@@ -16,7 +16,7 @@ import {
   inngestHeaders,
   type Mode,
   parseAsBoolean,
-  processEnv,
+  normalizeUrl,
 } from "../helpers/env.ts";
 import {
   type ErrCode,
@@ -151,8 +151,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return undefined;
     }
 
+    if (parseAsBoolean(devEnvValue) !== undefined) {
+      return undefined;
+    }
+
     try {
-      return new URL(devEnvValue);
+      return new URL(normalizeUrl(devEnvValue));
     } catch {
       return undefined;
     }
@@ -368,13 +372,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return this.options.isDev ? "dev" : "cloud";
     }
 
-    if (this.getExplicitDevUrl) {
-      return "dev";
-    }
-
     const envIsDev = parseAsBoolean(this._env[envKeys.InngestDevMode]);
     if (typeof envIsDev === "boolean") {
       return envIsDev ? "dev" : "cloud";
+    }
+
+    if (this.getExplicitDevUrl) {
+      return "dev";
     }
 
     return "cloud";

@@ -59,16 +59,21 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   });
 };
 
-export interface ModeOptions {
-  type: "cloud" | "dev";
-
-  /**
-   * If the mode was set as a dev URL, this is the URL that was set.
-   */
-  explicitDevUrl?: URL;
-}
-
 export type Mode = "cloud" | "dev";
+
+export const normalizeUrl = (
+  urlString: string,
+  scheme: string = "http://",
+): string => {
+  if (urlString === "undefined") {
+    throw new Error("Fuck this shit I'm out");
+  }
+  if (urlString.includes("://")) {
+    return urlString;
+  }
+
+  return `${scheme}${urlString}`;
+};
 
 /**
  * getEnvironmentName returns the suspected branch name for this environment by
@@ -440,7 +445,9 @@ export const parseAsBoolean = (value: unknown): boolean | undefined => {
       return true;
     }
 
-    return false;
+    if (["false", "0"].includes(trimmed)) {
+      return false;
+    }
   }
 
   return undefined;
