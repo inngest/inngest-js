@@ -989,12 +989,8 @@ export namespace Inngest {
  *
  * @public
  */
-export type GetStepTools<
-  TInngest extends Inngest.Any,
-  TTrigger extends string = string,
-> = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
-  ? TStep
-  : never;
+export type GetStepTools<TInngest extends Inngest.Any> =
+  GetFunctionInput<TInngest> extends { step: infer TStep } ? TStep : never;
 
 /**
  * A helper type to extract the type of the input to a function from a given
@@ -1012,13 +1008,9 @@ export type GetStepTools<
  *
  * @public
  */
-export type GetFunctionInput<
-  TClient extends Inngest.Any,
-  TTrigger extends string = string,
-> = Parameters<
+export type GetFunctionInput<TClient extends Inngest.Any> = Parameters<
   Handler<
     TClient,
-    TTrigger,
     ExtendWithMiddleware<
       [
         typeof builtInMiddleware,

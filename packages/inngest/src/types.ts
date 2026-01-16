@@ -484,9 +484,7 @@ export type WithInvocation<T extends EventPayload> = Simplify<
  *
  * @public
  */
-export type BaseContext<
-  TClient extends Inngest.Any,
-> = {
+export type BaseContext<TClient extends Inngest.Any> = {
   /**
    * The event data present in the payload.
    */
@@ -521,7 +519,6 @@ export type BaseContext<
  */
 export type Context<
   TClient extends Inngest.Any = Inngest.Any,
-  TTriggers extends string = string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TClient>, keyof TOverrides> & TOverrides;
 
@@ -546,14 +543,13 @@ export namespace Context {
  */
 export type Handler<
   TClient extends Inngest.Any,
-  TTriggers extends string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TClient, TTriggers, TOverrides>,
+  ctx: Context<TClient, TOverrides>,
 ) => unknown;
 
 /**
@@ -567,7 +563,7 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  export type Any = Handler<Inngest.Any, any, any>;
+  export type Any = Handler<Inngest.Any, any>;
 }
 
 /**
