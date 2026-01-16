@@ -90,7 +90,7 @@ export class V0InngestExecution
   public start() {
     this.debug("starting V0 execution");
 
-    // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+    // biome-ignore lint/suspicious/noAssignInExpressions: intentional
     return (this.execution ??= this._start().then((result) => {
       this.debug("result:", result);
       return result;
@@ -418,7 +418,7 @@ export class V0InngestExecution
 
       const collisionHash = _internals.hashData(obj);
 
-      // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+      // biome-ignore lint/suspicious/noAssignInExpressions: intentional
       const pos = (this.state.tickOpHashes[collisionHash] =
         (this.state.tickOpHashes[collisionHash] ?? -1) + 1);
 

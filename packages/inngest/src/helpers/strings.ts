@@ -9,7 +9,7 @@ const { sha256 } = hashjs;
  * Safely `JSON.stringify()` an `input`, handling circular refernences and
  * removing `BigInt` values.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const stringify = (input: any): string => {
   return safeStringify(input, (_key, value) => {
     if (typeof value !== "bigint") {
