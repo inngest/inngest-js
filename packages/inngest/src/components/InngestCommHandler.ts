@@ -299,13 +299,6 @@ export class InngestCommHandler<
   StreamOutput = any,
 > {
   /**
-   * The ID of this serve handler, e.g. `"my-app"`. It's recommended that this
-   * value represents the overarching app/service that this set of functions is
-   * being served from.
-   */
-  public readonly id: string;
-
-  /**
    * The handler specified during instantiation of the class.
    */
   public readonly handler: Handler;
@@ -423,7 +416,6 @@ export class InngestCommHandler<
         `${logPrefix} The \`id\` serve option is deprecated and has been removed in v4`,
       );
     }
-    this.id = this.client.id;
 
     this.handler = options.handler as Handler;
 
@@ -452,7 +444,7 @@ export class InngestCommHandler<
     >((acc, fn) => {
       const configs = fn["getConfig"]({
         baseUrl: new URL("https://example.com"),
-        appPrefix: this.id,
+        appPrefix: this.client.id,
       });
 
       const fns = configs.reduce((acc, { id }, index) => {
@@ -534,7 +526,7 @@ export class InngestCommHandler<
 
     // Early validation for environments where process.env is available (Node.js).
     // Edge environments will skip this and validate at request time instead.
-    this.validateModeConfiguration({ skipIfNoEnv: true });
+    this.validateModeConfiguration(true);
   }
 
   /**
@@ -2046,7 +2038,7 @@ export class InngestCommHandler<
     const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
       (acc, fn) => [
         ...acc,
-        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
+        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.client.id }),
       ],
       [],
     );
@@ -2105,7 +2097,7 @@ export class InngestCommHandler<
       url: url.href,
       deployType: "ping",
       framework: this.frameworkName,
-      appName: this.id,
+      appName: this.client.id,
       functions: this.configs(url),
       sdk: `js:v${version}`,
       v: "0.1",
@@ -2149,7 +2141,7 @@ export class InngestCommHandler<
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.id,
+      app_id: this.client.id,
       appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
       env,
@@ -2222,7 +2214,7 @@ export class InngestCommHandler<
           ...introspection,
           authentication_succeeded: true,
           api_origin: this.apiBaseUrl,
-          app_id: this.id,
+          app_id: this.client.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
@@ -2371,11 +2363,7 @@ export class InngestCommHandler<
   /**
    * Validate that the current mode has the configuration it requires.
    */
-  private validateModeConfiguration({
-    skipIfNoEnv = false,
-  }: {
-    skipIfNoEnv?: boolean;
-  } = {}) {
+  private validateModeConfiguration(skipIfNoEnv: boolean = false) {
     // During early validation (construction time), sync client env with
     // the handler's env to pick up any process.env changes since client
     // construction. At request time, this is done in createRequestHandler.
@@ -2420,7 +2408,7 @@ export class InngestCommHandler<
       // Never validate signatures outside of prod. Make sure to check the mode
       // exists here instead of using nullish coalescing to confirm that the check
       // has been completed.
-      if (this.client.mode && this.client.mode !== "cloud") {
+      if (this.client.mode !== "cloud") {
         return { success: true, keyUsed: "" };
       }
 

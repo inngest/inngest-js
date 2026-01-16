@@ -118,11 +118,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     defaultInngestEventBaseUrl,
   );
 
-  // private headers!: Record<string, string>;
-
   private readonly fetch: FetchT;
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
@@ -133,18 +130,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
-  /**
-   * Whether the client is running in a production environment. This can
-   * sometimes be `undefined` if the client has expressed no preference or
-   * perhaps environment variables are only available at a later stage in the
-   * runtime, for example when receiving a request.
-   *
-   * An {@link InngestCommHandler} should prioritize this value over all other
-   * settings, but should still check for the presence of an environment
-   * variable if it is not set.
-   */
-
-  // private _mode: Mode | undefined; // TODO: do we even need this?
   private _env: Env = {};
 
   private _appVersion: string | undefined;
@@ -159,7 +144,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * Try to parse the `INNGEST_DEV` environment variable as a URL.
    * Returns the URL if valid, otherwise `undefined`.
    */
-  // TODO: this is really more internal, right?
+  // TODO: make this more explicitly private
   get getExplicitDevUrl(): URL | undefined {
     const devEnvValue = this._env[envKeys.InngestDevMode];
     if (typeof devEnvValue !== "string" || !devEnvValue) {
@@ -723,8 +708,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return await applyHookToOutput({ result: { ids: [] } });
     }
 
-    // When sending events, check if the dev server is available.  If so, use the
-    // dev server.
     const url = this.sendEventUrl.href;
 
     /**
