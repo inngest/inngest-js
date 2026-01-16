@@ -113,10 +113,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   /**
    * The absolute URL of the Inngest Cloud API.
    */
-  private sendEventUrl: URL = new URL(
-    `e/${this.eventKey}`,
-    defaultInngestEventBaseUrl,
-  );
+  private get sendEventUrl(): URL {
+    return new URL(`e/${this.eventKey}`, this.eventBaseUrl);
+  }
 
   private readonly fetch: FetchT;
 
@@ -448,11 +447,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     eventKey: string,
   ): void {
     this.eventKey = eventKey || dummyEventKey;
-
-    this.sendEventUrl = new URL(
-      `e/${this.eventKey}`,
-      this.eventBaseUrl || defaultInngestEventBaseUrl,
-    );
   }
 
   private eventKeySet(): boolean {
