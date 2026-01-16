@@ -225,10 +225,17 @@ function checkDependencies(
     });
   });
 
+  // Packages that are dynamically imported and should not be flagged as unused
+  const dynamicallyImportedPackages = ["ulid"];
+
   // Check for unused packages in dependencies
   // biome-ignore lint/complexity/noForEach: intentional
   Object.keys(dependencies).forEach((dependency) => {
-    if (!importedModules.has(dependency) && !dependency.startsWith("@types/")) {
+    if (
+      !importedModules.has(dependency) &&
+      !dependency.startsWith("@types/") &&
+      !dynamicallyImportedPackages.includes(dependency)
+    ) {
       const typesPackage = `@types/${dependency}`;
       if (!importedModules.has(typesPackage)) {
         if (!issues[dependency]) {
