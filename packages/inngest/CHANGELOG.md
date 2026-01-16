@@ -1,5 +1,11 @@
 # inngest
 
+## 3.49.3
+
+### Patch Changes
+
+- [#1248](https://github.com/inngest/inngest-js/pull/1248) [`351ec02d`](https://github.com/inngest/inngest-js/commit/351ec02d6bd3faa5c0b8466cddb0f946974051d6) Thanks [@amh4r](https://github.com/amh4r)! - Fix steps sometimes resolving out of order
+
 ## 3.49.2
 
 ### Patch Changes
