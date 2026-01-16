@@ -561,7 +561,10 @@ export class V0InngestExecution
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
-      let retriable: boolean | string = !(error instanceof NonRetriableError);
+      let retriable: boolean | string = !(
+        error instanceof NonRetriableError ||
+        (error as any)?.name === "NonRetriableError"
+      );
       if (retriable && error instanceof RetryAfterError) {
         retriable = error.retryAfter;
       }
