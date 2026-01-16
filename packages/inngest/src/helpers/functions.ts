@@ -140,7 +140,6 @@ export const parseFnData = (data: unknown) => {
                         .transform((v) => (Array.isArray(v) ? v : [])),
                       current: z.number(),
                     })
-                    .passthrough()
                     .optional()
                     .nullable(),
                 })
@@ -177,7 +176,6 @@ export const parseFnData = (data: unknown) => {
                         .transform((v) => (Array.isArray(v) ? v : [])),
                       current: z.number(),
                     })
-                    .passthrough()
                     .optional()
                     .nullable(),
                 })
@@ -213,7 +211,6 @@ export const parseFnData = (data: unknown) => {
                         .transform((v) => (Array.isArray(v) ? v : [])),
                       current: z.number(),
                     })
-                    .passthrough()
                     .optional()
                     .nullable(),
                 })
@@ -301,7 +298,7 @@ export const fetchAllFnData = async ({
     // If we don't have a stack here, we need to at least set something.
     // TODO We should be passed this by the steps API.
     const stepIds = Object.keys(result.steps || {});
-    if (stepIds.length && !result.ctx?.stack?.length) {
+    if (stepIds.length && !result.ctx?.stack?.stack?.length) {
       result.ctx = {
         ...(result.ctx as NonNullable<typeof result.ctx>),
         stack: {
