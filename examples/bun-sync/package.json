@@ -10,6 +10,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "inngest": "../../packages/inngest/inngest.tgz"
+    "inngest": "^3.0.0"
   }
 }
