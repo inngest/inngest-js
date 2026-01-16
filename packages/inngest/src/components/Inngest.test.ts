@@ -690,7 +690,8 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
+            assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
           },
         );
       });
@@ -702,7 +703,8 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
+            assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
           },
         );
       });
@@ -713,7 +715,8 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
+            assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
           },
         );
       });
@@ -724,7 +727,8 @@ describe("createFunction", () => {
           { cron: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // Cron triggers have empty data, and invoked events also have empty data (without schema)
+            assertType<IsEqual<typeof event.data, {}>>(true);
           },
         );
       });
@@ -733,7 +737,7 @@ describe("createFunction", () => {
         // @ts-expect-error Unknown property
         inngest.createFunction({ id: "test" }, { foo: "bar" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
+          assertType<{}>(event.data);
         });
       });
 
@@ -744,7 +748,7 @@ describe("createFunction", () => {
           { event: "test", cron: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            assertType<{}>(event.data);
           },
         );
       });

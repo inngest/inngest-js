@@ -76,7 +76,6 @@ export type {
   StrictUnion,
   StrictUnionHelper,
   UnionKeys,
-  WithoutInternal,
 } from "./helpers/types";
 export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
 export type { LogArg, Logger } from "./middleware/logger";

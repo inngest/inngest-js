@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {
   ExecutionVersion,
   internalEvents,
@@ -27,6 +28,7 @@ import type {
   InngestMiddleware,
   MiddlewareRegisterReturn,
 } from "./InngestMiddleware.ts";
+import type { EventType } from "./triggers/triggers.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -212,8 +214,15 @@ export class InngestFunction<
 
     if (cancelOn) {
       fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+        let eventName: string;
+        if (typeof event === "string") {
+          eventName = event;
+        } else {
+          eventName = event.name;
+        }
+
         const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
-          event,
+          event: eventName,
         };
 
         if (timeout) {
@@ -350,7 +359,8 @@ export namespace InngestFunction {
    */
   export type Trigger<T extends string> = StrictUnion<
     | {
-        event: T;
+        // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
+        event: T | EventType<T, any>;
         if?: string;
       }
     | {
@@ -625,7 +635,7 @@ export namespace InngestFunction {
       mode: "skip" | "cancel";
     };
 
-    cancelOn?: Cancellation<Record<string, EventPayload>>[];
+    cancelOn?: Cancellation[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.

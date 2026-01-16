@@ -451,7 +451,7 @@ type MiddlewareRunArgs = Readonly<{
    * The context object that will be passed to the function. This contains
    * event data, some contextual data such as the run's ID, and step tooling.
    */
-  ctx: Record<string, unknown> & Readonly<BaseContext<Inngest.Any, string>>; // TODO Acceptable?
+  ctx: Record<string, unknown> & Readonly<BaseContext<Inngest.Any>>; // TODO Acceptable?
 
   /**
    * The step data that will be passed to the function.
