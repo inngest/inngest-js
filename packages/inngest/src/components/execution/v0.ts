@@ -566,8 +566,13 @@ export class V0InngestExecution
         // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
         (error as any)?.name === "NonRetriableError"
       );
-      if (retriable && error instanceof RetryAfterError) {
-        retriable = error.retryAfter;
+      if (
+        retriable &&
+        (error instanceof RetryAfterError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "RetryAfterError")
+      ) {
+        retriable = (error as RetryAfterError).retryAfter;
       }
 
       const serializedError = serializeError(error);
