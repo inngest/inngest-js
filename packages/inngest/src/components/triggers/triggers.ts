@@ -102,9 +102,7 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
  */
 export class EventType<
   TName extends string,
-  TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined,
+  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
 > {
   /**
    * The event name. This is the same as the `name` property, but is necessary
