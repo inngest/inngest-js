@@ -1,5 +1,13 @@
 # inngest
 
+## 3.49.2
+
+### Patch Changes
+
+- [#1244](https://github.com/inngest/inngest-js/pull/1244) [`f5c565e8`](https://github.com/inngest/inngest-js/commit/f5c565e84cbe6eb5d91715a0cdfe33a3fc14d63e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure execution version doesn't slide when going to/from checkpointing
+
+- [#1245](https://github.com/inngest/inngest-js/pull/1245) [`6694bccc`](https://github.com/inngest/inngest-js/commit/6694bccc394071d412c0a99bfeb07566d163f74f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix async data fetching not happening with `optimizedParallelism: true`
+
 ## 3.49.1
 
 ### Patch Changes
