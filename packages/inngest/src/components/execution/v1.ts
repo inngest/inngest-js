@@ -1429,7 +1429,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         hashedId,
         input: stepState?.input,
 
-        fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
+        fn: opts?.fn ? () => opts.fn?.(this.fnArg, ...fnArgs) : undefined,
         promise,
         fulfilled: isFulfilled,
         hasStepState: Boolean(stepState),
