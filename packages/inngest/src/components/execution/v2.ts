@@ -551,7 +551,11 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       .catch<OutgoingOp>((error) => {
         let errorIsRetriable = true;
 
-        if (error instanceof NonRetriableError) {
+        if (
+          error instanceof NonRetriableError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "NonRetriableError"
+        ) {
           errorIsRetriable = false;
         } else if (
           this.fnArg.maxAttempts &&
@@ -674,11 +678,18 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        */
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
+        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+        (error as any)?.name === "NonRetriableError" ||
         (error instanceof StepError &&
           error === this.state.recentlyRejectedStepError)
       );
-      if (retriable && error instanceof RetryAfterError) {
-        retriable = error.retryAfter;
+      if (
+        retriable &&
+        (error instanceof RetryAfterError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "RetryAfterError")
+      ) {
+        retriable = (error as RetryAfterError).retryAfter;
       }
       const serializedError = minifyPrettyError(serializeError(error));
 
