@@ -1492,6 +1492,7 @@ export class InngestCommHandler<
             events: [],
             steps: {},
             version: PREFERRED_EXECUTION_VERSION,
+            sdkDecided: true,
             ctx: {
               attempt: 0,
               disable_immediate_execution: false,
@@ -1904,11 +1905,12 @@ export class InngestCommHandler<
     }
 
     const immediateFnData = parseFnData(data);
-    let { version } = immediateFnData;
+    let { version, sdkDecided } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.
     if (
       version === ExecutionVersion.V1 &&
+      sdkDecided &&
       fn.fn["shouldOptimizeParallelism"]?.()
     ) {
       version = ExecutionVersion.V2;
