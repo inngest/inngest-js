@@ -479,16 +479,6 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
- * Returns the event type for a function context. Since events are now generic
- * strings, this returns a simplified EventPayload type.
- */
-type GetContextEvents<
-  _TClient extends Inngest.Any,
-  _TTriggers extends string,
-  _TExcludeInternal extends boolean = false,
-> = Simplify<EventPayload>;
-
-/**
  * Base context object, omitting any extras that may be added by middleware or
  * function configuration.
  *
@@ -496,13 +486,12 @@ type GetContextEvents<
  */
 export type BaseContext<
   TClient extends Inngest.Any,
-  TTriggers extends string = string,
 > = {
   /**
    * The event data present in the payload.
    */
-  event: GetContextEvents<TClient, TTriggers>;
-  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
+  event: Simplify<EventPayload>;
+  events: AsTuple<Simplify<EventPayload>>;
 
   /**
    * The run ID for the current function execution
@@ -534,7 +523,7 @@ export type Context<
   TClient extends Inngest.Any = Inngest.Any,
   TTriggers extends string = string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
+> = Omit<BaseContext<TClient>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -1409,27 +1398,25 @@ export interface DevServerInfo {
 }
 
 /**
- * Given a set of events and a user-friendly trigger paramter, returns the name
- * of the event that the user intends to listen to.
+ * Given a user-friendly trigger parameter, returns the name of the event that
+ * the user intends to listen to.
  *
  * @public
  */
-export type EventNameFromTrigger<
-  Events extends Record<string, EventPayload>,
-  T extends InngestFunction.Trigger<keyof Events & string>,
-> = IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
-  ? `${internalEvents.FunctionInvoked}`
-  : T extends string // `string` indicates a migration from v2 to v3
-    ? T
-    : // If the trigger is an event string (e.g. `{ event: "my-event" }`)
-      T extends { event: infer IEvent } // an event trigger
-      ? // If the event is an EventType (e.g. `{ event: eventType("my-event") }`)
-        IEvent extends EventType<infer TName, infer _TSchema>
-        ? TName // Extract name from EventType
-        : IEvent // Use event directly if it's a string
-      : T extends { cron: string } // a cron trigger
-        ? `${internalEvents.ScheduledTimer}`
-        : never;
+export type EventNameFromTrigger<T extends InngestFunction.Trigger<string>> =
+  IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
+    ? `${internalEvents.FunctionInvoked}`
+    : T extends string // `string` indicates a migration from v2 to v3
+      ? T
+      : // If the trigger is an event string (e.g. `{ event: "my-event" }`)
+        T extends { event: infer IEvent } // an event trigger
+        ? // If the event is an EventType (e.g. `{ event: eventType("my-event") }`)
+          IEvent extends EventType<infer TName, infer _TSchema>
+          ? TName // Extract name from EventType
+          : IEvent // Use event directly if it's a string
+        : T extends { cron: string } // a cron trigger
+          ? `${internalEvents.ScheduledTimer}`
+          : never;
 
 /**
  * A union to represent known names of supported frameworks that we can use
@@ -1648,10 +1635,7 @@ export type PayloadForAnyInngestFunction<
         { data: ExtractTriggerSchemaInput<ITriggers> }
       : // Otherwise, fall back to existing behavior
         IsEqual<
-            EventNameFromTrigger<
-              Record<string, EventPayload>,
-              ITriggers[number]
-            >,
+            EventNameFromTrigger<ITriggers[number]>,
             `${internalEvents.ScheduledTimer}`
           > extends true
         ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
