@@ -5,7 +5,7 @@ export default inngest.createFunction(
   { event: "demo/event.sent" },
   async ({ event, step }) => {
     return {
-      message: `Hello ${event.name}!`,
+      message: `Hello ${event.name} ${Math.random()}!`,
     };
   }
 );
