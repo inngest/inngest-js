@@ -1,4 +1,3 @@
-import runPayloadSchema from "./run-payload-schema";
 import handlingStepErrors from "./handling-step-errors";
 import helloWorld from "./hello-world";
 import multipleTriggers from "./multiple-triggers";
@@ -13,9 +12,10 @@ import stepInvokeFunctions from "./step-invoke";
 import stepInvokeNotFound from "./step-invoke-not-found";
 import undefinedData from "./undefined-data";
 import unhandledStepErrors from "./unhandled-step-errors";
+import runPayloadSchema from "./run-payload-schema";
+import waitPayloadSchema from "./wait-payload-schema";
 
 export const functions = [
-  runPayloadSchema,
   helloWorld,
   promiseAll,
   promiseRace,
@@ -30,6 +30,8 @@ export const functions = [
   handlingStepErrors,
   unhandledStepErrors,
   multipleTriggers,
+  runPayloadSchema,
+  waitPayloadSchema,
 ];
 
 export { inngest } from "./client";
