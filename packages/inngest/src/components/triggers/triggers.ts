@@ -264,8 +264,8 @@ export function eventType<
 export function invoke<TData extends Record<string, unknown>>(
   schema: StandardSchemaV1<TData>,
 ) {
-  return {
-    event: "inngest/function.invoked",
+  return new EventType({
+    name: "inngest/function.invoked",
     schema,
-  } as const;
+  });
 }

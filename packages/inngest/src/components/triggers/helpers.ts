@@ -39,7 +39,7 @@ type HasInvokeTrigger<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends { event: InvokeEventName; schema?: any }
+  ? First extends EventType<InvokeEventName, any>
     ? true
     : HasInvokeTrigger<Rest>
   : false;
@@ -92,16 +92,14 @@ type PlainEventToReceivedEvent<
 type ProcessSingleTrigger<
   TTrigger,
   TSeenCron extends boolean,
-> = TTrigger extends EventType<any, any>
-  ? [EventTypeToEvent<TTrigger>]
-  : // Is this a cron trigger?
-    TTrigger extends { cron: string }
-    ? TSeenCron extends true
-      ? [] // Skip additional cron triggers (they're merged into one)
-      : [ReceivedEvent<CronEventName, {}>]
-    : // Is this an invoke trigger?
-      TTrigger extends { event: InvokeEventName; schema?: any }
-      ? [] // Skip invoke triggers (handled separately by ToReceivedEvent)
+> = TTrigger extends EventType<InvokeEventName, any> // Is this an invoke trigger?
+  ? [] // Skip invoke triggers (handled separately by ToReceivedEvent)
+  : TTrigger extends EventType<any, any> // Is this an event type trigger?
+    ? [EventTypeToEvent<TTrigger>]
+    : TTrigger extends { cron: string } // Is this a cron trigger?
+      ? TSeenCron extends true
+        ? [] // Skip additional cron triggers (they're merged into one)
+        : [ReceivedEvent<CronEventName, {}>]
       : // Is this an event trigger using an EventType?
         TTrigger extends {
             event: EventType<infer TName, infer TSchema>;
@@ -180,7 +178,7 @@ type ExtractInvokeSchemas<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends { event: InvokeEventName; schema: infer TSchema }
+  ? First extends EventType<InvokeEventName, infer TSchema>
     ? TSchema extends StandardSchemaV1<infer TData>
       ? TData | ExtractInvokeSchemas<Rest>
       : ExtractInvokeSchemas<Rest>
