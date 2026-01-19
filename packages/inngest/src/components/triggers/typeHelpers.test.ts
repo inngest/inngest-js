@@ -1,7 +1,7 @@
 import { describe, test } from "vitest";
 import { z } from "zod";
-import type { ReceivedEvent, ToReceivedEvent } from "./helpers.ts";
 import { cron, eventType, invoke } from "./triggers.ts";
+import type { ReceivedEvent, ToReceivedEvent } from "./typeHelpers.ts";
 
 describe("ToReceivedEvent", () => {
   test("single event", () => {

@@ -4,6 +4,10 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
 import type { EventType } from "./triggers.ts";
 
+export type AnySchema = StandardSchemaV1<any>;
+type BasicDataUnknown = Record<string, unknown>;
+type BasicDataAny = Record<string, any>;
+
 type InvokeEventName = "inngest/function.invoked";
 type CronEventName = "inngest/scheduled.timer";
 
@@ -17,7 +21,7 @@ type CronEventName = "inngest/scheduled.timer";
  */
 export type ReceivedEvent<
   TName extends string,
-  TData extends Record<string, unknown>,
+  TData extends BasicDataUnknown,
 > = {
   data: TData;
   id: string;
@@ -57,11 +61,9 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TName,
   infer TSchema
 >
-  ? TSchema extends StandardSchemaV1<
-      infer TData extends Record<string, unknown>
-    >
+  ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
     ? ReceivedEvent<TName, TData>
-    : ReceivedEvent<TName, Record<string, any>>
+    : ReceivedEvent<TName, BasicDataAny>
   : never;
 
 /**
@@ -76,11 +78,9 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
 type PlainEventToReceivedEvent<
   TName extends string,
   TSchema,
-> = TSchema extends StandardSchemaV1<
-  infer TData extends Record<string, unknown>
->
+> = TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
   ? ReceivedEvent<TName, TData>
-  : ReceivedEvent<TName, Record<string, any>>;
+  : ReceivedEvent<TName, BasicDataAny>;
 
 /**
  * Processes a single trigger and converts it to ReceivedEvent(s).
@@ -107,10 +107,10 @@ type ProcessSingleTrigger<
           }
         ? [
             TSchema extends StandardSchemaV1<
-              infer TData extends Record<string, unknown>
+              infer TData extends BasicDataUnknown
             >
               ? ReceivedEvent<TName, TData>
-              : ReceivedEvent<TName, Record<string, any>>,
+              : ReceivedEvent<TName, BasicDataAny>,
           ]
         : // Is this an event trigger using a string name (i.e. not an EventType)?
           TTrigger extends {
@@ -202,18 +202,18 @@ type ExtractAllSchemaOutputs<T extends readonly any[]> = T extends readonly [
   ? First extends EventType<string, infer TSchema>
     ? TSchema extends StandardSchemaV1<infer TData>
       ? TData | ExtractAllSchemaOutputs<Rest>
-      : Record<string, any> | ExtractAllSchemaOutputs<Rest>
+      : BasicDataAny | ExtractAllSchemaOutputs<Rest>
     : First extends { event: EventType<string, infer TSchema> }
       ? TSchema extends StandardSchemaV1<infer TData>
         ? TData | ExtractAllSchemaOutputs<Rest>
-        : Record<string, any> | ExtractAllSchemaOutputs<Rest>
+        : BasicDataAny | ExtractAllSchemaOutputs<Rest>
       : First extends {
             event: string;
             schema: StandardSchemaV1<infer TData>;
           }
         ? TData | ExtractAllSchemaOutputs<Rest>
         : First extends { event: string }
-          ? Record<string, any> | ExtractAllSchemaOutputs<Rest>
+          ? BasicDataAny | ExtractAllSchemaOutputs<Rest>
           : ExtractAllSchemaOutputs<Rest>
   : never;
 
@@ -310,7 +310,7 @@ export type BaseContextWithTriggers<
 export type ContextWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
-  TOverrides extends Record<string, unknown> = Record<never, never>,
+  TOverrides extends BasicDataUnknown = Record<never, never>,
 > = Omit<BaseContextWithTriggers<TStepTools, TTriggers>, keyof TOverrides> &
   TOverrides;
 
@@ -326,7 +326,7 @@ export type ContextWithTriggers<
 export type HandlerWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
-  TOverrides extends Record<string, unknown> = Record<never, never>,
+  TOverrides extends BasicDataUnknown = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to

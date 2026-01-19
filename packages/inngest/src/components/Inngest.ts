@@ -64,7 +64,7 @@ import {
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
-import type { HandlerWithTriggers } from "./triggers/helpers.ts";
+import type { HandlerWithTriggers } from "./triggers/typeHelpers.ts";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
