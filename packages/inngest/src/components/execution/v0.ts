@@ -42,6 +42,7 @@ import {
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
+import { validateEvents } from "../triggers/utils.js";
 import {
   type ExecutionResult,
   ExecutionVersion,
@@ -102,6 +103,7 @@ export class V0InngestExecution
 
     try {
       await this.transformInput();
+      await this.validateEventSchemas();
       await this.state.hooks.beforeMemoization?.();
 
       if (this.state.opStack.length === 0 && !this.options.requestedRunStep) {
@@ -507,6 +509,24 @@ export class V0InngestExecution
     if (inputMutations?.steps) {
       this.state.opStack = [...inputMutations.steps];
     }
+  }
+
+  /**
+   * Validate event data against schemas defined in function triggers.
+   */
+  private async validateEventSchemas(): Promise<void> {
+    const triggers = this.options.fn.opts.triggers;
+    if (!triggers || triggers.length === 0) return;
+
+    const fnArgEvents = this.fnArg.events;
+    if (!fnArgEvents || fnArgEvents.length === 0) return;
+
+    const events = fnArgEvents.map((event) => ({
+      name: event.name,
+      data: event.data,
+    }));
+
+    await validateEvents(events, triggers);
   }
 
   private getEarlyExecRunStep(ops: OutgoingOp[]): string | undefined {

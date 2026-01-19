@@ -59,6 +59,7 @@ import {
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
+import { validateEvents } from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
   type ExecutionResult,
@@ -961,6 +962,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Mutate input as neccessary based on middleware.
      */
     await this.transformInput();
+    await this.validateEventSchemas();
 
     /**
      * Start the timer to time out the run if needed.
@@ -1015,6 +1017,24 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         inputMutations.steps.map((step) => [step.id, step]),
       );
     }
+  }
+
+  /**
+   * Validate event data against schemas defined in function triggers.
+   */
+  private async validateEventSchemas(): Promise<void> {
+    const triggers = this.options.fn.opts.triggers;
+    if (!triggers || triggers.length === 0) return;
+
+    const fnArgEvents = this.fnArg.events;
+    if (!fnArgEvents || fnArgEvents.length === 0) return;
+
+    const events = fnArgEvents.map((event) => ({
+      name: event.name,
+      data: event.data,
+    }));
+
+    await validateEvents(events, triggers);
   }
 
   /**

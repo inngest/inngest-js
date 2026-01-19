@@ -1,7 +1,37 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../../helpers/consts";
 import type { InngestFunction } from "../InngestFunction";
+import { NonRetriableError } from "../NonRetriableError";
 import { EventType } from "./triggers";
 import type { AnySchema } from "./typeHelpers";
+
+class EventValidationError extends NonRetriableError {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+
+  static fromIssues(
+    issues: readonly StandardSchemaV1.Issue[],
+  ): EventValidationError {
+    if (issues.length === 0) {
+      // Unreachable
+      return new EventValidationError("Validation failed");
+    }
+
+    const message = issues
+      .map((issue) => {
+        let path = "value";
+        if (issue.path && issue.path.length > 0) {
+          path = issue.path.join(".");
+        }
+        return `${path}: ${issue.message}`;
+      })
+      .join(", ");
+
+    return new EventValidationError(message);
+  }
+}
 
 /**
  * Validates a tuple of events against a tuple of triggers. Throws an error if
@@ -32,7 +62,9 @@ export async function validateEvents<
       //    resynced with Inngest
       // 4. Function is triggered by "my-event"
 
-      throw new Error(`Event not found in triggers: ${event.name}`);
+      throw new EventValidationError(
+        `Event not found in triggers: ${event.name}`,
+      );
     }
     if (validate === null) {
       // No validator
@@ -105,7 +137,7 @@ function createEventSchemas(
     } else {
       // Only reachable if the user specifies an invalid trigger
 
-      throw new Error("Invalid trigger");
+      throw new EventValidationError("Invalid trigger");
     }
 
     if (schema) {
@@ -146,9 +178,7 @@ function createEventValidators(
         return (async () => {
           const result = await schema["~standard"].validate(data);
           if (result.issues) {
-            throw new Error(
-              result.issues.map((issue) => issue.message).join(", "),
-            );
+            throw EventValidationError.fromIssues(result.issues);
           }
         })();
       });
@@ -170,11 +200,7 @@ function createEventValidators(
         return (async () => {
           const result = await schema["~standard"].validate(data);
           if (result.issues) {
-            // Validation failed, so we need to build a user-friendly error
-            // message
-            throw new Error(
-              result.issues.map((issue) => issue.message).join(", "),
-            );
+            throw EventValidationError.fromIssues(result.issues);
           }
         })();
       });

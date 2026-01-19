@@ -1,3 +1,4 @@
+import runPayloadSchema from "./run-payload-schema";
 import handlingStepErrors from "./handling-step-errors";
 import helloWorld from "./hello-world";
 import multipleTriggers from "./multiple-triggers";
@@ -14,6 +15,7 @@ import undefinedData from "./undefined-data";
 import unhandledStepErrors from "./unhandled-step-errors";
 
 export const functions = [
+  runPayloadSchema,
   helloWorld,
   promiseAll,
   promiseRace,

@@ -1179,7 +1179,7 @@ export const testFramework = (
           const event = {
             data: {},
             id: "",
-            name: "inngest/scheduled.timer",
+            name: "demo/event.sent",
             ts: 1674082830001,
             user: {},
             v: "1",
@@ -1211,7 +1211,7 @@ export const testFramework = (
                 method: "POST",
                 headers: {
                   [headerKeys.Signature]:
-                    "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                    "t=1687306735&s=58f943ec07eba92f4c60f550f1710e69415cb4b31068995e2ed2a8294b657dc7",
                 },
                 url: "/api/inngest?fnId=test-test&stepId=step",
                 body,
@@ -1230,7 +1230,7 @@ export const testFramework = (
             const event = {
               data: {},
               id: "",
-              name: "inngest/scheduled.timer",
+              name: "demo/event.sent",
               ts: 1674082830001,
               user: {},
               v: "1",
@@ -1263,7 +1263,7 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=58f943ec07eba92f4c60f550f1710e69415cb4b31068995e2ed2a8294b657dc7",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
