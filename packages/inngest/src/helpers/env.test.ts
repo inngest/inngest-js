@@ -32,7 +32,10 @@ describe("parseAsBoolean", () => {
     { input: null, expected: undefined },
   ];
 
-  it.each(specs)("parseAsBoolean($input) === $expected", ({ input, expected }) => {
-    expect(parseAsBoolean(input)).toBe(expected);
-  });
+  it.each(specs)(
+    "parseAsBoolean($input) === $expected",
+    ({ input, expected }) => {
+      expect(parseAsBoolean(input)).toBe(expected);
+    },
+  );
 });

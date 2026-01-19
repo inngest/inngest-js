@@ -15,8 +15,8 @@ import {
   getFetch,
   inngestHeaders,
   type Mode,
-  parseAsBoolean,
   normalizeUrl,
+  parseAsBoolean,
 } from "../helpers/env.ts";
 import {
   type ErrCode,
