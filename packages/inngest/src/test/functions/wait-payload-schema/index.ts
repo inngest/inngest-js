@@ -4,7 +4,6 @@ import { inngest } from "../client";
 
 const name = "wait-payload-schema";
 
-
 const et = eventType(`${name}/resolve`, {
   schema: z.object({
     nested: z.object({
@@ -20,8 +19,8 @@ export default inngest.createFunction(
     const matched = await step.waitForEvent("wait", {
       event: et,
       timeout: "1m",
-    })
-  
+    });
+
     return matched?.data;
   },
 );

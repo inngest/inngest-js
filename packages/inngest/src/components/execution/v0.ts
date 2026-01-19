@@ -42,7 +42,9 @@ import {
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
-import { validateEvents } from "../triggers/utils.js";
+import {
+  validateEvents,
+} from "../triggers/utils.js";
 import {
   type ExecutionResult,
   ExecutionVersion,
@@ -159,6 +161,22 @@ export class V0InngestExecution
           this.state.currentOp.fulfilled = true;
 
           if (typeof incomingOp.data !== "undefined") {
+            // Validate waitForEvent results against the schema if present
+            if (this.state.currentOp.op === StepOpCode.WaitForEvent) {
+              const waitForEventOpts = this.state.currentOp.rawArgs?.[1];
+              try {
+                const eventData: unknown = incomingOp.data;
+                await validateEvents(
+                  // @ts-expect-error - This is a full event object at runtime
+                  [eventData],
+
+                  [waitForEventOpts],
+                );
+              } catch (err) {
+                this.state.currentOp.reject(err);
+                continue;
+              }
+            }
             this.state.currentOp.resolve(incomingOp.data);
           } else {
             this.state.currentOp.reject(incomingOp.error);

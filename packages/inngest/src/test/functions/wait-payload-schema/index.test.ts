@@ -24,7 +24,7 @@ test("invalid data", async () => {
 
   const item = await runHasTimeline(runId, {
     stepType: "FINALIZATION",
-   status: "FAILED",
+    status: "FAILED",
   });
   const { error } = await item?.getOutput();
   expect(error.message).toEqual("nested.msg: Expected string, received number");

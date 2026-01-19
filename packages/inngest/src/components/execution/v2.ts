@@ -52,7 +52,9 @@ import {
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
-import { validateEvents } from "../triggers/utils.js";
+import {
+  validateEvents,
+} from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
   type ExecutionResult,
@@ -1022,8 +1024,29 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               stepState.data,
               stepState.error,
               stepState.input,
-            ]).then(() => {
+            ]).then(async () => {
               if (typeof stepState.data !== "undefined") {
+                // Validate waitForEvent results against the schema if present
+                if (opId.op === StepOpCode.WaitForEvent) {
+                  const waitForEventOpts = step.rawArgs?.[1] as
+                    | { event: unknown }
+                    | undefined;
+                  try {
+                    await validateEvents(
+                      [stepState.data],
+
+                      // @ts-expect-error - This is a full event object at runtime
+                      [waitForEventOpts?.event],
+                    );
+                  } catch (err) {
+                    this.state.recentlyRejectedStepError = new StepError(
+                      opId.id,
+                      err,
+                    );
+                    reject(this.state.recentlyRejectedStepError);
+                    return;
+                  }
+                }
                 resolve(stepState.data);
               } else {
                 this.state.recentlyRejectedStepError = new StepError(

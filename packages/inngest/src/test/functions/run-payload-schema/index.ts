@@ -12,10 +12,6 @@ const et = eventType(name, {
   }),
 });
 
-export default inngest.createFunction(
-  { id: name },
-  et,
-  async ({ event }) => {
-    return event.data;
-  },
-);
+export default inngest.createFunction({ id: name }, et, async ({ event }) => {
+  return event.data;
+});

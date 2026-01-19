@@ -1477,8 +1477,29 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             // future middleware applications. For this reason, we'll make sure
             // the values are fully resolved before continuing.
             void Promise.all([result.data, result.error, result.input]).then(
-              () => {
+              async () => {
                 if (typeof result.data !== "undefined") {
+                  // Validate waitForEvent results against the schema if present
+                  if (opId.op === StepOpCode.WaitForEvent) {
+                    const waitForEventOpts = step.rawArgs?.[1] as
+                      | { event: unknown }
+                      | undefined;
+                    try {
+                      await validateEvents(
+                        [result.data],
+
+                        // @ts-expect-error - This is a full event object at runtime
+                        [waitForEventOpts?.event],
+                      );
+                    } catch (err) {
+                      this.state.recentlyRejectedStepError = new StepError(
+                        opId.id,
+                        err,
+                      );
+                      reject(this.state.recentlyRejectedStepError);
+                      return;
+                    }
+                  }
                   resolve(result.data);
                 } else {
                   this.state.recentlyRejectedStepError = new StepError(
