@@ -10,7 +10,7 @@ test("literal object", async () => {
   const events = [{ name: "evt", data: { valid: false } }] as const;
   const triggers = [{ event: "evt" }] as const;
 
-  expect(await validateEvents(events, triggers)).toEqual(events);
+  await validateEvents(events, triggers);
 });
 
 describe("eventType: success", async () => {
@@ -20,7 +20,7 @@ describe("eventType: success", async () => {
       eventType("evt", { schema: z.object({ valid: z.literal(true) }) }),
     ] as const;
 
-    await expect(validateEvents(events, triggers)).resolves.toBe(events);
+    await validateEvents(events, triggers);
   });
 
   test("multiple event types", async () => {
@@ -33,7 +33,7 @@ describe("eventType: success", async () => {
       eventType("evt-2", { schema: z.object({ valid: z.literal(true) }) }),
     ] as const;
 
-    expect(await validateEvents(events, triggers)).toEqual(events);
+    await validateEvents(events, triggers);
   });
 
   test("no schema", async () => {
@@ -42,37 +42,67 @@ describe("eventType: success", async () => {
     const events = [{ name: "evt", data: { valid: false } }] as const;
     const triggers = [eventType("evt")] as const;
 
-    expect(await validateEvents(events, triggers)).toEqual(events);
+    await validateEvents(events, triggers);
+  });
+
+  test("wildcard", async () => {
+    const triggers = [
+      eventType("user/*", { schema: z.object({ a: z.string() }) }),
+      eventType("evt", { schema: z.object({ b: z.string() }) }),
+    ] as const;
+
+    // Valid against the wildcard trigger
+    await validateEvents([{ name: "user/foo", data: { a: "A" } }], triggers);
+
+    // Valid against the non-wildcard trigger
+    await validateEvents([{ name: "evt", data: { b: "B" } }], triggers);
+  });
+
+  test("multiple matching wildcard triggers", async () => {
+    const triggers = [
+      eventType("user/*", { schema: z.object({ a: z.string() }) }),
+      eventType("user/foo/*", { schema: z.object({ b: z.string() }) }),
+    ] as const;
+
+    // Valid against both wildcard triggers
+    await validateEvents(
+      [{ name: "user/foo/bar", data: { a: "A" } }],
+      triggers,
+    );
+    await validateEvents(
+      [{ name: "user/foo/bar", data: { b: "B" } }],
+      triggers,
+    );
   });
 });
 
 describe("eventType: failure", async () => {
   test("basic", async () => {
-    const events = [{ name: "evt", data: { valid: false } }] as const;
+    const events = [{ name: "evt", data: { msg: 1 } }] as const;
     const triggers = [
-      eventType("evt", { schema: z.object({ valid: z.literal(true) }) }),
+      eventType("evt", { schema: z.object({ msg: z.string() }) }),
     ] as const;
 
     await expect(validateEvents(events, triggers)).rejects.toThrowError(
       expect.objectContaining({
-        message: "Invalid literal value, expected true",
+        message: "msg: Expected string, received number",
       }),
     );
   });
 
   test("2nd event fails both schemas", async () => {
     const events = [
-      { name: "evt-2", data: { valid: true } },
-      { name: "evt-2", data: { valid: false } },
+      { name: "evt-2", data: { name: "Alice" } },
+      { name: "evt-2", data: { name: 1 } },
     ] as const;
     const triggers = [
       eventType("evt-1", { schema: z.object({ msg: z.string() }) }),
-      eventType("evt-2", { schema: z.object({ valid: z.literal(true) }) }),
+      eventType("evt-2", { schema: z.object({ name: z.string() }) }),
     ] as const;
 
     await expect(validateEvents(events, triggers)).rejects.toThrowError(
       expect.objectContaining({
-        message: "Invalid literal value, expected true",
+        message: "name: Expected string, received number",
       }),
     );
   });
@@ -89,6 +119,20 @@ describe("eventType: failure", async () => {
       }),
     );
   });
+
+  test("wildcard", async () => {
+    const events = [
+      { name: "user/foo", data: { msg: 1 } },
+    ] as const;
+    const triggers = [
+      eventType("user/*", { schema: z.object({ msg: z.string() }) }),
+    ] as const;
+    await expect(validateEvents(events, triggers)).rejects.toThrowError(
+      expect.objectContaining({
+        message: "msg: Expected string, received number",
+      }),
+    );
+  });
 });
 
 describe("cron", async () => {
@@ -96,7 +140,7 @@ describe("cron", async () => {
     const events = [{ name: internalEvents.ScheduledTimer, data: {} }] as const;
     const triggers = [cron("0 0 * * *")] as const;
 
-    expect(await validateEvents(events, triggers)).toEqual(events);
+    await validateEvents(events, triggers);
   });
 });
 
@@ -107,7 +151,7 @@ describe("invoke: success", async () => {
     ] as const;
     const triggers = [invoke(z.object({ valid: z.literal(true) }))] as const;
 
-    expect(await validateEvents(events, triggers)).toEqual(events);
+    await validateEvents(events, triggers);
   });
 
   test("multiple invoke triggers", async () => {
@@ -122,7 +166,7 @@ describe("invoke: success", async () => {
       invoke(z.object({ b: z.string() })),
     ] as const;
 
-    expect(await validateEvents(events, triggers)).toEqual(events);
+    await validateEvents(events, triggers);
   });
 
   test("only event type trigger", async () => {
@@ -136,20 +180,20 @@ describe("invoke: success", async () => {
       eventType("evt", { schema: z.object({ valid: z.literal(true) }) }),
     ] as const;
 
-    expect(await validateEvents(events, triggers)).toEqual(events);
+    await validateEvents(events, triggers);
   });
 });
 
 describe("invoke: failure", async () => {
   test("basic", async () => {
     const events = [
-      { name: internalEvents.FunctionInvoked, data: { valid: false } },
+      { name: internalEvents.FunctionInvoked, data: { msg: 1 } },
     ] as const;
-    const triggers = [invoke(z.object({ valid: z.literal(true) }))] as const;
+    const triggers = [invoke(z.object({ msg: z.string() }))] as const;
 
     await expect(validateEvents(events, triggers)).rejects.toThrowError(
       expect.objectContaining({
-        message: "Invalid literal value, expected true",
+        message: "msg: Expected string, received number",
       }),
     );
   });
@@ -159,15 +203,15 @@ describe("invoke: failure", async () => {
     // against it
 
     const events = [
-      { name: internalEvents.FunctionInvoked, data: { valid: false } },
+      { name: internalEvents.FunctionInvoked, data: { msg: 1 } },
     ] as const;
     const triggers = [
-      eventType("evt", { schema: z.object({ valid: z.literal(true) }) }),
+      eventType("evt", { schema: z.object({ msg: z.string() }) }),
     ] as const;
 
     await expect(validateEvents(events, triggers)).rejects.toThrowError(
       expect.objectContaining({
-        message: "Invalid literal value, expected true",
+        message: "msg: Expected string, received number",
       }),
     );
   });
