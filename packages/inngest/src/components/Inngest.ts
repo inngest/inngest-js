@@ -112,13 +112,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly inngestApi: InngestApi;
 
-  /**
-   * The absolute URL of the Inngest Cloud API.
-   */
-  private get sendEventUrl(): URL {
-    return new URL(`e/${this.eventKey}`, this.eventBaseUrl);
-  }
-
   private readonly _userProvidedFetch?: FetchT;
   private _cachedFetch?: FetchT;
 
@@ -736,7 +729,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
         // We don't need to do fallback auth here because this uses event keys and
         // not signing keys
-        const response = await this.fetch(this.sendEventUrl.href, {
+        const url = new URL(`e/${this.eventKey}`, this.eventBaseUrl);
+        const response = await this.fetch(url.href, {
           method: "POST",
           body: stringify(payloads),
           headers: { ...this.headers, ...headers },
