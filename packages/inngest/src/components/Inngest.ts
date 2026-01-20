@@ -45,6 +45,8 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
+  type LogLevel,
+  logLevels,
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
@@ -117,7 +119,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return new URL(`e/${this.eventKey}`, this.eventBaseUrl);
   }
 
-  private readonly fetch: FetchT;
+  private readonly _userProvidedFetch?: FetchT;
+  private _cachedFetch?: FetchT;
 
   private readonly logger: Logger;
 
@@ -143,8 +146,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * Try to parse the `INNGEST_DEV` environment variable as a URL.
    * Returns the URL if valid, otherwise `undefined`.
    */
-  // TODO: make this more explicitly private
-  get getExplicitDevUrl(): URL | undefined {
+  get explicitDevUrl(): URL | undefined {
     const devEnvValue = this._env[envKeys.InngestDevMode];
     if (typeof devEnvValue !== "string" || !devEnvValue) {
       return undefined;
@@ -170,7 +172,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * dev mode.
    */
   private resolveDefaultUrl(cloudUrl: string): string {
-    const explicitDevUrl = this.getExplicitDevUrl;
+    const explicitDevUrl = this.explicitDevUrl;
     if (explicitDevUrl) {
       return explicitDevUrl.href;
     }
@@ -196,15 +198,25 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  // NOTE:
-  // This being undefined makes sense here, but once it's accessed IRL
-  // it should cause issues!
+  // defer fetch resolution until first use, but cache for reference stability
+  get fetch(): FetchT {
+    if (!this._cachedFetch) {
+      this._cachedFetch = this._userProvidedFetch
+        ? getFetch(this._userProvidedFetch)
+        : getFetch(globalThis.fetch);
+    }
+    return this._cachedFetch;
+  }
+
   get signingKey(): string | undefined {
-    return this._env[envKeys.InngestSigningKey];
+    return this.options.signingKey || this._env[envKeys.InngestSigningKey];
   }
 
   get signingKeyFallback(): string | undefined {
-    return this._env[envKeys.InngestSigningKeyFallback];
+    return (
+      this.options.signingKeyFallback ||
+      this._env[envKeys.InngestSigningKeyFallback]
+    );
   }
 
   get headers(): Record<string, string> {
@@ -212,6 +224,17 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       inngestEnv: this.options.env,
       env: this._env,
     });
+  }
+
+  get logLevel(): LogLevel {
+    const level =
+      this.options.logLevel || this._env[envKeys.InngestLogLevel] || "info";
+
+    if (logLevels.includes(level as LogLevel)) {
+      return level as LogLevel;
+    }
+
+    return "info";
   }
 
   get env(): string | null {
@@ -257,7 +280,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     const {
       id,
-      fetch,
       logger = new DefaultLogger(),
       middleware,
       appVersion,
@@ -267,26 +289,15 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       throw new Error("An `id` must be passed to create an Inngest instance.");
     }
 
-    // anything in the client that comes from an ENV var should probably be
-    // a getter, because it coudl be updated after the client has been
-    // constructed
-    // ....
-    // since the comm handler is reconstructed on every req, can we just
-    // put all of the validation in there?
-    // comm handler's first action is to update the env on the client, so then
-    // the getters for url/key/etc all just work
-    // ahhhhh wait, looking closer at the cloudflare serve, it looks like it's
-    // returning the request handler
-
     this.id = id;
     this._env = { ...allProcessEnv() };
-    this.fetch = getFetch(fetch);
+    this._userProvidedFetch = options.fetch;
 
     this.inngestApi = new InngestApi({
       baseUrl: () => this.apiBaseUrl,
       signingKey: () => this.signingKey,
       signingKeyFallback: () => this.signingKeyFallback,
-      fetch: this.fetch,
+      fetch: () => this.fetch,
     });
 
     this.loadEnvDependentConfig();
@@ -323,10 +334,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return this;
   }
 
-  // TODO: I think that these should both also be getters?
+  // TODO: In v4 this will be updated as part of EXE-1151
   private loadEnvDependentConfig(): void {
-    // TODO: this should probably set the default event key better, right?
-    // although IIRC an empty one flows through correctly?
     this.setEventKey(
       this.options.eventKey || this._env[envKeys.InngestEventKey] || "",
     );
@@ -376,7 +385,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return envIsDev ? "dev" : "cloud";
     }
 
-    if (this.getExplicitDevUrl) {
+    if (this.explicitDevUrl) {
       return "dev";
     }
 
@@ -706,8 +715,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return await applyHookToOutput({ result: { ids: [] } });
     }
 
-    const url = this.sendEventUrl.href;
-
     /**
      * If in prod mode and key is not present, fail now.
      */
@@ -729,7 +736,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
         // We don't need to do fallback auth here because this uses event keys and
         // not signing keys
-        const response = await this.fetch(url, {
+        const response = await this.fetch(this.sendEventUrl.href, {
           method: "POST",
           body: stringify(payloads),
           headers: { ...this.headers, ...headers },

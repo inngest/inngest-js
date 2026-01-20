@@ -15,12 +15,10 @@ import {
   queryKeys,
   syncKind,
 } from "../helpers/consts.ts";
-import { devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
   type Env,
-  getFetch,
   getPlatformName,
   inngestHeaders,
   parseAsBoolean,
@@ -50,7 +48,6 @@ import {
   type InBandRegisterRequest,
   inBandSyncRequestBodySchema,
   type LogLevel,
-  logLevels,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
@@ -232,11 +229,6 @@ interface InngestCommHandlerOptions<
 }
 
 /**
- * Capturing the global type of fetch so that we can reliably access it below.
- */
-type FetchT = typeof fetch;
-
-/**
  * A schema for the response from Inngest when registering.
  */
 const registerResSchema = z.object({
@@ -315,11 +307,6 @@ export class InngestCommHandler<
   protected readonly frameworkName: string;
 
   /**
-   * The localized `fetch` implementation used by this handler.
-   */
-  private readonly fetch: FetchT;
-
-  /**
    * The host used to access the Inngest serve endpoint, e.g.:
    *
    *     "https://myapp.com"
@@ -356,7 +343,9 @@ export class InngestCommHandler<
   /**
    * The minimum level to log from the Inngest serve handler.
    */
-  protected readonly logLevel: LogLevel;
+  protected get logLevel(): LogLevel {
+    return this.client.logLevel;
+  }
 
   protected readonly streaming: RegisterOptions["streaming"];
 
@@ -410,13 +399,6 @@ export class InngestCommHandler<
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
 
-    // XXX: remove for v3->v4
-    if (options.id) {
-      throw new Error(
-        `${logPrefix} The \`id\` serve option is deprecated and has been removed in v4`,
-      );
-    }
-
     this.handler = options.handler as Handler;
 
     /**
@@ -467,28 +449,12 @@ export class InngestCommHandler<
       };
     }, {});
 
-    this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
+    this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
     this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
-
-    const defaultLogLevel: typeof this.logLevel = "info";
-    this.logLevel = z
-      .enum(logLevels)
-      .default(defaultLogLevel)
-      .catch((ctx) => {
-        this.log(
-          "warn",
-          `Unknown log level passed: ${String(
-            ctx.input,
-          )}; defaulting to ${defaultLogLevel}`,
-        );
-
-        return defaultLogLevel;
-      })
-      .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
 
     if (this.logLevel === "debug") {
       /**
@@ -522,31 +488,9 @@ export class InngestCommHandler<
       })
       .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
-    this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
-
     // Early validation for environments where process.env is available (Node.js).
     // Edge environments will skip this and validate at request time instead.
     this.validateModeConfiguration(true);
-  }
-
-  /**
-   * Get the API base URL for the Inngest API.
-   *
-   * This is a getter to encourage checking the environment for the API base URL
-   * each time it's accessed, as it may change during execution.
-   */
-  protected get apiBaseUrl(): string {
-    return this._options.baseUrl || this.client.apiBaseUrl;
-  }
-
-  /**
-   * Get the event API base URL for the Inngest API.
-   *
-   * This is a getter to encourage checking the environment for the event API
-   * base URL each time it's accessed, as it may change during execution.
-   */
-  protected get eventApiBaseUrl(): string {
-    return this._options.baseUrl || this.client.eventBaseUrl;
   }
 
   /**
@@ -2213,14 +2157,14 @@ export class InngestCommHandler<
         introspection = {
           ...introspection,
           authentication_succeeded: true,
-          api_origin: this.apiBaseUrl,
+          api_origin: this.client.apiBaseUrl,
           app_id: this.client.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
           },
           env,
-          event_api_origin: this.eventApiBaseUrl,
+          event_api_origin: this.client.eventBaseUrl,
           event_key_hash: this.hashedEventKey ?? null,
           extra: {
             ...introspection.extra,
@@ -2256,26 +2200,18 @@ export class InngestCommHandler<
     let res: globalThis.Response;
 
     // Clone the URL object to avoid mutating the property between requests.
-    let registerURL = new URL(this.inngestRegisterUrl.href);
-
-    // Use explicit dev server URL if provided via INNGEST_DEV=<url>
-    if (this.client.getExplicitDevUrl) {
-      registerURL = devServerUrl(
-        this.client.getExplicitDevUrl.href,
-        "/fn/register",
-      );
-    }
+    const registerUrl = new URL(this.inngestRegisterUrl.href);
 
     if (deployId) {
-      registerURL.searchParams.set(queryKeys.DeployId, deployId);
+      registerUrl.searchParams.set(queryKeys.DeployId, deployId);
     }
 
     try {
       res = await fetchWithAuthFallback({
         authToken: this.hashedSigningKey,
         authTokenFallback: this.hashedSigningKeyFallback,
-        fetch: this.fetch,
-        url: registerURL.href,
+        fetch: this.client.fetch,
+        url: registerUrl.href,
         options: {
           method: "POST",
           body: stringify(body),

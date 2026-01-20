@@ -184,6 +184,7 @@ const inngestCloud = createClient({
   id: "test",
   eventKey: "event-key-123",
   isDev: false,
+  fetch,
 });
 
 export const testFramework = (
@@ -267,12 +268,6 @@ export const testFramework = (
   ) => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
-
-      /**
-       * For testing, the fetch implementation has to be stable for us to
-       * appropriately mock out the network requests.
-       */
-      fetch,
     });
 
     return serveHandler;
@@ -290,7 +285,7 @@ export const testFramework = (
     process.env = {} as NodeJS.ProcessEnv;
 
     try {
-      const freshClient = createClient({ id: "test" });
+      const freshClient = createClient({ id: "test", fetch });
       return getServeHandler([{ client: freshClient, functions }]);
     } finally {
       process.env = originalEnv;
@@ -513,7 +508,10 @@ export const testFramework = (
               typeof process?.env === "object"
                 ? createEdgeHandler()
                 : getServeHandler([
-                    { client: createClient({ id: "test" }), functions: [] },
+                    {
+                      client: createClient({ id: "test", fetch }),
+                      functions: [],
+                    },
                   ]);
 
             // Request without signing key should fail
@@ -877,7 +875,12 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
+                  client: new Inngest({
+                    id: "Test",
+                    env: "FOO",
+                    isDev: false,
+                    fetch,
+                  }),
                   functions: [],
                 },
               ],

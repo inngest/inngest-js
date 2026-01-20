@@ -869,6 +869,25 @@ export interface ClientOptions {
    * the parameters directly if necessary.
    */
   checkpointing?: CheckpointingOptions;
+
+  /**
+   * The signing key used to authenticate requests from Inngest.
+   * If not provided, will search for the `INNGEST_SIGNING_KEY` environment variable.
+   */
+  signingKey?: string;
+
+  /**
+   * A fallback signing key used to authenticate requests from Inngest during key rotation.
+   * If not provided, will search for the `INNGEST_SIGNING_KEY_FALLBACK` environment variable.
+   */
+  signingKeyFallback?: string;
+
+  /**
+   * The minimum log level to output from the Inngest library.
+   * If not provided, will search for the `INNGEST_LOG_LEVEL` environment variable,
+   * defaulting to "info".
+   */
+  logLevel?: LogLevel;
 }
 
 export type CheckpointingOptions =
@@ -909,41 +928,6 @@ export type LogLevel = (typeof logLevels)[number];
  */
 export interface RegisterOptions {
   /**
-   * A key used to sign requests to and from Inngest in order to prove that the
-   * source is legitimate.
-   *
-   * You must provide a signing key to communicate securely with Inngest. If
-   * your key is not provided here, we'll try to retrieve it from the
-   * `INNGEST_SIGNING_KEY` environment variable.
-   *
-   * If no key can be found, you will not be able to register your functions or
-   * receive events from Inngest.
-   */
-  signingKey?: string;
-
-  /**
-   * The same as signingKey, except used as a fallback when auth fails using the
-   * primary signing key.
-   */
-  signingKeyFallback?: string;
-
-  /**
-   * The URL used to register functions with Inngest.
-   * Defaults to https://api.inngest.com/fn/register
-   */
-  baseUrl?: string;
-
-  /**
-   * If provided, will override the used `fetch` implementation. Useful for
-   * giving the library a particular implementation if accessing it is not done
-   * via globals.
-   *
-   * By default the library will try to use the native Web API fetch, falling
-   * back to a Node implementation if no global fetch can be found.
-   */
-  fetch?: typeof fetch;
-
-  /**
    * The path to the Inngest serve endpoint. e.g.:
    *
    *     "/some/long/path/to/inngest/endpoint"
@@ -978,13 +962,6 @@ export interface RegisterOptions {
   serveHost?: string;
 
   /**
-   * The minimum level to log from the Inngest serve endpoint.
-   *
-   * Default level: "info"
-   */
-  logLevel?: LogLevel;
-
-  /**
    * Some serverless providers (especially those with edge compute) may support
    * streaming responses back to Inngest. This can be used to circumvent
    * restrictive request timeouts and other limitations. It is only available if
@@ -1004,13 +981,6 @@ export interface RegisterOptions {
    * Defaults to `false`.
    */
   streaming?: "allow" | "force" | false;
-
-  /**
-   * The ID of this app. This is used to group functions together in the Inngest
-   * UI. The ID of the passed client is used by default.
-   * @deprecated Will be removed in v4.
-   */
-  id?: string;
 }
 
 /**

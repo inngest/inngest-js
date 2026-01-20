@@ -12,7 +12,7 @@ import {
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
-import { createClient, nodeVersion, testSigningKey } from "../test/helpers.ts";
+import { createClient, nodeVersion } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
@@ -114,7 +114,7 @@ describe("new Inngest()", () => {
         env: { [envKeys.InngestDevMode]: "http://localhost:3000" },
       });
       expect(inngest.mode === "dev").toBe(true);
-      expect(inngest.getExplicitDevUrl?.href).toBe("http://localhost:3000/");
+      expect(inngest.explicitDevUrl?.href).toBe("http://localhost:3000/");
     });
 
     test("`INNGEST_DEV=host:port` without scheme sets dev mode and assumes http://", () => {
@@ -122,7 +122,7 @@ describe("new Inngest()", () => {
         env: { [envKeys.InngestDevMode]: "0.0.0.0:8288" },
       });
       expect(inngest.mode === "dev").toBe(true);
-      expect(inngest.getExplicitDevUrl?.href).toBe("http://0.0.0.0:8288/");
+      expect(inngest.explicitDevUrl?.href).toBe("http://0.0.0.0:8288/");
     });
 
     test("`INNGEST_DEV=localhost:port` without scheme sets dev mode and assumes http://", () => {
@@ -130,7 +130,7 @@ describe("new Inngest()", () => {
         env: { [envKeys.InngestDevMode]: "localhost:9000" },
       });
       expect(inngest.mode === "dev").toBe(true);
-      expect(inngest.getExplicitDevUrl?.href).toBe("http://localhost:9000/");
+      expect(inngest.explicitDevUrl?.href).toBe("http://localhost:9000/");
     });
 
     test("`INNGEST_DEV=host:port` uses the URL for apiBaseUrl and eventBaseUrl", () => {

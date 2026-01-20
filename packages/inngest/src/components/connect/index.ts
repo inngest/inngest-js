@@ -210,9 +210,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     const env = allProcessEnv();
-    options.signingKey = options.signingKey || env[envKeys.InngestSigningKey];
-    options.signingKeyFallback =
-      options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
 
     if (options.maxWorkerConcurrency === undefined) {
       const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];
@@ -304,17 +301,17 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.debug("Establishing connection", { attempt });
 
-    if (this.inngest.mode === "cloud" && !this.options.signingKey) {
+    if (this.inngest.mode === "cloud" && !this.inngest.signingKey) {
       throw new Error("Signing key is required");
     }
 
-    this._hashedSigningKey = this.options.signingKey
-      ? hashSigningKey(this.options.signingKey)
+    this._hashedSigningKey = this.inngest.signingKey
+      ? hashSigningKey(this.inngest.signingKey)
       : undefined;
 
     if (
-      this.options.signingKey &&
-      this.options.signingKey.startsWith(
+      this.inngest.signingKey &&
+      this.inngest.signingKey.startsWith(
         InngestBranchEnvironmentSigningKeyPrefix,
       ) &&
       !this._inngestEnv
@@ -324,8 +321,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     }
 
-    if (this.options.signingKeyFallback) {
-      this._hashedFallbackKey = hashSigningKey(this.options.signingKeyFallback);
+    if (this.inngest.signingKeyFallback) {
+      this._hashedFallbackKey = hashSigningKey(this.inngest.signingKeyFallback);
     }
 
     try {
@@ -400,8 +397,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
         client: client,
         functions: functions,
         frameworkName: "connect",
-        signingKey: this.options.signingKey,
-        signingKeyFallback: this.options.signingKeyFallback,
         skipSignatureValidation: true,
         handler: (msg: GatewayExecutorRequestData) => {
           const asString = new TextDecoder().decode(msg.requestPayload);

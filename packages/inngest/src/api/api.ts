@@ -1,9 +1,6 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import {
-  defaultInngestApiBaseUrl,
-  type ExecutionVersion,
-} from "../helpers/consts.ts";
+import type { ExecutionVersion } from "../helpers/consts.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
@@ -50,7 +47,7 @@ export namespace InngestApi {
     baseUrl: () => string | undefined;
     signingKey: () => string | undefined;
     signingKeyFallback: () => string | undefined;
-    fetch: FetchT;
+    fetch: () => FetchT;
   }
 
   export interface Subscription {
@@ -81,7 +78,7 @@ export class InngestApi {
   private readonly _signingKey: () => string | undefined;
   private readonly _signingKeyFallback: () => string | undefined;
   private readonly _apiBaseUrl: () => string | undefined;
-  private readonly fetch: FetchT;
+  private readonly _fetch: () => FetchT;
 
   constructor({
     baseUrl,
@@ -92,7 +89,19 @@ export class InngestApi {
     this._apiBaseUrl = baseUrl;
     this._signingKey = signingKey;
     this._signingKeyFallback = signingKeyFallback;
-    this.fetch = fetch;
+    this._fetch = fetch;
+  }
+
+  private get apiBaseUrl(): string | undefined {
+    return this._apiBaseUrl();
+  }
+
+  private get signingKey(): string | undefined {
+    return this._signingKey();
+  }
+
+  private get signingKeyFallback(): string | undefined {
+    return this._signingKeyFallback();
   }
 
   private get hashedKey(): string {
@@ -107,32 +116,8 @@ export class InngestApi {
     return hashSigningKey(this.signingKeyFallback);
   }
 
-  // set the signing key in case it was not instantiated previously
-  // setSigningKey(key: string | undefined) {
-  //   if (typeof key === "string" && this.signingKey === "") {
-  //     this.signingKey = key;
-  //   }
-  // }
-  //
-  // setSigningKeyFallback(key: string | undefined) {
-  //   if (typeof key === "string" && !this.signingKeyFallback) {
-  //     this.signingKeyFallback = key;
-  //   }
-  // }
-
-  private get apiBaseUrl(): string | undefined {
-    return this._apiBaseUrl();
-  }
-  private get signingKey(): string | undefined {
-    return this._signingKey();
-  }
-  private get signingKeyFallback(): string | undefined {
-    return this._signingKeyFallback();
-  }
-
   private async getTargetUrl(path: string): Promise<URL> {
-    const baseUrl = this.apiBaseUrl || defaultInngestApiBaseUrl;
-    return new URL(path, baseUrl);
+    return new URL(path, this.apiBaseUrl);
   }
 
   private async req(
@@ -146,7 +131,7 @@ export class InngestApi {
       const res = await fetchWithAuthFallback({
         authToken: this.hashedKey,
         authTokenFallback: this.hashedFallbackKey,
-        fetch: this.fetch,
+        fetch: this._fetch(),
         url: finalUrl,
         options: {
           ...options,
@@ -274,7 +259,7 @@ export class InngestApi {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
-      fetch: this.fetch,
+      fetch: this._fetch(),
       url,
       options: {
         method: "POST",
@@ -365,7 +350,7 @@ export class InngestApi {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
-      fetch: this.fetch,
+      fetch: this._fetch(),
       url,
       options: {
         method: "POST",

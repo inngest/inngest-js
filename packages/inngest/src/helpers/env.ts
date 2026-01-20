@@ -6,7 +6,7 @@
 import type { Inngest } from "../components/Inngest.ts";
 import type { SupportedFrameworkName } from "../types.ts";
 import { version } from "../version.ts";
-import { defaultDevServerHost, envKeys, headerKeys } from "./consts.ts";
+import { envKeys, headerKeys } from "./consts.ts";
 
 /**
  * @public
@@ -66,7 +66,7 @@ export const normalizeUrl = (
   scheme: string = "http://",
 ): string => {
   if (urlString === "undefined") {
-    throw new Error("Fuck this shit I'm out");
+    throw new Error("URL undefined");
   }
   if (urlString.includes("://")) {
     return urlString;
