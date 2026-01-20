@@ -2383,7 +2383,7 @@ export class InngestCommHandler<
           `To fix this, choose one of the following:\n` +
           `  - For local development, set INNGEST_DEV=1 to use the Dev Server (e.g. INNGEST_DEV=1 npm run dev)\n` +
           `  - For production, set the ${envKeys.InngestSigningKey} environment variable\n\n` +
-          `Find your keys at https://app.inngest.com/secrets`,
+          `Find your keys at https://app.inngest.com`,
       );
     }
   }

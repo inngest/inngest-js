@@ -916,11 +916,6 @@ export interface RegisterOptions {
    * your key is not provided here, we'll try to retrieve it from the
    * `INNGEST_SIGNING_KEY` environment variable.
    *
-   * You can retrieve your signing key from the Inngest UI inside the "Secrets"
-   * section at {@link https://app.inngest.com/secrets}. We highly recommend
-   * that you add this to your platform's available environment variables as
-   * `INNGEST_SIGNING_KEY`.
-   *
    * If no key can be found, you will not be able to register your functions or
    * receive events from Inngest.
    */
