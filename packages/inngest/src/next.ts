@@ -259,6 +259,21 @@ export const serve = (
         transformStreamingResponse: ({ body, headers, status }) => {
           return new Response(body, { status, headers });
         },
+        experimentalTransformSyncRequest: async (data) => {
+          // Support `return new Response()`
+          const res = data as Response;
+
+          const headers: Record<string, string> = {};
+          res.headers.forEach((v, k) => {
+            headers[k] = v;
+          });
+
+          return {
+            headers: headers,
+            status: res.status,
+            body: await res.clone().text(),
+          };
+        },
       };
     },
   });
