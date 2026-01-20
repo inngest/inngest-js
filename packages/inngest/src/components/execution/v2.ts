@@ -1280,7 +1280,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             // `true`. This gives us a chance to handle checkpointing in another
             // part of the loop.
             if (
-              (!this.options.checkpointingConfig || step.hasStepState) &&
+              (this.options.stepMode === StepMode.Async || step.hasStepState) &&
               step.handle()
             ) {
               unhandledFoundStepsToReport.delete(hashedId);
