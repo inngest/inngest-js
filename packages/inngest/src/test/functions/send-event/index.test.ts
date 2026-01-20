@@ -1,3 +1,6 @@
+import { beforeAll, describe, expect, test } from "vitest";
+import { z } from "zod/v3";
+import { eventType, Inngest } from "../../../index";
 import {
   checkIntrospection,
   eventRunWithName,
@@ -44,4 +47,51 @@ describe("run", () => {
     expect(event).toBeDefined();
     expect(JSON.parse(event?.payload ?? "{}")).toMatchObject({ foo: "bar" });
   }, 60000);
+});
+
+describe("payload validation", () => {
+  const inngest = new Inngest({
+    id: "app",
+    isDev: true,
+  });
+
+  test("valid data", async () => {
+    const eventName = `${Math.floor(Math.random() * 10_000_000)}`;
+    const et = eventType(eventName, {
+      schema: z.object({
+        valid: z.literal(true),
+      }),
+    });
+
+    const {ids} = await inngest.send(et.create({ data: { valid: true } }));
+    expect(ids).toEqual(expect.any(Array));
+  });
+
+  test("invalid data", async () => {
+    const eventName = `${Math.floor(Math.random() * 10_000_000)}`;
+    const et = eventType(eventName, {
+      schema: z.object({
+        valid: z.literal(true),
+      }),
+    });
+
+    await expect(
+      inngest.send(
+        et.create({
+          data: {
+            // @ts-expect-error - Invalid data
+            valid: false,
+          },
+        }),
+      ),
+    ).rejects.toThrowError("Invalid literal value, expected true");
+  });
+
+  test("no schema", async () => {
+    const eventName = `${Math.floor(Math.random() * 10_000_000)}`;
+    const et = eventType(eventName);
+
+    const {ids} = await inngest.send(et.create({ data: {} }));
+    expect(ids).toEqual(expect.any(Array));
+  });
 });

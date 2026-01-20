@@ -64,7 +64,10 @@ import {
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
-import type { HandlerWithTriggers } from "./triggers/typeHelpers.ts";
+import {
+  type HandlerWithTriggers,
+  isValidatable,
+} from "./triggers/typeHelpers.ts";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -615,6 +618,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       : payload
         ? ([payload] as [EventPayload])
         : [];
+
+    // Validate payloads that have a validate method (from `EventType.create()`)
+    for (const payload of payloads) {
+      if (isValidatable(payload)) {
+        await payload.validate();
+      }
+    }
 
     const inputChanges = await hooks.transformInput?.({
       payloads: [...payloads],

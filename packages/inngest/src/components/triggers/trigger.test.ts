@@ -222,15 +222,7 @@ describe("eventType with schema", () => {
     expectTypeOf(created2.v).not.toBeAny();
     expectTypeOf(created2.v).toEqualTypeOf<string | undefined>();
 
-    const validated = await created2.validate();
-    expectTypeOf(validated).not.toBeAny();
-    expectTypeOf(validated).toEqualTypeOf<{
-      data: { msg: string };
-      id?: string;
-      name: "event-1";
-      ts?: number;
-      v?: string;
-    }>();
+    await created2.validate();
 
     // @ts-expect-error - Missing data
     let event = et.create({});

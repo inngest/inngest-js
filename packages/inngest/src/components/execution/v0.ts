@@ -42,9 +42,7 @@ import {
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
-import {
-  validateEvents,
-} from "../triggers/utils.js";
+import { validateEvents } from "../triggers/utils.js";
 import {
   type ExecutionResult,
   ExecutionVersion,

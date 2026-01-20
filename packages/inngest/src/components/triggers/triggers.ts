@@ -78,7 +78,7 @@ type UnvalidatedCreatedEvent<
   TName extends string,
   TData,
 > = ValidatedCreatedEvent<TName, TData> & {
-  validate: () => Promise<ValidatedCreatedEvent<TName, TData>>;
+  validate: () => Promise<void>;
 };
 
 /**
@@ -154,11 +154,7 @@ export class EventType<
 
       // Method for validating and transforming the event data against the
       // schema
-      validate: async (): Promise<
-        ValidatedCreatedEvent<TName, ExtractSchemaData<TSchema>>
-      > => {
-        let data = params.data;
-
+      validate: async (): Promise<void> => {
         if (this.schema) {
           // Only perform validation if a schema was provided
 
@@ -179,13 +175,7 @@ export class EventType<
                 .join(", "),
             );
           }
-          data = check.value;
         }
-
-        return {
-          ...event,
-          data: data as ExtractSchemaData<TSchema>,
-        };
       },
     };
 

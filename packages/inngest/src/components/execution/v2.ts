@@ -52,9 +52,7 @@ import {
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
-import {
-  validateEvents,
-} from "../triggers/utils.js";
+import { validateEvents } from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
   type ExecutionResult,

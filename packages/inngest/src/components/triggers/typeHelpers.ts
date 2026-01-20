@@ -334,3 +334,19 @@ export type HandlerWithTriggers<
    */
   ctx: ContextWithTriggers<TStepTools, TTriggers, TOverrides>,
 ) => unknown;
+
+/**
+ * Type guard to check if an object has a `validate` method. The use case is for
+ * safely validating an event payload that might have a `validate` method
+ */
+export function isValidatable<T>(
+  value: T,
+): value is T & { validate: () => Promise<void> } {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  if (!("validate" in value)) {
+    return false;
+  }
+  return typeof value.validate === "function";
+}
