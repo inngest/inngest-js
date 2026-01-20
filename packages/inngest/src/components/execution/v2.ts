@@ -252,6 +252,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           runId: this.fnArg.runId,
           event: this.fnArg.event as APIStepPayload,
           steps,
+          executionVersion: this.version,
         });
 
         this.state.checkpointedRun = {
@@ -1511,10 +1512,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     userlandStep.id = resultOp.id;
     userlandStep.hasStepState = true;
 
-    console.log(`resumeStepWithResult: resuming step ${resultOp.id}`);
-
     if (resume) {
-      console.log(`resumeStepWithResult: handling step ${resultOp.id}`);
       userlandStep.fulfilled = true;
       this.state.stepState[resultOp.id] = userlandStep;
 
