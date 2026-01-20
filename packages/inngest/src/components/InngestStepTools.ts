@@ -164,7 +164,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   const createTool = <T extends (...args: any[]) => Promise<unknown>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
@@ -196,7 +196,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     type?: string,
   ) => {
     return createTool<
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
 

@@ -6,7 +6,7 @@ import type { FailureEventPayload } from "../types.ts";
 import { EventSchemas } from "./EventSchemas.ts";
 import { type GetEvents, Inngest } from "./Inngest.ts";
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 type Schemas<T extends EventSchemas<any>> = GetEvents<
   Inngest<{ id: "test"; schemas: T }>,
   true
@@ -111,7 +111,7 @@ describe("EventSchemas", () => {
 
     test("can set 'any' type for data", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         "test.event": { data: any };
       }>();
 
@@ -120,7 +120,7 @@ describe("EventSchemas", () => {
 
     test("can set 'any' type for data alongside populated events", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         "test.event": { data: any };
         "test.event2": { data: { foo: string } };
       }>();
@@ -131,7 +131,7 @@ describe("EventSchemas", () => {
 
     test("can set 'any' type for user", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         "test.event": { data: { foo: string }; user: any };
       }>();
 
@@ -180,7 +180,7 @@ describe("EventSchemas", () => {
     test("cannot set non-object type for user", () => {
       // @ts-expect-error User must be object type or any
       new EventSchemas().fromRecord<{
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         "test.event": { data: any; user: string };
       }>();
     });
@@ -298,7 +298,7 @@ describe("EventSchemas", () => {
         >
       >(true);
 
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       const t0: Schemas<typeof schemas>["app/blog.post.*"] = null as any;
       const _fnToCheckTypesOnly = () => {
         if (t0.name === "app/blog.post.created") {
@@ -369,7 +369,7 @@ describe("EventSchemas", () => {
     test("can set 'any' type for data", () => {
       const schemas = new EventSchemas().fromUnion<{
         name: "test.event";
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         data: any;
       }>();
 
@@ -380,7 +380,7 @@ describe("EventSchemas", () => {
       const schemas = new EventSchemas().fromUnion<{
         name: "test.event";
         data: { foo: string };
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         user: any;
       }>();
 
@@ -396,7 +396,7 @@ describe("EventSchemas", () => {
       // @ts-expect-error User must be object type or any
       new EventSchemas().fromUnion<{
         name: "test.event";
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         data: any;
         user: string;
       }>();
@@ -1020,7 +1020,7 @@ describe("EventSchemas", () => {
 
     test("fetches 'any' event payload based on event", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         "test.event": { data: any };
       }>();
 

@@ -151,7 +151,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly fetch: FetchT;
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
@@ -1153,7 +1152,7 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
@@ -1171,7 +1170,7 @@ export type GetFunctionOutputFromInngestFunction<
  */
 export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
   ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
     ? null

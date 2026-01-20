@@ -74,7 +74,7 @@ const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 type ConnectCommHandler = InngestCommHandler<
   [GatewayExecutorRequestData],
   SDKResponse,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any
 >;
 
@@ -649,7 +649,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
       | undefined;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
     const websocketConnectedPromise = new Promise((resolve, reject) => {
       resolveWebsocketConnected = resolve;

@@ -24,9 +24,9 @@ import type {
  */
 export type NormalizedEventSchema = {
   name?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   data?: Record<string, any>;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   user?: Record<string, any>;
 };
 

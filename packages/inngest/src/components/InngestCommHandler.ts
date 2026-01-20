@@ -167,11 +167,11 @@ export interface InternalServeHandlerOptions extends ServeHandlerOptions {
 }
 
 interface InngestCommHandlerOptions<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Input extends any[] = any[],
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   StreamOutput = any,
 > extends RegisterOptions {
   /**
@@ -297,11 +297,11 @@ const registerResSchema = z.object({
  * @public
  */
 export class InngestCommHandler<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Input extends any[] = any[],
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   StreamOutput = any,
 > {
   /**
@@ -457,7 +457,7 @@ export class InngestCommHandler<
      * testing.
      */
     this.allowExpiredSignatures = Boolean(
-      // biome-ignore lint/complexity/noArguments: <explanation>
+      // biome-ignore lint/complexity/noArguments: intentional
       arguments["0"]?.__testingAllowExpiredSignatures,
     );
 
@@ -484,7 +484,7 @@ export class InngestCommHandler<
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
       }, {});
 
-      // biome-ignore lint/complexity/noForEach: <explanation>
+      // biome-ignore lint/complexity/noForEach: intentional
       configs.forEach(({ id }) => {
         if (acc[id]) {
           // TODO PrettyError
@@ -1492,7 +1492,7 @@ export class InngestCommHandler<
             events: [],
             steps: {},
             version: PREFERRED_ASYNC_EXECUTION_VERSION,
-            sdkDecidedVersion: true,
+            sdkDecided: true,
             ctx: {
               attempt: 0,
               disable_immediate_execution: false,
@@ -1908,11 +1908,12 @@ export class InngestCommHandler<
     }
 
     const immediateFnData = parseFnData(data);
-    let { version, sdkDecidedVersion } = immediateFnData;
+    let { version, sdkDecided } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.
     if (
       version === ExecutionVersion.V1 &&
+      sdkDecided &&
       fn.fn["shouldOptimizeParallelism"]?.()
     ) {
       version = ExecutionVersion.V2;
@@ -2019,9 +2020,7 @@ export class InngestCommHandler<
 
           return {
             version:
-              checkpointingConfig && sdkDecidedVersion
-                ? ExecutionVersion.V2
-                : version,
+              checkpointingConfig && sdkDecided ? ExecutionVersion.V2 : version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
@@ -2666,17 +2665,17 @@ class RequestSignature {
  * {@link InngestCommHandler} instance.
  */
 export type Handler<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Input extends any[] = any[],
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   StreamOutput = any,
 > = (...args: Input) => HandlerResponse<Output, StreamOutput>;
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type HandlerResponse<Output = any, StreamOutput = any> = {
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   body: () => MaybePromise<any>;
   textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;

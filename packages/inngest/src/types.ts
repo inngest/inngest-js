@@ -631,7 +631,7 @@ export namespace Handler {
   /**
    * Represents any `Handler`, regardless of generics and inference.
    */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   export type Any = Handler<Inngest.Any, any, any>;
 }
 
@@ -650,7 +650,7 @@ type AssertKeysAreFrom<T, K extends keyof T> = K;
  * This is used to represent an event payload when invoking a function, as the
  * event name is not known or needed.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export interface MinimalEventPayload<TData = any> {
   /**
    * A unique id used to idempotently process a given event payload.
@@ -670,7 +670,7 @@ export interface MinimalEventPayload<TData = any> {
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
    */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   user?: any;
 
   /**
@@ -687,7 +687,7 @@ export interface MinimalEventPayload<TData = any> {
  *
  * @public
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
   /**
    * A unique identifier for the type of event. We recommend using lowercase dot
@@ -1641,7 +1641,7 @@ export type MetadataTarget =
     };
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   T extends InngestFunction<any, any, any, infer IClient, any, any>
     ? GetEvents<IClient, true>
     : never;
@@ -1666,7 +1666,7 @@ export type TriggerEventFromFunction<
   ? PayloadForAnyInngestFunction<TFunction>
   : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         any
       >
     ? IInput
@@ -1695,15 +1695,15 @@ export type PayloadForAnyInngestFunction<
     ? EventsFromFunction<TFunction>
     : never,
 > = TFunction extends InngestFunction<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
   infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
 >

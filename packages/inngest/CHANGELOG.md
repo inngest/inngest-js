@@ -1,5 +1,25 @@
 # inngest
 
+## 3.49.3
+
+### Patch Changes
+
+- [#1248](https://github.com/inngest/inngest-js/pull/1248) [`351ec02d`](https://github.com/inngest/inngest-js/commit/351ec02d6bd3faa5c0b8466cddb0f946974051d6) Thanks [@amh4r](https://github.com/amh4r)! - Fix steps sometimes resolving out of order
+
+## 3.49.2
+
+### Patch Changes
+
+- [#1244](https://github.com/inngest/inngest-js/pull/1244) [`f5c565e8`](https://github.com/inngest/inngest-js/commit/f5c565e84cbe6eb5d91715a0cdfe33a3fc14d63e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure execution version doesn't slide when going to/from checkpointing
+
+- [#1245](https://github.com/inngest/inngest-js/pull/1245) [`6694bccc`](https://github.com/inngest/inngest-js/commit/6694bccc394071d412c0a99bfeb07566d163f74f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix async data fetching not happening with `optimizedParallelism: true`
+
+## 3.49.1
+
+### Patch Changes
+
+- [#1234](https://github.com/inngest/inngest-js/pull/1234) [`c85e2f29`](https://github.com/inngest/inngest-js/commit/c85e2f297a782e78fe4b681793464e5b60045c23) Thanks [@amh4r](https://github.com/amh4r)! - Fix not treating Next Request.body as a ReadableStream
+
 ## 3.49.0
 
 ### Minor Changes

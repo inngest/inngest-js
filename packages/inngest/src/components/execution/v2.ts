@@ -1482,7 +1482,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        * memoizing.
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
-        // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+        // biome-ignore lint/suspicious/noAssignInExpressions: intentional
         await (beforeExecHooksPromise = (async () => {
           await this.state.hooks?.afterMemoization?.();
           await this.state.hooks?.beforeExecution?.();
