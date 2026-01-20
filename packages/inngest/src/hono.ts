@@ -55,7 +55,6 @@ export const serve = (
   options: ServeHandlerOptions,
 ): ((c: Context) => Promise<Response>) => {
   const handler = new InngestCommHandler({
-    fetch: fetch.bind(globalThis),
     frameworkName,
     ...options,
     handler: (c: Context) => {

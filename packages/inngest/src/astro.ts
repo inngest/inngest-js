@@ -49,7 +49,6 @@ export const serve = (
 } => {
   const commHandler = new InngestCommHandler({
     frameworkName,
-    fetch: fetch.bind(globalThis),
     ...options,
     handler: ({ request: req }: { request: Request }) => {
       return {

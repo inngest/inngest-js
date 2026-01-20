@@ -5,7 +5,7 @@ import { createClient } from "../test/helpers.ts";
 describe("ServeHandler", () => {
   describe("functions argument", () => {
     test("types: allows mutable functions array", () => {
-      const inngest = createClient({ id: "test" });
+      const inngest = createClient({ id: "test", isDev: true });
 
       const functions = [
         inngest.createFunction(
@@ -19,7 +19,7 @@ describe("ServeHandler", () => {
     });
 
     test("types: allows readonly functions array", () => {
-      const inngest = createClient({ id: "test" });
+      const inngest = createClient({ id: "test", isDev: true });
 
       const functions = [
         inngest.createFunction(
@@ -31,26 +31,5 @@ describe("ServeHandler", () => {
 
       serve({ client: inngest, functions });
     });
-  });
-});
-
-describe("#597", () => {
-  test("does not mark `fetch` as custom if none given to `new Inngest()`", () => {
-    const inngest = createClient({ id: "test" });
-
-    const commHandler = new InngestCommHandler({
-      client: inngest,
-      frameworkName: "test-framework",
-      functions: [],
-      handler: () => ({
-        body: () => "body",
-        headers: () => undefined,
-        method: () => "GET",
-        url: () => new URL("https://www.inngest.com"),
-        transformResponse: (response) => response,
-      }),
-    });
-
-    expect(commHandler["fetch"]).toBe(inngest["fetch"]);
   });
 });

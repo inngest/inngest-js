@@ -127,13 +127,6 @@ export const serve = (
 ) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     frameworkName,
-
-    /**
-     * Assume that we want to override the `fetch` implementation with the one
-     * globally available in the Cloudflare env. Specifying it here will
-     * ensure we avoid trying to load a Node-compatible version later.
-     */
-    fetch: fetch.bind(globalThis),
     ...options,
     handler: (...args: Either<PagesHandlerArgs, WorkersHandlerArgs>) => {
       const { req, env } = deriveHandlerArgs(args);
