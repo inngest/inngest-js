@@ -317,6 +317,27 @@ describe("eventType with schema", () => {
       },
     );
   });
+
+  test("wildcard", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn" },
+      [
+        eventType("event-1", { schema: z.object({ a: z.string() }) }),
+        eventType("user/*", { schema: z.object({ b: z.string() }) }),
+      ],
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+
+        // TODO: Improve this. It'd be awesome to properly support wildcards,
+        // instead of throwing up our hands and using "unknown"
+        expectTypeOf(event.name).toBeUnknown();
+
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: string }>();
+      },
+    );
+  });
 });
 
 test("eventType with version", () => {
@@ -517,6 +538,31 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         }
+      },
+    );
+  });
+
+  test("wildcard event type and invoke", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn" },
+      [
+        eventType("user/*", { schema: z.object({ type: z.literal("user") }) }),
+        eventType("admin/*", {
+          schema: z.object({ type: z.literal("admin") }),
+        }),
+        invoke(z.object({ type: z.literal("invoke") })),
+      ],
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          unknown | "inngest/function.invoked"
+        >();
+
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<
+          { type: "user" } | { type: "admin" } | { type: "invoke" }
+        >();
       },
     );
   });

@@ -63,7 +63,7 @@ describe("payload validation", () => {
       }),
     });
 
-    const {ids} = await inngest.send(et.create({ data: { valid: true } }));
+    const { ids } = await inngest.send(et.create({ data: { valid: true } }));
     expect(ids).toEqual(expect.any(Array));
   });
 
@@ -91,7 +91,7 @@ describe("payload validation", () => {
     const eventName = `${Math.floor(Math.random() * 10_000_000)}`;
     const et = eventType(eventName);
 
-    const {ids} = await inngest.send(et.create({ data: {} }));
+    const { ids } = await inngest.send(et.create({ data: {} }));
     expect(ids).toEqual(expect.any(Array));
   });
 });

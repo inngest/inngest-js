@@ -12,6 +12,20 @@ type InvokeEventName = "inngest/function.invoked";
 type CronEventName = "inngest/scheduled.timer";
 
 /**
+ * Detects if a string type contains a wildcard character (*).
+ */
+type ContainsWildcard<T extends string> = T extends `${string}*${string}`
+  ? true
+  : false;
+
+/**
+ * Converts wildcard event names to `unknown`, preserving literal names.
+ */
+type WildcardToUnknown<T extends string> = ContainsWildcard<T> extends true
+  ? unknown
+  : T;
+
+/**
  * Represents the structure of an event as received by function handlers.
  *
  * This is the runtime event shape that your function receives when triggered.
@@ -19,10 +33,7 @@ type CronEventName = "inngest/scheduled.timer";
  * @template TName - The event name as a string literal type
  * @template TData - The event data object type
  */
-export type ReceivedEvent<
-  TName extends string,
-  TData extends BasicDataUnknown,
-> = {
+export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
   data: TData;
   id: string;
   name: TName;
@@ -62,8 +73,8 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TSchema
 >
   ? TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
-    ? ReceivedEvent<TName, TData>
-    : ReceivedEvent<TName, BasicDataAny>
+    ? ReceivedEvent<WildcardToUnknown<TName>, TData>
+    : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>
   : never;
 
 /**
@@ -79,8 +90,8 @@ type PlainEventToReceivedEvent<
   TName extends string,
   TSchema,
 > = TSchema extends StandardSchemaV1<infer TData extends BasicDataUnknown>
-  ? ReceivedEvent<TName, TData>
-  : ReceivedEvent<TName, BasicDataAny>;
+  ? ReceivedEvent<WildcardToUnknown<TName>, TData>
+  : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>;
 
 /**
  * Processes a single trigger and converts it to ReceivedEvent(s).
@@ -109,8 +120,8 @@ type ProcessSingleTrigger<
             TSchema extends StandardSchemaV1<
               infer TData extends BasicDataUnknown
             >
-              ? ReceivedEvent<TName, TData>
-              : ReceivedEvent<TName, BasicDataAny>,
+              ? ReceivedEvent<WildcardToUnknown<TName>, TData>
+              : ReceivedEvent<WildcardToUnknown<TName>, BasicDataAny>,
           ]
         : // Is this an event trigger using a string name (i.e. not an EventType)?
           TTrigger extends {
