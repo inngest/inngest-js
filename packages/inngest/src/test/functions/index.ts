@@ -7,6 +7,7 @@ import polling from "./polling";
 import promiseAll from "./promise-all";
 import promiseRace from "./promise-race";
 import runPayloadSchema from "./run-payload-schema";
+import runPayloadWildcardSchema from "./run-payload-wildcard-schema";
 import sendEvent from "./send-event";
 import sequentialReduce from "./sequential-reduce";
 import stepInvokeFunctions from "./step-invoke";
@@ -31,6 +32,7 @@ export const functions = [
   unhandledStepErrors,
   multipleTriggers,
   runPayloadSchema,
+  runPayloadWildcardSchema,
   waitPayloadSchema,
 ];
 

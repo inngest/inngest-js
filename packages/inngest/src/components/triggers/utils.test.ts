@@ -121,9 +121,7 @@ describe("eventType: failure", async () => {
   });
 
   test("wildcard", async () => {
-    const events = [
-      { name: "user/foo", data: { msg: 1 } },
-    ] as const;
+    const events = [{ name: "user/foo", data: { msg: 1 } }] as const;
     const triggers = [
       eventType("user/*", { schema: z.object({ msg: z.string() }) }),
     ] as const;
