@@ -63,6 +63,14 @@ export interface StrategyConfig {
    * The Inngest client instance.
    */
   inngest: Inngest.Any;
+
+  /**
+   * The base URL for the Inngest API, as defined when constructing the Inngest
+   * client (field or env var).
+   */
+  apiBaseUrl: string | undefined;
+
+  mode: { isDev: boolean; isInferred: boolean };
 }
 
 /**

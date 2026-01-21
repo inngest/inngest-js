@@ -353,6 +353,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         requestHandlers,
         options: this.options,
         inngest: this.inngest,
+        apiBaseUrl: this.inngest.apiBaseUrl,
+        mode: this.inngest["mode"],
       },
       this.options,
     );

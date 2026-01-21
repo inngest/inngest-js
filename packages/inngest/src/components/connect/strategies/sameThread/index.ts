@@ -33,14 +33,14 @@ export class SameThreadStrategy extends BaseStrategy {
       {
         hashedSigningKey: config.hashedSigningKey,
         hashedFallbackKey: config.hashedFallbackKey,
-        inngestEnv: config.inngestEnv,
+        envName: config.inngestEnv,
         connectionData: config.connectionData,
         instanceId: config.options.instanceId,
         maxWorkerConcurrency: config.options.maxWorkerConcurrency,
         rewriteGatewayEndpoint: config.options.rewriteGatewayEndpoint,
-        getTargetUrl: (path) =>
-          this.inngest["inngestApi"]["getTargetUrl"](path),
+        apiBaseUrl: config.apiBaseUrl,
         appIds: Object.keys(config.requestHandlers),
+        mode: { isDev: config.mode.isDev, isInferred: config.mode.isInferred },
       },
       {
         log: (message, data) => this.debugLog(message, data),

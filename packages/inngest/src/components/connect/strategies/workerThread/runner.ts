@@ -122,15 +122,20 @@ class WorkerRunner {
       {
         hashedSigningKey: this.config.hashedSigningKey,
         hashedFallbackKey: this.config.hashedFallbackKey,
-        inngestEnv: this.config.inngestEnv,
+        envName: this.config.envName,
         connectionData: this.config.connectionData,
         instanceId: this.config.options.instanceId,
         maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
         // rewriteGatewayEndpoint is not supported in worker thread (can't serialize functions)
         rewriteGatewayEndpoint: undefined,
-        getTargetUrl: async (path) =>
-          new URL(path, this.config!.inngestApiBaseUrl),
+        // getTargetUrl: async (path) =>
+        //   new URL(path, this.config!.inngestApiBaseUrl),
+        apiBaseUrl: this.config.apiBaseUrl,
         appIds: this.config.appIds,
+        mode: {
+          isDev: this.config.mode.isDev,
+          isInferred: this.config.mode.isInferred,
+        },
       },
       {
         log: (message, data) => this.log(message, data),

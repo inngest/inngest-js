@@ -18,7 +18,7 @@ export interface SerializableConfig {
   /**
    * The Inngest environment name.
    */
-  inngestEnv: string | undefined;
+  envName: string | undefined;
 
   /**
    * Data for establishing the connection.
@@ -44,14 +44,20 @@ export interface SerializableConfig {
   };
 
   /**
-   * The base URL for the Inngest API.
+   * The base URL for the Inngest API, as defined when constructing the Inngest
+   * client (field or env var).
    */
-  inngestApiBaseUrl: string;
+  apiBaseUrl: string | undefined;
 
   /**
    * The app IDs that this worker supports.
    */
   appIds: string[];
+
+  /**
+   * The mode of the Inngest client.
+   */
+  mode: { isDev: boolean; isInferred: boolean };
 }
 
 /**

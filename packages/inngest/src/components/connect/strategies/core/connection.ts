@@ -7,7 +7,12 @@
 
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import ms from "ms";
-import { headerKeys } from "../../../../helpers/consts.ts";
+import {
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
+  headerKeys,
+} from "../../../../helpers/consts.ts";
+import { devServerAvailable } from "../../../../helpers/devserver.ts";
 import { allProcessEnv, getPlatformName } from "../../../../helpers/env.ts";
 import {
   ConnectMessage,
@@ -71,7 +76,7 @@ export interface ConnectionCoreConfig {
   /**
    * The Inngest environment name.
    */
-  inngestEnv: string | undefined;
+  envName: string | undefined;
 
   /**
    * Data for establishing the connection.
@@ -94,9 +99,11 @@ export interface ConnectionCoreConfig {
   rewriteGatewayEndpoint?: (endpoint: string) => string;
 
   /**
-   * Get the target URL for API requests.
+   * The base URL for the Inngest API.
    */
-  getTargetUrl: (path: string) => Promise<URL>;
+  apiBaseUrl: string | undefined;
+
+  mode: { isDev: boolean; isInferred: boolean };
 
   /**
    * App IDs that this connection supports.
@@ -295,11 +302,11 @@ export class ConnectionCore {
         : {}),
     };
 
-    if (this.config.inngestEnv) {
-      headers[headerKeys.Environment] = this.config.inngestEnv;
+    if (this.config.envName) {
+      headers[headerKeys.Environment] = this.config.envName;
     }
 
-    const targetUrl = await this.config.getTargetUrl("/v0/connect/start");
+    const targetUrl = new URL("/v0/connect/start", await this.getApiBaseUrl());
 
     let resp;
     try {
@@ -320,7 +327,7 @@ export class ConnectionCore {
       if (resp.status === 401) {
         throw new AuthError(
           `Failed initial API handshake request to ${targetUrl.toString()}${
-            this.config.inngestEnv ? ` (env: ${this.config.inngestEnv})` : ""
+            this.config.envName ? ` (env: ${this.config.envName})` : ""
           }, ${await resp.text()}`,
           attempt,
         );
@@ -476,7 +483,7 @@ export class ConnectionCore {
       if (!setupState.sentWorkerConnect) {
         const workerConnectRequestMsg = WorkerConnectRequestData.create({
           connectionId: startResp.connectionId,
-          environment: this.config.inngestEnv,
+          environment: this.config.envName,
           platform: getPlatformName({ ...allProcessEnv() }),
           sdkVersion: `v${version}`,
           sdkLanguage: "typescript",
@@ -966,5 +973,34 @@ export class ConnectionCore {
     };
 
     return conn;
+  }
+
+  private async getApiBaseUrl(): Promise<string> {
+    // This is a reimplementation of `InngestApi.getTargetUrl`. It has to be
+    // here for 2 reasons:
+    // 1. This file may run in a worker thread, so we can't pass the
+    // `InngestApi` instance to it
+    //
+    // 2. We can't run `InngestApi.getTargetUrl` ahead of time because the Dev
+    // Server may become available after initialization. So if we start the
+    // Connect worker and then the Dev Server then the URL would never point to
+    // the Dev Server.
+
+    if (this.config.apiBaseUrl !== undefined) {
+      return this.config.apiBaseUrl;
+    }
+
+    if (this.config.mode.isDev && this.config.mode.isInferred) {
+      const devAvailable = await devServerAvailable(
+        defaultDevServerHost,
+        fetch,
+      );
+
+      if (devAvailable) {
+        return defaultDevServerHost;
+      }
+    }
+
+    return defaultInngestApiBaseUrl;
   }
 }

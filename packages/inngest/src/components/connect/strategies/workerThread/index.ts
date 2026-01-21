@@ -95,7 +95,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
     await this.createWorker();
 
     // Initialize the worker with config
-    const serializableConfig = this.buildSerializableConfig();
+    const serializableConfig = await this.buildSerializableConfig();
     this.sendToWorker({ type: "INIT", config: serializableConfig });
 
     // Wait for connection to be ready
@@ -156,8 +156,8 @@ export class WorkerThreadStrategy extends BaseStrategy {
         this._state = ConnectionState.RECONNECTING;
         // Attempt to recreate and reconnect
         this.createWorker()
-          .then(() => {
-            const config = this.buildSerializableConfig();
+          .then(async () => {
+            const config = await this.buildSerializableConfig();
             this.sendToWorker({ type: "INIT", config });
             this.sendToWorker({ type: "CONNECT", attempt: 0 });
           })
@@ -280,11 +280,11 @@ export class WorkerThreadStrategy extends BaseStrategy {
     this.worker.postMessage(msg);
   }
 
-  private buildSerializableConfig(): SerializableConfig {
+  private async buildSerializableConfig(): Promise<SerializableConfig> {
     return {
       hashedSigningKey: this.config.hashedSigningKey,
       hashedFallbackKey: this.config.hashedFallbackKey,
-      inngestEnv: this.config.inngestEnv,
+      envName: this.config.inngestEnv,
       connectionData: {
         marshaledCapabilities: this.config.connectionData.marshaledCapabilities,
         manualReadinessAck: this.config.connectionData.manualReadinessAck,
@@ -302,24 +302,12 @@ export class WorkerThreadStrategy extends BaseStrategy {
         rewriteGatewayEndpoint: undefined,
       },
       // Get the base URL from the inngest client
-      inngestApiBaseUrl: this.getInngestApiBaseUrl(),
+      apiBaseUrl: this.config.apiBaseUrl,
       appIds: Object.keys(this.config.requestHandlers),
+      mode: {
+        isDev: this.config.mode.isDev,
+        isInferred: this.config.mode.isInferred,
+      },
     };
-  }
-
-  private getInngestApiBaseUrl(): string {
-    // Access the internal inngestApi to get the base URL
-    const inngest = this.config.inngest as Inngest.Any;
-    try {
-      // Try to get the base URL from the inngestApi
-      const api = inngest["inngestApi"];
-      if (api && typeof api.apiBaseUrl === "string") {
-        return api.apiBaseUrl;
-      }
-      // Fallback to default
-      return "https://api.inngest.com";
-    } catch {
-      return "https://api.inngest.com";
-    }
   }
 }
