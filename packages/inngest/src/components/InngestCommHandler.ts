@@ -2272,6 +2272,7 @@ export class InngestCommHandler<
       | AuthenticatedIntrospection = {
       extra: {
         is_mode_explicit: this._mode.isExplicit,
+        native_crypto: globalThis.crypto?.subtle ? true : false,
       },
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
@@ -2304,6 +2305,7 @@ export class InngestCommHandler<
           extra: {
             ...introspection.extra,
             is_streaming: await this.shouldStream(actions),
+            native_crypto: globalThis.crypto?.subtle ? true : false,
           },
           framework: this.frameworkName,
           sdk_language: "js",
