@@ -40,6 +40,7 @@ export enum envKeys {
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
+  InngestConnectUseWorkerThread = "INNGEST_CONNECT_USE_WORKER_THREAD",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
