@@ -1374,7 +1374,6 @@ export const testFramework = (
             id: "",
             name: "inngest/scheduled.timer",
             ts: 1674082830001,
-            user: {},
             v: "1",
           };
 
@@ -1402,7 +1401,7 @@ export const testFramework = (
                 method: "POST",
                 headers: {
                   [headerKeys.Signature]:
-                    "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                    "t=1687306735&s=eece58c8cf7cfc21a5751b1969c9aef525c96257b42b556c2782c83d26ea0d87",
                 },
                 url: "/api/inngest?fnId=test-test&stepId=step",
                 body,
@@ -1427,7 +1426,6 @@ export const testFramework = (
               id: "",
               name: "inngest/scheduled.timer",
               ts: 1674082830001,
-              user: {},
               v: "1",
             };
 
@@ -1455,7 +1453,7 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=eece58c8cf7cfc21a5751b1969c9aef525c96257b42b556c2782c83d26ea0d87",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
@@ -1480,7 +1478,6 @@ export const testFramework = (
               id: "",
               name: "inngest/scheduled.timer",
               ts: 1674082830001,
-              user: {},
               v: "1",
             };
 
@@ -1508,7 +1505,7 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=eece58c8cf7cfc21a5751b1969c9aef525c96257b42b556c2782c83d26ea0d87",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
@@ -1547,7 +1544,6 @@ export const testFramework = (
               id: "",
               name: "inngest/scheduled.timer",
               ts: 1674082830001,
-              user: {},
               v: "1",
             };
 
@@ -1576,7 +1572,7 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=eece58c8cf7cfc21a5751b1969c9aef525c96257b42b556c2782c83d26ea0d87",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
@@ -1637,14 +1633,13 @@ export const testFramework = (
 export const sendEvent = async (
   name: string,
   data?: Record<string, unknown>,
-  user?: Record<string, unknown>,
 ): Promise<string> => {
   const res = await fetch("http://localhost:8288/e/key", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ name, data: data || {}, user, ts: Date.now() }),
+    body: JSON.stringify({ name, data: data || {}, ts: Date.now() }),
   });
 
   if (!res.ok) {

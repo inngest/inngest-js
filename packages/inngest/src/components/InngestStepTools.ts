@@ -680,8 +680,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
         );
       }
 
-      const { _type, function: fn, data, user, v, timeout } = parsedFnOpts.data;
-      const payload = { data, user, v } satisfies MinimalEventPayload;
+      const { _type, function: fn, data, v, timeout } = parsedFnOpts.data;
+      const payload = { data, v } satisfies MinimalEventPayload;
       const opts: {
         payload: MinimalEventPayload;
         function_id: string;
@@ -875,7 +875,6 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
  */
 export const invokePayloadSchema = z.object({
   data: z.record(z.any()).optional(),
-  user: z.record(z.any()).optional(),
   v: z.string().optional(),
 });
 
