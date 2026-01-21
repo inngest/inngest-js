@@ -25,6 +25,7 @@ import {
 } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -714,6 +715,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     }
 
     const hooks = await getHookStack(
+      new ServerTiming(),
       this.middleware,
       "onSendEvent",
       undefined,

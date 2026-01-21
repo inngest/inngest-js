@@ -240,3 +240,44 @@ export enum ExecutionVersion {
  * Default maximum number of retries for function/step executions.
  */
 export const defaultMaxRetries = 3;
+
+export enum timings {
+  // Prefix for all middleware hook timings, ideally in the format
+  // `mw.{middlwareId}.{hookName}`
+  SdkMiddlewareHookPrefix = "mw",
+
+  // The timings of SDK-side step handling code - registering steps, potentially
+  // including awaiting middleware
+  SdkStep = "sdk.step",
+
+  // How long we spent waiting for the event loop to be free again after we
+  // relinquishing control
+  SdkEventLoop = "sdk.eventloop.blocked",
+
+  // A marker to indicate that we extended the event loop many times and
+  // eventually broke out of it to ensure other CPU-bound code could run in the
+  // process.
+  //
+  // It's rare that this occurs. If it does, it likely indicates a very (read:
+  // hundreds of nested promises) deep execution tree in userland code.
+  SdkEventLoopExtensionBreak = "sdk.eventloop.extensionbreak",
+
+  // A marker to indicate that we detected and warned the user that they nested
+  // steps.
+  WarningNestedStep = "warning.nestedstep",
+
+  // A marker to indicate that we detected and warned the user that they
+  // triggered parallel indexing within a step.
+  WarningParallelIndexing = "warning.parallelindexing",
+
+  // Timing of the entire userland function execution. This is everything from
+  // the moment we enter userland function code to the moment it either settles
+  // or we interrupt due to discovering/running steps.
+  //
+  // If we run a step, this also includes the step's execution time.
+  UserlandFunction = "userland.fn",
+
+  // Timing of running the userland code of a step, if we found and executed
+  // one.
+  UserlandStep = "userland.step",
+}
