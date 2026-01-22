@@ -14,7 +14,6 @@ import {
   GatewayExecutorRequestData,
   SDKResponse,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
-import type { Inngest } from "../../../Inngest.ts";
 import { ConnectionState } from "../../types.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
 import type { StrategyConfig } from "../core/types.ts";
@@ -41,7 +40,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
   constructor(config: StrategyConfig) {
     super();
     this.config = config;
-    this.debugLog = debug("inngest:connect:worker-thread");
+    this.debugLog = debug("inngest:connect");
   }
 
   get connectionId(): string | undefined {
@@ -66,6 +65,9 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
         const timeout = setTimeout(() => {
           this.debugLog("Worker close timeout, terminating");
+
+          // Force terminate the worker to avoid hanging. Ideally this should
+          // never happen, since the worker thread should've exited
           this.worker?.terminate();
           resolve();
         }, 30_000);
@@ -287,7 +289,9 @@ export class WorkerThreadStrategy extends BaseStrategy {
   private async buildSerializableConfig(): Promise<SerializableConfig> {
     if (this.config.options.rewriteGatewayEndpoint) {
       // TODO: Figure out how to support this. Currently, we don't support it
-      throw new Error("rewriteGatewayEndpoint is not supported in worker threads");
+      throw new Error(
+        "rewriteGatewayEndpoint is not supported in worker threads",
+      );
     }
 
     return {

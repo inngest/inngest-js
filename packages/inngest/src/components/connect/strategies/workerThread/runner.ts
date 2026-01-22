@@ -226,6 +226,10 @@ class WorkerRunner {
 
     this.sendMessage({ type: "CLOSED" });
     this.log("Fully closed");
+
+    // Exit the worker thread. Without this, the parentPort message listener
+    // keeps the event loop alive and the worker never exits.
+    process.exit(0);
   }
 }
 

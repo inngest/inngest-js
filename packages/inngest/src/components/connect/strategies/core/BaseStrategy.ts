@@ -4,8 +4,8 @@ import { ConnectionState } from "../../types.ts";
 import type { ConnectionStrategy } from "./types.ts";
 
 /**
- * Base class for connection strategies providing common functionality
- * for state management, shutdown signal handling, and close lifecycle.
+ * Base class for connection strategies providing common functionality for state
+ * management, shutdown signal handling, and close lifecycle.
  */
 export abstract class BaseStrategy implements ConnectionStrategy {
   protected _state: ConnectionState = ConnectionState.CONNECTING;

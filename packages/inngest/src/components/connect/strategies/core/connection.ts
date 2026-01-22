@@ -1,5 +1,6 @@
 /**
- * Shared connection core logic used by both SameThreadStrategy and WorkerThreadStrategy.
+ * Shared connection core logic used by both SameThreadStrategy and
+ * WorkerThreadStrategy.
  *
  * This module extracts the common WebSocket connection management, handshake,
  * heartbeat, lease extension, and reconnection logic.
@@ -16,7 +17,6 @@ import {
   type GatewayExecutorRequestData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
-  SDKResponse,
   WorkerConnectRequestData,
   WorkerDisconnectReason,
   WorkerRequestAckData,
@@ -60,24 +60,9 @@ export interface Connection {
  * Extends BaseConnectionConfig with connection-specific options.
  */
 export interface ConnectionCoreConfig extends BaseConnectionConfig {
-  /**
-   * Instance ID for the worker.
-   */
   instanceId?: string;
-
-  /**
-   * Max worker concurrency.
-   */
   maxWorkerConcurrency?: number;
-
-  /**
-   * Function to rewrite the gateway endpoint (optional).
-   */
   rewriteGatewayEndpoint?: (endpoint: string) => string;
-
-  /**
-   * App IDs that this connection supports.
-   */
   appIds: string[];
 }
 
@@ -85,43 +70,14 @@ export interface ConnectionCoreConfig extends BaseConnectionConfig {
  * Callbacks for connection core events.
  */
 export interface ConnectionCoreCallbacks {
-  /**
-   * Log a debug message.
-   */
   log: (message: string, data?: unknown) => void;
-
-  /**
-   * Called when connection state changes.
-   */
   onStateChange: (state: ConnectionState) => void;
-
-  /**
-   * Get the current connection state.
-   */
   getState: () => ConnectionState;
-
-  /**
-   * Handle an execution request.
-   * Returns the encoded SDKResponse bytes.
-   */
   handleExecutionRequest: (
     request: GatewayExecutorRequestData,
   ) => Promise<Uint8Array>;
-
-  /**
-   * Called when a reply is acknowledged.
-   */
   onReplyAck?: (requestId: string) => void;
-
-  /**
-   * Called when a response needs to be buffered (no active connection).
-   */
   onBufferResponse?: (requestId: string, responseBytes: Uint8Array) => void;
-
-  /**
-   * Called before each connection attempt to allow flushing buffered messages.
-   * @param signingKey The current signing key being used for this attempt
-   */
   beforeConnect?: (signingKey: string | undefined) => Promise<void>;
 }
 

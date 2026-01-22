@@ -1,6 +1,5 @@
 import debug, { type Debugger } from "debug";
 import { SDKResponse } from "../../../../proto/src/components/connect/protobuf/connect.ts";
-import type { Inngest } from "../../../Inngest.ts";
 import { MessageBuffer } from "../../buffer.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
 import { ConnectionCore } from "../core/connection.ts";
@@ -23,7 +22,7 @@ export class SameThreadStrategy extends BaseStrategy {
   constructor(config: StrategyConfig) {
     super();
     this.config = config;
-    this.debugLog = debug("inngest:connect:same-thread");
+    this.debugLog = debug("inngest:connect");
 
     // Create the connection core with callbacks
     this.core = new ConnectionCore(
