@@ -21,7 +21,8 @@ describe("EventSchemas", () => {
       | `${internalEvents.FunctionFinished}`
       | `${internalEvents.FunctionInvoked}`
       | `${internalEvents.FunctionCancelled}`
-      | `${internalEvents.ScheduledTimer}`;
+      | `${internalEvents.ScheduledTimer}`
+      | `${internalEvents.HttpRequest}`;
 
     type Actual = Schemas<typeof schemas>[keyof Schemas<
       typeof schemas

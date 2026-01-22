@@ -23,7 +23,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { internalEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -85,7 +85,7 @@ export const jsonErrorSchema = baseJsonErrorSchema
  * The payload for an API endpoint running steps.
  */
 export type APIStepPayload = {
-  name: `${knownEvents.HttpRunStarted}`;
+  name: `${internalEvents.HttpRequest}`;
   data: {
     /**
      * The domain that served the original request.
