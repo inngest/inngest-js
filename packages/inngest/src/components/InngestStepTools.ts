@@ -11,7 +11,6 @@ import type {
   ParametersExceptFirst,
   SendEventPayload,
   SimplifyDeep,
-  WithoutInternalStr,
 } from "../helpers/types.ts";
 import {
   type EventPayload,

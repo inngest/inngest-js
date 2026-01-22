@@ -2,7 +2,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
-import type { EventType } from "./triggers.ts";
+import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
 type BasicDataUnknown = Record<string, unknown>;
@@ -55,7 +55,7 @@ type HasInvokeTrigger<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends EventType<InvokeEventName, any>
+  ? First extends EventTypeWithAnySchema<InvokeEventName>
     ? true
     : HasInvokeTrigger<Rest>
   : false;
@@ -104,9 +104,9 @@ type PlainEventToReceivedEvent<
 type ProcessSingleTrigger<
   TTrigger,
   TSeenCron extends boolean,
-> = TTrigger extends EventType<InvokeEventName, any> // Is this an invoke trigger?
+> = TTrigger extends EventTypeWithAnySchema<InvokeEventName> // Is this an invoke trigger?
   ? [] // Skip invoke triggers (handled separately by ToReceivedEvent)
-  : TTrigger extends EventType<any, any> // Is this an event type trigger?
+  : TTrigger extends EventTypeWithAnySchema<string> // Is this an event type trigger?
     ? [EventTypeToEvent<TTrigger>]
     : TTrigger extends { cron: string } // Is this a cron trigger?
       ? TSeenCron extends true

@@ -19,7 +19,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { EventType } from "./components/triggers/triggers.ts";
+import type { EventType, EventTypeWithAnySchema } from "./components/triggers/triggers.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
@@ -1063,8 +1063,7 @@ export type Cancellation = {
    */
   event:
     | string
-    // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
-    | EventType<string, any>;
+    | EventTypeWithAnySchema<string>;
 
   /**
    * The expression that must evaluate to true in order to cancel the function run. There

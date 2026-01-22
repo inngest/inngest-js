@@ -172,7 +172,6 @@ export class V0InngestExecution
                 );
               } catch (err) {
                 this.state.currentOp.reject(err);
-                continue;
               }
             }
             this.state.currentOp.resolve(incomingOp.data);

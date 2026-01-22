@@ -93,6 +93,11 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
   v?: string;
 };
 
+export type EventTypeWithAnySchema<TName extends string> = EventType<
+  TName,
+  any
+>;
+
 /**
  * Represents a typed event definition that can be used both as a trigger
  * and for creating events with validation.

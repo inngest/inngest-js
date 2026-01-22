@@ -28,7 +28,7 @@ import type {
   InngestMiddleware,
   MiddlewareRegisterReturn,
 } from "./InngestMiddleware.ts";
-import type { EventType } from "./triggers/triggers.ts";
+import type { EventType, EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -357,10 +357,10 @@ export namespace InngestFunction {
    *
    * @public
    */
-  export type Trigger<T extends string> = StrictUnion<
+  export type Trigger<TName extends string> = StrictUnion<
     | {
         // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
-        event: T | EventType<T, any>;
+        event: TName | EventTypeWithAnySchema<TName>;
         if?: string;
       }
     | {

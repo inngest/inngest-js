@@ -342,6 +342,18 @@ describe("eventType with schema", () => {
       },
     );
   });
+
+  test("schema isn't an object", () => {
+    eventType("evt", {
+      // @ts-expect-error - Schema must be an object
+      schema: z.string(),
+    });
+
+    eventType("evt", {
+      // @ts-expect-error - Schema must be an object
+      schema: z.array(z.object({ a: z.string() })),
+    });
+  });
 });
 
 test("eventType with version", () => {
