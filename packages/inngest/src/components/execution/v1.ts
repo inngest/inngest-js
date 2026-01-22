@@ -1481,15 +1481,19 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 if (typeof result.data !== "undefined") {
                   // Validate waitForEvent results against the schema if present
                   if (opId.op === StepOpCode.WaitForEvent) {
-                    const waitForEventOpts = step.rawArgs?.[1] as
-                      | { event: unknown }
-                      | undefined;
+                    const { event } = (step.rawArgs?.[1] ?? {}) as {
+                      event: unknown;
+                    };
+                    if (!event) {
+                      // Unreachable
+                      throw new Error("Missing event option in waitForEvent");
+                    }
                     try {
                       await validateEvents(
                         [result.data],
 
                         // @ts-expect-error - This is a full event object at runtime
-                        [waitForEventOpts?.event],
+                        [event],
                       );
                     } catch (err) {
                       this.state.recentlyRejectedStepError = new StepError(
