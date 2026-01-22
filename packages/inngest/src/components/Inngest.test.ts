@@ -435,9 +435,9 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[0]?.[1]?.body as string,
@@ -466,9 +466,9 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[0]?.[1]?.body as string,
