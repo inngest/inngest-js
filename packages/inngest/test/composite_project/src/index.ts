@@ -9,8 +9,6 @@ type CatchAll =
   | Inngest.ClientOptions
   | Inngest.ClientOptionsFromInngest<any>
   | Inngest.Context.Any
-  | Inngest.EventSchemas
-  | Inngest.GetEvents<any>
   | Inngest.GetFunctionInput<any>
   | Inngest.GetFunctionOutput<any>
   | Inngest.GetStepTools<any>
@@ -34,8 +32,7 @@ type CatchAll =
   | Inngest.StepOptionsOrId
   | Inngest.StrictUnion<any>
   | Inngest.TimeStr
-  | Inngest.UnionKeys<any>
-  | Inngest.ZodEventSchemas;
+  | Inngest.UnionKeys<any>;
 
 export const inngest = new Inngest.Inngest({
   id: "me",

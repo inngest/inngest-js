@@ -10,12 +10,12 @@ import {
   type CheckpointingOptions,
   type ConcurrencyOption,
   defaultCheckpointingOptions,
+  type EventPayload,
   type FunctionConfig,
   type Handler,
   type InternalCheckpointingOptions,
   type TimeStr,
   type TimeStrBatch,
-  type EventPayload,
 } from "../types.ts";
 import type {
   IInngestExecution,
