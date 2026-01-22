@@ -64,7 +64,7 @@ export const isInngestEndpointAdapter = (
    * The input to check.
    */
   input: unknown,
-): input is InngestMiddleware.Any => {
+): input is InngestEndpointAdapter.Like => {
   // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === InngestEndpointAdapter.Tag;
 };
