@@ -1373,6 +1373,7 @@ export interface InBandRegisterRequest
 export interface UnauthenticatedIntrospection {
   extra: {
     is_mode_explicit: boolean;
+    native_crypto: boolean;
   };
   function_count: number;
   has_event_key: boolean;
@@ -1392,6 +1393,7 @@ export interface AuthenticatedIntrospection
   event_key_hash: string | null;
   extra: UnauthenticatedIntrospection["extra"] & {
     is_streaming: boolean;
+    native_crypto: boolean;
   };
   framework: string;
   sdk_language: string;

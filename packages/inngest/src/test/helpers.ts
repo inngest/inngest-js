@@ -865,16 +865,6 @@ export const testFramework = (
             actionOverrides?: Partial<HandlerResponse>;
           },
         ) => {
-          const signingKey = "123";
-          const body = { url: "https://example.com/api/inngest" };
-          const ts = Date.now().toString();
-
-          const signature = validSignature
-            ? `t=${ts}&s=${signDataWithKey(body, signingKey, ts)}`
-            : validSignature === false
-              ? "INVALID"
-              : undefined;
-
           const name = `${
             serverMode === serverKind.Cloud ? "Cloud" : "Dev"
           } Server -> ${sdkMode === serverKind.Cloud ? "Cloud" : "Dev"} SDK - ${
@@ -898,6 +888,16 @@ export const testFramework = (
           } ${expectedResponse}`;
 
           test(name, async () => {
+            const signingKey = "123";
+            const body = { url: "https://example.com/api/inngest" };
+            const ts = Date.now().toString();
+
+            const signature = validSignature
+              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts)}`
+              : validSignature === false
+                ? "INVALID"
+                : undefined;
+
             const ret = await run(
               [{ client: inngest, functions: [] }],
               [
