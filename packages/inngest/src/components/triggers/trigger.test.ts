@@ -23,7 +23,12 @@ describe("cron", () => {
       >();
 
       expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<{}>();
+      expectTypeOf(event.data).toEqualTypeOf<
+        | {
+            cron: string;
+          }
+        | {}
+      >();
     });
   });
 
@@ -105,7 +110,6 @@ describe("eventType without options", () => {
       {
         event: et,
         if: "event.data.foo == 'bar'",
-        schema: et.schema,
       },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
@@ -446,7 +450,7 @@ describe("mixed triggers", () => {
           | { b: number }
           | { name: string }
           | { age: number }
-          | {}
+          | { cron: string }
         >();
 
         // Can type narrow the data type based on the event name
@@ -455,7 +459,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "event-2") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         } else if (event.name === "inngest/scheduled.timer") {
-          expectTypeOf(event.data).toEqualTypeOf<{}>();
+          expectTypeOf(event.data).toEqualTypeOf<{ cron: string }>();
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<
             { name: string } | { age: number }
@@ -502,13 +506,15 @@ describe("mixed triggers", () => {
           "event-1" | "inngest/scheduled.timer" | "inngest/function.invoked"
         >();
         expectTypeOf(event.data).not.toBeAny();
-        expectTypeOf(event.data).toEqualTypeOf<{ a: string } | {}>();
+        expectTypeOf(event.data).toEqualTypeOf<
+          { a: string } | { cron: string }
+        >();
 
         // Can type narrow the data type based on the event name
         if (event.name === "event-1") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         } else if (event.name === "inngest/scheduled.timer") {
-          expectTypeOf(event.data).toEqualTypeOf<{}>();
+          expectTypeOf(event.data).toEqualTypeOf<{ cron: string }>();
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }

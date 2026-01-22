@@ -10,6 +10,7 @@ type BasicDataAny = Record<string, any>;
 
 type InvokeEventName = "inngest/function.invoked";
 type CronEventName = "inngest/scheduled.timer";
+type CronEventData = { cron: string };
 
 /**
  * Detects if a string type contains a wildcard character (*).
@@ -110,7 +111,7 @@ type ProcessSingleTrigger<
     : TTrigger extends { cron: string } // Is this a cron trigger?
       ? TSeenCron extends true
         ? [] // Skip additional cron triggers (they're merged into one)
-        : [ReceivedEvent<CronEventName, {}>]
+        : [ReceivedEvent<CronEventName, CronEventData>]
       : // Is this an event trigger using an EventType?
         TTrigger extends {
             event: EventType<infer TName, infer TSchema>;
