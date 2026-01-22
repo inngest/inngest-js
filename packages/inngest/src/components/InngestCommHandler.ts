@@ -574,6 +574,14 @@ export class InngestCommHandler<
 
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
+      if (
+        this.streaming === "force" ||
+        this.env[envKeys.InngestStreaming] === "force"
+      ) {
+        throw new Error(
+          `${logPrefix} Streaming has been forced but the serve handler does not support streaming. Please either remove the streaming option or use a serve handler that supports streaming.`,
+        );
+      }
       return false;
     }
 
@@ -1113,7 +1121,22 @@ export class InngestCommHandler<
       };
     };
 
-    if (await this.shouldStream(actions)) {
+    let shouldStream: boolean;
+    try {
+      shouldStream = await this.shouldStream(actions);
+    } catch (err) {
+      return actions.transformResponse("sending back response", {
+        status: 500,
+        headers: {
+          ...(await getHeaders()),
+          "Content-Type": "application/json",
+        },
+        body: stringify(serializeError(err)),
+        version: undefined,
+      });
+    }
+
+    if (shouldStream) {
       const method = await actions.method("starting streaming response");
 
       if (method === "POST") {

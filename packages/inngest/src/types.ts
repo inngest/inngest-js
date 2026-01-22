@@ -1011,8 +1011,8 @@ export interface RegisterOptions {
    *
    * If this is `"force"`, the SDK will always attempt to stream responses back
    * to Inngest regardless of whether we can detect support for it or not. This
-   * will override `allowStreaming`, but will still not attempt to stream if
-   * the serve handler does not support it.
+   * will override `allowStreaming`. If the serve handler does not support
+   * streaming, an error will be thrown.
    *
    * If this is `false`, streaming will never be used.
    *
