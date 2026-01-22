@@ -1,7 +1,7 @@
 import { ZodError, z } from "zod/v3";
 import type { InngestApi } from "../api/api.ts";
 import { stepsSchemas } from "../api/schema.ts";
-import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
+import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
 import { err, ok, type Result } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
 import { prettyError } from "./errors.ts";
@@ -87,19 +87,19 @@ const fnDataVersionSchema = z.object({
     .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
       if (typeof v === "undefined") {
         console.debug(
-          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`,
+          `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
         );
 
         return {
           sdkDecided: true,
-          version: PREFERRED_EXECUTION_VERSION,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
         };
       }
 
       if (v === -1) {
         return {
           sdkDecided: true,
-          version: PREFERRED_EXECUTION_VERSION,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
         };
       }
 
@@ -110,8 +110,10 @@ const fnDataVersionSchema = z.object({
     }),
 });
 
+type FnDataVersionParse = z.output<typeof fnDataVersionSchema>;
+
 export const parseFnData = (data: unknown) => {
-  let version: ExecutionVersion;
+  let version: FnDataVersionParse["version"]["version"];
 
   try {
     const parsedVersionData = fnDataVersionSchema.parse(data);

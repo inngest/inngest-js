@@ -69,7 +69,8 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
+  PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
@@ -992,8 +993,7 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
-    // TODO Nope. Should be v2, so we now have two preferred versions...
-    const exeVersion = PREFERRED_EXECUTION_VERSION;
+    const exeVersion = PREFERRED_CHECKPOINTING_EXECUTION_VERSION;
 
     const exe = fn["createExecution"]({
       version: exeVersion,
@@ -1196,7 +1196,7 @@ export class InngestCommHandler<
           ? {}
           : {
               [headerKeys.RequestVersion]: (
-                res.version ?? PREFERRED_EXECUTION_VERSION
+                res.version ?? PREFERRED_ASYNC_EXECUTION_VERSION
               ).toString(),
             }),
       };
@@ -1478,7 +1478,6 @@ export class InngestCommHandler<
 
         let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
         let fnId: string | undefined;
-        let stepId: string | null | undefined;
 
         if (forceExecution) {
           fn =
@@ -1486,12 +1485,11 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
-          stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
           body = {
             event: {},
             events: [],
             steps: {},
-            version: PREFERRED_EXECUTION_VERSION,
+            version: PREFERRED_ASYNC_EXECUTION_VERSION,
             sdkDecided: true,
             ctx: {
               attempt: 0,
@@ -1505,7 +1503,10 @@ export class InngestCommHandler<
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
-          } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
+          } as Extract<
+            FnData,
+            { version: typeof PREFERRED_ASYNC_EXECUTION_VERSION }
+          >;
         } else {
           const rawProbe = await actions.queryStringWithDefaults(
             "testing for probe",
@@ -1556,17 +1557,24 @@ export class InngestCommHandler<
           }
 
           fn = this.fns[fnId];
-
-          stepId =
-            (await actions.queryStringWithDefaults(
-              "processing run request",
-              queryKeys.StepId,
-            )) || null;
         }
 
         if (typeof fnId === "undefined" || !fn) {
           throw new Error("No function ID found in request");
         }
+
+        // Always try and grab the step ID; in regular async flows this will be
+        // in the querystring, and in sync modes it'll be in the headers.
+        const stepId =
+          (await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.StepId,
+          )) ||
+          (await actions.headers(
+            "processing run request",
+            headerKeys.InngestStepId,
+          )) ||
+          null;
 
         const { version, result } = this.runStep({
           functionId: fnId,
@@ -2016,7 +2024,8 @@ export class InngestCommHandler<
           );
 
           return {
-            version,
+            version:
+              checkpointingConfig && sdkDecided ? ExecutionVersion.V2 : version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
