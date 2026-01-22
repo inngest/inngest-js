@@ -13,6 +13,7 @@
  */
 
 import { Inngest } from "../components/Inngest.js";
+import { InngestEndpointAdapter } from "../components/InngestEndpointAdapter.js";
 import { InngestFunction } from "../components/InngestFunction.js";
 import { InngestMiddleware } from "../components/InngestMiddleware.js";
 
@@ -53,4 +54,17 @@ export const isInngestMiddleware = (
 ): input is InngestMiddleware.Any => {
   // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === InngestMiddleware.Tag;
+};
+
+/**
+ * Asserts that the given `input` is an `InngestMiddleware` object.
+ */
+export const isInngestEndpointAdapter = (
+  /**
+   * The input to check.
+   */
+  input: unknown,
+): input is InngestMiddleware.Any => {
+  // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
+  return (input as any)[Symbol.toStringTag] === InngestEndpointAdapter.Tag;
 };

@@ -147,6 +147,8 @@ export interface SyncHandlerOptions extends RegisterOptions {
     | 20;
 }
 
+export type SyncAdapterOptions = Omit<SyncHandlerOptions, "client">;
+
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
   /**
    * Can be used to override the framework name given to a particular serve
