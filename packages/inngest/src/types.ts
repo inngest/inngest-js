@@ -1005,20 +1005,14 @@ export interface RegisterOptions {
    * restrictive request timeouts and other limitations. It is only available if
    * the serve handler being used supports streaming.
    *
-   * If this is `"allow"`, the SDK will attempt to stream responses back to
-   * Inngest if it can confidently detect support for it by verifyng that the
-   * platform and the serve handler supports streaming.
-   *
-   * If this is `"force"`, the SDK will always attempt to stream responses back
-   * to Inngest regardless of whether we can detect support for it or not. This
-   * will override `allowStreaming`. If the serve handler does not support
-   * streaming, an error will be thrown.
+   * If this is `"true"`, the SDK will attempt to stream responses back
+   * to Inngest. If the serve handler does not support streaming, an error will be thrown.
    *
    * If this is `false`, streaming will never be used.
    *
    * Defaults to `false`.
    */
-  streaming?: "allow" | "force" | false;
+  streaming?: true | false;
 }
 
 /**

@@ -473,7 +473,7 @@ export class InngestCommHandler<
 
     const defaultStreamingOption: typeof this.streaming = false;
     this.streaming = z
-      .union([z.enum(["allow", "force"]), z.literal(false)])
+      .boolean()
       .default(defaultStreamingOption)
       .catch((ctx) => {
         this.log(
@@ -485,7 +485,9 @@ export class InngestCommHandler<
 
         return defaultStreamingOption;
       })
-      .parse(options.streaming || this.env[envKeys.InngestStreaming]);
+      .parse(
+        options.streaming || parseAsBoolean(this.env[envKeys.InngestStreaming]),
+      );
 
     // Early validation for environments where process.env is available (Node.js).
     // Edge environments will skip this and validate at request time instead.
@@ -575,8 +577,8 @@ export class InngestCommHandler<
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
       if (
-        this.streaming === "force" ||
-        this.env[envKeys.InngestStreaming] === "force"
+        this.streaming === true ||
+        parseAsBoolean(this.env[envKeys.InngestStreaming]) === true
       ) {
         throw new Error(
           `${logPrefix} Streaming has been forced but the serve handler does not support streaming. Please either remove the streaming option or use a serve handler that supports streaming.`,
@@ -585,19 +587,9 @@ export class InngestCommHandler<
       return false;
     }
 
-    // If the user has forced streaming, we should always stream.
-    if (this.streaming === "force") {
-      return true;
-    }
-
-    // If the user has allowed streaming, we should stream if the platform
-    // supports it.
     return (
-      this.streaming === "allow" &&
-      platformSupportsStreaming(
-        this.frameworkName as SupportedFrameworkName,
-        this.env,
-      )
+      this.streaming === true ||
+      parseAsBoolean(this.env[envKeys.InngestStreaming]) === true
     );
   }
 

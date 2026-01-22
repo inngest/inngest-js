@@ -95,11 +95,11 @@ describe("ServeHandler", () => {
       }
     };
 
-    test("throws error when streaming is 'force' but handler doesn't support it", async () => {
+    test("throws error when streaming is true but handler doesn't support it", async () => {
       const handler = serve({
         client: inngest,
         functions: [fn],
-        streaming: "force",
+        streaming: true,
       });
 
       const result = await runHandler(handler, {
@@ -110,34 +110,19 @@ describe("ServeHandler", () => {
       expect(result.body).toMatch(/streaming/i);
     });
 
-    test("throws error when INNGEST_STREAMING=force env var but handler doesn't support it", async () => {
+    test("throws error when INNGEST_STREAMING=true env var but handler doesn't support it", async () => {
       const handler = serve({
         client: inngest,
         functions: [fn],
       });
 
       const result = await runHandler(handler, {
-        env: { [envKeys.InngestStreaming]: "force" },
+        env: { [envKeys.InngestStreaming]: "true" },
         actionOverrides: { transformStreamingResponse: undefined },
       });
 
       expect(result.status).toBe(500);
       expect(result.body).toMatch(/streaming/i);
-    });
-
-    test("no error with streaming: 'allow' when handler doesn't support it", async () => {
-      const handler = serve({
-        client: inngest,
-        functions: [fn],
-        streaming: "allow",
-      });
-
-      const result = await runHandler(handler, {
-        actionOverrides: { transformStreamingResponse: undefined },
-      });
-
-      // Should not be a 500 error - silent fallback to non-streaming is correct
-      expect(result.status).not.toBe(500);
     });
   });
 });
