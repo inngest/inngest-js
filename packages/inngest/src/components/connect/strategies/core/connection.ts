@@ -495,7 +495,6 @@ export class ConnectionCore {
 
     clearTimeout(connectTimeout);
 
-    this.callbacks.onStateChange(ConnectionState.ACTIVE);
     this.excludeGateways.delete(startResp.gatewayGroup);
 
     attempt = 0;
@@ -515,6 +514,10 @@ export class ConnectionCore {
       pendingHeartbeats: 0,
     };
     this.currentConnection = conn;
+
+    // Set state to ACTIVE after currentConnection is set, so that
+    // connectionId is available in the onStateChange callback.
+    this.callbacks.onStateChange(ConnectionState.ACTIVE);
 
     this.callbacks.log(`Connection ready (${connectionId})`);
 
