@@ -10,6 +10,7 @@
  */
 
 import { isMainThread, parentPort } from "node:worker_threads";
+import { MessageBuffer } from "../../buffer.ts";
 import { ConnectionState } from "../../types.ts";
 import { ConnectionCore } from "../core/connection.ts";
 import type {
@@ -17,6 +18,13 @@ import type {
   SerializableConfig,
   WorkerToMainMessage,
 } from "./protocol.ts";
+
+/**
+ * Time in milliseconds to wait for gateway acknowledgment of a response.
+ * If no ACK is received within this deadline, the response is moved to the
+ * buffer for later flush via HTTP.
+ */
+const responseAcknowledgeDeadline = 5_000;
 
 if (isMainThread) {
   throw new Error("This file should only be run in a worker thread");
@@ -33,6 +41,7 @@ class WorkerRunner {
   private config: SerializableConfig | undefined;
   private state: ConnectionState = ConnectionState.CONNECTING;
   private core: ConnectionCore | undefined;
+  private messageBuffer: MessageBuffer | undefined;
 
   /**
    * Pending execution responses waiting for user code to complete.
@@ -162,14 +171,34 @@ class WorkerRunner {
           });
 
           // Wait for main thread to complete execution
-          return requestPromise;
+          const responseBytes = await requestPromise;
+
+          // Add to pending with deadline for acknowledgment tracking
+          this.messageBuffer?.addPending(
+            request.requestId,
+            responseBytes,
+            responseAcknowledgeDeadline,
+          );
+
+          return responseBytes;
         },
-        // No reply ack handling needed in worker - main thread handles buffering
-        onReplyAck: undefined,
-        // No buffering in worker thread
-        onBufferResponse: undefined,
+        onReplyAck: (requestId) => {
+          this.messageBuffer?.acknowledgePending(requestId);
+        },
+        onBufferResponse: (requestId, responseBytes) => {
+          this.messageBuffer?.append(requestId, responseBytes);
+        },
+        beforeConnect: async (signingKey) => {
+          await this.messageBuffer?.flush(signingKey);
+        },
       },
     );
+
+    // Create message buffer for buffering responses when connection is lost
+    this.messageBuffer = new MessageBuffer({
+      envName: this.config.envName,
+      getApiBaseUrl: () => this.core!.getApiBaseUrl(),
+    });
   }
 
   async close(): Promise<void> {
@@ -185,6 +214,20 @@ class WorkerRunner {
 
     if (this.core) {
       await this.core.waitForInProgress();
+    }
+
+    this.log("Flushing messages before closing");
+
+    if (this.messageBuffer) {
+      try {
+        await this.messageBuffer.flush(this.config?.hashedSigningKey);
+      } catch (err) {
+        this.log(
+          "Failed to flush messages, using fallback key",
+          err instanceof Error ? err.message : err,
+        );
+        await this.messageBuffer.flush(this.config?.hashedFallbackKey);
+      }
     }
 
     this.setState(ConnectionState.CLOSED);
