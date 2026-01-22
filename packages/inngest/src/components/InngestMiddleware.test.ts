@@ -791,7 +791,7 @@ describe("stacking and inference", () => {
                             payloads: [
                               {
                                 name: "foo",
-                                user: { userFromMiddleware: true },
+                                data: { dataFromMiddleware: true },
                               },
                             ],
                           };
@@ -828,10 +828,7 @@ describe("stacking and inference", () => {
                 opts: expect.objectContaining({
                   payload: {
                     data: {
-                      dataFromStep: true,
-                    },
-                    user: {
-                      userFromMiddleware: true,
+                      dataFromMiddleware: true,
                     },
                   },
                 }),

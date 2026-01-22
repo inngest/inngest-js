@@ -10,7 +10,6 @@ const generateEvent = (): EventPayload => {
   return {
     name: randomstr(),
     data: { hello: "world" },
-    user: {},
     ts: 0,
   };
 };

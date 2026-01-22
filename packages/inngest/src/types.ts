@@ -603,13 +603,6 @@ export interface MinimalEventPayload<TData = any> {
   data?: TData;
 
   /**
-   * Any user data associated with the event
-   * All fields ending in "_id" will be used to attribute the event to a particular user
-   */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  user?: any;
-
-  /**
    * A specific event schema version
    * (optional)
    */
