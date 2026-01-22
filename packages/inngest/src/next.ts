@@ -164,7 +164,8 @@ export const serve = (
              * To avoid this, we'll try to parse the URL from `req.url`, but
              * also use the `host` header if it's available.
              */
-            const host = options.serveHost || getHeader("host");
+            const host =
+              options.serveOrigin || options.serveHost || getHeader("host");
             if (host) {
               const hostWithProtocol = new URL(
                 host.includes("://")
@@ -183,7 +184,7 @@ export const serve = (
           }
 
           let scheme: "http" | "https" = "https";
-          const host = options.serveHost || getHeader("host") || "";
+          const host = options.serveOrigin || getHeader("host") || "";
 
           try {
             if (process.env.NODE_ENV === "development") {

@@ -5,6 +5,10 @@ This guide covers how to migrate between the v3 and the v4 version of the `innge
 > [!WARNING]
 > This migration guide is a work in progress.
 
+## Deprecate `serveHost` in Favor of `serveOrigin`
+
+Using "host" here is actually a misnomer because the scheme and port can be specified, while a "host" is only the domain or IP. _What is programming_ if not a fun version of pedantry, so we fixed this and deprecated the `serveHost` option in favor of `serveOrigin`.
+
 ## Default Mode Changed to Cloud
 
 The default mode is now `cloud` instead of `dev`. This prevents accidental production deployments in development mode and aligns with all other Inngest SDKs.

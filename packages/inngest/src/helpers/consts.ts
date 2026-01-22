@@ -33,8 +33,9 @@ export enum envKeys {
   InngestBaseUrl = "INNGEST_BASE_URL",
   InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
   InngestApiBaseUrl = "INNGEST_API_BASE_URL",
-  InngestServeHost = "INNGEST_SERVE_HOST",
+  InngestServeHost = "INNGEST_SERVE_HOST", // Deprecated, use INNGEST_SERVE_ORIGIN
   InngestServePath = "INNGEST_SERVE_PATH",
+  InngestServeOrigin = "INNGEST_SERVE_ORIGIN",
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
