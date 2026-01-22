@@ -1304,7 +1304,7 @@ export const testFramework = (
 
         const fn = client.createFunction(
           { name: "Test", id: "test" },
-          { event: "demo/event.sent" },
+          { cron: "0 0 0 0 0" },
           () => "fn",
         );
         const env = {
@@ -1372,7 +1372,7 @@ export const testFramework = (
           const event = {
             data: {},
             id: "",
-            name: "demo/event.sent",
+            name: "inngest/scheduled.timer",
             ts: 1674082830001,
             v: "1",
           };
@@ -1424,7 +1424,7 @@ export const testFramework = (
             const event = {
               data: {},
               id: "",
-              name: "demo/event.sent",
+              name: "inngest/scheduled.timer",
               ts: 1674082830001,
               v: "1",
             };
