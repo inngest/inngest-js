@@ -1,5 +1,4 @@
 import debug from "debug";
-import { ulid } from "ulid";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import {
@@ -990,6 +989,7 @@ export class InngestCommHandler<
     }
 
     // We create a new run ID here in the SDK.
+    const { ulid } = await import("ulid"); // lazy loading for edge envs
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
