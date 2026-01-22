@@ -3,9 +3,9 @@ import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import type {
-  CheckpointingOptions,
   Context,
   IncomingOp,
+  InternalCheckpointingOptions,
   OutgoingOp,
   StepMode,
 } from "../../types.ts";
@@ -83,8 +83,18 @@ export interface MemoizedOp extends IncomingOp {
  * Changing this should not ever be a breaking change, as this will only change
  * new runs, not existing ones.
  */
-export const PREFERRED_EXECUTION_VERSION =
+export const PREFERRED_ASYNC_EXECUTION_VERSION =
   ExecutionVersion.V1 satisfies ExecutionVersion;
+
+/**
+ * The preferred execution version that will be used by the SDK when handling
+ * checkpointed runs where the Executor is allowing us to choose.
+ *
+ * Changing this should not ever be a breaking change, as this will only change
+ * new runs, not existing ones.
+ */
+export const PREFERRED_CHECKPOINTING_EXECUTION_VERSION =
+  ExecutionVersion.V2 satisfies ExecutionVersion;
 
 /**
  * Options for creating a new {@link InngestExecution} instance.
@@ -107,7 +117,7 @@ export interface InngestExecutionOptions {
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
-  checkpointingConfig?: CheckpointingOptions;
+  checkpointingConfig?: InternalCheckpointingOptions;
 
   /**
    * If this execution is being run from a queue job, this will be an identifier

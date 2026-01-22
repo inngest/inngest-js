@@ -6,11 +6,11 @@ globalThis.console = {
 };
 
 const clearConsole = () => {
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   (globalThis.console.log as any).mockClear();
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   (globalThis.console.warn as any).mockClear();
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   (globalThis.console.error as any).mockClear();
 };
 
@@ -41,7 +41,7 @@ import {
   type ExecutionResult,
   type ExecutionResults,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals as _v1Internals } from "./execution/v1.ts";
 import { _internals as _v2Internals } from "./execution/v2.ts";
@@ -105,7 +105,7 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
 
 const inngest = createClient(opts);
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 const matchError = (err: any) => {
   const serializedErr = serializeError(err);
   return expect.objectContaining({
@@ -123,7 +123,7 @@ describe("runFn", () => {
     const stepRet = { someProperty: "step done" };
     const stepErr = new Error("step error");
 
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     [
       {
         type: "synchronous",
@@ -161,7 +161,7 @@ describe("runFn", () => {
             );
 
             const execution = fn["createExecution"]({
-              version: PREFERRED_EXECUTION_VERSION,
+              version: PREFERRED_ASYNC_EXECUTION_VERSION,
               partialOptions: {
                 client: fn["client"],
                 data: fromPartial({
@@ -208,7 +208,7 @@ describe("runFn", () => {
 
           test("wrap thrown error", async () => {
             const execution = fn["createExecution"]({
-              version: PREFERRED_EXECUTION_VERSION,
+              version: PREFERRED_ASYNC_EXECUTION_VERSION,
               partialOptions: {
                 client: fn["client"],
                 data: fromPartial({
@@ -251,9 +251,9 @@ describe("runFn", () => {
         fn: InngestFunction.Any;
         steps: Record<
           string,
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          // biome-ignore lint/suspicious/noExplicitAny: intentional
           | Mock<(...args: any[]) => string>
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          // biome-ignore lint/suspicious/noExplicitAny: intentional
           | Mock<(...args: any[]) => Promise<string>>
         >;
         event?: EventPayload;
@@ -288,7 +288,7 @@ describe("runFn", () => {
         } | null
       >,
     ) => {
-      // biome-ignore lint/complexity/noForEach: <explanation>
+      // biome-ignore lint/complexity/noForEach: intentional
       Object.entries(executionTests).forEach(([version, specs]) => {
         if (!specs) return;
         const { hashes, tests } = specs;
@@ -306,7 +306,7 @@ describe("runFn", () => {
               ) as typeof hashes)
             : hashes;
 
-          // biome-ignore lint/complexity/noForEach: <explanation>
+          // biome-ignore lint/complexity/noForEach: intentional
           Object.entries(tests(processedHashes)).forEach(([name, t]) => {
             describe(name, () => {
               let hashDataSpy: ReturnType<typeof getHashDataSpy>;
@@ -361,7 +361,7 @@ describe("runFn", () => {
 
               if (t.expectedHashOps?.length) {
                 test("hashes expected ops", () => {
-                  // biome-ignore lint/complexity/noForEach: <explanation>
+                  // biome-ignore lint/complexity/noForEach: intentional
                   t.expectedHashOps?.forEach((h) => {
                     expect(hashDataSpy).toHaveBeenCalledWith(h);
                   });
@@ -389,7 +389,7 @@ describe("runFn", () => {
                 describe("error logs", () => {
                   t.expectedErrors?.forEach((error, i) => {
                     test(`error log #${i + 1} includes "${error}"`, () => {
-                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                      // biome-ignore lint/suspicious/noExplicitAny: intentional
                       const call = (mockLogger.error as any).mock.calls[i];
                       const stringifiedArgs =
                         call?.map((arg: unknown) => {
@@ -409,7 +409,7 @@ describe("runFn", () => {
               }
 
               test("runs expected steps", () => {
-                // biome-ignore lint/complexity/noForEach: <explanation>
+                // biome-ignore lint/complexity/noForEach: intentional
                 Object.keys(tools.steps).forEach((k) => {
                   const step = tools.steps[k];
 
@@ -443,7 +443,7 @@ describe("runFn", () => {
                             .steps
                         : [];
 
-                  // biome-ignore lint/complexity/noForEach: <explanation>
+                  // biome-ignore lint/complexity/noForEach: intentional
                   outgoingOps.forEach((op) => {
                     expect(op.id).toMatch(/^[a-f0-9]{40}$/i);
                   });

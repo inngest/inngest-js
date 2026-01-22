@@ -9,7 +9,7 @@ testFramework("Koa", KoaHandler, {
       url: `https://${req.headers.host || req.hostname}${req.url}`,
       method: req.method as RequestMethod,
       statusCode: req.statusCode,
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       headers: req.headers as any,
       host: req.hostname,
 
