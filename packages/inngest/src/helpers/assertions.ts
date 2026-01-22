@@ -57,7 +57,7 @@ export const isInngestMiddleware = (
 };
 
 /**
- * Asserts that the given `input` is an `InngestMiddleware` object.
+ * Asserts that the given `input` is an `InngestEndpointAdapter` object.
  */
 export const isInngestEndpointAdapter = (
   /**
