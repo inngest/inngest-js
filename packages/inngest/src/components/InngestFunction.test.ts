@@ -681,7 +681,7 @@ describe("runFn", () => {
             },
             "request with event foo.data.foo:foo runs A step": {
               stack: {
-                [foo]: { id: foo, data: { data: { foo: "foo" } } },
+                [foo]: { id: foo, data: { name: "foo", data: { foo: "foo" } } },
               },
               expectedReturn: {
                 type: "step-ran",
@@ -696,7 +696,7 @@ describe("runFn", () => {
             },
             "request with event foo.data.foo:bar runs B step": {
               stack: {
-                [foo]: { id: foo, data: { data: { foo: "bar" } } },
+                [foo]: { id: foo, data: { name: "foo", data: { foo: "bar" } } },
               },
               expectedReturn: {
                 type: "step-ran",
@@ -714,7 +714,7 @@ describe("runFn", () => {
               stack: {
                 [foo]: {
                   id: foo,
-                  data: { data: { foo: "bar" } },
+                  data: { name: "foo", data: { foo: "bar" } },
                 },
                 [B]: {
                   id: B,
@@ -750,7 +750,9 @@ describe("runFn", () => {
               },
             },
             "request with event foo.data.foo:foo runs A step": {
-              stack: { [foo]: { id: foo, data: { data: { foo: "foo" } } } },
+              stack: {
+                [foo]: { id: foo, data: { name: "foo", data: { foo: "foo" } } },
+              },
               expectedReturn: {
                 type: "step-ran",
                 step: expect.objectContaining({
@@ -764,7 +766,9 @@ describe("runFn", () => {
               expectedStepsRun: ["A"],
             },
             "request with event foo.data.foo:bar runs B step": {
-              stack: { [foo]: { id: foo, data: { data: { foo: "bar" } } } },
+              stack: {
+                [foo]: { id: foo, data: { name: "foo", data: { foo: "bar" } } },
+              },
               expectedReturn: {
                 type: "step-ran",
                 step: expect.objectContaining({
@@ -781,7 +785,7 @@ describe("runFn", () => {
               stack: {
                 [foo]: {
                   id: foo,
-                  data: { data: { foo: "bar" } },
+                  data: { name: "foo", data: { foo: "bar" } },
                 },
                 [B]: {
                   id: B,
@@ -816,7 +820,9 @@ describe("runFn", () => {
               },
             },
             "request with event foo.data.foo:foo runs A step": {
-              stack: { [foo]: { id: foo, data: { data: { foo: "foo" } } } },
+              stack: {
+                [foo]: { id: foo, data: { name: "foo", data: { foo: "foo" } } },
+              },
               expectedReturn: {
                 type: "step-ran",
                 step: expect.objectContaining({
@@ -830,7 +836,9 @@ describe("runFn", () => {
               expectedStepsRun: ["A"],
             },
             "request with event foo.data.foo:bar runs B step": {
-              stack: { [foo]: { id: foo, data: { data: { foo: "bar" } } } },
+              stack: {
+                [foo]: { id: foo, data: { name: "foo", data: { foo: "bar" } } },
+              },
               expectedReturn: {
                 type: "step-ran",
                 step: expect.objectContaining({
@@ -847,7 +855,7 @@ describe("runFn", () => {
               stack: {
                 [foo]: {
                   id: foo,
-                  data: { data: { foo: "bar" } },
+                  data: { name: "foo", data: { foo: "bar" } },
                 },
                 [B]: {
                   id: B,

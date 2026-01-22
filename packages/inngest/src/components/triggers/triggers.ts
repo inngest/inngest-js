@@ -95,6 +95,7 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
 
 export type EventTypeWithAnySchema<TName extends string> = EventType<
   TName,
+  // biome-ignore lint/suspicious/noExplicitAny: any is fine
   any
 >;
 

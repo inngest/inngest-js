@@ -19,7 +19,10 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { EventType, EventTypeWithAnySchema } from "./components/triggers/triggers.ts";
+import type {
+  EventType,
+  EventTypeWithAnySchema,
+} from "./components/triggers/triggers.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
@@ -1019,9 +1022,7 @@ export type Cancellation = {
   /**
    * The name of the event that should cancel the function run.
    */
-  event:
-    | string
-    | EventTypeWithAnySchema<string>;
+  event: string | EventTypeWithAnySchema<string>;
 
   /**
    * The expression that must evaluate to true in order to cancel the function run. There

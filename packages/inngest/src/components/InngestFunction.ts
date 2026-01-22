@@ -1,4 +1,3 @@
-import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {
   ExecutionVersion,
   internalEvents,
@@ -10,7 +9,6 @@ import type {
   Cancellation,
   CheckpointingOptions,
   ConcurrencyOption,
-  EventPayload,
   FunctionConfig,
   Handler,
   TimeStr,
@@ -28,7 +26,7 @@ import type {
   InngestMiddleware,
   MiddlewareRegisterReturn,
 } from "./InngestMiddleware.ts";
-import type { EventType, EventTypeWithAnySchema } from "./triggers/triggers.ts";
+import type { EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any

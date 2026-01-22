@@ -741,7 +741,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             // Cron triggers have empty data, and invoked events also have empty data (without schema)
-            assertType<IsEqual<typeof event.data, {}>>(true);
+            assertType<IsEqual<typeof event.data, {} | { cron: string }>>(true);
           },
         );
       });
