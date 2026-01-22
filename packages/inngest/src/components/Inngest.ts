@@ -107,11 +107,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private readonly options: TClientOpts;
 
-  /**
-   * Inngest event key, used to send events to Inngest Cloud.
-   */
-  private eventKey = "";
-
   private readonly inngestApi: InngestApi;
 
   private readonly _userProvidedFetch?: FetchT;
@@ -190,6 +185,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       this._env[envKeys.InngestEventApiBaseUrl] ||
       this._env[envKeys.InngestBaseUrl] ||
       this.resolveDefaultUrl(defaultInngestEventBaseUrl)
+    );
+  }
+
+  get eventKey(): string | undefined {
+    return (
+      this.options.eventKey || this._env[envKeys.InngestEventKey] || undefined
     );
   }
 
@@ -295,8 +296,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       fetch: () => this.fetch,
     });
 
-    this.loadEnvDependentConfig();
-
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
@@ -324,16 +323,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     env: Record<string, string | undefined> = allProcessEnv(),
   ): this {
     this._env = { ...this._env, ...env };
-    this.loadEnvDependentConfig();
 
     return this;
-  }
-
-  // TODO: In v4 this will be updated as part of EXE-1151
-  private loadEnvDependentConfig(): void {
-    this.setEventKey(
-      this.options.eventKey || this._env[envKeys.InngestEventKey] || "",
-    );
   }
 
   /**
@@ -437,24 +428,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
   }
 
-  /**
-   * Set the event key for this instance of Inngest. This is useful if for some
-   * reason the key is not available at time of instantiation or present in the
-   * `INNGEST_EVENT_KEY` environment variable.
-   */
-  public setEventKey(
-    /**
-     * Inngest event key, used to send events to Inngest Cloud. Use this is your
-     * key is for some reason not available at time of instantiation or present
-     * in the `INNGEST_EVENT_KEY` environment variable.
-     */
-    eventKey: string,
-  ): void {
-    this.eventKey = eventKey || dummyEventKey;
-  }
-
   private eventKeySet(): boolean {
-    return Boolean(this.eventKey) && this.eventKey !== dummyEventKey;
+    return this.eventKey !== undefined;
   }
 
   /**
@@ -792,7 +767,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
         // We don't need to do fallback auth here because this uses event keys and
         // not signing keys
-        const url = new URL(`e/${this.eventKey}`, this.eventBaseUrl);
+        const url = new URL(
+          `e/${this.eventKey ?? dummyEventKey}`,
+          this.eventBaseUrl,
+        );
         const response = await this.fetch(url.href, {
           method: "POST",
           body: stringify(payloads),

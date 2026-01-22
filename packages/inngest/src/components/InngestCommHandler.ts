@@ -4,7 +4,6 @@ import { getAsyncCtx } from "../experimental";
 import {
   debugPrefix,
   defaultMaxRetries,
-  dummyEventKey,
   ExecutionVersion,
   envKeys,
   forwardedHeaders,
@@ -535,10 +534,10 @@ export class InngestCommHandler<
   }
 
   private get hashedEventKey(): string | undefined {
-    if (!this.client["eventKey"] || this.client["eventKey"] === dummyEventKey) {
+    if (!this.client.eventKey) {
       return undefined;
     }
-    return hashEventKey(this.client["eventKey"]);
+    return hashEventKey(this.client.eventKey);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
