@@ -574,12 +574,16 @@ export class InngestCommHandler<
       return false;
     }
 
+    // TODO: if we detect that someone is using 'allow' or 'force', we should log a warning
+    const streamingRequested =
+      this.streaming === true ||
+      parseAsBoolean(this.env[envKeys.InngestStreaming]) === true ||
+      this.env[envKeys.InngestStreaming] === "allow" ||
+      this.env[envKeys.InngestStreaming] === "force";
+
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
-      if (
-        this.streaming === true ||
-        parseAsBoolean(this.env[envKeys.InngestStreaming]) === true
-      ) {
+      if (streamingRequested) {
         throw new Error(
           `${logPrefix} Streaming has been forced but the serve handler does not support streaming. Please either remove the streaming option or use a serve handler that supports streaming.`,
         );
@@ -587,10 +591,7 @@ export class InngestCommHandler<
       return false;
     }
 
-    return (
-      this.streaming === true ||
-      parseAsBoolean(this.env[envKeys.InngestStreaming]) === true
-    );
+    return streamingRequested;
   }
 
   private async isInngestReq(
