@@ -12,10 +12,10 @@
  * @module
  */
 
-import { Inngest } from "../components/Inngest.js";
-import { InngestFunction } from "../components/InngestFunction.js";
-import { InngestMiddleware } from "../components/InngestMiddleware.js";
-import { headerKeys } from "./consts";
+import { Inngest } from "../components/Inngest.ts";
+import { InngestFunction } from "../components/InngestFunction.ts";
+import { InngestMiddleware } from "../components/InngestMiddleware.ts";
+import { headerKeys } from "./consts.ts";
 
 /**
  * Asserts that the given `input` is an `Inngest` object.
@@ -59,7 +59,12 @@ export const isInngestMiddleware = (
 /**
  * Asserts that the given `input` is a request originating from Inngest.
  */
-export const isInngestRequest = (input: unknown): boolean => {
+export const isInngestRequest = (
+  /**
+   * The input to check.
+   */
+  input: unknown,
+): boolean => {
   try {
     const runId = (input as Request).headers.get(headerKeys.InngestRunId);
     const signature = (input as Request).headers.get(headerKeys.Signature);
