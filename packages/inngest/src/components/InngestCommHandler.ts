@@ -307,25 +307,6 @@ export class InngestCommHandler<
   protected readonly frameworkName: string;
 
   /**
-   * The host used to access the Inngest serve endpoint, e.g.:
-   *
-   *     "https://myapp.com"
-   *
-   * By default, the library will try to infer this using request details such
-   * as the "Host" header and request path, but sometimes this isn't possible
-   * (e.g. when running in a more controlled environments such as AWS Lambda or
-   * when dealing with proxies/redirects).
-   *
-   * Provide the custom hostname here to ensure that the path is reported
-   * correctly when registering functions with Inngest.
-   *
-   * To also provide a custom path, use `servePath`.
-   *
-   * @deprecated use `_serveOrigin` instead.
-   */
-  private readonly _serveHost: string | undefined;
-
-  /**
    * The origin used to access the Inngest serve endpoint, e.g.:
    *
    *     "https://myapp.com" or "https://myapp.com:1234"
@@ -472,7 +453,6 @@ export class InngestCommHandler<
 
     this._serveOrigin =
       options.serveOrigin || this.env[envKeys.InngestServeOrigin];
-    this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
@@ -529,13 +509,31 @@ export class InngestCommHandler<
    *
    * To also provide a custom path, use `servePath`.
    */
+  private static _warnedServeHost = false;
+
   protected get serveOrigin(): string | undefined {
-    return (
-      this._serveOrigin ||
-      this._serveHost ||
-      this.env[envKeys.InngestServeOrigin] ||
-      this.env[envKeys.InngestServeHost]
-    );
+    if (this._serveOrigin) {
+      return this._serveOrigin;
+    }
+
+    const envOrigin = this.env[envKeys.InngestServeOrigin];
+    if (envOrigin) {
+      return envOrigin;
+    }
+
+    const envHost = this.env[envKeys.InngestServeHost];
+    if (envHost) {
+      if (!InngestCommHandler._warnedServeHost) {
+        InngestCommHandler._warnedServeHost = true;
+        this.log(
+          "warn",
+          "INNGEST_SERVE_HOST is deprecated and will be removed in the future. Please update to use INNGEST_SERVE_ORIGIN instead.",
+        );
+      }
+      return envHost;
+    }
+
+    return undefined;
   }
 
   /**

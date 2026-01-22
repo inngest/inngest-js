@@ -83,10 +83,7 @@ export const serve = (
           return new URL(
             event.request.url,
             `${protocol}://${
-              event.request.headers.get("host") ||
-              options.serveOrigin ||
-              options.serveHost ||
-              ""
+              event.request.headers.get("host") || options.serveOrigin || ""
             }`,
           );
         },

@@ -72,8 +72,7 @@ export const serve = (
 
           // We now know that `c.req.url` is a relative URL, so let's try
           // to build a base URL to pair it with.
-          const host =
-            options.serveOrigin || options.serveHost || c.req.header("host");
+          const host = options.serveOrigin || c.req.header("host");
           if (!host) {
             throw new Error(
               "No host header found in request and no `serveOrigin` given either.",
