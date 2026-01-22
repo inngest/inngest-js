@@ -1478,7 +1478,6 @@ export class InngestCommHandler<
 
         let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
         let fnId: string | undefined;
-        let stepId: string | null | undefined;
 
         if (forceExecution) {
           fn =
@@ -1486,7 +1485,6 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
-          stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
           body = {
             event: {},
             events: [],
@@ -1559,17 +1557,24 @@ export class InngestCommHandler<
           }
 
           fn = this.fns[fnId];
-
-          stepId =
-            (await actions.queryStringWithDefaults(
-              "processing run request",
-              queryKeys.StepId,
-            )) || null;
         }
 
         if (typeof fnId === "undefined" || !fn) {
           throw new Error("No function ID found in request");
         }
+
+        // Always try and grab the step ID; in regular async flows this will be
+        // in the querystring, and in sync modes it'll be in the headers.
+        const stepId =
+          (await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.StepId,
+          )) ||
+          (await actions.headers(
+            "processing run request",
+            headerKeys.InngestStepId,
+          )) ||
+          null;
 
         const { version, result } = this.runStep({
           functionId: fnId,
