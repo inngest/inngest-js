@@ -76,11 +76,6 @@ export interface StrategyConfig extends BaseConnectionConfig {
    * Connection options from the user.
    */
   options: ConnectHandlerOptions;
-
-  /**
-   * The Inngest client instance.
-   */
-  inngest: Inngest.Any;
 }
 
 /**

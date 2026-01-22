@@ -15,7 +15,6 @@ const ResponseAcknowledgeDeadline = 5_000;
  * in the same thread as user code execution. This is the default strategy.
  */
 export class SameThreadStrategy extends BaseStrategy {
-  private readonly inngest: Inngest.Any;
   private readonly config: StrategyConfig;
   protected readonly debugLog: Debugger;
   private readonly messageBuffer: MessageBuffer;
@@ -24,7 +23,6 @@ export class SameThreadStrategy extends BaseStrategy {
   constructor(config: StrategyConfig) {
     super();
     this.config = config;
-    this.inngest = config.inngest;
     this.debugLog = debug("inngest:connect:same-thread");
 
     // Create the connection core with callbacks

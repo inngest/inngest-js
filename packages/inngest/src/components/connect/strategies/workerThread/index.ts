@@ -208,18 +208,22 @@ export class WorkerThreadStrategy extends BaseStrategy {
     message: string,
     data?: unknown,
   ): void {
+    // If data is nullish, set it to an empty string. This avoids seeing `null`
+    // and `undefined` in logs
+    data = data ?? "";
+
     switch (level) {
       case "debug":
         this.debugLog(message, data);
         break;
       case "info":
-        console.log(`[inngest] ${message}`, data ?? "");
+        console.log(`[inngest] ${message}`, data);
         break;
       case "warn":
-        console.warn(`[inngest] ${message}`, data ?? "");
+        console.warn(`[inngest] ${message}`, data);
         break;
       case "error":
-        console.error(`[inngest] ${message}`, data ?? "");
+        console.error(`[inngest] ${message}`, data);
         break;
     }
   }
@@ -281,6 +285,11 @@ export class WorkerThreadStrategy extends BaseStrategy {
   }
 
   private async buildSerializableConfig(): Promise<SerializableConfig> {
+    if (this.config.options.rewriteGatewayEndpoint) {
+      // TODO: Figure out how to support this. Currently, we don't support it
+      throw new Error("rewriteGatewayEndpoint is not supported in worker threads");
+    }
+
     return {
       apiBaseUrl: this.config.apiBaseUrl,
       appIds: Object.keys(this.config.requestHandlers),
@@ -291,7 +300,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
       hashedSigningKey: this.config.hashedSigningKey,
       instanceId: this.config.options.instanceId,
       maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
-      mode: this.config.mode,
+      mode: {
+        isDev: this.config.mode.isDev,
+        isInferred: this.config.mode.isInferred,
+      },
     };
   }
 }

@@ -10,6 +10,7 @@
  */
 
 import { isMainThread, parentPort } from "node:worker_threads";
+import { GatewayExecutorRequestData } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { MessageBuffer } from "../../buffer.ts";
 import { ConnectionState } from "../../types.ts";
 import { ConnectionCore } from "../core/connection.ts";
@@ -129,17 +130,11 @@ class WorkerRunner {
 
     this.core = new ConnectionCore(
       {
-        apiBaseUrl: this.config.apiBaseUrl,
-        appIds: this.config.appIds,
-        connectionData: this.config.connectionData,
-        envName: this.config.envName,
-        hashedFallbackKey: this.config.hashedFallbackKey,
-        hashedSigningKey: this.config.hashedSigningKey,
-        instanceId: this.config.instanceId,
-        maxWorkerConcurrency: this.config.maxWorkerConcurrency,
-        mode: this.config.mode,
+        ...this.config,
 
-        // TODO: Figure out how to support this. Currently, we don't support it because functions can't be passed to worker threads (since they aren't serializable)
+        // TODO: Figure out how to support this. Currently, we don't support it
+        // because functions can't be passed to worker threads (since they
+        // aren't serializable)
         rewriteGatewayEndpoint: undefined,
       },
       {
@@ -161,9 +156,6 @@ class WorkerRunner {
           });
 
           // Send the request to main thread (as serialized bytes)
-          const { GatewayExecutorRequestData } = await import(
-            "../../../../proto/src/components/connect/protobuf/connect.ts"
-          );
           this.sendMessage({
             type: "EXECUTION_REQUEST",
             requestId: request.requestId,

@@ -1,7 +1,6 @@
 import { defaultDevServerHost, defaultInngestApiBaseUrl } from "./consts.ts";
 import { devServerAvailable } from "./devserver.ts";
 
-
 interface ResolveApiBaseUrlOpts {
   /**
    * An explicit API base URL to use. If provided, this will be returned
