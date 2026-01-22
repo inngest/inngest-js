@@ -42,8 +42,8 @@ import {
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
-import type { EventType } from "./triggers/triggers.ts";
 import type { Realtime } from "./realtime/types.ts";
+import type { EventType } from "./triggers/triggers.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;

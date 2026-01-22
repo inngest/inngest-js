@@ -67,11 +67,11 @@ import {
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
+import type { Realtime } from "./realtime/types";
 import {
   type HandlerWithTriggers,
   isValidatable,
 } from "./triggers/typeHelpers.ts";
-import type { Realtime } from "./realtime/types";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
