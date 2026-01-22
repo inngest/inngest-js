@@ -1204,12 +1204,12 @@ export class InngestCommHandler<
       let signature: string | undefined;
 
       try {
-        signature = await signatureValidation.then((result) => {
+        signature = await signatureValidation.then(async (result) => {
           if (!result.success || !result.keyUsed) {
             return undefined;
           }
 
-          return this.getResponseSignature(result.keyUsed, res.body);
+          return await this.getResponseSignature(result.keyUsed, res.body);
         });
       } catch (err) {
         // If we fail to sign, retun a 500 with the error.
@@ -2272,6 +2272,7 @@ export class InngestCommHandler<
       | AuthenticatedIntrospection = {
       extra: {
         is_mode_explicit: this._mode.isExplicit,
+        native_crypto: globalThis.crypto?.subtle ? true : false,
       },
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
@@ -2304,6 +2305,7 @@ export class InngestCommHandler<
           extra: {
             ...introspection.extra,
             is_streaming: await this.shouldStream(actions),
+            native_crypto: globalThis.crypto?.subtle ? true : false,
           },
           framework: this.frameworkName,
           sdk_language: "js",
@@ -2527,7 +2529,7 @@ export class InngestCommHandler<
       // Validate the signature
       return {
         success: true,
-        keyUsed: new RequestSignature(sig).verifySignature({
+        keyUsed: await new RequestSignature(sig).verifySignature({
           body,
           allowExpiredSignatures: this.allowExpiredSignatures,
           signingKey: this.signingKey,
@@ -2539,9 +2541,12 @@ export class InngestCommHandler<
     }
   }
 
-  protected getResponseSignature(key: string, body: string): string {
+  protected async getResponseSignature(
+    key: string,
+    body: string,
+  ): Promise<string> {
     const now = Date.now();
-    const mac = signDataWithKey(body, key, now.toString());
+    const mac = await signDataWithKey(body, key, now.toString());
 
     return `t=${now}&s=${mac}`;
   }
@@ -2604,7 +2609,7 @@ class RequestSignature {
     return delta > 1000 * 60 * 5;
   }
 
-  #verifySignature({
+  async #verifySignature({
     body,
     signingKey,
     allowExpiredSignatures,
@@ -2612,20 +2617,20 @@ class RequestSignature {
     body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
-  }): void {
+  }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
       // TODO PrettyError
       throw new Error("Signature has expired");
     }
 
-    const mac = signDataWithKey(body, signingKey, this.timestamp);
+    const mac = await signDataWithKey(body, signingKey, this.timestamp);
     if (mac !== this.signature) {
       // TODO PrettyError
       throw new Error("Invalid signature");
     }
   }
 
-  public verifySignature({
+  public async verifySignature({
     body,
     signingKey,
     signingKeyFallback,
@@ -2635,9 +2640,9 @@ class RequestSignature {
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
-  }): string {
+  }): Promise<string> {
     try {
-      this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+      await this.#verifySignature({ body, signingKey, allowExpiredSignatures });
 
       return signingKey;
     } catch (err) {
@@ -2645,7 +2650,7 @@ class RequestSignature {
         throw err;
       }
 
-      this.#verifySignature({
+      await this.#verifySignature({
         body,
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
