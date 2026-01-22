@@ -1039,7 +1039,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                       [stepState.data],
 
                       // @ts-expect-error - This is a full event object at runtime
-                      [event],
+                      [{ event }],
                     );
                   } catch (err) {
                     this.state.recentlyRejectedStepError = new StepError(

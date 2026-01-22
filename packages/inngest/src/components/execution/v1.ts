@@ -1493,7 +1493,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                         [result.data],
 
                         // @ts-expect-error - This is a full event object at runtime
-                        [event],
+                        [{ event }],
                       );
                     } catch (err) {
                       this.state.recentlyRejectedStepError = new StepError(
