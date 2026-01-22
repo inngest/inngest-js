@@ -1,7 +1,38 @@
 import * as Inngest from "inngest";
 
 // Prove certain types are exported and can be used
-type CatchAll = Inngest.JsonError;
+type CatchAll =
+  | Inngest.JsonError
+  | Inngest.EventPayload
+  | Inngest.AiAdapter
+  | Inngest.AiAdapters
+  | Inngest.ClientOptions
+  | Inngest.ClientOptionsFromInngest<any>
+  | Inngest.Context.Any
+  | Inngest.GetFunctionInput<any>
+  | Inngest.GetFunctionOutput<any>
+  | Inngest.GetStepTools<any>
+  | Inngest.Inngest
+  | Inngest.InngestCommHandler
+  | Inngest.InngestFunction.Any
+  | Inngest.InngestFunctionReference.Any
+  | Inngest.InngestMiddleware.Any
+  | Inngest.Logger
+  | Inngest.MiddlewareOptions
+  | Inngest.NonRetriableError
+  | Inngest.OutgoingOp
+  | Inngest.ProxyLogger
+  | Inngest.RegisterOptions
+  | Inngest.RetryAfterError
+  | Inngest.ScheduledTimerEventPayload
+  | Inngest.SendEventBaseOutput
+  | Inngest.ServeHandlerOptions
+  | Inngest.StepError
+  | Inngest.StepOptions
+  | Inngest.StepOptionsOrId
+  | Inngest.StrictUnion<any>
+  | Inngest.TimeStr
+  | Inngest.UnionKeys<any>;
 
 export const inngest = new Inngest.Inngest({
   id: "me",
@@ -57,6 +88,12 @@ export const inngest = new Inngest.Inngest({
 });
 
 void inngest.send({ name: "foo", data: { foo: "bar" } });
+
+void inngest.sendSignal({ signal: "foo", data: { foo: "bar" } });
+
+void inngest.setEnvVars({});
+
+void inngest.setEventKey("");
 
 const fn = inngest.createFunction(
   { id: "my-fn" },

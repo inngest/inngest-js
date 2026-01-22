@@ -17,7 +17,7 @@ describe("ProxyLogger", () => {
   });
 
   const populateBuf = () => {
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     buffer.forEach(({ level, args }) => {
       const method = level as keyof ProxyLogger;
 

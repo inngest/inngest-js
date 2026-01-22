@@ -56,7 +56,7 @@ describe("getAsyncCtx", () => {
 
     const inngest = new Inngest({ id: "test" });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     let resolve: (value: any) => void | PromiseLike<void>;
     const externalP = new Promise<AsyncContext | undefined>((r) => {
       resolve = r;
@@ -78,7 +78,7 @@ describe("getAsyncCtx", () => {
       },
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
 
     const { result } = await t.execute();

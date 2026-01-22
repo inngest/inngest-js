@@ -21,7 +21,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
        * `process.stderr`, we do need to provide some pieces of this, but we can
        * still remove any env vars.
        */
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
@@ -33,7 +33,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
       /**
        * Fake a global Deno object, which is primarily used to access env vars.
        */
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       (globalThis as any).Deno = {
         env: { toObject: () => originalProcess.env },
       };
@@ -49,21 +49,21 @@ testFramework("Deno Fresh", DenoFreshHandler, {
         Response: { value: originalResponse, configurable: true },
         Headers: { value: originalHeaders, configurable: true },
       });
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       delete (globalThis as any).Deno;
     });
   },
 
   transformReq: (req, _res, env) => {
     const headers = new Headers();
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).headers = headers;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req, env];
@@ -89,7 +89,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
     });
 
     test("Deno.env.toObject should be defined", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       expect((globalThis as any).Deno.env.toObject).toBeDefined();
     });
   },

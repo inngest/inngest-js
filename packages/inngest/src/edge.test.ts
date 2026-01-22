@@ -45,15 +45,15 @@ testFramework("Edge", EdgeHandler, {
   },
   transformReq: (req) => {
     const headers = new Headers();
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).headers = headers;
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req];
