@@ -166,7 +166,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
   async connect(attempt = 0): Promise<void> {
     this.debugLog("Establishing connection", { attempt });
 
-    const inngestEnv = this.inngest.env ?? getEnvironmentName();
+    const envName = this.inngest.env ?? getEnvironmentName();
 
     if (this.inngest["mode"].isCloud && !this.options.signingKey) {
       throw new Error("Signing key is required");
@@ -181,7 +181,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this.options.signingKey.startsWith(
         InngestBranchEnvironmentSigningKeyPrefix,
       ) &&
-      !inngestEnv
+      !envName
     ) {
       throw new Error(
         "Environment is required when using branch environment signing keys",
@@ -348,7 +348,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       {
         hashedSigningKey,
         hashedFallbackKey,
-        inngestEnv,
+        envName,
         connectionData,
         requestHandlers,
         options: this.options,

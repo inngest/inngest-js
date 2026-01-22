@@ -26,9 +26,10 @@ export interface ConnectionEstablishData {
 }
 
 /**
- * Configuration required by connection strategies.
+ * Base configuration shared across all connection config types.
+ * Contains the core fields needed for authentication and connection establishment.
  */
-export interface StrategyConfig {
+export interface BaseConnectionConfig {
   /**
    * The hashed signing key for authentication.
    */
@@ -42,13 +43,30 @@ export interface StrategyConfig {
   /**
    * The Inngest environment name.
    */
-  inngestEnv: string | undefined;
+  envName: string | undefined;
 
   /**
    * Data for establishing the connection.
    */
   connectionData: ConnectionEstablishData;
 
+  /**
+   * The base URL for the Inngest API, as defined when constructing the Inngest
+   * client (field or env var).
+   */
+  apiBaseUrl: string | undefined;
+
+  /**
+   * The mode of the Inngest client.
+   */
+  mode: { isDev: boolean; isInferred: boolean };
+}
+
+/**
+ * Configuration required by connection strategies.
+ * Extends BaseConnectionConfig with strategy-specific fields.
+ */
+export interface StrategyConfig extends BaseConnectionConfig {
   /**
    * Request handlers mapped by app ID.
    */
@@ -63,14 +81,6 @@ export interface StrategyConfig {
    * The Inngest client instance.
    */
   inngest: Inngest.Any;
-
-  /**
-   * The base URL for the Inngest API, as defined when constructing the Inngest
-   * client (field or env var).
-   */
-  apiBaseUrl: string | undefined;
-
-  mode: { isDev: boolean; isInferred: boolean };
 }
 
 /**

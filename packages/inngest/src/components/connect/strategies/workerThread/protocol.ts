@@ -1,63 +1,34 @@
 import type { ConnectionState } from "../../types.ts";
+import type { BaseConnectionConfig } from "../core/types.ts";
 
 /**
- * Serializable configuration for the worker thread.  This contains all the data
+ * Serializable configuration for the worker thread. This contains all the data
  * needed to establish and maintain a connection.
+ *
+ * Extends BaseConnectionConfig with worker-specific options. Note that
+ * `rewriteGatewayEndpoint` is not supported in worker threads since functions
+ * cannot be serialized.
  */
-export interface SerializableConfig {
+export interface SerializableConfig extends BaseConnectionConfig {
   /**
-   * The hashed signing key for authentication.
+   * Instance ID for the worker.
    */
-  hashedSigningKey: string | undefined;
+  instanceId?: string;
 
   /**
-   * The hashed fallback signing key for authentication.
+   * Max worker concurrency.
    */
-  hashedFallbackKey: string | undefined;
+  maxWorkerConcurrency?: number;
 
   /**
-   * The Inngest environment name.
+   * Signals to handle for graceful shutdown.
    */
-  envName: string | undefined;
-
-  /**
-   * Data for establishing the connection.
-   */
-  connectionData: {
-    marshaledCapabilities: string;
-    manualReadinessAck: boolean;
-    apps: {
-      appName: string;
-      appVersion?: string;
-      functions: Uint8Array;
-    }[];
-  };
-
-  /**
-   * Connection options.
-   */
-  options: {
-    instanceId?: string;
-    maxWorkerConcurrency?: number;
-    handleShutdownSignals?: string[];
-    rewriteGatewayEndpoint?: string; // Serialized as string, not function
-  };
-
-  /**
-   * The base URL for the Inngest API, as defined when constructing the Inngest
-   * client (field or env var).
-   */
-  apiBaseUrl: string | undefined;
+  handleShutdownSignals?: string[];
 
   /**
    * The app IDs that this worker supports.
    */
   appIds: string[];
-
-  /**
-   * The mode of the Inngest client.
-   */
-  mode: { isDev: boolean; isInferred: boolean };
 }
 
 /**

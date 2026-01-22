@@ -7,13 +7,9 @@
 
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import ms from "ms";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-  headerKeys,
-} from "../../../../helpers/consts.ts";
-import { devServerAvailable } from "../../../../helpers/devserver.ts";
+import { headerKeys } from "../../../../helpers/consts.ts";
 import { allProcessEnv, getPlatformName } from "../../../../helpers/env.ts";
+import { resolveApiBaseUrl } from "../../../../helpers/url.ts";
 import {
   ConnectMessage,
   GatewayConnectionReadyData,
@@ -45,7 +41,7 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "../../util.ts";
-import type { ConnectionEstablishData } from "./types.ts";
+import type { BaseConnectionConfig } from "./types.ts";
 
 const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 
@@ -61,28 +57,9 @@ export interface Connection {
 
 /**
  * Configuration for the connection core.
+ * Extends BaseConnectionConfig with connection-specific options.
  */
-export interface ConnectionCoreConfig {
-  /**
-   * The hashed signing key for authentication.
-   */
-  hashedSigningKey: string | undefined;
-
-  /**
-   * The hashed fallback signing key for authentication.
-   */
-  hashedFallbackKey: string | undefined;
-
-  /**
-   * The Inngest environment name.
-   */
-  envName: string | undefined;
-
-  /**
-   * Data for establishing the connection.
-   */
-  connectionData: ConnectionEstablishData;
-
+export interface ConnectionCoreConfig extends BaseConnectionConfig {
   /**
    * Instance ID for the worker.
    */
@@ -97,13 +74,6 @@ export interface ConnectionCoreConfig {
    * Function to rewrite the gateway endpoint (optional).
    */
   rewriteGatewayEndpoint?: (endpoint: string) => string;
-
-  /**
-   * The base URL for the Inngest API.
-   */
-  apiBaseUrl: string | undefined;
-
-  mode: { isDev: boolean; isInferred: boolean };
 
   /**
    * App IDs that this connection supports.
@@ -975,32 +945,10 @@ export class ConnectionCore {
     return conn;
   }
 
-  private async getApiBaseUrl(): Promise<string> {
-    // This is a reimplementation of `InngestApi.getTargetUrl`. It has to be
-    // here for 2 reasons:
-    // 1. This file may run in a worker thread, so we can't pass the
-    // `InngestApi` instance to it
-    //
-    // 2. We can't run `InngestApi.getTargetUrl` ahead of time because the Dev
-    // Server may become available after initialization. So if we start the
-    // Connect worker and then the Dev Server then the URL would never point to
-    // the Dev Server.
-
-    if (this.config.apiBaseUrl !== undefined) {
-      return this.config.apiBaseUrl;
-    }
-
-    if (this.config.mode.isDev && this.config.mode.isInferred) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        fetch,
-      );
-
-      if (devAvailable) {
-        return defaultDevServerHost;
-      }
-    }
-
-    return defaultInngestApiBaseUrl;
+  async getApiBaseUrl(): Promise<string> {
+    return resolveApiBaseUrl({
+      apiBaseUrl: this.config.apiBaseUrl,
+      mode: this.config.mode,
+    });
   }
 }

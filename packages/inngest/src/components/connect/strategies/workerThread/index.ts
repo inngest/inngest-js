@@ -282,32 +282,16 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
   private async buildSerializableConfig(): Promise<SerializableConfig> {
     return {
-      hashedSigningKey: this.config.hashedSigningKey,
-      hashedFallbackKey: this.config.hashedFallbackKey,
-      envName: this.config.inngestEnv,
-      connectionData: {
-        marshaledCapabilities: this.config.connectionData.marshaledCapabilities,
-        manualReadinessAck: this.config.connectionData.manualReadinessAck,
-        apps: this.config.connectionData.apps.map((app) => ({
-          appName: app.appName,
-          appVersion: app.appVersion,
-          functions: app.functions,
-        })),
-      },
-      options: {
-        instanceId: this.config.options.instanceId,
-        maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
-        handleShutdownSignals: this.config.options.handleShutdownSignals,
-        // rewriteGatewayEndpoint is not serializable (function)
-        rewriteGatewayEndpoint: undefined,
-      },
-      // Get the base URL from the inngest client
       apiBaseUrl: this.config.apiBaseUrl,
       appIds: Object.keys(this.config.requestHandlers),
-      mode: {
-        isDev: this.config.mode.isDev,
-        isInferred: this.config.mode.isInferred,
-      },
+      connectionData: this.config.connectionData,
+      envName: this.config.envName,
+      handleShutdownSignals: this.config.options.handleShutdownSignals,
+      hashedFallbackKey: this.config.hashedFallbackKey,
+      hashedSigningKey: this.config.hashedSigningKey,
+      instanceId: this.config.options.instanceId,
+      maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
+      mode: this.config.mode,
     };
   }
 }

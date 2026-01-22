@@ -1,17 +1,21 @@
 import debug, { type Debugger } from "debug";
 import { headerKeys } from "../../helpers/consts.ts";
 import { FlushResponse } from "../../proto/src/components/connect/protobuf/connect.ts";
-import type { Inngest } from "../Inngest.ts";
 import { expBackoff } from "./util.ts";
 
 export class MessageBuffer {
   private buffered: Record<string, Uint8Array> = {};
   private pending: Record<string, Uint8Array> = {};
-  private inngest: Inngest.Any;
+  private getApiBaseUrl: () => Promise<string>;
   private debug: Debugger;
+  private envName: string | undefined;
 
-  constructor(inngest: Inngest.Any) {
-    this.inngest = inngest;
+  constructor({
+    envName,
+    getApiBaseUrl,
+  }: { envName: string | undefined; getApiBaseUrl: () => Promise<string> }) {
+    this.envName = envName;
+    this.getApiBaseUrl = getApiBaseUrl;
     this.debug = debug("inngest:connect:message-buffer");
   }
 
@@ -49,8 +53,8 @@ export class MessageBuffer {
         : {}),
     };
 
-    if (this.inngest.env) {
-      headers[headerKeys.Environment] = this.inngest.env;
+    if (this.envName) {
+      headers[headerKeys.Environment] = this.envName;
     }
 
     // protobuf's `finish()` is typed as `Uint8Array<ArrayBufferLike>` (could be
@@ -63,7 +67,7 @@ export class MessageBuffer {
 
     const resp = await fetch(
       // refactor this to a more universal spot
-      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/flush"),
+      new URL("/v0/connect/flush", await this.getApiBaseUrl()),
       {
         method: "POST",
         body: responseBytes,

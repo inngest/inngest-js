@@ -3,6 +3,7 @@ import type { ConnectionStrategy, StrategyConfig } from "./core/types.ts";
 import { SameThreadStrategy } from "./sameThread/index.ts";
 
 export type {
+  BaseConnectionConfig,
   ConnectionEstablishData,
   ConnectionStrategy,
   RequestHandler,

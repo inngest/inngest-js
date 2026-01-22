@@ -120,22 +120,18 @@ class WorkerRunner {
 
     this.core = new ConnectionCore(
       {
-        hashedSigningKey: this.config.hashedSigningKey,
-        hashedFallbackKey: this.config.hashedFallbackKey,
-        envName: this.config.envName,
-        connectionData: this.config.connectionData,
-        instanceId: this.config.options.instanceId,
-        maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
-        // rewriteGatewayEndpoint is not supported in worker thread (can't serialize functions)
-        rewriteGatewayEndpoint: undefined,
-        // getTargetUrl: async (path) =>
-        //   new URL(path, this.config!.inngestApiBaseUrl),
         apiBaseUrl: this.config.apiBaseUrl,
         appIds: this.config.appIds,
-        mode: {
-          isDev: this.config.mode.isDev,
-          isInferred: this.config.mode.isInferred,
-        },
+        connectionData: this.config.connectionData,
+        envName: this.config.envName,
+        hashedFallbackKey: this.config.hashedFallbackKey,
+        hashedSigningKey: this.config.hashedSigningKey,
+        instanceId: this.config.instanceId,
+        maxWorkerConcurrency: this.config.maxWorkerConcurrency,
+        mode: this.config.mode,
+
+        // TODO: Figure out how to support this. Currently, we don't support it because functions can't be passed to worker threads (since they aren't serializable)
+        rewriteGatewayEndpoint: undefined,
       },
       {
         log: (message, data) => this.log(message, data),

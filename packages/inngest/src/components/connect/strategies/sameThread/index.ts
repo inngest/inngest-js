@@ -26,21 +26,20 @@ export class SameThreadStrategy extends BaseStrategy {
     this.config = config;
     this.inngest = config.inngest;
     this.debugLog = debug("inngest:connect:same-thread");
-    this.messageBuffer = new MessageBuffer(this.inngest);
 
     // Create the connection core with callbacks
     this.core = new ConnectionCore(
       {
-        hashedSigningKey: config.hashedSigningKey,
-        hashedFallbackKey: config.hashedFallbackKey,
-        envName: config.inngestEnv,
-        connectionData: config.connectionData,
-        instanceId: config.options.instanceId,
-        maxWorkerConcurrency: config.options.maxWorkerConcurrency,
-        rewriteGatewayEndpoint: config.options.rewriteGatewayEndpoint,
         apiBaseUrl: config.apiBaseUrl,
         appIds: Object.keys(config.requestHandlers),
-        mode: { isDev: config.mode.isDev, isInferred: config.mode.isInferred },
+        connectionData: config.connectionData,
+        envName: config.envName,
+        hashedFallbackKey: config.hashedFallbackKey,
+        hashedSigningKey: config.hashedSigningKey,
+        instanceId: config.options.instanceId,
+        maxWorkerConcurrency: config.options.maxWorkerConcurrency,
+        mode: config.mode,
+        rewriteGatewayEndpoint: config.options.rewriteGatewayEndpoint,
       },
       {
         log: (message, data) => this.debugLog(message, data),
@@ -76,6 +75,11 @@ export class SameThreadStrategy extends BaseStrategy {
         },
       },
     );
+
+    this.messageBuffer = new MessageBuffer({
+      envName: config.envName,
+      getApiBaseUrl: () => this.core.getApiBaseUrl(),
+    });
   }
 
   get connectionId(): string | undefined {
