@@ -5,14 +5,16 @@ import {
 } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
-import type {
-  Cancellation,
-  CheckpointingOptions,
-  ConcurrencyOption,
-  FunctionConfig,
-  Handler,
-  TimeStr,
-  TimeStrBatch,
+import {
+  type Cancellation,
+  type CheckpointingOptions,
+  type ConcurrencyOption,
+  defaultCheckpointingOptions,
+  type FunctionConfig,
+  type Handler,
+  type InternalCheckpointingOptions,
+  type TimeStr,
+  type TimeStrBatch,
 } from "../types.ts";
 import type {
   IInngestExecution,
@@ -302,18 +304,34 @@ export class InngestFunction<
     requestedRunStep: string | undefined,
     internalFnId: string | undefined,
     disableImmediateExecution: boolean,
-  ): CheckpointingOptions | undefined {
+  ): InternalCheckpointingOptions | undefined {
     if (requestedRunStep || !internalFnId || disableImmediateExecution) {
       return;
     }
 
     // TODO We should check the commhandler's client instead of this one?
-    return (
+    const userCfg =
       this.opts.checkpointing ??
       this.client["options"].checkpointing ??
       this.opts.experimentalCheckpointing ??
-      this.client["options"].experimentalCheckpointing
-    );
+      this.client["options"].experimentalCheckpointing;
+
+    // Return default options if `true` is specified by the user
+    if (!userCfg) {
+      return;
+    }
+
+    if (userCfg === true) {
+      return defaultCheckpointingOptions;
+    }
+
+    return {
+      bufferedSteps:
+        userCfg.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
+      maxRuntime: userCfg.maxRuntime ?? defaultCheckpointingOptions.maxRuntime,
+      maxInterval:
+        userCfg.maxInterval ?? defaultCheckpointingOptions.maxInterval,
+    };
   }
 }
 
@@ -334,15 +352,15 @@ export namespace InngestFunction {
    * inference.
    */
   export type Any = InngestFunction<
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
     Handler.Any,
     Handler.Any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
   >;
 
@@ -367,7 +385,7 @@ export namespace InngestFunction {
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
 
   /**
