@@ -409,9 +409,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
-        this.state.checkpointingStepBuffer.push(
-          this.resumeStepWithResult(stepResult, resume),
-        );
+        const stepToResume = this.resumeStepWithResult(stepResult, resume);
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: stepResult.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? stepResult.data;
+
+        // Buffer a copy with transformed data for checkpointing
+        this.state.checkpointingStepBuffer.push({
+          ...stepToResume,
+          data: transformedData,
+        });
       }
 
       if (
@@ -524,9 +538,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           return this.checkpointAndSwitchToAsync([result]);
         }
 
-        return void (await this.checkpoint([
-          this.resumeStepWithResult(result),
-        ]));
+        // Resume the step with original data for user code
+        const stepToResume = this.resumeStepWithResult(result);
+
+        // Transform data for checkpoint (encryption middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: result.data },
+          step: undefined,
+        });
+        const transformedData = transformedOutput?.result?.data ?? result.data;
+
+        // Create a copy for checkpointing with transformed data
+        const stepForCheckpoint = { ...stepToResume, data: transformedData };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {

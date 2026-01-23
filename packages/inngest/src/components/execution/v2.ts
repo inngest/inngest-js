@@ -407,9 +407,23 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
-        this.state.checkpointingStepBuffer.push(
-          this.resumeStepWithResult(stepResult, resume),
-        );
+        const stepToResume = this.resumeStepWithResult(stepResult, resume);
+
+        // Transform data for checkpoint (encryption middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: stepResult.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? stepResult.data;
+
+        // Buffer a copy with transformed data for checkpointing
+        this.state.checkpointingStepBuffer.push({
+          ...stepToResume,
+          data: transformedData,
+        });
       }
 
       if (
@@ -471,27 +485,17 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           },
         ]);
 
-        // Done - just return the value
-        return {
-          type: "function-resolved",
-          ctx: this.fnArg,
-          ops: this.ops,
-          data: checkpoint.data,
-        };
+        // Apply middleware transformation before returning
+        return await this.transformOutput({ data: checkpoint.data });
       },
 
-      "function-rejected": (checkpoint) => {
+      "function-rejected": async (checkpoint) => {
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
         if (this.inFinalAttempt()) {
-          return {
-            type: "function-rejected",
-            ctx: this.fnArg,
-            error: checkpoint.error,
-            ops: this.ops,
-            retriable: false,
-          };
+          // Apply middleware transformation before returning
+          return await this.transformOutput({ error: checkpoint.error });
         }
 
         // Otherwise, checkpoint the error and switch to async mode
@@ -532,9 +536,22 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return this.checkpointAndSwitchToAsync([result]);
         }
 
-        return void (await this.checkpoint([
-          this.resumeStepWithResult(result),
-        ]));
+        // Resume the step with original data for user code
+        const stepToResume = this.resumeStepWithResult(result);
+
+        // Transform data for checkpoint (encryption middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: result.data },
+          step: undefined,
+        });
+        const transformedData = transformedOutput?.result?.data ?? result.data;
+
+        // Create a copy for checkpointing with transformed data
+        const stepForCheckpoint = { ...stepToResume, data: transformedData };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {
