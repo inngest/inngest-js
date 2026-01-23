@@ -1131,21 +1131,6 @@ export class InngestCommHandler<
 
     const methodP = actions.method("starting to handle request");
 
-    const contentLength = await actions
-      .headers("checking signature for request", headerKeys.ContentLength)
-      .then((value) => {
-        if (!value) {
-          return undefined;
-        }
-        return Number.parseInt(value, 10);
-      });
-
-    const transferEncoding = await actions.headers(
-      "checking transfer-encoding",
-      "Transfer-Encoding",
-    );
-    const isChunked = transferEncoding?.toLowerCase().includes("chunked");
-
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1153,23 +1138,16 @@ export class InngestCommHandler<
           return headerSignature ?? undefined;
         }),
       methodP,
-      methodP.then((method) => {
+      methodP.then(async (method) => {
         if (method === "POST" || method === "PUT") {
-          if (contentLength === 0) {
-            // Empty body. Return empty string to avoid `req.json()` throwing an
-            // error in `serve()`
-            return "";
-          }
-
-          if (contentLength === undefined && !isChunked) {
-            // No Content-Length and not chunked, so no body. Return empty
-            // string to avoid `req.json()` throwing an error in `serve()`
-            return "";
-          }
-
-          return actions.body(
+          const body = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
+          if (body === "") {
+            // Empty body can happen with PUT requests
+            return "";
+          }
+          return JSON.parse(body);
         }
 
         return "";
