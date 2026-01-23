@@ -1143,7 +1143,7 @@ export class InngestCommHandler<
           const body = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
-          if (body === "") {
+          if (!body) {
             // Empty body can happen with PUT requests
             return "";
           }
@@ -1423,10 +1423,10 @@ export class InngestCommHandler<
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
   }): Promise<ActionResponse> {
-    // This is when the request body is completely missing; it does not
-    // include an empty body. This commonly happens when the HTTP framework
-    // doesn't have body parsing middleware.
-    const isMissingBody = rawBody === undefined;
+    // This is when the request body is completely missing. This commonly
+    // happens when the HTTP framework doesn't have body parsing middleware,
+    // or for PUT requests that don't require a body.
+    const isMissingBody = !rawBody;
     let body = rawBody;
 
     try {
