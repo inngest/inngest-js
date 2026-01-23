@@ -409,7 +409,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
-        // Transform data for checkpoint (encryption middleware)
+        // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
         // which has side effects like calling the finished hook
         const transformedOutput = await this.state.hooks?.transformOutput?.({
@@ -539,7 +539,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         // Resume the step with original data for user code
         const stepToResume = this.resumeStepWithResult(result);
 
-        // Transform data for checkpoint (encryption middleware)
+        // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
         // which has side effects like calling the finished hook
         const transformedOutput = await this.state.hooks?.transformOutput?.({
