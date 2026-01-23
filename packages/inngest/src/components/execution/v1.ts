@@ -473,27 +473,17 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           },
         ]);
 
-        // Done - just return the value
-        return {
-          type: "function-resolved",
-          ctx: this.fnArg,
-          ops: this.ops,
-          data: checkpoint.data,
-        };
+        // Apply middleware transformation before returning
+        return await this.transformOutput({ data: checkpoint.data });
       },
 
-      "function-rejected": (checkpoint) => {
+      "function-rejected": async (checkpoint) => {
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
         if (this.inFinalAttempt()) {
-          return {
-            type: "function-rejected",
-            ctx: this.fnArg,
-            error: checkpoint.error,
-            ops: this.ops,
-            retriable: false,
-          };
+          // Apply middleware transformation before returning
+          return await this.transformOutput({ error: checkpoint.error });
         }
 
         // Otherwise, checkpoint the error and switch to async mode
