@@ -343,13 +343,6 @@ export class InngestCommHandler<
    */
   private readonly _servePath: string | undefined;
 
-  /**
-   * The minimum level to log from the Inngest serve handler.
-   */
-  protected get logLevel(): LogLevel {
-    return this.client.logLevel;
-  }
-
   protected readonly streaming: RegisterOptions["streaming"];
 
   /**
@@ -418,8 +411,7 @@ export class InngestCommHandler<
       []) as InngestFunction.Any[];
 
     if (this.rawFns.length !== (options.functions ?? []).length) {
-      // TODO PrettyError
-      console.warn(
+      this.client.logger.warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );
     }
@@ -439,7 +431,6 @@ export class InngestCommHandler<
       // biome-ignore lint/complexity/noForEach: intentional
       configs.forEach(({ id }) => {
         if (acc[id]) {
-          // TODO PrettyError
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
           );
@@ -460,7 +451,7 @@ export class InngestCommHandler<
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
 
-    if (this.logLevel === "debug") {
+    if (this.client.logLevel === "debug") {
       /**
        * `debug` is an old library; sometimes its runtime detection doesn't work
        * for newer pairings of framework/runtime.
@@ -481,11 +472,8 @@ export class InngestCommHandler<
       .boolean()
       .default(defaultStreamingOption)
       .catch((ctx) => {
-        this.log(
-          "warn",
-          `Unknown streaming option passed: ${String(
-            ctx.input,
-          )}; defaulting to ${String(defaultStreamingOption)}`,
+        this.client.logger.warn(
+          `Unknown streaming option passed: ${String(ctx.input)}; defaulting to ${String(defaultStreamingOption)}`,
         );
 
         return defaultStreamingOption;
@@ -530,8 +518,7 @@ export class InngestCommHandler<
     if (envHost) {
       if (!InngestCommHandler._warnedServeHost) {
         InngestCommHandler._warnedServeHost = true;
-        this.log(
-          "warn",
+        this.client.logger.warn(
           "INNGEST_SERVE_HOST is deprecated and will be removed in the future. Please update to use INNGEST_SERVE_ORIGIN instead.",
         );
       }
@@ -1246,7 +1233,7 @@ export class InngestCommHandler<
           return runAsPromise(fn)
             .catch(rethrowError(errMessage))
             .catch((err) => {
-              this.log("error", err);
+              this.client.logger.error(errMessage, err);
               throw err;
             });
         },
@@ -1350,8 +1337,7 @@ export class InngestCommHandler<
 
       if (method === "POST" || forceExecution) {
         if (!forceExecution && isMissingBody) {
-          this.log(
-            "error",
+          this.client.logger.error(
             "Missing body when executing, possibly due to missing request body middleware",
           );
 
@@ -1459,7 +1445,6 @@ export class InngestCommHandler<
             queryKeys.FnId,
           );
           if (!fnId) {
-            // TODO PrettyError
             throw new Error("No function ID found in async request");
           }
 
@@ -1643,7 +1628,7 @@ export class InngestCommHandler<
         try {
           return await handler(stepOutput);
         } catch (err) {
-          this.log("error", "Error handling execution result", err);
+          this.client.logger.error("Error handling execution result", err);
           throw err;
         }
       }
@@ -1700,8 +1685,7 @@ export class InngestCommHandler<
 
         if (inBandSyncRequested) {
           if (isMissingBody) {
-            this.log(
-              "error",
+            this.client.logger.error(
               "Missing body when syncing, possibly due to missing request body middleware",
             );
 
@@ -1844,7 +1828,6 @@ export class InngestCommHandler<
     headerReqVersion?: ExecutionVersion;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     if (!fn) {
-      // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
@@ -2072,8 +2055,7 @@ export class InngestCommHandler<
       if (!check.success) {
         const errors = check.error.errors.map((err) => err.message).join("; ");
 
-        this.log(
-          "warn",
+        this.client.logger.warn(
           `Config invalid for function "${config.id}" : ${errors}`,
         );
       }
@@ -2305,7 +2287,7 @@ export class InngestCommHandler<
         },
       });
     } catch (err: unknown) {
-      this.log("error", err);
+      this.client.logger.error(err);
 
       return {
         status: 500,
@@ -2323,7 +2305,7 @@ export class InngestCommHandler<
     try {
       data = JSON.parse(raw);
     } catch (err) {
-      this.log("warn", "Couldn't unpack register response:", err);
+      this.client.logger.warn("Couldn't unpack register response: ", err);
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2345,7 +2327,7 @@ export class InngestCommHandler<
     try {
       ({ status, error, skipped, modified } = registerResSchema.parse(data));
     } catch (err) {
-      this.log("warn", "Invalid register response schema:", err);
+      this.client.logger.warn("Invalid register response schema: ", err);
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2366,8 +2348,7 @@ export class InngestCommHandler<
     // during registration with the body of the current functions and refuse
     // to register if the functions are the same.
     if (!skipped) {
-      this.log(
-        "debug",
+      this.client.logger.debug(
         "registered inngest functions:",
         res.status,
         res.statusText,
@@ -2432,7 +2413,6 @@ export class InngestCommHandler<
 
       // If we're here, we're in production; lack of a signing key is an error.
       if (!this.client.signingKey) {
-        // TODO PrettyError
         throw new Error(
           `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`,
         );
@@ -2440,7 +2420,6 @@ export class InngestCommHandler<
 
       // If we're here, we're in production; lack of a req signature is an error.
       if (!sig) {
-        // TODO PrettyError
         throw new Error(`No ${headerKeys.Signature} provided`);
       }
 
@@ -2468,38 +2447,6 @@ export class InngestCommHandler<
 
     return `t=${now}&s=${mac}`;
   }
-
-  /**
-   * Log to stdout/stderr if the log level is set to include the given level.
-   * The default log level is `"info"`.
-   *
-   * This is an abstraction over `console.log` and will try to use the correct
-   * method for the given log level.  For example, `log("error", "foo")` will
-   * call `console.error("foo")`.
-   */
-  protected log(level: LogLevel, ...args: unknown[]) {
-    const logLevels: LogLevel[] = [
-      "debug",
-      "info",
-      "warn",
-      "error",
-      "fatal",
-      "silent",
-    ];
-
-    const logLevelSetting = logLevels.indexOf(this.logLevel);
-    const currentLevel = logLevels.indexOf(level);
-
-    if (currentLevel >= logLevelSetting) {
-      let logger = console.log;
-
-      if (Object.hasOwn(console, level)) {
-        logger = console[level as keyof typeof console] as typeof logger;
-      }
-
-      logger(`${logPrefix} ${level as string} -`, ...args);
-    }
-  }
 }
 
 class RequestSignature {
@@ -2512,7 +2459,6 @@ class RequestSignature {
     this.signature = params.get("s") || "";
 
     if (!this.timestamp || !this.signature) {
-      // TODO PrettyError
       throw new Error(`Invalid ${headerKeys.Signature} provided`);
     }
   }
@@ -2537,13 +2483,11 @@ class RequestSignature {
     allowExpiredSignatures: boolean;
   }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
-      // TODO PrettyError
       throw new Error("Signature has expired");
     }
 
     const mac = await signDataWithKey(body, signingKey, this.timestamp);
     if (mac !== this.signature) {
-      // TODO PrettyError
       throw new Error("Invalid signature");
     }
   }

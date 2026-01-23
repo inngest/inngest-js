@@ -1,4 +1,3 @@
-import chalk from "chalk";
 import stringify from "json-stringify-safe";
 import {
   type SerializedError as CjsSerializedError,
@@ -6,11 +5,10 @@ import {
   serializeError as cjsSerializeError,
   errorConstructors,
 } from "serialize-error-cjs";
-import stripAnsi from "strip-ansi";
 import { z } from "zod/v3";
-import type { Inngest } from "../components/Inngest.ts";
 import { NonRetriableError } from "../components/NonRetriableError.ts";
 import type { ClientOptions, OutgoingOp } from "../types.ts";
+import { formatLogMessage } from "./log.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -295,137 +293,6 @@ export enum ErrCode {
   NONDETERMINISTIC_STEPS = "NONDETERMINISTIC_STEPS",
 }
 
-export interface PrettyError {
-  /**
-   * The type of message, used to decide on icon and color use.
-   */
-  type?: "error" | "warn";
-
-  /**
-   * A short, succinct description of what happened. Will be used as the error's
-   * header, so should be short and to the point with no trailing punctuation.
-   */
-  whatHappened: string;
-
-  /**
-   * If applicable, provide a full sentence to reassure the user about certain
-   * details, for example if an error occurred whilst uploading a file, but we
-   * can assure the user that uploading succeeded and something internal failed.
-   */
-  reassurance?: string;
-
-  /**
-   * Tell the user why the error happened if we can. This should be a full
-   * sentence or paragraph that explains the error in more detail, for example
-   * to explain that a file failed to upload because it was too large and that
-   * the maximum size is 10MB.
-   */
-  why?: string;
-
-  /**
-   * If applicable, tell the user what the consequences of the error are, for
-   * example to tell them that their file was not uploaded and that they will
-   * need to try again.
-   */
-  consequences?: string;
-
-  /**
-   * If we can, tell the user what they can do to fix the error now. This should
-   * be a full sentence or paragraph that explains what the user can do to fix
-   * the error, for example to tell them to try uploading a smaller file or
-   * upgrade to a paid plan.
-   */
-  toFixNow?: string | string[];
-
-  /**
-   * If applicable, tell the user what to do if the error persists, they want
-   * more information, or the fix we've given them doesn't work.
-   *
-   * This should be a full sentence or paragraph, and will likely refer users
-   * to contact us for support, join our Discord, or read documentation.
-   */
-  otherwise?: string;
-
-  /**
-   * Add a stack trace to the message so that the user knows what line of code
-   * the error is in relation to.
-   */
-  stack?: true;
-
-  /**
-   * If applicable, provide a code that the user can use to reference the error
-   * when contacting support.
-   */
-  code?: ErrCode;
-}
-
-export const prettyErrorSplitter =
-  "=================================================";
-
-/**
- * Given an unknown `err`, mutate it to minify any pretty errors that it
- * contains.
- */
-export const minifyPrettyError = <T>(err: T): T => {
-  try {
-    if (!isError(err)) {
-      return err;
-    }
-
-    const isPrettyError = err.message.includes(prettyErrorSplitter);
-    if (!isPrettyError) {
-      return err;
-    }
-
-    const sanitizedMessage = stripAnsi(err.message);
-
-    const message =
-      sanitizedMessage.split("  ")[1]?.split("\n")[0]?.trim() || err.message;
-    const code =
-      sanitizedMessage.split("\n\nCode: ")[1]?.split("\n\n")[0]?.trim() ||
-      undefined;
-
-    err.message = [code, message].filter(Boolean).join(" - ");
-
-    if (err.stack) {
-      const sanitizedStack = stripAnsi(err.stack);
-      const stackRest = sanitizedStack
-        .split(`${prettyErrorSplitter}\n`)
-        .slice(2)
-        .join("\n");
-
-      err.stack = `${err.name}: ${err.message}\n${stackRest}`;
-    }
-
-    return err;
-  } catch (_noopErr) {
-    return err;
-  }
-};
-
-/**
- * Given an `err`, return a boolean representing whether it is in the shape of
- * an `Error` or not.
- */
-const isError = (err: unknown): err is Error => {
-  try {
-    if (err instanceof Error) {
-      return true;
-    }
-
-    if (typeof err !== "object" || err === null) {
-      return false;
-    }
-
-    const hasName = Object.hasOwn(err, "name");
-    const hasMessage = Object.hasOwn(err, "message");
-
-    return hasName && hasMessage;
-  } catch (_noopErr) {
-    return false;
-  }
-};
-
 /**
  * Given an `unknown` object, retrieve the `message` property from it, or fall
  * back to the `fallback` string if it doesn't exist or is empty.
@@ -437,77 +304,6 @@ export const getErrorMessage = (err: unknown, fallback: string): string => {
     .parse(err);
 
   return message;
-};
-
-/**
- * Given a {@link PrettyError}, return a nicely-formatted string ready to log
- * or throw.
- *
- * Useful for ensuring that errors are logged in a consistent, helpful format
- * across the SDK by prompting for key pieces of information.
- */
-export const prettyError = ({
-  type = "error",
-  whatHappened,
-  otherwise,
-  reassurance,
-  toFixNow,
-  why,
-  consequences,
-  stack,
-  code,
-}: PrettyError): string => {
-  const { icon, colorFn } = (
-    {
-      error: { icon: "❌", colorFn: chalk.red },
-      warn: { icon: "⚠️", colorFn: chalk.yellow },
-    } satisfies Record<
-      NonNullable<PrettyError["type"]>,
-      { icon: string; colorFn: (s: string) => string }
-    >
-  )[type];
-
-  let header = `${icon}  ${chalk.bold.underline(whatHappened.trim())}`;
-  if (stack) {
-    header +=
-      "\n" +
-      [...(new Error().stack?.split("\n").slice(1).filter(Boolean) || [])].join(
-        "\n",
-      );
-  }
-
-  let toFixNowStr =
-    (Array.isArray(toFixNow)
-      ? toFixNow
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .map((s, i) => `\t${i + 1}. ${s}`)
-          .join("\n")
-      : toFixNow?.trim()) ?? "";
-
-  if (Array.isArray(toFixNow) && toFixNowStr) {
-    toFixNowStr = `To fix this, you can take one of the following courses of action:\n\n${toFixNowStr}`;
-  }
-
-  let body = [reassurance?.trim(), why?.trim(), consequences?.trim()]
-    .filter(Boolean)
-    .join(" ");
-  body += body ? `\n\n${toFixNowStr}` : toFixNowStr;
-
-  const trailer = [otherwise?.trim()].filter(Boolean).join(" ");
-
-  const message = [
-    prettyErrorSplitter,
-    header,
-    body,
-    trailer,
-    code ? `Code: ${code}` : "",
-    prettyErrorSplitter,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  return colorFn(message);
 };
 
 export const fixEventKeyMissingSteps = [
@@ -565,16 +361,13 @@ export const rethrowError = (prefix: string): ((err: any) => never) => {
  * regular async actions.
  */
 export const functionStoppedRunningErr = (code: ErrCode) => {
-  return prettyError({
-    whatHappened: "Your function was stopped from running",
-    why: "We detected a mix of asynchronous logic, some using step tooling and some not.",
-    consequences:
-      "This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
-    stack: true,
-    toFixNow:
+  return formatLogMessage({
+    message: "Your function was stopped from running",
+    explanation:
+      "We detected a mix of asynchronous logic, some using step tooling and some not. This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
+    action:
       "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
-    otherwise:
-      "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+    docs: "https://www.inngest.com/docs/functions/multi-step#gotchas",
     code,
   });
 };

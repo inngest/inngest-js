@@ -7,6 +7,7 @@ import type { Inngest } from "../components/Inngest.ts";
 import type { SupportedFrameworkName } from "../types.ts";
 import { version } from "../version.ts";
 import { envKeys, headerKeys } from "./consts.ts";
+import { getLogger } from "./log.ts";
 
 /**
  * @public
@@ -356,10 +357,10 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
           !(err instanceof Error) ||
           !err.message?.startsWith("fetch failed")
         ) {
-          console.warn(
+          getLogger().warn(
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
           );
-          console.error(err);
+          getLogger().error(err);
         }
 
         throw err;

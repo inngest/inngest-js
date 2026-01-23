@@ -1,3 +1,4 @@
+import { DefaultLogger } from "../../middleware/logger.ts";
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
@@ -45,6 +46,11 @@ export interface AsyncContext {
  */
 const alsSymbol = Symbol.for("inngest:als");
 
+type ALSCache = {
+  promise: Promise<AsyncLocalStorageIsh>;
+  resolved?: AsyncLocalStorageIsh;
+};
+
 /**
  * A type that represents a partial, runtime-agnostic interface of
  * `AsyncLocalStorage`.
@@ -52,6 +58,43 @@ const alsSymbol = Symbol.for("inngest:als");
 type AsyncLocalStorageIsh = {
   getStore: () => AsyncContext | undefined;
   run: <R>(store: AsyncContext, fn: () => R) => R;
+};
+
+const getCache = (): ALSCache => {
+  const g = globalThis as Record<symbol, ALSCache | undefined>;
+
+  if (!g[alsSymbol]) {
+    g[alsSymbol] = createCache();
+  }
+
+  return g[alsSymbol];
+};
+
+const createCache = (): ALSCache => {
+  const cache = {} as ALSCache;
+  cache.promise = initializeALS(cache);
+  return cache;
+};
+
+const initializeALS = async (
+  cache: ALSCache,
+): Promise<AsyncLocalStorageIsh> => {
+  try {
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    const als = new AsyncLocalStorage<AsyncContext>();
+    cache.resolved = als;
+    return als;
+  } catch {
+    const fallback: AsyncLocalStorageIsh = {
+      getStore: () => undefined,
+      run: (_, fn) => fn(),
+    };
+    cache.resolved = fallback;
+    console.warn(
+      "node:async_hooks is not supported in this runtime. Async context is disabled.",
+    );
+    return fallback;
+  }
 };
 
 /**
@@ -62,29 +105,17 @@ export const getAsyncCtx = async (): Promise<AsyncContext | undefined> => {
 };
 
 /**
+ * Retrieve the async context for the current execution. Returns undefined if ALS
+ * hasn't been init'd yet.
+ */
+export const getAsyncCtxSync = (): AsyncContext | undefined => {
+  return getCache().resolved?.getStore();
+};
+
+/**
  * Get a singleton instance of `AsyncLocalStorage` used to store and retrieve
  * async context for the current execution.
  */
 export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
-  (globalThis as Record<string | symbol | number, unknown>)[alsSymbol] ??=
-    new Promise<AsyncLocalStorageIsh>(async (resolve) => {
-      try {
-        const { AsyncLocalStorage } = await import("node:async_hooks");
-
-        resolve(new AsyncLocalStorage<AsyncContext>());
-      } catch (_err) {
-        console.warn(
-          "node:async_hooks is not supported in this runtime. Experimental async context is disabled.",
-        );
-
-        resolve({
-          getStore: () => undefined,
-          run: (_, fn) => fn(),
-        });
-      }
-    });
-
-  return (globalThis as Record<string | symbol | number, unknown>)[
-    alsSymbol
-  ] as Promise<AsyncLocalStorageIsh>;
+  return getCache().promise;
 };

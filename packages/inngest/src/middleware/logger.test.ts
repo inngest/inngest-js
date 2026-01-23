@@ -164,4 +164,28 @@ describe("ProxyLogger", () => {
       }).toThrow();
     });
   });
+
+  describe("log-level filtering", () => {
+    test("should only forward messages at or above the configured logLevel", () => {
+      const mock: Logger = {
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      const proxy = new ProxyLogger(mock, "warn");
+      proxy.enable();
+
+      proxy.debug("d");
+      proxy.info("i");
+      proxy.warn("w");
+      proxy.error("e");
+
+      expect(mock.debug).not.toHaveBeenCalled();
+      expect(mock.info).not.toHaveBeenCalled();
+      expect(mock.warn).toHaveBeenCalledWith("w");
+      expect(mock.error).toHaveBeenCalledWith("e");
+    });
+  });
 });

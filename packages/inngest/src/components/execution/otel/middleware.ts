@@ -92,7 +92,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      console.warn("no provider found to extend and unable to create one");
+      debug("no provider found to extend and unable to create one");
 
       break;
     }
@@ -104,7 +104,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      console.warn(
+      debug(
         "unable to create provider, Extended Traces middleware will not work",
       );
 
@@ -118,7 +118,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      console.warn(
+      debug(
         'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
 
@@ -129,7 +129,7 @@ export const extendedTracesMiddleware = ({
     }
     default: {
       // unknown
-      console.warn(
+      debug(
         `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
       );
     }

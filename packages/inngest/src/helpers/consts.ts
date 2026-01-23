@@ -1,5 +1,3 @@
-import chalk from "chalk";
-
 /**
  * Keys for accessing query parameters included in requests from Inngest to run
  * functions.
@@ -182,7 +180,7 @@ export enum internalEvents {
   HttpRequest = "inngest/http.request",
 }
 
-export const logPrefix: string = chalk.magenta.bold("[Inngest]");
+export const logPrefix: string = "[Inngest]";
 
 export const debugPrefix = "inngest";
 

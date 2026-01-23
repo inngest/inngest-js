@@ -2,6 +2,7 @@ import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
 import ms from "ms";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
+import { getLogger } from "../../helpers/log.ts";
 import {
   allProcessEnv,
   getEnvironmentName,
@@ -529,7 +530,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (err instanceof ConnectionLimitError) {
-          console.error(
+          getLogger().error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
           // Continue reconnecting, do not throw.

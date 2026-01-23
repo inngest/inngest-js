@@ -1,4 +1,5 @@
 import { runAsPromise } from "./promises.ts";
+import { getLogger } from "./log.ts";
 
 interface Timing {
   description: string;
@@ -35,12 +36,12 @@ export class ServerTiming {
     return (): void => {
       const target = this.timings[name];
       if (!target) {
-        return console.warn(`Timing "${name}" does not exist`);
+        return getLogger().warn(`Timing "${name}" does not exist`);
       }
 
       const timer = target.timers[index];
       if (!timer) {
-        return console.warn(
+        return getLogger().warn(
           `Timer ${index} for timing "${name}" does not exist`,
         );
       }

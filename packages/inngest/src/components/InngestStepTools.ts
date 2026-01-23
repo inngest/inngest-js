@@ -3,6 +3,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
+import { getLogger } from "../helpers/log.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
@@ -695,13 +696,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
-        // TODO PrettyError
-        console.warn(
+        getLogger().warn(
           "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
           err,
         );
 
-        // TODO PrettyError
         throw new Error(
           `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
             time
@@ -761,6 +760,13 @@ export const createStepTools = <TClient extends Inngest.Any>(
       switch (_type) {
         case "fnInstance":
           opts.function_id = fn.id(fn["client"].id);
+          break;
+
+        case "fullId":
+          getLogger().warn(
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`,
+          );
+          opts.function_id = fn;
           break;
 
         case "refInstance":

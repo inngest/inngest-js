@@ -18,12 +18,9 @@ import {
   normalizeUrl,
   parseAsBoolean,
 } from "../helpers/env.ts";
-import {
-  type ErrCode,
-  fixEventKeyMissingSteps,
-  prettyError,
-} from "../helpers/errors.ts";
+import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
+import { formatLogMessage, setGlobalLogger } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
@@ -116,7 +113,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private readonly _userProvidedFetch?: FetchT;
   private _cachedFetch?: FetchT;
 
-  private readonly logger: Logger;
+  /**
+   * The logging instance being used by Inngest
+   */
+  public readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
 
@@ -301,6 +301,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     });
 
     this.logger = logger;
+    setGlobalLogger(logger);
 
     this.middleware = this.initializeMiddleware([
       ...builtInMiddleware,
@@ -354,6 +355,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         const prev = await acc;
         const next = await (m as InngestMiddleware.Any).init({
           client: this,
+          logger: this.logger,
           ...opts?.registerInput,
         });
 
@@ -683,7 +685,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         message += `: ${err.message}`;
       }
 
-      console.debug(message);
+      this.logger.debug(message);
 
       // Disable retries.
       maxAttempts = 1;
@@ -754,15 +756,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
      * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      console.warn(
-        prettyError({
-          type: "warn",
-          whatHappened: "`inngest.send()` called with no events",
-          reassurance:
-            "This is not an error, but you may not have intended to do this.",
-          consequences:
-            "The returned promise will resolve, but no events have been sent to Inngest.",
-          stack: true,
+      this.logger.warn(
+        formatLogMessage({
+          message: "`inngest.send()` called with no events",
+          explanation:
+            "This is not an error, but you may not have intended to do this. The returned promise will resolve, but no events have been sent to Inngest.",
         }),
       );
 
@@ -774,11 +772,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
      */
     if (this.mode === "cloud" && !this.eventKeySet()) {
       throw new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
+        formatLogMessage({
+          message: "Failed to send event",
+          explanation:
+            "Your event or events were not sent to Inngest. We couldn't find an event key to use to send events to Inngest.",
+          action: fixEventKeyMissingSteps.join("; "),
         }),
       );
     }
@@ -862,14 +860,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
     if (Object.hasOwn(options, "fns")) {
       // v2 -> v3 migration warning
-      console.warn(
+      this.logger.warn(
         `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`,
       );
     }
 
     if (typeof options === "string") {
       // v2 -> v3 runtime migraton warning
-      console.warn(
+      this.logger.warn(
         `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
 
@@ -887,7 +885,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   >(triggers: T): AsArray<T> {
     if (typeof triggers === "string") {
       // v2 -> v3 migration warning
-      console.warn(
+      this.logger.warn(
         `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
 
@@ -944,10 +942,13 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
               );
             }
           } catch (err) {
-            console.error('failed to create "childLogger" with error: ', err);
+            providedLogger.error(
+              'failed to create "childLogger" with error: ',
+              err,
+            );
             // no-op
           }
-          const logger = new ProxyLogger(providedLogger);
+          const logger = new ProxyLogger(providedLogger, client.logLevel);
 
           return {
             transformInput() {

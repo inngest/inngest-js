@@ -90,7 +90,10 @@ export class InngestFunction<
 
     this.middleware = this.client["initializeMiddleware"](
       this.opts.middleware,
-      { registerInput: { fn: this }, prefixStack: this.client["middleware"] },
+      {
+        registerInput: { fn: this, logger: this.client.logger },
+        prefixStack: this.client["middleware"],
+      },
     );
   }
 

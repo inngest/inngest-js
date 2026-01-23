@@ -10,11 +10,10 @@ import {
 import {
   deserializeError,
   ErrCode,
-  minifyPrettyError,
-  prettyError,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
+import { formatLogMessage, getLogger } from "../../helpers/log.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -1073,7 +1072,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     });
 
     if (inputMutations?.ctx) {
-      this.fnArg = inputMutations.ctx;
+      // Merge onto the existing object rather than replacing it, because the ALS
+      // execution context holds a reference to this fn.Arg. Replacing the object
+      // would cause ALS consumers to see stale state.
+      Object.assign(this.fnArg, inputMutations.ctx);
     }
 
     if (inputMutations?.steps) {
@@ -1147,7 +1149,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         retriable = (error as RetryAfterError).retryAfter;
       }
 
-      const serializedError = minifyPrettyError(serializeError(error));
+      const serializedError = serializeError(error);
 
       return {
         type: "function-rejected",
@@ -1376,16 +1378,11 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         this.options.client["warnMetadata"](
           { run_id: this.fnArg.runId },
           ErrCode.NESTING_STEPS,
-          prettyError({
-            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
-              opId.displayName ?? opId.id
-            }\``,
-            consequences: "Nesting `step.*` tooling is not supported.",
-            type: "warn",
-            reassurance:
-              "It's possible to see this warning if steps are separated by regular asynchronous calls, which is fine.",
-            stack: true,
-            toFixNow:
+          formatLogMessage({
+            message: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``,
+            explanation:
+              "Nesting `step.*` tooling is not supported. It's possible to see this warning if steps are separated by regular asynchronous calls, which is fine.",
+            action:
               "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
             code: ErrCode.NESTING_STEPS,
           }),
@@ -1569,7 +1566,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     userlandStep.id = resultOp.id;
     userlandStep.hasStepState = true;
 
+    getLogger().debug(`resumeStepWithResult: resuming step ${resultOp.id}`);
+
     if (resume) {
+      getLogger().debug(`resumeStepWithResult: handling step ${resultOp.id}`);
       userlandStep.fulfilled = true;
       this.state.stepState[resultOp.id] = userlandStep;
 

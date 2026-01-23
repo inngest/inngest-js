@@ -4,6 +4,7 @@ import type { MetadataTarget } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestMiddleware } from "./InngestMiddleware.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
+import { getLogger } from "../helpers/log.ts";
 
 /**
  * The level at which to attach the metadata.
@@ -294,7 +295,7 @@ async function performOp(
   const isInsideRun = !!ctx?.execution;
   const isInsideStep = !!ctx?.execution?.executingStep;
   if (isInsideRun && !isInsideStep) {
-    console.warn(
+    getLogger().warn(
       "inngest: metadata.update() called outside of a step. This metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
     );
   }
