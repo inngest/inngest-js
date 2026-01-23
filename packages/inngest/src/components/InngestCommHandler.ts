@@ -306,21 +306,21 @@ export class InngestCommHandler<
   protected readonly frameworkName: string;
 
   /**
-   * The host used to access the Inngest serve endpoint, e.g.:
+   * The origin used to access the Inngest serve endpoint, e.g.:
    *
-   *     "https://myapp.com"
+   *     "https://myapp.com" or "https://myapp.com:1234"
    *
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
    * when dealing with proxies/redirects).
    *
-   * Provide the custom hostname here to ensure that the path is reported
+   * Provide the custom origin here to ensure that the path is reported
    * correctly when registering functions with Inngest.
    *
    * To also provide a custom path, use `servePath`.
    */
-  private readonly _serveHost: string | undefined;
+  private readonly _serveOrigin: string | undefined;
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
@@ -335,7 +335,7 @@ export class InngestCommHandler<
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
    *
-   * To also provide a custom hostname, use `serveHost`.
+   * To also provide a custom hostname, use `serveOrigin`.
    */
   private readonly _servePath: string | undefined;
 
@@ -450,7 +450,8 @@ export class InngestCommHandler<
 
     this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
-    this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this._serveOrigin =
+      options.serveOrigin || this.env[envKeys.InngestServeOrigin];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
@@ -493,7 +494,7 @@ export class InngestCommHandler<
   }
 
   /**
-   * The host used to access the Inngest serve endpoint, e.g.:
+   * The origin used to access the Inngest serve endpoint, e.g.:
    *
    *     "https://myapp.com"
    *
@@ -502,13 +503,36 @@ export class InngestCommHandler<
    * (e.g. when running in a more controlled environments such as AWS Lambda or
    * when dealing with proxies/redirects).
    *
-   * Provide the custom hostname here to ensure that the path is reported
+   * Provide the custom origin here to ensure that the path is reported
    * correctly when registering functions with Inngest.
    *
    * To also provide a custom path, use `servePath`.
    */
-  protected get serveHost(): string | undefined {
-    return this._serveHost || this.env[envKeys.InngestServeHost];
+  private static _warnedServeHost = false;
+
+  protected get serveOrigin(): string | undefined {
+    if (this._serveOrigin) {
+      return this._serveOrigin;
+    }
+
+    const envOrigin = this.env[envKeys.InngestServeOrigin];
+    if (envOrigin) {
+      return envOrigin;
+    }
+
+    const envHost = this.env[envKeys.InngestServeHost];
+    if (envHost) {
+      if (!InngestCommHandler._warnedServeHost) {
+        InngestCommHandler._warnedServeHost = true;
+        this.log(
+          "warn",
+          "INNGEST_SERVE_HOST is deprecated and will be removed in the future. Please update to use INNGEST_SERVE_ORIGIN instead.",
+        );
+      }
+      return envHost;
+    }
+
+    return undefined;
   }
 
   /**
@@ -524,7 +548,7 @@ export class InngestCommHandler<
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
    *
-   * To also provide a custom hostname, use `serveHost`.
+   * To also provide a custom hostname, use `serveOrigin`.
    *
    * This is a getter to encourage checking the environment for the serve path
    * each time it's accessed, as it may change during execution.
@@ -2015,21 +2039,20 @@ export class InngestCommHandler<
   /**
    * Return an Inngest serve endpoint URL given a potential `path` and `host`.
    *
-   * Will automatically use the `serveHost` and `servePath` if they have been
+   * Will automatically use the `serveOrigin` and `servePath` if they have been
    * set when registering.
    */
   protected reqUrl(url: URL): URL {
     let ret = new URL(url);
 
-    const serveHost = this.serveHost || this.env[envKeys.InngestServeHost];
     const servePath = this.servePath || this.env[envKeys.InngestServePath];
 
     if (servePath) {
       ret.pathname = servePath;
     }
 
-    if (serveHost) {
-      ret = new URL(ret.pathname + ret.search, serveHost);
+    if (this.serveOrigin) {
+      ret = new URL(ret.pathname + ret.search, this.serveOrigin);
     }
 
     return ret;
@@ -2184,7 +2207,7 @@ export class InngestCommHandler<
           framework: this.frameworkName,
           sdk_language: "js",
           sdk_version: version,
-          serve_origin: this.serveHost ?? null,
+          serve_origin: this.serveOrigin ?? null,
           serve_path: this.servePath ?? null,
           signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
           signing_key_hash: this.hashedSigningKey ?? null,
