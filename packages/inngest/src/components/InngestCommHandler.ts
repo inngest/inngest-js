@@ -1140,6 +1140,12 @@ export class InngestCommHandler<
         return Number.parseInt(value, 10);
       });
 
+    const transferEncoding = await actions.headers(
+      "checking transfer-encoding",
+      "Transfer-Encoding",
+    );
+    const isChunked = transferEncoding?.toLowerCase().includes("chunked");
+
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1149,8 +1155,15 @@ export class InngestCommHandler<
       methodP,
       methodP.then((method) => {
         if (method === "POST" || method === "PUT") {
-          if (!contentLength) {
-            // Return empty string because req.json() will throw an error.
+          if (contentLength === 0) {
+            // Empty body. Return empty string to avoid `req.json()` throwing an
+            // error in `serve()`
+            return "";
+          }
+
+          if (contentLength === undefined && !isChunked) {
+            // No Content-Length and not chunked, so no body. Return empty
+            // string to avoid `req.json()` throwing an error in `serve()`
             return "";
           }
 
