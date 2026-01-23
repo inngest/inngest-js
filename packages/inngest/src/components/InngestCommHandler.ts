@@ -1147,7 +1147,12 @@ export class InngestCommHandler<
             // Empty body can happen with PUT requests
             return "";
           }
-          return JSON.parse(body);
+          // Some adapters return strings (req.text()), others return
+          // pre-parsed objects (req.body). Handle both cases.
+          if (typeof body === "string") {
+            return JSON.parse(body);
+          }
+          return body;
         }
 
         return "";
