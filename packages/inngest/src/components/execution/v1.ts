@@ -246,13 +246,33 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
+    // Transform step data via middleware (e.g., encryption) before sending to API.
+    // Create copies to avoid mutating the originals used locally by userland code.
+    const transformedSteps = await Promise.all(
+      steps.map(async (step) => {
+        if (step.data === undefined) {
+          return step;
+        }
+
+        const transformed = await this.state.hooks?.transformOutput?.({
+          result: { data: step.data },
+          step,
+        });
+
+        return {
+          ...step,
+          data: transformed?.result?.data ?? step.data,
+        };
+      }),
+    );
+
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
         const res = await this.options.client["inngestApi"].checkpointNewRun({
           runId: this.fnArg.runId,
           event: this.fnArg.event as APIStepPayload,
-          steps,
+          steps: transformedSteps,
         });
 
         this.state.checkpointedRun = {
@@ -265,7 +285,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           appId: this.state.checkpointedRun.appId,
           fnId: this.state.checkpointedRun.fnId,
           runId: this.fnArg.runId,
-          steps,
+          steps: transformedSteps,
         });
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
@@ -285,7 +305,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         runId: this.fnArg.runId,
         fnId: this.options.internalFnId,
         queueItemId: this.options.queueItemId,
-        steps,
+        steps: transformedSteps,
       });
     } else {
       throw new Error(
