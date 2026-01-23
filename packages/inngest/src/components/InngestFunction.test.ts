@@ -43,6 +43,7 @@ import {
   type ExecutionResults,
   type InngestExecutionOptions,
   PREFERRED_ASYNC_EXECUTION_VERSION,
+  PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals as _v1Internals } from "./execution/v1.ts";
 import { _internals as _v2Internals } from "./execution/v2.ts";
@@ -3636,6 +3637,134 @@ describe("runFn", () => {
         },
         triggers: [{ event: "foo" }],
         cancel: [{ event: "baz", if: "event.data.title == async.data.title" }],
+      });
+    });
+  });
+
+  describe("sync mode (checkpointing) middleware", () => {
+    // Helper to create a mock ActionResponse for sync mode tests
+    const mockCreateResponse = (data: unknown) => ({
+      status: 200,
+      headers: {},
+      body: JSON.stringify(data),
+      version: PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
+    });
+
+    describe("function-resolved", () => {
+      test("should call transformOutput middleware in sync mode", async () => {
+        const transformOutputMock = vi.fn(({ result }) => ({ result }));
+
+        const clientWithMiddleware = createClient({
+          ...opts,
+          middleware: [
+            new InngestMiddleware({
+              name: "TestTransformOutput",
+              init: () => ({
+                onFunctionRun: () => ({
+                  transformOutput: transformOutputMock,
+                }),
+              }),
+            }),
+          ],
+        });
+
+        const fn = new InngestFunction(
+          clientWithMiddleware,
+          { id: "SyncTransformTest", triggers: [{ event: "foo" }] },
+          () => {
+            return { result: "success" };
+          },
+        );
+
+        const execution = fn["createExecution"]({
+          version: PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
+          partialOptions: {
+            client: fn["client"],
+            data: fromPartial({
+              event: { name: "foo", data: { foo: "foo" } },
+            }),
+            runId: "run",
+            stepState: {},
+            stepCompletionOrder: [],
+            reqArgs: [],
+            headers: {},
+            stepMode: StepMode.Sync,
+            createResponse: mockCreateResponse,
+          },
+        });
+
+        const result = await execution.start();
+
+        expect(result.type).toBe("function-resolved");
+        expect(transformOutputMock).toHaveBeenCalledTimes(1);
+        expect(transformOutputMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            result: expect.objectContaining({
+              data: { result: "success" },
+            }),
+          }),
+        );
+      });
+    });
+
+    describe("function-rejected", () => {
+      test("should call transformOutput middleware in sync mode on final attempt", async () => {
+        const transformOutputMock = vi.fn(({ result }) => ({ result }));
+
+        const clientWithMiddleware = createClient({
+          ...opts,
+          middleware: [
+            new InngestMiddleware({
+              name: "TestTransformOutput",
+              init: () => ({
+                onFunctionRun: () => ({
+                  transformOutput: transformOutputMock,
+                }),
+              }),
+            }),
+          ],
+        });
+
+        const testError = new Error("test error");
+
+        const fn = new InngestFunction(
+          clientWithMiddleware,
+          { id: "SyncTransformErrorTest", triggers: [{ event: "foo" }] },
+          () => {
+            throw testError;
+          },
+        );
+
+        const execution = fn["createExecution"]({
+          version: PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
+          partialOptions: {
+            client: fn["client"],
+            data: fromPartial({
+              event: { name: "foo", data: { foo: "foo" } },
+              attempt: 2, // On attempt 2 with maxAttempts 3, this is the final attempt (2 + 1 >= 3)
+              maxAttempts: 3,
+            }),
+            runId: "run",
+            stepState: {},
+            stepCompletionOrder: [],
+            reqArgs: [],
+            headers: {},
+            stepMode: StepMode.Sync,
+            createResponse: mockCreateResponse,
+          },
+        });
+
+        const result = await execution.start();
+
+        expect(result.type).toBe("function-rejected");
+        expect(transformOutputMock).toHaveBeenCalledTimes(1);
+        expect(transformOutputMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            result: expect.objectContaining({
+              error: testError,
+            }),
+          }),
+        );
       });
     });
   });
