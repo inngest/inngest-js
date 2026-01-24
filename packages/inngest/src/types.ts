@@ -16,6 +16,7 @@ import type {
   GetEvents,
   Inngest,
 } from "./components/Inngest.ts";
+import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type {
@@ -958,6 +959,12 @@ export interface ClientOptions {
    * the parameters directly if necessary.
    */
   checkpointing?: CheckpointingOptions;
+
+  /**
+   * An optional endpoint adapter to use when creating Durable Endpoints using
+   * `inngest.endpoint()`.
+   */
+  endpointAdapter?: InngestEndpointAdapter.Like;
 }
 
 export type CheckpointingOptions =

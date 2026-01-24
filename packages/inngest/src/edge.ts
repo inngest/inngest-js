@@ -22,6 +22,7 @@ import {
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
@@ -106,15 +107,16 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
  * @example
  * ```ts
  * import { Inngest, step } from "inngest";
- * import { createExperimentalEndpointWrapper } from "inngest/edge";
+ * import { endpointAdapter } from "inngest/edge";
  *
- * const wrap = createExperimentalEndpointWrapper({
- *   client: new Inngest({ id: "my-app" }),
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter,
  * });
  *
  * Bun.serve({
  *   routes: {
- *     "/": wrap(async (req) => {
+ *     "/": inngest.endpoint(async (req) => {
  *       const foo = await step.run("my-step", () => ({ foo: "bar" }));
  *
  *       return new Response(`Result: ${JSON.stringify(foo)}`);
@@ -123,8 +125,6 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
  * });
  * ```
  */
-export const createExperimentalEndpointWrapper = (
-  options: SyncHandlerOptions,
-) => {
+export const endpointAdapter = InngestEndpointAdapter.create((options) => {
   return commHandler(options, options).createSyncHandler();
-};
+});

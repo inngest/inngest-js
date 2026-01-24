@@ -13,6 +13,7 @@
  */
 
 import { Inngest } from "../components/Inngest.ts";
+import { InngestEndpointAdapter } from "../components/InngestEndpointAdapter.ts";
 import { InngestFunction } from "../components/InngestFunction.ts";
 import { InngestMiddleware } from "../components/InngestMiddleware.ts";
 import { headerKeys } from "./consts.ts";
@@ -75,4 +76,17 @@ export const isInngestRequest = (
   } catch {
     return false;
   }
+};
+
+/**
+ * Asserts that the given `input` is an `InngestEndpointAdapter` object.
+ */
+export const isInngestEndpointAdapter = (
+  /**
+   * The input to check.
+   */
+  input: unknown,
+): input is InngestEndpointAdapter.Like => {
+  // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
+  return (input as any)[Symbol.toStringTag] === InngestEndpointAdapter.Tag;
 };

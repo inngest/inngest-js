@@ -630,6 +630,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     },
   };
 
+  public endpoint<THandler extends Inngest.EndpointHandler<this>>(
+    handler: THandler,
+  ): THandler {
+    if (!this.options.endpointAdapter) {
+      throw new Error(
+        "No endpoint adapter configured for this Inngest client.",
+      );
+    }
+
+    return this.options.endpointAdapter({ client: this })(handler);
+  }
+
   /**
    * Send one or many events to Inngest. Takes an entire payload (including
    * name) as each input.
@@ -1057,6 +1069,10 @@ export namespace Inngest {
   export interface Like {
     readonly [Symbol.toStringTag]: typeof Inngest.Tag;
   }
+
+  export type EndpointHandler<TClient extends Inngest.Any> = ReturnType<
+    NonNullable<ClientOptionsFromInngest<TClient>["endpointAdapter"]>
+  >;
 
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
