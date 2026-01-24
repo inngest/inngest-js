@@ -37,6 +37,7 @@ import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
+  versionSchema,
 } from "../helpers/functions.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
@@ -1578,6 +1579,26 @@ export class InngestCommHandler<
           )) ||
           null;
 
+        // Try get the request version from headers for sync executions.
+        let headerReqVersion: ExecutionVersion | undefined;
+
+        try {
+          const res = versionSchema.parse(
+            Number(
+              await actions.headers(
+                "processing run request",
+                headerKeys.RequestVersion,
+              ),
+            ),
+          );
+
+          if (!res.sdkDecided) {
+            headerReqVersion = res.version;
+          }
+        } catch {
+          // no-op
+        }
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
@@ -1588,6 +1609,7 @@ export class InngestCommHandler<
           fn,
           forceExecution,
           actions,
+          headerReqVersion,
         });
         const stepOutput = await result;
 
@@ -1898,6 +1920,7 @@ export class InngestCommHandler<
     headers,
     fn,
     forceExecution,
+    headerReqVersion,
   }: {
     actions: HandlerResponseWithErrors;
     functionId: string;
@@ -1908,13 +1931,16 @@ export class InngestCommHandler<
     headers: Record<string, string>;
     fn: { fn: InngestFunction.Any; onFailure: boolean };
     forceExecution: boolean;
+    headerReqVersion?: ExecutionVersion;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(data);
+    // Try to get the request version from headers before falling back to
+    // parsing it from the body.
+    const immediateFnData = parseFnData(data, headerReqVersion);
     let { version, sdkDecided } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.

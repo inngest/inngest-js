@@ -253,6 +253,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           runId: this.fnArg.runId,
           event: this.fnArg.event as APIStepPayload,
           steps,
+          executionVersion: this.version,
         });
 
         this.state.checkpointedRun = {
