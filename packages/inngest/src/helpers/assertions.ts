@@ -12,9 +12,10 @@
  * @module
  */
 
-import { Inngest } from "../components/Inngest.js";
-import { InngestFunction } from "../components/InngestFunction.js";
-import { InngestMiddleware } from "../components/InngestMiddleware.js";
+import { Inngest } from "../components/Inngest.ts";
+import { InngestFunction } from "../components/InngestFunction.ts";
+import { InngestMiddleware } from "../components/InngestMiddleware.ts";
+import { headerKeys } from "./consts.ts";
 
 /**
  * Asserts that the given `input` is an `Inngest` object.
@@ -53,4 +54,25 @@ export const isInngestMiddleware = (
 ): input is InngestMiddleware.Any => {
   // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === InngestMiddleware.Tag;
+};
+
+/**
+ * Asserts that the given `input` is a request originating from Inngest.
+ */
+export const isInngestRequest = (
+  /**
+   * The input to check.
+   */
+  input: unknown,
+): boolean => {
+  try {
+    const runId = (input as Request).headers.get(headerKeys.InngestRunId);
+    const signature = (input as Request).headers.get(headerKeys.Signature);
+
+    // Note that the signature just has to be present; in Dev it'll be empty,
+    // but still set to `""`.
+    return Boolean(runId && typeof signature === "string");
+  } catch {
+    return false;
+  }
 };
