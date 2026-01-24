@@ -11,6 +11,7 @@ import {
   envKeys,
   forwardedHeaders,
   headerKeys,
+  internalEvents,
   logPrefix,
   probe as probeEnum,
   queryKeys,
@@ -893,9 +894,8 @@ export class InngestCommHandler<
   }
 
   /**
-   * Given a set of actions that let us access the incoming request, create a
-   * `http/run.started` event that repesents a run starting from an HTTP
-   * request.
+   * Given a set of actions that let us access the incoming request, create an
+   * event that repesents a run starting from an HTTP request.
    */
   private async createHttpEvent(
     actions: HandlerResponseWithErrors,
@@ -946,7 +946,7 @@ export class InngestCommHandler<
       ]);
 
     return {
-      name: "http/run.started",
+      name: internalEvents.HttpRequest,
       data: {
         content_type: contentType,
         domain,
