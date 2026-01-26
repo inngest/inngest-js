@@ -33,14 +33,14 @@ function isWorkerThreadsAvailable(): boolean {
 /**
  * Creates a connection strategy based on the provided options.
  *
- * By default, uses SameThreadStrategy. When `useWorkerThread: true` is
+ * By default, uses SameThreadStrategy. When `isolateExecution: true` is
  * specified and worker_threads is available, uses WorkerThreadStrategy instead.
  */
 export function createStrategy(
   config: StrategyConfig,
   options: ConnectHandlerOptions,
 ): ConnectionStrategy {
-  if (options.useWorkerThread) {
+  if (options.isolateExecution) {
     // Check if worker_threads is available
     if (!isWorkerThreadsAvailable()) {
       throw new Error("Worker threads are not supported in this environment");

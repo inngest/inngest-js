@@ -125,10 +125,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     // Check for worker thread env var
-    if (options.useWorkerThread === undefined) {
-      const envValue = env[envKeys.InngestConnectUseWorkerThread];
+    if (options.isolateExecution === undefined) {
+      const envValue = env[envKeys.InngestConnectIsolateExecution];
       if (envValue === "1" || envValue === "true") {
-        options.useWorkerThread = true;
+        options.isolateExecution = true;
       }
     }
 
