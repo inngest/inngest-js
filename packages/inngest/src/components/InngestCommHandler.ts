@@ -69,7 +69,8 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
+  PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
@@ -992,8 +993,7 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
-    // TODO Nope. Should be v2, so we now have two preferred versions...
-    const exeVersion = PREFERRED_EXECUTION_VERSION;
+    const exeVersion = PREFERRED_CHECKPOINTING_EXECUTION_VERSION;
 
     const exe = fn["createExecution"]({
       version: exeVersion,
@@ -1196,7 +1196,7 @@ export class InngestCommHandler<
           ? {}
           : {
               [headerKeys.RequestVersion]: (
-                res.version ?? PREFERRED_EXECUTION_VERSION
+                res.version ?? PREFERRED_ASYNC_EXECUTION_VERSION
               ).toString(),
             }),
       };
@@ -1204,12 +1204,12 @@ export class InngestCommHandler<
       let signature: string | undefined;
 
       try {
-        signature = await signatureValidation.then((result) => {
+        signature = await signatureValidation.then(async (result) => {
           if (!result.success || !result.keyUsed) {
             return undefined;
           }
 
-          return this.getResponseSignature(result.keyUsed, res.body);
+          return await this.getResponseSignature(result.keyUsed, res.body);
         });
       } catch (err) {
         // If we fail to sign, retun a 500 with the error.
@@ -1478,7 +1478,6 @@ export class InngestCommHandler<
 
         let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
         let fnId: string | undefined;
-        let stepId: string | null | undefined;
 
         if (forceExecution) {
           fn =
@@ -1486,12 +1485,11 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
-          stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
           body = {
             event: {},
             events: [],
             steps: {},
-            version: PREFERRED_EXECUTION_VERSION,
+            version: PREFERRED_ASYNC_EXECUTION_VERSION,
             sdkDecided: true,
             ctx: {
               attempt: 0,
@@ -1505,7 +1503,10 @@ export class InngestCommHandler<
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
-          } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
+          } as Extract<
+            FnData,
+            { version: typeof PREFERRED_ASYNC_EXECUTION_VERSION }
+          >;
         } else {
           const rawProbe = await actions.queryStringWithDefaults(
             "testing for probe",
@@ -1556,17 +1557,24 @@ export class InngestCommHandler<
           }
 
           fn = this.fns[fnId];
-
-          stepId =
-            (await actions.queryStringWithDefaults(
-              "processing run request",
-              queryKeys.StepId,
-            )) || null;
         }
 
         if (typeof fnId === "undefined" || !fn) {
           throw new Error("No function ID found in request");
         }
+
+        // Always try and grab the step ID; in regular async flows this will be
+        // in the querystring, and in sync modes it'll be in the headers.
+        const stepId =
+          (await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.StepId,
+          )) ||
+          (await actions.headers(
+            "processing run request",
+            headerKeys.InngestStepId,
+          )) ||
+          null;
 
         const { version, result } = this.runStep({
           functionId: fnId,
@@ -2016,7 +2024,8 @@ export class InngestCommHandler<
           );
 
           return {
-            version,
+            version:
+              checkpointingConfig && sdkDecided ? ExecutionVersion.V2 : version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
@@ -2272,6 +2281,7 @@ export class InngestCommHandler<
       | AuthenticatedIntrospection = {
       extra: {
         is_mode_explicit: this._mode.isExplicit,
+        native_crypto: globalThis.crypto?.subtle ? true : false,
       },
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
@@ -2304,6 +2314,7 @@ export class InngestCommHandler<
           extra: {
             ...introspection.extra,
             is_streaming: await this.shouldStream(actions),
+            native_crypto: globalThis.crypto?.subtle ? true : false,
           },
           framework: this.frameworkName,
           sdk_language: "js",
@@ -2527,7 +2538,7 @@ export class InngestCommHandler<
       // Validate the signature
       return {
         success: true,
-        keyUsed: new RequestSignature(sig).verifySignature({
+        keyUsed: await new RequestSignature(sig).verifySignature({
           body,
           allowExpiredSignatures: this.allowExpiredSignatures,
           signingKey: this.signingKey,
@@ -2539,9 +2550,12 @@ export class InngestCommHandler<
     }
   }
 
-  protected getResponseSignature(key: string, body: string): string {
+  protected async getResponseSignature(
+    key: string,
+    body: string,
+  ): Promise<string> {
     const now = Date.now();
-    const mac = signDataWithKey(body, key, now.toString());
+    const mac = await signDataWithKey(body, key, now.toString());
 
     return `t=${now}&s=${mac}`;
   }
@@ -2604,7 +2618,7 @@ class RequestSignature {
     return delta > 1000 * 60 * 5;
   }
 
-  #verifySignature({
+  async #verifySignature({
     body,
     signingKey,
     allowExpiredSignatures,
@@ -2612,20 +2626,20 @@ class RequestSignature {
     body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
-  }): void {
+  }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
       // TODO PrettyError
       throw new Error("Signature has expired");
     }
 
-    const mac = signDataWithKey(body, signingKey, this.timestamp);
+    const mac = await signDataWithKey(body, signingKey, this.timestamp);
     if (mac !== this.signature) {
       // TODO PrettyError
       throw new Error("Invalid signature");
     }
   }
 
-  public verifySignature({
+  public async verifySignature({
     body,
     signingKey,
     signingKeyFallback,
@@ -2635,9 +2649,9 @@ class RequestSignature {
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
-  }): string {
+  }): Promise<string> {
     try {
-      this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+      await this.#verifySignature({ body, signingKey, allowExpiredSignatures });
 
       return signingKey;
     } catch (err) {
@@ -2645,7 +2659,7 @@ class RequestSignature {
         throw err;
       }
 
-      this.#verifySignature({
+      await this.#verifySignature({
         body,
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
