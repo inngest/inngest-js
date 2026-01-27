@@ -48,6 +48,7 @@ import type {
   MetadataUpdate,
 } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
+import type { Middleware } from "../InngestMiddlewareV2.ts";
 import {
   createStepTools,
   type FoundStep,
@@ -69,6 +70,7 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
+import { MiddlewareManager } from "./MiddlewareManager.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
@@ -86,6 +88,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private middlewareManager: MiddlewareManager;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -135,6 +138,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
+    this.middlewareManager = new MiddlewareManager(
+      this.fnArg,
+      this.options.runId,
+      () => this.state.stepState,
+      this.options.client.middlewareV2,
+    );
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.initializeTimer(this.state);
     this.initializeCheckpointRuntimeTimer(this.state);
@@ -900,7 +909,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           transformedPayload?.payloads?.[0] ?? {},
         );
 
-        return {
+        let transformedStep = {
           ...step,
           opts: {
             ...step.opts,
@@ -910,6 +919,42 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             },
           },
         };
+
+        // Transform invoke step input through middlewareV2
+        if (this.middlewareManager.hasMiddleware()) {
+          let invokeStepInfo = this.middlewareManager.buildStepInfo({
+            hashedId: step.id,
+            userlandId: step.userland?.id ?? step.id,
+            displayName: step.displayName ?? step.id,
+            memoized: false,
+            stepKind: "invoke",
+            input: [transformedStep.opts?.payload?.data],
+          });
+
+          const invokeRunInfo = this.middlewareManager.buildRunInfo();
+
+          // Build handler chain - for invoke, the handler is a noop
+          const wrapped = this.middlewareManager.wrapStepHandler(
+            async () => undefined,
+            invokeStepInfo,
+            invokeRunInfo,
+          );
+          invokeStepInfo = wrapped.stepInfo;
+
+          // Update the payload data with the (potentially transformed) input
+          transformedStep = {
+            ...transformedStep,
+            opts: {
+              ...transformedStep.opts,
+              payload: {
+                ...transformedStep.opts?.payload,
+                data: invokeStepInfo.input?.[0] as Record<string, unknown>,
+              },
+            },
+          };
+        }
+
+        return transformedStep;
       }),
     ) as Promise<T>;
   }
@@ -919,6 +964,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     name,
     opts,
     fn,
+    rawArgs,
     displayName,
     userland,
     hashedId,
@@ -952,7 +998,46 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     let interval: GoInterval | undefined;
 
-    return goIntervalTiming(() => runAsPromise(fn))
+    // Wrap step execution with middlewareV2 transformStep hooks
+    const stepKind = opts?.type === "step.sendEvent" ? "sendEvent" : "run";
+    const stepInput = Array.isArray(opts?.input) ? opts.input : undefined;
+    const stepInfo = this.middlewareManager.buildStepInfo({
+      hashedId,
+      userlandId: userland.id,
+      displayName: displayName ?? userland.id,
+      memoized: false,
+      stepKind,
+      input: stepInput,
+    });
+
+    const runInfo = this.middlewareManager.buildRunInfo();
+
+    // Build the handler chain and allow transformStepInput to mutate stepInfo.input
+    // The innermost handler checks if input was modified
+    const innerHandler: () => Promise<unknown> = () => {
+      // If stepInfo.input was mutated, call user function with new args
+      if (stepInfo.input !== stepInput && rawArgs) {
+        const userFn = rawArgs[1] as (...args: unknown[]) => unknown;
+        return runAsPromise(() => userFn(...(stepInfo.input as unknown[])));
+      }
+      return runAsPromise(fn);
+    };
+
+    const wrapped = this.middlewareManager.wrapStepHandler(
+      innerHandler,
+      stepInfo,
+      runInfo,
+    );
+    const handler = wrapped.handler;
+
+    // Call onStepStart after transformStepInput (so mutations are visible)
+    this.middlewareManager.onStepStart(wrapped.stepInfo, runInfo);
+
+    const executeWithMiddleware = async () => {
+      return handler();
+    };
+
+    return goIntervalTiming(() => executeWithMiddleware())
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
@@ -966,10 +1051,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
         const metadata = this.state.metadata?.get(id);
+        const data = await resultPromise;
+
+        // Call onStepEnd for each middleware
+        this.middlewareManager.onStepEnd(wrapped.stepInfo, runInfo, data);
 
         return {
           ...outgoingOp,
-          data: await resultPromise,
+          data,
           ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
@@ -990,6 +1079,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const metadata = this.state.metadata?.get(id);
+
+        // Call onStepError for each middleware
+        this.middlewareManager.onStepError(wrapped.stepInfo, runInfo, error);
 
         if (errorIsRetriable) {
           return {
@@ -1024,7 +1116,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Mutate input as neccessary based on middleware.
      */
     await this.transformInput();
-    await this.validateEventSchemas();
 
     /**
      * Start the timer to time out the run if needed.
@@ -1044,19 +1135,54 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     /**
-     * Trigger the user's function.
+     * Build initial RunInfo for transformRunInput middleware
      */
-    runAsPromise(() => this.userFnToRun(this.fnArg))
+    let runInfo = this.middlewareManager.buildRunInfo();
+
+    // Innermost handler: apply mutations then run user function
+    const innerRunHandler: () => Promise<unknown> = async () => {
+      // Apply mutations from runInfo back to execution state
+      this.applyRunInfoMutations(runInfo);
+      await this.validateEventSchemas();
+      return this.userFnToRun(this.fnArg);
+    };
+
+    /**
+     * Apply transformRunInput for each middleware (reverse order so first is outermost).
+     * Each can modify runInfo (including step) and wrap the handler.
+     */
+    const wrapped = this.middlewareManager.wrapRunHandler(
+      innerRunHandler,
+      runInfo,
+    );
+    const runHandler = wrapped.handler;
+    runInfo = wrapped.runInfo;
+
+    /**
+     * Trigger the user's function wrapped in transformRunInput middleware
+     */
+    runAsPromise(runHandler)
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
         await this.state.hooks?.afterExecution?.();
       })
       .then((data) => {
-        this.state.setCheckpoint({ type: "function-resolved", data });
+        // Apply transformRunOutput for each middleware (forward order)
+        const result = this.middlewareManager.transformRunOutput(data, runInfo);
+        this.state.setCheckpoint({ type: "function-resolved", data: result });
       })
       .catch((error) => {
-        this.state.setCheckpoint({ type: "function-rejected", error });
+        // Apply transformRunError for each middleware (forward order)
+        const err = error instanceof Error ? error : new Error(String(error));
+        const transformedErr = this.middlewareManager.transformRunError(
+          err,
+          runInfo,
+        );
+        this.state.setCheckpoint({
+          type: "function-rejected",
+          error: transformedErr,
+        });
       });
   }
 
@@ -1242,6 +1368,65 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.options.transformCtx?.(fnArg) ?? fnArg;
+  }
+
+  /**
+   * Apply mutations from runInfo back to execution state.
+   * Allows transformRunInput middleware to modify event data, step tools,
+   * memoized step data, and inject custom fields into the handler context.
+   */
+  private applyRunInfoMutations(
+    runInfo: Middleware.RunInfo & Record<string, unknown>,
+  ): void {
+    // Extract ctx extensions (properties not in base RunInfo)
+    const baseKeys = new Set([
+      "attempt",
+      "event",
+      "events",
+      "runId",
+      "step",
+      "steps",
+    ]);
+    const ctxExtensions: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(runInfo)) {
+      if (!baseKeys.has(key)) {
+        ctxExtensions[key] = value;
+      }
+    }
+
+    // Apply event mutations
+    if (runInfo.event !== this.fnArg.event) {
+      this.fnArg = { ...this.fnArg, event: runInfo.event };
+    }
+
+    // Apply events mutations
+    if (runInfo.events !== this.fnArg.events) {
+      this.fnArg = {
+        ...this.fnArg,
+        // @ts-expect-error - TODO
+        events: runInfo.events,
+      };
+    }
+
+    // Apply step tools mutations
+    if (runInfo.step !== this.fnArg.step) {
+      this.fnArg = { ...this.fnArg, step: runInfo.step };
+    }
+
+    // Apply ctx extensions from middleware
+    if (Object.keys(ctxExtensions).length > 0) {
+      this.fnArg = { ...this.fnArg, ...ctxExtensions };
+    }
+
+    // Apply step data mutations
+    for (const [hashedId, stepData] of Object.entries(runInfo.steps)) {
+      const existing = this.state.stepState[hashedId];
+      if (existing && stepData && stepData.type === "data") {
+        if (stepData.data !== existing.data) {
+          this.state.stepState[hashedId] = { ...existing, data: stepData.data };
+        }
+      }
+    }
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -1554,7 +1739,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               async () => {
                 if (typeof result.data !== "undefined") {
                   // Validate waitForEvent results against the schema if present
-                  if (opId.op === StepOpCode.WaitForEvent) {
+                  // Skip validation if result.data is null (timeout case)
+                  if (
+                    opId.op === StepOpCode.WaitForEvent &&
+                    result.data !== null
+                  ) {
                     const { event } = (step.rawArgs?.[1] ?? {}) as {
                       event: unknown;
                     };
@@ -1578,13 +1767,60 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                       return;
                     }
                   }
-                  resolve(result.data);
-                } else {
-                  this.state.recentlyRejectedStepError = new StepError(
-                    opId.id,
-                    result.error,
+
+                  // Wrap memoized data resolution through middlewareV2 transformStep hooks
+                  const memoizedStepInfo = this.middlewareManager.buildStepInfo(
+                    {
+                      hashedId,
+                      userlandId: opId.userland.id,
+                      displayName: step.displayName ?? opId.userland.id,
+                      memoized: true,
+                      stepKind:
+                        step.opts?.type === "step.sendEvent"
+                          ? "sendEvent"
+                          : "run",
+                    },
                   );
-                  reject(this.state.recentlyRejectedStepError);
+
+                  const memoizedRunInfo = this.middlewareManager.buildRunInfo();
+
+                  // Transform memoized output through middlewareV2 (forward order for output piping)
+                  const outputResult =
+                    this.middlewareManager.transformStepOutput(
+                      result.data,
+                      memoizedStepInfo,
+                      memoizedRunInfo,
+                    );
+
+                  resolve(outputResult);
+                } else {
+                  const stepError = new StepError(opId.id, result.error);
+                  this.state.recentlyRejectedStepError = stepError;
+
+                  // Wrap error through middlewareV2 transformStep hooks
+                  const memoizedStepInfo = this.middlewareManager.buildStepInfo(
+                    {
+                      hashedId,
+                      userlandId: opId.userland.id,
+                      displayName: step.displayName ?? opId.userland.id,
+                      memoized: true,
+                      stepKind:
+                        step.opts?.type === "step.sendEvent"
+                          ? "sendEvent"
+                          : "run",
+                    },
+                  );
+
+                  const errorRunInfo = this.middlewareManager.buildRunInfo();
+
+                  // Transform memoized error through middlewareV2 (forward order for error piping)
+                  const errorResult = this.middlewareManager.transformStepError(
+                    stepError,
+                    memoizedStepInfo,
+                    errorRunInfo,
+                  );
+
+                  reject(errorResult);
                 }
               },
             );

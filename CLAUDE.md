@@ -97,3 +97,7 @@ To test examples: `pnpm dev:example` and select from the list.
 - **TypeScript 5.8+**: Strict peer dependency requirement
 - **Framework peer deps**: All framework dependencies are optional peer deps
 - **No ESLint**: Uses Biome instead for linting and formatting
+
+## Task file
+
+If there's a `task.md` file in the repo root, always read it into context before starting work. This file contains instructions for the task at hand.

@@ -39,6 +39,8 @@ import {
   ProxyLogger,
 } from "../middleware/logger.ts";
 import {
+  type ApplyAllMiddlewareV2CtxExtensions,
+  type ApplyAllMiddlewareV2StepExtensions,
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
@@ -88,7 +90,7 @@ type FetchT = typeof fetch;
  *
  * @public
  */
-export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
+export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
   get [Symbol.toStringTag](): typeof Inngest.Tag {
@@ -125,6 +127,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * the client is ready to be used.
    */
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
+
+  /**
+   * V2 middleware instances that provide simpler hooks.
+   */
+  readonly middlewareV2: TClientOpts["middlewareV2"];
 
   private _env: Env = {};
 
@@ -282,6 +289,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       id,
       logger = new DefaultLogger(),
       middleware,
+      middlewareV2,
       appVersion,
     } = this.options;
 
@@ -307,6 +315,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       ...(middleware || []),
     ]);
 
+    this.middlewareV2 = middlewareV2;
     this._appVersion = appVersion;
   }
 
@@ -711,6 +720,19 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         ? ([payload] as [EventPayload])
         : [];
 
+    // Apply transformClientInput for each V2 middleware
+    for (const mw of this.middlewareV2 || []) {
+      if (mw?.transformClientInput) {
+        const transformed = mw.transformClientInput({
+          method: "send",
+          input: payloads,
+        });
+        if (transformed !== undefined) {
+          payloads = transformed as EventPayload[];
+        }
+      }
+    }
+
     // Validate payloads that have a validate method (from `EventType.create()`)
     for (const payload of payloads) {
       if (isValidatable(payload)) {
@@ -1026,7 +1048,15 @@ export namespace Inngest {
           NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
           TMiddleware,
         ]
-      >
+      > &
+        ApplyAllMiddlewareV2CtxExtensions<
+          ClientOptionsFromInngest<TClient>["middlewareV2"]
+        > & {
+          step: ReturnType<typeof createStepTools<TClient>> &
+            ApplyAllMiddlewareV2StepExtensions<
+              ClientOptionsFromInngest<TClient>["middlewareV2"]
+            >;
+        }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient>>,
@@ -1038,7 +1068,15 @@ export namespace Inngest {
           TMiddleware,
         ],
         FailureEventArgs<EventPayload>
-      >
+      > &
+        ApplyAllMiddlewareV2CtxExtensions<
+          ClientOptionsFromInngest<TClient>["middlewareV2"]
+        > & {
+          step: ReturnType<typeof createStepTools<TClient>> &
+            ApplyAllMiddlewareV2StepExtensions<
+              ClientOptionsFromInngest<TClient>["middlewareV2"]
+            >;
+        }
     >,
   >(
     options: Omit<
@@ -1159,6 +1197,51 @@ export type GetFunctionOutputFromReferenceInngestFunction<
     ? null
     : SimplifyDeep<Jsonify<IOutput>>
   : unknown;
+
+/**
+ * A helper type to extract the raw (non-Jsonified) output type of an Inngest
+ * function. This is used when middleware transforms will handle serialization.
+ *
+ * @internal
+ */
+export type GetFunctionOutputRaw<
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends InngestFunction.Any
+  ? GetFunctionOutputRawFromInngestFunction<TFunction>
+  : TFunction extends InngestFunctionReference.Any
+    ? GetFunctionOutputRawFromReferenceInngestFunction<TFunction>
+    : unknown;
+
+/**
+ * @internal
+ */
+export type GetFunctionOutputRawFromInngestFunction<
+  TFunction extends InngestFunction.Any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+> = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
+  ? VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>
+  : unknown;
+
+/**
+ * @internal
+ */
+export type GetFunctionOutputRawFromReferenceInngestFunction<
+  TFunction extends InngestFunctionReference.Any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+> = TFunction extends InngestFunctionReference<any, infer IOutput>
+  ? VoidToNull<SimplifyDeep<IOutput>>
+  : unknown;
+
+/**
+ * Helper type that converts void/undefined/never to null.
+ * Uses ReturnType trick to check for void without directly using void in type position.
+ * @internal
+ */
+type VoidToNull<T> = IsNever<T> extends true
+  ? null
+  : T extends ReturnType<() => void>
+    ? null
+    : T;
 
 /**
  * A helper type to extract the inferred options from a given Inngest instance.

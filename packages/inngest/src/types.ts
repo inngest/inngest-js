@@ -19,12 +19,17 @@ import type {
   ExtendSendEventWithMiddleware,
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
+import type {
+  DefaultStaticTransform,
+  Middleware,
+} from "./components/InngestMiddlewareV2.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,
 } from "./components/triggers/triggers.ts";
 import type { internalEvents } from "./helpers/consts.ts";
+import type { Jsonify } from "./helpers/jsonify.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -671,6 +676,143 @@ export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
   >;
 
 /**
+ * Extract the output transformer from a middleware V2 instance.
+ */
+type GetMiddlewareV2Transformer<T> = T extends Middleware.BaseMiddleware
+  ? T extends {
+      staticTransform: infer TTransform extends Middleware.StaticTransform;
+    }
+    ? TTransform
+    : DefaultStaticTransform
+  : DefaultStaticTransform;
+
+/**
+ * Extract the output transformer from a middleware V2 array.
+ * Returns the first middleware's transformer for backwards compatibility.
+ * Use `ApplyAllMiddlewareV2Transforms` for composing multiple transforms.
+ */
+export type ExtractMiddlewareV2Transformer<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [infer First, ...infer _Rest]
+  ? GetMiddlewareV2Transformer<First>
+  : DefaultStaticTransform;
+
+/**
+ * Apply all middleware V2 transforms in sequence.
+ * Each middleware's transform is applied to the result of the previous one.
+ * When no middleware is provided, applies Jsonify as the default transform.
+ */
+export type ApplyAllMiddlewareV2Transforms<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+  T,
+> = TMw extends [Middleware.BaseMiddleware, ...Middleware.BaseMiddleware[]]
+  ? ApplyMiddlewareV2TransformsInternal<TMw, T>
+  : Jsonify<T>; // No middleware or empty array - apply default Jsonify
+
+/**
+ * Internal helper that recursively applies middleware transforms.
+ * Does NOT apply Jsonify at the end, as that's only for the no-middleware case.
+ */
+type ApplyMiddlewareV2TransformsInternal<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+  T,
+> = TMw extends [infer First, ...infer Rest extends Middleware.BaseMiddleware[]]
+  ? ApplyMiddlewareV2TransformsInternal<
+      Rest,
+      ApplyMiddlewareStaticTransform<GetMiddlewareV2Transformer<First>, T>
+    >
+  : T;
+
+/**
+ * Apply the output transformation using the In/Out interface pattern.
+ *
+ * @example
+ * ```ts
+ * interface PreserveDate extends MiddlewareStaticTransform {
+ *   Out: this["In"] extends Date ? Date : Jsonify<this["In"]>;
+ * }
+ *
+ * // ApplyStaticTransform<PreserveDate, Date> = Date
+ * ```
+ */
+export type ApplyMiddlewareStaticTransform<
+  TTransformer extends { In: unknown; Out: unknown },
+  T,
+> = (TTransformer & { In: T })["Out"];
+
+/**
+ * Extract the context extensions from a middleware V2 instance.
+ * Looks at the return type of `transformRunInput` and extracts additional
+ * properties on `runInfo` (excluding base `RunInfo` properties and `step`).
+ */
+type GetMiddlewareV2CtxExtensions<T> = T extends Middleware.BaseMiddleware
+  ? T extends {
+      transformRunInput(arg: Middleware.TransformRunInputArgs): {
+        runInfo: infer TRunInfo;
+      };
+    }
+    ? Omit<TRunInfo, keyof Middleware.RunInfo>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware V2 context extensions.
+ * Each middleware's ctx extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareV2CtxExtensions<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [Middleware.BaseMiddleware, ...Middleware.BaseMiddleware[]]
+  ? ApplyMiddlewareV2CtxExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware ctx extensions.
+ */
+type ApplyMiddlewareV2CtxExtensionsInternal<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.BaseMiddleware[]]
+  ? GetMiddlewareV2CtxExtensions<First> &
+      ApplyMiddlewareV2CtxExtensionsInternal<Rest>
+  : {};
+
+/**
+ * Extract the step extensions from a middleware V2 instance.
+ * Looks at the return type of `transformRunInput` and extracts additional
+ * properties on `runInfo.step` (excluding base `StepTools` properties).
+ */
+type GetMiddlewareV2StepExtensions<T> = T extends Middleware.BaseMiddleware
+  ? T extends {
+      transformRunInput(arg: Middleware.TransformRunInputArgs): {
+        runInfo: { step: infer TStep };
+      };
+    }
+    ? Omit<TStep, keyof Middleware.StepTools>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware V2 step extensions.
+ * Each middleware's step extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareV2StepExtensions<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [Middleware.BaseMiddleware, ...Middleware.BaseMiddleware[]]
+  ? ApplyMiddlewareV2StepExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware step extensions.
+ */
+type ApplyMiddlewareV2StepExtensionsInternal<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.BaseMiddleware[]]
+  ? GetMiddlewareV2StepExtensions<First> &
+      ApplyMiddlewareV2StepExtensionsInternal<Rest>
+  : {};
+
+/**
  * An HTTP-like, standardised response format that allows Inngest to help
  * orchestrate steps and retries.
  *
@@ -788,6 +930,11 @@ export interface ClientOptions {
    */
   logger?: Logger;
   middleware?: InngestMiddleware.Stack;
+
+  /**
+   * V2 middleware instances that provide simpler hooks for common operations.
+   */
+  middlewareV2?: Middleware.BaseMiddleware[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will

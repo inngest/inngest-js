@@ -1,0 +1,121 @@
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../index.ts";
+import { createTestApp } from "../../devServerTestHarness.ts";
+import { randomSuffix, testNameFromFileUrl } from "../utils.ts";
+
+const testFileName = testNameFromFileUrl(import.meta.url);
+
+test("transform event data before sending", async () => {
+  const state = {
+    done: false,
+    receivedEventData: null as unknown,
+  };
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override transformClientInput(arg: Middleware.TransformClientInputArgs) {
+      if (arg.method !== "send") {
+        return arg.input;
+      }
+
+      // Transform the event payloads - add an "injected" field
+      return arg.input.map((event) => ({
+        ...event,
+        data: {
+          ...event.data,
+          injected: "value",
+        },
+      }));
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middlewareV2: [new TestMiddleware()],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    { event: eventName },
+    async ({ event }) => {
+      state.receivedEventData = event.data;
+      state.done = true;
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+  await client.send({ name: eventName, data: { original: "data" } });
+  await vitest.waitFor(() => expect(state.done).toBe(true), 5000);
+
+  expect(state.receivedEventData).toEqual({
+    injected: "value",
+    original: "data",
+  });
+});
+
+test("multiple middleware transform in order", async () => {
+  const state = {
+    done: false,
+    receivedEventData: null as unknown,
+  };
+
+  class Mw1 extends Middleware.BaseMiddleware {
+    override transformClientInput(arg: Middleware.TransformClientInputArgs) {
+      if (arg.method !== "send") {
+        return arg.input;
+      }
+
+      return arg.input.map((event) => ({
+        ...event,
+        data: {
+          ...event.data,
+          mw1: "first",
+        },
+      }));
+    }
+  }
+
+  class Mw2 extends Middleware.BaseMiddleware {
+    override transformClientInput(arg: Middleware.TransformClientInputArgs) {
+      if (arg.method !== "send") {
+        return arg.input;
+      }
+
+      return arg.input.map((event) => ({
+        ...event,
+        data: {
+          ...event.data,
+          mw2: "second",
+        },
+      }));
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middlewareV2: [new Mw1(), new Mw2()],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    { event: eventName },
+    async ({ event }) => {
+      state.receivedEventData = event.data;
+      state.done = true;
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+  await client.send({ name: eventName, data: { original: "data" } });
+  await vitest.waitFor(() => expect(state.done).toBe(true), 5000);
+
+  // Both middleware should have transformed the data
+  expect(state.receivedEventData).toEqual({
+    mw1: "first",
+    mw2: "second",
+    original: "data",
+  });
+});

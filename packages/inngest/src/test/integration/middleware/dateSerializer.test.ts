@@ -1,0 +1,237 @@
+import { expect, test } from "vitest";
+import { z } from "zod/v3";
+import { eventType, Inngest, invoke, Middleware } from "../../../index.ts";
+import type { Jsonify } from "../../../types.ts";
+import { createTestApp } from "../../devServerTestHarness.ts";
+import {
+  BaseSerializerMiddleware,
+  isRecord,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "../utils.ts";
+
+const testFileName = testNameFromFileUrl(import.meta.url);
+
+test("step.run", async () => {
+  // Return a Date object from a step and expect the Date object to exist in the
+  // step output
+
+  const state = {
+    done: false,
+    stepOutputs: [] as { date: Date; int: number }[],
+  };
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middlewareV2: [new EncodingMiddleware()],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    { event: eventName },
+    async ({ step }) => {
+      const output = await step.run("my-step", () => {
+        return { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 };
+      });
+      expectTypeOf(output).not.toBeAny();
+      expectTypeOf(output).toEqualTypeOf<{ date: Date; int: number }>();
+      state.stepOutputs.push(output);
+
+      state.done = true;
+    },
+  );
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await vitest.waitFor(async () => {
+    expect(state.done).toBe(true);
+  }, 10000);
+
+  expect(state.stepOutputs).toEqual([
+    { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
+  ]);
+});
+
+test("event.data", async () => {
+  // Send an event with a Date object and expect the Date object to exist in the
+  // event data
+
+  const state = {
+    done: false,
+    eventData: null as { date: Date; int: number } | null,
+    eventsData: [] as { date: Date; int: number }[],
+  };
+
+  const et = eventType(randomSuffix("evt"), {
+    schema: z.object({
+      date: z.date(),
+      int: z.number(),
+    }),
+  });
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middlewareV2: [new EncodingMiddleware()],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    et,
+    async ({ event, events }) => {
+      expectTypeOf(event.data).not.toBeAny();
+      state.eventData = event.data;
+      state.eventsData = events.map((event) => {
+        expectTypeOf(event.data).not.toBeAny();
+        return event.data;
+      });
+
+      state.done = true;
+    },
+  );
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send(
+    et.create({
+      date: new Date("2026-02-03T00:00:00.000Z"),
+      int: 42,
+    }),
+  );
+  await vitest.waitFor(async () => {
+    expect(state.done).toBe(true);
+  }, 5000);
+
+  expect(state.eventsData).toEqual([
+    { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
+  ]);
+  expect(state.eventData).toEqual({
+    date: new Date("2026-02-03T00:00:00.000Z"),
+    int: 42,
+  });
+});
+
+test("step.invoke", async () => {
+  // Invoke a function with a Date object and expect the Date object to exist in
+  // the child function's event data and the parent function's `step.invoke`
+  // output. In other words, a Date object flows through:
+  // Client send -> Parent fn -> Child fn -> Parent fn
+
+  const state = {
+    done: false,
+    eventData: null as { date: Date; int: number } | null,
+    eventsData: [] as { date: Date; int: number }[],
+    stepOutputs: [] as { date: Date; int: number }[],
+  };
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middlewareV2: [new EncodingMiddleware()],
+  });
+  const parentFn = client.createFunction(
+    { id: "parent-fn", retries: 0 },
+    { event: eventName },
+    async ({ step }) => {
+      const output = await step.invoke("a", {
+        data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
+        function: childFn,
+      });
+      expectTypeOf(output).not.toBeAny();
+      expectTypeOf(output).toEqualTypeOf<{ date: Date; int: number }>();
+      state.stepOutputs.push(output);
+
+      state.done = true;
+    },
+  );
+  const childFn = client.createFunction(
+    { id: "child-fn", retries: 0 },
+    invoke(z.object({ date: z.date(), int: z.number() })),
+    async ({ event, events }) => {
+      expectTypeOf(event.data).not.toBeAny();
+      state.eventData = event.data;
+      state.eventsData = events.map((event) => {
+        expectTypeOf(event.data).not.toBeAny();
+        return event.data;
+      });
+
+      return event.data;
+    },
+  );
+  await createTestApp({ client, functions: [parentFn, childFn] });
+
+  await client.send({ name: eventName });
+  await vitest.waitFor(async () => {
+    expect(state.done).toBe(true);
+  }, 5000);
+
+  expect(state.eventsData).toEqual([
+    {
+      _inngest: expect.any(Object),
+      date: new Date("2026-02-03T00:00:00.000Z"),
+      int: 42,
+    },
+  ]);
+  expect(state.eventData).toEqual({
+    _inngest: expect.any(Object),
+    date: new Date("2026-02-03T00:00:00.000Z"),
+    int: 42,
+  });
+  expect(state.stepOutputs).toEqual([
+    {
+      _inngest: expect.any(Object),
+      date: new Date("2026-02-03T00:00:00.000Z"),
+      int: 42,
+    },
+  ]);
+});
+
+// Normal TypeScript type that preserves Date objects, else jsonifies
+type PreservedDate<T> = T extends Date
+  ? Date
+  : T extends Array<infer U>
+    ? Array<PreservedDate<U>>
+    : T extends Record<string, unknown>
+      ? { [K in keyof T]: PreservedDate<T[K]> }
+      : Jsonify<T>;
+
+// Higher-kinded type that preserves Date objects, else jsonifies
+interface PreserveDate extends Middleware.StaticTransform {
+  Out: PreservedDate<this["In"]>;
+}
+
+// How Date objects are represented after serialization
+const serializedMarker = "__INNGEST_DATE_SERIALIZER__";
+type Serialized = {
+  [serializedMarker]: true;
+  value: string;
+};
+
+class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
+  declare staticTransform: PreserveDate;
+
+  constructor() {
+    super({
+      deserialize: (value: Serialized) => {
+        return new Date(value.value);
+      },
+      isSerialized: (value: unknown): value is Serialized => {
+        if (!isRecord(value)) {
+          return false;
+        }
+        return Object.hasOwn(value, serializedMarker);
+      },
+      needsSerialize: (value: unknown): boolean => {
+        return value instanceof Date;
+      },
+      serialize: (value: Date): Serialized => {
+        if (value instanceof Date) {
+          return {
+            [serializedMarker]: true,
+            value: value.toISOString(),
+          };
+        }
+        return value;
+      },
+    });
+  }
+}

@@ -13,6 +13,7 @@ import type {
   SimplifyDeep,
 } from "../helpers/types.ts";
 import {
+  type ApplyAllMiddlewareV2Transforms,
   type Context,
   type EventPayload,
   type HashedOp,
@@ -30,7 +31,7 @@ import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
-  GetFunctionOutput,
+  GetFunctionOutputRaw,
   GetStepTools,
   Inngest,
 } from "./Inngest.ts";
@@ -218,12 +219,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         ...input: Parameters<TFn>
       ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
         SimplifyDeep<
-          Jsonify<
+          ApplyAllMiddlewareV2Transforms<
+            ClientOptionsFromInngest<TClient>["middlewareV2"],
             TFn extends (...args: Parameters<TFn>) => Promise<infer U>
               ? Awaited<U extends void ? null : U>
               : ReturnType<TFn> extends void
@@ -722,7 +720,14 @@ export const createStepTools = <TClient extends Inngest.Any>(
       <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>,
-      ) => InvocationResult<GetFunctionOutput<TFunction>>
+      ) => InvocationResult<
+        SimplifyDeep<
+          ApplyAllMiddlewareV2Transforms<
+            ClientOptionsFromInngest<TClient>["middlewareV2"],
+            GetFunctionOutputRaw<TFunction>
+          >
+        >
+      >
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
