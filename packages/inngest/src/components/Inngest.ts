@@ -122,6 +122,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
+  /**
+   * V2 middleware instances that provide simpler hooks.
+   */
+  readonly middlewareV2: TClientOpts["middlewareV2"];
+
   private _env: Env = {};
 
   private _appVersion: string | undefined;
@@ -278,6 +283,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       id,
       logger = new DefaultLogger(),
       middleware,
+      middlewareV2,
       appVersion,
     } = this.options;
 
@@ -303,6 +309,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       ...(middleware || []),
     ]);
 
+    this.middlewareV2 = middlewareV2;
     this._appVersion = appVersion;
   }
 

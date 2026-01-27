@@ -951,7 +951,28 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     let interval: GoInterval | undefined;
 
-    return goIntervalTiming(() => runAsPromise(fn))
+    // Wrap step execution with middlewareV2 transformStep hooks
+    const middlewareV2 = this.options.client.middlewareV2 || [];
+
+    const executeWithMiddleware = async () => {
+      // Build the handler chain from inside out
+      // The innermost handler runs the actual step function
+      let handler: () => unknown = () => runAsPromise(fn);
+
+      // Wrap with each middleware's transformStep (in reverse order so first middleware is outermost)
+      for (let i = middlewareV2.length - 1; i >= 0; i--) {
+        const mw = middlewareV2[i];
+        if (mw?.transformStep) {
+          const nextHandler = handler;
+          const currentMw = mw;
+          handler = () => currentMw.transformStep!(nextHandler);
+        }
+      }
+
+      return handler();
+    };
+
+    return goIntervalTiming(() => executeWithMiddleware())
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
@@ -1455,9 +1476,25 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             // future middleware applications. For this reason, we'll make sure
             // the values are fully resolved before continuing.
             void Promise.all([result.data, result.error, result.input]).then(
-              () => {
+              async () => {
                 if (typeof result.data !== "undefined") {
-                  resolve(result.data);
+                  // Wrap memoized data resolution through middlewareV2 transformStep hooks
+                  const middlewareV2 = this.options.client.middlewareV2 || [];
+
+                  // Build handler chain - innermost returns the memoized data
+                  let handler: () => unknown = () => result.data;
+
+                  for (let i = middlewareV2.length - 1; i >= 0; i--) {
+                    const mw = middlewareV2[i];
+                    if (mw?.transformStep) {
+                      const nextHandler = handler;
+                      const currentMw = mw;
+                      handler = () => currentMw.transformStep!(nextHandler);
+                    }
+                  }
+
+                  const transformedData = await handler();
+                  resolve(transformedData);
                 } else {
                   this.state.recentlyRejectedStepError = new StepError(
                     opId.id,
@@ -1489,7 +1526,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         })());
       }
 
-      return promise;
+      // Wrap the promise through middlewareV2 transformStep hooks
+      const middlewareV2 = this.options.client.middlewareV2 || [];
+      if (middlewareV2.length === 0) {
+        return promise;
+      }
+
+      // Build the handler chain that wraps the promise result
+      let handler: () => unknown = () => promise;
+      for (let i = middlewareV2.length - 1; i >= 0; i--) {
+        const mw = middlewareV2[i];
+        if (mw?.transformStep) {
+          const nextHandler = handler;
+          const currentMw = mw;
+          handler = () => currentMw.transformStep!(nextHandler);
+        }
+      }
+
+      return handler() as Promise<unknown>;
     };
 
     return createStepTools(this.options.client, this, stepHandler);

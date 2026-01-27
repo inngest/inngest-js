@@ -17,6 +17,7 @@ import type {
   ExtendSendEventWithMiddleware,
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
+import type { InngestMiddlewareV2 } from "./components/InngestMiddlewareV2.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
@@ -797,6 +798,11 @@ export interface ClientOptions {
    */
   logger?: Logger;
   middleware?: InngestMiddleware.Stack;
+
+  /**
+   * V2 middleware instances that provide simpler hooks for common operations.
+   */
+  middlewareV2?: InngestMiddlewareV2[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will
