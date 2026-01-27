@@ -6,18 +6,14 @@
  */
 
 import { Inngest, step } from "inngest";
-import { createExperimentalEndpointWrapper } from "inngest/edge";
+import { endpointAdapter } from "inngest/edge";
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateText, generateObject } from "ai";
 import { z } from "zod";
 import Exa from "exa-js";
 import { createHash } from "crypto";
 
-const inngest = new Inngest({ id: "deepresearch-backend" });
-
-export const wrap = createExperimentalEndpointWrapper({
-  client: inngest,
-});
+const inngest = new Inngest({ id: "deepresearch-backend", endpointAdapter });
 
 // Initialize Exa client
 const exa = new Exa(process.env.EXA_API_KEY || "");
@@ -134,7 +130,7 @@ function getEventStore(researchId: string): EventStore {
  */
 function emitProgress(
   researchId: string,
-  event: Omit<ResearchEvent, "timestamp">
+  event: Omit<ResearchEvent, "timestamp">,
 ) {
   const store = getEventStore(researchId);
   const fullEvent = {
@@ -166,7 +162,7 @@ function calculateProgress(
   currentDepth: number,
   maxDepth: number,
   currentQuery: number,
-  totalQueries: number
+  totalQueries: number,
 ): number {
   const depthProgress = ((maxDepth - currentDepth) / maxDepth) * 100;
   const queryProgress = (currentQuery / totalQueries) * (100 / maxDepth);
@@ -174,89 +170,22 @@ function calculateProgress(
 }
 
 // ============================================================
-// FAILURE INJECTION & RETRY TRACKING (for durability demos)
+// FAILURE INJECTION (for durability demos)
 // ============================================================
 
 /**
- * Check if a failure should be simulated for this step
- * Used to demonstrate Durable Endpoints' automatic retry behavior
+ * Check if a failure should be simulated for this step.
+ * Throws an error if failure should be injected - Inngest will handle retries.
  */
-function shouldSimulateFailure(
+function maybeInjectFailure(
   stepType: string,
   injectFailure: string | null,
-  failureRate: number
-): boolean {
-  if (!injectFailure || injectFailure !== stepType) return false;
-  return Math.random() < failureRate;
-}
-
-/**
- * Generic helper to run a durable step with failure injection and retry tracking.
- * Emits progress events for retries so UI can show durability in action.
- */
-async function runDurableStep<T>(
-  researchId: string,
-  stepId: string,
-  stepType: string,
-  fn: () => Promise<T>,
-  injectFailure: string | null,
-  failureRate: number
-): Promise<{ result: T; retryCount: number; duration: number }> {
-  let attempt = 0;
-  const maxAttempts = 3;
-  const startTime = Date.now();
-
-  while (attempt < maxAttempts) {
-    attempt++;
-    try {
-      // Simulate failure if enabled (but not on last attempt to ensure eventual success)
-      if (
-        attempt < maxAttempts &&
-        shouldSimulateFailure(stepType, injectFailure, failureRate)
-      ) {
-        throw new Error(`Simulated: ${stepType} failure (for demo)`);
-      }
-
-      const result = (await step.run(stepId, fn)) as T;
-      const duration = Date.now() - startTime;
-
-      // Emit recovery event if we had to retry
-      if (attempt > 1) {
-        emitProgress(researchId, {
-          type: "step-recovered",
-          stepId,
-          attempt,
-          retryCount: attempt - 1,
-          duration,
-          reasoning: `Recovered after ${attempt - 1} ${
-            attempt - 1 === 1 ? "retry" : "retries"
-          }`,
-        });
-      }
-
-      return { result, retryCount: attempt - 1, duration };
-    } catch (error) {
-      if (attempt < maxAttempts) {
-        emitProgress(researchId, {
-          type: "step-retry",
-          stepId,
-          attempt,
-          maxAttempts,
-          errorMessage:
-            error instanceof Error ? error.message : "Unknown error",
-          reasoning: `Retrying ${stepType} (attempt ${
-            attempt + 1
-          }/${maxAttempts})...`,
-        });
-        // Small delay before retry to make it visible in UI
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } else {
-        throw error; // Max retries exceeded
-      }
-    }
+  failureRate: number,
+): void {
+  if (!injectFailure || injectFailure !== stepType) return;
+  if (Math.random() < failureRate) {
+    throw new Error(`Simulated ${stepType} failure (demo)`);
   }
-
-  throw new Error("Unreachable");
 }
 
 // ============================================================
@@ -267,10 +196,18 @@ async function runDurableStep<T>(
 const ClarificationQuestionsSchema = z.object({
   questions: z.array(
     z.object({
-      id: z.string().describe("A short identifier for the question (e.g., 'scope', 'recency')"),
-      question: z.string().describe("The clarification question to ask the user"),
-      options: z.array(z.string()).describe("2-4 short clickable options for quick selection"),
-    })
+      id: z
+        .string()
+        .describe(
+          "A short identifier for the question (e.g., 'scope', 'recency')",
+        ),
+      question: z
+        .string()
+        .describe("The clarification question to ask the user"),
+      options: z
+        .array(z.string())
+        .describe("2-4 short clickable options for quick selection"),
+    }),
   ),
 });
 
@@ -280,25 +217,26 @@ const ClarificationQuestionsSchema = z.object({
  * Generate clarification questions for a research topic
  * This is a Durable Endpoint - the LLM call is wrapped in step.run() for automatic retries
  */
-export const clarifyHandler = wrap(async (req: Request): Promise<Response> => {
-  const url = new URL(req.url);
-  const topic = url.searchParams.get("topic");
+export const clarifyHandler = inngest.endpoint(
+  async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+    const topic = url.searchParams.get("topic");
 
-  if (!topic) {
-    return new Response(JSON.stringify({ error: "topic is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+    if (!topic) {
+      return new Response(JSON.stringify({ error: "topic is required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
-  console.log(`[Clarify] Generating questions for: "${topic}"`);
+    console.log(`[Clarify] Generating questions for: "${topic}"`);
 
-  // Durable step: Generate clarification questions with automatic retry on failure
-  const questions = await step.run("generate-clarifications", async () => {
-    const { object } = await generateObject({
-      model: anthropic("claude-sonnet-4-20250514"),
-      schema: ClarificationQuestionsSchema,
-      prompt: `You are a research assistant helping to clarify a research topic before conducting deep research.
+    // Durable step: Generate clarification questions with automatic retry on failure
+    const questions = await step.run("generate-clarifications", async () => {
+      const { object } = await generateObject({
+        model: anthropic("claude-sonnet-4-20250514"),
+        schema: ClarificationQuestionsSchema,
+        prompt: `You are a research assistant helping to clarify a research topic before conducting deep research.
 
 Given this research topic: "${topic}"
 
@@ -309,18 +247,19 @@ Generate 3-4 clarification questions that will help narrow down the research foc
 - Any specific applications or contexts
 
 For each question, provide 2-4 short clickable options (2-4 words each) that users can click to quickly fill their answer.`,
+      });
+
+      return object.questions;
     });
 
-    return object.questions;
-  });
+    console.log(`[Clarify] Generated ${questions.length} questions`);
 
-  console.log(`[Clarify] Generated ${questions.length} questions`);
-
-  return new Response(JSON.stringify({ questions }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-});
+    return new Response(JSON.stringify({ questions }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  },
+);
 
 // ============================================================
 // EXA SEARCH HELPER
@@ -365,18 +304,22 @@ const SearchQueriesSchema = z.object({
       query: z.string().describe("The search query"),
       reasoning: z
         .string()
-        .describe("Why this query is important - what gap it fills or what aspect it explores"),
+        .describe(
+          "Why this query is important - what gap it fills or what aspect it explores",
+        ),
       angle: z
         .string()
-        .describe("Brief label for the angle (e.g., 'Technical foundations', 'Industry applications')"),
-    })
+        .describe(
+          "Brief label for the angle (e.g., 'Technical foundations', 'Industry applications')",
+        ),
+    }),
   ),
 });
 
 async function generateSearchQueries(
   topic: string,
   clarifications: Record<string, string>,
-  breadth: number
+  breadth: number,
 ): Promise<QueryWithReasoning[]> {
   const clarificationContext = Object.entries(clarifications)
     .map(([id, answer]) => `- ${id}: ${answer}`)
@@ -434,26 +377,30 @@ const ExtractedLearningsSchema = z.object({
         .string()
         .optional()
         .describe("How this relates to previous findings"),
-    })
+    }),
   ),
   followUps: z.array(
     z.object({
       query: z.string().describe("A follow-up search query"),
       reasoning: z
         .string()
-        .describe("Why this direction is worth exploring based on what we learned"),
-    })
+        .describe(
+          "Why this direction is worth exploring based on what we learned",
+        ),
+    }),
   ),
   synthesisNote: z
     .string()
-    .describe("Brief observation about how these findings connect to the bigger picture"),
+    .describe(
+      "Brief observation about how these findings connect to the bigger picture",
+    ),
 });
 
 async function extractLearnings(
   topic: string,
   query: string,
   sources: Source[],
-  existingLearnings: string[] = []
+  existingLearnings: string[] = [],
 ): Promise<ExtractedLearnings> {
   if (sources.length === 0) {
     return { learnings: [], followUps: [], synthesisNote: "" };
@@ -461,7 +408,8 @@ async function extractLearnings(
 
   const sourceContents = sources
     .map(
-      (s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content.substring(0, 1000)}`
+      (s, i) =>
+        `[Source ${i + 1}: ${s.title}]\n${s.content.substring(0, 1000)}`,
     )
     .join("\n\n");
 
@@ -500,7 +448,7 @@ Finally, provide a brief SYNTHESIS NOTE about how these findings fit together.`,
 
 async function generateReport(
   topic: string,
-  research: AccumulatedResearch
+  research: AccumulatedResearch,
 ): Promise<string> {
   // Create numbered sources for citations
   const numberedSources = research.sources.slice(0, 15).map((s, i) => ({
@@ -512,7 +460,7 @@ async function generateReport(
 
   const sourcesForPrompt = numberedSources
     .map(
-      (s) => `[${s.number}] "${s.title}" - ${s.url}\nExcerpt: ${s.content}...`
+      (s) => `[${s.number}] "${s.title}" - ${s.url}\nExcerpt: ${s.content}...`,
     )
     .join("\n\n");
 
@@ -551,12 +499,13 @@ Format the report in Markdown. Be comprehensive but concise.`,
   return text;
 }
 
-// ============================================================
-// RECURSIVE DEEP RESEARCH (sequential execution)
-// ============================================================
-
 // Union type for queries (can be plain strings or with reasoning)
 type QueryInput = string | QueryWithReasoning;
+
+// ============================================================
+// RECURSIVE DEEP RESEARCH (parallel execution with Promise.all)
+// Uses Inngest's native retry mechanism for durability
+// ============================================================
 
 async function deepResearch(
   researchId: string,
@@ -568,197 +517,7 @@ async function deepResearch(
   accumulated: AccumulatedResearch,
   existingUrls: Set<string>,
   injectFailure: string | null = null,
-  failureRate: number = 0.3
-): Promise<AccumulatedResearch> {
-  if (depth === 0 || queries.length === 0) {
-    return accumulated;
-  }
-
-  const allFollowUps: QueryInput[] = [];
-
-  // Process each query sequentially
-  for (let i = 0; i < queries.length; i++) {
-    const queryInput = queries[i];
-    // Handle both plain strings and QueryWithReasoning objects
-    const query =
-      typeof queryInput === "string" ? queryInput : queryInput.query;
-    const queryReasoning =
-      typeof queryInput === "string" ? undefined : queryInput.reasoning;
-    const queryAngle =
-      typeof queryInput === "string" ? undefined : queryInput.angle;
-
-    const stepHash = hashQuery(query);
-    const progress = calculateProgress(depth, maxDepth, i, queries.length);
-
-    // Emit search start with reasoning
-    emitProgress(researchId, {
-      type: "search-start",
-      depth,
-      query,
-      progress,
-      reasoning: queryReasoning
-        ? `Exploring "${queryAngle}": ${query}`
-        : `Searching: "${query}" (Depth ${maxDepth - depth + 1}/${maxDepth})`,
-      queryReasoning,
-      queryAngle,
-    });
-
-    // Step: Search with Exa (with retry tracking for durability demo)
-    const {
-      result: results,
-      retryCount: searchRetries,
-      duration: searchDuration,
-    } = await runDurableStep<Source[]>(
-      researchId,
-      `search-d${depth}-${stepHash}`,
-      "search",
-      async () => searchExa(query),
-      injectFailure,
-      failureRate
-    );
-
-    // Filter duplicates
-    const newResults = results.filter((r) => !existingUrls.has(r.url));
-    newResults.forEach((r) => existingUrls.add(r.url));
-
-    // Emit sources found
-    for (const source of newResults) {
-      emitProgress(researchId, {
-        type: "source-found",
-        depth,
-        source: {
-          title: source.title,
-          url: source.url,
-          favicon: source.favicon,
-        },
-        progress,
-        reasoning: `Found: ${source.title}`,
-      });
-      accumulated.sources.push(source);
-    }
-
-    emitProgress(researchId, {
-      type: "search-complete",
-      depth,
-      query,
-      progress,
-      duration: searchDuration,
-      retryCount: searchRetries,
-      reasoning: `Found ${newResults.length} new sources for "${query}"${
-        searchRetries > 0 ? ` (${searchRetries} retries)` : ""
-      }`,
-    });
-
-    accumulated.queries.push(query);
-
-    // Step: Extract learnings (with retry tracking for durability demo)
-    const {
-      result: extractedLearnings,
-      retryCount: learnRetries,
-      duration: learnDuration,
-    } = await runDurableStep<ExtractedLearnings>(
-      researchId,
-      `learn-d${depth}-${stepHash}`,
-      "learn",
-      async () =>
-        extractLearnings(topic, query, newResults, accumulated.learnings),
-      injectFailure,
-      failureRate
-    );
-
-    // Emit learnings with rich reasoning
-    for (const learning of extractedLearnings.learnings) {
-      emitProgress(researchId, {
-        type: "learning-extracted",
-        depth,
-        learning: learning.insight,
-        progress,
-        duration: learnDuration,
-        retryCount: learnRetries,
-        reasoning: `Insight: ${learning.insight.substring(0, 100)}...`,
-        sourceRationale: learning.sourceRationale,
-        learningConnection: learning.connection,
-      });
-      accumulated.learnings.push(learning.insight);
-    }
-
-    // Emit synthesis note if present
-    if (extractedLearnings.synthesisNote) {
-      emitProgress(researchId, {
-        type: "synthesis",
-        depth,
-        progress,
-        synthesisNote: extractedLearnings.synthesisNote,
-        reasoning: `Synthesis: ${extractedLearnings.synthesisNote}`,
-      });
-    }
-
-    // Collect follow-up queries with reasoning
-    for (const followUp of extractedLearnings.followUps) {
-      // Emit reasoning for why we're exploring this follow-up
-      emitProgress(researchId, {
-        type: "follow-up-reasoning",
-        depth,
-        query: followUp.query,
-        progress,
-        followUpReasoning: followUp.reasoning,
-        reasoning: `Next: ${followUp.query} — ${followUp.reasoning}`,
-      });
-      allFollowUps.push({
-        query: followUp.query,
-        reasoning: followUp.reasoning,
-        angle: "Follow-up exploration",
-      });
-    }
-  }
-
-  emitProgress(researchId, {
-    type: "depth-complete",
-    depth,
-    progress: calculateProgress(depth - 1, maxDepth, 0, 1),
-    reasoning: `Completed depth ${maxDepth - depth + 1}/${maxDepth}`,
-  });
-
-  // Recurse with collected follow-up queries
-  if (allFollowUps.length > 0 && depth > 1) {
-    const nextBreadth = Math.ceil(breadth / 2);
-    // Limit follow-ups to prevent explosion
-    const limitedFollowUps = allFollowUps.slice(
-      0,
-      nextBreadth * queries.length
-    );
-
-    await deepResearch(
-      researchId,
-      topic,
-      limitedFollowUps,
-      depth - 1,
-      maxDepth,
-      nextBreadth,
-      accumulated,
-      existingUrls,
-      injectFailure,
-      failureRate
-    );
-  }
-
-  return accumulated;
-}
-
-// ============================================================
-// RECURSIVE DEEP RESEARCH (parallel execution with Promise.all)
-// Commented out for now - can be enabled for faster execution
-// ============================================================
-/*
-async function deepResearchParallel(
-  researchId: string,
-  topic: string,
-  queries: string[],
-  depth: number,
-  maxDepth: number,
-  breadth: number,
-  accumulated: AccumulatedResearch,
-  existingUrls: Set<string>
+  failureRate: number = 0.3,
 ): Promise<AccumulatedResearch> {
   if (depth === 0 || queries.length === 0) {
     return accumulated;
@@ -766,25 +525,41 @@ async function deepResearchParallel(
 
   const baseProgress = calculateProgress(depth, maxDepth, 0, queries.length);
 
-  // Emit search start for all queries
-  queries.forEach((query) => {
+  // Emit search start for all queries with reasoning
+  for (const queryInput of queries) {
+    const query =
+      typeof queryInput === "string" ? queryInput : queryInput.query;
+    const queryReasoning =
+      typeof queryInput === "string" ? undefined : queryInput.reasoning;
+    const queryAngle =
+      typeof queryInput === "string" ? undefined : queryInput.angle;
+
     emitProgress(researchId, {
       type: "search-start",
       depth,
       query,
       progress: baseProgress,
-      reasoning: `Searching: "${query}" (Depth ${maxDepth - depth + 1}/${maxDepth})`,
+      reasoning: queryReasoning
+        ? `Exploring "${queryAngle}": ${query}`
+        : `Searching: "${query}" (Depth ${maxDepth - depth + 1}/${maxDepth})`,
+      queryReasoning,
+      queryAngle,
     });
-  });
+  }
 
   // Step 1: Search all queries in parallel using Promise.all
+  // Each step.run() is individually durable - Inngest retries failures automatically
   const searchResults = await Promise.all(
-    queries.map((query) => {
+    queries.map((queryInput) => {
+      const query =
+        typeof queryInput === "string" ? queryInput : queryInput.query;
       const stepHash = hashQuery(query);
+
       return step.run(`search-d${depth}-${stepHash}`, async () => {
+        maybeInjectFailure("search", injectFailure, failureRate);
         return { query, results: await searchExa(query) };
       });
-    })
+    }),
   );
 
   // Process search results and filter duplicates
@@ -799,7 +574,11 @@ async function deepResearchParallel(
       emitProgress(researchId, {
         type: "source-found",
         depth,
-        source: { title: source.title, url: source.url },
+        source: {
+          title: source.title,
+          url: source.url,
+          favicon: source.favicon,
+        },
         progress: baseProgress,
         reasoning: `Found: ${source.title}`,
       });
@@ -819,33 +598,71 @@ async function deepResearchParallel(
   }
 
   // Step 2: Extract learnings from all results in parallel using Promise.all
+  // Each step.run() is individually durable - Inngest retries failures automatically
   const learningsResults = await Promise.all(
     queryResults.map(({ query, newResults }) => {
       const stepHash = hashQuery(query);
+
       return step.run(`learn-d${depth}-${stepHash}`, async () => {
-        return { query, learnings: await extractLearnings(topic, query, newResults) };
+        maybeInjectFailure("learn", injectFailure, failureRate);
+        return {
+          query,
+          learnings: await extractLearnings(
+            topic,
+            query,
+            newResults,
+            accumulated.learnings,
+          ),
+        };
       });
-    })
+    }),
   );
 
-  // Collect all follow-up queries
-  const allFollowUps: string[] = [];
+  // Collect all follow-up queries with reasoning
+  const allFollowUps: QueryInput[] = [];
 
   for (const { learnings } of learningsResults) {
-    // Emit learnings
-    for (const insight of learnings.insights) {
+    // Emit learnings with rich reasoning
+    for (const learning of learnings.learnings) {
       emitProgress(researchId, {
         type: "learning-extracted",
         depth,
-        learning: insight,
+        learning: learning.insight,
         progress: baseProgress,
-        reasoning: `Insight: ${insight.substring(0, 100)}...`,
+        reasoning: `Insight: ${learning.insight.substring(0, 100)}...`,
+        sourceRationale: learning.sourceRationale,
+        learningConnection: learning.connection,
       });
-      accumulated.learnings.push(insight);
+      accumulated.learnings.push(learning.insight);
     }
 
-    // Collect follow-up queries
-    allFollowUps.push(...learnings.followUpQueries);
+    // Emit synthesis note if present
+    if (learnings.synthesisNote) {
+      emitProgress(researchId, {
+        type: "synthesis",
+        depth,
+        progress: baseProgress,
+        synthesisNote: learnings.synthesisNote,
+        reasoning: `Synthesis: ${learnings.synthesisNote}`,
+      });
+    }
+
+    // Collect follow-up queries with reasoning
+    for (const followUp of learnings.followUps) {
+      emitProgress(researchId, {
+        type: "follow-up-reasoning",
+        depth,
+        query: followUp.query,
+        progress: baseProgress,
+        followUpReasoning: followUp.reasoning,
+        reasoning: `Next: ${followUp.query} — ${followUp.reasoning}`,
+      });
+      allFollowUps.push({
+        query: followUp.query,
+        reasoning: followUp.reasoning,
+        angle: "Follow-up exploration",
+      });
+    }
   }
 
   emitProgress(researchId, {
@@ -858,10 +675,12 @@ async function deepResearchParallel(
   // Step 3: Recurse with all collected follow-up queries
   if (allFollowUps.length > 0 && depth > 1) {
     const nextBreadth = Math.ceil(breadth / 2);
-    // Limit follow-ups to prevent explosion
-    const limitedFollowUps = allFollowUps.slice(0, nextBreadth * queries.length);
+    const limitedFollowUps = allFollowUps.slice(
+      0,
+      nextBreadth * queries.length,
+    );
 
-    await deepResearchParallel(
+    await deepResearch(
       researchId,
       topic,
       limitedFollowUps,
@@ -869,13 +688,14 @@ async function deepResearchParallel(
       maxDepth,
       nextBreadth,
       accumulated,
-      existingUrls
+      existingUrls,
+      injectFailure,
+      failureRate,
     );
   }
 
   return accumulated;
 }
-*/
 
 // ============================================================
 // RESEARCH DURABLE ENDPOINT
@@ -887,193 +707,170 @@ async function deepResearchParallel(
  * The durable endpoint that executes the deep research workflow.
  * clarifications is a JSON-encoded object of answers
  */
-export const researchHandler = wrap(async (req: Request): Promise<Response> => {
-  const url = new URL(req.url);
-  const researchId = url.searchParams.get("researchId");
-  const topic = url.searchParams.get("topic");
-  const clarificationsParam = url.searchParams.get("clarifications");
-  const depth = parseInt(url.searchParams.get("depth") || "3", 10);
-  const breadth = parseInt(url.searchParams.get("breadth") || "3", 10);
+export const researchHandler = inngest.endpoint(
+  async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+    const researchId = url.searchParams.get("researchId");
+    const topic = url.searchParams.get("topic");
+    const clarificationsParam = url.searchParams.get("clarifications");
+    const depth = parseInt(url.searchParams.get("depth") || "3", 10);
+    const breadth = parseInt(url.searchParams.get("breadth") || "3", 10);
 
-  // Failure injection params for durability demos
-  // Usage: ?injectFailure=search&failureRate=0.5
-  const injectFailure = url.searchParams.get("injectFailure"); // "search" | "learn" | "report"
-  const failureRate = parseFloat(url.searchParams.get("failureRate") || "0.3");
-
-  // Parse clarifications from JSON string
-  let clarifications: Record<string, string> = {};
-  if (clarificationsParam) {
-    try {
-      clarifications = JSON.parse(clarificationsParam);
-    } catch {
-      // Ignore parse errors, use empty object
-    }
-  }
-
-  if (!topic || !researchId) {
-    return new Response(
-      JSON.stringify({ error: "topic and researchId are required" }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }
+    // Failure injection params for durability demos
+    // Usage: ?injectFailure=search&failureRate=0.5
+    const injectFailure = url.searchParams.get("injectFailure"); // "search" | "learn" | "report"
+    const failureRate = parseFloat(
+      url.searchParams.get("failureRate") || "0.3",
     );
-  }
 
-  console.log(
-    `[Research ${researchId}] Starting deep research for: "${topic}"`
-  );
+    // Parse clarifications from JSON string
+    let clarifications: Record<string, string> = {};
+    if (clarificationsParam) {
+      try {
+        clarifications = JSON.parse(clarificationsParam);
+      } catch {
+        // Ignore parse errors, use empty object
+      }
+    }
 
-  const accumulated: AccumulatedResearch = {
-    topic,
-    sources: [],
-    learnings: [],
-    queries: [],
-  };
-  const existingUrls = new Set<string>();
-
-  try {
-    // Step 1: Generate initial search queries
-    emitProgress(researchId, {
-      type: "clarify-complete",
-      progress: 5,
-      reasoning:
-        "Generating search queries based on your topic and clarifications...",
-    });
-
-    const initialQueries = await step.run("generate-queries", async () => {
-      return await generateSearchQueries(topic, clarifications, breadth);
-    });
+    if (!topic || !researchId) {
+      return new Response(
+        JSON.stringify({ error: "topic and researchId are required" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     console.log(
-      `[Research ${researchId}] Generated ${initialQueries.length} initial queries`
+      `[Research ${researchId}] Starting deep research for: "${topic}"`,
     );
 
-    // Emit queries with their reasoning
-    emitProgress(researchId, {
-      type: "queries-generated",
-      progress: 8,
-      reasoning: `Generated ${initialQueries.length} research angles to explore`,
-    });
-
-    // Emit reasoning for each query
-    for (const q of initialQueries) {
-      emitProgress(researchId, {
-        type: "search-start",
-        query: q.query,
-        queryReasoning: q.reasoning,
-        queryAngle: q.angle,
-        progress: 10,
-        reasoning: `Planning: "${q.angle}" — ${q.reasoning}`,
-      });
-    }
-
-    // Step 2: Execute recursive deep research
-    await deepResearch(
-      researchId,
+    const accumulated: AccumulatedResearch = {
       topic,
-      initialQueries,
-      depth,
-      depth,
-      breadth,
-      accumulated,
-      existingUrls,
-      injectFailure,
-      failureRate
-    );
+      sources: [],
+      learnings: [],
+      queries: [],
+    };
+    const existingUrls = new Set<string>();
 
-    // Step 3: Generate final report
-    emitProgress(researchId, {
-      type: "report-generating",
-      progress: 95,
-      reasoning: "Synthesizing findings into a comprehensive report...",
-    });
-
-    const reportStartTime = Date.now();
-    let reportRetryCount = 0;
-
-    const report = await step.run("generate-report", async () => {
-      if (shouldSimulateFailure("report", injectFailure, failureRate)) {
-        reportRetryCount++;
-        emitProgress(researchId, {
-          type: "step-retry",
-          stepId: "generate-report",
-          attempt: reportRetryCount,
-          maxAttempts: 3,
-          errorMessage: "Simulated: Report generation timeout",
-          reasoning: `Retrying report generation (attempt ${
-            reportRetryCount + 1
-          }/3)...`,
-        });
-        throw new Error("Simulated: Report generation timeout");
-      }
-      return await generateReport(topic, accumulated);
-    });
-
-    // Emit report completion with metrics
-    if (reportRetryCount > 0) {
+    try {
+      // Step 1: Generate initial search queries
       emitProgress(researchId, {
-        type: "step-recovered",
-        stepId: "generate-report",
-        attempt: reportRetryCount + 1,
-        duration: Date.now() - reportStartTime,
-        retryCount: reportRetryCount,
-        reasoning: `Report generation recovered after ${reportRetryCount} retries`,
+        type: "clarify-complete",
+        progress: 5,
+        reasoning:
+          "Generating search queries based on your topic and clarifications...",
       });
-    }
 
-    console.log(
-      `[Research ${researchId}] Research complete. ${accumulated.sources.length} sources, ${accumulated.learnings.length} learnings`
-    );
+      const initialQueries = await step.run("generate-queries", async () => {
+        return await generateSearchQueries(topic, clarifications, breadth);
+      });
 
-    // Emit completion
-    emitProgress(researchId, {
-      type: "complete",
-      progress: 100,
-      reasoning: "Research complete!",
-      result: {
-        report,
-        sourcesCount: accumulated.sources.length,
-        learningsCount: accumulated.learnings.length,
-      },
-    });
+      console.log(
+        `[Research ${researchId}] Generated ${initialQueries.length} initial queries`,
+      );
 
-    return new Response(
-      JSON.stringify({
-        success: true,
+      // Emit queries with their reasoning
+      emitProgress(researchId, {
+        type: "queries-generated",
+        progress: 8,
+        reasoning: `Generated ${initialQueries.length} research angles to explore`,
+      });
+
+      // Emit reasoning for each query
+      for (const q of initialQueries) {
+        emitProgress(researchId, {
+          type: "search-start",
+          query: q.query,
+          queryReasoning: q.reasoning,
+          queryAngle: q.angle,
+          progress: 10,
+          reasoning: `Planning: "${q.angle}" — ${q.reasoning}`,
+        });
+      }
+
+      // Step 2: Execute recursive deep research (parallel execution)
+      await deepResearch(
         researchId,
         topic,
-        report,
-        sources: accumulated.sources,
-        learnings: accumulated.learnings,
-        queries: accumulated.queries,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  } catch (error) {
-    console.error(`[Research ${researchId}] Error:`, error);
+        initialQueries,
+        depth,
+        depth,
+        breadth,
+        accumulated,
+        existingUrls,
+        injectFailure,
+        failureRate,
+      );
 
-    emitProgress(researchId, {
-      type: "error",
-      error: error instanceof Error ? error.message : "Unknown error",
-      reasoning: "Research failed due to an error",
-    });
+      // Step 3: Generate final report
+      emitProgress(researchId, {
+        type: "report-generating",
+        progress: 95,
+        reasoning: "Synthesizing findings into a comprehensive report...",
+      });
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : "Research failed",
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
-});
+      const report = await step.run("generate-report", async () => {
+        // Throw if failure injection is enabled - Inngest handles retry
+        maybeInjectFailure("report", injectFailure, failureRate);
+        return await generateReport(topic, accumulated);
+      });
+
+      console.log(
+        `[Research ${researchId}] Research complete. ${accumulated.sources.length} sources, ${accumulated.learnings.length} learnings`,
+      );
+
+      // Emit completion
+      emitProgress(researchId, {
+        type: "complete",
+        progress: 100,
+        reasoning: "Research complete!",
+        result: {
+          report,
+          sourcesCount: accumulated.sources.length,
+          learningsCount: accumulated.learnings.length,
+        },
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          researchId,
+          topic,
+          report,
+          sources: accumulated.sources,
+          learnings: accumulated.learnings,
+          queries: accumulated.queries,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    } catch (error) {
+      console.error(`[Research ${researchId}] Error:`, error);
+
+      emitProgress(researchId, {
+        type: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
+        reasoning: "Research failed due to an error",
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : "Research failed",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+  },
+);
 
 // ============================================================
 // POLLING EVENTS ENDPOINT
@@ -1115,7 +912,7 @@ export async function researchEventsHandler(req: Request): Promise<Response> {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
-      }
+      },
     );
   }
 
@@ -1135,6 +932,6 @@ export async function researchEventsHandler(req: Request): Promise<Response> {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
       },
-    }
+    },
   );
 }
