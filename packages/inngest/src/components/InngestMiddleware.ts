@@ -513,7 +513,7 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<
       // ending with "_at" is transformed to a Date.
       //
       // transformEvent?: (event: EventPayload) => unknown;
-      // transformStep?: (data: unknown) => unknown;
+      // wrapStep?: (data: unknown) => unknown;
     }
   | undefined
   // biome-ignore lint/suspicious/noConfusingVoidType: intentional

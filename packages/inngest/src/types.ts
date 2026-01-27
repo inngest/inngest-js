@@ -21,10 +21,16 @@ import type {
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type {
+  DefaultStaticTransform,
+  Middleware,
+  MiddlewareClass,
+} from "./components/middleware/index.ts";
+import type {
   EventType,
   EventTypeWithAnySchema,
 } from "./components/triggers/triggers.ts";
 import type { internalEvents } from "./helpers/consts.ts";
+import type { Jsonify } from "./helpers/jsonify.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -664,11 +670,153 @@ export type SendEventOutput<TOpts extends ClientOptions> = Omit<
 > &
   SendEventOutputWithMiddleware<TOpts>;
 
-export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
+export type SendEventOutputWithMiddleware<_TOpts extends ClientOptions> =
   ExtendSendEventWithMiddleware<
-    [typeof builtInMiddleware, NonNullable<TOpts["middleware"]>],
+    [typeof builtInMiddleware],
     SendEventBaseOutput
   >;
+
+/**
+ * Extract the output transformer from a middleware class (constructor).
+ */
+type GetMiddlewareTransformer<T> = T extends MiddlewareClass
+  ? InstanceType<T> extends {
+      staticTransform: infer TTransform extends Middleware.StaticTransform;
+    }
+    ? TTransform
+    : DefaultStaticTransform
+  : DefaultStaticTransform;
+
+/**
+ * Extract the output transformer from a middleware array.
+ * Returns the first middleware's transformer for backwards compatibility.
+ * Use `ApplyAllMiddlewareTransforms` for composing multiple transforms.
+ */
+export type ExtractMiddlewareTransformer<
+  TMw extends MiddlewareClass[] | undefined,
+> = TMw extends [infer First, ...infer _Rest]
+  ? GetMiddlewareTransformer<First>
+  : DefaultStaticTransform;
+
+/**
+ * Apply all middleware transforms in sequence.
+ * Each middleware's transform is applied to the result of the previous one.
+ * When no middleware is provided, applies Jsonify as the default transform.
+ */
+export type ApplyAllMiddlewareTransforms<
+  TMw extends MiddlewareClass[] | undefined,
+  T,
+> = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
+  ? ApplyMiddlewareTransformsInternal<TMw, T>
+  : Jsonify<T>; // No middleware or empty array - apply default Jsonify
+
+/**
+ * Internal helper that recursively applies middleware transforms.
+ * Does NOT apply Jsonify at the end, as that's only for the no-middleware case.
+ *
+ * Processes from the end of the array first to match the runtime onion model:
+ * the last middleware in the array is innermost and transforms first, while the
+ * first middleware is outermost and transforms last. For `[MW1, MW2]` with
+ * input `T`, this gives `MW1(MW2(T))`.
+ */
+type ApplyMiddlewareTransformsInternal<
+  TMw extends MiddlewareClass[] | undefined,
+  T,
+> = TMw extends [...infer Rest extends MiddlewareClass[], infer Last]
+  ? ApplyMiddlewareTransformsInternal<
+      Rest,
+      ApplyMiddlewareStaticTransform<GetMiddlewareTransformer<Last>, T>
+    >
+  : T;
+
+/**
+ * Apply the output transformation using the In/Out interface pattern.
+ *
+ * @example
+ * ```ts
+ * interface PreserveDate extends MiddlewareStaticTransform {
+ *   Out: this["In"] extends Date ? Date : Jsonify<this["In"]>;
+ * }
+ *
+ * // ApplyStaticTransform<PreserveDate, Date> = Date
+ * ```
+ */
+export type ApplyMiddlewareStaticTransform<
+  TTransformer extends { In: unknown; Out: unknown },
+  T,
+> = (TTransformer & { In: T })["Out"];
+
+/**
+ * Extract the context extensions from a middleware class (constructor).
+ * Looks at the return type of `transformFunctionInput` and extracts additional
+ * properties on `ctx` (excluding base `TransformFunctionInputArgs["ctx"]` properties).
+ */
+type GetMiddlewareCtxExtensions<T> = T extends MiddlewareClass
+  ? InstanceType<T> extends {
+      transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
+        ctx: infer TCtx;
+      };
+    }
+    ? Omit<TCtx, keyof Middleware.TransformFunctionInputArgs["ctx"]>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware context extensions.
+ * Each middleware's ctx extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareCtxExtensions<
+  TMw extends MiddlewareClass[] | undefined,
+> = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
+  ? ApplyMiddlewareCtxExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware ctx extensions.
+ */
+type ApplyMiddlewareCtxExtensionsInternal<
+  TMw extends MiddlewareClass[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends MiddlewareClass[]]
+  ? GetMiddlewareCtxExtensions<First> &
+      ApplyMiddlewareCtxExtensionsInternal<Rest>
+  : {};
+
+/**
+ * Extract the step extensions from a middleware class (constructor).
+ * Looks at the return type of `transformFunctionInput` and extracts additional
+ * properties on `ctx.step` (excluding base `StepTools` properties).
+ */
+type GetMiddlewareStepExtensions<T> = T extends MiddlewareClass
+  ? InstanceType<T> extends {
+      transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
+        ctx: { step: infer TStep };
+      };
+    }
+    ? Omit<TStep, keyof Middleware.StepTools>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware step extensions.
+ * Each middleware's step extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareStepExtensions<
+  TMw extends MiddlewareClass[] | undefined,
+> = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
+  ? ApplyMiddlewareStepExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware step extensions.
+ */
+type ApplyMiddlewareStepExtensionsInternal<
+  TMw extends MiddlewareClass[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends MiddlewareClass[]]
+  ? GetMiddlewareStepExtensions<First> &
+      ApplyMiddlewareStepExtensionsInternal<Rest>
+  : {};
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
@@ -787,7 +935,12 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
-  middleware?: InngestMiddleware.Stack;
+  /**
+   * Middleware classes that provide simpler hooks for common operations.
+   * Each class is instantiated fresh per-request so that middleware can safely
+   * use `this` for request-scoped state.
+   */
+  middleware?: MiddlewareClass[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will
