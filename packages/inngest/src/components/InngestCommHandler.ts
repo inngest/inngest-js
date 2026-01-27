@@ -1131,15 +1131,6 @@ export class InngestCommHandler<
 
     const methodP = actions.method("starting to handle request");
 
-    const contentLength = await actions
-      .headers("checking signature for request", headerKeys.ContentLength)
-      .then((value) => {
-        if (!value) {
-          return undefined;
-        }
-        return Number.parseInt(value, 10);
-      });
-
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1147,16 +1138,21 @@ export class InngestCommHandler<
           return headerSignature ?? undefined;
         }),
       methodP,
-      methodP.then((method) => {
+      methodP.then(async (method) => {
         if (method === "POST" || method === "PUT") {
-          if (!contentLength) {
-            // Return empty string because req.json() will throw an error.
-            return "";
-          }
-
-          return actions.body(
+          const body = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
+          if (!body) {
+            // Empty body can happen with PUT requests
+            return "";
+          }
+          // Some adapters return strings (req.text()), others return
+          // pre-parsed objects (req.body). Handle both cases.
+          if (typeof body === "string") {
+            return JSON.parse(body);
+          }
+          return body;
         }
 
         return "";
@@ -1432,10 +1428,10 @@ export class InngestCommHandler<
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
   }): Promise<ActionResponse> {
-    // This is when the request body is completely missing; it does not
-    // include an empty body. This commonly happens when the HTTP framework
-    // doesn't have body parsing middleware.
-    const isMissingBody = rawBody === undefined;
+    // This is when the request body is completely missing. This commonly
+    // happens when the HTTP framework doesn't have body parsing middleware,
+    // or for PUT requests that don't require a body.
+    const isMissingBody = !rawBody;
     let body = rawBody;
 
     try {

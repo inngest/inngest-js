@@ -14,16 +14,8 @@ testFramework("Remix", RemixHandler, {
     // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).headers = headers;
     // biome-ignore lint/suspicious/noExplicitAny: intentional
-    (req as any).json = () => {
-      // Try and parse the body as JSON - this forces an error case where
-      // `req.json()` throws an error if the body is not valid JSON and ensures
-      // that we are correctly handling requests with no data like some PUTs.
-      if (req.method === "PUT" && !headers.has(headerKeys.ContentLength)) {
-        throw new Error("Unexpected input error");
-      }
-
-      return Promise.resolve(req.body);
-    };
+    (req as any).text = () =>
+      Promise.resolve(req.body === undefined ? "" : JSON.stringify(req.body));
 
     return [{ request: req }];
   },
