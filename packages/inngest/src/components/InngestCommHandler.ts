@@ -1642,16 +1642,12 @@ export class InngestCommHandler<
           },
           "step-not-found": (result) => {
             return {
-              status: 500,
+              status: 206,
               headers: {
                 "Content-Type": "application/json",
                 [headerKeys.NoRetry]: "false",
               },
-              body: stringify({
-                error: `Could not find step "${
-                  result.step.displayName || result.step.id
-                }" to run; timed out`,
-              }),
+              body: stringify([result.step]),
               version,
             };
           },
