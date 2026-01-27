@@ -11,3 +11,5 @@ dist
 *.tgz
 examples/**/*/.env
 examples/**/*/dist
+
+CLAUDE.local.md

@@ -123,6 +123,10 @@ export type StepTools = ReturnType<typeof getStepTools>;
  * Given an Inngest function and the appropriate execution state, return the
  * resulting data from this execution.
  */
+/**
+ * Given an Inngest function and the appropriate execution state, return the
+ * resulting data from this execution.
+ */
 export const runFnWithStack = async (
   fn: InngestFunction.Any,
   stepState: InngestExecutionOptions["stepState"],
@@ -161,6 +165,45 @@ export const runFnWithStack = async (
 
   return rest;
 };
+
+type RunFnOpts = {
+  executionVersion?: ExecutionVersion;
+  runStep?: string;
+  onFailure?: boolean;
+  event?: EventPayload;
+  stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
+  disableImmediateExecution?: boolean;
+};
+
+/**
+ * Creates a function runner that accumulates step state across multiple calls.
+ * Returns a callable that can be invoked repeatedly for subsequent requests.
+ */
+export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
+  let stepState: InngestExecutionOptions["stepState"] = {};
+
+  return async () => {
+    const result = await runFnWithStack(fn, stepState, opts);
+
+    // Accumulate step state for subsequent requests
+    if (result.type === "step-ran" && result.step) {
+      stepState = {
+        ...stepState,
+        [result.step.id]: { id: result.step.id, data: result.step.data },
+      };
+    }
+
+    return {
+      assertStepData: (expected: unknown) => {
+        if (result.type !== "step-ran") {
+          throw new Error(`Expected step-ran, got ${result.type}`);
+        }
+        expect(result.step.data).toEqual(expected);
+      },
+      result,
+    };
+  };
+}
 
 /**
  * Test signing key used for cloud mode tests.

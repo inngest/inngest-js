@@ -2,21 +2,6 @@ interface Hooks {
   transformStep?: (handler: () => unknown) => unknown;
 }
 
-/**
- * A new middleware class that provides simpler hooks for common operations.
- *
- * @example
- * ```ts
- * class MyMiddleware extends InngestMiddlewareV2 {
- *   async transformStep(handler: () => unknown) {
- *     console.log("before running");
- *     const output = await handler();
- *     console.log("after running");
- *     return output;
- *   }
- * }
- * ```
- */
 export class InngestMiddlewareV2 implements Hooks {
   /**
    * Called before a step method runs. Override this method to wrap step execution
