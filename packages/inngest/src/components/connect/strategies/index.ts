@@ -15,19 +15,14 @@ export { SameThreadStrategy } from "./sameThread/index.ts";
 /**
  * Checks if worker_threads is available in the current environment.
  */
-function isWorkerThreadsAvailable(): boolean {
-  try {
-    // Check if we're in a Node.js environment with worker_threads support
-    if (typeof process === "undefined" || !process.versions?.node) {
-      return false;
-    }
-
-    // Try to load worker_threads
-    require("node:worker_threads");
-    return true;
-  } catch {
-    return false;
+function assertWorkerThreadsAvailable(): void {
+  // Check if we're in a Node.js environment with worker_threads support
+  if (typeof process === "undefined" || !process.versions?.node) {
+    throw new Error("Not running in a Node.js environment");
   }
+
+  // Try to load worker_threads
+  require("node:worker_threads");
 }
 
 /**
@@ -42,8 +37,12 @@ export function createStrategy(
 ): ConnectionStrategy {
   if (options.isolateExecution) {
     // Check if worker_threads is available
-    if (!isWorkerThreadsAvailable()) {
-      throw new Error("Worker threads are not supported in this environment");
+    try {
+      assertWorkerThreadsAvailable();
+    } catch (err) {
+      throw new Error("Worker threads are not supported in this environment", {
+        cause: err,
+      });
     }
 
     // Try to load worker thread strategy
