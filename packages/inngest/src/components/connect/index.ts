@@ -344,7 +344,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     // Create and initialize the strategy
-    this.strategy = createStrategy(
+    this.strategy = await createStrategy(
       {
         hashedSigningKey,
         hashedFallbackKey,

@@ -12,18 +12,7 @@ export type {
 } from "./core/types.ts";
 export { SameThreadStrategy } from "./sameThread/index.ts";
 
-/**
- * Checks if worker_threads is available in the current environment.
- */
-function assertWorkerThreadsAvailable(): void {
-  // Check if we're in a Node.js environment with worker_threads support
-  if (typeof process === "undefined" || !process.versions?.node) {
-    throw new Error("Not running in a Node.js environment");
-  }
 
-  // Try to load worker_threads
-  require("node:worker_threads");
-}
 
 /**
  * Creates a connection strategy based on the provided options.
@@ -31,25 +20,15 @@ function assertWorkerThreadsAvailable(): void {
  * By default, uses SameThreadStrategy. When `isolateExecution: true` is
  * specified and worker_threads is available, uses WorkerThreadStrategy instead.
  */
-export function createStrategy(
+export async function createStrategy(
   config: StrategyConfig,
   options: ConnectHandlerOptions,
-): ConnectionStrategy {
+): Promise<ConnectionStrategy> {
   if (options.isolateExecution) {
-    // Check if worker_threads is available
-    try {
-      assertWorkerThreadsAvailable();
-    } catch (err) {
-      throw new Error("Worker threads are not supported in this environment", {
-        cause: err,
-      });
-    }
-
     // Try to load worker thread strategy
     try {
       // Dynamic import to avoid bundling worker_threads in non-Node environments
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { WorkerThreadStrategy } = require("./workerThread/index.ts");
+      const { WorkerThreadStrategy } = await import("./workerThread/index.ts");
       return new WorkerThreadStrategy(config);
     } catch (err) {
       throw new Error("Failed to load worker thread strategy", { cause: err });
