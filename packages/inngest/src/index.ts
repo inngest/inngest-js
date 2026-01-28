@@ -49,6 +49,10 @@ export {
   type NormalizedEventSchemaToPayload as StandardEventSchemaToPayload,
   type ZodEventSchemas,
 } from "./components/EventSchemas.ts";
+export type {
+  ExecutionResults,
+  IInngestExecution,
+} from "./components/execution/InngestExecution.ts";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
