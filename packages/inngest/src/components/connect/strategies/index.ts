@@ -12,8 +12,6 @@ export type {
 } from "./core/types.ts";
 export { SameThreadStrategy } from "./sameThread/index.ts";
 
-
-
 /**
  * Creates a connection strategy based on the provided options.
  *
