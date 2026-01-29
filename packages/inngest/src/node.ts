@@ -16,21 +16,16 @@ import type { SupportedFrameworkName } from "./types.ts";
 export const frameworkName: SupportedFrameworkName = "nodejs";
 
 /**
- * Parse the incoming message request as a JSON body
+ * Read the incoming message request body as text
  */
-async function parseRequestBody(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+async function readRequestBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
     });
     req.on("end", () => {
-      try {
-        const json = JSON.parse(body) as unknown;
-        resolve(json);
-      } catch (err) {
-        reject(err);
-      }
+      resolve(body);
     });
   });
 }
@@ -85,7 +80,7 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
     ...options,
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => {
       return {
-        body: async () => parseRequestBody(req),
+        body: async () => readRequestBody(req),
         headers: (key) => {
           return req.headers[key] && Array.isArray(req.headers[key])
             ? req.headers[key][0]
