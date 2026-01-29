@@ -963,10 +963,55 @@ export interface ClientOptions {
 export type CheckpointingOptions =
   | boolean
   | {
+      /**
+       * The maximum amount of time the function should be allowed to checkpoint
+       * before falling back to async execution.
+       *
+       * We recommend setting this to a value slightly lower than your
+       * platform's request timeout to ensure that functions can complete
+       * checkpointing before being forcefully terminated.
+       *
+       * Set to `0` to disable maximum runtime.
+       *
+       * @default 0
+       */
       maxRuntime?: number | string | Temporal.DurationLike;
-      // maxSteps?: number;
-      // maxInterval?: number | string | Temporal.DurationLike;
+
+      /**
+       * The number of steps to buffer together before checkpointing. This can
+       * help reduce the number of requests made to Inngest when running many
+       * steps in sequence.
+       *
+       * Set to `1` to checkpoint after every step.
+       *
+       * @default 1
+       */
+      bufferedSteps?: number;
+
+      /**
+       * The maximum interval to wait before checkpointing, even if the buffered
+       * step count has not been reached.
+       */
+      maxInterval?: number | string | Temporal.DurationLike;
     };
+
+/**
+ * Internal version of {@link CheckpointingOptions} with the `true` option
+ * excluded, as that just suggests using the default options.
+ */
+export type InternalCheckpointingOptions = Exclude<
+  Required<CheckpointingOptions>,
+  boolean
+>;
+
+/**
+ * Default config options if `true` has been passed by a user.
+ */
+export const defaultCheckpointingOptions: InternalCheckpointingOptions = {
+  bufferedSteps: 1,
+  maxRuntime: 0,
+  maxInterval: 0,
+};
 
 /**
  * A set of log levels that can be used to control the amount of logging output
@@ -1328,6 +1373,7 @@ export interface InBandRegisterRequest
 export interface UnauthenticatedIntrospection {
   extra: {
     is_mode_explicit: boolean;
+    native_crypto: boolean;
   };
   function_count: number;
   has_event_key: boolean;
@@ -1347,6 +1393,7 @@ export interface AuthenticatedIntrospection
   event_key_hash: string | null;
   extra: UnauthenticatedIntrospection["extra"] & {
     is_streaming: boolean;
+    native_crypto: boolean;
   };
   framework: string;
   sdk_language: string;

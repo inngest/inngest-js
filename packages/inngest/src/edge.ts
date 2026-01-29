@@ -43,7 +43,7 @@ const commHandler = (
     syncOptions,
     handler: (req: Request) => {
       return {
-        body: () => req.json(),
+        body: () => req.text(),
         textBody: () => req.text(),
         headers: (key: string) => req.headers.get(key),
         method: () => req.method,

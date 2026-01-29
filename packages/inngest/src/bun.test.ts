@@ -54,7 +54,8 @@ testFramework("Bun", BunHandler, {
     (req as any).headers = headers;
 
     // biome-ignore lint/suspicious/noExplicitAny: intentional
-    (req as any).json = () => Promise.resolve(req.body);
+    (req as any).text = () =>
+      Promise.resolve(req.body === undefined ? "" : JSON.stringify(req.body));
 
     return [req];
   },

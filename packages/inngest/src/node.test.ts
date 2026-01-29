@@ -23,7 +23,8 @@ testFramework("Node", NodeHandler, {
     }
 
     // Mock the body data
-    const bodyData = Buffer.from(JSON.stringify(req.body));
+    const bodyString = req.body === undefined ? "" : JSON.stringify(req.body);
+    const bodyData = Buffer.from(bodyString);
 
     // Override the read methods to return the body data
     nodeReq.push(bodyData);
