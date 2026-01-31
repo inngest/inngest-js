@@ -2,4 +2,4 @@
 "inngest": patch
 ---
 
-Use `ulidx` instead of `ulid` for edge compatibility
+Upgrade `ulid` for edge compatibility
