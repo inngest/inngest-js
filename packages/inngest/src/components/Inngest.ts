@@ -53,6 +53,7 @@ import {
   type TriggersFromClient,
 } from "../types.ts";
 import type { EventSchemas } from "./EventSchemas.ts";
+import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -67,6 +68,7 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
+import type { Realtime } from "./realtime/types";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -151,7 +153,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly fetch: FetchT;
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
@@ -514,7 +515,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private async updateMetadata({
     target,
     metadata,
@@ -567,6 +567,68 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       ],
     });
   }
+
+  /**
+   * Realtime-related functionality for this Inngest client.
+   */
+  public realtime: {
+    /**
+     * Unlike step-level realtime methods (`step.realtime.*`), these tools will
+     * never be their own durable steps when run. Use these methods inside of a
+     * step to make them durable, or anywhere outside of an Inngest function
+     * too.
+     */
+    publish: Realtime.PublishFn;
+
+    /**
+     * Generate a subscription token for subscribing to realtime messages.
+     */
+    getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
+  } = {
+    publish: async (opts) => {
+      const [{ topic, channel, data }, ctx] = await Promise.all([
+        opts,
+        getAsyncCtx(),
+      ]);
+
+      const runId = ctx?.execution?.ctx.runId;
+
+      const res = await this.inngestApi.publish(
+        {
+          channel: channel,
+          topics: [topic],
+          runId,
+        },
+        data,
+      );
+
+      if (res.ok) {
+        return data;
+      }
+
+      throw new Error(
+        `Failed to publish event: ${res.error?.error || "Unknown error"}`,
+      );
+    },
+
+    getSubscriptionToken: async ({ channel, topics }) => {
+      const channelId = typeof channel === "string" ? channel : channel.name;
+      if (!channelId) {
+        throw new Error(
+          "Channel ID is required to create a subscription token",
+        );
+      }
+
+      const key = await this.inngestApi.getSubscriptionToken(channelId, topics);
+
+      return {
+        channel: channelId,
+        topics,
+        key,
+        // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
+      } as any;
+    },
+  };
 
   /**
    * Send one or many events to Inngest. Takes an entire payload (including
@@ -1154,7 +1216,7 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
@@ -1172,7 +1234,7 @@ export type GetFunctionOutputFromInngestFunction<
  */
 export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
   ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
     ? null

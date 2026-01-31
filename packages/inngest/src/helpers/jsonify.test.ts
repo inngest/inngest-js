@@ -4,7 +4,7 @@ import type { Jsonify } from "./jsonify.ts";
 describe("Jsonify", () => {
   describe("unnested", () => {
     test("allows `any`", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Actual = Jsonify<any>;
       assertType<IsAny<Actual>>(true);
     });
@@ -29,9 +29,9 @@ describe("Jsonify", () => {
 
   describe("nested", () => {
     test("allows `any`", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Actual = Jsonify<{ foo: any }>;
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Expected = { foo: any };
       assertType<IsEqual<Actual, Expected>>(true);
     });
@@ -74,14 +74,14 @@ describe("Jsonify", () => {
   describe("#98", () => {
     test("allows mapped types with overrides when unnested", () => {
       interface Foo {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         [x: string]: any;
         foo: boolean;
       }
 
       type Actual = Jsonify<Foo>;
       type Expected = {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         [x: string]: any;
         foo: boolean;
       };
@@ -93,13 +93,13 @@ describe("Jsonify", () => {
 
     test("allows mapped types with overrides when nested", () => {
       interface Foo {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         [x: string]: any;
         foo: boolean;
       }
 
       type Actual = Jsonify<{ foo: Foo }>;
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Expected = { foo: { [x: string]: any; foo: boolean } };
 
       assertType<IsEqual<Actual, Expected>>(true);
