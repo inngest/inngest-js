@@ -8,22 +8,22 @@ type TopicInputProps = {
 
 export function TopicInput({ topic, setTopic, onSubmit }: TopicInputProps) {
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-3">
       <div>
-        <label className="block text-lg font-bold text-gray-800 mb-2">
+        <label className="block text-sm font-bold text-gray-800 mb-1.5">
           What would you like to research?
         </label>
         <textarea
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
           placeholder="e.g., What are the latest developments in quantum computing for drug discovery?"
-          className="w-full p-4 border border-gray-300 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 resize-none h-32"
+          className="w-full p-3 border border-gray-300 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 resize-none h-24 text-sm"
           required
         />
       </div>
       <button
         type="submit"
-        className="w-full bg-gray-900 hover:bg-gray-800 text-white py-3 font-medium transition-colors"
+        className="w-full bg-gray-900 hover:bg-gray-800 text-white py-2.5 text-sm font-medium transition-colors"
       >
         Start Research
       </button>

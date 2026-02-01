@@ -1,7 +1,7 @@
 /**
  * Bun API server for DeepResearch backend
  *
- * Uses Inngest's Durable Endpoints approach with createExperimentalEndpointWrapper()
+ * Uses Inngest's Durable Endpoints approach with inngest.endpoint()
  * This allows HTTP handlers to become durable directly using step.run()
  */
 
@@ -22,7 +22,7 @@ const corsHeaders = {
 // Helper to add CORS headers to a response
 async function withCors(
   handler: (req: Request) => Promise<Response>,
-  req: Request
+  req: Request,
 ): Promise<Response> {
   const response = await handler(req);
   const newHeaders = new Headers(response.headers);

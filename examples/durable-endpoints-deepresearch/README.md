@@ -26,7 +26,7 @@ durable-endpoints-deepresearch/
 
 ## Technology Stack
 
-- **Backend**: Bun + Inngest Durable Endpoints (`createExperimentalEndpointWrapper`)
+- **Backend**: Bun + Inngest Durable Endpoints (`inngest.endpoint()`)
 - **LLM**: Vercel AI SDK with Anthropic Claude Sonnet
 - **Search**: Exa API for web search
 - **Frontend**: Next.js 15 + React 19 + TailwindCSS
@@ -43,11 +43,13 @@ durable-endpoints-deepresearch/
 ### Setup
 
 1. **Clone and navigate to the example:**
+
    ```bash
    cd examples/durable-endpoints-deepresearch
    ```
 
 2. **Set up the backend:**
+
    ```bash
    cd express-api
    bun install
@@ -66,12 +68,14 @@ durable-endpoints-deepresearch/
 ### Running
 
 1. **Start the backend (port 4000):**
+
    ```bash
    cd express-api
    bun run dev
    ```
 
 2. **Start the frontend (port 3000):**
+
    ```bash
    cd next-app
    npm run dev
@@ -126,23 +130,25 @@ The backend emits real-time events via SSE:
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/research/clarify?topic=...` | GET | Generate clarification questions |
-| `/api/research?researchId=...&topic=...&clarifications=...` | GET | Start deep research (durable) |
-| `/api/research/events?researchId=...` | GET | SSE stream for progress updates |
+| Endpoint                                                    | Method | Description                      |
+| ----------------------------------------------------------- | ------ | -------------------------------- |
+| `/api/research/clarify?topic=...`                           | GET    | Generate clarification questions |
+| `/api/research?researchId=...&topic=...&clarifications=...` | GET    | Start deep research (durable)    |
+| `/api/research/events?researchId=...`                       | GET    | SSE stream for progress updates  |
 
 > **Note**: Durable Endpoints currently require GET requests. The `clarifications` parameter is a JSON-encoded object.
 
 ## Environment Variables
 
 ### express-api/.env
+
 ```
 EXA_API_KEY=your_exa_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
 ### next-app/.env.local (optional)
+
 ```
 NEXT_PUBLIC_BUN_API_URL=http://localhost:4000
 ```

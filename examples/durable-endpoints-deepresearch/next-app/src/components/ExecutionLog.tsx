@@ -22,8 +22,8 @@ export function ExecutionLog({
   }, [logs]);
 
   return (
-    <div className="h-48 bg-white border-t border-gray-200 flex flex-col">
-      <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+    <div className="h-28 flex-shrink-0 bg-white border-t border-gray-200 flex flex-col">
+      <div className="px-3 py-1.5 border-b border-gray-200 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
           <span
             className={`w-2 h-2 rounded-full ${

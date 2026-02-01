@@ -222,7 +222,7 @@ export function CodeViewer({
     if (activeStep && codeRef.current) {
       const range = STEP_LINE_RANGES[activeStep];
       if (range) {
-        const lineHeight = 20;
+        const lineHeight = 16; // matches leading-4
         const scrollTo = (range.start - 3) * lineHeight;
         codeRef.current.scrollTo({ top: scrollTo, behavior: "smooth" });
       }
@@ -254,20 +254,20 @@ export function CodeViewer({
   const lines = SOURCE_CODE.split("\n");
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Code Header */}
-      <div className="bg-gray-100 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-400"></div>
-            <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
-            <div className="w-3 h-3 rounded-full bg-green-400"></div>
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Code Header - Compact */}
+      <div className="bg-gray-100 border-b border-gray-200 px-3 py-1.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-400"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-yellow-400"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-green-400"></div>
           </div>
-          <span className="text-gray-600 text-sm font-medium">
+          <span className="text-gray-600 text-xs font-medium">
             <code>GET /api/research</code>
           </span>
         </div>
-        <span className="text-xs text-gray-600 bg-gray-200 px-2 py-1 rounded font-medium">
+        <span className="text-[10px] text-gray-600 bg-gray-200 px-1.5 py-0.5 rounded font-medium">
           Durable Endpoint
         </span>
       </div>
@@ -275,7 +275,7 @@ export function CodeViewer({
       {/* Code Content */}
       <pre
         ref={codeRef}
-        className="flex-1 overflow-auto bg-gray-50 p-4 font-mono text-sm leading-5 text-gray-800"
+        className="flex-1 overflow-auto bg-gray-50 p-2 font-mono text-xs leading-4 text-gray-800"
       >
         <code>
           {lines.map((line, index) => {

@@ -41,14 +41,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header - Compact */}
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-3">
+        <div className="max-w-7xl mx-auto px-4 py-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gray-900 rounded-lg flex items-center justify-center">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-gray-900 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-5 h-5 text-white"
+                  className="w-4 h-4 text-white"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -62,9 +62,9 @@ export default function Home() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-lg font-bold text-gray-900">DeepResearch</h1>
-                <p className="text-gray-400 text-xs">
-                  Powered by Inngest Durable Endpoints
+                <h1 className="text-base font-bold text-gray-900 leading-tight">DeepResearch</h1>
+                <p className="text-gray-400 text-[10px] leading-tight">
+                  Inngest Durable Endpoints
                 </p>
               </div>
             </div>
@@ -92,10 +92,10 @@ export default function Home() {
       </header>
 
       {/* Main content */}
-      <div className="flex h-[calc(100vh-57px)]">
+      <div className="flex h-[calc(100vh-45px)]">
         {/* Left Panel - Research UI */}
         <div className="w-1/2 overflow-auto bg-white border-r border-gray-200">
-          <div className="p-6 max-w-xl mx-auto">
+          <div className="p-4 max-w-xl mx-auto">
             {/* Topic Input (shown when idle) */}
             {researchState === "idle" && (
               <TopicInput
@@ -181,13 +181,15 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right Panel - Code Viewer */}
-        <div className="w-1/2 flex flex-col bg-white">
-          <CodeViewer
-            activeStep={activeStep}
-            stepStatuses={stepStatuses}
-            currentStepParams={currentStepParams}
-          />
+        {/* Right Panel - Code Viewer & Execution Log share space */}
+        <div className="w-1/2 flex flex-col bg-white overflow-hidden">
+          <div className="flex-1 min-h-0">
+            <CodeViewer
+              activeStep={activeStep}
+              stepStatuses={stepStatuses}
+              currentStepParams={currentStepParams}
+            />
+          </div>
           <ExecutionLog
             logs={logs}
             durabilityMetrics={durabilityMetrics}

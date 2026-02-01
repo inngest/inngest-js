@@ -25,7 +25,9 @@ export function useResearch() {
   const [topic, setTopic] = useState("");
   const [questions, setQuestions] = useState<ClarificationQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [currentResearchId, setCurrentResearchId] = useState<string | null>(null);
+  const [currentResearchId, setCurrentResearchId] = useState<string | null>(
+    null,
+  );
 
   // Progress state
   const [progress, setProgress] = useState(0);
@@ -49,11 +51,13 @@ export function useResearch() {
   });
 
   // Durability metrics
-  const [durabilityMetrics, setDurabilityMetrics] = useState<DurabilityMetrics>({
-    totalRetries: 0,
-    totalRecoveries: 0,
-    steps: {},
-  });
+  const [durabilityMetrics, setDurabilityMetrics] = useState<DurabilityMetrics>(
+    {
+      totalRetries: 0,
+      totalRecoveries: 0,
+      steps: {},
+    },
+  );
 
   // Demo mode settings
   const [demoMode, setDemoMode] = useState<DemoModeSettings>({
@@ -82,12 +86,12 @@ export function useResearch() {
     (
       type: LogEntry["type"],
       message: string,
-      extra?: Partial<Omit<LogEntry, "timestamp" | "type" | "message">>
+      extra?: Partial<Omit<LogEntry, "timestamp" | "type" | "message">>,
     ) => {
       const timestamp = new Date().toLocaleTimeString();
       setLogs((prev) => [...prev, { timestamp, type, message, ...extra }]);
     },
-    []
+    [],
   );
 
   const updateReasoning = useCallback((newReasoning: string) => {
@@ -156,7 +160,9 @@ export function useResearch() {
         }
         addLog(
           "search",
-          `Searching: "${data.query}"${data.depth ? ` (Depth ${data.depth})` : ""}`
+          `Searching: "${data.query}"${
+            data.depth ? ` (Depth ${data.depth})` : ""
+          }`,
         );
       } else if (data.type === "source-found") {
         if (data.source) {
@@ -176,7 +182,7 @@ export function useResearch() {
             {
               sourceRationale: data.sourceRationale,
               learningConnection: data.learningConnection,
-            }
+            },
           );
           if (data.sourceRationale) {
             addLog("reasoning", `Source relevance: ${data.sourceRationale}`, {
@@ -202,7 +208,7 @@ export function useResearch() {
           addLog(
             "follow-up",
             `Next direction: ${data.query} — ${data.followUpReasoning}`,
-            { followUpReasoning: data.followUpReasoning }
+            { followUpReasoning: data.followUpReasoning },
           );
         }
         updateReasoning(data.reasoning || "");
@@ -241,7 +247,7 @@ export function useResearch() {
         const errorMsg = String(data.errorMessage || "Unknown error");
         addLog(
           "retry",
-          `Retrying ${stepId} (${attempt}/${maxAttempts}): ${errorMsg}`
+          `Retrying ${stepId} (${attempt}/${maxAttempts}): ${errorMsg}`,
         );
         updateReasoning(data.reasoning || `Retrying step...`);
         setDurabilityMetrics((prev) => ({
@@ -259,9 +265,13 @@ export function useResearch() {
         const stepId = String(data.stepId || "unknown");
         const attempt = Number(data.attempt || 1);
         const duration = data.duration as number | undefined;
-        addLog("recovered", `✓ Recovered ${stepId} after ${attempt - 1} retries`, {
-          duration,
-        });
+        addLog(
+          "recovered",
+          `✓ Recovered ${stepId} after ${attempt - 1} retries`,
+          {
+            duration,
+          },
+        );
         updateReasoning(data.reasoning || `Step recovered!`);
         setDurabilityMetrics((prev) => ({
           ...prev,
@@ -277,7 +287,7 @@ export function useResearch() {
         }));
       }
     },
-    [addLog, updateReasoning]
+    [addLog, updateReasoning],
   );
 
   // Submit topic and get clarification questions
@@ -291,7 +301,9 @@ export function useResearch() {
 
       try {
         const res = await fetch(
-          `${BUN_API_URL}/api/research/clarify?topic=${encodeURIComponent(topic)}`
+          `${BUN_API_URL}/api/research/clarify?topic=${encodeURIComponent(
+            topic,
+          )}`,
         );
 
         const data = await res.json();
@@ -299,20 +311,25 @@ export function useResearch() {
         if (data.questions) {
           setQuestions(data.questions);
           setResearchState("clarifying");
-          addLog("info", `Received ${data.questions.length} clarification questions`);
+          addLog(
+            "info",
+            `Received ${data.questions.length} clarification questions`,
+          );
         } else {
           throw new Error(data.error || "Failed to get questions");
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to get questions");
+        setError(
+          err instanceof Error ? err.message : "Failed to get questions",
+        );
         setResearchState("error");
         addLog(
           "error",
-          `Error: ${err instanceof Error ? err.message : "Unknown error"}`
+          `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
         );
       }
     },
-    [topic, addLog]
+    [topic, addLog],
   );
 
   // Submit answers and start research
@@ -336,11 +353,26 @@ export function useResearch() {
     }
 
     // Start the research request (runs in background)
-    fetch(`${BUN_API_URL}/api/research?${params.toString()}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.report) {
-          setReport(data.report);
+    fetch(`${BUN_API_URL}/api/research?${params.toString()}`, { mode: "cors" })
+      .then((res) => {
+        console.log("RESEARCH", res.redirected);
+        console.log("RESEARCH - ", res.url);
+        if (res.redirected) {
+          fetch(res.url)
+            .then((res) => {
+              return res;
+            })
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.data && data.data.body) {
+                const result = JSON.parse(data.data.body);
+                setReport(result.report);
+              }
+            })
+            .catch((err) => {
+              setError(err.message);
+              setResearchState("error");
+            });
         }
       })
       .catch((err) => {
@@ -358,8 +390,8 @@ export function useResearch() {
       try {
         const res = await fetch(
           `${BUN_API_URL}/api/research/events?researchId=${encodeURIComponent(
-            researchId
-          )}&cursor=${cursor}`
+            researchId,
+          )}&cursor=${cursor}`,
         );
         const { events, cursor: nextCursor, status } = await res.json();
 

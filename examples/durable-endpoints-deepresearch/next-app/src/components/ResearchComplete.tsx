@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Source } from "@/types";
 import { CitationText } from "./ui";
@@ -9,6 +10,34 @@ type ResearchCompleteProps = {
   sources: Source[];
   onReset: () => void;
 };
+
+/**
+ * Recursively extracts text content from React children.
+ * Handles strings, numbers, arrays, and nested elements.
+ */
+function extractTextFromChildren(children: ReactNode): string {
+  if (children === null || children === undefined) {
+    return "";
+  }
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) {
+    return children.map(extractTextFromChildren).join("");
+  }
+  if (
+    typeof children === "object" &&
+    "props" in children &&
+    children.props &&
+    typeof children.props === "object" &&
+    "children" in children.props
+  ) {
+    return extractTextFromChildren(
+      (children.props as { children: ReactNode }).children,
+    );
+  }
+  return "";
+}
 
 export function ResearchComplete({
   report,
@@ -96,12 +125,18 @@ export function ResearchComplete({
           components={{
             p: ({ children }) => (
               <p>
-                <CitationText text={String(children)} sources={sources} />
+                <CitationText
+                  text={extractTextFromChildren(children)}
+                  sources={sources}
+                />
               </p>
             ),
             li: ({ children }) => (
               <li>
-                <CitationText text={String(children)} sources={sources} />
+                <CitationText
+                  text={extractTextFromChildren(children)}
+                  sources={sources}
+                />
               </li>
             ),
           }}

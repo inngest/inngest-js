@@ -1,7 +1,7 @@
 /**
  * Durable Endpoint for DeepResearch with SSE progress streaming
  *
- * Uses createExperimentalEndpointWrapper() to make the HTTP handler durable.
+ * Uses inngest.endpoint() to make the HTTP handler durable.
  * Streams real-time progress updates via Server-Sent Events.
  */
 
@@ -548,7 +548,7 @@ async function deepResearch(
   }
 
   // Step 1: Search all queries in parallel using Promise.all
-  // Each step.run() is individually durable - Inngest retries failures automatically
+  // Steps return data; processing happens outside for proper memoization
   const searchResults = await Promise.all(
     queries.map((queryInput) => {
       const query =
@@ -557,12 +557,13 @@ async function deepResearch(
 
       return step.run(`search-d${depth}-${stepHash}`, async () => {
         maybeInjectFailure("search", injectFailure, failureRate);
-        return { query, results: await searchExa(query) };
+        const results = await searchExa(query);
+        return { query, results };
       });
     }),
   );
 
-  // Process search results and filter duplicates
+  // Process search results outside steps (runs on every replay)
   const queryResults: Array<{ query: string; newResults: Source[] }> = [];
 
   for (const { query, results } of searchResults) {
@@ -598,27 +599,25 @@ async function deepResearch(
   }
 
   // Step 2: Extract learnings from all results in parallel using Promise.all
-  // Each step.run() is individually durable - Inngest retries failures automatically
+  // Steps return data; processing happens outside for proper memoization
   const learningsResults = await Promise.all(
     queryResults.map(({ query, newResults }) => {
       const stepHash = hashQuery(query);
 
       return step.run(`learn-d${depth}-${stepHash}`, async () => {
         maybeInjectFailure("learn", injectFailure, failureRate);
-        return {
+        const learnings = await extractLearnings(
+          topic,
           query,
-          learnings: await extractLearnings(
-            topic,
-            query,
-            newResults,
-            accumulated.learnings,
-          ),
-        };
+          newResults,
+          accumulated.learnings,
+        );
+        return { query, learnings };
       });
     }),
   );
 
-  // Collect all follow-up queries with reasoning
+  // Process learnings outside steps (runs on every replay)
   const allFollowUps: QueryInput[] = [];
 
   for (const { learnings } of learningsResults) {
