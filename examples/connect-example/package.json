@@ -13,6 +13,6 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
-    "inngest": "file:../../packages/inngest/inngest.tgz"
+    "inngest": "^3.0.0"
   }
 }
