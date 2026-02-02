@@ -47,6 +47,7 @@ import type {
   MetadataUpdate,
 } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
+import type { StepInfo } from "../InngestMiddlewareV2.ts";
 import {
   createStepTools,
   type FoundStep,
@@ -954,6 +955,21 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     // Wrap step execution with middlewareV2 transformStep hooks
     const middlewareV2 = this.options.client.middlewareV2 || [];
 
+    // Call onStepStart for each middleware
+    const stepKind = opts?.type === "step.sendEvent" ? "sendEvent" : "run";
+    const stepInfo: StepInfo = {
+      hashedId,
+      id: userland.id,
+      memoized: false, // Always false for onStepStart
+      name: displayName ?? userland.id,
+      stepKind,
+    };
+    for (const mw of middlewareV2) {
+      if (mw?.onStepStart) {
+        mw.onStepStart(stepInfo);
+      }
+    }
+
     const executeWithMiddleware = async () => {
       // Build the handler chain from inside out
       // The innermost handler runs the actual step function
@@ -965,8 +981,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         if (mw?.transformStep) {
           const nextHandler = handler;
           const currentMw = mw;
-          handler = () =>
-            currentMw.transformStep!(nextHandler, { memoized: false });
+          handler = () => currentMw.transformStep!(nextHandler, stepInfo);
         }
       }
 
@@ -1481,6 +1496,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                 if (typeof result.data !== "undefined") {
                   // Wrap memoized data resolution through middlewareV2 transformStep hooks
                   const middlewareV2 = this.options.client.middlewareV2 || [];
+                  const memoizedStepInfo: StepInfo = {
+                    hashedId,
+                    id: opId.userland.id,
+                    memoized: true,
+                    name: step.displayName ?? opId.userland.id,
+                    stepKind:
+                      step.opts?.type === "step.sendEvent"
+                        ? "sendEvent"
+                        : "run",
+                  };
 
                   // Build handler chain - innermost returns the memoized data
                   let handler: () => unknown = () => result.data;
@@ -1491,9 +1516,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                       const nextHandler = handler;
                       const currentMw = mw;
                       handler = () =>
-                        currentMw.transformStep!(nextHandler, {
-                          memoized: true,
-                        });
+                        currentMw.transformStep!(nextHandler, memoizedStepInfo);
                     }
                   }
 
@@ -1505,6 +1528,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
                   // Wrap error through middlewareV2 transformStep hooks
                   const middlewareV2 = this.options.client.middlewareV2 || [];
+                  const memoizedStepInfo: StepInfo = {
+                    hashedId,
+                    id: opId.userland.id,
+                    memoized: true,
+                    name: step.displayName ?? opId.userland.id,
+                    stepKind:
+                      step.opts?.type === "step.sendEvent"
+                        ? "sendEvent"
+                        : "run",
+                  };
 
                   // Build handler chain - innermost throws the StepError
                   let handler: () => unknown = () => {
@@ -1517,9 +1550,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                       const nextHandler = handler;
                       const currentMw = mw;
                       handler = () =>
-                        currentMw.transformStep!(nextHandler, {
-                          memoized: true,
-                        });
+                        currentMw.transformStep!(nextHandler, memoizedStepInfo);
                     }
                   }
 
@@ -1561,6 +1592,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return promise;
       }
 
+      const freshStepInfo: StepInfo = {
+        hashedId,
+        id: opId.userland.id,
+        memoized: false,
+        name: step.displayName ?? opId.userland.id,
+        stepKind: step.opts?.type === "step.sendEvent" ? "sendEvent" : "run",
+      };
+
       // Build the handler chain that wraps the promise result
       let handler: () => unknown = () => promise;
       for (let i = middlewareV2.length - 1; i >= 0; i--) {
@@ -1568,8 +1607,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         if (mw?.transformStep) {
           const nextHandler = handler;
           const currentMw = mw;
-          handler = () =>
-            currentMw.transformStep!(nextHandler, { memoized: false });
+          handler = () => currentMw.transformStep!(nextHandler, freshStepInfo);
         }
       }
 
