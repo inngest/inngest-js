@@ -7,12 +7,14 @@ type ExecutionLogProps = {
   logs: LogEntry[];
   durabilityMetrics: DurabilityMetrics;
   researchState: ResearchState;
+  height?: number;
 };
 
 export function ExecutionLog({
   logs,
   durabilityMetrics,
   researchState,
+  height = 112,
 }: ExecutionLogProps) {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -22,7 +24,10 @@ export function ExecutionLog({
   }, [logs]);
 
   return (
-    <div className="h-28 flex-shrink-0 bg-white border-t border-gray-200 flex flex-col">
+    <div
+      className="flex-shrink-0 bg-white flex flex-col"
+      style={{ height: `${height}px` }}
+    >
       <div className="px-3 py-1.5 border-b border-gray-200 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
           <span

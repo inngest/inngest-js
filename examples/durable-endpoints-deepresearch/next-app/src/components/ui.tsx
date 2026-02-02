@@ -16,9 +16,9 @@ export function LoadingSpinner({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   );
 }
 
-// Progress Bar - Compact with 2 rows of squares
+// Progress Bar - Full width with vertical columns and pulsing animation
 export function ProgressBar({ progress }: { progress: number }) {
-  const rows = 2;
+  const rows = 3;
   const cols = 32;
   const filledCols = Math.floor((progress / 100) * cols);
 
@@ -30,9 +30,9 @@ export function ProgressBar({ progress }: { progress: number }) {
 
   return (
     <div className="w-full">
-      <div className="flex gap-[2px] w-full justify-between">
+      <div className="flex gap-[3px] w-full justify-between">
         {Array.from({ length: cols }).map((_, col) => (
-          <div key={col} className="flex flex-col gap-[2px]">
+          <div key={col} className="flex flex-col gap-[3px]">
             {Array.from({ length: rows }).map((_, row) => {
               const { isFilled, isPulsing } = getSquareState(col);
               const pulseDelay = isPulsing
@@ -42,7 +42,7 @@ export function ProgressBar({ progress }: { progress: number }) {
               return (
                 <div
                   key={row}
-                  className={`w-2 h-2 transition-all duration-300 ${
+                  className={`w-2.5 h-2.5 transition-all duration-300 ${
                     isPulsing ? "animate-pulse" : ""
                   }`}
                   style={{
@@ -60,9 +60,9 @@ export function ProgressBar({ progress }: { progress: number }) {
           </div>
         ))}
       </div>
-      <div className="flex justify-between mt-1">
-        <span className="text-[10px] text-gray-500">{progress}%</span>
-        <span className="text-[10px] text-gray-400">
+      <div className="flex justify-between mt-2">
+        <span className="text-xs text-gray-500">{progress}%</span>
+        <span className="text-xs text-gray-400">
           {progress < 100 ? "Researching..." : "Complete"}
         </span>
       </div>
