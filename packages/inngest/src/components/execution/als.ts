@@ -1,4 +1,3 @@
-import { DefaultLogger } from "../../middleware/logger.ts";
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";

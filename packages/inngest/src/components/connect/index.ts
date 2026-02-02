@@ -2,13 +2,13 @@ import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
 import ms from "ms";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
-import { getLogger } from "../../helpers/log.ts";
 import {
   allProcessEnv,
   getEnvironmentName,
   getPlatformName,
 } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
+import { getLogger } from "../../helpers/log.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import {
   ConnectMessage,

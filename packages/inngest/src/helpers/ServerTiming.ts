@@ -1,5 +1,5 @@
-import { runAsPromise } from "./promises.ts";
 import { getLogger } from "./log.ts";
+import { runAsPromise } from "./promises.ts";
 
 interface Timing {
   description: string;
