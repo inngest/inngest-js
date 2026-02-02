@@ -554,7 +554,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         // which has side effects like calling the finished hook
         const transformedOutput = await this.state.hooks?.transformOutput?.({
           result: { data: result.data },
-          step: undefined,
+          step: result,
         });
         const transformedData = transformedOutput?.result?.data ?? result.data;
 
