@@ -479,11 +479,21 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: checkpoint.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(checkpoint.data),
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 

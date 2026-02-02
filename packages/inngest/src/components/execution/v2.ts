@@ -414,7 +414,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         // which has side effects like calling the finished hook
         const transformedOutput = await this.state.hooks?.transformOutput?.({
           result: { data: stepResult.data },
-          step: undefined,
+          step: stepResult,
         });
         const transformedData =
           transformedOutput?.result?.data ?? stepResult.data;
@@ -477,11 +477,21 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: checkpoint.data },
+          step: this.state.executingStep,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(checkpoint.data),
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 
@@ -656,7 +666,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               steps,
             };
           }
-
+          // NOTE - Do we need to handle this case?
           return;
         },
         "function-rejected": async (checkpoint) => {
