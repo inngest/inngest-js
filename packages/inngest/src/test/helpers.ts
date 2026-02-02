@@ -189,7 +189,11 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
     if (result.type === "step-ran" && result.step) {
       stepState = {
         ...stepState,
-        [result.step.id]: { id: result.step.id, data: result.step.data },
+        [result.step.id]: {
+          data: result.step.data,
+          error: result.step.error,
+          id: result.step.id,
+        },
       };
     }
 
@@ -199,6 +203,23 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
           throw new Error(`Expected step-ran, got ${result.type}`);
         }
         expect(result.step.data).toEqual(expected);
+      },
+      assertStepError: (expected: {
+        cause?: unknown;
+        message: string;
+        name: string;
+      }) => {
+        if (result.type !== "step-ran") {
+          throw new Error(`Expected step-ran, got ${result.type}`);
+        }
+        if (!isRecord(result.step.error)) {
+          throw new Error(
+            `Expected step.error to be a record, got ${typeof result.step.error}`,
+          );
+        }
+        expect(result.step.error.cause).toEqual(expected.cause);
+        expect(result.step.error.message).toEqual(expected.message);
+        expect(result.step.error.name).toEqual(expected.name);
       },
       result,
     };
@@ -2191,3 +2212,7 @@ export const nodeVersion = process.version
       return { major, minor, patch };
     })()
   : undefined;
+
+function isRecord(val: unknown): val is Record<string, unknown> {
+  return typeof val === "object" && val !== null && !Array.isArray(val);
+}
