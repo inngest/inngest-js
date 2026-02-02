@@ -474,7 +474,7 @@ export class InngestCommHandler<
 
     const defaultStreamingOption: typeof this.streaming = false;
     this.streaming = z
-      .union([z.enum(["allow", "force"]), z.literal(false)])
+      .boolean()
       .default(defaultStreamingOption)
       .catch((ctx) => {
         this.log(
@@ -486,7 +486,9 @@ export class InngestCommHandler<
 
         return defaultStreamingOption;
       })
-      .parse(options.streaming || this.env[envKeys.InngestStreaming]);
+      .parse(
+        options.streaming || parseAsBoolean(this.env[envKeys.InngestStreaming]),
+      );
 
     // Early validation for environments where process.env is available (Node.js).
     // Edge environments will skip this and validate at request time instead.
@@ -596,25 +598,24 @@ export class InngestCommHandler<
       return false;
     }
 
+    // TODO: if we detect that someone is using 'allow' or 'force', we should log a warning
+    const streamingRequested =
+      this.streaming === true ||
+      parseAsBoolean(this.env[envKeys.InngestStreaming]) === true ||
+      this.env[envKeys.InngestStreaming] === "allow" ||
+      this.env[envKeys.InngestStreaming] === "force";
+
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
+      if (streamingRequested) {
+        throw new Error(
+          `${logPrefix} Streaming has been forced but the serve handler does not support streaming. Please either remove the streaming option or use a serve handler that supports streaming.`,
+        );
+      }
       return false;
     }
 
-    // If the user has forced streaming, we should always stream.
-    if (this.streaming === "force") {
-      return true;
-    }
-
-    // If the user has allowed streaming, we should stream if the platform
-    // supports it.
-    return (
-      this.streaming === "allow" &&
-      platformSupportsStreaming(
-        this.frameworkName as SupportedFrameworkName,
-        this.env,
-      )
-    );
+    return streamingRequested;
   }
 
   private async isInngestReq(
@@ -1137,7 +1138,22 @@ export class InngestCommHandler<
       };
     };
 
-    if (await this.shouldStream(actions)) {
+    let shouldStream: boolean;
+    try {
+      shouldStream = await this.shouldStream(actions);
+    } catch (err) {
+      return actions.transformResponse("sending back response", {
+        status: 500,
+        headers: {
+          ...(await getHeaders()),
+          "Content-Type": "application/json",
+        },
+        body: stringify(serializeError(err)),
+        version: undefined,
+      });
+    }
+
+    if (shouldStream) {
       const method = await actions.method("starting streaming response");
 
       if (method === "POST") {
