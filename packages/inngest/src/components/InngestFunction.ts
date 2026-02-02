@@ -305,7 +305,7 @@ export class InngestFunction<
     return (
       this.opts.optimizeParallelism ??
       this.client["options"].optimizeParallelism ??
-      false
+      true
     );
   }
 

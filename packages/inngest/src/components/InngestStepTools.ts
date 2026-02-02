@@ -179,9 +179,19 @@ export const createStepTools = <TClient extends Inngest.Any>(
     matchOp: MatchOpFn<T>,
     opts?: StepToolOptions<T>,
   ): T => {
+    const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
+      const op = matchOp(stepOptions, ...rest);
+
+      if (stepOptions.parallelMode) {
+        op.opts = { ...op.opts, parallelMode: stepOptions.parallelMode };
+      }
+
+      return op;
+    };
+
     return (async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
-      return stepHandler({ args: parsedArgs, matchOp, opts });
+      return stepHandler({ args: parsedArgs, matchOp: wrappedMatchOp, opts });
     }) as T;
   };
 

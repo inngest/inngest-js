@@ -1465,6 +1465,11 @@ export interface StepOptions {
    * changed at any time without affecting the step's behaviour.
    */
   name?: string;
+
+  /**
+   * The steps 'parallelMode', TODO: document
+   */
+  parallelMode?: "race" | undefined;
 }
 
 /**
