@@ -965,7 +965,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         if (mw?.transformStep) {
           const nextHandler = handler;
           const currentMw = mw;
-          handler = () => currentMw.transformStep!(nextHandler);
+          handler = () =>
+            currentMw.transformStep!(nextHandler, { memoized: false });
         }
       }
 
@@ -1489,18 +1490,46 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                     if (mw?.transformStep) {
                       const nextHandler = handler;
                       const currentMw = mw;
-                      handler = () => currentMw.transformStep!(nextHandler);
+                      handler = () =>
+                        currentMw.transformStep!(nextHandler, {
+                          memoized: true,
+                        });
                     }
                   }
 
                   const transformedData = await handler();
                   resolve(transformedData);
                 } else {
-                  this.state.recentlyRejectedStepError = new StepError(
-                    opId.id,
-                    result.error,
-                  );
-                  reject(this.state.recentlyRejectedStepError);
+                  const stepError = new StepError(opId.id, result.error);
+                  this.state.recentlyRejectedStepError = stepError;
+
+                  // Wrap error through middlewareV2 transformStep hooks
+                  const middlewareV2 = this.options.client.middlewareV2 || [];
+
+                  // Build handler chain - innermost throws the StepError
+                  let handler: () => unknown = () => {
+                    throw stepError;
+                  };
+
+                  for (let i = middlewareV2.length - 1; i >= 0; i--) {
+                    const mw = middlewareV2[i];
+                    if (mw?.transformStep) {
+                      const nextHandler = handler;
+                      const currentMw = mw;
+                      handler = () =>
+                        currentMw.transformStep!(nextHandler, {
+                          memoized: true,
+                        });
+                    }
+                  }
+
+                  try {
+                    await handler();
+                    // Should never reach here since innermost handler throws
+                    reject(stepError);
+                  } catch (err) {
+                    reject(err);
+                  }
                 }
               },
             );
@@ -1539,7 +1568,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         if (mw?.transformStep) {
           const nextHandler = handler;
           const currentMw = mw;
-          handler = () => currentMw.transformStep!(nextHandler);
+          handler = () =>
+            currentMw.transformStep!(nextHandler, { memoized: false });
         }
       }
 

@@ -1,14 +1,16 @@
-interface Hooks {
-  transformStep?: (handler: () => unknown) => unknown;
+export interface StepInfo {
+  /**
+   * Whether the step result is being retrieved from memoized state (true)
+   * or being executed fresh (false).
+   */
+  memoized: boolean;
 }
 
-export class InngestMiddlewareV2 implements Hooks {
+export class InngestMiddlewareV2 {
   /**
-   * Called before a step method runs. Override this method to wrap step execution
-   * with before/after hooks.
-   *
-   * @param handler - Function that executes the actual step. Call this to run the step.
-   * @returns The return value is NOT passed to the caller; the step's return value is used instead.
+   * Called 1 or more times per step, each time the step is "reached"
+   * (regardless of whether it's already memoized). This gives an opportunity to
+   * modify step inputs and outputs.
    */
-  transformStep?(handler: () => unknown): unknown;
+  transformStep?(handler: () => unknown, stepInfo: StepInfo): unknown;
 }
