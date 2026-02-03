@@ -3,6 +3,7 @@ import { ExecutionVersion } from "../helpers/consts.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
 import { InngestCommHandler } from "./InngestCommHandler.ts";
+import { parallel } from "./InngestStepTools.ts";
 
 describe("EXE-1135: Default to optimized parallelism", () => {
   describe("shouldOptimizeParallelism precedence", () => {
@@ -198,6 +199,151 @@ describe("EXE-1135: Default to optimized parallelism", () => {
 
       expect(ret.type).toBe("steps-found");
       if (ret.type === "steps-found") {
+        for (const op of ret.steps) {
+          expect(op.opts).toMatchObject({ parallelMode: "race" });
+        }
+      }
+    });
+  });
+
+  describe("parallel() helper", () => {
+    test("automatically sets parallelMode on steps inside callback", async () => {
+      const client = createClient({ id: "test", isDev: true });
+      const fn = client.createFunction(
+        { id: "test-fn" },
+        { event: "test/event" },
+        async ({ step }) => {
+          await parallel({ mode: "race" }, async () => {
+            return Promise.race([
+              step.run("a", () => "a"),
+              step.run("b", () => "b"),
+              step.run("c", () => "c"),
+            ]);
+          });
+        },
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        { disableImmediateExecution: true },
+      );
+
+      expect(ret.type).toBe("steps-found");
+      if (ret.type === "steps-found") {
+        expect(ret.steps).toHaveLength(3);
+        for (const op of ret.steps) {
+          expect(op.op).toBe(StepOpCode.StepPlanned);
+          expect(op.opts).toMatchObject({ parallelMode: "race" });
+        }
+      }
+    });
+
+    test("does not affect steps outside the callback", async () => {
+      const client = createClient({ id: "test", isDev: true });
+      const fn = client.createFunction(
+        { id: "test-fn" },
+        { event: "test/event" },
+        async ({ step }) => {
+          // This step is outside parallel() - should NOT have parallelMode
+          const outside = step.run("outside", () => "outside");
+
+          await parallel({ mode: "race" }, async () => {
+            return Promise.race([
+              step.run("inside-a", () => "a"),
+              step.run("inside-b", () => "b"),
+            ]);
+          });
+
+          await outside;
+        },
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        { disableImmediateExecution: true },
+      );
+
+      expect(ret.type).toBe("steps-found");
+      if (ret.type === "steps-found") {
+        expect(ret.steps).toHaveLength(3);
+
+        const outsideStep = ret.steps.find((s) => s.displayName === "outside");
+        const insideSteps = ret.steps.filter((s) =>
+          s.displayName?.startsWith("inside-"),
+        );
+
+        expect(outsideStep).toBeDefined();
+        expect(outsideStep?.opts?.parallelMode).toBeUndefined();
+
+        expect(insideSteps).toHaveLength(2);
+        for (const op of insideSteps) {
+          expect(op.opts).toMatchObject({ parallelMode: "race" });
+        }
+      }
+    });
+
+    test("parallel() context applies to all steps in callback", async () => {
+      const client = createClient({ id: "test", isDev: true });
+      const fn = client.createFunction(
+        { id: "test-fn" },
+        { event: "test/event" },
+        async ({ step }) => {
+          await parallel({ mode: "race" }, async () => {
+            return Promise.race([
+              step.run("a", () => "a"),
+              step.run({ id: "b" }, () => "b"),
+            ]);
+          });
+        },
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        { disableImmediateExecution: true },
+      );
+
+      expect(ret.type).toBe("steps-found");
+      if (ret.type === "steps-found") {
+        expect(ret.steps).toHaveLength(2);
+
+        // Both steps should have parallelMode from the parallel() context
+        for (const op of ret.steps) {
+          expect(op.opts).toMatchObject({ parallelMode: "race" });
+        }
+      }
+    });
+
+    test("works with all step types (sleep, waitForEvent)", async () => {
+      const client = createClient({ id: "test", isDev: true });
+      const fn = client.createFunction(
+        { id: "test-fn" },
+        { event: "test/event" },
+        async ({ step }) => {
+          await parallel({ mode: "race" }, async () => {
+            return Promise.race([
+              step.run("work", () => "done"),
+              step.sleep("timeout", "10s"),
+              step.waitForEvent("external", {
+                event: "external/event",
+                timeout: "1h",
+              }),
+            ]);
+          });
+        },
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        { disableImmediateExecution: true },
+      );
+
+      expect(ret.type).toBe("steps-found");
+      if (ret.type === "steps-found") {
+        expect(ret.steps).toHaveLength(3);
         for (const op of ret.steps) {
           expect(op.opts).toMatchObject({ parallelMode: "race" });
         }

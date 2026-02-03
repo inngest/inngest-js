@@ -1467,9 +1467,16 @@ export interface StepOptions {
   name?: string;
 
   /**
-   * The steps 'parallelMode', TODO: document
+   * The parallel execution mode for this step. Used with optimized parallelism
+   * to control how steps behave in parallel execution contexts.
+   *
+   * - `"race"`: Indicates this step is part of a `Promise.race()` group. When
+   *   one step in the race completes, the executor can cancel remaining steps.
+   *
+   * Can be set directly on step options or automatically via the `parallel()`
+   * helper from `inngest/experimental`.
    */
-  parallelMode?: "race" | undefined;
+  parallelMode?: "race";
 }
 
 /**

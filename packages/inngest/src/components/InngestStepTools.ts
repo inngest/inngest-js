@@ -1,7 +1,7 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
-import { getAsyncCtx } from "../experimental";
+import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { getLogger } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -26,6 +26,13 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
 } from "../types.ts";
+import {
+  type AsyncContext,
+  getAsyncCtx,
+  getAsyncCtxSync,
+  getAsyncLocalStorage,
+  isALSFallback,
+} from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
@@ -182,8 +189,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
       const op = matchOp(stepOptions, ...rest);
 
-      if (stepOptions.parallelMode) {
-        op.opts = { ...op.opts, parallelMode: stepOptions.parallelMode };
+      // Explicit option takes precedence, then check ALS context
+      const parallelMode =
+        stepOptions.parallelMode ?? getAsyncCtxSync()?.execution?.parallelMode;
+
+      if (parallelMode) {
+        op.opts = { ...op.opts, parallelMode };
       }
 
       return op;
@@ -1107,4 +1118,77 @@ type AiInferOpts<TModel extends AiAdapter> = {
    * The input to pass to the model.
    */
   body: AiAdapter.Input<TModel>;
+};
+
+/**
+ * Options for the `parallel()` helper.
+ */
+export interface ParallelOptions {
+  /**
+   * The parallel mode to apply to all steps created within the callback.
+   *
+   * - `"race"`: Steps will be executed with race semantics, meaning the first
+   *   step to complete will "win" and remaining steps may be cancelled.
+   */
+  mode?: "race";
+}
+
+/**
+ * A helper that sets the parallel mode for all steps created within the
+ * callback. This allows you to use native `Promise.race()` with cleaner syntax.
+ *
+ * @example
+ * ```ts
+ * const winner = await parallel({ mode: "race" }, async () => {
+ *   return Promise.race([
+ *     step.run("a", () => "a"),
+ *     step.run("b", () => "b"),
+ *     step.run("c", () => "c"),
+ *   ]);
+ * });
+ * ```
+ *
+ * Without this helper, you would need to manually tag each step:
+ * ```ts
+ * const winner = await Promise.race([
+ *   step.run({ id: "a", parallelMode: "race" }, () => "a"),
+ *   step.run({ id: "b", parallelMode: "race" }, () => "b"),
+ *   step.run({ id: "c", parallelMode: "race" }, () => "c"),
+ * ]);
+ * ```
+ */
+export const parallel = async <T>(
+  options: ParallelOptions,
+  callback: () => Promise<T>,
+): Promise<T> => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution) {
+    throw new Error(
+      "`parallel()` must be called within an Inngest function execution",
+    );
+  }
+
+  const als = await getAsyncLocalStorage();
+
+  if (isALSFallback()) {
+    throw new Error(
+      "`parallel()` requires AsyncLocalStorage support, which is not available in this runtime. " +
+        "This typically affects Cloudflare Workers and some edge environments.\n\n" +
+        "Workaround: Pass `parallelMode` directly to each step:\n" +
+        "  step.run({ id: 'my-step', parallelMode: 'race' }, fn)",
+    );
+  }
+
+  // Create a new context with the parallelMode set
+  const nestedCtx: AsyncContext = {
+    ...currentCtx,
+    execution: {
+      ...currentCtx.execution,
+      parallelMode: options.mode,
+    },
+  };
+
+  // Run the callback inside the nested context
+  return als.run(nestedCtx, callback);
 };
