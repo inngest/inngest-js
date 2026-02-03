@@ -1034,6 +1034,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
         const metadata = this.state.metadata?.get(id);
 
+        // Call onStepError for each middleware
+        for (const mw of middlewareV2) {
+          if (mw?.onStepError) {
+            mw.onStepError(runInfo, stepInfo, error);
+          }
+        }
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,

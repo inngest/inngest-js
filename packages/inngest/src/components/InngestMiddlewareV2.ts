@@ -64,6 +64,16 @@ class BaseMiddlewareImpl {
     stepInfo: Middleware.StepInfo,
     handler: () => unknown,
   ): unknown;
+
+  /**
+   * Called each time a step errors. Only called for `step.run` and
+   * `step.sendEvent`. Never called for memoized errors.
+   */
+  onStepError?(
+    runInfo: Middleware.RunInfo,
+    stepInfo: Middleware.StepInfo,
+    error: Error,
+  ): void;
 }
 
 /**
