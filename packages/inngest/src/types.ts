@@ -750,6 +750,37 @@ export type ApplyMiddlewareStaticTransform<
 > = (TTransformer & { In: T })["Out"];
 
 /**
+ * Extract the context extensions from a middleware V2 instance.
+ * Uses the return type of `extendRunInfo` method.
+ */
+type GetMiddlewareV2CtxExtensions<T> = T extends Middleware.BaseMiddleware
+  ? T extends { extendRunInfo(runInfo: Middleware.RunInfo): infer TCtx }
+    ? TCtx
+    : {}
+  : {};
+
+/**
+ * Apply all middleware V2 context extensions.
+ * Each middleware's ctx extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareV2CtxExtensions<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [Middleware.BaseMiddleware, ...Middleware.BaseMiddleware[]]
+  ? ApplyMiddlewareV2CtxExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware ctx extensions.
+ */
+type ApplyMiddlewareV2CtxExtensionsInternal<
+  TMw extends Middleware.BaseMiddleware[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.BaseMiddleware[]]
+  ? GetMiddlewareV2CtxExtensions<First> &
+      ApplyMiddlewareV2CtxExtensionsInternal<Rest>
+  : {};
+
+/**
  * An HTTP-like, standardised response format that allows Inngest to help
  * orchestrate steps and retries.
  *

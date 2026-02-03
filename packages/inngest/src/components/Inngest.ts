@@ -39,6 +39,7 @@ import {
   ProxyLogger,
 } from "../middleware/logger.ts";
 import {
+  type ApplyAllMiddlewareV2CtxExtensions,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -1009,7 +1010,10 @@ export namespace Inngest {
           NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
           TMiddleware,
         ]
-      >
+      > &
+        ApplyAllMiddlewareV2CtxExtensions<
+          ClientOptionsFromInngest<TClient>["middlewareV2"]
+        >
     >,
     TFailureHandler extends Handler.Any = Handler<
       TClient,
@@ -1029,7 +1033,10 @@ export namespace Inngest {
             AsArray<TTrigger>[number]
           >]
         >
-      >
+      > &
+        ApplyAllMiddlewareV2CtxExtensions<
+          ClientOptionsFromInngest<TClient>["middlewareV2"]
+        >
     >,
   >(
     options: Omit<

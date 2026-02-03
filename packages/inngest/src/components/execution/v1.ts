@@ -1115,10 +1115,21 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     const middlewareV2 = this.options.client.middlewareV2 || [];
 
-    // Innermost handler: apply runInfo mutations then run user function
+    /**
+     * Collect context extensions from all middleware.
+     * Each middleware's extendRunInfo is called and results are merged.
+     */
+    const ctxExtensions: Record<string, unknown> = {};
+    for (const mw of middlewareV2) {
+      if (mw?.extendRunInfo) {
+        Object.assign(ctxExtensions, mw.extendRunInfo(runInfo));
+      }
+    }
+
+    // Innermost handler: apply mutations then run user function
     let runHandler: () => Promise<unknown> = async () => {
-      // Apply mutations from runInfo back to execution state
-      this.applyRunInfoMutations(runInfo);
+      // Apply mutations from runInfo and ctx extensions back to execution state
+      this.applyRunInfoMutations(runInfo, ctxExtensions);
       return this.userFnToRun(this.fnArg);
     };
 
@@ -1335,13 +1346,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   /**
-   * Apply mutations from runInfo back to execution state.
-   * Allows transformRun middleware to modify event data and memoized step data.
+   * Apply mutations from runInfo and context extensions back to execution state.
+   * Allows transformRun middleware to modify event data, memoized step data,
+   * and inject custom fields into the handler context.
    */
-  private applyRunInfoMutations(runInfo: Middleware.RunInfo): void {
+  private applyRunInfoMutations(
+    runInfo: Middleware.RunInfo,
+    ctxExtensions: Record<string, unknown>,
+  ): void {
     // Apply event mutations
     if (runInfo.event !== this.fnArg.event) {
       this.fnArg = { ...this.fnArg, event: runInfo.event };
+    }
+
+    // Apply ctx extensions from middleware
+    if (Object.keys(ctxExtensions).length > 0) {
+      this.fnArg = { ...this.fnArg, ...ctxExtensions };
     }
 
     // Apply step data mutations

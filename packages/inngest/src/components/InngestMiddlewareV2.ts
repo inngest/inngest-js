@@ -46,6 +46,13 @@ class BaseMiddlewareImpl {
   declare staticTransform: DefaultStaticTransform;
 
   /**
+   * Called many times per run, once for each step attempt. This gives an
+   * opportunity to append the runInfo object in a way that reflects in static
+   * types.
+   */
+  extendRunInfo?(runInfo: Middleware.RunInfo): void;
+
+  /**
    * Called 1 time per step before running its handler. Only called for
    * `step.run` and `step.sendEvent`.
    */
@@ -67,8 +74,8 @@ class BaseMiddlewareImpl {
 
   /**
    * Called many times per run, once for each step attempt. This gives an
-   * opportunity to modify step inputs and outputs. Modify `runInfo` by
-   * reference.
+   * opportunity to modify run input and output. Modify `runInfo` by reference.
+   * Note that any modifications are not reflected in static types.
    */
   transformRun?(
     handler: () => Promise<unknown>,
