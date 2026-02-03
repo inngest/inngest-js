@@ -714,9 +714,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * Invoke a passed Inngest `function` with the given `data`. Returns the
      * result of the returned value of the function or `null` if the function
      * does not return a value.
-     *
-     * A string ID can also be passed to reference functions outside of the
-     * current app.
      */
     invoke: createTool<
       <TFunction extends InvokeTargetFunctionDefinition>(
@@ -732,15 +729,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       const parsedFnOpts = optsSchema
         .extend({
-          _type: z.literal("fullId").optional().default("fullId"),
-          function: z.string().min(1),
+          _type: z.literal("fnInstance").optional().default("fnInstance"),
+          function: z.instanceof(InngestFunction),
         })
-        .or(
-          optsSchema.extend({
-            _type: z.literal("fnInstance").optional().default("fnInstance"),
-            function: z.instanceof(InngestFunction),
-          }),
-        )
         .or(
           optsSchema.extend({
             _type: z.literal("refInstance").optional().default("refInstance"),
@@ -751,7 +742,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       if (!parsedFnOpts.success) {
         throw new Error(
-          `Invalid invocation options passed to invoke; must include either a function or functionId.`,
+          `Invalid invocation options passed to invoke; must include a function instance or referenceFunction().`,
         );
       }
 
@@ -770,13 +761,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
       switch (_type) {
         case "fnInstance":
           opts.function_id = fn.id(fn["client"].id);
-          break;
-
-        case "fullId":
-          console.warn(
-            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`,
-          );
-          opts.function_id = fn;
           break;
 
         case "refInstance":

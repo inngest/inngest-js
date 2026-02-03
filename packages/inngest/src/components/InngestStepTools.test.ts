@@ -854,19 +854,6 @@ describe("invoke", () => {
         });
       });
 
-      test("with `function` string", async () => {
-        await expect(
-          step.invoke("id", {
-            function: "some-client-some-fn",
-            data: { foo: "foo" },
-          }),
-        ).resolves.toMatchObject({
-          opts: {
-            function_id: "some-client-some-fn",
-          },
-        });
-      });
-
       test("with `function` ref instance", async () => {
         await expect(
           step.invoke("id", {
@@ -963,10 +950,6 @@ describe("invoke", () => {
       ReturnType<T>
     >;
 
-    test("allows specifying function as a string", () => {
-      const _test = () => invoke("id", { function: "test-fn", data: "foo" });
-    });
-
     test("allows specifying function as an instance", () => {
       const fn = client.createFunction(
         { id: "fn" },
@@ -975,10 +958,6 @@ describe("invoke", () => {
       );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-    });
-
-    test("allows specifying function as a string", () => {
-      const _test = () => invoke("id", { function: "fn", data: { foo: "" } });
     });
 
     test("allows specifying function as a reference function", () => {

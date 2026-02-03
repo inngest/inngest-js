@@ -1509,8 +1509,7 @@ export type MetadataTarget =
  */
 export type InvokeTargetFunctionDefinition =
   | Public<InngestFunctionReference.Any>
-  | Public<InngestFunction.Any>
-  | string;
+  | Public<InngestFunction.Any>;
 
 /**
  * Given an invocation target, extract the payload that will be used to trigger

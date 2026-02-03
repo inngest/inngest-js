@@ -98,3 +98,33 @@ serve({ client, functions, streaming: true });
 ## Edge Environment Improvements
 
 In v4, fetch and configuration are now resolved lazily at first use rather than eagerly at client construction. This means you no longer need to manually bind `globalThis.fetch` before creating an Inngest client in edge environments (Cloudflare Workers, Vercel Edge, Deno, etc.).
+
+## Remove String Function IDs in `step.invoke()`
+
+Passing a raw string to `step.invoke()` is no longer supported. Use `referenceFunction()` or pass an imported function instance instead.
+
+```typescript
+// Old (v3) - No longer works
+await step.invoke("my-step", {
+  function: "my-app-other-fn",
+  data: { foo: "bar" },
+});
+
+// New (v4) - Use referenceFunction for cross-app invocation
+import { referenceFunction } from "inngest";
+
+await step.invoke("my-step", {
+  function: referenceFunction({ appId: "my-app", functionId: "other-fn" }),
+  data: { foo: "bar" },
+});
+
+// Or pass an imported function instance directly
+import { otherFn } from "./other-fn";
+
+await step.invoke("my-step", {
+  function: otherFn,
+  data: { foo: "bar" },
+});
+```
+
+The `referenceFunction()` helper provides type safety and avoids the footgun of manually constructing the `appId-functionId` string.
