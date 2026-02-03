@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import { literal } from "zod/v3";
-import { dummyEventKey, envKeys, headerKeys } from "../helpers/consts.ts";
+import { envKeys, headerKeys } from "../helpers/consts.ts";
 import type { IsAny, IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
@@ -213,6 +213,19 @@ describe("send", () => {
       );
     });
 
+    test("should succeed in dev mode without event key", async () => {
+      const inngest = createClient({
+        id: "test",
+        isDev: true,
+      });
+
+      await expect(
+        inngest.send({ name: "test", data: {} }),
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+    });
+
     test("should succeed if event key specified at instantiation", async () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
@@ -254,7 +267,7 @@ describe("send", () => {
 
     test("should succeed if event key given at runtime", async () => {
       const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      inngest.setEnvVars({ [envKeys.InngestEventKey]: testEventKey });
 
       await expect(inngest.send(testEvent)).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
@@ -273,8 +286,7 @@ describe("send", () => {
     });
 
     test("should succeed if an empty list of payloads is given", async () => {
-      const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       await expect(inngest.send([])).resolves.toMatchObject({
         ids: Array(0).fill(expect.any(String)),
@@ -421,8 +433,7 @@ describe("send", () => {
     });
 
     test("should insert `ts` timestamp ", async () => {
-      const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       const testEventWithoutTs = {
         name: "test.without.ts",
@@ -453,8 +464,7 @@ describe("send", () => {
     });
 
     test("should insert blank `data` if none given", async () => {
-      const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       const testEventWithoutData = {
         name: "test.without.data",
@@ -484,8 +494,7 @@ describe("send", () => {
 
     if (nodeVersion?.major && nodeVersion.major >= 19) {
       test("should use seed header for idempotency ID if none given", async () => {
-        const inngest = createClient({ id: "test" });
-        inngest.setEventKey(testEventKey);
+        const inngest = createClient({ id: "test", eventKey: testEventKey });
 
         const testEventWithoutId = {
           name: "test.without.id",
@@ -782,10 +791,40 @@ describe("setEnvVars", () => {
 
   test("updates event key from env", () => {
     const inngest = createClient({ id: "test" });
-    expect(inngest["eventKey"]).toBe(dummyEventKey);
+    expect(inngest["eventKey"]).toBe(undefined);
 
     inngest.setEnvVars({ [envKeys.InngestEventKey]: "new-key" });
     expect(inngest["eventKey"]).toBe("new-key");
+  });
+
+  test("setEnvVars without event key preserves existing key", () => {
+    const inngest = createClient({ id: "test", eventKey: "my-key" });
+    inngest.setEnvVars({ SOME_OTHER_VAR: "value" });
+    expect(inngest["eventKey"]).toBe("my-key");
+  });
+
+  test("options eventKey takes priority over env", () => {
+    const inngest = createClient({ id: "test", eventKey: "options-key" });
+    inngest.setEnvVars({ [envKeys.InngestEventKey]: "env-key" });
+    expect(inngest["eventKey"]).toBe("options-key");
+  });
+});
+
+describe("eventKeySet", () => {
+  test("returns false when no key set", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest["eventKeySet"]()).toBe(false);
+  });
+
+  test("returns true when key is set via options", () => {
+    const inngest = createClient({ id: "test", eventKey: "my-key" });
+    expect(inngest["eventKeySet"]()).toBe(true);
+  });
+
+  test("returns true when key is set via env", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({ [envKeys.InngestEventKey]: "my-key" });
+    expect(inngest["eventKeySet"]()).toBe(true);
   });
 });
 

@@ -771,7 +771,7 @@ export const testFramework = (
             });
           });
 
-          test("register with overwritten host when specified", async () => {
+          test("register with overwritten origin when specified", async () => {
             let reqToMock;
 
             nock("https://api.inngest.com")
@@ -789,7 +789,7 @@ export const testFramework = (
               { event: "demo/event.sent" },
               () => "fn1",
             );
-            const serveHost = "https://example.com";
+            const serveOrigin = "https://example.com";
             const stepId = "step";
 
             await run(
@@ -797,7 +797,7 @@ export const testFramework = (
                 {
                   client: inngestCloud,
                   functions: [fn1],
-                  serveHost,
+                  serveOrigin,
                 },
               ],
               [{ method: "PUT" }],
@@ -805,13 +805,13 @@ export const testFramework = (
             );
 
             expect(reqToMock).toMatchObject({
-              url: `${serveHost}/api/inngest`,
+              url: `${serveOrigin}/api/inngest`,
               functions: [
                 {
                   steps: {
                     [stepId]: {
                       runtime: {
-                        url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                        url: `${serveOrigin}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
                       },
                     },
                   },
@@ -907,7 +907,7 @@ export const testFramework = (
           });
         });
 
-        test("register with overwritten host and path when specified", async () => {
+        test("register with overwritten origin and path when specified", async () => {
           let reqToMock;
 
           nock("https://api.inngest.com")
@@ -925,7 +925,7 @@ export const testFramework = (
             { event: "demo/event.sent" },
             () => "fn1",
           );
-          const serveHost = "https://example.com";
+          const serveOrigin = "https://example.com";
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
@@ -934,7 +934,7 @@ export const testFramework = (
               {
                 client: inngestCloud,
                 functions: [fn1],
-                serveHost,
+                serveOrigin,
                 servePath,
               },
             ],
@@ -943,13 +943,117 @@ export const testFramework = (
           );
 
           expect(reqToMock).toMatchObject({
-            url: `${serveHost}${servePath}`,
+            url: `${serveOrigin}${servePath}`,
             functions: [
               {
                 steps: {
                   [stepId]: {
                     runtime: {
-                      url: `${serveHost}${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                      url: `${serveOrigin}${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+        });
+
+        test("INNGEST_SERVE_ORIGIN env var takes precedence over INNGEST_SERVE_HOST", async () => {
+          let reqToMock;
+
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const fn1 = inngestCloud.createFunction(
+            { id: "fn1" },
+            { event: "demo/event.sent" },
+            () => "fn1",
+          );
+          const serveOrigin = "https://new-origin.com";
+          const serveHost = "https://old-host.com";
+          const stepId = "step";
+
+          await run(
+            [
+              {
+                client: inngestCloud,
+                functions: [fn1],
+              },
+            ],
+            [{ method: "PUT" }],
+            {
+              [envKeys.InngestSigningKey]: testSigningKey,
+              [envKeys.InngestServeOrigin]: serveOrigin,
+              [envKeys.InngestServeHost]: serveHost,
+            },
+          );
+
+          expect(reqToMock).toMatchObject({
+            url: `${serveOrigin}/api/inngest`,
+            functions: [
+              {
+                steps: {
+                  [stepId]: {
+                    runtime: {
+                      url: `${serveOrigin}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+        });
+
+        test("INNGEST_SERVE_HOST env var works as fallback with deprecation warning", async () => {
+          let reqToMock;
+
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const fn1 = inngestCloud.createFunction(
+            { id: "fn1" },
+            { event: "demo/event.sent" },
+            () => "fn1",
+          );
+          const serveHost = "https://old-host.com";
+          const stepId = "step";
+
+          await run(
+            [
+              {
+                client: inngestCloud,
+                functions: [fn1],
+              },
+            ],
+            [{ method: "PUT" }],
+            {
+              [envKeys.InngestSigningKey]: testSigningKey,
+              [envKeys.InngestServeHost]: serveHost,
+            },
+          );
+
+          expect(reqToMock).toMatchObject({
+            url: `${serveHost}/api/inngest`,
+            functions: [
+              {
+                steps: {
+                  [stepId]: {
+                    runtime: {
+                      url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
                     },
                   },
                 },
