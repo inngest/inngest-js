@@ -5,7 +5,7 @@
 Prerequisites:
 
 1. Clone this repository
-2. Intall [`pnpm`](https://pnpm.io/installation)
+2. Install [`pnpm`](https://pnpm.io/installation)
 3. Install [Volta](https://volta.sh/) to manage consistent Node versions (optional)
 
 ### Development
