@@ -1,23 +1,31 @@
-import { describe, expect, test } from "vitest";
-import { Inngest, InngestMiddlewareV2, type StepInfo } from "../../../index.ts";
-import { createTestApp } from "../../devServerTestHarness.ts";
+import { expect, test } from "vitest";
 import {
-  assertStepError,
-  randomSuffix,
-  testNameFromFileUrl,
-} from "../utils.ts";
+  Inngest,
+  InngestMiddlewareV2,
+  type RunInfo,
+  type StepInfo,
+} from "../../../index.ts";
+import { createTestApp } from "../../devServerTestHarness.ts";
+import { randomSuffix, testNameFromFileUrl } from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("success", async () => {
   const state = {
+    calls: [] as [RunInfo, StepInfo][],
+    done: false,
     logs: [] as string[],
     outputsInsideMiddleware: [] as unknown[],
     outputsFromStep: [] as string[],
   };
 
   class TestMiddleware extends InngestMiddlewareV2 {
-    override async transformStep(handler: () => unknown, stepInfo: StepInfo) {
+    override async transformStep(
+      runInfo: RunInfo,
+      stepInfo: StepInfo,
+      handler: () => unknown,
+    ) {
+      state.calls.push([runInfo, stepInfo]);
       state.logs.push("mw handler: before");
       state.outputsInsideMiddleware.push(await handler());
       state.logs.push("mw handler: after");
@@ -41,26 +49,28 @@ test("success", async () => {
         return "original";
       });
       state.outputsFromStep.push(output);
+      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
   await vitest.waitFor(async () => {
-    expect(state.logs).toEqual([
-      // 1st request
-      "fn: top",
-      "mw handler: before",
-      "step handler: inside",
-      "mw handler: after",
-
-      // 2nd request
-      "fn: top",
-      "mw handler: before",
-      "mw handler: after",
-    ]);
+    expect(state.done).toBe(true);
   }, 5000);
 
+  expect(state.logs).toEqual([
+    // 1st request
+    "fn: top",
+    "mw handler: before",
+    "step handler: inside",
+    "mw handler: after",
+
+    // 2nd request
+    "fn: top",
+    "mw handler: before",
+    "mw handler: after",
+  ]);
   expect(state.outputsInsideMiddleware).toEqual([
     // 1st request
     "original",
@@ -69,6 +79,54 @@ test("success", async () => {
     "transformed",
   ]);
   expect(state.outputsFromStep).toEqual(["transformed"]);
+
+  const expectedEvent = {
+    data: {},
+    id: expect.any(String),
+    name: eventName,
+    ts: expect.any(Number),
+    user: {},
+  };
+  const expectedRunInfo = {
+    attempt: 0,
+    event: expectedEvent,
+    events: [expectedEvent],
+    runId: expect.any(String),
+    steps: {},
+  };
+  expect(state.calls).toEqual([
+    // 1st call: not memoized
+    [
+      expectedRunInfo,
+      {
+        hashedId: expect.any(String),
+        id: "step",
+        memoized: false,
+        name: "step",
+        stepKind: "run",
+      },
+    ],
+
+    // 2nd call: memoized
+    [
+      {
+        ...expectedRunInfo,
+        steps: {
+          bd370d1b6f9b3580a77083b3ed3256c621f44a99: {
+            data: "transformed",
+            type: "data",
+          },
+        },
+      },
+      {
+        hashedId: expect.any(String),
+        id: "step",
+        memoized: true,
+        name: "step",
+        stepKind: "run",
+      },
+    ],
+  ]);
 });
 
 test("error", async () => {
@@ -76,6 +134,7 @@ test("error", async () => {
     errorsOutsideStep: [] as unknown[],
     errorsInsideMiddleware: [] as unknown[],
     logs: [] as string[],
+    calls: [] as [RunInfo, StepInfo][],
   };
 
   class OriginalError extends Error {
@@ -94,9 +153,11 @@ test("error", async () => {
 
   class TestMiddleware extends InngestMiddlewareV2 {
     override async transformStep(
+      runInfo: RunInfo,
+      stepInfo: StepInfo,
       handler: () => unknown,
-      { memoized }: StepInfo,
     ) {
+      state.calls.push([runInfo, stepInfo]);
       try {
         state.logs.push("mw: before");
         const output = await handler();
@@ -108,7 +169,7 @@ test("error", async () => {
       } catch (error) {
         state.logs.push("mw: error");
 
-        if (!memoized) {
+        if (!stepInfo.memoized) {
           // Only wrap the error if the step isn't memoized
           error = new TransformedError("transformed", { cause: error });
         }
@@ -170,34 +231,75 @@ test("error", async () => {
     ]);
   }, 5000);
 
-  expect(state.errorsInsideMiddleware).length(3);
-
-  // In middleware, the first 2 errors are TransformedError (from requests 1
-  // and 2)
-  for (const error of state.errorsInsideMiddleware.slice(0, 2)) {
-    expect(error).toBeInstanceOf(TransformedError);
-    const tError = error as TransformedError;
-    expect(tError.message).toBe("transformed");
-    expect(tError.name).toBe("TransformedError");
-    expect(tError.cause).toBeInstanceOf(OriginalError);
-    const cause = tError.cause as OriginalError;
-    expect(cause.message).toBe("original");
-    expect(cause.name).toBe("OriginalError");
-  }
-
-  const expectedStepError = {
-    cause: {
-      message: "original",
-      name: "OriginalError",
-    },
-    message: "transformed",
-    name: "TransformedError",
+  const expectedEvent = {
+    data: {},
+    id: expect.any(String),
+    name: eventName,
+    ts: expect.any(Number),
+    user: {},
   };
+  const expectedRunInfo = {
+    attempt: 0,
+    event: expectedEvent,
+    events: [expectedEvent],
+    runId: expect.any(String),
+    steps: {},
+  };
+  expect(state.calls).toEqual([
+    // 1st attempt
+    [
+      expectedRunInfo,
+      {
+        hashedId: expect.any(String),
+        id: "step",
+        memoized: false,
+        name: "step",
+        stepKind: "run",
+      },
+    ],
 
-  // In middleware, the 3rd error is the memoized StepError (from request 3)
-  assertStepError(state.errorsInsideMiddleware[2], expectedStepError);
+    // 2nd attempt
+    [
+      {
+        ...expectedRunInfo,
+        attempt: 1,
+      },
+      {
+        hashedId: expect.any(String),
+        id: "step",
+        memoized: false,
+        name: "step",
+        stepKind: "run",
+      },
+    ],
 
-  // In the function handler, the error is the memoized StepError
-  expect(state.errorsOutsideStep).length(1);
-  assertStepError(state.errorsOutsideStep[0], expectedStepError);
+    // `step.run` throws (since attempts exhausted)
+    [
+      {
+        ...expectedRunInfo,
+        steps: {
+          bd370d1b6f9b3580a77083b3ed3256c621f44a99: {
+            error: {
+              cause: {
+                message: "original",
+                name: "OriginalError",
+                stack: expect.any(String),
+              },
+              message: "transformed",
+              name: "TransformedError",
+              stack: expect.any(String),
+            },
+            type: "error",
+          },
+        },
+      },
+      {
+        hashedId: expect.any(String),
+        id: "step",
+        memoized: true,
+        name: "step",
+        stepKind: "run",
+      },
+    ],
+  ]);
 });

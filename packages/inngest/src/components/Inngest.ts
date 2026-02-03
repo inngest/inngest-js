@@ -84,7 +84,7 @@ type FetchT = typeof fetch;
  *
  * @public
  */
-export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
+export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
   get [Symbol.toStringTag](): typeof Inngest.Tag {

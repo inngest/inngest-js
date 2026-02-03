@@ -48,7 +48,7 @@ import type {
   MetadataUpdate,
 } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
-import type { StepInfo } from "../InngestMiddlewareV2.ts";
+import type { RunInfo, StepInfo } from "../InngestMiddlewareV2.ts";
 import {
   createStepTools,
   type FoundStep,
@@ -963,10 +963,19 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       stepKind,
     };
 
+    // Build RunInfo from the current execution context
+    const runInfo: RunInfo = {
+      attempt: this.fnArg.attempt,
+      event: this.fnArg.event,
+      events: this.fnArg.events,
+      runId: this.options.runId,
+      steps: this.buildStepsForRunInfo(),
+    };
+
     // Call onStepStart for each middleware
     for (const mw of middlewareV2) {
       if (mw?.onStepStart) {
-        mw.onStepStart(stepInfo);
+        mw.onStepStart(runInfo, stepInfo);
       }
     }
 
@@ -981,7 +990,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if (mw?.transformStep) {
           const nextHandler = handler;
           const currentMw = mw;
-          handler = () => currentMw.transformStep!(nextHandler, stepInfo);
+          handler = () =>
+            currentMw.transformStep!(runInfo, stepInfo, nextHandler);
         }
       }
 
@@ -1248,6 +1258,32 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.options.transformCtx?.(fnArg) ?? fnArg;
+  }
+
+  /**
+   * Build the steps object for RunInfo from the current step state.
+   */
+  private buildStepsForRunInfo(): RunInfo["steps"] {
+    const result: Record<string, unknown> = {};
+    for (const [id, op] of Object.entries(this.state.stepState)) {
+      if (op.error !== undefined) {
+        result[id] = {
+          type: "error" as const,
+          error: op.error,
+        };
+      } else if (op.input !== undefined) {
+        result[id] = {
+          type: "input" as const,
+          input: op.input,
+        };
+      } else {
+        result[id] = {
+          type: "data" as const,
+          data: op.data,
+        };
+      }
+    }
+    return result as RunInfo["steps"];
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -1572,6 +1608,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                         : "run",
                   };
 
+                  // Build RunInfo from the current execution context
+                  const memoizedRunInfo: RunInfo = {
+                    attempt: this.fnArg.attempt,
+                    event: this.fnArg.event,
+                    events: this.fnArg.events,
+                    runId: this.options.runId,
+                    steps: this.buildStepsForRunInfo(),
+                  };
+
                   // Build handler chain - innermost returns the memoized data
                   let handler: () => unknown = () => result.data;
 
@@ -1581,7 +1626,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                       const nextHandler = handler;
                       const currentMw = mw;
                       handler = () =>
-                        currentMw.transformStep!(nextHandler, memoizedStepInfo);
+                        currentMw.transformStep!(
+                          memoizedRunInfo,
+                          memoizedStepInfo,
+                          nextHandler,
+                        );
                     }
                   }
 
@@ -1604,6 +1653,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                         : "run",
                   };
 
+                  // Build RunInfo from the current execution context
+                  const errorRunInfo: RunInfo = {
+                    attempt: this.fnArg.attempt,
+                    event: this.fnArg.event,
+                    events: this.fnArg.events,
+                    runId: this.options.runId,
+                    steps: this.buildStepsForRunInfo(),
+                  };
+
                   // Build handler chain - innermost throws the StepError
                   let handler: () => unknown = () => {
                     throw stepError;
@@ -1615,7 +1673,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                       const nextHandler = handler;
                       const currentMw = mw;
                       handler = () =>
-                        currentMw.transformStep!(nextHandler, memoizedStepInfo);
+                        currentMw.transformStep!(
+                          errorRunInfo,
+                          memoizedStepInfo,
+                          nextHandler,
+                        );
                     }
                   }
 

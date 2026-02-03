@@ -17,9 +17,14 @@ import type {
   ExtendSendEventWithMiddleware,
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
-import type { InngestMiddlewareV2 } from "./components/InngestMiddlewareV2.ts";
+import type {
+  DefaultStaticTransform,
+  InngestMiddlewareV2,
+  MiddlewareStaticTransform,
+} from "./components/InngestMiddlewareV2.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { Jsonify } from "./helpers/jsonify.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -679,6 +684,79 @@ export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
     [typeof builtInMiddleware, NonNullable<TOpts["middleware"]>],
     SendEventBaseOutput
   >;
+
+/**
+ * Extract the output transformer from a middleware V2 instance.
+ */
+type GetMiddlewareV2Transformer<T> = T extends InngestMiddlewareV2
+  ? T extends {
+      staticTransform: infer TTransform extends MiddlewareStaticTransform;
+    }
+    ? TTransform
+    : DefaultStaticTransform
+  : DefaultStaticTransform;
+
+/**
+ * Extract the output transformer from a middleware V2 array.
+ * Returns the first middleware's transformer for backwards compatibility.
+ * Use `ApplyAllMiddlewareV2Transforms` for composing multiple transforms.
+ */
+export type ExtractMiddlewareV2Transformer<
+  TMw extends InngestMiddlewareV2[] | undefined,
+> = TMw extends [infer First, ...infer _Rest]
+  ? GetMiddlewareV2Transformer<First>
+  : DefaultStaticTransform;
+
+/**
+ * Apply all middleware V2 transforms in sequence.
+ * Each middleware's transform is applied to the result of the previous one.
+ * When no middleware is provided, applies Jsonify as the default transform.
+ */
+export type ApplyAllMiddlewareV2Transforms<
+  TMw extends InngestMiddlewareV2[] | undefined,
+  T,
+> = TMw extends [InngestMiddlewareV2, ...InngestMiddlewareV2[]]
+  ? ApplyMiddlewareV2TransformsInternal<TMw, T>
+  : Jsonify<T>; // No middleware or empty array - apply default Jsonify
+
+/**
+ * Internal helper that recursively applies middleware transforms.
+ * Does NOT apply Jsonify at the end, as that's only for the no-middleware case.
+ */
+type ApplyMiddlewareV2TransformsInternal<
+  TMw extends InngestMiddlewareV2[] | undefined,
+  T,
+> = TMw extends [infer First, ...infer Rest extends InngestMiddlewareV2[]]
+  ? ApplyMiddlewareV2TransformsInternal<
+      Rest,
+      ApplyMiddlewareStaticTransform<GetMiddlewareV2Transformer<First>, T>
+    >
+  : T;
+
+/**
+ * Apply the output transformation using the In/Out interface pattern.
+ *
+ * @example
+ * ```ts
+ * interface PreserveDate extends MiddlewareStaticTransform {
+ *   Out: this["In"] extends Date ? Date : Jsonify<this["In"]>;
+ * }
+ *
+ * // ApplyStaticTransform<PreserveDate, Date> = Date
+ * ```
+ */
+export type ApplyMiddlewareStaticTransform<
+  TTransformer extends { In: unknown; Out: unknown },
+  T,
+> = (TTransformer & { In: T })["Out"];
+
+/**
+ * Re-export transformer types for use in middleware declarations.
+ */
+export type {
+  DefaultStaticTransform as DefaultTransform,
+  MiddlewareStaticTransform as StaticTransform,
+};
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help

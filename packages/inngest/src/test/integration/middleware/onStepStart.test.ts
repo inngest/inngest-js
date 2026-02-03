@@ -1,20 +1,26 @@
 import { expect, test } from "vitest";
-import { Inngest, InngestMiddlewareV2, type StepInfo } from "../../../index.ts";
+import {
+  Inngest,
+  InngestMiddlewareV2,
+  type RunInfo,
+  type StepInfo,
+} from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
 import { randomSuffix, testNameFromFileUrl } from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("called once per step", async () => {
+test("1 step", async () => {
   const state = {
-    onStepStartCalls: [] as StepInfo[],
+    done: false,
+    onStepStartCalls: [] as [RunInfo, StepInfo][],
     logs: [] as string[],
   };
 
   class TestMiddleware extends InngestMiddlewareV2 {
-    override onStepStart(stepInfo: StepInfo) {
-      state.onStepStartCalls.push(stepInfo);
-      state.logs.push(`onStepStart: ${stepInfo.id}`);
+    override onStepStart(runInfo: RunInfo, stepInfo: StepInfo) {
+      state.onStepStartCalls.push([runInfo, stepInfo]);
+      state.logs.push("mw");
     }
   }
 
@@ -35,6 +41,7 @@ test("called once per step", async () => {
         return "result";
       });
       state.logs.push("fn: bottom");
+      state.done = true;
     },
   );
 
@@ -42,39 +49,58 @@ test("called once per step", async () => {
 
   await client.send({ name: eventName });
   await vitest.waitFor(async () => {
-    expect(state.logs).toEqual([
-      // 1st request (fresh execution)
-      "fn: top",
-      "onStepStart: my-step",
-      "step: inside",
-
-      // 2nd request (memoized - onStepStart NOT called)
-      "fn: top",
-      "fn: bottom",
-    ]);
+    expect(state.done).toBe(true);
   }, 5000);
+
+  expect(state.logs).toEqual([
+    // 1st request (fresh execution)
+    "fn: top",
+    "mw",
+    "step: inside",
+
+    // 2nd request (memoized - onStepStart NOT called)
+    "fn: top",
+    "fn: bottom",
+  ]);
+
+  const expectedEvent = {
+    data: {},
+    id: expect.any(String),
+    name: eventName,
+    ts: expect.any(Number),
+    user: {},
+  };
+  const expectedRunInfo = {
+    attempt: 0,
+    event: expectedEvent,
+    events: [expectedEvent],
+    runId: expect.any(String),
+    steps: {},
+  };
 
   // onStepStart called exactly once (only on fresh execution)
   expect(state.onStepStartCalls).toHaveLength(1);
-  const firstCall = state.onStepStartCalls[0];
-  expect(firstCall).toBeDefined();
-  expect(firstCall).toMatchObject({
-    id: "my-step",
-    memoized: false,
-    stepKind: "run",
-    name: "my-step",
-  });
-  expect(firstCall?.hashedId).toBeDefined();
+  expect(state.onStepStartCalls[0]).toEqual([
+    expectedRunInfo,
+    {
+      hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
+      id: "my-step",
+      memoized: false,
+      name: "my-step",
+      stepKind: "run",
+    },
+  ]);
 });
 
-test("called for multiple steps", async () => {
+test("multiple steps", async () => {
   const state = {
-    onStepStartCalls: [] as StepInfo[],
+    done: false,
+    onStepStartCalls: [] as [RunInfo, StepInfo][],
   };
 
   class TestMiddleware extends InngestMiddlewareV2 {
-    override onStepStart(stepInfo: StepInfo) {
-      state.onStepStartCalls.push(stepInfo);
+    override onStepStart(runInfo: RunInfo, stepInfo: StepInfo) {
+      state.onStepStartCalls.push([runInfo, stepInfo]);
     }
   }
 
@@ -89,25 +115,108 @@ test("called for multiple steps", async () => {
     { event: eventName },
     async ({ step }) => {
       await step.run("step-1", () => "result1");
-      await step.sendEvent("step-2", {name: randomSuffix("other-evt")});
+      await step.sendEvent("step-2", { name: randomSuffix("other-evt") });
+      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
   await vitest.waitFor(async () => {
-    // Each step's onStepStart called exactly once
-    expect(state.onStepStartCalls).toHaveLength(2);
+    expect(state.done).toBe(true);
   }, 5000);
-  expect(state.onStepStartCalls.map((s) => s.id)).toEqual([
-    "step-1",
-    "step-2",
+
+  const expectedEvent = {
+    data: {},
+    id: expect.any(String),
+    name: eventName,
+    ts: expect.any(Number),
+    user: {},
+  };
+  const expectedRunInfo = {
+    attempt: 0,
+    event: expectedEvent,
+    events: [expectedEvent],
+    runId: expect.any(String),
+    steps: {},
+  };
+
+  expect(state.onStepStartCalls).toHaveLength(2);
+  expect(state.onStepStartCalls).toEqual([
+    [
+      expectedRunInfo,
+      {
+        hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
+        id: "step-1",
+        memoized: false,
+        name: "step-1",
+        stepKind: "run",
+      },
+    ],
+    [
+      {
+        ...expectedRunInfo,
+        steps: {
+          cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa: {
+            data: "result1",
+            type: "data",
+          },
+        },
+      },
+      {
+        hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
+        id: "step-2",
+        memoized: false,
+        name: "step-2",
+        stepKind: "sendEvent",
+      },
+    ],
   ]);
-  expect(state.onStepStartCalls.map((s) => s.stepKind)).toEqual([
-    "run",
-    "sendEvent",
-  ]);
-  expect(state.onStepStartCalls.every((s) => s.memoized === false)).toBe(
-    true,
+});
+
+test("unsupported step kinds", async () => {
+  const state = {
+    count: 0,
+    done: false,
+  };
+
+  class TestMiddleware extends InngestMiddlewareV2 {
+    override onStepStart(runInfo: RunInfo, stepInfo: StepInfo) {
+      state.count++;
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middlewareV2: [new TestMiddleware()],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    { event: eventName },
+    async ({ step }) => {
+      await step.invoke("invoke", { function: childFn });
+      await step.sleep("sleep", "1s");
+      await step.waitForEvent("waitForEvent", {
+        event: randomSuffix("never"),
+        timeout: "1s",
+      });
+      state.done = true;
+    },
   );
+  const childFn = client.createFunction(
+    { id: "child-fn", retries: 0 },
+    [],
+    () => {},
+  );
+
+  await createTestApp({ client, functions: [fn, childFn] });
+
+  await client.send({ name: eventName });
+  await vitest.waitFor(async () => {
+    expect(state.done).toBe(true);
+  }, 10_000);
+  expect(state.count).toEqual(0);
 });

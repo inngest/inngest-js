@@ -13,6 +13,7 @@ import type {
   WithoutInternalStr,
 } from "../helpers/types.ts";
 import {
+  type ApplyAllMiddlewareV2Transforms,
   type Context,
   type EventPayload,
   type HashedOp,
@@ -217,12 +218,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         ...input: Parameters<TFn>
       ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
         SimplifyDeep<
-          Jsonify<
+          ApplyAllMiddlewareV2Transforms<
+            ClientOptionsFromInngest<TClient>["middlewareV2"],
             TFn extends (...args: Parameters<TFn>) => Promise<infer U>
               ? Awaited<U extends void ? null : U>
               : ReturnType<TFn> extends void
