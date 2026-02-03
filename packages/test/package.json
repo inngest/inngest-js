@@ -40,7 +40,7 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "inngest": "^3.42.3",
+    "inngest": "latest",
     "tinyspy": "^3.0.2",
     "ulid": "^2.3.0"
   },

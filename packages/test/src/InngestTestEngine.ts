@@ -5,7 +5,7 @@ import {
   InngestExecutionV1,
   ServerTiming,
 } from "inngest/internals";
-import { StepOpCode } from "inngest/types";
+import { StepMode, StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
 import type { Mock } from "./spy.js";
@@ -378,6 +378,7 @@ export class InngestTestEngine {
       [StepOpCode.InvokeFunction]: () => baseRet,
       [StepOpCode.Sleep]: () => baseRet,
       [StepOpCode.StepError]: () => ({ ...baseRet, error: step.error }),
+      [StepOpCode.StepFailed]: () => ({ ...baseRet, error: step.error }),
       [StepOpCode.StepNotFound]: () => baseRet,
       [StepOpCode.StepRun]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.WaitForEvent]: () => baseRet,
@@ -385,6 +386,8 @@ export class InngestTestEngine {
       [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.AiGateway]: () => baseRet,
       [StepOpCode.Gateway]: () => baseRet,
+      [StepOpCode.RunComplete]: () => baseRet,
+      [StepOpCode.DiscoveryRequest]: () => baseRet,
     };
 
     const result = opHandlers[step.op]();
@@ -623,6 +626,7 @@ export class InngestTestEngine {
         headers: {},
         stepCompletionOrder: steps.map((step) => step.id),
         stepState: mockStepState,
+        stepMode: StepMode.Async,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
         isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
         timer: new ServerTiming.ServerTiming(),
