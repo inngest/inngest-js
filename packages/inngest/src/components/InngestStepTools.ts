@@ -481,13 +481,26 @@ export const createStepTools = <TClient extends Inngest.Any>(
     waitForEvent: createTool<
       <
         TOpts extends {
+          /**
+           * The event to wait for.
+           */
           event:
             | string
             // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
             | EventType<string, any>;
+
+          /**
+           * The step function will wait for the event for a maximum of this
+           * time, at which point the signal will be returned as `null` instead
+           * of any signal data.
+           *
+           * The time to wait can be specified using a `number` of milliseconds,
+           * an `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or
+           * `"2.5d"`, or a `Date` object.
+           *
+           * {@link https://npm.im/ms}
+           */
           timeout: number | string | Date;
-          // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
-          schema?: StandardSchemaV1<any>;
         } & ExclusiveKeys<{ match?: string; if?: string }, "match", "if">,
       >(
         idOrOptions: StepOptionsOrId,
