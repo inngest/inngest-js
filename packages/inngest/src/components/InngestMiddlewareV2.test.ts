@@ -1,10 +1,7 @@
 import type { IsEqual } from "../helpers/types.ts";
 import type { Jsonify } from "../types.ts";
 import { Inngest } from "./Inngest.ts";
-import {
-  InngestMiddlewareV2,
-  type MiddlewareStaticTransform,
-} from "./InngestMiddlewareV2.ts";
+import { Middleware } from "./InngestMiddlewareV2.ts";
 
 describe("staticTransform", () => {
   test("custom staticTransform", () => {
@@ -12,12 +9,12 @@ describe("staticTransform", () => {
     // Inngest
     type PreserveDate<T> = T extends Date ? Date : Jsonify<T>;
 
-    // Turn the above type into an Inngest-compatible MiddlewareStaticTransform
-    interface PreserveDateTransform extends MiddlewareStaticTransform {
+    // Turn the above type into an Inngest-compatible Middleware.StaticTransform
+    interface PreserveDateTransform extends Middleware.StaticTransform {
       Out: PreserveDate<this["In"]>;
     }
 
-    class DatePreservingMiddleware extends InngestMiddlewareV2 {
+    class DatePreservingMiddleware extends Middleware.BaseMiddleware {
       declare staticTransform: PreserveDateTransform;
     }
 
@@ -55,7 +52,7 @@ describe("staticTransform", () => {
   test("middleware without staticTransform", () => {
     // Jsonify: Date -> string
 
-    class RegularMiddleware extends InngestMiddlewareV2 {}
+    class RegularMiddleware extends Middleware.BaseMiddleware {}
 
     const inngest = new Inngest({
       id: "test",
@@ -79,19 +76,19 @@ describe("staticTransform", () => {
   test("multiple staticTransform", () => {
     // Test that multiple middleware transforms are composed together
 
-    interface BooleanToStringTransform extends MiddlewareStaticTransform {
+    interface BooleanToStringTransform extends Middleware.StaticTransform {
       Out: this["In"] extends boolean ? string : this["In"];
     }
 
-    class BooleanToString extends InngestMiddlewareV2 {
+    class BooleanToString extends Middleware.BaseMiddleware {
       declare staticTransform: BooleanToStringTransform;
     }
 
-    interface NumberToStringTransform extends MiddlewareStaticTransform {
+    interface NumberToStringTransform extends Middleware.StaticTransform {
       Out: this["In"] extends number ? string : this["In"];
     }
 
-    class NumberToString extends InngestMiddlewareV2 {
+    class NumberToString extends Middleware.BaseMiddleware {
       declare staticTransform: NumberToStringTransform;
     }
 

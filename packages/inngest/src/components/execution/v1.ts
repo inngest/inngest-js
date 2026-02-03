@@ -48,7 +48,7 @@ import type {
   MetadataUpdate,
 } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
-import type { RunInfo, StepInfo } from "../InngestMiddlewareV2.ts";
+import type { Middleware } from "../InngestMiddlewareV2.ts";
 import {
   createStepTools,
   type FoundStep,
@@ -955,7 +955,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const middlewareV2 = this.options.client.middlewareV2 || [];
 
     const stepKind = opts?.type === "step.sendEvent" ? "sendEvent" : "run";
-    const stepInfo: StepInfo = {
+    const stepInfo: Middleware.StepInfo = {
       hashedId,
       id: userland.id,
       memoized: false,
@@ -964,7 +964,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     };
 
     // Build RunInfo from the current execution context
-    const runInfo: RunInfo = {
+    const runInfo: Middleware.RunInfo = {
       attempt: this.fnArg.attempt,
       event: this.fnArg.event,
       events: this.fnArg.events,
@@ -1263,7 +1263,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   /**
    * Build the steps object for RunInfo from the current step state.
    */
-  private buildStepsForRunInfo(): RunInfo["steps"] {
+  private buildStepsForRunInfo(): Middleware.RunInfo["steps"] {
     const result: Record<string, unknown> = {};
     for (const [id, op] of Object.entries(this.state.stepState)) {
       if (op.error !== undefined) {
@@ -1283,7 +1283,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         };
       }
     }
-    return result as RunInfo["steps"];
+    return result as Middleware.RunInfo["steps"];
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -1597,7 +1597,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 if (typeof result.data !== "undefined") {
                   // Wrap memoized data resolution through middlewareV2 transformStep hooks
                   const middlewareV2 = this.options.client.middlewareV2 || [];
-                  const memoizedStepInfo: StepInfo = {
+                  const memoizedStepInfo: Middleware.StepInfo = {
                     hashedId,
                     id: opId.userland.id,
                     memoized: true,
@@ -1609,7 +1609,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   };
 
                   // Build RunInfo from the current execution context
-                  const memoizedRunInfo: RunInfo = {
+                  const memoizedRunInfo: Middleware.RunInfo = {
                     attempt: this.fnArg.attempt,
                     event: this.fnArg.event,
                     events: this.fnArg.events,
@@ -1642,7 +1642,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
                   // Wrap error through middlewareV2 transformStep hooks
                   const middlewareV2 = this.options.client.middlewareV2 || [];
-                  const memoizedStepInfo: StepInfo = {
+                  const memoizedStepInfo: Middleware.StepInfo = {
                     hashedId,
                     id: opId.userland.id,
                     memoized: true,
@@ -1654,7 +1654,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   };
 
                   // Build RunInfo from the current execution context
-                  const errorRunInfo: RunInfo = {
+                  const errorRunInfo: Middleware.RunInfo = {
                     attempt: this.fnArg.attempt,
                     event: this.fnArg.event,
                     events: this.fnArg.events,

@@ -19,8 +19,7 @@ import type {
 } from "./components/InngestMiddleware.ts";
 import type {
   DefaultStaticTransform,
-  InngestMiddlewareV2,
-  MiddlewareStaticTransform,
+  Middleware,
 } from "./components/InngestMiddlewareV2.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
@@ -688,9 +687,9 @@ export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
 /**
  * Extract the output transformer from a middleware V2 instance.
  */
-type GetMiddlewareV2Transformer<T> = T extends InngestMiddlewareV2
+type GetMiddlewareV2Transformer<T> = T extends Middleware.BaseMiddleware
   ? T extends {
-      staticTransform: infer TTransform extends MiddlewareStaticTransform;
+      staticTransform: infer TTransform extends Middleware.StaticTransform;
     }
     ? TTransform
     : DefaultStaticTransform
@@ -702,7 +701,7 @@ type GetMiddlewareV2Transformer<T> = T extends InngestMiddlewareV2
  * Use `ApplyAllMiddlewareV2Transforms` for composing multiple transforms.
  */
 export type ExtractMiddlewareV2Transformer<
-  TMw extends InngestMiddlewareV2[] | undefined,
+  TMw extends Middleware.BaseMiddleware[] | undefined,
 > = TMw extends [infer First, ...infer _Rest]
   ? GetMiddlewareV2Transformer<First>
   : DefaultStaticTransform;
@@ -713,9 +712,9 @@ export type ExtractMiddlewareV2Transformer<
  * When no middleware is provided, applies Jsonify as the default transform.
  */
 export type ApplyAllMiddlewareV2Transforms<
-  TMw extends InngestMiddlewareV2[] | undefined,
+  TMw extends Middleware.BaseMiddleware[] | undefined,
   T,
-> = TMw extends [InngestMiddlewareV2, ...InngestMiddlewareV2[]]
+> = TMw extends [Middleware.BaseMiddleware, ...Middleware.BaseMiddleware[]]
   ? ApplyMiddlewareV2TransformsInternal<TMw, T>
   : Jsonify<T>; // No middleware or empty array - apply default Jsonify
 
@@ -724,9 +723,9 @@ export type ApplyAllMiddlewareV2Transforms<
  * Does NOT apply Jsonify at the end, as that's only for the no-middleware case.
  */
 type ApplyMiddlewareV2TransformsInternal<
-  TMw extends InngestMiddlewareV2[] | undefined,
+  TMw extends Middleware.BaseMiddleware[] | undefined,
   T,
-> = TMw extends [infer First, ...infer Rest extends InngestMiddlewareV2[]]
+> = TMw extends [infer First, ...infer Rest extends Middleware.BaseMiddleware[]]
   ? ApplyMiddlewareV2TransformsInternal<
       Rest,
       ApplyMiddlewareStaticTransform<GetMiddlewareV2Transformer<First>, T>
@@ -749,14 +748,6 @@ export type ApplyMiddlewareStaticTransform<
   TTransformer extends { In: unknown; Out: unknown },
   T,
 > = (TTransformer & { In: T })["Out"];
-
-/**
- * Re-export transformer types for use in middleware declarations.
- */
-export type {
-  DefaultStaticTransform as DefaultTransform,
-  MiddlewareStaticTransform as StaticTransform,
-};
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
@@ -880,7 +871,7 @@ export interface ClientOptions {
   /**
    * V2 middleware instances that provide simpler hooks for common operations.
    */
-  middlewareV2?: InngestMiddlewareV2[];
+  middlewareV2?: Middleware.BaseMiddleware[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will

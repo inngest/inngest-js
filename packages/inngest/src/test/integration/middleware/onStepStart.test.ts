@@ -1,10 +1,5 @@
 import { expect, test } from "vitest";
-import {
-  Inngest,
-  InngestMiddlewareV2,
-  type RunInfo,
-  type StepInfo,
-} from "../../../index.ts";
+import { Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
 import { randomSuffix, testNameFromFileUrl } from "../utils.ts";
 
@@ -13,12 +8,15 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 test("1 step", async () => {
   const state = {
     done: false,
-    onStepStartCalls: [] as [RunInfo, StepInfo][],
+    onStepStartCalls: [] as [Middleware.RunInfo, Middleware.StepInfo][],
     logs: [] as string[],
   };
 
-  class TestMiddleware extends InngestMiddlewareV2 {
-    override onStepStart(runInfo: RunInfo, stepInfo: StepInfo) {
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onStepStart(
+      runInfo: Middleware.RunInfo,
+      stepInfo: Middleware.StepInfo,
+    ) {
       state.onStepStartCalls.push([runInfo, stepInfo]);
       state.logs.push("mw");
     }
@@ -95,11 +93,14 @@ test("1 step", async () => {
 test("multiple steps", async () => {
   const state = {
     done: false,
-    onStepStartCalls: [] as [RunInfo, StepInfo][],
+    onStepStartCalls: [] as [Middleware.RunInfo, Middleware.StepInfo][],
   };
 
-  class TestMiddleware extends InngestMiddlewareV2 {
-    override onStepStart(runInfo: RunInfo, stepInfo: StepInfo) {
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onStepStart(
+      runInfo: Middleware.RunInfo,
+      stepInfo: Middleware.StepInfo,
+    ) {
       state.onStepStartCalls.push([runInfo, stepInfo]);
     }
   }
@@ -180,8 +181,11 @@ test("unsupported step kinds", async () => {
     done: false,
   };
 
-  class TestMiddleware extends InngestMiddlewareV2 {
-    override onStepStart(runInfo: RunInfo, stepInfo: StepInfo) {
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onStepStart(
+      runInfo: Middleware.RunInfo,
+      stepInfo: Middleware.StepInfo,
+    ) {
       state.count++;
     }
   }

@@ -58,11 +58,7 @@ export type {
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
 export { InngestMiddleware } from "./components/InngestMiddleware.ts";
-export {
-  InngestMiddlewareV2,
-  type RunInfo,
-  type StepInfo,
-} from "./components/InngestMiddlewareV2.ts";
+export { Middleware } from "./components/InngestMiddlewareV2.ts";
 export { step } from "./components/InngestStepTools.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";

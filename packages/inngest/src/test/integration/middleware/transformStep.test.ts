@@ -1,10 +1,5 @@
 import { expect, test } from "vitest";
-import {
-  Inngest,
-  InngestMiddlewareV2,
-  type RunInfo,
-  type StepInfo,
-} from "../../../index.ts";
+import { Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
 import { randomSuffix, testNameFromFileUrl } from "../utils.ts";
 
@@ -12,17 +7,17 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("success", async () => {
   const state = {
-    calls: [] as [RunInfo, StepInfo][],
+    calls: [] as [Middleware.RunInfo, Middleware.StepInfo][],
     done: false,
     logs: [] as string[],
     outputsInsideMiddleware: [] as unknown[],
     outputsFromStep: [] as string[],
   };
 
-  class TestMiddleware extends InngestMiddlewareV2 {
+  class TestMiddleware extends Middleware.BaseMiddleware {
     override async transformStep(
-      runInfo: RunInfo,
-      stepInfo: StepInfo,
+      runInfo: Middleware.RunInfo,
+      stepInfo: Middleware.StepInfo,
       handler: () => unknown,
     ) {
       state.calls.push([runInfo, stepInfo]);
@@ -134,7 +129,7 @@ test("error", async () => {
     errorsOutsideStep: [] as unknown[],
     errorsInsideMiddleware: [] as unknown[],
     logs: [] as string[],
-    calls: [] as [RunInfo, StepInfo][],
+    calls: [] as [Middleware.RunInfo, Middleware.StepInfo][],
   };
 
   class OriginalError extends Error {
@@ -151,10 +146,10 @@ test("error", async () => {
     }
   }
 
-  class TestMiddleware extends InngestMiddlewareV2 {
+  class TestMiddleware extends Middleware.BaseMiddleware {
     override async transformStep(
-      runInfo: RunInfo,
-      stepInfo: StepInfo,
+      runInfo: Middleware.RunInfo,
+      stepInfo: Middleware.StepInfo,
       handler: () => unknown,
     ) {
       state.calls.push([runInfo, stepInfo]);
