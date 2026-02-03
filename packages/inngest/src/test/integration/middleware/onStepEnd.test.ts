@@ -220,7 +220,7 @@ test("memoized step does not call onStepEnd", async () => {
     override onStepEnd() {
       state.endCalls++;
     }
-    override transformStep() {
+    override async transformStep() {
       state.transformCalls++;
     }
   }

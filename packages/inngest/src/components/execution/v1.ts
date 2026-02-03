@@ -982,7 +982,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const executeWithMiddleware = async () => {
       // Build the handler chain from inside out
       // The innermost handler runs the actual step function
-      let handler: () => unknown = () => runAsPromise(fn);
+      let handler: () => Promise<unknown> = () => runAsPromise(fn);
 
       // Wrap with each middleware's transformStep (in reverse order so first middleware is outermost)
       for (let i = middlewareV2.length - 1; i >= 0; i--) {
@@ -991,7 +991,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           const nextHandler = handler;
           const currentMw = mw;
           handler = () =>
-            currentMw.transformStep!(runInfo, stepInfo, nextHandler);
+            currentMw.transformStep!(nextHandler, runInfo, stepInfo);
         }
       }
 
@@ -1100,9 +1100,42 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     /**
-     * Trigger the user's function.
+     * Build RunInfo for transformRun middleware
      */
-    runAsPromise(() => this.userFnToRun(this.fnArg))
+    const runInfo: Middleware.RunInfo = {
+      attempt: this.fnArg.attempt,
+      event: this.fnArg.event,
+      events: this.fnArg.events,
+      runId: this.options.runId,
+      steps: this.buildStepsForRunInfo(),
+    };
+
+    /**
+     * Build middleware chain for transformRun
+     */
+    const middlewareV2 = this.options.client.middlewareV2 || [];
+
+    // Innermost handler: apply runInfo mutations then run user function
+    let runHandler: () => Promise<unknown> = async () => {
+      // Apply mutations from runInfo back to execution state
+      this.applyRunInfoMutations(runInfo);
+      return this.userFnToRun(this.fnArg);
+    };
+
+    // Wrap with each middleware's transformRun (reverse order)
+    for (let i = middlewareV2.length - 1; i >= 0; i--) {
+      const mw = middlewareV2[i];
+      if (mw?.transformRun) {
+        const nextHandler = runHandler;
+        const currentMw = mw;
+        runHandler = () => currentMw.transformRun!(nextHandler, runInfo);
+      }
+    }
+
+    /**
+     * Trigger the user's function wrapped in transformRun middleware
+     */
+    runAsPromise(runHandler)
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
@@ -1299,6 +1332,27 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
     }
     return result as Middleware.RunInfo["steps"];
+  }
+
+  /**
+   * Apply mutations from runInfo back to execution state.
+   * Allows transformRun middleware to modify event data and memoized step data.
+   */
+  private applyRunInfoMutations(runInfo: Middleware.RunInfo): void {
+    // Apply event mutations
+    if (runInfo.event !== this.fnArg.event) {
+      this.fnArg = { ...this.fnArg, event: runInfo.event };
+    }
+
+    // Apply step data mutations
+    for (const [hashedId, stepData] of Object.entries(runInfo.steps)) {
+      const existing = this.state.stepState[hashedId];
+      if (existing && stepData && stepData.type === "data") {
+        if (stepData.data !== existing.data) {
+          this.state.stepState[hashedId] = { ...existing, data: stepData.data };
+        }
+      }
+    }
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -1633,7 +1687,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   };
 
                   // Build handler chain - innermost returns the memoized data
-                  let handler: () => unknown = () => result.data;
+                  let handler: () => Promise<unknown> = async () => result.data;
 
                   for (let i = middlewareV2.length - 1; i >= 0; i--) {
                     const mw = middlewareV2[i];
@@ -1642,9 +1696,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                       const currentMw = mw;
                       handler = () =>
                         currentMw.transformStep!(
+                          nextHandler,
                           memoizedRunInfo,
                           memoizedStepInfo,
-                          nextHandler,
                         );
                     }
                   }
@@ -1678,7 +1732,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   };
 
                   // Build handler chain - innermost throws the StepError
-                  let handler: () => unknown = () => {
+                  let handler: () => Promise<unknown> = async () => {
                     throw stepError;
                   };
 
@@ -1689,9 +1743,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                       const currentMw = mw;
                       handler = () =>
                         currentMw.transformStep!(
+                          nextHandler,
                           errorRunInfo,
                           memoizedStepInfo,
-                          nextHandler,
                         );
                     }
                   }

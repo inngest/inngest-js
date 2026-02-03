@@ -16,9 +16,9 @@ test("success", async () => {
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override async transformStep(
+      handler: () => Promise<unknown>,
       runInfo: Middleware.RunInfo,
       stepInfo: Middleware.StepInfo,
-      handler: () => unknown,
     ) {
       state.calls.push([runInfo, stepInfo]);
       state.logs.push("mw handler: before");
@@ -148,9 +148,9 @@ test("error", async () => {
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override async transformStep(
+      handler: () => Promise<unknown>,
       runInfo: Middleware.RunInfo,
       stepInfo: Middleware.StepInfo,
-      handler: () => unknown,
     ) {
       state.calls.push([runInfo, stepInfo]);
       try {

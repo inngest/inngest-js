@@ -47,7 +47,6 @@ import type {
   MetadataUpdate,
 } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
-import type { Middleware } from "../InngestMiddlewareV2.ts";
 import {
   createStepTools,
   type FoundStep,
@@ -952,54 +951,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     let interval: GoInterval | undefined;
 
-    // Wrap step execution with middlewareV2 transformStep hooks
-    const middlewareV2 = this.options.client.middlewareV2 || [];
-
-    // Call onStepStart for each middleware
-    const stepKind = opts?.type === "step.sendEvent" ? "sendEvent" : "run";
-    const stepInfo: Middleware.StepInfo = {
-      hashedId,
-      id: userland.id,
-      memoized: false, // Always false for onStepStart
-      name: displayName ?? userland.id,
-      stepKind,
-    };
-
-    // Build RunInfo from the current execution context
-    const runInfo: Middleware.RunInfo = {
-      attempt: this.fnArg.attempt,
-      event: this.fnArg.event,
-      events: this.fnArg.events,
-      runId: this.options.runId,
-      steps: this.buildStepsForRunInfo(),
-    };
-
-    for (const mw of middlewareV2) {
-      if (mw?.onStepStart) {
-        mw.onStepStart(runInfo, stepInfo);
-      }
-    }
-
-    const executeWithMiddleware = async () => {
-      // Build the handler chain from inside out
-      // The innermost handler runs the actual step function
-      let handler: () => unknown = () => runAsPromise(fn);
-
-      // Wrap with each middleware's transformStep (in reverse order so first middleware is outermost)
-      for (let i = middlewareV2.length - 1; i >= 0; i--) {
-        const mw = middlewareV2[i];
-        if (mw?.transformStep) {
-          const nextHandler = handler;
-          const currentMw = mw;
-          handler = () =>
-            currentMw.transformStep!(runInfo, stepInfo, nextHandler);
-        }
-      }
-
-      return handler();
-    };
-
-    return goIntervalTiming(() => executeWithMiddleware())
+    return goIntervalTiming(() => runAsPromise(fn))
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
@@ -1013,18 +965,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
         const metadata = this.state.metadata?.get(id);
-        const data = await resultPromise;
-
-        // Call onStepEnd for each middleware
-        for (const mw of middlewareV2) {
-          if (mw?.onStepEnd) {
-            mw.onStepEnd(runInfo, stepInfo, data);
-          }
-        }
 
         return {
           ...outgoingOp,
-          data,
+          data: await resultPromise,
           ...(metadata && metadata.length > 0 ? { metadata } : {}),
         };
       })
@@ -1041,13 +985,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const metadata = this.state.metadata?.get(id);
-
-        // Call onStepError for each middleware
-        for (const mw of middlewareV2) {
-          if (mw?.onStepError) {
-            mw.onStepError(runInfo, stepInfo, error);
-          }
-        }
 
         if (errorIsRetriable) {
           return {
@@ -1274,32 +1211,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.options.transformCtx?.(fnArg) ?? fnArg;
-  }
-
-  /**
-   * Build the steps object for RunInfo from the current step state.
-   */
-  private buildStepsForRunInfo(): Middleware.RunInfo["steps"] {
-    const result: Record<string, unknown> = {};
-    for (const [id, op] of Object.entries(this.state.stepState)) {
-      if (op.error !== undefined) {
-        result[id] = {
-          type: "error" as const,
-          error: op.error,
-        };
-      } else if (op.input !== undefined) {
-        result[id] = {
-          type: "input" as const,
-          input: op.input,
-        };
-      } else {
-        result[id] = {
-          type: "data" as const,
-          data: op.data,
-        };
-      }
-    }
-    return result as Middleware.RunInfo["steps"];
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -1544,101 +1455,15 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             // future middleware applications. For this reason, we'll make sure
             // the values are fully resolved before continuing.
             void Promise.all([result.data, result.error, result.input]).then(
-              async () => {
+              () => {
                 if (typeof result.data !== "undefined") {
-                  // Wrap memoized data resolution through middlewareV2 transformStep hooks
-                  const middlewareV2 = this.options.client.middlewareV2 || [];
-                  const memoizedStepInfo: Middleware.StepInfo = {
-                    hashedId,
-                    id: opId.userland.id,
-                    memoized: true,
-                    name: step.displayName ?? opId.userland.id,
-                    stepKind:
-                      step.opts?.type === "step.sendEvent"
-                        ? "sendEvent"
-                        : "run",
-                  };
-
-                  // Build RunInfo from the current execution context
-                  const memoizedRunInfo: Middleware.RunInfo = {
-                    attempt: this.fnArg.attempt,
-                    event: this.fnArg.event,
-                    events: this.fnArg.events,
-                    runId: this.options.runId,
-                    steps: this.buildStepsForRunInfo(),
-                  };
-
-                  // Build handler chain - innermost returns the memoized data
-                  let handler: () => unknown = () => result.data;
-
-                  for (let i = middlewareV2.length - 1; i >= 0; i--) {
-                    const mw = middlewareV2[i];
-                    if (mw?.transformStep) {
-                      const nextHandler = handler;
-                      const currentMw = mw;
-                      handler = () =>
-                        currentMw.transformStep!(
-                          memoizedRunInfo,
-                          memoizedStepInfo,
-                          nextHandler,
-                        );
-                    }
-                  }
-
-                  const transformedData = await handler();
-                  resolve(transformedData);
+                  resolve(result.data);
                 } else {
-                  const stepError = new StepError(opId.id, result.error);
-                  this.state.recentlyRejectedStepError = stepError;
-
-                  // Wrap error through middlewareV2 transformStep hooks
-                  const middlewareV2 = this.options.client.middlewareV2 || [];
-                  const memoizedStepInfo: Middleware.StepInfo = {
-                    hashedId,
-                    id: opId.userland.id,
-                    memoized: true,
-                    name: step.displayName ?? opId.userland.id,
-                    stepKind:
-                      step.opts?.type === "step.sendEvent"
-                        ? "sendEvent"
-                        : "run",
-                  };
-
-                  // Build RunInfo from the current execution context
-                  const errorRunInfo: Middleware.RunInfo = {
-                    attempt: this.fnArg.attempt,
-                    event: this.fnArg.event,
-                    events: this.fnArg.events,
-                    runId: this.options.runId,
-                    steps: this.buildStepsForRunInfo(),
-                  };
-
-                  // Build handler chain - innermost throws the StepError
-                  let handler: () => unknown = () => {
-                    throw stepError;
-                  };
-
-                  for (let i = middlewareV2.length - 1; i >= 0; i--) {
-                    const mw = middlewareV2[i];
-                    if (mw?.transformStep) {
-                      const nextHandler = handler;
-                      const currentMw = mw;
-                      handler = () =>
-                        currentMw.transformStep!(
-                          errorRunInfo,
-                          memoizedStepInfo,
-                          nextHandler,
-                        );
-                    }
-                  }
-
-                  try {
-                    await handler();
-                    // Should never reach here since innermost handler throws
-                    reject(stepError);
-                  } catch (err) {
-                    reject(err);
-                  }
+                  this.state.recentlyRejectedStepError = new StepError(
+                    opId.id,
+                    result.error,
+                  );
+                  reject(this.state.recentlyRejectedStepError);
                 }
               },
             );
@@ -1664,42 +1489,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         })());
       }
 
-      // Wrap the promise through middlewareV2 transformStep hooks
-      const middlewareV2 = this.options.client.middlewareV2 || [];
-      if (middlewareV2.length === 0) {
-        return promise;
-      }
-
-      const freshStepInfo: Middleware.StepInfo = {
-        hashedId,
-        id: opId.userland.id,
-        memoized: false,
-        name: step.displayName ?? opId.userland.id,
-        stepKind: step.opts?.type === "step.sendEvent" ? "sendEvent" : "run",
-      };
-
-      // Build RunInfo from the current execution context
-      const freshRunInfo: Middleware.RunInfo = {
-        attempt: this.fnArg.attempt,
-        event: this.fnArg.event,
-        events: this.fnArg.events,
-        runId: this.options.runId,
-        steps: this.buildStepsForRunInfo(),
-      };
-
-      // Build the handler chain that wraps the promise result
-      let handler: () => unknown = () => promise;
-      for (let i = middlewareV2.length - 1; i >= 0; i--) {
-        const mw = middlewareV2[i];
-        if (mw?.transformStep) {
-          const nextHandler = handler;
-          const currentMw = mw;
-          handler = () =>
-            currentMw.transformStep!(freshRunInfo, freshStepInfo, nextHandler);
-        }
-      }
-
-      return handler() as Promise<unknown>;
+      return promise;
     };
 
     return createStepTools(this.options.client, this, stepHandler);

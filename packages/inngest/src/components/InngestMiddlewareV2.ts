@@ -60,10 +60,20 @@ class BaseMiddlewareImpl {
    * modify step inputs and outputs.
    */
   transformStep?(
+    handler: () => Promise<unknown>,
     runInfo: Middleware.RunInfo,
     stepInfo: Middleware.StepInfo,
-    handler: () => unknown,
-  ): unknown;
+  ): Promise<unknown>;
+
+  /**
+   * Called many times per run, once for each step attempt. This gives an
+   * opportunity to modify step inputs and outputs. Modify `runInfo` by
+   * reference.
+   */
+  transformRun?(
+    handler: () => Promise<unknown>,
+    runInfo: Middleware.RunInfo,
+  ): Promise<unknown>;
 
   /**
    * Called each time a step errors. Only called for `step.run` and
@@ -112,7 +122,7 @@ export namespace Middleware {
     event: EventPayload;
     events: EventPayload[];
     runId: string;
-    steps: Record<string, z.infer<(typeof stepsSchemas)[ExecutionVersion.V2]>>;
+    steps: z.infer<(typeof stepsSchemas)[ExecutionVersion.V2]>;
   };
 
   export type StepInfo = {
