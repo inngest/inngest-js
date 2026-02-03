@@ -74,6 +74,16 @@ class BaseMiddlewareImpl {
     stepInfo: Middleware.StepInfo,
     error: Error,
   ): void;
+
+  /**
+   * Called each time a step successfully completes. Only called for `step.run`
+   * and `step.sendEvent`. Never called for memoized step outputs.
+   */
+  onStepEnd?(
+    runInfo: Middleware.RunInfo,
+    stepInfo: Middleware.StepInfo,
+    data: unknown,
+  ): void;
 }
 
 /**

@@ -1013,10 +1013,18 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
         const metadata = this.state.metadata?.get(id);
+        const data = await resultPromise;
+
+        // Call onStepEnd for each middleware
+        for (const mw of middlewareV2) {
+          if (mw?.onStepEnd) {
+            mw.onStepEnd(runInfo, stepInfo, data);
+          }
+        }
 
         return {
           ...outgoingOp,
-          data: await resultPromise,
+          data,
           ...(metadata && metadata.length > 0 ? { metadata } : {}),
         };
       })
