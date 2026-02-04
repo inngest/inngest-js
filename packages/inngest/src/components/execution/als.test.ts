@@ -69,8 +69,7 @@ describe("getAsyncCtx", () => {
     let internalRunId: string | undefined;
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ runId }) => {
         internalRunId = runId;
 

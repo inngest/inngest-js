@@ -16,25 +16,28 @@ describe("cron", () => {
 
   test("createFunction", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "fn" }, cron("* * * * *"), ({ event }) => {
-      expectTypeOf(event.name).not.toBeAny();
-      expectTypeOf(event.name).toEqualTypeOf<
-        "inngest/scheduled.timer" | "inngest/function.invoked"
-      >();
+    inngest.createFunction(
+      { id: "fn", triggers: [cron("* * * * *")] },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          "inngest/scheduled.timer" | "inngest/function.invoked"
+        >();
 
-      expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<
-        | {
-            cron: string;
-          }
-        | {}
-      >();
-    });
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<
+          | {
+              cron: string;
+            }
+          | {}
+        >();
+      },
+    );
   });
 
   test("step.invoke", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+    inngest.createFunction({ id: "parent", triggers: [] }, async ({ step }) => {
       await step.invoke("invoke", {
         function: child,
         data: { message: "hello" },
@@ -46,8 +49,7 @@ describe("cron", () => {
     });
 
     const child = inngest.createFunction(
-      { id: "child" },
-      cron("* * * * *"),
+      { id: "child", triggers: [cron("* * * * *")] },
       () => {},
     );
   });
@@ -94,7 +96,7 @@ describe("eventType without options", () => {
     const inngest = new Inngest({ id: "app" });
 
     // Without condition
-    inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+    inngest.createFunction({ id: "fn", triggers: [et] }, ({ event }) => {
       expectTypeOf(event.name).not.toBeAny();
       expectTypeOf(event.name).toEqualTypeOf<
         "event-1" | "inngest/function.invoked"
@@ -106,10 +108,14 @@ describe("eventType without options", () => {
 
     // With condition
     inngest.createFunction(
-      { id: "fn2" },
       {
-        event: et,
-        if: "event.data.foo == 'bar'",
+        id: "fn2",
+        triggers: [
+          {
+            event: et,
+            if: "event.data.foo == 'bar'",
+          },
+        ],
       },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
@@ -131,8 +137,8 @@ describe("eventType without options", () => {
       {
         id: "fn",
         cancelOn: [et],
+        triggers: [et],
       },
-      et,
       () => {},
     );
 
@@ -141,15 +147,15 @@ describe("eventType without options", () => {
       {
         id: "fn2",
         cancelOn: [{ event: et, if: "event.data.foo == 'bar'" }],
+        triggers: [et],
       },
-      [et],
       () => {},
     );
   });
 
   test("step.invoke", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+    inngest.createFunction({ id: "parent", triggers: [] }, async ({ step }) => {
       await step.invoke("invoke", {
         function: child,
         data: { message: "hello" },
@@ -160,12 +166,15 @@ describe("eventType without options", () => {
       });
     });
 
-    const child = inngest.createFunction({ id: "child" }, et, () => {});
+    const child = inngest.createFunction(
+      { id: "child", triggers: [et] },
+      () => {},
+    );
   });
 
   test("step.waitForEvent", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "fn" }, et, async ({ step }) => {
+    inngest.createFunction({ id: "fn", triggers: [et] }, async ({ step }) => {
       const matched = await step.waitForEvent("id", {
         event: et,
         timeout: 1000,
@@ -239,7 +248,7 @@ describe("eventType with schema", () => {
 
   test("function trigger", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+    inngest.createFunction({ id: "fn", triggers: [et] }, ({ event }) => {
       expectTypeOf(event.name).not.toBeAny();
       expectTypeOf(event.name).toEqualTypeOf<
         "event-1" | "inngest/function.invoked"
@@ -251,7 +260,7 @@ describe("eventType with schema", () => {
 
   test("step.invoke", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+    inngest.createFunction({ id: "parent", triggers: [] }, async ({ step }) => {
       await step.invoke("invoke", {
         function: child,
         data: { msg: "hello" },
@@ -270,12 +279,15 @@ describe("eventType with schema", () => {
       });
     });
 
-    const child = inngest.createFunction({ id: "child" }, et, () => {});
+    const child = inngest.createFunction(
+      { id: "child", triggers: [et] },
+      () => {},
+    );
   });
 
   test("step.waitForEvent", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "fn" }, et, async ({ step }) => {
+    inngest.createFunction({ id: "fn", triggers: [et] }, async ({ step }) => {
       const matched = await step.waitForEvent("id", {
         event: et,
         timeout: 1000,
@@ -294,11 +306,13 @@ describe("eventType with schema", () => {
   test("multiple event types", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
-      { id: "fn" },
-      [
-        eventType("event-1", { schema: z.object({ a: z.string() }) }),
-        eventType("event-2", { schema: z.object({ b: z.number() }) }),
-      ],
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", { schema: z.object({ a: z.string() }) }),
+          eventType("event-2", { schema: z.object({ b: z.number() }) }),
+        ],
+      },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
@@ -325,11 +339,13 @@ describe("eventType with schema", () => {
   test("wildcard", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
-      { id: "fn" },
-      [
-        eventType("event-1", { schema: z.object({ a: z.string() }) }),
-        eventType("user/*", { schema: z.object({ b: z.string() }) }),
-      ],
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", { schema: z.object({ a: z.string() }) }),
+          eventType("user/*", { schema: z.object({ b: z.string() }) }),
+        ],
+      },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
 
@@ -393,8 +409,7 @@ describe("invoke", () => {
   test("createFunction", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
-      { id: "fn" },
-      invoke(z.object({ msg: z.string() })),
+      { id: "fn", triggers: [invoke(z.object({ msg: z.string() }))] },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
@@ -407,7 +422,7 @@ describe("invoke", () => {
 
   test("step.invoke", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+    inngest.createFunction({ id: "parent", triggers: [] }, async ({ step }) => {
       await step.invoke("invoke", {
         function: child,
         data: { msg: "hello" },
@@ -427,8 +442,7 @@ describe("invoke", () => {
     });
 
     const child = inngest.createFunction(
-      { id: "child" },
-      invoke(z.object({ msg: z.string() })),
+      { id: "child", triggers: [invoke(z.object({ msg: z.string() }))] },
       () => {},
     );
   });
@@ -438,15 +452,17 @@ describe("mixed triggers", () => {
   test("multiple of each kind", () => {
     const inngest = new Inngest({ id: "app" });
     const fn = inngest.createFunction(
-      { id: "fn" },
-      [
-        eventType("event-1", { schema: z.object({ a: z.string() }) }),
-        cron("* * * * *"),
-        invoke(z.object({ name: z.string() })),
-        eventType("event-2", { schema: z.object({ b: z.number() }) }),
-        cron("0 0 * * *"),
-        invoke(z.object({ age: z.number() })),
-      ],
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", { schema: z.object({ a: z.string() }) }),
+          cron("* * * * *"),
+          invoke(z.object({ name: z.string() })),
+          eventType("event-2", { schema: z.object({ b: z.number() }) }),
+          cron("0 0 * * *"),
+          invoke(z.object({ age: z.number() })),
+        ],
+      },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
@@ -480,7 +496,7 @@ describe("mixed triggers", () => {
       },
     );
 
-    inngest.createFunction({ id: "fn" }, [], async ({ step }) => {
+    inngest.createFunction({ id: "fn", triggers: [] }, async ({ step }) => {
       await step.invoke("invoke", {
         function: fn,
 
@@ -508,11 +524,13 @@ describe("mixed triggers", () => {
   test("object literals instead of trigger creation functions", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
-      { id: "fn" },
-      [
-        { event: "event-1", schema: z.object({ a: z.string() }) },
-        { cron: "0 0 * * *" },
-      ],
+      {
+        id: "fn",
+        triggers: [
+          { event: "event-1", schema: z.object({ a: z.string() }) },
+          { cron: "0 0 * * *" },
+        ],
+      },
       ({ event }) => {
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/scheduled.timer" | "inngest/function.invoked"
@@ -537,11 +555,13 @@ describe("mixed triggers", () => {
   test("event type and invoke", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
-      { id: "fn" },
-      [
-        eventType("event-1", { schema: z.object({ a: z.string() }) }),
-        invoke(z.object({ b: z.number() })),
-      ],
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", { schema: z.object({ a: z.string() }) }),
+          invoke(z.object({ b: z.number() })),
+        ],
+      },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
@@ -563,14 +583,18 @@ describe("mixed triggers", () => {
   test("wildcard event type and invoke", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
-      { id: "fn" },
-      [
-        eventType("user/*", { schema: z.object({ type: z.literal("user") }) }),
-        eventType("admin/*", {
-          schema: z.object({ type: z.literal("admin") }),
-        }),
-        invoke(z.object({ type: z.literal("invoke") })),
-      ],
+      {
+        id: "fn",
+        triggers: [
+          eventType("user/*", {
+            schema: z.object({ type: z.literal("user") }),
+          }),
+          eventType("admin/*", {
+            schema: z.object({ type: z.literal("admin") }),
+          }),
+          invoke(z.object({ type: z.literal("invoke") })),
+        ],
+      },
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<

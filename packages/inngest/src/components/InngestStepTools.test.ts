@@ -969,8 +969,7 @@ describe("invoke", () => {
 
     test("allows specifying function as an instance", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -991,8 +990,7 @@ describe("invoke", () => {
 
     test("allows no payload if a cron", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { cron: "* * * * *" },
+        { id: "fn", triggers: [{ cron: "* * * * *" }] },
         () => "return",
       );
 
@@ -1034,8 +1032,10 @@ describe("invoke", () => {
 
     test("allows any data shape when invoking a function with multiple triggers", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        {
+          id: "fn",
+          triggers: [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        },
         () => "return",
       );
 
@@ -1052,8 +1052,7 @@ describe("invoke", () => {
 
     test("returns correct output type for function", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -1065,8 +1064,7 @@ describe("invoke", () => {
 
     test("returns correct output type for function with reference", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -1111,8 +1109,7 @@ describe("invoke", () => {
 
     test("returns correct output const type for function", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return" as const,
       );
 
@@ -1124,8 +1121,7 @@ describe("invoke", () => {
 
     test("returns correct output const type for function with reference", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return" as const,
       );
 
@@ -1140,9 +1136,12 @@ describe("invoke", () => {
     });
 
     test("returns null if function returns undefined|void", () => {
-      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-        // no-op
-      });
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
 
@@ -1151,9 +1150,12 @@ describe("invoke", () => {
     });
 
     test("returns null if function returns undefined|void with reference", () => {
-      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-        // no-op
-      });
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
 
       const _test = () =>
         invoke("id", {

@@ -49,14 +49,17 @@ export const createExecutionWithMemoizedSteps = ({
 
   const run = async () => {
     const execution = client
-      .createFunction({ id: "test" }, { event: "test" }, async ({ step }) => {
-        for (let i = 0; i < stepCount; i++) {
-          await step.run(
-            i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`,
-            () => userStepOutput,
-          );
-        }
-      })
+      .createFunction(
+        { id: "test", triggers: [{ event: "test" }] },
+        async ({ step }) => {
+          for (let i = 0; i < stepCount; i++) {
+            await step.run(
+              i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`,
+              () => userStepOutput,
+            );
+          }
+        },
+      )
       ["createExecution"]({
         version: ExecutionVersion.V2,
         partialOptions: {
