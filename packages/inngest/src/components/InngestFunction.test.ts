@@ -3860,7 +3860,10 @@ describe("runFn", () => {
         const result = await execution.start();
 
         expect(result.type).toBe("function-resolved");
-        expect(transformOutputMock).toHaveBeenCalledTimes(1);
+        // In sync mode, transformOutput is called twice:
+        // 1. Once to transform data for checkpointing
+        // 2. Once to transform data for the SDK return value
+        expect(transformOutputMock).toHaveBeenCalledTimes(2);
         expect(transformOutputMock).toHaveBeenCalledWith(
           expect.objectContaining({
             result: expect.objectContaining({
@@ -4065,7 +4068,9 @@ describe("runFn", () => {
               id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
               op: "RunComplete",
               data: {
-                body: '{"encrypted":true,"original":{"stepData":"hello"}}',
+                // The final function result is { final: { stepData: "hello" } }
+                // which gets encrypted by transformOutput middleware
+                body: '{"encrypted":true,"original":{"final":{"stepData":"hello"}}}',
                 headers: {},
                 status: 200,
                 version: 2,
@@ -4191,7 +4196,9 @@ describe("runFn", () => {
               id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
               op: "RunComplete",
               data: {
-                body: '{"encrypted":true,"original":{"stepData":"hello"}}',
+                // The final function result is { final: { stepData: "hello" } }
+                // which gets encrypted by transformOutput middleware
+                body: '{"encrypted":true,"original":{"final":{"stepData":"hello"}}}',
                 headers: {},
                 status: 200,
                 version: 2,
