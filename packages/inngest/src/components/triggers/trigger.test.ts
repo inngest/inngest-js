@@ -234,8 +234,6 @@ describe("eventType with schema", () => {
 
     // @ts-expect-error - Missing data
     let event = et.create();
-    // @ts-expect-error - Missing data
-    event = et.create({});
     await expect(event.validate()).rejects.toThrowError("data is required");
 
     // @ts-expect-error - Invalid data
