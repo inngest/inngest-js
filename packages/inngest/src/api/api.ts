@@ -420,7 +420,9 @@ export class InngestApi {
       json = await res.json();
     } catch {
       return err({
-        error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+        error: `Failed to update metadata: ${res.status} ${
+          res.statusText
+        } - ${await resClone.text()}`,
         status: res.status,
       });
     }
@@ -442,6 +444,7 @@ export class InngestApi {
   async checkpointNewRun(args: {
     runId: string;
     event: APIStepPayload;
+    executionVersion: ExecutionVersion;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({
@@ -449,6 +452,7 @@ export class InngestApi {
       event: args.event,
       steps: args.steps,
       ts: new Date().valueOf(),
+      request_version: args.executionVersion,
     });
 
     const result = await this.req("/v1/checkpoint", {
@@ -471,7 +475,9 @@ export class InngestApi {
     }
 
     throw new Error(
-      `Failed to checkpoint new run: ${res.status} ${res.statusText} - ${await res.text()}`,
+      `Failed to checkpoint new run: ${res.status} ${
+        res.statusText
+      } - ${await res.text()}`,
     );
   }
 
@@ -506,7 +512,9 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint steps: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint steps: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
   }
@@ -542,7 +550,9 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint async: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint async: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
   }

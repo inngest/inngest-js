@@ -120,14 +120,13 @@ export const serve = (
 
       return {
         body: async () => {
-          if (typeof req.json === "function") {
-            return await req.json();
+          if (req.text) {
+            return req.text();
           }
-
           if (req.body instanceof ReadableStream) {
-            return await streamToJSON(req.body);
+            return readStream(req.body);
           }
-
+          // Unreachable?
           return req.body;
         },
         headers: getHeader,
@@ -292,7 +291,7 @@ export const serve = (
   return handlerFn;
 };
 
-async function streamToJSON(stream: ReadableStream): Promise<unknown> {
+async function readStream(stream: ReadableStream): Promise<string> {
   const chunks = [];
   const reader = stream.getReader();
   while (true) {
@@ -302,5 +301,5 @@ async function streamToJSON(stream: ReadableStream): Promise<unknown> {
     }
     chunks.push(value);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks).toString("utf8");
 }

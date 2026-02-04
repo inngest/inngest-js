@@ -12,6 +12,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
+import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type {
@@ -23,7 +24,7 @@ import type {
   EventType,
   EventTypeWithAnySchema,
 } from "./components/triggers/triggers.ts";
-import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { internalEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -84,7 +85,7 @@ export const jsonErrorSchema = baseJsonErrorSchema
  * The payload for an API endpoint running steps.
  */
 export type APIStepPayload = {
-  name: `${knownEvents.HttpRunStarted}`;
+  name: `${internalEvents.HttpRequest}`;
   data: {
     /**
      * The domain that served the original request.
@@ -871,6 +872,12 @@ export interface ClientOptions {
    * defaulting to "info".
    */
   logLevel?: LogLevel;
+
+  /**
+   * An optional endpoint adapter to use when creating Durable Endpoints using
+   * `inngest.endpoint()`.
+   */
+  endpointAdapter?: InngestEndpointAdapter.Like;
 }
 
 export type CheckpointingOptions =
@@ -1222,7 +1229,9 @@ export interface InBandRegisterRequest
  * @internal
  */
 export interface UnauthenticatedIntrospection {
-  extra: {};
+  extra: {
+    native_crypto: boolean;
+  };
   function_count: number;
   has_event_key: boolean;
   has_signing_key: boolean;

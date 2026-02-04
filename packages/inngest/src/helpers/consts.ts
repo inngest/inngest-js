@@ -179,16 +179,7 @@ export enum internalEvents {
   FunctionFinished = "inngest/function.finished",
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
-}
-
-/**
- * Events that are known globally by the Inngest platform.
- */
-export enum knownEvents {
-  /**
-   * An HTTP request has been received to trigger a function execution.
-   */
-  HttpRunStarted = "http/run.started",
+  HttpRequest = "inngest/http.request",
 }
 
 export const logPrefix: string = chalk.magenta.bold("[Inngest]");

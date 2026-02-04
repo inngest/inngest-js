@@ -375,7 +375,6 @@ export namespace InngestFunction {
    */
   export type Trigger<TName extends string> = StrictUnion<
     | {
-        // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
         event: TName | EventTypeWithAnySchema<TName>;
         if?: string;
       }

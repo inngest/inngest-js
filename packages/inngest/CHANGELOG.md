@@ -1,5 +1,67 @@
 # inngest
 
+## 3.50.0
+
+### Minor Changes
+
+- [#1226](https://github.com/inngest/inngest-js/pull/1226) [`dab4607c`](https://github.com/inngest/inngest-js/commit/dab4607c846e861847cace81e4c58cb4d69fa55b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Adds the ability to configure the number of `bufferedSteps` and `maxInterval` when checkpointing.
+
+  ```ts
+  import { inngest } from "./client";
+
+  export const helloWorld = inngest.createFunction(
+    {
+      id: "hello-world",
+      checkpointing: { bufferedSteps: Infinity, maxInterval: "5s" },
+    },
+    { event: "demo/event.sent" },
+    async ({ event, step }) => {
+      const a = await step.run("a", () => "a");
+      const b = await step.run("b", () => "b");
+      const c = await step.run("c", () => "c");
+
+      return {
+        message: `Hello ${event.name}! ${a} ${b} ${c}`,
+      };
+    },
+  );
+  ```
+
+  If `checkpointing: true` is used, `bufferedSteps` defaults to `1` and no `maxInterval` is set.
+
+- [#1093](https://github.com/inngest/inngest-js/pull/1093) [`ad044e05`](https://github.com/inngest/inngest-js/commit/ad044e05cf0aac7e593e753f73782d6b24bab0cc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add realtime client methods to `inngest`:
+  - `inngest.realtime.publish()`
+  - `inngest.realtime.getSubscriptionToken()`
+  - `step.realtime.publish()`
+
+### Patch Changes
+
+- [#1267](https://github.com/inngest/inngest-js/pull/1267) [`093c4f96`](https://github.com/inngest/inngest-js/commit/093c4f96d0b43a9f9b0f869531855c13aa1b51f6) Thanks [@amh4r](https://github.com/amh4r)! - Fix not properly handling transfer chunked requests
+
+- [#1233](https://github.com/inngest/inngest-js/pull/1233) [`df7d3023`](https://github.com/inngest/inngest-js/commit/df7d3023ede2029a6da32f89c27f3a94a5cfa6cd) Thanks [@Linell](https://github.com/Linell)! - Lazily load [ulid](https://www.npmjs.com/package/ulid) to avoid issues in edge environments.
+
+- [#1257](https://github.com/inngest/inngest-js/pull/1257) [`0eb6b473`](https://github.com/inngest/inngest-js/commit/0eb6b473fd0f37e7cdefe7ee0ccf11a58e49b676) Thanks [@Linell](https://github.com/Linell)! - Use native Web Crypto API for HMAC-SHA256 signing with hash.js fallback
+
+  This change improves performance by using the native Web Crypto API when available for request signature verification. Falls back to hash.js for environments without crypto support.
+
+- [#1226](https://github.com/inngest/inngest-js/pull/1226) [`dab4607c`](https://github.com/inngest/inngest-js/commit/dab4607c846e861847cace81e4c58cb4d69fa55b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Correctly access parallel step IDs from resumed sync requests
+
+- [#1226](https://github.com/inngest/inngest-js/pull/1226) [`dab4607c`](https://github.com/inngest/inngest-js/commit/dab4607c846e861847cace81e4c58cb4d69fa55b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Default to v2 execution version when checkpointing
+
+## 3.49.3
+
+### Patch Changes
+
+- [#1248](https://github.com/inngest/inngest-js/pull/1248) [`351ec02d`](https://github.com/inngest/inngest-js/commit/351ec02d6bd3faa5c0b8466cddb0f946974051d6) Thanks [@amh4r](https://github.com/amh4r)! - Fix steps sometimes resolving out of order
+
+## 3.49.2
+
+### Patch Changes
+
+- [#1244](https://github.com/inngest/inngest-js/pull/1244) [`f5c565e8`](https://github.com/inngest/inngest-js/commit/f5c565e84cbe6eb5d91715a0cdfe33a3fc14d63e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure execution version doesn't slide when going to/from checkpointing
+
+- [#1245](https://github.com/inngest/inngest-js/pull/1245) [`6694bccc`](https://github.com/inngest/inngest-js/commit/6694bccc394071d412c0a99bfeb07566d163f74f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix async data fetching not happening with `optimizedParallelism: true`
+
 ## 3.49.1
 
 ### Patch Changes
