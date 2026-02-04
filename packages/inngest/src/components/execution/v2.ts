@@ -22,6 +22,7 @@ import {
   type GoInterval,
   goIntervalTiming,
   resolveAfterPending,
+  retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
@@ -245,15 +246,25 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
+    // Retry checkpoint calls with exponential backoff to handle transient
+    // network failures (e.g., dev server temporarily down, cloud hiccup).
+    // If retries exhaust, the error propagates up - for Sync mode this results
+    // in a 500 error, for AsyncCheckpointing the caller handles fallback.
+    const retryOpts = { maxAttempts: 5, baseDelay: 100 };
+
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
-        const res = await this.options.client["inngestApi"].checkpointNewRun({
-          runId: this.fnArg.runId,
-          event: this.fnArg.event as APIStepPayload,
-          steps,
-          executionVersion: this.version,
-        });
+        const res = await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointNewRun({
+              runId: this.fnArg.runId,
+              event: this.fnArg.event as APIStepPayload,
+              steps,
+              executionVersion: this.version,
+            }),
+          retryOpts,
+        );
 
         this.state.checkpointedRun = {
           appId: res.data.app_id,
@@ -261,12 +272,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           token: res.data.token,
         };
       } else {
-        await this.options.client["inngestApi"].checkpointSteps({
-          appId: this.state.checkpointedRun.appId,
-          fnId: this.state.checkpointedRun.fnId,
-          runId: this.fnArg.runId,
-          steps,
-        });
+        await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointSteps({
+              appId: this.state.checkpointedRun!.appId,
+              fnId: this.state.checkpointedRun!.fnId,
+              runId: this.fnArg.runId,
+              steps,
+            }),
+          retryOpts,
+        );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
       if (!this.options.queueItemId) {
@@ -281,12 +296,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      await this.options.client["inngestApi"].checkpointStepsAsync({
-        runId: this.fnArg.runId,
-        fnId: this.options.internalFnId,
-        queueItemId: this.options.queueItemId,
-        steps,
-      });
+      await retryWithBackoff(
+        () =>
+          this.options.client["inngestApi"].checkpointStepsAsync({
+            runId: this.fnArg.runId,
+            fnId: this.options.internalFnId!,
+            queueItemId: this.options.queueItemId!,
+            steps,
+          }),
+        retryOpts,
+      );
     } else {
       throw new Error(
         "Checkpointing is only supported in Sync and AsyncCheckpointing step modes. This is a bug in the Inngest SDK.",
