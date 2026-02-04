@@ -1048,17 +1048,14 @@ export class InngestCommHandler<
         );
       },
       "function-rejected": ({ error }) => {
-        return actions.transformResponse(
-          "creating sync error response",
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            version: exeVersion,
-            body: stringify(error),
+        return actions.transformResponse("creating sync error response", {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          version: exeVersion,
+          body: stringify(error),
+        });
       },
       "function-resolved": ({ data }) => {
         // We're done and we didn't call any step tools, so just return the
