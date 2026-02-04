@@ -20,7 +20,11 @@ import {
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { formatLogMessage, setGlobalLogger } from "../helpers/log.ts";
+import {
+  formatLogMessage,
+  getLogger,
+  setGlobalLogger,
+} from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
@@ -30,11 +34,7 @@ import type {
   SimplifyDeep,
   SingleOrArray,
 } from "../helpers/types.ts";
-import {
-  DefaultLogger,
-  type Logger,
-  ProxyLogger,
-} from "../middleware/logger.ts";
+import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import {
   type ClientOptions,
   type EventPayload,
@@ -112,11 +112,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly _userProvidedFetch?: FetchT;
   private _cachedFetch?: FetchT;
-
-  /**
-   * The logging instance being used by Inngest
-   */
-  public readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
 
@@ -237,6 +232,15 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return "info";
   }
 
+  /**
+   * The logger for this client. Returns the context-aware logger during
+   * function execution (with log level filtering and child logger support),
+   * or the global/default logger outside of execution.
+   */
+  get logger(): Logger {
+    return getLogger();
+  }
+
   get env(): string | null {
     return this.headers[headerKeys.Environment] ?? null;
   }
@@ -278,12 +282,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   constructor(options: TClientOpts) {
     this.options = options;
 
-    const {
-      id,
-      logger = new DefaultLogger(),
-      middleware,
-      appVersion,
-    } = this.options;
+    const { id, logger, middleware, appVersion } = this.options;
 
     if (!id) {
       throw new Error("An `id` must be passed to create an Inngest instance.");
@@ -300,8 +299,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       fetch: () => this.fetch,
     });
 
-    this.logger = logger;
-    setGlobalLogger(logger);
+    if (logger) {
+      setGlobalLogger(logger);
+    }
 
     this.middleware = this.initializeMiddleware([
       ...builtInMiddleware,

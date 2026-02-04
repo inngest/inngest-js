@@ -114,12 +114,10 @@ export async function signDataWithKey(
   if (!hasLoggedCryptoImplementation) {
     hasLoggedCryptoImplementation = true;
     if (subtle) {
-      getLogger().debug(
-        "[inngest] Using native Web Crypto for request signing",
-      );
+      getLogger().debug("Using native Web Crypto for request signing");
     } else {
       getLogger().debug(
-        "[inngest] Using hash.js fallback for request signing (native crypto unavailable)",
+        "Using hash.js fallback for request signing (native crypto unavailable)",
       );
     }
   }
@@ -129,7 +127,7 @@ export async function signDataWithKey(
       return await signWithNative(subtle, data, signingKey, ts);
     } catch (error) {
       getLogger().debug(
-        "[inngest] Native crypto failed, falling back to hash.js:",
+        "Native crypto failed, falling back to hash.js:",
         error,
       );
     }
