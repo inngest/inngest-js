@@ -59,8 +59,7 @@ describe("stacking and inference", () => {
       });
 
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         () => {
           return "success";
         },
@@ -158,6 +157,7 @@ describe("stacking and inference", () => {
           inngest.createFunction(
             {
               id: "",
+              triggers: [{ event: "" }],
               middleware: [fnMw],
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
@@ -167,7 +167,6 @@ describe("stacking and inference", () => {
                 expect(ctx.bar).toBe("bar");
               },
             },
-            { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
               expect(ctx.foo).toBe("foo");
@@ -223,6 +222,7 @@ describe("stacking and inference", () => {
           inngest.createFunction(
             {
               id: "",
+              triggers: [{ event: "" }],
               middleware: [fnMw],
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], "foo">>(true);
@@ -232,7 +232,6 @@ describe("stacking and inference", () => {
                 expect(ctx.bar).toBe("bar");
               },
             },
-            { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["foo"], "foo">>(true);
               expect(ctx.foo).toBe("foo");
@@ -285,6 +284,7 @@ describe("stacking and inference", () => {
           inngest.createFunction(
             {
               id: "",
+              triggers: [{ event: "" }],
               middleware: [fnMw],
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
@@ -294,7 +294,6 @@ describe("stacking and inference", () => {
                 expect(ctx.step).toBe(true);
               },
             },
-            { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
               expect(ctx.event).toBe(true);
@@ -384,6 +383,7 @@ describe("stacking and inference", () => {
           inngest.createFunction(
             {
               id: "",
+              triggers: [{ event: "" }],
               middleware: [fnMw1, fnMw2],
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
@@ -393,7 +393,6 @@ describe("stacking and inference", () => {
                 expect(ctx.fooFn).toBe("foo");
               },
             },
-            { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
               expect(ctx.foo).toBe("foo");
@@ -408,6 +407,7 @@ describe("stacking and inference", () => {
           inngest.createFunction(
             {
               id: "",
+              triggers: [{ event: "" }],
               middleware: [fnMw1, fnMw2],
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
@@ -417,7 +417,6 @@ describe("stacking and inference", () => {
                 expect(ctx.barFn).toBe(true);
               },
             },
-            { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
               expect(ctx.bar).toBe(true);
@@ -507,12 +506,12 @@ describe("stacking and inference", () => {
           inngest.createFunction(
             {
               id: "",
+              triggers: [{ event: "" }],
               middleware: [fnMw1, fnMw2],
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], number>>(true);
               },
             },
-            { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["foo"], number>>(true);
             },
@@ -543,7 +542,7 @@ describe("stacking and inference", () => {
               },
             }),
           ],
-        }).createFunction({ id: "" }, { event: "" }, () => {
+        }).createFunction({ id: "", triggers: [{ event: "" }] }, () => {
           throw new Error("test error");
         });
 
@@ -589,7 +588,7 @@ describe("stacking and inference", () => {
               },
             }),
           ],
-        }).createFunction({ id: "" }, { event: "" }, () => {
+        }).createFunction({ id: "", triggers: [{ event: "" }] }, () => {
           throw new Error("test error");
         });
 
@@ -627,7 +626,7 @@ describe("stacking and inference", () => {
               },
             }),
           ],
-        }).createFunction({ id: "" }, { event: "" }, () => {
+        }).createFunction({ id: "", triggers: [{ event: "" }] }, () => {
           throw new Error("test error");
         });
 
@@ -690,8 +689,7 @@ describe("stacking and inference", () => {
               }),
             ],
           }).createFunction(
-            { id: "fn_id" },
-            { event: "foo" },
+            { id: "fn_id", triggers: [{ event: "foo" }] },
             async ({ step }) => {
               await step.invoke("id", {
                 function: referenceFunction({
@@ -744,8 +742,7 @@ describe("stacking and inference", () => {
               }),
             ],
           }).createFunction(
-            { id: "fn_id" },
-            { event: "foo" },
+            { id: "fn_id", triggers: [{ event: "foo" }] },
             async ({ step }) => {
               await step.invoke("id", {
                 function: referenceFunction({
@@ -803,8 +800,7 @@ describe("stacking and inference", () => {
               }),
             ],
           }).createFunction(
-            { id: "fn_id" },
-            { event: "foo" },
+            { id: "fn_id", triggers: [{ event: "foo" }] },
             async ({ step }) => {
               await step.invoke("id", {
                 function: referenceFunction({
@@ -857,8 +853,7 @@ describe("stacking and inference", () => {
               }),
             ],
           }).createFunction(
-            { id: "fn_id" },
-            { event: "foo" },
+            { id: "fn_id", triggers: [{ event: "foo" }] },
             async ({ step }) => {
               await Promise.all([
                 step.invoke("id", {
@@ -933,25 +928,33 @@ describe("stacking and inference", () => {
         const payload = { name: "foo", data: { foo: "bar" } };
 
         test("output context has value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["foo"], string>>(true);
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["foo"], string>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
+            },
+          );
         });
 
         test("output context retains default 'ids' value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
-              true,
-            );
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
+            },
+          );
         });
       });
 
@@ -984,25 +987,33 @@ describe("stacking and inference", () => {
         const payload = { name: "foo", data: { foo: "bar" } };
 
         test("output context has value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["foo"], "bar">>(true);
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["foo"], "bar">>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["foo"], "bar">>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["foo"], "bar">>(true);
+            },
+          );
         });
 
         test("output context retains default 'ids' value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
-              true,
-            );
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
+            },
+          );
         });
       });
 
@@ -1035,15 +1046,18 @@ describe("stacking and inference", () => {
         const payload = { name: "foo", data: { foo: "bar" } };
 
         test("output context has value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["ids"], boolean>>(
-              true,
-            );
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["ids"], boolean>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["ids"], boolean>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["ids"], boolean>>(true);
+            },
+          );
         });
       });
 
@@ -1093,25 +1107,33 @@ describe("stacking and inference", () => {
         const payload = { name: "foo", data: { foo: "bar" } };
 
         test("output context has foo value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["foo"], string>>(true);
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["foo"], string>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
+            },
+          );
         });
 
         test("output context has bar value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["bar"], boolean>>(
-              true,
-            );
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["bar"], boolean>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["bar"], boolean>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["bar"], boolean>>(true);
+            },
+          );
         });
       });
 
@@ -1161,15 +1183,18 @@ describe("stacking and inference", () => {
         const payload = { name: "foo", data: { foo: "bar" } };
 
         test("output context has new value", () => {
-          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
-            const directRes = inngest.send(payload);
-            assertType<IsEqual<Awaited<typeof directRes>["foo"], boolean>>(
-              true,
-            );
+          inngest.createFunction(
+            { id: "", triggers: [{ event: "" }] },
+            ({ step }) => {
+              const directRes = inngest.send(payload);
+              assertType<IsEqual<Awaited<typeof directRes>["foo"], boolean>>(
+                true,
+              );
 
-            const res = step.sendEvent("id", payload);
-            assertType<IsEqual<Awaited<typeof res>["foo"], boolean>>(true);
-          });
+              const res = step.sendEvent("id", payload);
+              assertType<IsEqual<Awaited<typeof res>["foo"], boolean>>(true);
+            },
+          );
         });
       });
     });

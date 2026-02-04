@@ -387,12 +387,12 @@ Real Inngest functions used for testing:
 #### Creating Functions:
 ```typescript
 export const myFunction = inngest.createFunction(
-  { 
+  {
     id: "my-function",
     concurrency: { limit: 10 },
-    retries: { attempts: 3 }
+    retries: { attempts: 3 },
+    triggers: [{ event: "user/created" }],
   },
-  { event: "user/created" },
   async ({ event, step }) => {
     // Step 1: Send welcome email
     const emailResult = await step.run("send-welcome-email", async () => {

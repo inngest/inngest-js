@@ -67,8 +67,7 @@ describe("getAsyncCtx", () => {
     let internalRunId: string | undefined;
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ runId }) => {
         internalRunId = runId;
 
@@ -133,8 +132,7 @@ describe("getAsyncCtxSync", () => {
     let internalRunId: string | undefined;
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ runId }) => {
         internalRunId = runId;
         // Synchronous access to context

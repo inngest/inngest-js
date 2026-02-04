@@ -35,9 +35,7 @@ const uploadFile = app.createFunction(
   {
     id: "upload-file", // Unique function ID
     retries: 0, // No retries for this example
-  },
-  {
-    event: "app/process-upload", // Triggered by this event
+    triggers: [{ event: "app/process-upload" }], // Triggered by this event
   },
   async ({
     event: {

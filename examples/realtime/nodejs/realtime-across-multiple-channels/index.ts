@@ -49,9 +49,7 @@ const likePost = app.createFunction(
   {
     id: "post/like", // Unique function ID
     retries: 0, // No retries for this example
-  },
-  {
-    event: "app/post.like", // Triggered by this event
+    triggers: [{ event: "app/post.like" }], // Triggered by this event
   },
   async ({
     event: {
