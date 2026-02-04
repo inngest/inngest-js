@@ -79,6 +79,22 @@ app.use("/api/inngest", serve({ client: inngest, functions }));
 > [!NOTE]
 > If you were relying on environment variables (e.g., `INNGEST_SIGNING_KEY`) rather than passing these options explicitly, no changes are required—the client will automatically read from the environment.
 
+## Streaming Option Simplified
+
+The `streaming` option in `serve()` has been simplified from `"allow" | "force" | false` to `true | false`.
+
+- `"force"` → `true` (enable streaming; throws error if handler doesn't support it)
+- `"allow"` → removed (use `true` instead)
+- `false` → `false` (unchanged)
+
+```typescript
+// Old (v3)
+serve({ client, functions, streaming: "force" });
+
+// New (v4)
+serve({ client, functions, streaming: true });
+```
+
 ## Edge Environment Improvements
 
 In v4, fetch and configuration are now resolved lazily at first use rather than eagerly at client construction. This means you no longer need to manually bind `globalThis.fetch` before creating an Inngest client in edge environments (Cloudflare Workers, Vercel Edge, Deno, etc.).

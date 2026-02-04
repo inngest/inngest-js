@@ -93,8 +93,6 @@ void inngest.sendSignal({ signal: "foo", data: { foo: "bar" } });
 
 void inngest.setEnvVars({});
 
-void inngest.setEventKey("");
-
 const fn = inngest.createFunction(
   { id: "my-fn" },
   { event: "foo" },
