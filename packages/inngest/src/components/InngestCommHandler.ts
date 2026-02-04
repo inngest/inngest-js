@@ -1047,9 +1047,17 @@ export class InngestCommHandler<
           "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
         );
       },
-      "function-rejected": () => {
-        throw new Error(
-          "We should not get the result 'function-rejected' when checkpointing. This is a bug in the `inngest` SDK",
+      "function-rejected": ({ error }) => {
+        return actions.transformResponse(
+          "creating sync error response",
+          {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            version: exeVersion,
+            body: stringify(error),
+          },
         );
       },
       "function-resolved": ({ data }) => {
