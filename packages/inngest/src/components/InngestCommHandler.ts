@@ -11,6 +11,7 @@ import {
   envKeys,
   forwardedHeaders,
   headerKeys,
+  internalEvents,
   logPrefix,
   probe as probeEnum,
   queryKeys,
@@ -36,6 +37,7 @@ import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
+  versionSchema,
 } from "../helpers/functions.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
@@ -146,6 +148,8 @@ export interface SyncHandlerOptions extends RegisterOptions {
     | 19
     | 20;
 }
+
+export type SyncAdapterOptions = Omit<SyncHandlerOptions, "client">;
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
   /**
@@ -893,9 +897,8 @@ export class InngestCommHandler<
   }
 
   /**
-   * Given a set of actions that let us access the incoming request, create a
-   * `http/run.started` event that repesents a run starting from an HTTP
-   * request.
+   * Given a set of actions that let us access the incoming request, create an
+   * event that repesents a run starting from an HTTP request.
    */
   private async createHttpEvent(
     actions: HandlerResponseWithErrors,
@@ -946,7 +949,7 @@ export class InngestCommHandler<
       ]);
 
     return {
-      name: "http/run.started",
+      name: internalEvents.HttpRequest,
       data: {
         content_type: contentType,
         domain,
@@ -1572,6 +1575,32 @@ export class InngestCommHandler<
           )) ||
           null;
 
+        // Try get the request version from headers for sync executions.
+        let headerReqVersion: ExecutionVersion | undefined;
+
+        try {
+          const rawVersionHeader = await actions.headers(
+            "processing run request",
+            headerKeys.RequestVersion,
+          );
+
+          // We only obey the request version header if it's actually a number,
+          // even though the underlying schema allows more values; that schema
+          // is intended to _always_ find a valid version and made for request
+          // bodies.
+          //
+          // Note that the header will be a `string` at this point.
+          if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
+            const res = versionSchema.parse(Number(rawVersionHeader));
+
+            if (!res.sdkDecided) {
+              headerReqVersion = res.version;
+            }
+          }
+        } catch {
+          // no-op
+        }
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
@@ -1582,6 +1611,7 @@ export class InngestCommHandler<
           fn,
           forceExecution,
           actions,
+          headerReqVersion,
         });
         const stepOutput = await result;
 
@@ -1892,6 +1922,7 @@ export class InngestCommHandler<
     headers,
     fn,
     forceExecution,
+    headerReqVersion,
   }: {
     actions: HandlerResponseWithErrors;
     functionId: string;
@@ -1902,13 +1933,16 @@ export class InngestCommHandler<
     headers: Record<string, string>;
     fn: { fn: InngestFunction.Any; onFailure: boolean };
     forceExecution: boolean;
+    headerReqVersion?: ExecutionVersion;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(data);
+    // Try to get the request version from headers before falling back to
+    // parsing it from the body.
+    const immediateFnData = parseFnData(data, headerReqVersion);
     let { version, sdkDecided } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.

@@ -78,6 +78,7 @@ export {
   isInngest,
   isInngestFunction,
   isInngestMiddleware,
+  isInngestRequest,
 } from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
 export { serializeError } from "./helpers/errors.ts";

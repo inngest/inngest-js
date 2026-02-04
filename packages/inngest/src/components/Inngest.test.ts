@@ -1173,6 +1173,7 @@ describe("helper types", () => {
         | `${internalEvents.FunctionInvoked}`
         | `${internalEvents.FunctionCancelled}`
         | `${internalEvents.ScheduledTimer}`
+        | `${internalEvents.HttpRequest}`
         | "foo"
         | "bar";
       type Actual = T0["event"]["name"];
