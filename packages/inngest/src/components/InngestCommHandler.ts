@@ -1579,17 +1579,23 @@ export class InngestCommHandler<
         let headerReqVersion: ExecutionVersion | undefined;
 
         try {
-          const res = versionSchema.parse(
-            Number(
-              await actions.headers(
-                "processing run request",
-                headerKeys.RequestVersion,
-              ),
-            ),
+          const rawVersionHeader = await actions.headers(
+            "processing run request",
+            headerKeys.RequestVersion,
           );
 
-          if (!res.sdkDecided) {
-            headerReqVersion = res.version;
+          // We only obey the request version header if it's actually a number,
+          // even though the underlying schema allows more values; that schema
+          // is intended to _always_ find a valid version and made for request
+          // bodies.
+          //
+          // Note that the header will be a `string` at this point.
+          if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
+            const res = versionSchema.parse(Number(rawVersionHeader));
+
+            if (!res.sdkDecided) {
+              headerReqVersion = res.version;
+            }
           }
         } catch {
           // no-op
