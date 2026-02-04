@@ -22,13 +22,16 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { NextRequest } from "next/server";
+import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
+  type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import { getResponse } from "./helpers/env.ts";
 import type { Either } from "./helpers/types.ts";
-import type { SupportedFrameworkName } from "./types.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -99,9 +102,69 @@ export const serve = (
   POST: RequestHandler;
   PUT: RequestHandler;
 } => {
+  const handler = commHandler(options);
+
+  /**
+   * Next.js 13 uses
+   * {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}
+   * to declare API routes instead of a generic catch-all method that was
+   * available using the `pages/api` directory.
+   *
+   * This means that users must now export a function for each method supported
+   * by the endpoint. For us, this means requiring a user explicitly exports
+   * `GET`, `POST`, and `PUT` functions.
+   *
+   * Because of this, we'll add circular references to those property names of
+   * the returned handler, meaning we can write some succinct code to export
+   * them. Thanks, @goodoldneon.
+   *
+   * @example
+   * ```ts
+   * export const { GET, POST, PUT } = serve(...);
+   * ```
+   *
+   * See {@link https://beta.nextjs.org/docs/routing/route-handlers}
+   */
+  const baseFn = handler.createHandler();
+
+  const fn = baseFn.bind(null, undefined);
+
+  /**
+   * Ensure we have a non-variadic length to avoid issues with forced type
+   * checking.
+   */
+  Object.defineProperty(fn, "length", { value: 1 });
+
+  type Fn = typeof fn;
+
+  const handlerFn = Object.defineProperties(fn, {
+    GET: { value: baseFn.bind(null, "GET") },
+    POST: { value: baseFn.bind(null, "POST") },
+    PUT: { value: baseFn.bind(null, "PUT") },
+  }) as Fn & {
+    GET: Fn;
+    POST: Fn;
+    PUT: Fn;
+  };
+
+  return handlerFn;
+};
+
+/**
+ * TODO
+ */
+export const endpointAdapter = InngestEndpointAdapter.create((options) => {
+  return commHandler(options, options).createSyncHandler();
+});
+
+const commHandler = (
+  options: RegisterOptions & { client: Inngest.Like },
+  syncOptions?: SyncHandlerOptions,
+) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
+    syncOptions,
     handler: (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
       ...args: Parameters<RequestHandler>
@@ -262,50 +325,7 @@ export const serve = (
     },
   });
 
-  /**
-   * Next.js 13 uses
-   * {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}
-   * to declare API routes instead of a generic catch-all method that was
-   * available using the `pages/api` directory.
-   *
-   * This means that users must now export a function for each method supported
-   * by the endpoint. For us, this means requiring a user explicitly exports
-   * `GET`, `POST`, and `PUT` functions.
-   *
-   * Because of this, we'll add circular references to those property names of
-   * the returned handler, meaning we can write some succinct code to export
-   * them. Thanks, @goodoldneon.
-   *
-   * @example
-   * ```ts
-   * export const { GET, POST, PUT } = serve(...);
-   * ```
-   *
-   * See {@link https://beta.nextjs.org/docs/routing/route-handlers}
-   */
-  const baseFn = handler.createHandler();
-
-  const fn = baseFn.bind(null, undefined);
-
-  /**
-   * Ensure we have a non-variadic length to avoid issues with forced type
-   * checking.
-   */
-  Object.defineProperty(fn, "length", { value: 1 });
-
-  type Fn = typeof fn;
-
-  const handlerFn = Object.defineProperties(fn, {
-    GET: { value: baseFn.bind(null, "GET") },
-    POST: { value: baseFn.bind(null, "POST") },
-    PUT: { value: baseFn.bind(null, "PUT") },
-  }) as Fn & {
-    GET: Fn;
-    POST: Fn;
-    PUT: Fn;
-  };
-
-  return handlerFn;
+  return handler;
 };
 
 async function readStream(stream: ReadableStream): Promise<string> {
