@@ -63,7 +63,7 @@ describe("payload validation", () => {
       }),
     });
 
-    const { ids } = await inngest.send(et.create({ data: { valid: true } }));
+    const { ids } = await inngest.send(et.create({ valid: true }));
     expect(ids).toEqual(expect.any(Array));
   });
 
@@ -78,10 +78,8 @@ describe("payload validation", () => {
     await expect(
       inngest.send(
         et.create({
-          data: {
-            // @ts-expect-error - Invalid data
-            valid: false,
-          },
+          // @ts-expect-error - Invalid data
+          valid: false,
         }),
       ),
     ).rejects.toThrowError("Invalid literal value, expected true");
