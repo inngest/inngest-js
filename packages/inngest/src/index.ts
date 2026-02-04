@@ -63,6 +63,12 @@ export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { StepError } from "./components/StepError.ts";
 export {
+  cron,
+  EventType,
+  eventType,
+  invoke,
+} from "./components/triggers/triggers.ts";
+export {
   isInngest,
   isInngestFunction,
   isInngestMiddleware,
@@ -76,7 +82,6 @@ export type {
   StrictUnion,
   StrictUnionHelper,
   UnionKeys,
-  WithoutInternal,
 } from "./helpers/types";
 export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
 export type { LogArg, Logger } from "./middleware/logger";

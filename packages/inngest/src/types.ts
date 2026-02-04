@@ -9,6 +9,7 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
@@ -18,6 +19,10 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
+import type {
+  EventType,
+  EventTypeWithAnySchema,
+} from "./components/triggers/triggers.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
@@ -477,30 +482,17 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
- * Returns the event type for a function context. Since events are now generic
- * strings, this returns a simplified EventPayload type.
- */
-type GetContextEvents<
-  _TClient extends Inngest.Any,
-  _TTriggers extends string,
-  _TExcludeInternal extends boolean = false,
-> = Simplify<EventPayload>;
-
-/**
  * Base context object, omitting any extras that may be added by middleware or
  * function configuration.
  *
  * @public
  */
-export type BaseContext<
-  TClient extends Inngest.Any,
-  TTriggers extends string = string,
-> = {
+export type BaseContext<TClient extends Inngest.Any> = {
   /**
    * The event data present in the payload.
    */
-  event: GetContextEvents<TClient, TTriggers>;
-  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
+  event: Simplify<EventPayload>;
+  events: AsTuple<Simplify<EventPayload>>;
 
   /**
    * The run ID for the current function execution
@@ -530,9 +522,8 @@ export type BaseContext<
  */
 export type Context<
   TClient extends Inngest.Any = Inngest.Any,
-  TTriggers extends string = string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
+> = Omit<BaseContext<TClient>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -555,14 +546,13 @@ export namespace Context {
  */
 export type Handler<
   TClient extends Inngest.Any,
-  TTriggers extends string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TClient, TTriggers, TOverrides>,
+  ctx: Context<TClient, TOverrides>,
 ) => unknown;
 
 /**
@@ -576,7 +566,7 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-  export type Any = Handler<Inngest.Any, any, any>;
+  export type Any = Handler<Inngest.Any, any>;
 }
 
 /**
@@ -1067,69 +1057,67 @@ export interface ConcurrencyOption {
  *
  * @public
  */
-export type Cancellation<Events extends Record<string, EventPayload>> = {
-  [K in keyof Events & string]: {
-    /**
-     * The name of the event that should cancel the function run.
-     */
-    event: K;
+export type Cancellation = {
+  /**
+   * The name of the event that should cancel the function run.
+   */
+  event: string | EventTypeWithAnySchema<string>;
 
-    /**
-     * The expression that must evaluate to true in order to cancel the function run. There
-     * are two variables available in this expression:
-     * - event, referencing the original function's event trigger
-     * - async, referencing the new cancel event.
-     *
-     * @example
-     *
-     * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
-     * field:
-     *
-     * ```ts
-     * "async.data.user_id == event.data.user_id"
-     * ```
-     */
-    if?: string;
+  /**
+   * The expression that must evaluate to true in order to cancel the function run. There
+   * are two variables available in this expression:
+   * - event, referencing the original function's event trigger
+   * - async, referencing the new cancel event.
+   *
+   * @example
+   *
+   * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
+   * field:
+   *
+   * ```ts
+   * "async.data.user_id == event.data.user_id"
+   * ```
+   */
+  if?: string;
 
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     *
-     * @deprecated Use `if` instead.
-     */
-    match?: string;
+  /**
+   * If provided, the step function will wait for the incoming event to match
+   * particular criteria. If the event does not match, it will be ignored and
+   * the step function will wait for another event.
+   *
+   * It must be a string of a dot-notation field name within both events to
+   * compare, e.g. `"data.id"` or `"user.email"`.
+   *
+   * ```
+   * // Wait for an event where the `user.email` field matches
+   * match: "user.email"
+   * ```
+   *
+   * All of these are helpers for the `if` option, which allows you to specify
+   * a custom condition to check. This can be useful if you need to compare
+   * multiple fields or use a more complex condition.
+   *
+   * See the Inngest expressions docs for more information.
+   *
+   * {@link https://www.inngest.com/docs/functions/expressions}
+   *
+   * @deprecated Use `if` instead.
+   */
+  match?: string;
 
-    /**
-     * An optional timeout that the cancel is valid for.  If this isn't
-     * specified, cancellation triggers are valid for up to a year or until the
-     * function ends.
-     *
-     * The time to wait can be specified using a `number` of milliseconds, an
-     * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-     * a `Date` object.
-     *
-     * {@link https://npm.im/ms}
-     */
-    timeout?: number | string | Date;
-  };
-}[keyof Events & string];
+  /**
+   * An optional timeout that the cancel is valid for.  If this isn't
+   * specified, cancellation triggers are valid for up to a year or until the
+   * function ends.
+   *
+   * The time to wait can be specified using a `number` of milliseconds, an
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+   * a `Date` object.
+   *
+   * {@link https://npm.im/ms}
+   */
+  timeout?: number | string | Date;
+};
 
 /**
  * The response to send to Inngest when pushing function config either directly
@@ -1405,23 +1393,25 @@ export interface DevServerInfo {
 }
 
 /**
- * Given a set of events and a user-friendly trigger paramter, returns the name
- * of the event that the user intends to listen to.
+ * Given a user-friendly trigger parameter, returns the name of the event that
+ * the user intends to listen to.
  *
  * @public
  */
-export type EventNameFromTrigger<
-  Events extends Record<string, EventPayload>,
-  T extends InngestFunction.Trigger<keyof Events & string>,
-> = IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
-  ? `${internalEvents.FunctionInvoked}`
-  : T extends string // `string` indicates a migration from v2 to v3
-    ? T
-    : T extends { event: infer IEvent } // an event trigger
-      ? IEvent
-      : T extends { cron: string } // a cron trigger
-        ? `${internalEvents.ScheduledTimer}`
-        : never;
+export type EventNameFromTrigger<T extends InngestFunction.Trigger<string>> =
+  IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
+    ? `${internalEvents.FunctionInvoked}`
+    : T extends string // `string` indicates a migration from v2 to v3
+      ? T
+      : // If the trigger is an event string (e.g. `{ event: "my-event" }`)
+        T extends { event: infer IEvent } // an event trigger
+        ? // If the event is an EventType (e.g. `{ event: eventType("my-event") }`)
+          IEvent extends EventType<infer TName, infer _TSchema>
+          ? TName // Extract name from EventType
+          : IEvent // Use event directly if it's a string
+        : T extends { cron: string } // a cron trigger
+          ? `${internalEvents.ScheduledTimer}`
+          : never;
 
 /**
  * A union to represent known names of supported frameworks that we can use
@@ -1505,9 +1495,6 @@ export type MetadataTarget =
       span_id: string;
     };
 
-export type EventsFromFunction<T extends InngestFunction.Any> =
-  T extends InngestFunction.Any ? Record<string, EventPayload> : never;
-
 /**
  * A function that can be invoked by Inngest.
  */
@@ -1535,6 +1522,76 @@ export type TriggerEventFromFunction<
     : MinimalEventPayload;
 
 /**
+ * Extracts the input type from invoke trigger schemas only.
+ * For `step.invoke`, we need the schema INPUT type (what the caller provides),
+ * not the output type (what the function receives after transformation).
+ *
+ * Only extracts from `invoke(schema)` triggers (event: "inngest/function.invoked").
+ * Returns a union of all invoke trigger input types.
+ *
+ * @internal
+ */
+type ExtractInvokeSchemaInput<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends {
+        event: "inngest/function.invoked";
+        schema: infer TSchema;
+      }
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData | ExtractInvokeSchemaInput<Rest>
+        : ExtractInvokeSchemaInput<Rest>
+      : ExtractInvokeSchemaInput<Rest>
+    : never;
+
+/**
+ * Extracts the input type from any trigger with a schema.
+ * Used as a fallback when no invoke triggers exist.
+ *
+ * @internal
+ */
+type ExtractTriggerSchemaInput<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends { schema: infer TSchema }
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData
+        : ExtractTriggerSchemaInput<Rest>
+      : ExtractTriggerSchemaInput<Rest>
+    : never;
+
+/**
+ * Checks if a trigger array contains an invoke trigger with a schema.
+ *
+ * @internal
+ */
+type HasInvokeTriggerWithSchema<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends {
+        event: "inngest/function.invoked";
+        // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
+        schema: StandardSchemaV1<any>;
+      }
+      ? true
+      : HasInvokeTriggerWithSchema<Rest>
+    : false;
+
+/**
+ * Checks if a trigger array contains any trigger with a schema.
+ *
+ * @internal
+ */
+type HasTriggerWithSchema<T extends readonly unknown[]> = T extends readonly [
+  infer First,
+  ...infer Rest,
+]
+  ? First extends {
+      // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
+      schema: StandardSchemaV1<any>;
+    }
+    ? true
+    : HasTriggerWithSchema<Rest>
+  : false;
+
+/**
  * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
  * that will be used to trigger it.
  *
@@ -1550,12 +1607,6 @@ export type TriggerEventFromFunction<
  */
 export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
-  TEvents extends Record<
-    string,
-    EventPayload
-  > = TFunction extends InngestFunction.Any
-    ? EventsFromFunction<TFunction>
-    : never,
 > = TFunction extends InngestFunction<
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
@@ -1567,19 +1618,23 @@ export type PayloadForAnyInngestFunction<
   any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
-  infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
+  infer ITriggers extends InngestFunction.Trigger<string>[]
 >
-  ? IsEqual<
-      TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
-      `${internalEvents.ScheduledTimer}`
-    > extends true
-    ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
-    : Simplify<
-        Omit<
-          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
-          "name" | "ts"
-        >
-      >
+  ? // First check: Does this function have an invoke trigger with a schema?
+    // If so, only invoke schemas should be used (not eventType schemas)
+    HasInvokeTriggerWithSchema<ITriggers> extends true
+    ? { data: ExtractInvokeSchemaInput<ITriggers> }
+    : // Second check: Does this function have any trigger with a schema?
+      HasTriggerWithSchema<ITriggers> extends true
+      ? // If so, use the schema's input type for the data property
+        { data: ExtractTriggerSchemaInput<ITriggers> }
+      : // Otherwise, fall back to existing behavior
+        IsEqual<
+            EventNameFromTrigger<ITriggers[number]>,
+            `${internalEvents.ScheduledTimer}`
+          > extends true
+        ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+        : MinimalEventPayload
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
