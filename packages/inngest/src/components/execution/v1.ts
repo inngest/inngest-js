@@ -73,6 +73,16 @@ import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
 
+/**
+ * Retry configuration for checkpoint operations.
+ *
+ * Checkpoint calls use exponential backoff with jitter to handle transient
+ * network failures (e.g., dev server temporarily down, cloud hiccup). If
+ * retries exhaust, the error propagates up - for Sync mode this results in a
+ * 500 error, for AsyncCheckpointing the caller handles fallback.
+ */
+const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
 };
@@ -247,12 +257,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
-    // Retry checkpoint calls with exponential backoff to handle transient
-    // network failures (e.g., dev server temporarily down, cloud hiccup).
-    // If retries exhaust, the error propagates up - for Sync mode this results
-    // in a 500 error, for AsyncCheckpointing the caller handles fallback.
-    const retryOpts = { maxAttempts: 5, baseDelay: 100 };
-
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
@@ -264,7 +268,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               steps,
               executionVersion: this.version,
             }),
-          retryOpts,
+          CHECKPOINT_RETRY_OPTIONS,
         );
 
         this.state.checkpointedRun = {
@@ -281,7 +285,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               runId: this.fnArg.runId,
               steps,
             }),
-          retryOpts,
+          CHECKPOINT_RETRY_OPTIONS,
         );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
@@ -305,7 +309,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             queueItemId: this.options.queueItemId!,
             steps,
           }),
-        retryOpts,
+        CHECKPOINT_RETRY_OPTIONS,
       );
     } else {
       throw new Error(

@@ -1047,14 +1047,18 @@ export class InngestCommHandler<
           "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
         );
       },
-      "function-rejected": ({ error }) => {
+      "function-rejected": (result) => {
         return actions.transformResponse("creating sync error response", {
-          status: 500,
+          status: result.retriable ? 500 : 400,
           headers: {
             "Content-Type": "application/json",
+            [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+            ...(typeof result.retriable === "string"
+              ? { [headerKeys.RetryAfter]: result.retriable }
+              : {}),
           },
           version: exeVersion,
-          body: stringify(error),
+          body: stringify(undefinedToNull(result.error)),
         });
       },
       "function-resolved": ({ data }) => {
