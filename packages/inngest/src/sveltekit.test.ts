@@ -43,7 +43,10 @@ testFramework("SvelteKit", SvelteKitHandler, {
         method: req.method,
         url: req.url,
         headers,
-        json: () => Promise.resolve(req.body),
+        text: () =>
+          Promise.resolve(
+            req.body === undefined ? "" : JSON.stringify(req.body),
+          ),
       }),
     };
 

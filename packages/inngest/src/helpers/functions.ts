@@ -77,48 +77,61 @@ export const undefinedToNull = (v: unknown) => {
   return isUndefined ? null : v;
 };
 
-const fnDataVersionSchema = z.object({
-  version: z
-    .literal(-1)
-    .or(z.literal(0))
-    .or(z.literal(1))
-    .or(z.literal(2))
-    .optional()
-    .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
-      if (typeof v === "undefined") {
-        console.debug(
-          `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
-        );
-
-        return {
-          sdkDecided: true,
-          version: PREFERRED_ASYNC_EXECUTION_VERSION,
-        };
-      }
-
-      if (v === -1) {
-        return {
-          sdkDecided: true,
-          version: PREFERRED_ASYNC_EXECUTION_VERSION,
-        };
-      }
+export const versionSchema = z
+  .literal(-1)
+  .or(z.literal(0))
+  .or(z.literal(1))
+  .or(z.literal(2))
+  .optional()
+  .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
+    if (typeof v === "undefined") {
+      console.debug(
+        `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
+      );
 
       return {
-        sdkDecided: false,
-        version: v,
+        sdkDecided: true,
+        version: PREFERRED_ASYNC_EXECUTION_VERSION,
       };
-    }),
+    }
+
+    if (v === -1) {
+      return {
+        sdkDecided: true,
+        version: PREFERRED_ASYNC_EXECUTION_VERSION,
+      };
+    }
+
+    return {
+      sdkDecided: false,
+      version: v,
+    };
+  });
+
+const fnDataVersionSchema = z.object({
+  version: versionSchema,
 });
 
-type FnDataVersionParse = z.output<typeof fnDataVersionSchema>;
-
-export const parseFnData = (data: unknown) => {
-  let version: FnDataVersionParse["version"]["version"];
+export const parseFnData = (data: unknown, headerVersion?: unknown) => {
+  let version: ExecutionVersion | undefined;
+  let sdkDecided: boolean;
 
   try {
-    const parsedVersionData = fnDataVersionSchema.parse(data);
-    version = parsedVersionData.version.version;
-    const sdkDecided = parsedVersionData.version.sdkDecided;
+    if (typeof headerVersion !== "undefined") {
+      try {
+        const res = versionSchema.parse(headerVersion);
+        version = res.version;
+        sdkDecided = res.sdkDecided;
+      } catch {
+        // no-op
+      }
+    }
+
+    if (typeof version === "undefined") {
+      const parsedVersionData = fnDataVersionSchema.parse(data);
+      version = parsedVersionData.version.version;
+      sdkDecided = parsedVersionData.version.sdkDecided;
+    }
 
     const versionHandlers = {
       [ExecutionVersion.V0]: () =>

@@ -11,6 +11,7 @@ import {
   envKeys,
   forwardedHeaders,
   headerKeys,
+  internalEvents,
   logPrefix,
   probe as probeEnum,
   queryKeys,
@@ -36,6 +37,7 @@ import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
+  versionSchema,
 } from "../helpers/functions.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
@@ -146,6 +148,8 @@ export interface SyncHandlerOptions extends RegisterOptions {
     | 19
     | 20;
 }
+
+export type SyncAdapterOptions = Omit<SyncHandlerOptions, "client">;
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
   /**
@@ -893,9 +897,8 @@ export class InngestCommHandler<
   }
 
   /**
-   * Given a set of actions that let us access the incoming request, create a
-   * `http/run.started` event that repesents a run starting from an HTTP
-   * request.
+   * Given a set of actions that let us access the incoming request, create an
+   * event that repesents a run starting from an HTTP request.
    */
   private async createHttpEvent(
     actions: HandlerResponseWithErrors,
@@ -946,7 +949,7 @@ export class InngestCommHandler<
       ]);
 
     return {
-      name: "http/run.started",
+      name: internalEvents.HttpRequest,
       data: {
         content_type: contentType,
         domain,
@@ -1131,15 +1134,6 @@ export class InngestCommHandler<
 
     const methodP = actions.method("starting to handle request");
 
-    const contentLength = await actions
-      .headers("checking signature for request", headerKeys.ContentLength)
-      .then((value) => {
-        if (!value) {
-          return undefined;
-        }
-        return Number.parseInt(value, 10);
-      });
-
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1147,16 +1141,21 @@ export class InngestCommHandler<
           return headerSignature ?? undefined;
         }),
       methodP,
-      methodP.then((method) => {
+      methodP.then(async (method) => {
         if (method === "POST" || method === "PUT") {
-          if (!contentLength) {
-            // Return empty string because req.json() will throw an error.
-            return "";
-          }
-
-          return actions.body(
+          const body = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
+          if (!body) {
+            // Empty body can happen with PUT requests
+            return "";
+          }
+          // Some adapters return strings (req.text()), others return
+          // pre-parsed objects (req.body). Handle both cases.
+          if (typeof body === "string") {
+            return JSON.parse(body);
+          }
+          return body;
         }
 
         return "";
@@ -1432,10 +1431,10 @@ export class InngestCommHandler<
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
   }): Promise<ActionResponse> {
-    // This is when the request body is completely missing; it does not
-    // include an empty body. This commonly happens when the HTTP framework
-    // doesn't have body parsing middleware.
-    const isMissingBody = rawBody === undefined;
+    // This is when the request body is completely missing. This commonly
+    // happens when the HTTP framework doesn't have body parsing middleware,
+    // or for PUT requests that don't require a body.
+    const isMissingBody = !rawBody;
     let body = rawBody;
 
     try {
@@ -1576,6 +1575,32 @@ export class InngestCommHandler<
           )) ||
           null;
 
+        // Try get the request version from headers for sync executions.
+        let headerReqVersion: ExecutionVersion | undefined;
+
+        try {
+          const rawVersionHeader = await actions.headers(
+            "processing run request",
+            headerKeys.RequestVersion,
+          );
+
+          // We only obey the request version header if it's actually a number,
+          // even though the underlying schema allows more values; that schema
+          // is intended to _always_ find a valid version and made for request
+          // bodies.
+          //
+          // Note that the header will be a `string` at this point.
+          if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
+            const res = versionSchema.parse(Number(rawVersionHeader));
+
+            if (!res.sdkDecided) {
+              headerReqVersion = res.version;
+            }
+          }
+        } catch {
+          // no-op
+        }
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
@@ -1586,6 +1611,7 @@ export class InngestCommHandler<
           fn,
           forceExecution,
           actions,
+          headerReqVersion,
         });
         const stepOutput = await result;
 
@@ -1896,6 +1922,7 @@ export class InngestCommHandler<
     headers,
     fn,
     forceExecution,
+    headerReqVersion,
   }: {
     actions: HandlerResponseWithErrors;
     functionId: string;
@@ -1906,13 +1933,16 @@ export class InngestCommHandler<
     headers: Record<string, string>;
     fn: { fn: InngestFunction.Any; onFailure: boolean };
     forceExecution: boolean;
+    headerReqVersion?: ExecutionVersion;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(data);
+    // Try to get the request version from headers before falling back to
+    // parsing it from the body.
+    const immediateFnData = parseFnData(data, headerReqVersion);
     let { version, sdkDecided } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.

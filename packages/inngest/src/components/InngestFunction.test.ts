@@ -28,6 +28,7 @@ import {
   EventSchemas,
   InngestMiddleware,
   NonRetriableError,
+  RetryAfterError,
 } from "../index.ts";
 import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
@@ -2770,6 +2771,150 @@ describe("runFn", () => {
                 },
                 expectedStepsRun: ["A"],
                 expectedErrors: ["Should not retry this step"],
+              },
+          }),
+        },
+      },
+    );
+
+    testFn(
+      "detects NonRetriableError by name when instanceof fails",
+      () => {
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            const error = new Error("Simulated monorepo error");
+            error.name = "NonRetriableError";
+            throw error;
+          },
+        );
+
+        return { fn, steps: {} };
+      },
+      {
+        [ExecutionVersion.V0]: {
+          hashes: {},
+          tests: () => ({
+            "detects NonRetriableError by name and sets retriable to false": {
+              expectedReturn: {
+                type: "function-rejected",
+                retriable: false,
+                error: expect.objectContaining({
+                  name: "NonRetriableError",
+                  message: "Simulated monorepo error",
+                }),
+              },
+              expectedErrors: ["Simulated monorepo error"],
+            },
+          }),
+        },
+        [ExecutionVersion.V1]: {
+          hashes: {},
+          tests: () => ({
+            "detects NonRetriableError by name and sets retriable to false": {
+              expectedReturn: {
+                type: "function-rejected",
+                retriable: false,
+                error: expect.objectContaining({
+                  name: "NonRetriableError",
+                  message: "Simulated monorepo error",
+                }),
+              },
+              expectedErrors: ["Simulated monorepo error"],
+              expectedStepsRun: [],
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
+          hashes: {},
+          tests: () => ({
+            "detects NonRetriableError by name and sets retriable to false": {
+              expectedReturn: {
+                type: "function-rejected",
+                retriable: false,
+                error: expect.objectContaining({
+                  name: "NonRetriableError",
+                  message: "Simulated monorepo error",
+                }),
+              },
+              expectedErrors: ["Simulated monorepo error"],
+              expectedStepsRun: [],
+            },
+          }),
+        },
+      },
+    );
+
+    testFn(
+      "detects RetryAfterError by name when instanceof fails",
+      () => {
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            const error = new Error(
+              "Simulated monorepo retry error",
+            ) as Error & { retryAfter: string };
+            error.name = "RetryAfterError";
+            error.retryAfter = "30";
+            throw error;
+          },
+        );
+
+        return { fn, steps: {} };
+      },
+      {
+        [ExecutionVersion.V0]: {
+          hashes: {},
+          tests: () => ({
+            "detects RetryAfterError by name and sets retriable to retryAfter value":
+              {
+                expectedReturn: {
+                  type: "function-rejected",
+                  retriable: "30",
+                  error: expect.objectContaining({
+                    name: "RetryAfterError",
+                    message: "Simulated monorepo retry error",
+                  }),
+                },
+                expectedErrors: ["Simulated monorepo retry error"],
+              },
+          }),
+        },
+        [ExecutionVersion.V1]: {
+          hashes: {},
+          tests: () => ({
+            "detects RetryAfterError by name and sets retriable to retryAfter value":
+              {
+                expectedReturn: {
+                  type: "function-rejected",
+                  retriable: "30",
+                  error: expect.objectContaining({
+                    name: "RetryAfterError",
+                    message: "Simulated monorepo retry error",
+                  }),
+                },
+                expectedErrors: ["Simulated monorepo retry error"],
+                expectedStepsRun: [],
+              },
+          }),
+        },
+        [ExecutionVersion.V2]: {
+          hashes: {},
+          tests: () => ({
+            "detects RetryAfterError by name and sets retriable to retryAfter value":
+              {
+                expectedReturn: {
+                  type: "function-rejected",
+                  retriable: "30",
+                  error: expect.objectContaining({
+                    name: "RetryAfterError",
+                    message: "Simulated monorepo retry error",
+                  }),
+                },
+                expectedErrors: ["Simulated monorepo retry error"],
+                expectedStepsRun: [],
               },
           }),
         },
