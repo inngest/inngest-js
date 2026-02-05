@@ -45,7 +45,6 @@ const commHandler = (
     handler: (req: Request) => {
       return {
         body: () => req.text(),
-        textBody: () => req.text(),
         headers: (key: string) => req.headers.get(key),
         method: () => req.method,
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
