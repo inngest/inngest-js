@@ -436,6 +436,21 @@ describe("invoke", () => {
       () => {},
     );
   });
+
+  test("invoke event not in triggers config is ignored", () => {
+    const inngest = new Inngest({ id: "app" });
+    const fn = inngest.createFunction(
+      { id: "fn" },
+      [invoke(z.object({ msg: z.string() }))],
+      () => {},
+    );
+    const config = fn["getConfig"]({
+      baseUrl: new URL("http://localhost:3000"),
+      appPrefix: "app",
+    });
+    expect(config).toHaveLength(1);
+    expect(config[0]!.triggers).toEqual([]);
+  });
 });
 
 describe("mixed triggers", () => {
