@@ -152,7 +152,28 @@ export const serve = (
 };
 
 /**
- * TODO
+ * In Next.js, create a function that can wrap any endpoint to be able to use
+ * steps seamlessly within that API.
+ *
+ * Supports Next.js 12+, both serverless and edge.
+ *
+ * @example Next.js >=13 with the `app` dir
+ * ```ts
+ * // app/api/my-endpoint/route.ts
+ * import { Inngest, step } from "inngest";
+ * import { endpointAdapter } from "inngest/next";
+ *
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter,
+ * });
+ *
+ * export const GET = inngest.endpoint(async (req) => {
+ *   const foo = await step.run("my-step", () => ({ foo: "bar" }));
+ *
+ *   return new Response(`Result: ${JSON.stringify(foo)}`);
+ * });
+ * ```
  */
 export const endpointAdapter = InngestEndpointAdapter.create((options) => {
   return syncCommHandler(options, options).createSyncHandler();
