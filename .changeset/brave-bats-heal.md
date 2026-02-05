@@ -1,3 +1,10 @@
+---
+"inngest": minor
+---
+
+Add the ability to create Durable Endpoint Proxies, used to redirect to Inngest run results using a user's own domain.
+
+```ts
 import { Inngest, step } from "inngest";
 import { endpointAdapter } from "inngest/edge";
 
@@ -19,18 +26,10 @@ const server = Bun.serve({
       return new Response(`Step result: ${foo}`);
     }),
 
-    "/parallel": inngest.endpoint(async (_req) => {
-      const [foo, bar] = await Promise.all([
-        step.run("foo", () => "foo result"),
-        step.run("bar", () => "bar result"),
-      ]);
-
-      return new Response(`Foo: ${foo}, Bar: ${bar}`);
-    }),
-
     // Proxy endpoint - fetches results from Inngest and decrypts if needed
     "/poll": inngest.endpointProxy(),
   },
 });
 
 console.log(`Listening on ${server.hostname}:${server.port}`);
+```
