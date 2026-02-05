@@ -1,8 +1,8 @@
 ## Implementation
 
-New stuff in `packages/inngest/src/components/InngestMiddlewareV2.ts`.
+New stuff in `packages/inngest/src/components/middleware/`.
 
-Do not worry about completely breaking the `InngestMiddleware` class. We'll eventually replace it with the new stuff.
+Do not worry about completely breaking the preexisting `InngestMiddleware` class. We'll eventually replace it with the new stuff.
 
 Do not worry about breaking changes.
 
@@ -16,10 +16,15 @@ To quickly verify your changes, run the following commands in the repo root:
 pnpm -C packages/inngest test:integration
 ```
 
-Do not worry about running a comprehensive test suite yet.
+Do not worry about running a comprehensive test suite. Only run the test command above.
 
 New tests are in:
 ```
-packages/inngest/src/components/InngestMiddlewareV2.test.ts
 packages/inngest/src/test/integration/middleware/
+```
+
+For linter checks and formatting, run:
+
+```sh
+pnpm -C packages/inngest exec biome check --diagnostic-level=error --fix
 ```

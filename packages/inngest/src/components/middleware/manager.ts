@@ -1,6 +1,6 @@
-import type { Context, EventPayload } from "../../types.ts";
-import type { Middleware } from "../InngestMiddlewareV2.ts";
-import type { MemoizedOp } from "./InngestExecution.ts";
+import type { Context } from "../../types.ts";
+import type { MemoizedOp } from "../execution/InngestExecution.ts";
+import type { Middleware } from "./middleware.ts";
 
 type StepKind = "run" | "sendEvent" | "invoke";
 

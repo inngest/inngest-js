@@ -19,11 +19,11 @@ import type {
   ExtendSendEventWithMiddleware,
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
+import type { createStepTools } from "./components/InngestStepTools.ts";
 import type {
   DefaultStaticTransform,
   Middleware,
-} from "./components/InngestMiddlewareV2.ts";
-import type { createStepTools } from "./components/InngestStepTools.ts";
+} from "./components/middleware/index.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,

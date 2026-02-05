@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## STOP: Read task.md First
+
+**BEFORE doing any work**, check if `task.md` exists in the repo root. If it does, read it immediately. Do not skip this step.
+
+`task.md` contains critical instructions for the current task including:
+- Which files you are allowed to modify
+- Constraints and approaches to avoid
+- Context that won't be repeated in the user's message
+
+The user's message may contain a plan or instructions, but `task.md` may have additional restrictions. Read it first.
+
 ## Repository Overview
 
 This is the official Inngest JavaScript/TypeScript SDK - a monorepo containing packages for building serverless event-driven systems, background jobs, and durable step functions. The SDK provides framework adapters for Next.js, Express, SvelteKit, and 15+ other frameworks.
@@ -98,6 +109,3 @@ To test examples: `pnpm dev:example` and select from the list.
 - **Framework peer deps**: All framework dependencies are optional peer deps
 - **No ESLint**: Uses Biome instead for linting and formatting
 
-## Task file
-
-If there's a `task.md` file in the repo root, always read it into context before starting work. This file contains instructions for the task at hand.

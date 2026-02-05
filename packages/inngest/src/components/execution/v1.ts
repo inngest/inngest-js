@@ -34,6 +34,7 @@ import {
   type EventPayload,
   type FailureEventArgs,
   type Handler,
+  type HashedOp,
   jsonErrorSchema,
   type OutgoingOp,
   StepMode,
@@ -48,7 +49,6 @@ import type {
   MetadataUpdate,
 } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
-import type { Middleware } from "../InngestMiddlewareV2.ts";
 import {
   createStepTools,
   type FoundStep,
@@ -57,6 +57,8 @@ import {
   STEP_INDEXING_SUFFIX,
   type StepHandler,
 } from "../InngestStepTools.ts";
+import { MiddlewareManager } from "../middleware/index.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
@@ -70,7 +72,6 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
-import { MiddlewareManager } from "./MiddlewareManager.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
@@ -959,16 +960,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     ) as Promise<T>;
   }
 
-  private async executeStep({
-    id,
-    name,
-    opts,
-    fn,
-    rawArgs,
-    displayName,
-    userland,
-    hashedId,
-  }: FoundStep): Promise<OutgoingOp> {
+  private async executeStep(foundStep: FoundStep): Promise<OutgoingOp> {
+    const { id, name, opts, fn, rawArgs, displayName, userland, hashedId } =
+      foundStep;
+    const { stepInfo, runInfo, wrappedHandler, setActualHandler } =
+      foundStep.middleware;
+
     this.debug(`preparing to execute step "${id}"`);
 
     this.timeout?.clear();
@@ -998,23 +995,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     let interval: GoInterval | undefined;
 
-    // Wrap step execution with middlewareV2 transformStep hooks
-    const stepKind = opts?.type === "step.sendEvent" ? "sendEvent" : "run";
+    // Build the actual handler that checks if input was modified by middleware
     const stepInput = Array.isArray(opts?.input) ? opts.input : undefined;
-    const stepInfo = this.middlewareManager.buildStepInfo({
-      hashedId,
-      userlandId: userland.id,
-      displayName: displayName ?? userland.id,
-      memoized: false,
-      stepKind,
-      input: stepInput,
-    });
-
-    const runInfo = this.middlewareManager.buildRunInfo();
-
-    // Build the handler chain and allow transformStepInput to mutate stepInfo.input
-    // The innermost handler checks if input was modified
-    const innerHandler: () => Promise<unknown> = () => {
+    const actualHandler: () => Promise<unknown> = () => {
       // If stepInfo.input was mutated, call user function with new args
       if (stepInfo.input !== stepInput && rawArgs) {
         const userFn = rawArgs[1] as (...args: unknown[]) => unknown;
@@ -1023,21 +1006,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return runAsPromise(fn);
     };
 
-    const wrapped = this.middlewareManager.wrapStepHandler(
-      innerHandler,
-      stepInfo,
-      runInfo,
-    );
-    const handler = wrapped.handler;
+    // Set the actual handler so the middleware pipeline can call it
+    setActualHandler(actualHandler);
 
     // Call onStepStart after transformStepInput (so mutations are visible)
-    this.middlewareManager.onStepStart(wrapped.stepInfo, runInfo);
+    this.middlewareManager.onStepStart(stepInfo, runInfo);
 
-    const executeWithMiddleware = async () => {
-      return handler();
-    };
-
-    return goIntervalTiming(() => executeWithMiddleware())
+    return goIntervalTiming(() => wrappedHandler())
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
@@ -1054,7 +1029,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const data = await resultPromise;
 
         // Call onStepEnd for each middleware
-        this.middlewareManager.onStepEnd(wrapped.stepInfo, runInfo, data);
+        this.middlewareManager.onStepEnd(stepInfo, runInfo, data);
 
         return {
           ...outgoingOp,
@@ -1081,7 +1056,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const metadata = this.state.metadata?.get(id);
 
         // Call onStepError for each middleware
-        this.middlewareManager.onStepError(wrapped.stepInfo, runInfo, error);
+        this.middlewareManager.onStepError(stepInfo, runInfo, error);
 
         if (errorIsRetriable) {
           return {
@@ -1640,35 +1615,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      if (this.state.steps.has(_internals.hashId(opId.id))) {
-        const originalId = opId.id;
-        maybeWarnOfParallelIndexing(originalId);
-
-        const expectedNextIndex = expectedNextStepIndexes.get(originalId) ?? 1;
-        for (let i = expectedNextIndex; ; i++) {
-          const newId = originalId + STEP_INDEXING_SUFFIX + i;
-
-          if (!this.state.steps.has(_internals.hashId(newId))) {
-            expectedNextStepIndexes.set(originalId, i + 1);
-            opId.id = newId;
-            opId.userland.index = i;
-            break;
-          }
-        }
-      }
+      // Apply middleware transformations (may change step ID, affecting
+      // memoization lookup)
+      const {
+        hashedId,
+        stepInfo,
+        runInfo,
+        wrappedHandler,
+        setActualHandler,
+        stepState,
+        isFulfilled,
+      } = this.applyMiddlewareToStep(
+        opId,
+        expectedNextStepIndexes,
+        maybeWarnOfParallelIndexing,
+      );
 
       const { promise, resolve, reject } = createDeferredPromise();
-      const hashedId = _internals.hashId(opId.id);
-      const stepState = this.state.stepState[hashedId];
-      let isFulfilled = false;
-      if (stepState) {
-        stepState.seen = true;
-        this.state.remainingStepsToBeSeen.delete(hashedId);
-
-        if (typeof stepState.input === "undefined") {
-          isFulfilled = true;
-        }
-      }
 
       let extraOpts: Record<string, unknown> | undefined;
       let fnArgs = [...args];
@@ -1701,6 +1664,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
       }
 
+      // Build FoundStep with middleware context
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
@@ -1714,6 +1678,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         hasStepState: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
+
+        // Middleware context for deferred handler pattern
+        middleware: {
+          wrappedHandler,
+          stepInfo,
+          runInfo,
+          setActualHandler,
+        },
+
         handle: () => {
           if (step.handled) {
             return false;
@@ -1768,37 +1741,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                     }
                   }
 
-                  // Wrap memoized data resolution through middlewareV2 transformStep hooks
-                  const memoizedStepInfo = this.middlewareManager.buildStepInfo(
-                    {
-                      hashedId,
-                      userlandId: opId.userland.id,
-                      displayName: step.displayName ?? opId.userland.id,
-                      memoized: true,
-                      stepKind:
-                        step.opts?.type === "step.sendEvent"
-                          ? "sendEvent"
-                          : "run",
-                    },
-                  );
-
-                  const memoizedRunInfo = this.middlewareManager.buildRunInfo();
-
-                  // Call transformStepInput for memoized steps
-                  const memoizedHandler = () => Promise.resolve(result.data);
-                  const wrapped = this.middlewareManager.wrapStepHandler(
-                    memoizedHandler,
-                    memoizedStepInfo,
-                    memoizedRunInfo,
+                  // Set inner handler to return memoized data
+                  step.middleware.setActualHandler(() =>
+                    Promise.resolve(result.data),
                   );
 
                   // Call the wrapped handler and transform output
-                  wrapped.handler().then((handlerResult) => {
+                  step.middleware.wrappedHandler().then((handlerResult) => {
                     const outputResult =
                       this.middlewareManager.transformStepOutput(
                         handlerResult,
-                        wrapped.stepInfo,
-                        memoizedRunInfo,
+                        step.middleware.stepInfo,
+                        step.middleware.runInfo,
                       );
 
                     resolve(outputResult);
@@ -1807,37 +1761,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   const stepError = new StepError(opId.id, result.error);
                   this.state.recentlyRejectedStepError = stepError;
 
-                  // Wrap error through middlewareV2 transformStep hooks
-                  const memoizedStepInfo = this.middlewareManager.buildStepInfo(
-                    {
-                      hashedId,
-                      userlandId: opId.userland.id,
-                      displayName: step.displayName ?? opId.userland.id,
-                      memoized: true,
-                      stepKind:
-                        step.opts?.type === "step.sendEvent"
-                          ? "sendEvent"
-                          : "run",
-                    },
-                  );
-
-                  const errorRunInfo = this.middlewareManager.buildRunInfo();
-
-                  // Call transformStepInput for memoized step errors
-                  const memoizedErrorHandler = () => Promise.reject(stepError);
-                  const wrappedError = this.middlewareManager.wrapStepHandler(
-                    memoizedErrorHandler,
-                    memoizedStepInfo,
-                    errorRunInfo,
+                  // Set inner handler to reject with step error
+                  step.middleware.setActualHandler(() =>
+                    Promise.reject(stepError),
                   );
 
                   // Call the wrapped handler and transform error
-                  wrappedError.handler().catch((e: Error) => {
+                  step.middleware.wrappedHandler().catch((e: Error) => {
                     const errorResult =
                       this.middlewareManager.transformStepError(
                         e,
-                        wrappedError.stepInfo,
-                        errorRunInfo,
+                        step.middleware.stepInfo,
+                        step.middleware.runInfo,
                       );
 
                     reject(errorResult);
@@ -1871,6 +1806,140 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     };
 
     return createStepTools(this.options.client, this, stepHandler);
+  }
+
+  /**
+   * Applies middleware transformations to a step before memoization lookup.
+   *
+   * This method handles the "deferred handler" pattern required because:
+   * 1. Middleware can change `stepInfo.id` via `transformStepInput`
+   * 2. The changed ID affects which memoized state is used
+   * 3. We need to wrap the handler BEFORE knowing what handler to use
+   * 4. We don't know the handler until after memoization lookup
+   *
+   * Solution: Create a placeholder handler, wrap it with middleware, use the
+   * (potentially changed) ID for memoization lookup, then set the actual
+   * handler based on memoization status via `setActualHandler`.
+   *
+   * @param opId - The step operation (may be mutated to reflect final ID)
+   * @param expectedNextStepIndexes - Map tracking next index for collision resolution
+   * @param maybeWarnOfParallelIndexing - Function to warn about parallel indexing issues
+   * @returns Middleware application result with wrapped handler and state
+   */
+  private applyMiddlewareToStep(
+    opId: HashedOp,
+    expectedNextStepIndexes: Map<string, number>,
+    maybeWarnOfParallelIndexing: (userlandCollisionId: string) => void,
+  ): MiddlewareApplicationResult {
+    // 1. Resolve initial collision with original ID
+    const initialCollision = resolveStepIdCollision(
+      opId.id,
+      this.state.steps,
+      expectedNextStepIndexes,
+    );
+    if (initialCollision.finalId !== opId.id) {
+      maybeWarnOfParallelIndexing(opId.id);
+      opId.id = initialCollision.finalId;
+      if (initialCollision.index !== undefined) {
+        opId.userland.index = initialCollision.index;
+      }
+    }
+
+    const originalId = opId.id;
+    let hashedId = _internals.hashId(opId.id);
+
+    // 2. Preliminary memoization lookup for middleware to see correct memoized status
+    const preliminaryStepState = this.state.stepState[hashedId];
+    const preliminaryMemoized = Boolean(preliminaryStepState);
+
+    // 3. Build stepInfo with preliminary memoized status
+    const stepKind = opId.opts?.type === "step.sendEvent" ? "sendEvent" : "run";
+    const stepInput = Array.isArray(opId.opts?.input)
+      ? opId.opts.input
+      : undefined;
+
+    let stepInfo = this.middlewareManager.buildStepInfo({
+      hashedId,
+      userlandId: opId.userland.id,
+      displayName: opId.displayName ?? opId.userland.id,
+      memoized: preliminaryMemoized,
+      stepKind,
+      input: stepInput,
+    });
+
+    // 4. Create deferred handler pattern - actual handler set later based on memoization
+    let actualHandler: (() => Promise<unknown>) | undefined;
+    const middlewareEntryPoint = async () => {
+      if (!actualHandler) {
+        throw new Error("Handler not initialized");
+      }
+      return actualHandler();
+    };
+
+    const setActualHandler = (handler: () => Promise<unknown>) => {
+      actualHandler = handler;
+    };
+
+    const runInfo = this.middlewareManager.buildRunInfo();
+
+    // 5. Apply middleware transformations (middleware can change the step ID)
+    const wrapped = this.middlewareManager.wrapStepHandler(
+      middlewareEntryPoint,
+      stepInfo,
+      runInfo,
+    );
+    stepInfo = wrapped.stepInfo;
+
+    // 6. If ID was changed by middleware, re-resolve collisions
+    if (stepInfo.id !== originalId) {
+      opId.id = stepInfo.id;
+      opId.userland.id = stepInfo.id;
+
+      const secondCollision = resolveStepIdCollision(
+        stepInfo.id,
+        this.state.steps,
+        expectedNextStepIndexes,
+      );
+      if (secondCollision.finalId !== stepInfo.id) {
+        opId.id = secondCollision.finalId;
+        opId.userland.id = secondCollision.finalId;
+        stepInfo.id = secondCollision.finalId;
+        if (secondCollision.index !== undefined) {
+          opId.userland.index = secondCollision.index;
+        }
+      }
+
+      // Recompute hashedId with final ID
+      hashedId = _internals.hashId(opId.id);
+      stepInfo.hashedId = hashedId;
+    }
+
+    // 7. Final memoization lookup with potentially modified hashedId
+    const stepState = this.state.stepState[hashedId];
+    let isFulfilled = false;
+    if (stepState) {
+      stepState.seen = true;
+      this.state.remainingStepsToBeSeen.delete(hashedId);
+
+      if (typeof stepState.input === "undefined") {
+        isFulfilled = true;
+      }
+      // Update memoized status based on final lookup (may differ if ID changed)
+      stepInfo.memoized = true;
+    } else {
+      // ID may have changed to a non-memoized ID
+      stepInfo.memoized = false;
+    }
+
+    return {
+      hashedId,
+      stepInfo,
+      runInfo,
+      wrappedHandler: wrapped.handler,
+      setActualHandler,
+      stepState,
+      isFulfilled,
+    };
   }
 
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
@@ -2210,6 +2279,85 @@ const hashOp = (op: OutgoingOp): OutgoingOp => {
 };
 
 /**
+ * Result of resolving a step ID collision.
+ */
+interface CollisionResolutionResult {
+  /** The final ID to use (either original or with index suffix). */
+  finalId: string;
+  /** The index used, if collision was detected. */
+  index?: number;
+}
+
+/**
+ * Result of applying middleware to a step.
+ *
+ * This structure captures all the information needed after middleware has
+ * transformed a step, including the potentially-changed ID and the wrapped
+ * handler pipeline.
+ */
+interface MiddlewareApplicationResult {
+  /** The final hashed ID (may differ from original if middleware changed it). */
+  hashedId: string;
+
+  /** Step info after middleware transformation. */
+  stepInfo: Middleware.StepInfo;
+
+  /** Run info at time of step registration. */
+  runInfo: Middleware.RunInfo;
+
+  /** The middleware-wrapped handler pipeline. */
+  wrappedHandler: () => Promise<unknown>;
+
+  /**
+   * Callback to set the actual handler that the pipeline will call.
+   * This is called after memoization lookup to set either:
+   * - A handler returning memoized data, OR
+   * - A handler executing the step fresh
+   */
+  setActualHandler: (handler: () => Promise<unknown>) => void;
+
+  /** Memoized state for this step, if any. */
+  stepState: MemoizedOp | undefined;
+
+  /** Whether step state indicates the step is fulfilled. */
+  isFulfilled: boolean;
+}
+
+/**
+ * Resolves step ID collisions by appending an index suffix if needed.
+ * Consolidates the duplicated collision detection logic.
+ *
+ * @param baseId - The original step ID
+ * @param stepsMap - Map of existing steps (keyed by hashed ID)
+ * @param expectedIndexes - Map tracking expected next index for each base ID
+ * @returns The final ID to use and optional index
+ */
+function resolveStepIdCollision(
+  baseId: string,
+  stepsMap: Map<string, FoundStep>,
+  expectedIndexes: Map<string, number>,
+): CollisionResolutionResult {
+  const hashedBaseId = hashId(baseId);
+
+  // No collision - return original ID
+  if (!stepsMap.has(hashedBaseId)) {
+    return { finalId: baseId };
+  }
+
+  // Collision detected - find next available index
+  const expectedNextIndex = expectedIndexes.get(baseId) ?? 1;
+  for (let i = expectedNextIndex; ; i++) {
+    const indexedId = baseId + STEP_INDEXING_SUFFIX + i;
+    const hashedIndexedId = hashId(indexedId);
+
+    if (!stepsMap.has(hashedIndexedId)) {
+      expectedIndexes.set(baseId, i + 1);
+      return { finalId: indexedId, index: i };
+    }
+  }
+}
+
+/**
  * Exported for testing.
  */
-export const _internals = { hashOp, hashId };
+export const _internals = { hashOp, hashId, resolveStepIdCollision };

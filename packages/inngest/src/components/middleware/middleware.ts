@@ -1,10 +1,10 @@
 import type z from "zod";
-import type { stepsSchemas } from "../api/schema.ts";
-import type { ExecutionVersion } from "../helpers/consts.ts";
-import type { Jsonify } from "../helpers/jsonify.ts";
-import type { EventPayload } from "../types.ts";
-import type { Inngest } from "./Inngest.ts";
-import type { createStepTools } from "./InngestStepTools.ts";
+import type { stepsSchemas } from "../../api/schema.ts";
+import type { ExecutionVersion } from "../../helpers/consts.ts";
+import type { Jsonify } from "../../helpers/jsonify.ts";
+import type { EventPayload } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
+import type { createStepTools } from "../InngestStepTools.ts";
 
 type StepKind = "run" | "sendEvent" | "invoke";
 
@@ -91,6 +91,13 @@ export namespace Middleware {
 
   /**
    * The argument passed to `transformStepInput`.
+   *
+   * **Important:** If you modify `stepInfo.id`, the memoization lookup will
+   * use the new ID. This allows middleware to remap step IDs (e.g., for
+   * encryption middleware that needs to use a different memoized state).
+   *
+   * Note that `stepInfo.memoized` reflects the status BEFORE your
+   * transformation - it may change if the new ID has different memoized state.
    */
   export type TransformStepInputArgs = {
     handler: () => Promise<unknown>;
