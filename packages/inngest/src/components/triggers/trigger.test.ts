@@ -71,14 +71,16 @@ describe("eventType without options", () => {
   });
 
   test("create", () => {
-    et.create({});
-    et.create({ data: { foo: "bar" } });
-    et.create({
-      data: { foo: "bar" },
-      id: "123",
-      ts: 1715769600,
-      v: "1.0.0",
-    });
+    et.create();
+    et.create({ foo: "bar" });
+    et.create(
+      { foo: "bar" },
+      {
+        id: "123",
+        ts: 1715769600,
+        v: "1.0.0",
+      },
+    );
   });
 
   test("schema transform", async () => {
@@ -202,17 +204,19 @@ describe("eventType with schema", () => {
   });
 
   test("create", async () => {
-    const created1 = et.create({ data: { msg: "hello" } });
+    const created1 = et.create({ msg: "hello" });
     expect(created1.v).toBeUndefined();
     expectTypeOf(created1.v).not.toBeAny();
     expectTypeOf(created1.v).toEqualTypeOf<string | undefined>();
 
-    const created2 = et.create({
-      data: { msg: "hello" },
-      id: "123",
-      ts: 1715769600,
-      v: "1.0.0",
-    });
+    const created2 = et.create(
+      { msg: "hello" },
+      {
+        id: "123",
+        ts: 1715769600,
+        v: "1.0.0",
+      },
+    );
     expect(created2.data).toEqual({ msg: "hello" });
     expectTypeOf(created2.data).not.toBeAny();
     expectTypeOf(created2.data).toEqualTypeOf<{ msg: string }>();
@@ -229,11 +233,11 @@ describe("eventType with schema", () => {
     await created2.validate();
 
     // @ts-expect-error - Missing data
-    let event = et.create({});
+    let event = et.create();
     await expect(event.validate()).rejects.toThrowError("data is required");
 
     // @ts-expect-error - Invalid data
-    event = et.create({ data: { foo: "bar" } });
+    event = et.create({ foo: "bar" });
     await expect(event.validate()).rejects.toThrowError("msg: Required");
   });
 
@@ -364,13 +368,13 @@ test("eventType with version", () => {
   expectTypeOf(et.version).toEqualTypeOf<string | undefined>();
 
   // Defaults to event type version
-  const created = et.create({});
+  const created = et.create();
   expect(created.v).toBe("1.0.0");
   expectTypeOf(created.v).not.toBeAny();
   expectTypeOf(created.v).toEqualTypeOf<string | undefined>();
 
   // Can override the version
-  const createdWithVersion = et.create({ v: "2.0.0" });
+  const createdWithVersion = et.create({}, { v: "2.0.0" });
   expect(createdWithVersion.v).toBe("2.0.0");
   expectTypeOf(createdWithVersion.v).not.toBeAny();
   expectTypeOf(createdWithVersion.v).toEqualTypeOf<string | undefined>();

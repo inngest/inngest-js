@@ -44,23 +44,27 @@ export function cron<T extends string>(schedule: T) {
 }
 
 /**
- * Parameters when creating an event (e.g. before sending an event).
- *
- * @template TData - The data type of the event. Note that this is the schema input, not output.
+ * Args for the `EventType.create` method
  */
-type EventCreateParams<TData extends Record<string, unknown> | undefined> = {
-  id?: string;
-  ts?: number;
-  v?: string;
-} & (TData extends undefined // The `data` field has a special case we need to handle
-  ? // If data is undefined then data is optional
-    {
-      data?: Record<string, unknown>;
-    }
-  : // If data is defined then data is required
-    {
-      data: TData;
-    });
+type EventCreateArgs<
+  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+> = TSchema extends undefined
+  ? [
+      data?: Record<string, unknown>,
+      options?: {
+        id?: string;
+        ts?: number;
+        v?: string;
+      },
+    ]
+  : [
+      data: ExtractSchemaData<TSchema>,
+      options?: {
+        id?: string;
+        ts?: number;
+        v?: string;
+      },
+    ];
 
 /**
  * Extract the input type from a StandardSchemaV1.
@@ -146,17 +150,19 @@ export class EventType<
    *
    * Validation is not performed within this method because validation may be async.
    *
-   * @param params - Event parameters including data, id, timestamp, etc.
+   * @param data - Event data (required if schema is defined, optional otherwise)
+   * @param options - Optional event options including id, timestamp, and version
    */
   create(
-    params: EventCreateParams<ExtractSchemaData<TSchema>>,
+    ...args: EventCreateArgs<TSchema>
   ): UnvalidatedCreatedEvent<TName, ExtractSchemaData<TSchema>> {
+    const [data, options] = args;
     const event: UnvalidatedCreatedEvent<TName, ExtractSchemaData<TSchema>> = {
       name: this.name,
-      data: params.data as ExtractSchemaData<TSchema>,
-      id: params.id,
-      ts: params.ts,
-      v: params.v ?? this.version,
+      data: data as ExtractSchemaData<TSchema>,
+      id: options?.id,
+      ts: options?.ts,
+      v: options?.v ?? this.version,
 
       // Method for validating and transforming the event data against the
       // schema
@@ -164,11 +170,11 @@ export class EventType<
         if (this.schema) {
           // Only perform validation if a schema was provided
 
-          if (!params.data) {
+          if (!data) {
             throw new Error("data is required");
           }
 
-          const check = await this.schema["~standard"].validate(params.data);
+          const check = await this.schema["~standard"].validate(data);
           if (check.issues) {
             throw new Error(
               check.issues
