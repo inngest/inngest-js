@@ -1,20 +1,26 @@
 import { Inngest, step } from "inngest";
-import { createExperimentalEndpointWrapper } from "inngest/edge";
+import { endpointAdapter } from "inngest/edge";
 
-const wrap = createExperimentalEndpointWrapper({
-  client: new Inngest({ id: "bun-sync-example" }),
+const inngest = new Inngest({
+  id: "bun-sync-example",
+  endpointAdapter: endpointAdapter.withOptions({
+    asyncRedirectUrl: "/poll",
+  }),
 });
 
 const server = Bun.serve({
   port: 3000,
   routes: {
-    "/": wrap(async (_) => {
+    "/": inngest.endpoint(async (_req) => {
       const foo = await step.run("example/step", async () => {
         return "Hello from step!";
       });
 
       return new Response(`Step result: ${foo}`);
     }),
+
+    // Proxy endpoint - fetches results from Inngest and decrypts if needed
+    "/poll": inngest.endpointProxy(),
   },
 });
 
