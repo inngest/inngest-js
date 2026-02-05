@@ -115,7 +115,7 @@ export function useInngestSubscription<
         setState(InngestSubscriptionState.Error);
       }
     }
-  }, []);
+  }, [enabled]);
 
   // Subscription management
   useEffect(() => {
