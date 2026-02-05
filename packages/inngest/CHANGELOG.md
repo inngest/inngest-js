@@ -1,5 +1,25 @@
 # inngest
 
+## 3.51.0
+
+### Minor Changes
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `isInngestRequest()` export for lightly checking if a `Request` looks like it comes from Inngest
+
+### Patch Changes
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Stabilise execution version when switching from sync to async
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use endpoint adapters for experimental Durable Endpoints instead of wrappers
+
+- [#1250](https://github.com/inngest/inngest-js/pull/1250) [`ad078067`](https://github.com/inngest/inngest-js/commit/ad078067f1fb4d17a1dcb43403fc4e3ac853e3fa) Thanks [@Linell](https://github.com/Linell)! - NonRetriableError && RetryAfterError instanceof checks help resolve issues of errors not working as expected in monorepos.
+
+- [#1168](https://github.com/inngest/inngest-js/pull/1168) [`4371be38`](https://github.com/inngest/inngest-js/commit/4371be389801d6bc9a243cee380e4f5a1ad8b82c) Thanks [@Linell](https://github.com/Linell)! - Add Anthropic Open Telemetry instrumentation so that calls to the Anthropic API are automatically captured.
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Rename `http/run.started` event created from Durable Endpoints to `inngest/http.request`
+
+- [#1266](https://github.com/inngest/inngest-js/pull/1266) [`b6361ee1`](https://github.com/inngest/inngest-js/commit/b6361ee19a0b9df077c7ef44fa46bf1e47192cb5) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix issue where middleware transformOutput is not called.
+
 ## 3.50.0
 
 ### Minor Changes

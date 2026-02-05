@@ -22,13 +22,17 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { NextRequest } from "next/server";
+import type { Inngest } from "./components/Inngest.ts";
 import {
+  type ActionResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
+  type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import { getResponse } from "./helpers/env.ts";
 import type { Either } from "./helpers/types.ts";
-import type { SupportedFrameworkName } from "./types.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -99,168 +103,7 @@ export const serve = (
   POST: RequestHandler;
   PUT: RequestHandler;
 } => {
-  const handler = new InngestCommHandler({
-    frameworkName,
-    ...options,
-    handler: (
-      reqMethod: "GET" | "POST" | "PUT" | undefined,
-      ...args: Parameters<RequestHandler>
-    ) => {
-      const [expectedReq, res] = args;
-      const req = expectedReq as Either<NextApiRequest, NextRequest>;
-
-      const getHeader = (key: string): string | null | undefined => {
-        const header =
-          typeof req.headers.get === "function"
-            ? req.headers.get(key)
-            : req.headers[key];
-
-        return Array.isArray(header) ? header[0] : header;
-      };
-
-      return {
-        body: async () => {
-          if (req.text) {
-            return req.text();
-          }
-          if (req.body instanceof ReadableStream) {
-            return readStream(req.body);
-          }
-          // Unreachable?
-          return req.body;
-        },
-        headers: getHeader,
-        method: () => {
-          /**
-           * `req.method`, though types say otherwise, is not available in Next.js
-           * 13 {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}.
-           *
-           * Therefore, we must try to set the method ourselves where we know it.
-           */
-          const method = reqMethod || req.method || "";
-          return method;
-        },
-        isProduction: () => {
-          /**
-           * Vercel Edge Functions do not allow dynamic access to environment
-           * variables, so we'll manage production checks directly here.
-           *
-           * We try/catch to avoid situations where Next.js is being used in
-           * environments where `process.env` is not accessible or polyfilled.
-           */
-          try {
-            const isProd = process.env.NODE_ENV === "production";
-            return isProd;
-          } catch (_err) {
-            // no-op
-          }
-
-          return;
-        },
-        queryString: (key, url) => {
-          const qs = req.query?.[key] || url.searchParams.get(key);
-          return Array.isArray(qs) ? qs[0] : qs;
-        },
-
-        url: () => {
-          let absoluteUrl: URL | undefined;
-          try {
-            absoluteUrl = new URL(req.url as string);
-          } catch {
-            // no-op
-          }
-
-          if (absoluteUrl) {
-            /**
-             * `req.url` here should may be the full URL, including query string.
-             * There are some caveats, however, where Next.js will obfuscate
-             * the host. For example, in the case of `host.docker.internal`,
-             * Next.js will instead set the host here to `localhost`.
-             *
-             * To avoid this, we'll try to parse the URL from `req.url`, but
-             * also use the `host` header if it's available.
-             */
-            const host = options.serveHost || getHeader("host");
-            if (host) {
-              const hostWithProtocol = new URL(
-                host.includes("://")
-                  ? host
-                  : `${absoluteUrl.protocol}//${host}`,
-              );
-
-              absoluteUrl.protocol = hostWithProtocol.protocol;
-              absoluteUrl.host = hostWithProtocol.host;
-              absoluteUrl.port = hostWithProtocol.port;
-              absoluteUrl.username = hostWithProtocol.username;
-              absoluteUrl.password = hostWithProtocol.password;
-            }
-
-            return absoluteUrl;
-          }
-
-          let scheme: "http" | "https" = "https";
-          const host = options.serveHost || getHeader("host") || "";
-
-          try {
-            if (process.env.NODE_ENV === "development") {
-              scheme = "http";
-            }
-          } catch (_err) {
-            // no-op
-          }
-
-          const url = new URL(req.url as string, `${scheme}://${host}`);
-
-          return url;
-        },
-        transformResponse: ({ body, headers, status }): Response => {
-          /**
-           * Carefully attempt to set headers and data on the response object
-           * for Next.js 12 support.
-           *
-           * This also assumes that we're not using Next.js 15, where the `res`
-           * object is repopulated as a `RouteContext` object. We expect these
-           * methods to NOT be defined in Next.js 15.
-           *
-           * We could likely use `instanceof ServerResponse` to better check the
-           * type of this, though Next.js 12 had issues with this due to not
-           * instantiating the response correctly.
-           */
-          if (isNext12ApiResponse(res)) {
-            for (const [key, value] of Object.entries(headers)) {
-              res.setHeader(key, value);
-            }
-
-            res.status(status);
-            res.send(body);
-
-            /**
-             * If we're here, we're in a serverless endpoint (not edge), so
-             * we've correctly sent the response and can return `undefined`.
-             *
-             * Next.js 13 edge requires that the return value is typed as
-             * `Response`, so we still enforce that as we cannot dynamically
-             * adjust typing based on the environment.
-             */
-            return undefined as unknown as Response;
-          }
-
-          /**
-           * If we're here, we're in an edge environment and need to return a
-           * `Response` object.
-           *
-           * We also don't know if the current environment has a native
-           * `Response` object, so we'll grab that first.
-           */
-          const Res = getResponse();
-          return new Res(body, { status, headers });
-        },
-        transformStreamingResponse: ({ body, headers, status }) => {
-          return new Response(body, { status, headers });
-        },
-      };
-    },
-  });
+  const handler = serveCommHandler(options);
 
   /**
    * Next.js 13 uses
@@ -306,6 +149,257 @@ export const serve = (
   };
 
   return handlerFn;
+};
+
+/**
+ * In Next.js, create a function that can wrap any endpoint to be able to use
+ * steps seamlessly within that API.
+ *
+ * Supports Next.js 12+, both serverless and edge.
+ *
+ * @example Next.js >=13 with the `app` dir
+ * ```ts
+ * // app/api/my-endpoint/route.ts
+ * import { Inngest, step } from "inngest";
+ * import { endpointAdapter } from "inngest/next";
+ *
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter,
+ * });
+ *
+ * export const GET = inngest.endpoint(async (req) => {
+ *   const foo = await step.run("my-step", () => ({ foo: "bar" }));
+ *
+ *   return new Response(`Result: ${JSON.stringify(foo)}`);
+ * });
+ * ```
+ */
+export const endpointAdapter = InngestEndpointAdapter.create((options) => {
+  return syncCommHandler(options, options).createSyncHandler();
+});
+
+/**
+ * Creates the handler actions object used by InngestCommHandler.
+ * Extracted to share logic between serve() and endpointAdapter().
+ */
+const createHandlerActions = (
+  req: Either<NextApiRequest, NextRequest>,
+  res: unknown,
+  options: RegisterOptions & { client: Inngest.Like },
+  reqMethod?: "GET" | "POST" | "PUT",
+) => {
+  const getHeader = (key: string): string | null | undefined => {
+    const header =
+      typeof req.headers.get === "function"
+        ? req.headers.get(key)
+        : req.headers[key];
+
+    return Array.isArray(header) ? header[0] : header;
+  };
+
+  return {
+    body: async () => {
+      if (req.text) {
+        return req.text();
+      }
+      if (req.body instanceof ReadableStream) {
+        return readStream(req.body);
+      }
+      // Unreachable?
+      return req.body;
+    },
+    headers: getHeader,
+    method: () => {
+      /**
+       * `req.method`, though types say otherwise, is not available in Next.js
+       * 13 {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}.
+       *
+       * Therefore, we must try to set the method ourselves where we know it.
+       */
+      const method = reqMethod || req.method || "";
+      return method;
+    },
+    isProduction: () => {
+      /**
+       * Vercel Edge Functions do not allow dynamic access to environment
+       * variables, so we'll manage production checks directly here.
+       *
+       * We try/catch to avoid situations where Next.js is being used in
+       * environments where `process.env` is not accessible or polyfilled.
+       */
+      try {
+        const isProd = process.env.NODE_ENV === "production";
+        return isProd;
+      } catch (_err) {
+        // no-op
+      }
+
+      return;
+    },
+    queryString: (key: string, url: URL) => {
+      const qs = req.query?.[key] || url.searchParams.get(key);
+      return Array.isArray(qs) ? qs[0] : qs;
+    },
+
+    url: () => {
+      let absoluteUrl: URL | undefined;
+      try {
+        absoluteUrl = new URL(req.url as string);
+      } catch {
+        // no-op
+      }
+
+      if (absoluteUrl) {
+        /**
+         * `req.url` here should may be the full URL, including query string.
+         * There are some caveats, however, where Next.js will obfuscate
+         * the host. For example, in the case of `host.docker.internal`,
+         * Next.js will instead set the host here to `localhost`.
+         *
+         * To avoid this, we'll try to parse the URL from `req.url`, but
+         * also use the `host` header if it's available.
+         */
+        const host = options.serveHost || getHeader("host");
+        if (host) {
+          const hostWithProtocol = new URL(
+            host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`,
+          );
+
+          absoluteUrl.protocol = hostWithProtocol.protocol;
+          absoluteUrl.host = hostWithProtocol.host;
+          absoluteUrl.port = hostWithProtocol.port;
+          absoluteUrl.username = hostWithProtocol.username;
+          absoluteUrl.password = hostWithProtocol.password;
+        }
+
+        return absoluteUrl;
+      }
+
+      let scheme: "http" | "https" = "https";
+      const host = options.serveHost || getHeader("host") || "";
+
+      try {
+        if (process.env.NODE_ENV === "development") {
+          scheme = "http";
+        }
+      } catch (_err) {
+        // no-op
+      }
+
+      const url = new URL(req.url as string, `${scheme}://${host}`);
+
+      return url;
+    },
+    transformResponse: ({
+      body,
+      headers,
+      status,
+    }: ActionResponse<string>): Response => {
+      /**
+       * Carefully attempt to set headers and data on the response object
+       * for Next.js 12 support.
+       *
+       * This also assumes that we're not using Next.js 15, where the `res`
+       * object is repopulated as a `RouteContext` object. We expect these
+       * methods to NOT be defined in Next.js 15.
+       *
+       * We could likely use `instanceof ServerResponse` to better check the
+       * type of this, though Next.js 12 had issues with this due to not
+       * instantiating the response correctly.
+       */
+      if (isNext12ApiResponse(res)) {
+        for (const [key, value] of Object.entries(headers)) {
+          res.setHeader(key, value);
+        }
+
+        res.status(status);
+        res.send(body);
+
+        /**
+         * If we're here, we're in a serverless endpoint (not edge), so
+         * we've correctly sent the response and can return `undefined`.
+         *
+         * Next.js 13 edge requires that the return value is typed as
+         * `Response`, so we still enforce that as we cannot dynamically
+         * adjust typing based on the environment.
+         */
+        return undefined as unknown as Response;
+      }
+
+      /**
+       * If we're here, we're in an edge environment and need to return a
+       * `Response` object.
+       *
+       * We also don't know if the current environment has a native
+       * `Response` object, so we'll grab that first.
+       */
+      const Res = getResponse();
+      return new Res(body, { status, headers });
+    },
+    transformStreamingResponse: ({
+      body,
+      headers,
+      status,
+    }: ActionResponse<ReadableStream>): Response => {
+      return new Response(body, { status, headers });
+    },
+    experimentalTransformSyncResponse: async (data: unknown) => {
+      const res = data as Response;
+
+      const headers: Record<string, string> = {};
+      res.headers.forEach((v, k) => {
+        headers[k] = v;
+      });
+
+      return {
+        headers: headers,
+        status: res.status,
+        body: await res.clone().text(),
+      };
+    },
+  };
+};
+
+/**
+ * Creates an InngestCommHandler for serve() - includes reqMethod parameter
+ * for binding to specific HTTP methods.
+ */
+const serveCommHandler = (
+  options: RegisterOptions & { client: Inngest.Like },
+) => {
+  return new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (
+      reqMethod: "GET" | "POST" | "PUT" | undefined,
+      ...args: Parameters<RequestHandler>
+    ) => {
+      const [expectedReq, res] = args;
+      const req = expectedReq as Either<NextApiRequest, NextRequest>;
+      return createHandlerActions(req, res, options, reqMethod);
+    },
+  });
+};
+
+/**
+ * Creates an InngestCommHandler for endpointAdapter() - no reqMethod parameter,
+ * uses the standard RequestHandler signature.
+ */
+const syncCommHandler = (
+  options: RegisterOptions & { client: Inngest.Like },
+  syncOptions: SyncHandlerOptions,
+) => {
+  return new InngestCommHandler({
+    frameworkName,
+    ...options,
+    syncOptions,
+    handler: (...args: Parameters<RequestHandler>) => {
+      const [expectedReq, res] = args;
+      const req = expectedReq as Either<NextApiRequest, NextRequest>;
+      return createHandlerActions(req, res, options);
+    },
+  });
 };
 
 async function readStream(stream: ReadableStream): Promise<string> {

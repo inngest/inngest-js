@@ -932,8 +932,7 @@ export class InngestCommHandler<
       url.searchParams.toString(),
     );
 
-    // TODO For body, we can add `textBody()` to the actions
-    const bodyPromise = actions.textBody!(reason).then((body) => {
+    const bodyPromise = actions.body(reason).then((body) => {
       return typeof body === "string" ? body : stringify(body);
     });
 
@@ -2726,7 +2725,6 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   body: () => MaybePromise<any>;
-  textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
