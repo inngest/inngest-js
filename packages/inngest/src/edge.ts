@@ -179,14 +179,9 @@ const createDurableEndpointProxyHandler = (
  * export const GET = inngest.endpointProxy();
  * ```
  */
-export const durableEndpointAdapter = InngestEndpointAdapter.create(
+export const endpointAdapter = InngestEndpointAdapter.create(
   (options) => {
     return commHandler(options, options).createSyncHandler();
   },
   createDurableEndpointProxyHandler,
 );
-
-/**
- * @deprecated Use `durableEndpointAdapter` instead. This alias will be removed in a future version.
- */
-export const endpointAdapter = durableEndpointAdapter;
