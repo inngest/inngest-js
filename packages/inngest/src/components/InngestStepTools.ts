@@ -2,7 +2,6 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
-import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { getLogger } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -760,13 +759,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
       switch (_type) {
         case "fnInstance":
           opts.function_id = fn.id(fn["client"].id);
-          break;
-
-        case "fullId":
-          getLogger().warn(
-            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`,
-          );
-          opts.function_id = fn;
           break;
 
         case "refInstance":

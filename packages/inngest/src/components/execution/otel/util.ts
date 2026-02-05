@@ -7,11 +7,8 @@ import {
 } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
-import Debug from "debug";
-import { debugPrefix } from "./consts.ts";
+import { getLogger } from "../../../helpers/log.ts";
 import { InngestSpanProcessor } from "./processor.ts";
-
-const debug = Debug(`${debugPrefix}:middleware`);
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];
@@ -54,7 +51,7 @@ export const extendProvider = (
   const existingProvider = trace.getTracerProvider();
   if (!existingProvider) {
     if (behaviour !== "auto") {
-      debug(
+      getLogger().warn(
         'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
     }
@@ -70,7 +67,7 @@ export const extendProvider = (
     // processor and adds it? That way they could support many different
     // providers.
     if (behaviour !== "auto") {
-      debug(
+      getLogger().warn(
         "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
       );
     }
