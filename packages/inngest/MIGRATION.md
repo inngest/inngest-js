@@ -5,6 +5,25 @@ This guide covers how to migrate between the v3 and the v4 version of the `innge
 > [!WARNING]
 > This migration guide is a work in progress.
 
+## `createFunction` API Changed to 2 Arguments
+
+The trigger is now part of the options object instead of a separate argument.
+
+```typescript
+// Old (v3)
+inngest.createFunction(
+  { id: "my-fn" },
+  { event: "user/created" },
+  async ({ event }) => { /* ... */ }
+);
+
+// New (v4)
+inngest.createFunction(
+  { id: "my-fn", triggers: [{ event: "user/created" }] },
+  async ({ event }) => { /* ... */ }
+);
+```
+
 ## Remove `serveHost` Option, Use `serveOrigin` Instead
 
 Using "host" here was actually a misnomer because the scheme and port can be specified, while a "host" is only the domain or IP. _What is programming_ if not a fun version of pedantry, so we fixed this and removed `serveHost` in favor of `serveOrigin`.
