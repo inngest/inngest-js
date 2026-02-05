@@ -1784,15 +1784,25 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
                   const memoizedRunInfo = this.middlewareManager.buildRunInfo();
 
-                  // Transform memoized output through middlewareV2 (forward order for output piping)
-                  const outputResult =
-                    this.middlewareManager.transformStepOutput(
-                      result.data,
-                      memoizedStepInfo,
-                      memoizedRunInfo,
-                    );
+                  // Call transformStepInput for memoized steps
+                  const memoizedHandler = () => Promise.resolve(result.data);
+                  const wrapped = this.middlewareManager.wrapStepHandler(
+                    memoizedHandler,
+                    memoizedStepInfo,
+                    memoizedRunInfo,
+                  );
 
-                  resolve(outputResult);
+                  // Call the wrapped handler and transform output
+                  wrapped.handler().then((handlerResult) => {
+                    const outputResult =
+                      this.middlewareManager.transformStepOutput(
+                        handlerResult,
+                        wrapped.stepInfo,
+                        memoizedRunInfo,
+                      );
+
+                    resolve(outputResult);
+                  });
                 } else {
                   const stepError = new StepError(opId.id, result.error);
                   this.state.recentlyRejectedStepError = stepError;
@@ -1813,14 +1823,25 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
                   const errorRunInfo = this.middlewareManager.buildRunInfo();
 
-                  // Transform memoized error through middlewareV2 (forward order for error piping)
-                  const errorResult = this.middlewareManager.transformStepError(
-                    stepError,
+                  // Call transformStepInput for memoized step errors
+                  const memoizedErrorHandler = () => Promise.reject(stepError);
+                  const wrappedError = this.middlewareManager.wrapStepHandler(
+                    memoizedErrorHandler,
                     memoizedStepInfo,
                     errorRunInfo,
                   );
 
-                  reject(errorResult);
+                  // Call the wrapped handler and transform error
+                  wrappedError.handler().catch((e: Error) => {
+                    const errorResult =
+                      this.middlewareManager.transformStepError(
+                        e,
+                        wrappedError.stepInfo,
+                        errorRunInfo,
+                      );
+
+                    reject(errorResult);
+                  });
                 }
               },
             );

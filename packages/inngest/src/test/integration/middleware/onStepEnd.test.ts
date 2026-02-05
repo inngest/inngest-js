@@ -205,23 +205,13 @@ test("step error does not call onStepEnd", async () => {
 
 test("memoized step does not call onStepEnd", async () => {
   const state = {
+    calls: 0,
     done: false,
-    endCalls: 0,
-    inputCalls: 0,
-    outputCalls: 0,
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepEnd() {
-      state.endCalls++;
-    }
-    override transformStepInput(arg: Middleware.TransformStepInputArgs) {
-      state.inputCalls++;
-      return arg;
-    }
-    override transformStepOutput(arg: Middleware.TransformStepOutputArgs) {
-      state.outputCalls++;
-      return arg;
+      state.calls++;
     }
   }
 
@@ -251,14 +241,5 @@ test("memoized step does not call onStepEnd", async () => {
     expect(state.done).toBe(true);
   }, 5000);
 
-  // onStepEnd should be called exactly twice (once per fresh execution)
-  // transformStepInput is called for fresh executions:
-  // - Invocation 1: step-1 fresh (1)
-  // - Invocation 2: step-2 fresh (2)
-  // transformStepOutput is called for memoized reads:
-  // - Invocation 2: step-1 memoized (1)
-  // - Invocation 3: step-1 memoized (2), step-2 memoized (3)
-  expect(state.endCalls).toBe(2);
-  expect(state.inputCalls).toBe(2);
-  expect(state.outputCalls).toBe(3);
+  expect(state.calls).toBe(2);
 });

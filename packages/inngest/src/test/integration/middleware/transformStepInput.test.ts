@@ -121,18 +121,25 @@ test("multiple middleware in correct order (reverse/wrapping)", async () => {
     "step executed",
     "mw2 after",
     "mw1 after",
+    "mw1 before",
+    "mw2 before",
+    "mw2 after",
+    "mw1 after",
   ]);
 });
 
-test("called for fresh execution", async () => {
+test("called when both fresh and memoized", async () => {
   const state = {
     done: false,
-    inputCalls: 0,
+    inputCalls: [] as { id: string; memoized: boolean }[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformStepInput(arg: Middleware.TransformStepInputArgs) {
-      state.inputCalls++;
+      state.inputCalls.push({
+        id: arg.stepInfo.id,
+        memoized: arg.stepInfo.memoized,
+      });
       return arg;
     }
   }
@@ -147,7 +154,6 @@ test("called for fresh execution", async () => {
     { id: "fn", retries: 0 },
     { event: eventName },
     async ({ step }) => {
-      // Each step triggers fresh execution on its first encounter
       await step.run("step-1", async () => "result-1");
       await step.run("step-2", async () => "result-2");
       state.done = true;
@@ -160,6 +166,15 @@ test("called for fresh execution", async () => {
     expect(state.done).toBe(true);
   }, 5000);
 
-  // Both steps have fresh execution, so transformStepInput called twice
-  expect(state.inputCalls).toBe(2);
+  expect(state.inputCalls).toEqual([
+    { id: "step-1", memoized: false },
+    { id: "step-1", memoized: true },
+    { id: "step-2", memoized: false },
+    { id: "step-1", memoized: true },
+    { id: "step-2", memoized: true },
+  ]);
 });
+
+// Add these tests later:
+// - Change step ID, so that the step is treated as fresh
+// - Change input for all step kinds

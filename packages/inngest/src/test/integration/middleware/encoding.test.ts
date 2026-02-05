@@ -18,10 +18,18 @@ type Serialized = {
 };
 
 function encode(value: unknown): Serialized {
+  console.log(value);
   return {
     [serializedMarker]: true,
     value: Buffer.from(JSON.stringify(value)).toString("base64"),
   };
+}
+
+function isSerialized(value: unknown): value is Serialized {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.hasOwn(value, serializedMarker);
 }
 
 test("base64 encoding/decoding middleware", async () => {
@@ -41,13 +49,8 @@ test("base64 encoding/decoding middleware", async () => {
             Buffer.from(value.value, "base64").toString("utf-8"),
           );
         },
-        isSerialized: (value: unknown): value is Serialized => {
-          if (!isRecord(value)) {
-            return false;
-          }
-          return Object.hasOwn(value, serializedMarker);
-        },
-        needsSerialize: () => true,
+        isSerialized,
+        needsSerialize: (value: unknown): boolean => !isSerialized(value),
         serialize: encode,
       });
     }
