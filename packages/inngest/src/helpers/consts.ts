@@ -150,6 +150,7 @@ export enum headerKeys {
   TraceState = "tracestate",
   InngestRunId = "x-run-id",
   InngestStepId = "x-inngest-step-id",
+  InngestForceStepPlan = "x-inngest-force-step-plan",
 }
 
 /**
