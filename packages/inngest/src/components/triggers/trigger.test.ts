@@ -444,7 +444,10 @@ describe("invoke", () => {
       [invoke(z.object({ msg: z.string() }))],
       () => {},
     );
-    const config = fn["getConfig"]({ baseUrl: new URL("http://localhost:3000"), appPrefix: "app" });
+    const config = fn["getConfig"]({
+      baseUrl: new URL("http://localhost:3000"),
+      appPrefix: "app",
+    });
     expect(config).toHaveLength(1);
     expect(config[0]!.triggers).toEqual([]);
   });
