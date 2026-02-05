@@ -22,6 +22,7 @@ import {
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
 import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
@@ -96,6 +97,35 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
 };
 
 /**
+ * Creates a durable endpoint proxy handler for edge environments.
+ *
+ * This handler extracts `runId` and `token` from query parameters,
+ * fetches the run output from Inngest, decrypts it via middleware
+ * (if configured), and returns it with CORS headers.
+ */
+const createDurableEndpointProxyHandler = (
+  options: InngestEndpointAdapter.ProxyHandlerOptions,
+): EdgeHandler => {
+  return async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+
+    const result = await handleDurableEndpointProxyRequest(
+      options.client as Inngest.Any,
+      {
+        runId: url.searchParams.get("runId"),
+        token: url.searchParams.get("token"),
+        method: req.method,
+      },
+    );
+
+    return new Response(result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
+  };
+};
+
+/**
  * In an edge runtime, create a function that can wrap any endpoint to be able
  * to use steps seamlessly within that API.
  *
@@ -123,7 +153,31 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
  *   },
  * });
  * ```
+ *
+ * You can also configure a custom redirect URL and create a proxy endpoint:
+ *
+ * @example
+ * ```ts
+ * import { Inngest } from "inngest";
+ * import { endpointAdapter } from "inngest/edge";
+ *
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter: endpointAdapter.withOptions({
+ *     asyncRedirectUrl: "/api/inngest/poll",
+ *   }),
+ * });
+ *
+ * // Your durable endpoint
+ * export const GET = inngest.endpoint(async (req) => {
+ *   const result = await step.run("work", () => "done");
+ *   return new Response(result);
+ * });
+ *
+ * // Proxy endpoint at /api/inngest/poll - handles CORS and decryption
+ * export const GET = inngest.endpointProxy();
+ * ```
  */
 export const endpointAdapter = InngestEndpointAdapter.create((options) => {
   return commHandler(options, options).createSyncHandler();
-});
+}, createDurableEndpointProxyHandler);

@@ -99,6 +99,21 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly InngestFunction.Like[];
 }
 
+/**
+ * Parameters passed to the asyncRedirectUrl function.
+ */
+export interface AsyncRedirectUrlParams {
+  /**
+   * The unique identifier for this run.
+   */
+  runId: string;
+
+  /**
+   * The token used to authenticate the request to fetch run output.
+   */
+  token: string;
+}
+
 export interface SyncHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
@@ -112,6 +127,30 @@ export interface SyncHandlerOptions extends RegisterOptions {
    * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
    */
   asyncResponse?: AsyncResponseValue;
+
+  /**
+   * Custom URL to redirect to when switching from sync to async mode.
+   *
+   * Can be:
+   * - A string path (e.g., "/api/inngest/poll") - resolved relative to request origin
+   * - A function that receives `{ runId, token }` and returns a full URL
+   *
+   * When a string path is provided, `runId` and `token` query parameters are
+   * automatically appended.
+   *
+   * @example
+   * ```ts
+   * // String path - resolved relative to request origin
+   * asyncRedirectUrl: "/api/inngest/poll"
+   *
+   * // Function - full control over URL construction
+   * asyncRedirectUrl: ({ runId, token }) =>
+   *   `https://my-app.com/poll?run=${runId}&t=${token}`
+   * ```
+   */
+  asyncRedirectUrl?:
+    | string
+    | ((params: AsyncRedirectUrlParams) => string | Promise<string>);
 
   /**
    * If defined, this sets the function ID that represents this endpoint.
@@ -846,6 +885,7 @@ export class InngestCommHandler<
           asyncMode:
             this._options.syncOptions?.asyncResponse ??
             AsyncResponseType.Redirect,
+          asyncRedirectUrl: this._options.syncOptions?.asyncRedirectUrl,
           fn,
         });
       }) as THandler);
@@ -967,12 +1007,14 @@ export class InngestCommHandler<
     actions,
     fn,
     asyncMode,
+    asyncRedirectUrl,
     args,
   }: {
     timer: ServerTiming;
     actions: HandlerResponseWithErrors;
     fn: InngestFunction.Any;
     asyncMode: AsyncResponseValue;
+    asyncRedirectUrl: SyncHandlerOptions["asyncRedirectUrl"];
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
@@ -1046,10 +1088,19 @@ export class InngestCommHandler<
           "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
         );
       },
-      "function-rejected": () => {
-        throw new Error(
-          "We should not get the result 'function-rejected' when checkpointing. This is a bug in the `inngest` SDK",
-        );
+      "function-rejected": (result) => {
+        return actions.transformResponse("creating sync error response", {
+          status: result.retriable ? 500 : 400,
+          headers: {
+            "Content-Type": "application/json",
+            [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+            ...(typeof result.retriable === "string"
+              ? { [headerKeys.RetryAfter]: result.retriable }
+              : {}),
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(result.error)),
+        });
       },
       "function-resolved": ({ data }) => {
         // We're done and we didn't call any step tools, so just return the
@@ -1059,16 +1110,35 @@ export class InngestCommHandler<
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
           case AsyncResponseType.Redirect: {
+            let redirectUrl: string;
+
+            if (asyncRedirectUrl) {
+              if (typeof asyncRedirectUrl === "function") {
+                // Full control: user provides complete URL
+                redirectUrl = await asyncRedirectUrl({ runId, token });
+              } else {
+                // String path: resolve relative to request origin
+                // new URL("/api/poll", "https://example.com") → "https://example.com/api/poll"
+                // new URL("https://other.com/poll", "https://example.com") → "https://other.com/poll"
+                const baseUrl = await actions.url("getting request origin");
+                const url = new URL(asyncRedirectUrl, baseUrl.origin);
+                url.searchParams.set("runId", runId);
+                url.searchParams.set("token", token);
+                redirectUrl = url.toString();
+              }
+            } else {
+              // Default: redirect to Inngest API
+              redirectUrl = await this.client["inngestApi"]
+                ["getTargetUrl"](`/v1/http/runs/${runId}/output?token=${token}`)
+                .then((url) => url.toString());
+            }
+
             return actions.transformResponse(
               "creating sync->async redirect response",
               {
                 status: 302,
                 headers: {
-                  [headerKeys.Location]: await this.client["inngestApi"]
-                    ["getTargetUrl"](
-                      `/v1/http/runs/${runId}/output?token=${token}`,
-                    )
-                    .then((url) => url.toString()),
+                  [headerKeys.Location]: redirectUrl,
                 },
                 version: exeVersion,
                 body: "",
