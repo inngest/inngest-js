@@ -179,9 +179,6 @@ const createDurableEndpointProxyHandler = (
  * export const GET = inngest.endpointProxy();
  * ```
  */
-export const endpointAdapter = InngestEndpointAdapter.create(
-  (options) => {
-    return commHandler(options, options).createSyncHandler();
-  },
-  createDurableEndpointProxyHandler,
-);
+export const endpointAdapter = InngestEndpointAdapter.create((options) => {
+  return commHandler(options, options).createSyncHandler();
+}, createDurableEndpointProxyHandler);
