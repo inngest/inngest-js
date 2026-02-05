@@ -331,15 +331,11 @@ const createHandlerActions = (
         headers[k] = v;
       });
 
-      const foo = {
+      return {
         headers: headers,
         status: res.status,
         body: await res.clone().text(),
       };
-
-      console.log("lol", { foo });
-
-      return foo;
     },
   };
 };
