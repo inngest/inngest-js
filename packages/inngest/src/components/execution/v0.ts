@@ -200,13 +200,16 @@ export class V0InngestExecution
           .finally(() => {
             this.state.executingStep = false;
           })
-          .catch(async (error: Error) => {
-            return await this.transformOutput({ error }, outgoingUserFnOp);
-          })
-          .then(async (data) => {
-            await this.state.hooks?.afterExecution?.();
-            return await this.transformOutput({ data }, outgoingUserFnOp);
-          });
+          .then(
+            async (data) => {
+              await this.state.hooks?.afterExecution?.();
+              return await this.transformOutput({ data }, outgoingUserFnOp);
+            },
+            async (error: Error) => {
+              await this.state.hooks?.afterExecution?.();
+              return await this.transformOutput({ error }, outgoingUserFnOp);
+            },
+          );
 
         const { type: _type, ...rest } = result;
 
