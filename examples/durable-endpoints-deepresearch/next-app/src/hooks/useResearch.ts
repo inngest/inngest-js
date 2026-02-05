@@ -12,9 +12,6 @@ import type {
   StepParams,
 } from "@/types";
 
-const BUN_API_URL =
-  process.env.NEXT_PUBLIC_BUN_API_URL || "http://localhost:4000";
-
 function generateResearchId(): string {
   return `RES-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -301,9 +298,7 @@ export function useResearch() {
 
       try {
         const res = await fetch(
-          `${BUN_API_URL}/api/research/clarify?topic=${encodeURIComponent(
-            topic,
-          )}`,
+          `/api/research/clarify?topic=${encodeURIComponent(topic)}`
         );
 
         const data = await res.json();
@@ -353,7 +348,7 @@ export function useResearch() {
     }
 
     // Start the research request (runs in background)
-    fetch(`${BUN_API_URL}/api/research?${params.toString()}`, { mode: "cors" })
+    fetch(`/api/research?${params.toString()}`)
       .then((res) => {
         console.log("RESEARCH", res.redirected);
         console.log("RESEARCH - ", res.url);
@@ -389,9 +384,9 @@ export function useResearch() {
 
       try {
         const res = await fetch(
-          `${BUN_API_URL}/api/research/events?researchId=${encodeURIComponent(
-            researchId,
-          )}&cursor=${cursor}`,
+          `/api/research/events?researchId=${encodeURIComponent(
+            researchId
+          )}&cursor=${cursor}`
         );
         const { events, cursor: nextCursor, status } = await res.json();
 

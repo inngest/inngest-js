@@ -19,7 +19,7 @@ export function calculateProgress(
   currentDepth: number,
   maxDepth: number,
   currentQuery: number,
-  totalQueries: number,
+  totalQueries: number
 ): number {
   const depthProgress = ((maxDepth - currentDepth) / maxDepth) * 100;
   const queryProgress = (currentQuery / totalQueries) * (100 / maxDepth);
@@ -39,7 +39,7 @@ export function calculateProgress(
 export function maybeInjectFailure(
   stepType: string,
   injectFailure: string | null,
-  failureRate: number,
+  failureRate: number
 ): void {
   if (!injectFailure || injectFailure !== stepType) return;
   if (Math.random() < failureRate) {

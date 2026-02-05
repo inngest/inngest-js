@@ -39,7 +39,7 @@ export async function deepResearch(
   accumulated: AccumulatedResearch,
   existingUrls: Set<string>,
   injectFailure: string | null = null,
-  failureRate: number = 0.3,
+  failureRate: number = 0.3
 ): Promise<AccumulatedResearch> {
   // Base case: no more depth or queries
   if (depth === 0 || queries.length === 0) {
@@ -86,7 +86,7 @@ export async function deepResearch(
         const results = await searchExa(query);
         return { query, results };
       });
-    }),
+    })
   );
 
   // Process search results outside steps (runs on every replay)
@@ -138,11 +138,11 @@ export async function deepResearch(
           topic,
           query,
           newResults,
-          accumulated.learnings,
+          accumulated.learnings
         );
         return { query, learnings };
       });
-    }),
+    })
   );
 
   // Process learnings outside steps (runs on every replay)
@@ -207,7 +207,7 @@ export async function deepResearch(
     // Limit follow-ups to prevent explosion
     const limitedFollowUps = allFollowUps.slice(
       0,
-      nextBreadth * queries.length,
+      nextBreadth * queries.length
     );
 
     await deepResearch(
@@ -220,7 +220,7 @@ export async function deepResearch(
       accumulated,
       existingUrls,
       injectFailure,
-      failureRate,
+      failureRate
     );
   }
 

@@ -1,7 +1,7 @@
 /**
  * Event Store for polling-based progress updates
  *
- * Uses an in-memory store to avoid SSE timeout limits (e.g., Bun's 255s limit).
+ * Uses an in-memory store to avoid SSE timeout limits.
  * Clients poll for new events using a cursor-based approach.
  */
 
@@ -30,7 +30,9 @@ function cleanupOldEventStores() {
 }
 
 // Run cleanup every 5 minutes
-setInterval(cleanupOldEventStores, 5 * 60 * 1000);
+if (typeof setInterval !== "undefined") {
+  setInterval(cleanupOldEventStores, 5 * 60 * 1000);
+}
 
 /**
  * Get or create an event store for a research session
@@ -55,7 +57,7 @@ export function getEventStore(researchId: string): EventStore {
  */
 export function emitProgress(
   researchId: string,
-  event: Omit<ResearchEvent, "timestamp">,
+  event: Omit<ResearchEvent, "timestamp">
 ) {
   const store = getEventStore(researchId);
   const fullEvent = {

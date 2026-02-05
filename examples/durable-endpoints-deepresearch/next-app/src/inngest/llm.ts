@@ -29,7 +29,7 @@ export const ClarificationQuestionsSchema = z.object({
       id: z
         .string()
         .describe(
-          "A short identifier for the question (e.g., 'scope', 'recency')",
+          "A short identifier for the question (e.g., 'scope', 'recency')"
         ),
       question: z
         .string()
@@ -37,7 +37,7 @@ export const ClarificationQuestionsSchema = z.object({
       options: z
         .array(z.string())
         .describe("2-4 short clickable options for quick selection"),
-    }),
+    })
   ),
 });
 
@@ -49,14 +49,14 @@ const SearchQueriesSchema = z.object({
       reasoning: z
         .string()
         .describe(
-          "Why this query is important - what gap it fills or what aspect it explores",
+          "Why this query is important - what gap it fills or what aspect it explores"
         ),
       angle: z
         .string()
         .describe(
-          "Brief label for the angle (e.g., 'Technical foundations', 'Industry applications')",
+          "Brief label for the angle (e.g., 'Technical foundations', 'Industry applications')"
         ),
-    }),
+    })
   ),
 });
 
@@ -72,7 +72,7 @@ const ExtractedLearningsSchema = z.object({
         .string()
         .optional()
         .describe("How this relates to previous findings"),
-    }),
+    })
   ),
   followUps: z.array(
     z.object({
@@ -80,14 +80,14 @@ const ExtractedLearningsSchema = z.object({
       reasoning: z
         .string()
         .describe(
-          "Why this direction is worth exploring based on what we learned",
+          "Why this direction is worth exploring based on what we learned"
         ),
-    }),
+    })
   ),
   synthesisNote: z
     .string()
     .describe(
-      "Brief observation about how these findings connect to the bigger picture",
+      "Brief observation about how these findings connect to the bigger picture"
     ),
 });
 
@@ -124,7 +124,7 @@ For each question, provide 2-4 short clickable options (2-4 words each) that use
 export async function generateSearchQueries(
   topic: string,
   clarifications: Record<string, string>,
-  breadth: number,
+  breadth: number
 ): Promise<QueryWithReasoning[]> {
   const clarificationContext = Object.entries(clarifications)
     .map(([id, answer]) => `- ${id}: ${answer}`)
@@ -157,7 +157,7 @@ export async function extractLearnings(
   topic: string,
   query: string,
   sources: Source[],
-  existingLearnings: string[] = [],
+  existingLearnings: string[] = []
 ): Promise<ExtractedLearnings> {
   if (sources.length === 0) {
     return { learnings: [], followUps: [], synthesisNote: "" };
@@ -166,7 +166,7 @@ export async function extractLearnings(
   const sourceContents = sources
     .map(
       (s, i) =>
-        `[Source ${i + 1}: ${s.title}]\n${s.content.substring(0, 1000)}`,
+        `[Source ${i + 1}: ${s.title}]\n${s.content.substring(0, 1000)}`
     )
     .join("\n\n");
 
@@ -208,7 +208,7 @@ Finally, provide a brief SYNTHESIS NOTE about how these findings fit together.`,
  */
 export async function generateReport(
   topic: string,
-  research: AccumulatedResearch,
+  research: AccumulatedResearch
 ): Promise<string> {
   // Create numbered sources for citations
   const numberedSources = research.sources.slice(0, 15).map((s, i) => ({
@@ -220,7 +220,7 @@ export async function generateReport(
 
   const sourcesForPrompt = numberedSources
     .map(
-      (s) => `[${s.number}] "${s.title}" - ${s.url}\nExcerpt: ${s.content}...`,
+      (s) => `[${s.number}] "${s.title}" - ${s.url}\nExcerpt: ${s.content}...`
     )
     .join("\n\n");
 
