@@ -1275,6 +1275,19 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         .then(() => {
           foundStepsReportPromise = undefined;
 
+          // Handle memoized steps in completion order first to preserve
+          // Promise.race() semantics - the step that completed first during
+          // actual execution should resolve first during replay.
+          for (const hashedId of this.state.stepCompletionOrder) {
+            const step = unhandledFoundStepsToReport.get(hashedId);
+            if (step?.hasStepState && step.handle()) {
+              unhandledFoundStepsToReport.delete(hashedId);
+              if (step.fulfilled) {
+                foundStepsToReport.delete(step.hashedId);
+              }
+            }
+          }
+
           for (const [hashedId, step] of unhandledFoundStepsToReport) {
             // Note that we only run `step.handle()` if `step.hasStepState` is
             // `true`. This gives us a chance to handle checkpointing in another
@@ -1286,7 +1299,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               unhandledFoundStepsToReport.delete(hashedId);
 
               if (step.fulfilled) {
-                foundStepsToReport.delete(step.id);
+                foundStepsToReport.delete(step.hashedId);
               }
             }
           }
