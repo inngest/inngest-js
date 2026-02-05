@@ -725,18 +725,14 @@ export namespace InngestFunction {
     middleware?: TMiddleware;
 
     /**
-     * If `true`, parallel steps within this function are optimized to reduce
-     * traffic during `Promise` resolution, which can hugely reduce the time
-     * taken and number of requests for each run.
+     * Optimizes parallel steps to reduce traffic during `Promise` resolution,
+     * reducing time and requests per run. `Promise.*()` waits for all promises
+     * to settle before resolving. Use the `parallel()` helper from
+     * `inngest/experimental` for `Promise.race()` semantics.
      *
-     * Note that this will be the default behaviour in v4 and in its current
-     * form will cause `Promise.*()` to wait for all promises to settle before
-     * resolving.
+     * Overrides the client-level setting.
      *
-     * Providing this value here will overwrite the same value given on the
-     * client.
-     *
-     * @default false
+     * @default true
      */
     optimizeParallelism?: boolean;
 
