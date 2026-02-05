@@ -1174,7 +1174,6 @@ export const parallel = async <T>(
   if (isALSFallback()) {
     throw new Error(
       "`parallel()` requires AsyncLocalStorage support, which is not available in this runtime. " +
-        "This typically affects Cloudflare Workers and some edge environments.\n\n" +
         "Workaround: Pass `parallelMode` directly to each step:\n" +
         "  step.run({ id: 'my-step', parallelMode: 'race' }, fn)",
     );
