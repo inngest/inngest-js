@@ -473,6 +473,7 @@ export class InngestApi {
     runId: string;
     event: APIStepPayload;
     executionVersion: ExecutionVersion;
+    retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({

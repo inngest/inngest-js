@@ -3,6 +3,7 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 import {
+  defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
   internalEvents,
@@ -253,6 +254,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           event: this.fnArg.event as APIStepPayload,
           steps,
           executionVersion: this.version,
+          retries: this.fnArg.maxAttempts ?? defaultMaxRetries,
         });
 
         this.state.checkpointedRun = {
