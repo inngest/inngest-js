@@ -2,12 +2,15 @@ import http from "node:http";
 import { PassThrough } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
+import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import type { SupportedFrameworkName } from "./types.ts";
+import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
+import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -74,10 +77,19 @@ const _createResProxy = (
   return { proxy, data };
 };
 
-const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
+export type NodeHandler = (
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+) => Promise<void>;
+
+const commHandler = (
+  options: RegisterOptions & { client: Inngest.Like },
+  syncOptions?: SyncHandlerOptions,
+) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
+    syncOptions,
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => {
       return {
         body: async () => readRequestBody(req),
@@ -121,6 +133,28 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
               res.destroy(new Error(String(error)));
             }
           }
+        },
+
+        experimentalTransformSyncResponse: async (data) => {
+          const nodeRes = data as http.ServerResponse;
+          const headers: Record<string, string> = {};
+
+          const rawHeaders = nodeRes.getHeaders?.() || {};
+          for (const [k, v] of Object.entries(rawHeaders)) {
+            if (typeof v === "string") {
+              headers[k] = v;
+            } else if (typeof v === "number") {
+              headers[k] = String(v);
+            } else if (Array.isArray(v)) {
+              headers[k] = v.join(", ");
+            }
+          }
+
+          return {
+            headers,
+            status: nodeRes.statusCode || 200,
+            body: "",
+          };
         },
       };
     },
@@ -201,3 +235,63 @@ export const createServer = (options: ServeHandlerOptions) => {
   });
   return server;
 };
+
+/**
+ * Creates a durable endpoint proxy handler for Node.js environments.
+ */
+const createDurableEndpointProxyHandler = (
+  options: InngestEndpointAdapter.ProxyHandlerOptions,
+): NodeHandler => {
+  return async (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> => {
+    const url = getURL(req);
+    const runId = url.searchParams.get("runId");
+    const token = url.searchParams.get("token");
+
+    const result = await handleDurableEndpointProxyRequest(
+      options.client as Inngest.Any,
+      {
+        runId,
+        token,
+        method: req.method || "GET",
+      },
+    );
+
+    res.writeHead(result.status, result.headers);
+    res.end(result.body);
+  };
+};
+
+/**
+ * In Node.js, create a function that can wrap any endpoint to be able to use
+ * steps seamlessly within that API.
+ *
+ * @example
+ * ```ts
+ * import http from "node:http";
+ * import { Inngest, step } from "inngest";
+ * import { endpointAdapter } from "inngest/node";
+ *
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter,
+ * });
+ *
+ * const server = http.createServer(inngest.endpoint(async (req, res) => {
+ *   const foo = await step.run("my-step", () => ({ foo: "bar" }));
+ *
+ *   res.writeHead(200, { "Content-Type": "application/json" });
+ *   res.end(JSON.stringify({ result: foo }));
+ * }));
+ * server.listen(3000);
+ * ```
+ */
+export const endpointAdapter: InngestEndpointAdapter.Like & {
+  createProxyHandler: (
+    options: InngestEndpointAdapter.ProxyHandlerOptions,
+  ) => NodeHandler;
+} = InngestEndpointAdapter.create((options) => {
+  return commHandler(options, options).createSyncHandler();
+}, createDurableEndpointProxyHandler);
