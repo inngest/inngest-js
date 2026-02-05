@@ -1512,7 +1512,10 @@ export class InngestCommHandler<
               attempt: 0,
               disable_immediate_execution: die,
               use_api: true,
-              max_attempts: 3,
+              // This execution path doesn't control max attempts; it's already
+              // been reported and Inngest is now in control of when to stop, so
+              // we remove this restriction.
+              max_attempts: Infinity,
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
