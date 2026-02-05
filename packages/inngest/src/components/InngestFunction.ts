@@ -178,18 +178,25 @@ export class InngestFunction<
     const fn: FunctionConfig = {
       id: fnId,
       name: this.name,
-      triggers: (this.opts.triggers ?? []).map((trigger) => {
-        if ("event" in trigger) {
-          return {
-            event: trigger.event as string,
-            expression: trigger.if,
-          };
-        }
+      triggers: (this.opts.triggers ?? [])
+        .filter((trigger) => {
+          // The invoke event is in the triggers if they used the `invoke`
+          // trigger helper. But we need to remove it in the config, or else the
+          // function will be triggered by any invoke
+          return trigger.event !== internalEvents.FunctionInvoked;
+        })
+        .map((trigger) => {
+          if ("event" in trigger) {
+            return {
+              event: trigger.event as string,
+              expression: trigger.if,
+            };
+          }
 
-        return {
-          cron: trigger.cron,
-        };
-      }),
+          return {
+            cron: trigger.cron,
+          };
+        }),
       steps: {
         [InngestFunction.stepId]: {
           id: InngestFunction.stepId,
