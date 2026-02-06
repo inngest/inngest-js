@@ -1,4 +1,5 @@
 import { resolveNextTick } from "../helpers/promises.ts";
+import type { LogLevel } from "../types.ts";
 
 /**
  * All kinds of arguments can come through
@@ -45,6 +46,19 @@ export class DefaultLogger implements Logger {
 }
 
 /**
+ * Numeric ranking for log levels. Higher = more severe.
+ * Used to determine if a message should be logged based on configured level.
+ */
+const LOG_LEVEL_RANK = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+} as const;
+
+type CallableLogLevel = keyof typeof LOG_LEVEL_RANK;
+
+/**
  * ProxyLogger aims to provide a thin wrapper on user's provided logger.
  * It's expected to be turned on and off based on the function execution
  * context, so it doesn't result in duplicated logging.
@@ -55,10 +69,12 @@ export class DefaultLogger implements Logger {
  */
 export class ProxyLogger implements Logger {
   private readonly logger: Logger;
+  private readonly logLevel: LogLevel;
   private enabled = false;
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, logLevel: LogLevel = "info") {
     this.logger = logger;
+    this.logLevel = logLevel;
 
     // Return a Proxy to forward arbitrary property access to the underlying
     // logger. For example, if the user provides a logger that has a `foo`
@@ -78,23 +94,28 @@ export class ProxyLogger implements Logger {
   }
 
   info(...args: LogArg[]) {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.shouldLog("info")) return;
     this.logger.info(...args);
   }
 
   warn(...args: LogArg[]) {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.shouldLog("warn")) return;
     this.logger.warn(...args);
   }
 
   error(...args: LogArg[]) {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.shouldLog("error")) return;
     this.logger.error(...args);
   }
 
   debug(...args: LogArg[]) {
     // there are loggers that don't implement "debug" by default
-    if (!this.enabled || !(typeof this.logger.debug === "function")) return;
+    if (
+      !this.enabled ||
+      !this.shouldLog("debug") ||
+      !(typeof this.logger.debug === "function")
+    )
+      return;
     this.logger.debug(...args);
   }
 
@@ -104,6 +125,24 @@ export class ProxyLogger implements Logger {
 
   disable() {
     this.enabled = false;
+  }
+
+  /**
+   * Check if a message at the given level should be logged based on configured logLevel.
+   */
+  private shouldLog(level: CallableLogLevel): boolean {
+    if (this.logLevel === "silent") return false;
+
+    // Map configured logLevel to a callable level (fatal -> error)
+    const effectiveLevel: CallableLogLevel =
+      this.logLevel === "fatal"
+        ? "error"
+        : this.logLevel in LOG_LEVEL_RANK
+          ? (this.logLevel as CallableLogLevel)
+          : "info";
+
+    // Log if message severity >= configured level (higher rank = more severe)
+    return LOG_LEVEL_RANK[level] >= LOG_LEVEL_RANK[effectiveLevel];
   }
 
   async flush() {

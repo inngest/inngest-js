@@ -10,11 +10,10 @@ import {
 import {
   deserializeError,
   ErrCode,
-  minifyPrettyError,
-  prettyError,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
+import { formatLogMessage } from "../../helpers/log.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -1072,7 +1071,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     });
 
     if (inputMutations?.ctx) {
-      this.fnArg = inputMutations.ctx;
+      // Merge onto the existing object rather than replacing it, because the ALS
+      // execution context holds a reference to this fn.Arg. Replacing the object
+      // would cause ALS consumers to see stale state.
+      Object.assign(this.fnArg, inputMutations.ctx);
     }
 
     if (inputMutations?.steps) {
@@ -1146,7 +1148,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         retriable = (error as RetryAfterError).retryAfter;
       }
 
-      const serializedError = minifyPrettyError(serializeError(error));
+      const serializedError = serializeError(error);
 
       return {
         type: "function-rejected",
@@ -1317,18 +1319,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           this.options.client["warnMetadata"](
             { run_id: this.fnArg.runId },
             ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-            prettyError({
-              type: "warn",
-              whatHappened:
+            formatLogMessage({
+              message:
                 "We detected that you have multiple steps with the same ID.",
-              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${userlandCollisionId}".`,
-              reassurance:
-                "Your function is still running, though it may exhibit unexpected behaviour.",
-              consequences:
-                "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
-              toFixNow:
+              explanation: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${userlandCollisionId}". Your function is still running, though it may exhibit unexpected behaviour. Using the same IDs across parallel chains of work can cause unexpected behaviour.`,
+              action:
                 "We recommend using a unique ID for each step, especially those happening in parallel.",
+              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
             }),
           );
         }
@@ -1439,16 +1436,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         this.options.client["warnMetadata"](
           { run_id: this.fnArg.runId },
           ErrCode.NESTING_STEPS,
-          prettyError({
-            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
-              opId.displayName ?? opId.id
-            }\``,
-            consequences: "Nesting `step.*` tooling is not supported.",
-            type: "warn",
-            reassurance:
-              "It's possible to see this warning if steps are separated by regular asynchronous calls, which is fine.",
-            stack: true,
-            toFixNow:
+          formatLogMessage({
+            message: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``,
+            explanation:
+              "Nesting `step.*` tooling is not supported. It's possible to see this warning if steps are separated by regular asynchronous calls, which is fine.",
+            action:
               "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
             code: ErrCode.NESTING_STEPS,
           }),

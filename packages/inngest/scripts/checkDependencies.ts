@@ -17,7 +17,6 @@
  * available to the consumer.
  */
 
-import chalk from "chalk";
 import fs from "fs";
 import { builtinModules } from "module";
 import path from "path";
@@ -264,18 +263,18 @@ function checkDependencies(
 
   // Output issues found
   if (Object.keys(issues).length > 0) {
-    console.log(chalk.red("Dependency Issues Found:"));
+    console.log("Dependency Issues Found:");
     Object.entries(issues).forEach(([module, data], index, array) => {
-      console.log(chalk.blue(`${module} (${data.type}):`));
+      console.log(`${module} (${data.type}):`);
       // biome-ignore lint/complexity/noForEach: intentional
-      data.files.forEach((file) => console.log(chalk.yellow(`  - ${file}`)));
+      data.files.forEach((file) => console.log(`  - ${file}`));
       if (index < array.length - 1) {
         console.log(""); // Add a line break between modules
       }
     });
     process.exit(1);
   } else {
-    console.log(chalk.green("No dependency issues found."));
+    console.log("No dependency issues found.");
   }
 }
 

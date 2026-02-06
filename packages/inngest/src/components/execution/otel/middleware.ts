@@ -1,5 +1,6 @@
 import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
+import { getLogger } from "../../../helpers/log.ts";
 import { version } from "../../../version.ts";
 import { InngestMiddleware } from "../../InngestMiddleware.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -92,7 +93,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      console.warn("no provider found to extend and unable to create one");
+      getLogger().warn("no provider found to extend and unable to create one");
 
       break;
     }
@@ -104,7 +105,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      console.warn(
+      getLogger().warn(
         "unable to create provider, Extended Traces middleware will not work",
       );
 
@@ -118,7 +119,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      console.warn(
+      getLogger().warn(
         'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
 
@@ -129,7 +130,7 @@ export const extendedTracesMiddleware = ({
     }
     default: {
       // unknown
-      console.warn(
+      getLogger().warn(
         `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
       );
     }

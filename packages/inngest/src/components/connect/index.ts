@@ -8,6 +8,7 @@ import {
   getPlatformName,
 } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
+import { getLogger } from "../../helpers/log.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import {
   ConnectMessage,
@@ -529,7 +530,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (err instanceof ConnectionLimitError) {
-          console.error(
+          getLogger().error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
           // Continue reconnecting, do not throw.

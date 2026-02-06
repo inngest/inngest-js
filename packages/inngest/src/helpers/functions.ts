@@ -4,7 +4,7 @@ import { stepsSchemas } from "../api/schema.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
 import { err, ok, type Result } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
-import { prettyError } from "./errors.ts";
+import { formatLogMessage, getLogger } from "./log.ts";
 import type { Await } from "./types.ts";
 
 /**
@@ -85,7 +85,7 @@ export const versionSchema = z
   .optional()
   .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
     if (typeof v === "undefined") {
-      console.debug(
+      getLogger().debug(
         `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
       );
 
@@ -269,11 +269,10 @@ export const fetchAllFnData = async ({
     if (shouldFetchData[result.version]()) {
       if (!result.ctx?.run_id) {
         return err(
-          prettyError({
-            whatHappened: "failed to attempt retrieving data from API",
-            consequences: "function execution can't continue",
-            why: "run_id is missing from context",
-            stack: true,
+          formatLogMessage({
+            message: "Failed to attempt retrieving data from API",
+            explanation:
+              "Function execution can't continue. run_id is missing from context.",
           }),
         );
       }
@@ -287,11 +286,9 @@ export const fetchAllFnData = async ({
         result.events = evtResp.value;
       } else {
         return err(
-          prettyError({
-            whatHappened: "failed to retrieve list of events",
-            consequences: "function execution can't continue",
-            why: evtResp.error?.error,
-            stack: true,
+          formatLogMessage({
+            message: "Failed to retrieve list of events",
+            explanation: `Function execution can't continue.${evtResp.error?.error ? ` ${evtResp.error.error}` : ""}`,
           }),
         );
       }
@@ -300,11 +297,9 @@ export const fetchAllFnData = async ({
         result.steps = stepResp.value;
       } else {
         return err(
-          prettyError({
-            whatHappened: "failed to retrieve steps for function run",
-            consequences: "function execution can't continue",
-            why: stepResp.error?.error,
-            stack: true,
+          formatLogMessage({
+            message: "Failed to retrieve steps for function run",
+            explanation: `Function execution can't continue.${stepResp.error?.error ? ` ${stepResp.error.error}` : ""}`,
           }),
         );
       }
@@ -325,9 +320,7 @@ export const fetchAllFnData = async ({
 
     return ok(result);
   } catch (error) {
-    // print it out for now.
-    // move to something like protobuf so we don't have to deal with this
-    console.error(error);
+    getLogger().error(error);
 
     return err(parseFailureErr(error));
   }
@@ -339,12 +332,11 @@ const parseFailureErr = (err: unknown) => {
     why = err.toString();
   }
 
-  return prettyError({
-    whatHappened: "Failed to parse data from executor.",
-    consequences: "Function execution can't continue.",
-    toFixNow:
-      "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express (https://expressjs.com/en/resources/middleware/body-parser.html).",
-    stack: true,
-    why,
+  return formatLogMessage({
+    message: "Failed to parse data from executor",
+    explanation: `Function execution can't continue.${why ? ` ${why}` : ""}`,
+    action:
+      "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express.",
+    docs: "https://expressjs.com/en/resources/middleware/body-parser.html",
   });
 };

@@ -5,10 +5,10 @@ import {
   deserializeError,
   ErrCode,
   functionStoppedRunningErr,
-  prettyError,
   serializeError,
 } from "../../helpers/errors.ts";
 import { undefinedToNull } from "../../helpers/functions.ts";
+import { formatLogMessage } from "../../helpers/log.ts";
 import {
   resolveAfterPending,
   resolveNextTick,
@@ -141,16 +141,13 @@ export class V0InngestExecution
              * undefined state.
              */
             throw new NonRetriableError(
-              prettyError({
-                whatHappened: " Your function was stopped from running",
-                why: "We couldn't resume your function's state because it may have changed since the run started or there are async actions in-between steps that we haven't noticed in previous executions.",
-                consequences:
-                  "Continuing to run the function may result in unexpected behaviour, so we've stopped your function to ensure nothing unexpected happened!",
-                toFixNow:
+              formatLogMessage({
+                message: "Your function was stopped from running",
+                explanation:
+                  "We couldn't resume your function's state because it may have changed since the run started or there are async actions in-between steps that we haven't noticed in previous executions. Continuing to run the function may result in unexpected behaviour, so we've stopped your function to ensure nothing unexpected happened!",
+                action:
                   "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
-                otherwise:
-                  "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
-                stack: true,
+                docs: "https://www.inngest.com/docs/functions/multi-step#gotchas",
                 code: ErrCode.NON_DETERMINISTIC_FUNCTION,
               }),
             );
@@ -454,15 +451,13 @@ export class V0InngestExecution
 
       if (this.state.executingStep) {
         throw new NonRetriableError(
-          prettyError({
-            whatHappened: "Your function was stopped from running",
-            why: "We detected that you have nested `step.*` tooling.",
-            consequences: "Nesting `step.*` tooling is not supported.",
-            stack: true,
-            toFixNow:
+          formatLogMessage({
+            message: "Your function was stopped from running",
+            explanation:
+              "We detected that you have nested `step.*` tooling. Nesting `step.*` tooling is not supported.",
+            action:
               "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
-            otherwise:
-              "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
+            docs: "https://www.inngest.com/docs/functions/multi-step",
             code: ErrCode.NESTING_STEPS,
           }),
         );

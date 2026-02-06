@@ -2,8 +2,8 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
-import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
+import { getLogger } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -695,13 +695,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
-        // TODO PrettyError
-        console.warn(
+        getLogger().warn(
           "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
           err,
         );
 
-        // TODO PrettyError
         throw new Error(
           `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
             time

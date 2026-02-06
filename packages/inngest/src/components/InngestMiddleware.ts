@@ -6,6 +6,7 @@ import type {
   PartialK,
   Simplify,
 } from "../helpers/types.ts";
+import type { Logger } from "../middleware/logger.ts";
 import type {
   BaseContext,
   EventPayload,
@@ -432,6 +433,11 @@ export type MiddlewareRegisterFn = (ctx: {
    * function rather than on the client.
    */
   fn?: InngestFunction.Any;
+
+  /**
+   * The client's logging instance, available for use during middleware initialization.
+   */
+  logger: Logger;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 /**
