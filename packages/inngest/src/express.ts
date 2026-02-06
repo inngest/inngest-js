@@ -26,6 +26,7 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { ExecutionVersion, headerKeys } from "./helpers/consts.ts";
 import type { Either } from "./helpers/types.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 
@@ -101,6 +102,7 @@ export const serve = (options: ServeHandlerOptions): any => {
             res.setHeader(name, value);
           }
 
+          res.setHeader(headerKeys.RequestVersion, ExecutionVersion.V2);
           return res.status(status).send(body);
         },
 
