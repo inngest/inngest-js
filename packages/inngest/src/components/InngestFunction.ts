@@ -291,7 +291,7 @@ export class InngestFunction<
     };
 
     const versionHandlers = {
-      [ExecutionVersion.V2]: () => createV2InngestExecution(options),
+      [ExecutionVersion.V2]: () => createV1InngestExecution(options),
       [ExecutionVersion.V1]: () => createV1InngestExecution(options),
       [ExecutionVersion.V0]: () => createV0InngestExecution(options),
     } satisfies Record<ExecutionVersion, () => IInngestExecution>;

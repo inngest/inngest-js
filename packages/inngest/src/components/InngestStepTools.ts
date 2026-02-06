@@ -1,7 +1,7 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
-import { logPrefix } from "../helpers/consts.ts";
+
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { getLogger } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -1175,7 +1175,7 @@ export const parallel = async <T>(
     throw new Error(
       "`parallel()` requires AsyncLocalStorage support, which is not available in this runtime. " +
         "Workaround: Pass `parallelMode` directly to each step:\n" +
-        "  step.run({ id: 'my-step', parallelMode: 'race' }, fn)",
+        '  step.run({ id: "my-step", parallelMode: "race" }, fn)',
     );
   }
 
