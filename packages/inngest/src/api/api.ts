@@ -1,15 +1,11 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-  type ExecutionVersion,
-} from "../helpers/consts.ts";
-import { devServerAvailable } from "../helpers/devserver.ts";
+import type { ExecutionVersion } from "../helpers/consts.ts";
 import type { Mode } from "../helpers/env.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
+import { resolveApiBaseUrl } from "../helpers/url.ts";
 import {
   type APIStepPayload,
   err,
@@ -128,24 +124,13 @@ export class InngestApi {
   }
 
   private async getTargetUrl(path: string): Promise<URL> {
-    if (this.apiBaseUrl) {
-      return new URL(path, this.apiBaseUrl);
-    }
+    const baseUrl = await resolveApiBaseUrl({
+      apiBaseUrl: this.apiBaseUrl,
+      mode: this.mode,
+      fetch: this.fetch,
+    });
 
-    let url = new URL(path, defaultInngestApiBaseUrl);
-
-    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        this.fetch,
-      );
-
-      if (devAvailable) {
-        url = new URL(path, defaultDevServerHost);
-      }
-    }
-
-    return url;
+    return new URL(path, baseUrl);
   }
 
   private async req(

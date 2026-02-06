@@ -1,34 +1,39 @@
 import debug, { type Debugger } from "debug";
 import { headerKeys } from "../../helpers/consts.ts";
-import {
-  FlushResponse,
-  SDKResponse,
-} from "../../proto/src/components/connect/protobuf/connect.ts";
-import type { Inngest } from "../Inngest.ts";
+import { FlushResponse } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { expBackoff } from "./util.ts";
 
 export class MessageBuffer {
-  private buffered: Record<string, SDKResponse> = {};
-  private pending: Record<string, SDKResponse> = {};
-  private inngest: Inngest.Any;
+  private buffered: Record<string, Uint8Array> = {};
+  private pending: Record<string, Uint8Array> = {};
+  private getApiBaseUrl: () => Promise<string>;
   private debug: Debugger;
+  private envName: string | undefined;
 
-  constructor(inngest: Inngest.Any) {
-    this.inngest = inngest;
+  constructor({
+    envName,
+    getApiBaseUrl,
+  }: { envName: string | undefined; getApiBaseUrl: () => Promise<string> }) {
+    this.envName = envName;
+    this.getApiBaseUrl = getApiBaseUrl;
     this.debug = debug("inngest:connect:message-buffer");
   }
 
-  public append(response: SDKResponse) {
-    this.buffered[response.requestId] = response;
-    delete this.pending[response.requestId];
+  public append(requestId: string, responseBytes: Uint8Array) {
+    this.buffered[requestId] = responseBytes;
+    delete this.pending[requestId];
   }
 
-  public addPending(response: SDKResponse, deadline: number) {
-    this.pending[response.requestId] = response;
+  public addPending(
+    requestId: string,
+    responseBytes: Uint8Array,
+    deadline: number,
+  ) {
+    this.pending[requestId] = responseBytes;
     setTimeout(() => {
-      if (this.pending[response.requestId]) {
-        this.debug("Message not acknowledged in time", response.requestId);
-        this.append(response);
+      if (this.pending[requestId]) {
+        this.debug("Message not acknowledged in time", requestId);
+        this.append(requestId, this.pending[requestId]!);
       }
     }, deadline);
   }
@@ -39,7 +44,7 @@ export class MessageBuffer {
 
   private async sendFlushRequest(
     hashedSigningKey: string | undefined,
-    msg: SDKResponse,
+    responseBytes: Uint8Array,
   ) {
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -48,16 +53,24 @@ export class MessageBuffer {
         : {}),
     };
 
-    if (this.inngest.env) {
-      headers[headerKeys.Environment] = this.inngest.env;
+    if (this.envName) {
+      headers[headerKeys.Environment] = this.envName;
+    }
+
+    // protobuf's `finish()` is typed as `Uint8Array<ArrayBufferLike>` (could be
+    // SharedArrayBuffer-backed), but it actually creates a regular ArrayBuffer.
+    // Cast to satisfy fetch's stricter type requirement.
+    // const body = responseBytes as Uint8Array<ArrayBuffer>;
+    if (!isUnsharedArrayBuffer(responseBytes)) {
+      throw new Error("Unreachable: response bytes are not an ArrayBuffer");
     }
 
     const resp = await fetch(
       // refactor this to a more universal spot
-      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/flush"),
+      new URL("/v0/connect/flush", await this.getApiBaseUrl()),
       {
         method: "POST",
-        body: new Uint8Array(SDKResponse.encode(msg).finish()),
+        body: responseBytes,
         headers: headers,
       },
     );
@@ -103,4 +116,18 @@ export class MessageBuffer {
 
     this.debug(`Failed to flush messages after max attempts`, { maxAttempts });
   }
+}
+
+function isUnsharedArrayBuffer(
+  value: Uint8Array<ArrayBufferLike>,
+): value is Uint8Array<ArrayBuffer> {
+  if (typeof SharedArrayBuffer === "undefined") {
+    // `SharedArrayBuffer` may not exist at runtime. Some runtimes removed it
+    // for security reasons (Spectre-like attacks).
+    //
+    // If it doesn't exist then we know value is an `ArrayBuffer`.
+    return true;
+  }
+
+  return value.buffer instanceof ArrayBuffer;
 }
