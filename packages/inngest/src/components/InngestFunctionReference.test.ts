@@ -222,8 +222,7 @@ describe("referenceFunction", () => {
 
       // Create a test function to reference
       const testFunction = inngest.createFunction(
-        { id: "test-function" },
-        { event: "test/event" },
+        { id: "test-function", triggers: [{ event: "test/event" }] },
         async () => {
           return { success: true, value: "test" };
         },
