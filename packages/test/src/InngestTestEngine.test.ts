@@ -10,8 +10,7 @@ describe("InngestTestEngine", () => {
       const executionOrder: string[] = [];
 
       const fn = inngest.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           const step1Result = await step.run("step-1", () => {
             executionOrder.push("step-1-unmocked");
@@ -78,8 +77,7 @@ describe("InngestTestEngine", () => {
       const executionOrder: string[] = [];
 
       const fn = inngest.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           const step1Result = await step.run("step-1", () => {
             executionOrder.push("step-1-unmocked");
@@ -130,8 +128,7 @@ describe("InngestTestEngine", () => {
       const executionOrder: string[] = [];
 
       const fn = inngest.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           // Run steps in parallel
           const results = await Promise.all([
@@ -193,8 +190,7 @@ describe("InngestTestEngine", () => {
       let capturedStep1Result: string | undefined;
 
       const fn = inngest.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           const step1Result = await step.run("step-1", () => {
             return "first-result";

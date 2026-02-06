@@ -2765,8 +2765,7 @@ describe("runFn", () => {
       "detects NonRetriableError by name when instanceof fails",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             const error = new Error("Simulated monorepo error");
             error.name = "NonRetriableError";
@@ -2834,8 +2833,7 @@ describe("runFn", () => {
       "detects RetryAfterError by name when instanceof fails",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             const error = new Error(
               "Simulated monorepo retry error",
