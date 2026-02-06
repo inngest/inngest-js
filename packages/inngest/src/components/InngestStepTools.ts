@@ -1,5 +1,6 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod/v3";
+import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -12,12 +13,14 @@ import type {
   WithoutInternalStr,
 } from "../helpers/types.ts";
 import {
+  type Context,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type SendEventOutput,
+  StepMode,
   StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
@@ -35,6 +38,13 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import {
+  type MetadataBuilder,
+  type MetadataStepTool,
+  metadataSymbol,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
+import type { Realtime } from "./realtime/types.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -121,7 +131,7 @@ export interface StepToolOptions<
    * when we receive an operation matching this one that does not contain a
    * `data` property.
    */
-  fn?: (...args: Parameters<T>) => unknown;
+  fn?: (...args: [Context.Any, ...Parameters<T>]) => unknown;
 }
 
 export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
@@ -156,7 +166,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   const createTool = <T extends (...args: any[]) => Promise<unknown>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
@@ -188,7 +198,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     type?: string,
   ) => {
     return createTool<
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
 
@@ -232,16 +242,64 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: id,
           displayName: name ?? id,
           ...(Object.keys(opts).length ? { opts } : {}),
+          userland: { id },
         };
       },
       {
-        fn: (_, fn, ...input) => fn(...input),
+        fn: (_, __, fn, ...input) => fn(...input),
       },
     );
+  };
+
+  /**
+   * Creates a metadata builder wrapper for step.metadata("id").
+   * Uses MetadataBuilder for config accumulation, but wraps .update() in tools.run() for memoization.
+   */
+  const createStepMetadataWrapper = (
+    memoizationId: string,
+    builder?: UnscopedMetadataBuilder,
+  ) => {
+    if (!client["experimentalMetadataEnabled"]) {
+      throw new Error(
+        'step.metadata() is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
+    const withBuilder = (next: UnscopedMetadataBuilder) =>
+      createStepMetadataWrapper(memoizationId, next);
+
+    if (!builder) {
+      builder = new UnscopedMetadataBuilder(client).run();
+    }
+
+    return {
+      run: (runId?: string) => withBuilder(builder.run(runId)),
+      step: (stepId: string, index?: number) =>
+        withBuilder(builder.step(stepId, index)),
+      attempt: (attemptIndex: number) =>
+        withBuilder(builder.attempt(attemptIndex)),
+      span: (spanId: string) => withBuilder(builder.span(spanId)),
+      update: async (
+        values: Record<string, unknown>,
+        kind = "default",
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await builder.update(values, kind);
+        });
+      },
+
+      do: async (
+        fn: (builder: MetadataBuilder) => Promise<void>,
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await fn(builder);
+        });
+      },
+    };
   };
 
   /**
@@ -286,16 +344,18 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ({ id, name }) => {
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
           displayName: name ?? id,
           opts: {
             type: "step.sendEvent",
           },
+          userland: { id },
         };
       },
       {
-        fn: (_idOrOptions, payload) => {
+        fn: (_ctx, _idOrOptions, payload) => {
           return client["_send"]({
             payload,
             headers: execution["options"]["headers"],
@@ -321,6 +381,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       // Temporal.ZonedDateTimeLike
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.WaitForSignal,
         name: opts.signal,
         displayName: name ?? id,
@@ -329,8 +390,54 @@ export const createStepTools = <TClient extends Inngest.Any>(
           timeout: timeStr(opts.timeout),
           conflict: opts.onConflict,
         },
+        userland: { id },
       };
     }),
+
+    /**
+     * Step-level functionality related to realtime features.
+     *
+     * Unlike client-level realtime methods (`inngest.realtime.*`), these tools
+     * will be their own durable steps when run. If you wish to use realtime
+     * features outside of a step, make sure to use the client-level methods
+     * instead.
+     */
+    realtime: {
+      /**
+       * Publish a realtime message to a particular topic and channel as a step.
+       */
+      publish: createTool<
+        <TMessage extends Realtime.Message.Input>(
+          idOrOptions: StepOptionsOrId,
+          opts: TMessage,
+        ) => Promise<Awaited<TMessage>["data"]>
+      >(
+        ({ id, name }) => {
+          return {
+            id,
+            mode: StepMode.Sync,
+            op: StepOpCode.StepPlanned,
+            displayName: name ?? id,
+            opts: {
+              type: "step.realtime.publish",
+            },
+            userland: { id },
+          };
+        },
+        {
+          fn: (ctx, _idOrOptions, opts) => {
+            return client["inngestApi"].publish(
+              {
+                topics: [opts.topic],
+                channel: opts.channel,
+                runId: ctx.runId,
+              },
+              opts.data,
+            );
+          },
+        },
+      ),
+    },
 
     /**
      * Send a Signal to Inngest.
@@ -341,6 +448,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ({ id, name }, opts) => {
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: "sendSignal",
           displayName: name ?? id,
@@ -348,10 +456,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
             type: "step.sendSignal",
             signal: opts.signal,
           },
+          userland: { id },
         };
       },
       {
-        fn: (_idOrOptions, opts) => {
+        fn: (_ctx, _idOrOptions, opts) => {
           return client["_sendSignal"]({
             signal: opts.signal,
             data: opts.data,
@@ -402,10 +511,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.WaitForEvent,
           name: opts.event,
           opts: matchOpts,
           displayName: name ?? id,
+          userland: { id },
         };
       },
     ),
@@ -450,6 +561,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.AiGateway,
           displayName: name ?? id,
           opts: {
@@ -463,6 +575,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             // eslint-disable-next-line
             ...rest,
           },
+          userland: { id },
         };
       }),
 
@@ -516,9 +629,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.Sleep,
         name: msTimeStr,
         displayName: name ?? id,
+        userland: { id },
       };
     }),
 
@@ -547,9 +662,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.Sleep,
           name: iso,
           displayName: name ?? id,
+          userland: { id },
         };
       } catch (err) {
         /**
@@ -649,9 +766,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts,
+        userland: { id },
       };
     }),
 
@@ -664,6 +783,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
      */
     fetch: stepFetch,
   };
+
+  // NOTE: This should be moved into the above object definition under the key
+  // "metadata" when metadata is made non-experimental.
+  (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
+    memoizationId: string,
+  ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
 
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
@@ -684,6 +809,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.Gateway,
         displayName: name ?? id,
         opts: {
@@ -692,12 +818,19 @@ export const createStepTools = <TClient extends Inngest.Any>(
           headers,
           body: init?.body,
         },
+        userland: { id },
       };
     },
   );
 
   return tools;
 };
+
+/**
+ * A generic set of step tools, without typing information about the client used
+ * to create them.
+ */
+export type GenericStepTools = GetStepTools<Inngest.Any>;
 
 export const gatewaySymbol = Symbol.for("inngest.step.gateway");
 
@@ -706,10 +839,91 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
     idOrOptions: StepOptionsOrId,
     ...args: Parameters<typeof fetch>
   ) => Promise<{
-    status: number;
+    status_code: number;
     headers: Record<string, string>;
     body: string;
   }>;
+};
+
+export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
+  [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
+};
+
+/**
+ * A generic set of step tools that can be used without typing information about
+ * the client used to create them.
+ *
+ * These tools use AsyncLocalStorage to track the context in which they are
+ * used, and will throw an error if used outside of an Inngest context.
+ *
+ * The intention of these high-level tools is to allow usage of Inngest step
+ * tools within API endpoints, though they can still be used within regular
+ * Inngest functions as well.
+ */
+export const step: GenericStepTools = {
+  // TODO Support `step.fetch` (this is already kinda half way deferred)
+  fetch: null as unknown as GenericStepTools["fetch"],
+  ai: {
+    infer: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),
+    wrap: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.ai.wrap(...args)),
+    models: {
+      ...models,
+    },
+  },
+  invoke: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.invoke(...args)),
+  run: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.run(...args)),
+  sendEvent: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sendEvent(...args)),
+  sendSignal: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sendSignal(...args)),
+  sleep: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sleep(...args)),
+  sleepUntil: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sleepUntil(...args)),
+  waitForEvent: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.waitForEvent(...args)),
+  waitForSignal: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.waitForSignal(...args)),
+  realtime: {
+    publish: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.realtime.publish(...args)),
+  },
+};
+
+/**
+ * An internal function used to retrieve or create step tooling for the current
+ * execution context.
+ *
+ * Note that this requires an existing context to create the step tooling;
+ * something must declare the Inngest execution context before this can be used.
+ */
+const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
+  const ctx = await getAsyncCtx();
+  if (!ctx) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no context was found",
+    );
+  }
+
+  if (!ctx.app) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no Inngest client was found in the execution context",
+    );
+  }
+
+  if (!ctx.execution) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no execution context was found",
+    );
+  }
+
+  // If we're here, we're in the context of a function execution already and
+  // we can return the existing step tooling.
+  return ctx.execution.ctx.step;
 };
 
 /**

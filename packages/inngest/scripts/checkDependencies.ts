@@ -142,7 +142,7 @@ function checkDependencies(
     path.resolve(packagePath, file),
   );
 
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   fileNames.forEach((file) => {
     const content = fs.readFileSync(file, "utf8");
     const sourceFile = ts.createSourceFile(
@@ -225,10 +225,17 @@ function checkDependencies(
     });
   });
 
+  // Packages that are dynamically imported and should not be flagged as unused
+  const dynamicallyImportedPackages = ["ulid"];
+
   // Check for unused packages in dependencies
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   Object.keys(dependencies).forEach((dependency) => {
-    if (!importedModules.has(dependency) && !dependency.startsWith("@types/")) {
+    if (
+      !importedModules.has(dependency) &&
+      !dependency.startsWith("@types/") &&
+      !dynamicallyImportedPackages.includes(dependency)
+    ) {
       const typesPackage = `@types/${dependency}`;
       if (!importedModules.has(typesPackage)) {
         if (!issues[dependency]) {
@@ -240,7 +247,7 @@ function checkDependencies(
   });
 
   // Check for @types packages that should be moved to dependencies
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   importedTypeModules.forEach((typeModule) => {
     if (
       importedModules.has(typeModule) &&
@@ -260,7 +267,7 @@ function checkDependencies(
     console.log(chalk.red("Dependency Issues Found:"));
     Object.entries(issues).forEach(([module, data], index, array) => {
       console.log(chalk.blue(`${module} (${data.type}):`));
-      // biome-ignore lint/complexity/noForEach: <explanation>
+      // biome-ignore lint/complexity/noForEach: intentional
       data.files.forEach((file) => console.log(chalk.yellow(`  - ${file}`)));
       if (index < array.length - 1) {
         console.log(""); // Add a line break between modules

@@ -71,7 +71,7 @@ export const isDeeplyEqual = <T extends object>(
 type DeferredPromiseReturn<T> = {
   promise: Promise<T>;
   resolve: (value: T) => DeferredPromiseReturn<T>;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   reject: (reason: any) => DeferredPromiseReturn<T>;
 };
 

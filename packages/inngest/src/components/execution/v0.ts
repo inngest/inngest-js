@@ -29,6 +29,11 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -39,6 +44,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import {
   type ExecutionResult,
+  ExecutionVersion,
   type IInngestExecution,
   InngestExecution,
   type InngestExecutionFactory,
@@ -56,6 +62,8 @@ export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
 {
+  public version = ExecutionVersion.V0;
+
   private state: V0ExecutionState;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
@@ -69,10 +77,20 @@ export class V0InngestExecution
     this.fnArg = this.createFnArg();
   }
 
+  public addMetadata(
+    _stepId: string,
+    _kind: MetadataKind,
+    _scope: MetadataScope,
+    _op: MetadataOpcode,
+    _values: Record<string, unknown>,
+  ): boolean {
+    return false;
+  }
+
   public start() {
     this.debug("starting V0 execution");
 
-    // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+    // biome-ignore lint/suspicious/noAssignInExpressions: intentional
     return (this.execution ??= this._start().then((result) => {
       this.debug("result:", result);
       return result;
@@ -182,13 +200,16 @@ export class V0InngestExecution
           .finally(() => {
             this.state.executingStep = false;
           })
-          .catch(async (error: Error) => {
-            return await this.transformOutput({ error }, outgoingUserFnOp);
-          })
-          .then(async (data) => {
-            await this.state.hooks?.afterExecution?.();
-            return await this.transformOutput({ data }, outgoingUserFnOp);
-          });
+          .then(
+            async (data) => {
+              await this.state.hooks?.afterExecution?.();
+              return await this.transformOutput({ data }, outgoingUserFnOp);
+            },
+            async (error: Error) => {
+              await this.state.hooks?.afterExecution?.();
+              return await this.transformOutput({ error }, outgoingUserFnOp);
+            },
+          );
 
         const { type: _type, ...rest } = result;
 
@@ -400,7 +421,7 @@ export class V0InngestExecution
 
       const collisionHash = _internals.hashData(obj);
 
-      // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+      // biome-ignore lint/suspicious/noAssignInExpressions: intentional
       const pos = (this.state.tickOpHashes[collisionHash] =
         (this.state.tickOpHashes[collisionHash] ?? -1) + 1);
 
@@ -441,7 +462,7 @@ export class V0InngestExecution
       return new Promise<unknown>((resolve, reject) => {
         this.state.tickOps[opId.id] = {
           ...opId,
-          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
+          ...(opts?.fn ? { fn: () => opts.fn?.(this.fnArg, ...args) } : {}),
           rawArgs: args,
           resolve,
           reject,
@@ -543,9 +564,18 @@ export class V0InngestExecution
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
-      let retriable: boolean | string = !(error instanceof NonRetriableError);
-      if (retriable && error instanceof RetryAfterError) {
-        retriable = error.retryAfter;
+      let retriable: boolean | string = !(
+        error instanceof NonRetriableError ||
+        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+        (error as any)?.name === "NonRetriableError"
+      );
+      if (
+        retriable &&
+        (error instanceof RetryAfterError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "RetryAfterError")
+      ) {
+        retriable = (error as RetryAfterError).retryAfter;
       }
 
       const serializedError = serializeError(error);

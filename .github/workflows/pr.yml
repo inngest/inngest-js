@@ -202,6 +202,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  "test_test":
+    name: "test: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/test
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+
   package_inngest:
     name: "inngest: Package"
     runs-on: ubuntu-latest
@@ -256,6 +272,7 @@ jobs:
         exclude:
           - example: framework-nextjs-starter
           - example: framework-hono
+          - example: bun-sync
     steps:
       # Checkout the repo
       - name: Checkout SDK

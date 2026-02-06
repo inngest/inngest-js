@@ -8,7 +8,7 @@ import {
   type IInngestExecution,
   type InngestExecution,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "../components/execution/InngestExecution.ts";
 import {
   type HandlerResponse,
@@ -32,7 +32,7 @@ import { signDataWithKey } from "../helpers/net.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { Inngest, type InngestFunction } from "../index.ts";
-import type { EventPayload, FunctionConfig } from "../types.ts";
+import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -89,7 +89,7 @@ export const getStepTools = (
   const execution = client
     .createFunction({ id: "test" }, { event: "test" }, () => undefined)
     ["createExecution"]({
-      version: PREFERRED_EXECUTION_VERSION,
+      version: PREFERRED_ASYNC_EXECUTION_VERSION,
       partialOptions: {
         client,
         data: fromPartial({
@@ -104,6 +104,7 @@ export const getStepTools = (
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
+        stepMode: StepMode.Async,
         ...executionOptions,
       },
     }) as IInngestExecution & InngestExecution;
@@ -135,7 +136,7 @@ export const runFnWithStack = async (
   },
 ) => {
   const execution = fn["createExecution"]({
-    version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
+    version: opts?.executionVersion ?? PREFERRED_ASYNC_EXECUTION_VERSION,
     partialOptions: {
       client: fn["client"],
       data: fromPartial({
@@ -150,6 +151,9 @@ export const runFnWithStack = async (
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
+      stepMode: StepMode.Async,
+      internalFnId: "fake-fn-id",
+      queueItemId: "fake-queue-item-id",
     },
   });
 
@@ -861,16 +865,6 @@ export const testFramework = (
             actionOverrides?: Partial<HandlerResponse>;
           },
         ) => {
-          const signingKey = "123";
-          const body = { url: "https://example.com/api/inngest" };
-          const ts = Date.now().toString();
-
-          const signature = validSignature
-            ? `t=${ts}&s=${signDataWithKey(body, signingKey, ts)}`
-            : validSignature === false
-              ? "INVALID"
-              : undefined;
-
           const name = `${
             serverMode === serverKind.Cloud ? "Cloud" : "Dev"
           } Server -> ${sdkMode === serverKind.Cloud ? "Cloud" : "Dev"} SDK - ${
@@ -894,6 +888,16 @@ export const testFramework = (
           } ${expectedResponse}`;
 
           test(name, async () => {
+            const signingKey = "123";
+            const body = { url: "https://example.com/api/inngest" };
+            const ts = Date.now().toString();
+
+            const signature = validSignature
+              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts)}`
+              : validSignature === false
+                ? "INVALID"
+                : undefined;
+
             const ret = await run(
               [{ client: inngest, functions: [] }],
               [

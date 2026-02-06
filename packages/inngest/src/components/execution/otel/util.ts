@@ -1,4 +1,4 @@
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
 import {
@@ -6,6 +6,7 @@ import {
   registerInstrumentations,
 } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { InngestSpanProcessor } from "./processor.ts";
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
@@ -25,15 +26,15 @@ export const createProvider = (
   const instrList: Instrumentations = [
     ...instrumentations,
     ...getNodeAutoInstrumentations(),
+    new AnthropicInstrumentation(),
   ];
 
   registerInstrumentations({
     instrumentations: instrList,
   });
 
-  p.register({
-    contextManager: new AsyncHooksContextManager().enable(),
-  });
+  trace.setGlobalTracerProvider(p);
+  context.setGlobalContextManager(new AsyncHooksContextManager().enable());
 
   return { success: true, processor };
 };

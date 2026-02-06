@@ -1,5 +1,18 @@
 # @inngest/realtime
 
+## 0.4.5
+
+### Patch Changes
+
+- [#1160](https://github.com/inngest/inngest-js/pull/1160) [`ab446473`](https://github.com/inngest/inngest-js/commit/ab4464730ffea7d85de7db603fbda9fb3ac645fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen `zod` dependency range to support v3/v4 across libraries
+
+- [#1166](https://github.com/inngest/inngest-js/pull/1166) [`1d08b13b`](https://github.com/inngest/inngest-js/commit/1d08b13b589fd17eab55241cb1c34e826776a00f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Re-export realtime types from `middleware` entrypoint
+
+- [#1159](https://github.com/inngest/inngest-js/pull/1159) [`a79b55af`](https://github.com/inngest/inngest-js/commit/a79b55af4a759b933c2c101798b21f3a14df58b2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `@inngest/realtime` attempting to nest steps with `inngest@3.45.0`
+
+- Updated dependencies [[`9fa34d12`](https://github.com/inngest/inngest-js/commit/9fa34d1250e25256ddb69606d7932419f131e998), [`ab446473`](https://github.com/inngest/inngest-js/commit/ab4464730ffea7d85de7db603fbda9fb3ac645fe), [`b5139f04`](https://github.com/inngest/inngest-js/commit/b5139f041cfef8a78d75bf9d0254d892e40060fe)]:
+  - inngest@3.45.1
+
 ## 0.4.4
 
 ### Patch Changes

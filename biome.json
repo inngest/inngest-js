@@ -9,7 +9,7 @@
       "!**/dist",
       "!**/src/proto",
       "!**/package.json",
-      "!**/jsr.json"
+      "!**/.claude"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },

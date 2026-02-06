@@ -70,6 +70,7 @@ export type {
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
 export { InngestMiddleware } from "./components/InngestMiddleware.ts";
+export { step } from "./components/InngestStepTools.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { StepError } from "./components/StepError.ts";
@@ -77,6 +78,7 @@ export {
   isInngest,
   isInngestFunction,
   isInngestMiddleware,
+  isInngestRequest,
 } from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
 export { serializeError } from "./helpers/errors.ts";

@@ -1,9 +1,11 @@
 import http from "node:http";
+import { PassThrough } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
+  type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 
@@ -14,21 +16,16 @@ import type { SupportedFrameworkName } from "./types.ts";
 export const frameworkName: SupportedFrameworkName = "nodejs";
 
 /**
- * Parse the incoming message request as a JSON body
+ * Read the incoming message request body as text
  */
-async function parseRequestBody(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+async function readRequestBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
     });
     req.on("end", () => {
-      try {
-        const json = JSON.parse(body) as unknown;
-        resolve(json);
-      } catch (err) {
-        reject(err);
-      }
+      resolve(body);
     });
   });
 }
@@ -41,49 +38,49 @@ function getURL(req: http.IncomingMessage, hostnameOption?: string): URL {
   return new URL(req.url || "", origin);
 }
 
-/**
- * Serve and register any declared functions with Inngest, making them available
- * to be triggered by events.
- *
- * @example Serve Inngest functions on all paths
- * ```ts
- * import { serve } from "inngest/node";
- * import { inngest } from "./src/inngest/client";
- * import myFn from "./src/inngest/myFn"; // Your own function
- *
- * const server = http.createServer(serve({
- *   client: inngest, functions: [myFn]
- * }));
- * server.listen(3000);
- * ```
- *
- * @example Serve Inngest on a specific path
- * ```ts
- * import { serve } from "inngest/node";
- * import { inngest } from "./src/inngest/client";
- * import myFn from "./src/inngest/myFn"; // Your own function
- *
- * const server = http.createServer((req, res) => {
- *   if (req.url.start === '/api/inngest') {
- *     return serve({
- *       client: inngest, functions: [myFn]
- *     })(req, res);
- *   }
- *   // ...
- * });
- * server.listen(3000);
- * ```
- *
- * @public
- */
-// Has explicit return type to avoid JSR-defined "slow types"
-export const serve = (options: ServeHandlerOptions): http.RequestListener => {
+const _createResProxy = (
+  res: http.ServerResponse,
+): {
+  proxy: http.ServerResponse;
+  data: Promise<string>;
+} => {
+  // We tap the response so that we can capture data being output to convert
+  // it to the format we need for checkpointing sync responses with
+  // `checkpointResponse()`.
+  const resChunks: Uint8Array[] = [];
+
+  const tap = new PassThrough();
+  tap.on("data", (chunk) => resChunks.push(chunk));
+
+  const data = new Promise<string>((resolve, reject) => {
+    tap.on("end", () => {
+      resolve(Buffer.concat(resChunks).toString());
+    });
+
+    // TODO reject when?
+
+    tap.pipe(res);
+  });
+
+  const proxy = new Proxy(res, {
+    get(target, prop) {
+      if (prop === "write") return tap.write.bind(tap);
+      if (prop === "end") return tap.end.bind(tap);
+
+      return Reflect.get(target, prop);
+    },
+  });
+
+  return { proxy, data };
+};
+
+const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => {
       return {
-        body: async () => parseRequestBody(req),
+        body: async () => readRequestBody(req),
         headers: (key) => {
           return req.headers[key] && Array.isArray(req.headers[key])
             ? req.headers[key][0]
@@ -128,7 +125,48 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
       };
     },
   });
-  return handler.createHandler() as http.RequestListener;
+
+  return handler;
+};
+
+/**
+ * Serve and register any declared functions with Inngest, making them available
+ * to be triggered by events.
+ *
+ * @example Serve Inngest functions on all paths
+ * ```ts
+ * import { serve } from "inngest/node";
+ * import { inngest } from "./src/inngest/client";
+ * import myFn from "./src/inngest/myFn"; // Your own function
+ *
+ * const server = http.createServer(serve({
+ *   client: inngest, functions: [myFn]
+ * }));
+ * server.listen(3000);
+ * ```
+ *
+ * @example Serve Inngest on a specific path
+ * ```ts
+ * import { serve } from "inngest/node";
+ * import { inngest } from "./src/inngest/client";
+ * import myFn from "./src/inngest/myFn"; // Your own function
+ *
+ * const server = http.createServer((req, res) => {
+ *   if (req.url.start === '/api/inngest') {
+ *     return serve({
+ *       client: inngest, functions: [myFn]
+ *     })(req, res);
+ *   }
+ *   // ...
+ * });
+ * server.listen(3000);
+ * ```
+ *
+ * @public
+ */
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (options: ServeHandlerOptions): http.RequestListener => {
+  return commHandler(options).createHandler() as http.RequestListener;
 };
 
 /**

@@ -137,6 +137,14 @@ describe("waitForEvent", () => {
       });
     });
   });
+
+  test("returns userland", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" }),
+    ).resolves.toMatchObject({
+      userland: { id: "id" },
+    });
+  });
 });
 
 describe("run", () => {
@@ -238,6 +246,12 @@ describe("run", () => {
       : false;
 
     assertType<KeysMatchExactly<Expected, Awaited<typeof output>>>(true);
+  });
+
+  test("returns userland", async () => {
+    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+      userland: { id: "id" },
+    });
   });
 });
 
@@ -592,6 +606,12 @@ describe("sleep", () => {
       name: "1m",
     });
   });
+
+  test("returns userland", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
+      userland: { id: "id" },
+    });
+  });
 });
 
 describe("sleepUntil", () => {
@@ -694,6 +714,15 @@ describe("sleepUntil", () => {
       "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
     );
   });
+
+  test("returns userland", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
+      userland: { id: "id" },
+    });
+  });
 });
 
 describe("sendEvent", () => {
@@ -742,12 +771,20 @@ describe("sendEvent", () => {
         ),
       ).resolves.toMatchObject({ name: "sendEvent" });
     });
+
+    test("returns userland", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" }),
+      ).resolves.toMatchObject({
+        userland: { id: "id" },
+      });
+    });
   });
 
   describe("types", () => {
     describe("no custom types", () => {
       const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
@@ -787,7 +824,7 @@ describe("sendEvent", () => {
 
       const sendEvent: ReturnType<
         typeof createStepTools<Client>
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
       >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
@@ -997,6 +1034,12 @@ describe("invoke", () => {
           },
         });
       });
+
+      test("return userland", async () => {
+        await expect(
+          step.invoke("id", { function: fn, data: { foo: "foo" } }),
+        ).resolves.toMatchObject({ userland: { id: "id" } });
+      });
     });
   });
 
@@ -1023,7 +1066,7 @@ describe("invoke", () => {
       typeof createStepTools<typeof client>
     >["invoke"];
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
       ReturnType<T>
     >;

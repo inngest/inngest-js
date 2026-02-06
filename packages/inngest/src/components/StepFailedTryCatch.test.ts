@@ -1,4 +1,5 @@
 import { serializeError } from "../helpers/errors";
+import { StepMode } from "../types";
 import {
   createV1InngestExecution,
   _internals as v1Internals,
@@ -58,6 +59,7 @@ describe("StepFailed OpCode with try/catch", () => {
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();
@@ -119,6 +121,7 @@ describe("StepFailed OpCode with try/catch", () => {
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();
@@ -168,6 +171,7 @@ describe("StepFailed OpCode with try/catch", () => {
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();

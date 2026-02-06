@@ -29,6 +29,7 @@ export const allProcessEnv = (): Env => {
     if (process.env) {
       return process.env;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (_err) {
     // noop
   }
@@ -40,6 +41,7 @@ export const allProcessEnv = (): Env => {
     if (env) {
       return env;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (_err) {
     // noop
   }
@@ -51,6 +53,7 @@ export const allProcessEnv = (): Env => {
     if (env) {
       return env;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (_err) {
     // noop
   }

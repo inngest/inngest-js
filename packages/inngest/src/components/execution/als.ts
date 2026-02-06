@@ -1,24 +1,42 @@
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { IInngestExecution } from "./InngestExecution.ts";
 
+/**
+ * Note - this structure can be used by other libraries, so cannot have breaking changes.
+ */
 export interface AsyncContext {
   /**
    * The Inngest App that is currently being used to execute the function.
+   *
+   * If this is defined, we are in the context of an Inngest function execution,
+   * or a possible one.
    */
   app: Inngest.Like;
 
   /**
-   * The `ctx` object that has been passed in to this function execution,
-   * including values such as `step` and `event`.
+   * Details of the current function execution context. If this doesn't exist,
+   * then we're not currently in a function execution context.
    */
-  ctx: Context.Any;
+  execution?: {
+    /**
+     * The execution instance that is currently running the function.
+     */
+    instance: IInngestExecution;
 
-  /**
-   * If present, this indicates we are currently executing a `step.run()` step's
-   * callback. Useful to understand whether we are in the context of a step
-   * execution or within the main function body.
-   */
-  executingStep?: StepOptions;
+    /**
+     * The `ctx` object that has been passed in to this function execution,
+     * including values such as `step` and `event`.
+     */
+    ctx: Context.Any;
+
+    /**
+     * If present, this indicates we are currently executing a `step.run()` step's
+     * callback. Useful to understand whether we are in the context of a step
+     * execution or within the main function body.
+     */
+    executingStep?: StepOptions;
+  };
 }
 
 /**

@@ -20,7 +20,12 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    */
   instanceId?: string;
 
-  maxConcurrency?: number;
+  /**
+   * MaxWorkerConcurrency represents the maximum number of worker concurrency to use.
+   *
+   * If left undefined, there will be no limit on the number of concurrent requests on the worker.
+   */
+  maxWorkerConcurrency?: number;
 
   /**
    * By default, connections will be gracefully shut down when the current

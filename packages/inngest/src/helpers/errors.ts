@@ -291,6 +291,8 @@ export enum ErrCode {
   STEP_USED_AFTER_ASYNC = "STEP_USED_AFTER_ASYNC",
 
   AUTOMATIC_PARALLEL_INDEXING = "AUTOMATIC_PARALLEL_INDEXING",
+
+  NONDETERMINISTIC_STEPS = "NONDETERMINISTIC_STEPS",
 }
 
 export interface PrettyError {
@@ -545,7 +547,7 @@ export class OutgoingResultError extends Error {
  * await doSomeAction().catch(rethrowError("Failed to do some action"));
  * ```
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const rethrowError = (prefix: string): ((err: any) => never) => {
   return (err) => {
     try {
@@ -553,7 +555,7 @@ export const rethrowError = (prefix: string): ((err: any) => never) => {
     } catch (_noopErr) {
       // no-op
     } finally {
-      // biome-ignore lint/correctness/noUnsafeFinally: <explanation>
+      // biome-ignore lint/correctness/noUnsafeFinally: intentional
       throw err;
     }
   };

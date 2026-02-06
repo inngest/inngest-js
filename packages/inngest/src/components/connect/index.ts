@@ -26,7 +26,7 @@ import {
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import type { Capabilities, FunctionConfig } from "../../types.ts";
 import { version } from "../../version.ts";
-import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
+import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import type { Inngest } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -74,7 +74,7 @@ const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 type ConnectCommHandler = InngestCommHandler<
   [GatewayExecutorRequestData],
   SDKResponse,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any
 >;
 
@@ -213,6 +213,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
     options.signingKey = options.signingKey || env[envKeys.InngestSigningKey];
     options.signingKeyFallback =
       options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
+
+    if (options.maxWorkerConcurrency === undefined) {
+      const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];
+      if (envValue) {
+        const parsed = Number.parseInt(envValue, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          options.maxWorkerConcurrency = parsed;
+        }
+      }
+    }
 
     return options;
   }
@@ -451,7 +461,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                 sdkVersion: `inngest-js:v${version}`,
                 requestVersion: parseInt(
                   headers[headerKeys.RequestVersion] ??
-                    PREFERRED_EXECUTION_VERSION.toString(),
+                    PREFERRED_ASYNC_EXECUTION_VERSION.toString(),
                   10,
                 ),
                 systemTraceCtx: msg.systemTraceCtx,
@@ -639,7 +649,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
       | undefined;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
     const websocketConnectedPromise = new Promise((resolve, reject) => {
       resolveWebsocketConnected = resolve;
@@ -785,6 +795,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           capabilities: new TextEncoder().encode(data.marshaledCapabilities),
           startedAt: startedAt,
           instanceId: this.options.instanceId || (await getHostname()),
+          maxWorkerConcurrency: this.options.maxWorkerConcurrency,
         });
 
         const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
@@ -1220,13 +1231,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }, heartbeatIntervalMs);
     }
 
-    conn.cleanup = () => {
-      this.debug("Cleaning up worker heartbeat", {
-        connectionId,
-      });
-
-      clearInterval(heartbeatInterval);
-
+    conn.cleanup = async () => {
       if (closed) {
         return;
       }
@@ -1247,6 +1252,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this.debug("Closing connection", { connectionId });
       ws.onerror = () => {};
       ws.onclose = () => {};
+
+      // We must wait for all in-flight requests to complete before closing
+      // the connection and stopping the heartbeater. If we don't, then
+      // Inngest Server will mark the step as failed since it lost contact
+      // with the worker
+      await this.inProgressRequests.wg.wait();
+
       ws.close(
         1000,
         workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN),
@@ -1255,6 +1267,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (this.currentConnection?.id === connectionId) {
         this.currentConnection = undefined;
       }
+
+      this.debug("Cleaning up worker heartbeat", {
+        connectionId,
+      });
+
+      clearInterval(heartbeatInterval);
     };
 
     return conn;

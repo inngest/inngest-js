@@ -1,13 +1,13 @@
 import type { Span } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
-  detectResourcesSync,
-  envDetectorSync,
-  hostDetectorSync,
-  type IResource,
-  osDetectorSync,
-  processDetectorSync,
-  serviceInstanceIdDetectorSync,
+  detectResources,
+  envDetector,
+  hostDetector,
+  osDetector,
+  processDetector,
+  type Resource,
+  serviceInstanceIdDetector,
 } from "@opentelemetry/resources";
 import {
   BatchSpanProcessor,
@@ -34,7 +34,7 @@ const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
  * attributes for the spans that are exported to the Inngest endpoint, and cache
  *  them for later use.
  */
-let _resourceAttributes: IResource | undefined;
+let _resourceAttributes: Resource | undefined;
 
 /**
  * A set of information about an execution that's used to set attributes on
@@ -218,15 +218,15 @@ export class InngestSpanProcessor implements SpanProcessor {
    * is used to set the resource attributes for the spans that are exported to
    * the Inngest endpoint, and cache them for later use.
    */
-  static get resourceAttributes(): IResource {
+  static get resourceAttributes(): Resource {
     if (!_resourceAttributes) {
-      _resourceAttributes = detectResourcesSync({
+      _resourceAttributes = detectResources({
         detectors: [
-          osDetectorSync,
-          envDetectorSync,
-          hostDetectorSync,
-          processDetectorSync,
-          serviceInstanceIdDetectorSync,
+          osDetector,
+          envDetector,
+          hostDetector,
+          processDetector,
+          serviceInstanceIdDetector,
         ],
       });
     }
@@ -289,6 +289,7 @@ export class InngestSpanProcessor implements SpanProcessor {
             url: url.href,
 
             headers: {
+              ...app["headers"],
               Authorization: `Bearer ${app["inngestApi"]["signingKey"]}`,
             },
           });
@@ -359,7 +360,8 @@ export class InngestSpanProcessor implements SpanProcessor {
     const debug = processorDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
     // 🤫 It seems to work
-    const parentSpanId = (span as unknown as ReadableSpan).parentSpanId;
+    const parentSpanId = (span as unknown as ReadableSpan).parentSpanContext
+      ?.spanId;
 
     // The root span isn't captured here, but we can capture children of it
     // here.

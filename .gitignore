@@ -5,6 +5,7 @@ node_modules
 /.direnv/
 
 .idea
+.claude
 
 # Build output
 dist
