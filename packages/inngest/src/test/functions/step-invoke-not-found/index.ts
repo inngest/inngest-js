@@ -1,3 +1,4 @@
+import { referenceFunction } from "inngest";
 import { inngest } from "../client";
 
 export default inngest.createFunction(
@@ -5,7 +6,7 @@ export default inngest.createFunction(
   { event: "demo/step.invoke.not-found" },
   async ({ step }) => {
     await step.invoke("invoke-non-existent-fn", {
-      function: "non-existant-fn",
+      function: referenceFunction({ functionId: "non-existant-fn" }),
     });
   },
 );
