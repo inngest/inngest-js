@@ -10,7 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "inngest": "^3.0.0",
+    "inngest": "3.50.1-pr-1284.0",
     "next": "^15.3.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

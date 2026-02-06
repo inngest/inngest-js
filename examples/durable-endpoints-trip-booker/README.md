@@ -1,6 +1,6 @@
 # Durable Trip Booking Example
 
-A comprehensive trip booking system demonstrating **Inngest's Durable Endpoints** approach, built with Bun and Next.js.
+A comprehensive trip booking system demonstrating **Inngest's Durable Endpoints** approach, built with Next.js.
 
 ## What are Durable Endpoints?
 
@@ -8,14 +8,13 @@ A comprehensive trip booking system demonstrating **Inngest's Durable Endpoints*
 
 ```typescript
 import { step } from "inngest";
-import { createExperimentalEndpointWrapper } from "inngest/edge";
+import { Inngest } from "inngest";
+import { endpointAdapter } from "inngest/next";
 
-const wrap = createExperimentalEndpointWrapper({
-  client: new Inngest({ id: "my-app" }),
-});
+const inngest = new Inngest({ id: "my-app", endpointAdapter });
 
-// This HTTP handler is now durable!
-const handler = wrap(async (req: Request) => {
+// This Next.js API route is now durable!
+export const GET = inngest.endpoint(async (req) => {
   // Each step is persisted - survives crashes/restarts
   const result = await step.run("my-step", async () => {
     return await doSomething();
@@ -29,25 +28,27 @@ const handler = wrap(async (req: Request) => {
 
 This example showcases production-ready patterns using Inngest Durable Endpoints:
 
-✅ **Durable HTTP Handlers** - Regular handlers made durable with `wrap()`
-✅ **7-Step Booking Orchestration** - Flight search, booking and payment processing
-✅ **Inline Error Handling** - Try/catch with durable compensation steps
-✅ **Compensation Patterns (Saga)** - Inline rollback on failure with idempotent operations
-✅ **Real-time UI Updates** - Live progress tracking with polling
-✅ **Demo Scenarios** - Happy path and flight failure
+- **Durable HTTP Handlers** - Next.js API routes made durable with `inngest.endpoint()`
+- **4-Step Booking Orchestration** - Flight search, reservation, payment, and confirmation
+- **Automatic Retries** - Step failures trigger Inngest's built-in retry mechanism
+- **Real-time UI Updates** - Live progress tracking with polling
+- **Code Viewer** - See the durable endpoint code highlighted as each step executes
 
 ## Architecture
 
 ```
-┌─────────────────┐                  ┌───────────────────────────┐
-│   Next.js App   │                  │   Bun API (Durable)       │
-│   (Port 3000)   │                  │   (Port 4000)             │
-├─────────────────┤                  ├───────────────────────────┤
-│ - Booking Form  │                  │ - wrap() durable handlers │
-│ - Status Page   │                  │ - step.run() in handlers  │
-│ - Email Handler │◄────REST────────►│ - Inline compensation     │
-│                 │                  │ - Mock Providers          │
-└─────────────────┘                  └───────────────────────────┘
+┌─────────────────────────────────────────┐
+│   Next.js App (Port 3000)               │
+├─────────────────────────────────────────┤
+│ Frontend:                               │
+│ - Booking Form                          │
+│ - Progress Tracker                      │
+│ - Code Viewer                           │
+│                                         │
+│ API Routes (Durable):                   │
+│ - GET /api/booking        (endpoint)    │
+│ - GET /api/booking/events (polling)     │
+└─────────────────────────────────────────┘
 ```
 
 ### Key Difference from Traditional Inngest
@@ -56,7 +57,7 @@ This example showcases production-ready patterns using Inngest Durable Endpoints
 | -------------------------------- | --------------------------- |
 | Define separate functions        | Inline in HTTP handlers     |
 | Trigger via events               | Direct HTTP calls           |
-| `inngest.createFunction()`       | `wrap(async (req) => ...)`  |
+| `inngest.createFunction()`       | `inngest.endpoint()`        |
 | `{ event, step }` from context   | Import `step` directly      |
 | Separate `/api/inngest` endpoint | No separate endpoint needed |
 
@@ -64,32 +65,20 @@ This example showcases production-ready patterns using Inngest Durable Endpoints
 
 ### Prerequisites
 
-- **Bun** (for backend API) - https://bun.sh
-- Node.js 20+ (for Next.js frontend)
+- Node.js 20+
 
 ### Installation & Setup
 
 **1. Install Dependencies**
 
 ```bash
-# Install Bun API dependencies
-cd express-api
-bun install
-
-# Install Next.js app dependencies
-cd ../next-app
+cd next-app
 npm install
 ```
 
-**2. Start Services**
+**2. Start the App**
 
 ```bash
-# Terminal 1: Start Bun API with Durable Endpoints
-cd express-api
-bun run dev
-# Runs on http://localhost:4000
-
-# Terminal 2: Start Next.js App
 cd next-app
 npm run dev
 # Runs on http://localhost:3000
@@ -98,17 +87,15 @@ npm run dev
 **3. Create a Booking**
 
 1. Open http://localhost:3000
-2. Fill out the booking form
-3. Select a demo scenario (or use "Happy Path")
-4. Click "Book Trip"
-5. Watch real-time progress on the status page
+2. Select origin and destination airports
+3. Pick a departure date
+4. Click "Search & Book"
+5. Watch real-time progress as each durable step executes
 
 ## Learn More
 
 - [Inngest Documentation](https://www.inngest.com/docs)
 - [Inngest Step Functions](https://www.inngest.com/docs/functions/steps)
-- [Bun Documentation](https://bun.sh/docs)
-- [Saga Pattern](https://microservices.io/patterns/data/saga.html)
 
 ## License
 
