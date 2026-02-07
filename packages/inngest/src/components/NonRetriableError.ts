@@ -16,7 +16,7 @@ export class NonRetriableError extends Error {
   public override readonly cause?: unknown;
 
   constructor(
-    message: string,
+    message?: string,
     options?: {
       /**
        * The underlying cause of the error, if any.
@@ -26,7 +26,7 @@ export class NonRetriableError extends Error {
       cause?: unknown;
     },
   ) {
-    super(message);
+    super(message ?? "Non-retriable error");
 
     this.cause = options?.cause;
 
