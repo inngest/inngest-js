@@ -223,6 +223,9 @@ export namespace Middleware {
     /**
      * Called each time a step successfully completes. Only called for `step.run`
      * and `step.sendEvent`. Never called for memoized step outputs.
+     *
+     * Calls after the `wrapStep` chain resolves, so `data` reflects any
+     * transformations applied by `wrapStep` middleware.
      */
     onStepEnd?(arg: Middleware.OnStepEndArgs): void;
 
@@ -268,6 +271,11 @@ export namespace Middleware {
      * Returns a callback that receives `{ next }` and must call `next()` to
      * execute the inner handler. Uses onion/callback-chain pattern (same as
      * `wrapStep`).
+     *
+     * **Important:** `next()` only resolves when the function completes. On
+     * requests where a fresh step is discovered, control flow is interrupted
+     * and `next()` never resolves. Use `try/finally` for cleanup that must
+     * run on every request.
      */
     wrapFunctionHandler?(): WrapFunctionHandlerReturn;
 
