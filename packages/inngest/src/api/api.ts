@@ -473,6 +473,7 @@ export class InngestApi {
     runId: string;
     event: APIStepPayload;
     executionVersion: ExecutionVersion;
+    retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({
@@ -481,6 +482,7 @@ export class InngestApi {
       steps: args.steps,
       ts: new Date().valueOf(),
       request_version: args.executionVersion,
+      retries: args.retries,
     });
 
     const result = await this.req("/v1/checkpoint", {
