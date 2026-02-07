@@ -47,8 +47,8 @@ export const extendProvider = (
   behaviour: Behaviour,
 ): { success: true; processor: InngestSpanProcessor } | { success: false } => {
   // Attempt to add our processor and export to the existing provider
-  const existingProvider = trace.getTracerProvider();
-  if (!existingProvider) {
+  const globalProvider = trace.getTracerProvider();
+  if (!globalProvider) {
     if (behaviour !== "auto") {
       console.warn(
         'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
@@ -58,7 +58,16 @@ export const extendProvider = (
     return { success: false };
   }
 
+  // trace.getTracerProvider() returns a ProxyTracerProvider wrapper
+  // Unwrap it to get the actual provider.
+  const existingProvider =
+    "getDelegate" in globalProvider &&
+    typeof globalProvider.getDelegate === "function"
+      ? globalProvider.getDelegate()
+      : globalProvider;
+
   if (
+    !existingProvider ||
     !("addSpanProcessor" in existingProvider) ||
     typeof existingProvider.addSpanProcessor !== "function"
   ) {
