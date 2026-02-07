@@ -6,7 +6,6 @@ import type {
   Context,
   EventPayload,
   StepOptions,
-  StepOptionsOrId,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { createStepTools } from "../InngestStepTools.ts";
@@ -141,6 +140,21 @@ export namespace Middleware {
     data: unknown;
   }>;
 
+  /**
+   * The argument passed to `onRunStart`.
+   */
+  export type OnRunStartArgs = DeepReadonly<{ ctx: Context.Any }>;
+
+  /**
+   * The argument passed to `onRunEnd`.
+   */
+  export type OnRunEndArgs = DeepReadonly<{ ctx: Context.Any; data: unknown }>;
+
+  /**
+   * The argument passed to `onRunError`.
+   */
+  export type OnRunErrorArgs = DeepReadonly<{ ctx: Context.Any; error: Error }>;
+
   export type StepKind =
     | "invoke"
     | "run"
@@ -240,6 +254,26 @@ export namespace Middleware {
      * `step.run` and `step.sendEvent`.
      */
     onStepStart?(arg: Middleware.OnStepStartArgs): void;
+
+    /**
+     * Called once per run on the very first request (0 memoized steps,
+     * attempt 0). Does NOT fire on subsequent requests where steps are
+     * being replayed.
+     */
+    onRunStart?(arg: Middleware.OnRunStartArgs): void;
+
+    /**
+     * Called when the function completes successfully. Receives the return
+     * value (after `wrapFunctionHandler` transformations). Does NOT fire when
+     * the function errors — `onRunError` fires instead.
+     */
+    onRunEnd?(arg: Middleware.OnRunEndArgs): void;
+
+    /**
+     * Called when the function throws an error. Receives the error instance.
+     * Does NOT fire when the function succeeds — `onRunEnd` fires instead.
+     */
+    onRunError?(arg: Middleware.OnRunErrorArgs): void;
 
     /**
      * Called when passing input to a client method. Currently, this is only for

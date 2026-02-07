@@ -73,6 +73,18 @@ test("all hooks fire in correct order with 2 middleware", async () => {
       override onStepError() {
         state.logs.push(`onStepError (${name})`);
       }
+
+      override onRunStart() {
+        state.logs.push(`onRunStart (${name})`);
+      }
+
+      override onRunEnd() {
+        state.logs.push(`onRunEnd (${name})`);
+      }
+
+      override onRunError() {
+        state.logs.push(`onRunError (${name})`);
+      }
     };
   }
 
@@ -117,6 +129,8 @@ test("all hooks fire in correct order with 2 middleware", async () => {
     "wrapRequest: before (mw2)",
     "transformFunctionInput (mw1)",
     "transformFunctionInput (mw2)",
+    "onRunStart (mw1)",
+    "onRunStart (mw2)",
     "onMemoizationEnd (mw1)", // Fires immediately (no memoized state)
     "onMemoizationEnd (mw2)",
     "wrapFunctionHandler: before (mw1)",
@@ -134,6 +148,7 @@ test("all hooks fire in correct order with 2 middleware", async () => {
     // NOTE: wrapFunctionHandler "after" does NOT fire here. Step discovery
     // interrupts the function via control flow, so next() in
     // wrapFunctionHandler never resolves. Use try/finally for cleanup.
+    // onRunEnd does NOT fire here either (interrupted).
     "wrapRequest: after (mw2)",
     "wrapRequest: after (mw1)",
 
@@ -142,6 +157,7 @@ test("all hooks fire in correct order with 2 middleware", async () => {
     "wrapRequest: before (mw2)",
     "transformFunctionInput (mw1)",
     "transformFunctionInput (mw2)",
+    // onRunStart does NOT fire here (memoized steps present)
     "wrapFunctionHandler: before (mw1)",
     "wrapFunctionHandler: before (mw2)",
     "fn: top",
@@ -154,6 +170,8 @@ test("all hooks fire in correct order with 2 middleware", async () => {
     "fn: bottom",
     "wrapFunctionHandler: after (mw2)", // Only unwinds when function completes
     "wrapFunctionHandler: after (mw1)",
+    "onRunEnd (mw1)",
+    "onRunEnd (mw2)",
     "wrapRequest: after (mw2)",
     "wrapRequest: after (mw1)",
   ]);

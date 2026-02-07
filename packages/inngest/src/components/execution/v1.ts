@@ -1091,6 +1091,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const fnInputResult = this.middlewareManager.transformFunctionInput();
     this.applyFunctionInputMutations(fnInputResult);
 
+    if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
+      this.middlewareManager.onRunStart();
+    }
+
     if (this.state.allStateUsed()) {
       this.maybeCallOnMemoizationEnd();
     }
@@ -1104,10 +1108,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     runAsPromise(runHandler)
       .then((data) => {
+        this.middlewareManager.onRunEnd(data);
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch((error) => {
         const err = error instanceof Error ? error : new Error(String(error));
+        this.middlewareManager.onRunError(err);
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
   }

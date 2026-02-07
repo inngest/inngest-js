@@ -262,6 +262,33 @@ export class MiddlewareManager {
       }
     }
   }
+
+  onRunStart(): void {
+    const ctx = this.fnArg;
+    for (const mw of this.middleware) {
+      if (mw?.onRunStart) {
+        mw.onRunStart({ ctx });
+      }
+    }
+  }
+
+  onRunEnd(data: unknown): void {
+    const ctx = this.fnArg;
+    for (const mw of this.middleware) {
+      if (mw?.onRunEnd) {
+        mw.onRunEnd({ ctx, data });
+      }
+    }
+  }
+
+  onRunError(error: Error): void {
+    const ctx = this.fnArg;
+    for (const mw of this.middleware) {
+      if (mw?.onRunError) {
+        mw.onRunError({ ctx, error });
+      }
+    }
+  }
 }
 
 function stepKindFromOpCode(
