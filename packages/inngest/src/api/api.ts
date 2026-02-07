@@ -482,6 +482,7 @@ export class InngestApi {
       steps: args.steps,
       ts: new Date().valueOf(),
       request_version: args.executionVersion,
+      retries: args.retries,
     });
 
     const result = await this.req("/v1/checkpoint", {
