@@ -156,7 +156,17 @@ export namespace Middleware {
   /**
    * The argument passed to `onRunError`.
    */
-  export type OnRunErrorArgs = DeepReadonly<{ ctx: Context.Any; error: Error }>;
+  export type OnRunErrorArgs = DeepReadonly<{
+    ctx: Context.Any;
+    error: Error;
+
+    /**
+     * Whether this is the final attempt for the function, meaning retries are
+     * exhausted or the error is non-retriable. When `false`, the function will
+     * be retried.
+     */
+    isFinalAttempt: boolean;
+  }>;
 
   export type StepKind =
     | "invoke"

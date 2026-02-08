@@ -285,11 +285,11 @@ export class MiddlewareManager {
     }
   }
 
-  onRunError(error: Error): void {
+  onRunError(error: Error, isFinalAttempt: boolean): void {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunError) {
-        mw.onRunError({ ctx, error });
+        mw.onRunError({ ctx, error, isFinalAttempt });
       }
     }
   }

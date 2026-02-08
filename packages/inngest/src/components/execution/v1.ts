@@ -1117,7 +1117,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       })
       .catch((error) => {
         const err = error instanceof Error ? error : new Error(String(error));
-        this.middlewareManager.onRunError(err);
+
+        let isFinalAttempt = false;
+
+        if (
+          err instanceof NonRetriableError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (err as any)?.name === "NonRetriableError"
+        ) {
+          isFinalAttempt = true;
+        } else if (
+          this.fnArg.maxAttempts &&
+          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
+        ) {
+          isFinalAttempt = true;
+        }
+
+        this.middlewareManager.onRunError(err, isFinalAttempt);
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
   }
