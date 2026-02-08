@@ -975,7 +975,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           const metadata = this.state.metadata?.get(id);
 
           // Call onStepError for each middleware
-          this.middlewareManager.onStepError(stepInfo, error);
+          this.middlewareManager.onStepError(
+            stepInfo,
+            error,
+            !errorIsRetriable,
+          );
 
           if (errorIsRetriable) {
             return {
@@ -1050,7 +1054,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const metadata = this.state.metadata?.get(id);
 
         // Call onStepError for each middleware
-        this.middlewareManager.onStepError(stepInfo, error);
+        this.middlewareManager.onStepError(stepInfo, error, !errorIsRetriable);
 
         if (errorIsRetriable) {
           return {

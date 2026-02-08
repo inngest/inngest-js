@@ -246,11 +246,15 @@ export class MiddlewareManager {
     }
   }
 
-  onStepError(stepInfo: Middleware.StepInfo, error: Error): void {
+  onStepError(
+    stepInfo: Middleware.StepInfo,
+    error: Error,
+    isFinalAttempt: boolean,
+  ): void {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepError) {
-        mw.onStepError({ stepInfo, ctx, error });
+        mw.onStepError({ stepInfo, ctx, error, isFinalAttempt });
       }
     }
   }

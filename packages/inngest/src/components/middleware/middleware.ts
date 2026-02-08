@@ -2,11 +2,7 @@ import type z from "zod";
 import type { stepsSchemas } from "../../api/schema.ts";
 import type { ExecutionVersion } from "../../helpers/consts.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
-import type {
-  Context,
-  EventPayload,
-  StepOptions,
-} from "../../types.ts";
+import type { Context, EventPayload, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { createStepTools } from "../InngestStepTools.ts";
 
@@ -129,6 +125,13 @@ export namespace Middleware {
     stepInfo: StepInfo;
     ctx: Context.Any;
     error: Error;
+
+    /**
+     * Whether this is the final attempt for the step, meaning retries are
+     * exhausted or the error is non-retriable. When `false`, the step will be
+     * retried.
+     */
+    isFinalAttempt: boolean;
   }>;
 
   /**
