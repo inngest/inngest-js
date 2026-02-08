@@ -1,24 +1,57 @@
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../index.ts";
-import { createTestApp } from "../../devServerTestHarness.ts";
-import {
-  anyContext,
-  randomSuffix,
-  testNameFromFileUrl,
-  waitFor,
-} from "../utils.ts";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { createTestApp } from "../../../devServerTestHarness.ts";
+import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("fires when function completes with data", async () => {
+test("no steps", async () => {
   const state = {
     done: false,
-    calls: [] as Middleware.OnRunEndArgs[],
+    logs: [] as string[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd(args: Middleware.OnRunEndArgs) {
-      state.calls.push(args);
+    override onMemoizationEnd() {
+      state.logs.push("mw");
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    { event: eventName },
+    async () => {
+      state.logs.push("fn: top");
+      state.done = true;
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await waitFor(async () => {
+    expect(state.done).toBe(true);
+  });
+
+  expect(state.logs).toEqual(["mw", "fn: top"]);
+});
+
+test("1 step", async () => {
+  const state = {
+    done: false,
+    logs: [] as string[],
+  };
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onMemoizationEnd() {
+      state.logs.push("mw");
     }
   }
 
@@ -33,9 +66,12 @@ test("fires when function completes with data", async () => {
     { id: "fn", retries: 0 },
     { event: eventName },
     async ({ step }) => {
-      await step.run("my-step", () => "step result");
+      state.logs.push("fn: top");
+      await step.run("my-step", () => {
+        state.logs.push("step: inside");
+      });
+      state.logs.push("fn: bottom");
       state.done = true;
-      return "fn result";
     },
   );
 
@@ -46,24 +82,28 @@ test("fires when function completes with data", async () => {
     expect(state.done).toBe(true);
   });
 
-  // Only fires on the completing request (request 2), not on step discovery (request 1)
-  expect(state.calls).toHaveLength(1);
-  expect(state.calls[0]).toEqual({ ctx: anyContext, data: "fn result" });
+  expect(state.logs).toEqual([
+    // 1st request
+    "mw",
+    "fn: top",
+    "step: inside",
+
+    // 3rd request
+    "fn: top",
+    "mw",
+    "fn: bottom",
+  ]);
 });
 
-test("does NOT fire when function errors", async () => {
+test("2 steps", async () => {
   const state = {
     done: false,
-    endCalls: 0,
-    errorCalls: 0,
+    logs: [] as string[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd() {
-      state.endCalls++;
-    }
-    override onRunError() {
-      state.errorCalls++;
+    override onMemoizationEnd() {
+      state.logs.push("mw");
     }
   }
 
@@ -77,9 +117,17 @@ test("does NOT fire when function errors", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
+    async ({ step }) => {
+      state.logs.push("fn: top");
+      await step.run("step-1", () => {
+        state.logs.push("step-1: inside");
+      });
+      state.logs.push("fn: between steps");
+      await step.run("step-2", () => {
+        state.logs.push("step-2: inside");
+      });
+      state.logs.push("fn: bottom");
       state.done = true;
-      throw new Error("fn error");
     },
   );
 
@@ -90,45 +138,22 @@ test("does NOT fire when function errors", async () => {
     expect(state.done).toBe(true);
   });
 
-  expect(state.endCalls).toBe(0);
-  expect(state.errorCalls).toBe(1);
-});
+  expect(state.logs).toEqual([
+    // 1st request
+    "mw",
+    "fn: top",
+    "step-1: inside",
 
-test("fires with no steps", async () => {
-  const state = {
-    done: false,
-    calls: [] as Middleware.OnRunEndArgs[],
-  };
+    // 2nd request
+    "fn: top",
+    "mw",
+    "fn: between steps",
+    "step-2: inside",
 
-  class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd(args: Middleware.OnRunEndArgs) {
-      state.calls.push(args);
-    }
-  }
-
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [TestMiddleware],
-  });
-
-  const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
-    async () => {
-      state.done = true;
-      return "no-step result";
-    },
-  );
-
-  await createTestApp({ client, functions: [fn] });
-
-  await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
-
-  expect(state.calls).toHaveLength(1);
-  expect(state.calls[0]).toEqual({ ctx: anyContext, data: "no-step result" });
+    // 3rd request
+    "fn: top",
+    "fn: between steps",
+    "mw",
+    "fn: bottom",
+  ]);
 });

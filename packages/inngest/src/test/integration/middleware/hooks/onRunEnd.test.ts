@@ -1,24 +1,24 @@
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../index.ts";
-import { createTestApp } from "../../devServerTestHarness.ts";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../utils.ts";
+} from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("fires once per run (not on memoized requests)", async () => {
+test("fires when function completes with data", async () => {
   const state = {
     done: false,
-    count: 0,
+    calls: [] as Middleware.OnRunEndArgs[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunStart(args: Middleware.OnRunStartArgs) {
-      state.count++;
+    override onRunEnd(args: Middleware.OnRunEndArgs) {
+      state.calls.push(args);
     }
   }
 
@@ -33,8 +33,9 @@ test("fires once per run (not on memoized requests)", async () => {
     { id: "fn", retries: 0 },
     { event: eventName },
     async ({ step }) => {
-      await step.run("my-step", () => "result");
+      await step.run("my-step", () => "step result");
       state.done = true;
+      return "fn result";
     },
   );
 
@@ -45,18 +46,24 @@ test("fires once per run (not on memoized requests)", async () => {
     expect(state.done).toBe(true);
   });
 
-  expect(state.count).toEqual(1);
+  // Only fires on the completing request (request 2), not on step discovery (request 1)
+  expect(state.calls).toHaveLength(1);
+  expect(state.calls[0]).toEqual({ ctx: anyContext, data: "fn result" });
 });
 
-test("fires even when function errors", async () => {
+test("does NOT fire when function errors", async () => {
   const state = {
     done: false,
-    count: 0,
+    endCalls: 0,
+    errorCalls: 0,
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunStart() {
-      state.count++;
+    override onRunEnd() {
+      state.endCalls++;
+    }
+    override onRunError() {
+      state.errorCalls++;
     }
   }
 
@@ -83,18 +90,19 @@ test("fires even when function errors", async () => {
     expect(state.done).toBe(true);
   });
 
-  expect(state.count).toBe(1);
+  expect(state.endCalls).toBe(0);
+  expect(state.errorCalls).toBe(1);
 });
 
 test("fires with no steps", async () => {
   const state = {
     done: false,
-    count: 0,
+    calls: [] as Middleware.OnRunEndArgs[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunStart() {
-      state.count++;
+    override onRunEnd(args: Middleware.OnRunEndArgs) {
+      state.calls.push(args);
     }
   }
 
@@ -110,7 +118,7 @@ test("fires with no steps", async () => {
     { event: eventName },
     async () => {
       state.done = true;
-      return "hello";
+      return "no-step result";
     },
   );
 
@@ -121,6 +129,6 @@ test("fires with no steps", async () => {
     expect(state.done).toBe(true);
   });
 
-  // No steps = 1 request = 1 call
-  expect(state.count).toBe(1);
+  expect(state.calls).toHaveLength(1);
+  expect(state.calls[0]).toEqual({ ctx: anyContext, data: "no-step result" });
 });

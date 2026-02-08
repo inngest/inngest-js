@@ -1,23 +1,30 @@
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../index.ts";
-import { createTestApp } from "../../devServerTestHarness.ts";
+import { Inngest, Middleware, StepError } from "../../../../index.ts";
+import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../utils.ts";
+} from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
+class MyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
 test("1 step", async () => {
   const state = {
-    calls: [] as Middleware.OnStepEndArgs[],
     done: false,
+    calls: [] as Middleware.OnStepErrorArgs[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd(args: Middleware.OnStepEndArgs) {
+    override onStepError(args: Middleware.OnStepErrorArgs) {
       state.calls.push(args);
     }
   }
@@ -32,10 +39,13 @@ test("1 step", async () => {
     { id: "fn", retries: 0 },
     { event: eventName },
     async ({ step }) => {
-      await step.run("my-step", () => {
-        return "step result";
-      });
-      state.done = true;
+      try {
+        await step.run("my-step", () => {
+          throw new MyError("my error");
+        });
+      } catch {
+        state.done = true;
+      }
     },
   );
 
@@ -48,8 +58,6 @@ test("1 step", async () => {
 
   expect(state.calls).toEqual([
     {
-      data: "step result",
-      ctx: anyContext,
       stepInfo: {
         hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
         input: undefined,
@@ -57,85 +65,25 @@ test("1 step", async () => {
         options: { id: "my-step", name: "my-step" },
         stepKind: "run",
       },
+      ctx: anyContext,
+      error: expect.any(MyError),
+      isFinalAttempt: true,
     },
   ]);
+  const { error } = state.calls[0]!;
+  expect(error.name).toBe("MyError");
+  expect(error.message).toBe("my error");
 });
 
-test("multiple steps", async () => {
+test("multiple steps with errors", async () => {
   const state = {
-    calls: [] as Middleware.OnStepEndArgs[],
     done: false,
+    calls: [] as Middleware.OnStepErrorArgs[],
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd(args: Middleware.OnStepEndArgs) {
+    override onStepError(args: Middleware.OnStepErrorArgs) {
       state.calls.push(args);
-    }
-  }
-
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [TestMiddleware],
-  });
-
-  const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
-    async ({ step }) => {
-      await step.run("step-1", () => "result 1");
-      await step.sendEvent("step-2", { name: "test-event", data: {} });
-      state.done = true;
-    },
-  );
-
-  await createTestApp({ client, functions: [fn] });
-
-  await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
-
-  expect(state.calls).toEqual([
-    {
-      data: "result 1",
-      ctx: anyContext,
-      stepInfo: {
-        hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
-        input: undefined,
-        memoized: false,
-        options: { id: "step-1", name: "step-1" },
-        stepKind: "run",
-      },
-    },
-    {
-      data: { ids: expect.any(Array) },
-      ctx: anyContext,
-      stepInfo: {
-        hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
-        input: undefined,
-        memoized: false,
-        options: { id: "step-2", name: "step-2" },
-        stepKind: "sendEvent",
-      },
-    },
-  ]);
-});
-
-test("step error does not call onStepEnd", async () => {
-  const state = {
-    done: false,
-    endCalls: 0,
-    errorCalls: 0,
-  };
-
-  class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd() {
-      state.endCalls++;
-    }
-    override onStepError() {
-      state.errorCalls++;
     }
   }
 
@@ -151,10 +99,17 @@ test("step error does not call onStepEnd", async () => {
     { event: eventName },
     async ({ step }) => {
       try {
-        await step.run("failing-step", () => {
-          throw new Error("step failed");
+        await step.run("step-1", () => {
+          throw new MyError("error 1");
         });
       } catch {}
+
+      try {
+        await step.run("step-2", () => {
+          throw new MyError("error 2");
+        });
+      } catch {}
+
       state.done = true;
     },
   );
@@ -166,19 +121,51 @@ test("step error does not call onStepEnd", async () => {
     expect(state.done).toBe(true);
   });
 
-  expect(state.endCalls).toBe(0);
-  expect(state.errorCalls).toBe(1);
+  expect(state.calls).toEqual([
+    {
+      error: expect.any(Error),
+      ctx: anyContext,
+      stepInfo: {
+        hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
+        input: undefined,
+        memoized: false,
+        options: { id: "step-1", name: "step-1" },
+        stepKind: "run",
+      },
+      isFinalAttempt: true,
+    },
+    {
+      error: expect.any(Error),
+      ctx: anyContext,
+      stepInfo: {
+        hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
+        input: undefined,
+        memoized: false,
+        options: { id: "step-2", name: "step-2" },
+        stepKind: "run",
+      },
+      isFinalAttempt: true,
+    },
+  ]);
+
+  const step1Error = state.calls[0]!.error;
+  expect(step1Error.message).toBe("error 1");
+  expect(step1Error.name).toBe("MyError");
+
+  const step2Error = state.calls[1]!.error;
+  expect(step2Error.message).toBe("error 2");
+  expect(step2Error.name).toBe("MyError");
 });
 
-test("memoized step does not call onStepEnd", async () => {
+test("no errors", async () => {
   const state = {
-    calls: 0,
+    count: 0,
     done: false,
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd() {
-      state.calls++;
+    override onStepError() {
+      state.count++;
     }
   }
 
@@ -193,10 +180,7 @@ test("memoized step does not call onStepEnd", async () => {
     { id: "fn", retries: 0 },
     { event: eventName },
     async ({ step }) => {
-      // First step will be executed, then memoized on second run
-      await step.run("step-1", () => "result 1");
-      // Second step triggers a new run where step-1 is memoized
-      await step.run("step-2", () => "result 2");
+      await step.run("step-1", () => "success");
       state.done = true;
     },
   );
@@ -207,6 +191,76 @@ test("memoized step does not call onStepEnd", async () => {
   await waitFor(async () => {
     expect(state.done).toBe(true);
   });
+  expect(state.count).toEqual(0);
+});
 
-  expect(state.calls).toBe(2);
+test("multiple attempts", async () => {
+  const state = {
+    done: false,
+    calls: [] as Middleware.OnStepErrorArgs[],
+    caughtError: null as unknown,
+  };
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onStepError(args: Middleware.OnStepErrorArgs) {
+      state.calls.push(args);
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 1 },
+    { event: eventName },
+    async ({ step }) => {
+      try {
+        await step.run("my-step", () => {
+          throw new MyError("my error");
+        });
+      } catch (err) {
+        state.caughtError = err;
+        state.done = true;
+      }
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await waitFor(async () => {
+    expect(state.done).toBe(true);
+  });
+
+  expect(state.calls).toHaveLength(2);
+  expect(state.calls[0]).toEqual({
+    stepInfo: {
+      hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
+      input: undefined,
+      memoized: false,
+      options: { id: "my-step", name: "my-step" },
+      stepKind: "run",
+    },
+    ctx: anyContext,
+    error: expect.any(MyError),
+    isFinalAttempt: false,
+  });
+  expect(state.calls[1]).toEqual({
+    stepInfo: {
+      hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
+      input: undefined,
+      memoized: false,
+      options: { id: "my-step", name: "my-step" },
+      stepKind: "run",
+    },
+    ctx: anyContext,
+    error: expect.any(MyError),
+    isFinalAttempt: true,
+  });
+  const { error } = state.calls[0]!;
+  expect(error.name).toBe("MyError");
+  expect(error.message).toBe("my error");
 });
