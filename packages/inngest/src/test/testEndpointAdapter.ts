@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { Inngest } from "../components/Inngest.ts";
 import { InngestEndpointAdapter } from "../components/InngestEndpointAdapter.ts";
+import { InngestMiddleware } from "../components/InngestMiddleware.ts";
 import { createClient } from "./helpers.ts";
 
 export interface NormalizedResponse {
@@ -27,13 +28,14 @@ export function testEndpointAdapter(
 ): void {
   const { invokeProxy, lifecycleChanges } = options;
 
-  const createProxyClient = () =>
-    createClient({ id: "test", endpointAdapter });
+  const createProxyClient = (
+    opts?: Partial<ConstructorParameters<typeof Inngest>[0]>,
+  ) => createClient({ id: "test", endpointAdapter, ...opts });
 
   const mockSuccessAPI = (data: unknown = { data: "result" }) =>
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(data), { status: 200 }),
-    );
+    vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
 
   describe(`${name} endpointAdapter`, () => {
     lifecycleChanges?.();
@@ -188,8 +190,7 @@ export function testEndpointAdapter(
           method: "GET",
         });
 
-        const ct =
-          res.headers["content-type"] ?? res.headers["Content-Type"];
+        const ct = res.headers["content-type"] ?? res.headers["Content-Type"];
         const origin =
           res.headers["access-control-allow-origin"] ??
           res.headers["Access-Control-Allow-Origin"];
@@ -239,34 +240,39 @@ export function testEndpointAdapter(
         });
 
         expect(res.status).toBe(500);
-        expect(JSON.parse(res.body).error).toBe(
-          "Failed to fetch run output",
-        );
+        expect(JSON.parse(res.body).error).toBe("Failed to fetch run output");
       });
 
-      test("response body uses decryptProxyResult output", async () => {
+      test("data passes through decryptProxyResult without middleware", async () => {
         const client = createProxyClient();
         client["inngestApi"]["getRunOutput"] = mockSuccessAPI({
           data: "raw-from-api",
         });
-        client["decryptProxyResult"] = vi
-          .fn()
-          .mockResolvedValue({ data: "after-decrypt" });
 
         const res = await invokeProxy(client, {
           url: "https://example.com/api/poll?runId=r&token=t",
           method: "GET",
         });
 
-        expect(JSON.parse(res.body)).toEqual({ data: "after-decrypt" });
+        expect(JSON.parse(res.body)).toEqual({ data: "raw-from-api" });
       });
 
-      test("decryptProxyResult exception returns 500", async () => {
-        const client = createProxyClient();
-        client["inngestApi"]["getRunOutput"] = mockSuccessAPI();
-        client["decryptProxyResult"] = vi
-          .fn()
-          .mockRejectedValue(new Error("Decryption failed"));
+      test("middleware exception in decryptProxyResult returns 500", async () => {
+        const failingMiddleware = new InngestMiddleware({
+          name: "test-failing-decrypt",
+          init: () => ({
+            onFunctionRun: () => ({
+              transformInput: () => {
+                throw new Error("Decryption failed");
+              },
+            }),
+          }),
+        });
+
+        const client = createProxyClient({ middleware: [failingMiddleware] });
+        client["inngestApi"]["getRunOutput"] = mockSuccessAPI({
+          data: "encrypted-payload",
+        });
 
         const res = await invokeProxy(client, {
           url: "https://example.com/api/poll?runId=r&token=t",
