@@ -1,7 +1,7 @@
 export {
   buildWrapRequestChain,
   MiddlewareManager,
-  type PreparedStepHandler,
+  type PreparedStep,
 } from "./manager.ts";
 export {
   type DefaultStaticTransform,

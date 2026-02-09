@@ -1724,13 +1724,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
     }
 
-    const originalId = opId.id;
+    const originalId = opId.userland.id;
     let hashedId = _internals.hashId(opId.id);
 
     // 2. Preliminary memoization lookup for middleware to see correct memoized status
     const preliminaryMemoized = Boolean(this.state.stepState[hashedId]);
 
-    // 3. Apply middleware (stepKind derivation, input extraction, deferred handler, wrapping)
+    // 3. Apply middleware (stepKind derivation, input extraction, deferred handler)
     const prepared = this.middlewareManager.applyToStep({
       op: opId.op,
       opts: opId.opts,
@@ -1739,8 +1739,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       displayName: opId.displayName ?? opId.userland.id,
       memoized: preliminaryMemoized,
     });
-    const { stepInfo } = prepared;
-    const { wrappedHandler, setActualHandler } = prepared;
+    const { stepInfo, entryPoint, setActualHandler } = prepared;
 
     // 4. If middleware changed the step ID, re-resolve collisions
     if (stepInfo.options.id !== originalId) {
@@ -1786,6 +1785,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       // ID may have changed to a non-memoized ID
       stepInfo.memoized = false;
     }
+
+    // 6. Build wrapStep chain after all mutations so middleware sees final values
+    const wrappedHandler = this.middlewareManager.wrapStepHandler(
+      entryPoint,
+      stepInfo,
+    );
 
     return {
       hashedId,

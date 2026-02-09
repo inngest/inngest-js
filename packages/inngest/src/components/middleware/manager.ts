@@ -21,8 +21,8 @@ export interface ApplyToStepInput {
   memoized: boolean;
 }
 
-export interface PreparedStepHandler {
-  wrappedHandler: () => Promise<unknown>;
+export interface PreparedStep {
+  entryPoint: () => Promise<unknown>;
   setActualHandler: (handler: () => Promise<unknown>) => void;
   stepInfo: Middleware.StepInfo;
 }
@@ -51,10 +51,12 @@ export class MiddlewareManager {
   }
 
   /**
-   * Consolidates step-kind derivation, step-input extraction, deferred handler
-   * creation, and middleware wrapping into a single call.
+   * Derives step-kind, extracts input, runs transformStepInput middleware,
+   * and creates a deferred handler entry point. Does NOT build the wrapStep
+   * chain — the caller should do that after any post-processing (e.g. ID
+   * collision resolution) so middleware sees final values.
    */
-  applyToStep(input: ApplyToStepInput): PreparedStepHandler {
+  applyToStep(input: ApplyToStepInput): PreparedStep {
     const stepKind = stepKindFromOpCode(input.op, input.opts);
     const stepInput = stepInputFromOp(stepKind, input.opts);
 
@@ -79,7 +81,7 @@ export class MiddlewareManager {
 
     // Deferred handler pattern — actual handler set later based on memoization
     let actualHandler: (() => Promise<unknown>) | undefined;
-    const middlewareEntryPoint = async () => {
+    const entryPoint = async () => {
       if (!actualHandler) {
         throw new Error("Handler not initialized");
       }
@@ -89,10 +91,8 @@ export class MiddlewareManager {
       actualHandler = handler;
     };
 
-    const wrappedHandler = this.wrapStepHandler(middlewareEntryPoint, stepInfo);
-
     return {
-      wrappedHandler,
+      entryPoint,
       setActualHandler,
       stepInfo,
     };
@@ -161,21 +161,14 @@ export class MiddlewareManager {
    * onion layering, same pattern as wrapStepHandler).
    */
   wrapRunHandler(handler: () => Promise<unknown>): () => Promise<unknown> {
-    const transforms: Middleware.WrapFunctionHandlerReturn[] = [];
+    const ctx = this.fnArg;
+    let chain: () => Promise<unknown> = handler;
     for (let i = this.middleware.length - 1; i >= 0; i--) {
       const mw = this.middleware[i];
       if (mw?.wrapFunctionHandler) {
-        transforms.push(mw.wrapFunctionHandler());
+        const next = chain;
+        chain = () => mw.wrapFunctionHandler!(next, { ctx });
       }
-    }
-
-    if (transforms.length === 0) return handler;
-
-    const ctx = this.fnArg;
-    let chain: () => Promise<unknown> = handler;
-    for (const transform of transforms) {
-      const next = chain;
-      chain = () => transform({ next, ctx });
     }
     return chain;
   }
@@ -214,29 +207,15 @@ export class MiddlewareManager {
     handler: () => Promise<unknown>,
     stepInfo: Middleware.StepInfo,
   ): () => Promise<unknown> {
-    // Collect transform functions by calling wrapStep
-    // in reverse order (so first middleware becomes outermost in chain)
-    const transforms: Middleware.WrapStepReturn[] = [];
+    const ctx = this.fnArg;
+    let chain: () => Promise<unknown> = handler;
     for (let i = this.middleware.length - 1; i >= 0; i--) {
       const mw = this.middleware[i];
       if (mw?.wrapStep) {
-        transforms.push(mw.wrapStep(stepInfo));
+        const next = chain;
+        chain = () => mw.wrapStep!(next, { stepInfo, ctx });
       }
     }
-
-    if (transforms.length === 0) {
-      return handler;
-    }
-
-    // Build next chain from innermost to outermost.
-    let chain: () => Promise<unknown> = handler;
-
-    const ctx = this.fnArg;
-    for (const transform of transforms) {
-      const next = chain;
-      chain = () => transform({ next, ctx });
-    }
-
     return chain;
   }
 
@@ -338,7 +317,7 @@ function stepInputFromOp(
 /**
  * Build an onion-style middleware chain for `wrapRequest`.
  *
- * Collects transforms in reverse order (so first middleware is outermost)
+ * Iterates in reverse order (so first middleware is outermost)
  * and returns a zero-arg function that kicks off the chain.
  */
 export function buildWrapRequestChain(
@@ -346,20 +325,13 @@ export function buildWrapRequestChain(
   handler: () => Promise<Middleware.Response>,
   requestInfo: Middleware.Request,
 ): () => Promise<Middleware.Response> {
-  const transforms: Middleware.WrapRequestReturn[] = [];
+  let chain: () => Promise<Middleware.Response> = handler;
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (mw?.wrapRequest) {
-      transforms.push(mw.wrapRequest({ requestInfo }));
+      const next = chain;
+      chain = () => mw.wrapRequest!(next, { requestInfo });
     }
-  }
-
-  if (transforms.length === 0) return handler;
-
-  let chain: () => Promise<Middleware.Response> = handler;
-  for (const transform of transforms) {
-    const next = chain;
-    chain = () => transform({ next });
   }
   return chain;
 }

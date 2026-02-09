@@ -1,6 +1,11 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
-import { Inngest, invoke, Middleware } from "../../../../index.ts";
+import {
+  type Context,
+  Inngest,
+  invoke,
+  Middleware,
+} from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
@@ -27,19 +32,18 @@ describe("output", async () => {
     };
 
     class MW extends Middleware.BaseMiddleware {
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          const output = await next();
-          state.hook.outputs.push(output);
-          if (stepInfo.memoized) {
-            return output;
-          }
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        const output = await next();
+        state.hook.outputs.push(output);
+        if (stepInfo.memoized) {
+          return output;
+        }
 
-          return `wrapped: ${output}`;
-        };
-      }
+        return `wrapped: ${output}`;
+      };
     }
 
     const eventName = randomSuffix("evt");
@@ -86,35 +90,33 @@ describe("output", async () => {
     };
 
     class MW1 extends Middleware.BaseMiddleware {
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          const output = await next();
-          state.hook.outputs.push(output);
-          if (stepInfo.memoized) {
-            return output;
-          }
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        const output = await next();
+        state.hook.outputs.push(output);
+        if (stepInfo.memoized) {
+          return output;
+        }
 
-          return `mw1: ${output}`;
-        };
-      }
+        return `mw1: ${output}`;
+      };
     }
 
     class MW2 extends Middleware.BaseMiddleware {
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          const output = await next();
-          state.hook.outputs.push(output);
-          if (stepInfo.memoized) {
-            return output;
-          }
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        const output = await next();
+        state.hook.outputs.push(output);
+        if (stepInfo.memoized) {
+          return output;
+        }
 
-          return `mw2: ${output}`;
-        };
-      }
+        return `mw2: ${output}`;
+      };
     }
 
     const eventName = randomSuffix("evt");
@@ -182,21 +184,20 @@ describe("error", async () => {
     };
 
     class MW extends Middleware.BaseMiddleware {
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          try {
-            await next();
-          } catch (error) {
-            state.mw.errors.push(error);
-            if (stepInfo.memoized) {
-              throw error;
-            }
-            throw new InsideMWError("wrapped", { cause: error });
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        try {
+          await next();
+        } catch (error) {
+          state.mw.errors.push(error);
+          if (stepInfo.memoized) {
+            throw error;
           }
-        };
-      }
+          throw new InsideMWError("wrapped", { cause: error });
+        }
+      };
     }
 
     const eventName = randomSuffix("evt");
@@ -257,39 +258,37 @@ describe("error", async () => {
     };
 
     class MW1 extends Middleware.BaseMiddleware {
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          try {
-            await next();
-          } catch (error) {
-            state.mw1.errors.push(error);
-            if (stepInfo.memoized) {
-              throw error;
-            }
-            throw new InsideMWError("mw1", { cause: error });
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        try {
+          await next();
+        } catch (error) {
+          state.mw1.errors.push(error);
+          if (stepInfo.memoized) {
+            throw error;
           }
-        };
-      }
+          throw new InsideMWError("mw1", { cause: error });
+        }
+      };
     }
 
     class MW2 extends Middleware.BaseMiddleware {
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          try {
-            await next();
-          } catch (error) {
-            state.mw2.errors.push(error);
-            if (stepInfo.memoized) {
-              throw error;
-            }
-            throw new InsideMWError("mw2", { cause: error });
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        try {
+          await next();
+        } catch (error) {
+          state.mw2.errors.push(error);
+          if (stepInfo.memoized) {
+            throw error;
           }
-        };
-      }
+          throw new InsideMWError("mw2", { cause: error });
+        }
+      };
     }
 
     const eventName = randomSuffix("evt");
@@ -354,11 +353,9 @@ test("wrap step handler", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapStep(): Middleware.WrapStepReturn {
-      return ({ next }) => {
-        state.handlerWrapped = true;
-        return next();
-      };
+    override wrapStep(next: () => Promise<unknown>) {
+      state.handlerWrapped = true;
+      return next();
     }
   }
 
@@ -397,24 +394,20 @@ test("multiple middleware in correct order (reverse/wrapping)", async () => {
   };
 
   class Mw1 extends Middleware.BaseMiddleware {
-    override wrapStep(): Middleware.WrapStepReturn {
-      return async ({ next }) => {
-        state.logs.push("mw1 before");
-        const result = await next();
-        state.logs.push("mw1 after");
-        return result;
-      };
+    override async wrapStep(next: () => Promise<unknown>) {
+      state.logs.push("mw1 before");
+      const result = await next();
+      state.logs.push("mw1 after");
+      return result;
     }
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
-    override wrapStep(): Middleware.WrapStepReturn {
-      return async ({ next }) => {
-        state.logs.push("mw2 before");
-        const result = await next();
-        state.logs.push("mw2 after");
-        return result;
-      };
+    override async wrapStep(next: () => Promise<unknown>) {
+      state.logs.push("mw2 before");
+      const result = await next();
+      state.logs.push("mw2 after");
+      return result;
     }
   }
 
@@ -464,15 +457,16 @@ test("called when both fresh and memoized", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapStep(
-      stepInfo: Middleware.StepInfo,
-    ): Middleware.WrapStepReturn {
+    override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+      next,
+      { stepInfo },
+    ) => {
       state.inputCalls.push({
         id: stepInfo.options.id,
         memoized: stepInfo.memoized,
       });
-      return ({ next }) => next();
-    }
+      return next();
+    };
   }
 
   const eventName = randomSuffix("evt");
@@ -538,8 +532,8 @@ describe("change step ID", async () => {
         return arg;
       }
 
-      override wrapStep(): Middleware.WrapStepReturn {
-        return ({ next }) => next();
+      override wrapStep(next: () => Promise<unknown>) {
+        return next();
       }
     }
 
@@ -636,8 +630,8 @@ describe("change step ID", async () => {
         return arg;
       }
 
-      override wrapStep(): Middleware.WrapStepReturn {
-        return ({ next }) => next();
+      override wrapStep(next: () => Promise<unknown>) {
+        return next();
       }
     }
 
@@ -741,34 +735,30 @@ test("bookend step.sleep", async () => {
       state.onStepStartCalls.push(arg);
     }
 
-    override wrapStep(
-      stepInfo: Middleware.StepInfo,
-    ): Middleware.WrapStepReturn {
+    override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+      next,
+      { stepInfo, ctx },
+    ) => {
       if (stepInfo.options.id.endsWith("-prepend")) {
-        return ({ next }) => next();
+        return next();
       }
 
       const prependStepId = stepInfo.options.id + "-prepend";
 
-      return async ({ next, ctx }) => {
-        state.beforeStep.output = await ctx.step.run(
-          prependStepId,
-          async () => {
-            state.beforeStep.insideCount++;
-            return state.beforeStep.insideCount;
-          },
-        );
+      state.beforeStep.output = await ctx.step.run(prependStepId, async () => {
+        state.beforeStep.insideCount++;
+        return state.beforeStep.insideCount;
+      });
 
-        // The normal step
-        const output = await next();
+      // The normal step
+      const output = await next();
 
-        state.afterStep.output = await ctx.step.run(prependStepId, async () => {
-          state.afterStep.insideCount++;
-          return state.afterStep.insideCount;
-        });
-        return output;
-      };
-    }
+      state.afterStep.output = await ctx.step.run(prependStepId, async () => {
+        state.afterStep.insideCount++;
+        return state.afterStep.insideCount;
+      });
+      return output;
+    };
   }
 
   const eventName = randomSuffix("evt");
@@ -823,29 +813,28 @@ test("bookend with steps", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapStep(
-      stepInfo: Middleware.StepInfo,
-    ): Middleware.WrapStepReturn {
+    override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+      next,
+      { stepInfo, ctx },
+    ) => {
       if (["before", "after"].includes(stepInfo.options.id)) {
-        return ({ next }) => next();
+        return next();
       }
 
-      return async ({ next, ctx }) => {
-        state.beforeStep.output = await ctx.step.run("before", async () => {
-          state.beforeStep.insideCount++;
-          return state.beforeStep.insideCount;
-        });
+      state.beforeStep.output = await ctx.step.run("before", async () => {
+        state.beforeStep.insideCount++;
+        return state.beforeStep.insideCount;
+      });
 
-        // The normal step
-        const output = await next();
+      // The normal step
+      const output = await next();
 
-        state.afterStep.output = await ctx.step.run("after", async () => {
-          state.afterStep.insideCount++;
-          return state.afterStep.insideCount;
-        });
-        return output;
-      };
-    }
+      state.afterStep.output = await ctx.step.run("after", async () => {
+        state.afterStep.insideCount++;
+        return state.afterStep.insideCount;
+      });
+      return output;
+    };
   }
 
   const eventName = randomSuffix("evt");
@@ -930,8 +919,8 @@ test("change step input", async () => {
       return arg;
     }
 
-    override wrapStep(): Middleware.WrapStepReturn {
-      return ({ next }) => next();
+    override wrapStep(next: () => Promise<unknown>) {
+      return next();
     }
   }
 
@@ -1038,25 +1027,24 @@ test("2 middleware with staticTransform", async () => {
   class MW1 extends Middleware.BaseMiddleware {
     declare staticTransform: MW1StaticTransform;
 
-    override wrapStep(
-      stepInfo: Middleware.StepInfo,
-    ): Middleware.WrapStepReturn {
-      return async ({ next }) => {
-        const output = await next();
-        if (stepInfo.memoized) {
-          return output;
-        }
-        if (!isRecord(output)) {
-          return output;
-        }
+    override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+      next,
+      { stepInfo },
+    ) => {
+      const output = await next();
+      if (stepInfo.memoized) {
+        return output;
+      }
+      if (!isRecord(output)) {
+        return output;
+      }
 
-        return {
-          ...output,
-          mw1: "replaced by mw1",
-          mwBoth: "replaced by mw1",
-        };
+      return {
+        ...output,
+        mw1: "replaced by mw1",
+        mwBoth: "replaced by mw1",
       };
-    }
+    };
   }
 
   // Replace the "mw2" and "mwBoth" fields
@@ -1070,25 +1058,24 @@ test("2 middleware with staticTransform", async () => {
   class MW2 extends Middleware.BaseMiddleware {
     declare staticTransform: MW2StaticTransform;
 
-    override wrapStep(
-      stepInfo: Middleware.StepInfo,
-    ): Middleware.WrapStepReturn {
-      return async ({ next }) => {
-        const output = await next();
-        if (stepInfo.memoized) {
-          return output;
-        }
-        if (!isRecord(output)) {
-          return output;
-        }
+    override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+      next,
+      { stepInfo },
+    ) => {
+      const output = await next();
+      if (stepInfo.memoized) {
+        return output;
+      }
+      if (!isRecord(output)) {
+        return output;
+      }
 
-        return {
-          ...output,
-          mw2: "replaced by mw2",
-          mwBoth: "replaced by mw2",
-        };
+      return {
+        ...output,
+        mw2: "replaced by mw2",
+        mwBoth: "replaced by mw2",
       };
-    }
+    };
   }
 
   const state = {

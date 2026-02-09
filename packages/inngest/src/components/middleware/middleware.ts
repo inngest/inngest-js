@@ -74,20 +74,6 @@ export namespace Middleware {
   };
 
   /**
-   * The return type from `wrapFunctionHandler`. A callback that receives a `next`
-   * function to call the inner handler (or next middleware).
-   */
-  export type WrapFunctionHandlerReturn = (args: {
-    next: () => Promise<unknown>;
-    ctx: Context.Any;
-  }) => Promise<unknown>;
-
-  export type WrapStepReturn = (args: {
-    next: () => Promise<unknown>;
-    ctx: Context.Any;
-  }) => Promise<unknown>;
-
-  /**
    * Information about the incoming HTTP request that triggered this execution.
    */
   export type Request = {
@@ -97,8 +83,17 @@ export namespace Middleware {
     url: URL;
   };
 
+  export type WrapFunctionHandlerArgs = DeepReadonly<{
+    ctx: Context.Any;
+  }>;
+
   export type WrapRequestArgs = DeepReadonly<{
     requestInfo: Request;
+  }>;
+
+  export type WrapStepArgs = DeepReadonly<{
+    ctx: Context.Any;
+    stepInfo: StepInfo;
   }>;
 
   /**
@@ -110,14 +105,6 @@ export namespace Middleware {
     headers: Record<string, string>;
     body: string;
   };
-
-  /**
-   * The return type from `wrapRequest`. A callback that receives a `next`
-   * function to call the inner handler (or next middleware).
-   */
-  export type WrapRequestReturn = (args: {
-    next: () => Promise<Response>;
-  }) => Promise<Response>;
 
   /**
    * The argument passed to `onStepStart`.
@@ -333,27 +320,31 @@ export namespace Middleware {
      * - Output/error transformation
      * - Logging, timing, or other cross-cutting concerns
      *
-     * Returns a callback that receives `{ next }` and must call `next()` to
-     * execute the inner handler. Uses onion/callback-chain pattern (same as
-     * `wrapStep`).
+     * Call `next()` to execute the inner handler (or next middleware).
+     * Uses onion/callback-chain pattern (same as `wrapStep`).
      *
      * **Important:** `next()` only resolves when the function completes. On
      * requests where a fresh step is discovered, control flow is interrupted
      * and `next()` never resolves. Use `try/finally` for cleanup that must
      * run on every request.
      */
-    wrapFunctionHandler?(): WrapFunctionHandlerReturn;
+    wrapFunctionHandler?(
+      next: () => Promise<unknown>,
+      args: WrapFunctionHandlerArgs,
+    ): Promise<unknown>;
 
     /**
      * Called once per request before any other hooks. Use this to validate
      * or inspect the incoming HTTP request (headers, method, URL, body).
      *
-     * Returns a callback that receives `{ next }` and must call `next()` to
-     * continue processing. Throwing rejects the request.
+     * Call `next()` to continue processing. Throwing rejects the request.
      *
      * Uses the same onion/callback-chain pattern as `wrapFunctionHandler`.
      */
-    wrapRequest?(args: WrapRequestArgs): WrapRequestReturn;
+    wrapRequest?(
+      next: () => Promise<Response>,
+      args: WrapRequestArgs,
+    ): Promise<Response>;
 
     /**
      * Called many times per step, when finding it.
@@ -364,7 +355,10 @@ export namespace Middleware {
      *
      * To modify step options or input, use `transformStepInput` instead.
      */
-    wrapStep?(stepInfo: StepInfo): WrapStepReturn;
+    wrapStep?(
+      next: () => Promise<unknown>,
+      args: WrapStepArgs,
+    ): Promise<unknown>;
   }
 }
 

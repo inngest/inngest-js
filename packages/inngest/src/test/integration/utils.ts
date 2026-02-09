@@ -1,5 +1,5 @@
 import path from "path";
-import { Middleware } from "../../../src/index.ts";
+import { type Context, Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";
 
 export function randomSuffix(value: string): string {
@@ -129,29 +129,31 @@ export abstract class BaseSerializerMiddleware<
     };
   }
 
-  override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-    return async ({ next }) => {
-      const output = await next();
-      return this.serialize(output);
-    };
+  override async wrapFunctionHandler(next: () => Promise<unknown>) {
+    const output = await next();
+    return this.serialize(output);
   }
 
-  override wrapStep(stepInfo: Middleware.StepInfo): Middleware.WrapStepReturn {
-    // For invoke steps, serialize input in the outer function so it's
-    // available before the handler chain runs (invoke steps are reported
-    // to the server before handler execution).
-    if (stepInfo.stepKind === "invoke") {
-      stepInfo.input = stepInfo.input?.map((i) => this.serialize(i));
+  override transformStepInput(
+    arg: Middleware.TransformStepInputArgs,
+  ): Middleware.TransformStepInputArgs {
+    // For invoke steps, serialize input so it's available before the handler
+    // chain runs (invoke steps are reported to the server before execution).
+    if (arg.stepInfo.stepKind === "invoke") {
+      arg.input = arg.input.map((i) => this.serialize(i));
     }
+    return arg;
+  }
 
-    return async ({ next, stepOptions, input }) => {
-      // For non-invoke steps, wrap the handler to serialize output
-      const result = await next({ stepOptions, input });
-      if (stepInfo.memoized) {
-        return this.deserialize(result);
-      }
-      return this.serialize(result);
-    };
+  override async wrapStep(
+    next: () => Promise<unknown>,
+    { stepInfo }: { stepInfo: Middleware.StepInfo; ctx: Context.Any },
+  ) {
+    const result = await next();
+    if (stepInfo.memoized) {
+      return this.deserialize(result);
+    }
+    return this.serialize(result);
   }
 
   override transformClientInput(arg: Middleware.TransformClientInputArgs) {

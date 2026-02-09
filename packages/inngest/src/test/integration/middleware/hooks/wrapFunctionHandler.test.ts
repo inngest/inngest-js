@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
+import { type Context, Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
 
@@ -20,24 +20,20 @@ test("multiple middleware in correct order", async () => {
   };
 
   class Mw1 extends Middleware.BaseMiddleware {
-    override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-      return async ({ next }) => {
-        state.logs.push("mw1: before handler");
-        const result = await next();
-        state.logs.push("mw1: after handler");
-        return result;
-      };
+    override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      state.logs.push("mw1: before handler");
+      const result = await next();
+      state.logs.push("mw1: after handler");
+      return result;
     }
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
-    override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-      return async ({ next }) => {
-        state.logs.push("mw2: before handler");
-        const result = await next();
-        state.logs.push("mw2: after handler");
-        return result;
-      };
+    override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      state.logs.push("mw2: before handler");
+      const result = await next();
+      state.logs.push("mw2: after handler");
+      return result;
     }
   }
 
@@ -92,8 +88,8 @@ test("bookend with steps", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-      return async ({ next, ctx }) => {
+    override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
+      async (next, { ctx }) => {
         state.beforeStep.output = await ctx.step.run("before", async () => {
           state.beforeStep.insideCount++;
           return state.beforeStep.insideCount;
@@ -110,7 +106,6 @@ test("bookend with steps", async () => {
         state.done = true;
         return output;
       };
-    }
   }
 
   const eventName = randomSuffix("evt");
@@ -158,12 +153,10 @@ describe("modify output", () => {
     };
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          const output = await next();
-          state.transformedResults.push(output);
-          return { wrapped: output };
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        const output = await next();
+        state.transformedResults.push(output);
+        return { wrapped: output };
       }
     }
 
@@ -198,22 +191,18 @@ describe("modify output", () => {
     };
 
     class Mw1 extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          const output = await next();
-          state.logs.push(`mw1: ${output}`);
-          return `mw1(${output})`;
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        const output = await next();
+        state.logs.push(`mw1: ${output}`);
+        return `mw1(${output})`;
       }
     }
 
     class Mw2 extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          const output = await next();
-          state.logs.push(`mw2: ${output}`);
-          return `mw2(${output})`;
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        const output = await next();
+        state.logs.push(`mw2: ${output}`);
+        return `mw2(${output})`;
       }
     }
 
@@ -266,15 +255,13 @@ describe("modify error", () => {
     };
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          try {
-            return await next();
-          } catch (error) {
-            state.capturedErrors.push(error as Error);
-            throw new WrappedError("wrapped", { cause: error });
-          }
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        try {
+          return await next();
+        } catch (error) {
+          state.capturedErrors.push(error as Error);
+          throw new WrappedError("wrapped", { cause: error });
+        }
       }
     }
 
@@ -311,30 +298,26 @@ describe("modify error", () => {
     };
 
     class Mw1 extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          try {
-            return await next();
-          } catch (error) {
-            const err = error as Error;
-            state.logs.push(`mw1: ${err.message}`);
-            throw new Error(`mw1(${err.message})`);
-          }
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        try {
+          return await next();
+        } catch (error) {
+          const err = error as Error;
+          state.logs.push(`mw1: ${err.message}`);
+          throw new Error(`mw1(${err.message})`);
+        }
       }
     }
 
     class Mw2 extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          try {
-            return await next();
-          } catch (error) {
-            const err = error as Error;
-            state.logs.push(`mw2: ${err.message}`);
-            throw new Error(`mw2(${err.message})`);
-          }
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        try {
+          return await next();
+        } catch (error) {
+          const err = error as Error;
+          state.logs.push(`mw2: ${err.message}`);
+          throw new Error(`mw2(${err.message})`);
+        }
       }
     }
 
@@ -372,17 +355,15 @@ describe("modify error", () => {
     };
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          try {
-            const output = await next();
-            state.outputCalls++;
-            return output;
-          } catch (error) {
-            state.errorCalls++;
-            throw error;
-          }
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        try {
+          const output = await next();
+          state.outputCalls++;
+          return output;
+        } catch (error) {
+          state.errorCalls++;
+          throw error;
+        }
       }
     }
 
@@ -418,17 +399,15 @@ describe("modify error", () => {
     };
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          try {
-            const output = await next();
-            state.outputCalls++;
-            return output;
-          } catch (error) {
-            state.errorCalls++;
-            throw error;
-          }
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        try {
+          const output = await next();
+          state.outputCalls++;
+          return output;
+        } catch (error) {
+          state.errorCalls++;
+          throw error;
+        }
       }
     }
 

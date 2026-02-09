@@ -17,14 +17,13 @@ test("receives request info", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapRequest({
-      requestInfo,
-    }: Middleware.WrapRequestArgs): Middleware.WrapRequestReturn {
+    override wrapRequest: Middleware.BaseMiddleware["wrapRequest"] = async (
+      next,
+      { requestInfo },
+    ) => {
       state.hookArgs.push({ requestInfo });
-      return async ({ next }) => {
-        return next();
-      };
-    }
+      return next();
+    };
   }
 
   const eventName = randomSuffix("evt");
@@ -67,10 +66,8 @@ test("throwing rejects the request", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapRequest(): Middleware.WrapRequestReturn {
-      return async () => {
-        throw new Error("request rejected");
-      };
+    override async wrapRequest(): Promise<Middleware.Response> {
+      throw new Error("request rejected");
     }
   }
 
@@ -104,13 +101,11 @@ test("next() resolves with response", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapRequest(): Middleware.WrapRequestReturn {
-      return async ({ next }) => {
-        const res = await next();
-        console.log(res);
-        state.response = res;
-        return res;
-      };
+    override async wrapRequest(next: () => Promise<Middleware.Response>) {
+      const res = await next();
+      console.log(res);
+      state.response = res;
+      return res;
     }
   }
 
@@ -151,24 +146,20 @@ test("multiple middleware in onion order", async () => {
   };
 
   class Mw1 extends Middleware.BaseMiddleware {
-    override wrapRequest(): Middleware.WrapRequestReturn {
-      return async ({ next }) => {
-        state.logs.push("mw1: before");
-        const result = await next();
-        state.logs.push("mw1: after");
-        return result;
-      };
+    override async wrapRequest(next: () => Promise<Middleware.Response>) {
+      state.logs.push("mw1: before");
+      const result = await next();
+      state.logs.push("mw1: after");
+      return result;
     }
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
-    override wrapRequest(): Middleware.WrapRequestReturn {
-      return async ({ next }) => {
-        state.logs.push("mw2: before");
-        const result = await next();
-        state.logs.push("mw2: after");
-        return result;
-      };
+    override async wrapRequest(next: () => Promise<Middleware.Response>) {
+      state.logs.push("mw2: before");
+      const result = await next();
+      state.logs.push("mw2: after");
+      return result;
     }
   }
 

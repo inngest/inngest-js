@@ -125,11 +125,9 @@ test("middleware state is consistent within a single request", async () => {
       return arg;
     }
 
-    override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-      return async ({ next }) => {
-        state.dataInWrap = this.data;
-        return next();
-      };
+    override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      state.dataInWrap = this.data;
+      return next();
     }
   }
 

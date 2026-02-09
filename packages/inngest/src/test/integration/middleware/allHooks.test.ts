@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../index.ts";
+import { type Context, Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
 import { randomSuffix, testNameFromFileUrl, waitFor } from "../utils.ts";
 
@@ -18,13 +18,11 @@ test("all hooks fire in correct order with 2 middleware", async () => {
         return arg.input;
       }
 
-      override wrapRequest(): Middleware.WrapRequestReturn {
-        return async ({ next }) => {
-          state.logs.push(`wrapRequest: before (${name})`);
-          const res = await next();
-          state.logs.push(`wrapRequest: after (${name})`);
-          return res;
-        };
+      override async wrapRequest(next: () => Promise<Middleware.Response>) {
+        state.logs.push(`wrapRequest: before (${name})`);
+        const res = await next();
+        state.logs.push(`wrapRequest: after (${name})`);
+        return res;
       }
 
       override transformFunctionInput(
@@ -38,13 +36,11 @@ test("all hooks fire in correct order with 2 middleware", async () => {
         state.logs.push(`onMemoizationEnd (${name})`);
       }
 
-      override wrapFunctionHandler(): Middleware.WrapFunctionHandlerReturn {
-        return async ({ next }) => {
-          state.logs.push(`wrapFunctionHandler: before (${name})`);
-          const result = await next();
-          state.logs.push(`wrapFunctionHandler: after (${name})`);
-          return result;
-        };
+      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+        state.logs.push(`wrapFunctionHandler: before (${name})`);
+        const result = await next();
+        state.logs.push(`wrapFunctionHandler: after (${name})`);
+        return result;
       }
 
       override transformStepInput(
@@ -56,20 +52,19 @@ test("all hooks fire in correct order with 2 middleware", async () => {
         return arg;
       }
 
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        return async ({ next }) => {
-          state.logs.push(
-            `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): before (${name})`,
-          );
-          const result = await next();
-          state.logs.push(
-            `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): after (${name})`,
-          );
-          return result;
-        };
-      }
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { stepInfo },
+      ) => {
+        state.logs.push(
+          `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): before (${name})`,
+        );
+        const result = await next();
+        state.logs.push(
+          `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): after (${name})`,
+        );
+        return result;
+      };
 
       override onStepStart() {
         state.logs.push(`onStepStart (${name})`);
