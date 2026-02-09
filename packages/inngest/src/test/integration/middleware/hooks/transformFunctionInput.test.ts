@@ -1,9 +1,58 @@
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
+import { type Context, Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
+
+test("same as ctx in function handler", async () => {
+  // Inject additional data into the event and verify that the function received
+  // the modified data
+
+  const state = {
+    fn: {
+      ctx: null as Context.Any | null,
+    },
+    done: false,
+    hook: {
+      ctx: null as Context.Any | null,
+    },
+  };
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ) {
+      state.hook.ctx = arg.ctx;
+      return arg;
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0 },
+    { event: eventName },
+    async (ctx) => {
+      state.fn.ctx = ctx;
+      state.done = true;
+      return "done";
+    },
+  );
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName, data: { original: "data" } });
+  await waitFor(async () => {
+    expect(state.done).toBe(true);
+  });
+
+  // Verify the function received the modified event data
+  expect(state.hook.ctx).toEqual(state.fn.ctx);
+});
 
 test("modify event data", async () => {
   // Inject additional data into the event and verify that the function received

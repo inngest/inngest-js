@@ -143,11 +143,7 @@ export class MiddlewareManager {
    */
   transformFunctionInput(): Middleware.TransformFunctionInputArgs {
     let result: Middleware.TransformFunctionInputArgs = {
-      ctx: {
-        event: this.fnArg.event,
-        events: this.fnArg.events,
-        step: this.fnArg.step,
-      },
+      ctx: this.fnArg,
       steps: this.buildSteps(),
     };
 
