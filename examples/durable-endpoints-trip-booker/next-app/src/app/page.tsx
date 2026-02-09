@@ -67,10 +67,10 @@ const SOURCE_CODE = `export const GET = inngest.endpoint(async (req: NextRequest
 
 // Line ranges for each step in the source code
 const STEP_LINE_RANGES: Record<string, { start: number; end: number }> = {
-  "search-availability": { start: 4, end: 12 },
-  "reserve-flight": { start: 14, end: 23 },
-  "process-payment": { start: 25, end: 35 },
-  "confirm-booking": { start: 37, end: 44 },
+  "search-availability": { start: 4, end: 13 },
+  "reserve-flight": { start: 15, end: 25 },
+  "process-payment": { start: 27, end: 37 },
+  "confirm-booking": { start: 39, end: 45 },
 };
 
 // TypeScript syntax highlighter
@@ -140,7 +140,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-gray-400 italic">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -157,7 +157,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-green-600">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -175,7 +175,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-green-600">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -188,7 +188,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-orange-500">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -204,26 +204,26 @@ function highlightSyntax(code: string): React.ReactNode[] {
         tokens.push(
           <span key={key++} className="text-purple-600 font-medium">
             {word}
-          </span>
+          </span>,
         );
       } else if (types.has(word)) {
         tokens.push(
           <span key={key++} className="text-blue-600">
             {word}
-          </span>
+          </span>,
         );
       } else if (code[end] === "(") {
         // Function call
         tokens.push(
           <span key={key++} className="text-amber-600">
             {word}
-          </span>
+          </span>,
         );
       } else {
         tokens.push(
           <span key={key++} className="text-gray-800">
             {word}
-          </span>
+          </span>,
         );
       }
       i = end;
@@ -235,7 +235,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-gray-600">
           {code[i]}
-        </span>
+        </span>,
       );
       i++;
       continue;
@@ -274,7 +274,7 @@ export default function Home() {
   const [isBooking, setIsBooking] = useState(false);
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus>>(
-    () => Object.fromEntries(STEPS.map((s) => [s.id, "pending"]))
+    () => Object.fromEntries(STEPS.map((s) => [s.id, "pending"])),
   );
   const [activeStep, setActiveStep] = useState<string | null>(null);
   const [currentSubStep, setCurrentSubStep] = useState<string | null>(null);
@@ -317,7 +317,7 @@ export default function Home() {
       const timestamp = new Date().toLocaleTimeString();
       setLogs((prev) => [...prev, { timestamp, stepId, type, message }]);
     },
-    []
+    [],
   );
 
   // Process events from polling response
@@ -331,20 +331,20 @@ export default function Home() {
           addLog(
             data.stepId,
             "start",
-            data.message || `${data.stepId}: started`
+            data.message || `${data.stepId}: started`,
           );
         } else if (data.type === "step-progress") {
           setCurrentSubStep(data.message);
           addLog(
             data.stepId,
             "progress",
-            data.message || `${data.stepId}: processing...`
+            data.message || `${data.stepId}: processing...`,
           );
         } else if (data.type === "step-retry") {
           addLog(
             data.stepId,
             "retry",
-            `⚠️ ${data.message || "Retrying..."} (attempt ${data.retryCount})`
+            `⚠️ ${data.message || "Retrying..."} (attempt ${data.retryCount})`,
           );
         } else if (data.type === "step-complete") {
           setStepStatuses((prev) => ({ ...prev, [data.stepId]: "completed" }));
@@ -352,7 +352,7 @@ export default function Home() {
           addLog(
             data.stepId,
             "complete",
-            data.message || `${data.stepId}: completed`
+            data.message || `${data.stepId}: completed`,
           );
         } else if (data.type === "step-error") {
           if (data.retryCount) {
@@ -363,7 +363,9 @@ export default function Home() {
             addLog(
               data.stepId,
               "retry",
-              `⚠️ ${data.message || data.error} (attempt ${data.retryCount}, Inngest retrying...)`
+              `⚠️ ${data.message || data.error} (attempt ${
+                data.retryCount
+              }, Inngest retrying...)`,
             );
           } else {
             setStepStatuses((prev) => ({ ...prev, [data.stepId]: "error" }));
@@ -371,7 +373,7 @@ export default function Home() {
             addLog(
               data.stepId,
               "error",
-              `${data.stepId}: ERROR - ${data.error}`
+              `${data.stepId}: ERROR - ${data.error}`,
             );
             setIsBooking(false);
           }
@@ -384,7 +386,7 @@ export default function Home() {
         }
       }
     },
-    [addLog]
+    [addLog],
   );
 
   const handleBooking = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -405,7 +407,11 @@ export default function Home() {
     // 2. Start the durable endpoint (non-blocking)
     addLog("init", "info", `Starting durable endpoint...`);
     fetch(
-      `/api/booking?bookingId=${encodeURIComponent(bookingId)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&date=${encodeURIComponent(date)}`
+      `/api/booking?bookingId=${encodeURIComponent(
+        bookingId,
+      )}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(
+        destination,
+      )}&date=${encodeURIComponent(date)}`,
     )
       .then((res) => res.json())
       .then((data) => {
@@ -426,7 +432,9 @@ export default function Home() {
       while (polling) {
         try {
           const res = await fetch(
-            `/api/booking/events?bookingId=${encodeURIComponent(bookingId)}&cursor=${cursor}`
+            `/api/booking/events?bookingId=${encodeURIComponent(
+              bookingId,
+            )}&cursor=${cursor}`,
           );
           const data = await res.json();
 
@@ -532,7 +540,7 @@ export default function Home() {
 
     // Determine line status based on step statuses
     const getLineStatus = (
-      lineNum: number
+      lineNum: number,
     ): "completed" | "running" | "error" | "retrying" | null => {
       for (const [stepId, range] of Object.entries(STEP_LINE_RANGES)) {
         if (lineNum >= range.start && lineNum <= range.end) {
@@ -572,7 +580,9 @@ export default function Home() {
           <span className="w-10 text-right pr-3 text-gray-400 select-none text-xs">
             {lineNum}
           </span>
-          <span className="flex-1 whitespace-pre">{highlightSyntax(line)}</span>
+          <span className="flex-1 whitespace-pre max-w-[200px]">
+            {highlightSyntax(line)}
+          </span>
         </div>
       );
     });
