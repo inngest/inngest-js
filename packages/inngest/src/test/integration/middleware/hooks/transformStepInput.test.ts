@@ -4,18 +4,17 @@ import { Inngest, invoke, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
+  createState,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("modify step.run input (1 middleware)", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     run: { input: 0 },
-  };
+  });
 
   class MW extends Middleware.BaseMiddleware {
     override transformStepInput(
@@ -37,7 +36,8 @@ test("modify step.run input (1 middleware)", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run(
         "my-step",
         (value: number) => {
@@ -46,24 +46,20 @@ test("modify step.run input (1 middleware)", async () => {
         },
         1,
       );
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.run).toEqual({ input: 42 });
 });
 
 test("modify step.run input (2 middleware, forward order)", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     run: { input: 0 },
-  };
+  });
 
   class MW1 extends Middleware.BaseMiddleware {
     override transformStepInput(
@@ -96,7 +92,8 @@ test("modify step.run input (2 middleware, forward order)", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run(
         "my-step",
         (value: number) => {
@@ -105,29 +102,25 @@ test("modify step.run input (2 middleware, forward order)", async () => {
         },
         1,
       );
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Forward order: MW1 runs first (* 10 = 10), then MW2 (+ 5 = 15)
   expect(state.run).toEqual({ input: 15 });
 });
 
 test("modify step options (change step ID)", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     step1: {
       insideCount: 0,
       output: 0,
     },
     onStepStartCalls: [] as Middleware.OnStepStartArgs[],
-  };
+  });
 
   let changeStepID = false;
   class MW extends Middleware.BaseMiddleware {
@@ -156,20 +149,18 @@ test("modify step options (change step ID)", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.step1.output = await step.run("step-1", () => {
         state.step1.insideCount++;
         return state.step1.insideCount;
       });
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.step1).toEqual({
     insideCount: 2,
@@ -200,8 +191,7 @@ test("modify step options (change step ID)", async () => {
 });
 
 test("modify all step kinds", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     invoke: { input: 0 },
     run: { input: 0 },
     sleep: {
@@ -212,7 +202,7 @@ test("modify all step kinds", async () => {
       afterTime: null as Date | null,
       beforeTime: null as Date | null,
     },
-  };
+  });
 
   class MW extends Middleware.BaseMiddleware {
     override transformStepInput(
@@ -242,7 +232,8 @@ test("modify all step kinds", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.invoke("invoke", { function: childFn, data: { value: 1 } });
 
       await step.run(
@@ -264,8 +255,6 @@ test("modify all step kinds", async () => {
         timeout: "60s",
       });
       state.waitForEvent.afterTime ??= new Date();
-
-      state.done = true;
     },
   );
   const childFn = client.createFunction(
@@ -278,9 +267,7 @@ test("modify all step kinds", async () => {
   await createTestApp({ client, functions: [fn, childFn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.invoke).toEqual({ input: 2 });
   expect(state.run).toEqual({ input: 2 });
@@ -298,10 +285,9 @@ test("modify all step kinds", async () => {
 });
 
 test("called for memoized and fresh", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     calls: [] as { id: string; memoized: boolean }[],
-  };
+  });
 
   class MW extends Middleware.BaseMiddleware {
     override transformStepInput(
@@ -324,18 +310,16 @@ test("called for memoized and fresh", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("step-1", async () => "result-1");
       await step.run("step-2", async () => "result-2");
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
     { id: "step-1", memoized: false },

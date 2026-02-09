@@ -1,6 +1,7 @@
 import path from "path";
 import { type Context, Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";
+import { DEV_SERVER_URL } from "../devServerTestHarness.ts";
 
 export function randomSuffix(value: string): string {
   return `${value}-${Math.random().toString(36).substring(2, 15)}`;
@@ -199,3 +200,121 @@ export async function sleep(ms: number = 1000): Promise<void> {
 export const waitFor: typeof vitest.waitFor = (callback, timeout = 10_000) => {
   return vitest.waitFor(callback, timeout);
 };
+
+type RunResult =
+  | { data: unknown; error?: undefined }
+  | { data?: undefined; error: unknown };
+
+async function fetchRunResult(
+  runId: string,
+  timeout = 10_000,
+): Promise<RunResult> {
+  const deadline = Date.now() + timeout;
+
+  // Poll for a FINALIZATION span with an outputID.
+  let outputID: string | undefined;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `query ($runId: String!) {
+          run(runID: $runId) {
+            trace(preview: true) {
+              stepType outputID status
+              childrenSpans {
+                stepType outputID status
+                childrenSpans { stepType outputID status }
+              }
+            }
+          }
+        }`,
+        variables: { runId },
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    const json = await res.json();
+    const find = (span: Record<string, unknown>): string | undefined => {
+      if (span.stepType === "FINALIZATION" && span.outputID) {
+        return span.outputID as string;
+      }
+      if (Array.isArray(span.childrenSpans)) {
+        for (const child of span.childrenSpans) {
+          const id = find(child as Record<string, unknown>);
+          if (id) return id;
+        }
+      }
+      return undefined;
+    };
+
+    const trace = json?.data?.run?.trace;
+    if (trace) outputID = find(trace);
+    if (outputID) break;
+    await sleep(400);
+  }
+  if (!outputID) {
+    throw new Error(`Timed out waiting for finalization of run ${runId}`);
+  }
+
+  // Fetch the output blob.
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `query ($outputId: String!) {
+        runTraceSpanOutputByID(outputID: $outputId) {
+          data
+          error { name message stack cause }
+        }
+      }`,
+      variables: { outputId: outputID },
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+
+  const json = await res.json();
+  const payload = json?.data?.runTraceSpanOutputByID;
+  if (payload.error) {
+    return { error: payload.error };
+  }
+  return { data: JSON.parse(payload.data) };
+}
+
+export class BaseState {
+  runId: string | null = null;
+
+  async waitForRunId(): Promise<string> {
+    return vitest.waitFor(async () => {
+      expect(this.runId).not.toBeNull();
+      return this.runId!;
+    });
+  }
+
+  async waitForRunComplete(): Promise<unknown> {
+    const runId = await this.waitForRunId();
+    const result = await fetchRunResult(runId);
+    if (result.error) {
+      throw new Error(
+        `Expected run ${runId} to complete, but it errored: ${JSON.stringify(result.error)}`,
+      );
+    }
+    return result.data;
+  }
+
+  async waitForRunFailed(): Promise<void> {
+    const runId = await this.waitForRunId();
+    const result = await fetchRunResult(runId);
+    if (!result.error) {
+      throw new Error(
+        `Expected run ${runId} to fail, but it completed with: ${JSON.stringify(result.data)}`,
+      );
+    }
+  }
+}
+
+export function createState<T extends Record<string, unknown>>(
+  initial: T,
+): BaseState & T {
+  return Object.assign(new BaseState(), initial);
+}

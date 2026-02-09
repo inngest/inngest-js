@@ -3,6 +3,7 @@ import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
+  createState,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
@@ -18,10 +19,9 @@ class MyError extends Error {
 }
 
 test("fires when function throws", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     calls: [] as Middleware.OnRunErrorArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunError(args: Middleware.OnRunErrorArgs) {
@@ -39,8 +39,8 @@ test("fires when function throws", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
       throw new MyError("fn error");
     },
   );
@@ -48,9 +48,7 @@ test("fires when function throws", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunFailed();
 
   expect(state.calls).toHaveLength(1);
   expect(state.calls[0]).toEqual({
@@ -65,10 +63,9 @@ test("fires when function throws", async () => {
 });
 
 test("does NOT fire when function succeeds", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     count: 0,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunError() {
@@ -86,9 +83,9 @@ test("does NOT fire when function succeeds", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("my-step", () => "result");
-      state.done = true;
       return "ok";
     },
   );
@@ -96,18 +93,15 @@ test("does NOT fire when function succeeds", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.count).toBe(0);
 });
 
 test("fires when function throws after steps complete", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     calls: [] as Middleware.OnRunErrorArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunError(args: Middleware.OnRunErrorArgs) {
@@ -125,9 +119,9 @@ test("fires when function throws after steps complete", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("my-step", () => "result");
-      state.done = true;
       throw new MyError("after steps");
     },
   );
@@ -135,9 +129,7 @@ test("fires when function throws after steps complete", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunFailed();
 
   expect(state.calls).toHaveLength(1);
   expect(state.calls[0]!.error.message).toBe("after steps");
@@ -145,10 +137,10 @@ test("fires when function throws after steps complete", async () => {
 });
 
 test("multiple attempts", async () => {
-  const state = {
+  const state = createState({
     attempts: 0,
     calls: [] as Middleware.OnRunErrorArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunError(args: Middleware.OnRunErrorArgs) {
@@ -166,7 +158,8 @@ test("multiple attempts", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 1 },
     { event: eventName },
-    async () => {
+    async ({ runId }) => {
+      state.runId = runId;
       state.attempts++;
       throw new MyError("fn error");
     },

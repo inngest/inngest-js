@@ -1,15 +1,14 @@
 import { expect, test } from "vitest";
 import { type Context, Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../utils.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("all hooks fire in correct order with 2 middleware", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     logs: [] as string[],
-  };
+  });
 
   function createMW(name: string) {
     return class extends Middleware.BaseMiddleware {
@@ -105,23 +104,21 @@ test("all hooks fire in correct order with 2 middleware", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
       await step.run("my-step", () => {
         state.logs.push("step: inside");
         return "result";
       });
       state.logs.push("fn: bottom");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.logs).toEqual([
     // client.send() - forward order

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { type Context, Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -9,15 +9,14 @@ test("same as ctx in function handler", async () => {
   // Inject additional data into the event and verify that the function received
   // the modified data
 
-  const state = {
+  const state = createState({
     fn: {
       ctx: null as Context.Any | null,
     },
-    done: false,
     hook: {
       ctx: null as Context.Any | null,
     },
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformFunctionInput(
@@ -38,17 +37,15 @@ test("same as ctx in function handler", async () => {
     { id: "fn", retries: 0 },
     { event: eventName },
     async (ctx) => {
+      state.runId = ctx.runId;
       state.fn.ctx = ctx;
-      state.done = true;
       return "done";
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName, data: { original: "data" } });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Verify the function received the modified event data
   expect(state.hook.ctx).toEqual(state.fn.ctx);
@@ -58,10 +55,9 @@ test("modify event data", async () => {
   // Inject additional data into the event and verify that the function received
   // the modified data
 
-  const state = {
-    done: false,
+  const state = createState({
     receivedEventData: null as unknown,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformFunctionInput(
@@ -92,18 +88,16 @@ test("modify event data", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ event }) => {
+    async ({ event, runId }) => {
+      state.runId = runId;
       state.receivedEventData = event.data;
-      state.done = true;
       return "done";
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName, data: { original: "data" } });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Verify the function received the modified event data
   expect(state.receivedEventData).toEqual({
@@ -116,10 +110,9 @@ test("modify memoized step data", async () => {
   // Transform all memoized step data and verify that the function received the
   // transformed data
 
-  const state = {
-    done: false,
+  const state = createState({
     stepOutputs: [] as unknown[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformFunctionInput(
@@ -153,21 +146,19 @@ test("modify memoized step data", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       const output = await step.run("my-step", () => {
         return "original";
       });
       state.stepOutputs.push(output);
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // The function received "transformed" (the value after middleware
   // modification)
@@ -180,10 +171,9 @@ test("dependency injection", async () => {
   class Database {}
   const db = new Database();
 
-  const state = {
-    done: false,
+  const state = createState({
     db: undefined as Database | undefined,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformFunctionInput(
@@ -208,19 +198,17 @@ test("dependency injection", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ db }) => {
+    async ({ db, runId }) => {
+      state.runId = runId;
       expectTypeOf(db).not.toBeAny();
       expectTypeOf(db).toEqualTypeOf<Database>();
       state.db = db;
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName, data: { original: "data" } });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.db).toEqual(db);
 });
@@ -228,10 +216,9 @@ test("dependency injection", async () => {
 test("add step method", async () => {
   // Add a step method to the step tools
 
-  const state = {
-    done: false,
+  const state = createState({
     stepOutputs: [] as string[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformFunctionInput(
@@ -259,21 +246,19 @@ test("add step method", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.stepOutputs.push(
         await step.run("my-step", () => {
           return "original";
         }),
       );
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName, data: { original: "data" } });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.stepOutputs).toEqual(["original"]);
 });

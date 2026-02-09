@@ -3,9 +3,9 @@ import { Inngest, Middleware, StepError } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
+  createState,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -18,10 +18,9 @@ class MyError extends Error {
 }
 
 test("1 step", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     calls: [] as Middleware.OnStepErrorArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepError(args: Middleware.OnStepErrorArgs) {
@@ -38,23 +37,20 @@ test("1 step", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       try {
         await step.run("my-step", () => {
           throw new MyError("my error");
         });
-      } catch {
-        state.done = true;
-      }
+      } catch {}
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
     {
@@ -76,10 +72,9 @@ test("1 step", async () => {
 });
 
 test("multiple steps with errors", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     calls: [] as Middleware.OnStepErrorArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepError(args: Middleware.OnStepErrorArgs) {
@@ -97,7 +92,8 @@ test("multiple steps with errors", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       try {
         await step.run("step-1", () => {
           throw new MyError("error 1");
@@ -109,17 +105,13 @@ test("multiple steps with errors", async () => {
           throw new MyError("error 2");
         });
       } catch {}
-
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
     {
@@ -158,10 +150,9 @@ test("multiple steps with errors", async () => {
 });
 
 test("no errors", async () => {
-  const state = {
+  const state = createState({
     count: 0,
-    done: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepError() {
@@ -179,27 +170,24 @@ test("no errors", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("step-1", () => "success");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
   expect(state.count).toEqual(0);
 });
 
 test("multiple attempts", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     calls: [] as Middleware.OnStepErrorArgs[],
     caughtError: null as unknown,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepError(args: Middleware.OnStepErrorArgs) {
@@ -216,14 +204,14 @@ test("multiple attempts", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 1 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       try {
         await step.run("my-step", () => {
           throw new MyError("my error");
         });
       } catch (err) {
         state.caughtError = err;
-        state.done = true;
       }
     },
   );
@@ -231,9 +219,7 @@ test("multiple attempts", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toHaveLength(2);
   expect(state.calls[0]).toEqual({

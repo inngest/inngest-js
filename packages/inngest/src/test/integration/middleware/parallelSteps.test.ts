@@ -1,13 +1,17 @@
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
-import { randomSuffix, sleep, testNameFromFileUrl, waitFor } from "../utils.ts";
+import {
+  createState,
+  randomSuffix,
+  sleep,
+  testNameFromFileUrl,
+} from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("info hooks for parallel steps", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     logs: [] as string[],
     parallelSteps: {
       outputs: [] as unknown[],
@@ -23,7 +27,7 @@ test("info hooks for parallel steps", async () => {
       insideCount: 0,
       output: "",
     },
-  };
+  });
 
   class MW extends Middleware.BaseMiddleware {
     override onMemoizationEnd() {
@@ -57,7 +61,8 @@ test("info hooks for parallel steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
       state.step1.output = await step.run("step-1", () => {
         state.step1.insideCount++;
@@ -86,16 +91,13 @@ test("info hooks for parallel steps", async () => {
       });
 
       state.logs.push("fn: bottom");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.parallelSteps.outputs).toEqual(["step-2-a: output", null]);
   expect(state.step1).toEqual({

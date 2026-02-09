@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -13,10 +13,9 @@ test("async local storage context via wrapFunctionHandler", async () => {
     msg: string;
   }
 
-  const state = {
+  const state = createState({
     contextsInFunction: [] as RunContext[],
-    done: false,
-  };
+  });
 
   const asyncLocalStorage = new AsyncLocalStorage<RunContext>();
 
@@ -35,7 +34,8 @@ test("async local storage context via wrapFunctionHandler", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       const context = asyncLocalStorage.getStore();
       if (!context) {
         throw new Error("missing context");
@@ -44,15 +44,12 @@ test("async local storage context via wrapFunctionHandler", async () => {
 
       await step.run("step-1", () => {});
       await step.run("step-2", () => {});
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Verify context was available at function level
   expect(state.contextsInFunction).toEqual([

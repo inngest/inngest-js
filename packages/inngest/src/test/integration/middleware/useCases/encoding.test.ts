@@ -3,10 +3,10 @@ import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   BaseSerializerMiddleware,
+  createState,
   isRecord,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -34,12 +34,11 @@ function isSerialized(value: unknown): value is Serialized {
 }
 
 test("base64 encoding/decoding middleware", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     step1Outputs: [] as unknown[],
     step2Outputs: [] as unknown[],
     transformFunctionInputCalls: [] as Middleware.TransformFunctionInputArgs[],
-  };
+  });
 
   class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
     constructor() {
@@ -75,7 +74,8 @@ test("base64 encoding/decoding middleware", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       const step1Output = await step.run("step-1", () => {
         return { message: "hello", count: 42 };
       });
@@ -85,17 +85,13 @@ test("base64 encoding/decoding middleware", async () => {
         return ["a", "b", "c"];
       });
       state.step2Outputs.push(step2Output);
-
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunFailed();
 
   const expectedFnInputArg = {
     ctx: {

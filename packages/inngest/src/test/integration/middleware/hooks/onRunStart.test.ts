@@ -3,18 +3,17 @@ import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
+  createState,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("fires once per run (not on memoized requests)", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     count: 0,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunStart(args: Middleware.OnRunStartArgs) {
@@ -32,27 +31,24 @@ test("fires once per run (not on memoized requests)", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
       await step.run("my-step", () => "result");
-      state.done = true;
+      state.runId = runId;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.count).toEqual(1);
 });
 
 test("fires even when function errors", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     count: 0,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunStart() {
@@ -70,8 +66,8 @@ test("fires even when function errors", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
       throw new Error("fn error");
     },
   );
@@ -79,18 +75,15 @@ test("fires even when function errors", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunFailed();
 
   expect(state.count).toBe(1);
 });
 
 test("fires with no steps", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     count: 0,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onRunStart() {
@@ -108,8 +101,8 @@ test("fires with no steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
       return "hello";
     },
   );
@@ -117,9 +110,7 @@ test("fires with no steps", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // No steps = 1 request = 1 call
   expect(state.count).toBe(1);

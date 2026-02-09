@@ -1,15 +1,14 @@
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("transform event data before sending", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     receivedEventData: null as unknown,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformClientInput(arg: Middleware.TransformClientInputArgs) {
@@ -38,15 +37,15 @@ test("transform event data before sending", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ event }) => {
+    async ({ event, runId }) => {
+      state.runId = runId;
       state.receivedEventData = event.data;
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
   await client.send({ name: eventName, data: { original: "data" } });
-  await waitFor(() => expect(state.done).toBe(true));
+  await state.waitForRunComplete();
 
   expect(state.receivedEventData).toEqual({
     injected: "value",
@@ -55,10 +54,9 @@ test("transform event data before sending", async () => {
 });
 
 test("multiple middleware transform in order", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     receivedEventData: null as unknown,
-  };
+  });
 
   class Mw1 extends Middleware.BaseMiddleware {
     override transformClientInput(arg: Middleware.TransformClientInputArgs) {
@@ -102,15 +100,15 @@ test("multiple middleware transform in order", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ event }) => {
+    async ({ event, runId }) => {
+      state.runId = runId;
       state.receivedEventData = event.data;
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
   await client.send({ name: eventName, data: { original: "data" } });
-  await waitFor(() => expect(state.done).toBe(true));
+  await state.waitForRunComplete();
 
   // Both middleware should have transformed the data
   expect(state.receivedEventData).toEqual({

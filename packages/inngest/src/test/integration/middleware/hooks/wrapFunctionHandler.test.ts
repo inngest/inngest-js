@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
 import { type Context, Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
+import {
+  createState,
+  randomSuffix,
+  testNameFromFileUrl,
+  waitFor,
+} from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -14,10 +19,7 @@ test("multiple middleware in correct order", async () => {
   // - Mw2 wraps the actual function
   // Result: mw1 before -> mw2 before -> fn -> mw2 after -> mw1 after
 
-  const state = {
-    done: false,
-    logs: [] as string[],
-  };
+  const state = createState({ logs: [] as string[] });
 
   class Mw1 extends Middleware.BaseMiddleware {
     override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -46,17 +48,15 @@ test("multiple middleware in correct order", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
+    async ({ runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // First middleware wraps second middleware, which wraps the function
   expect(state.logs).toEqual([
@@ -71,7 +71,7 @@ test("multiple middleware in correct order", async () => {
 test("bookend with steps", async () => {
   // Run a step before and after the Inngest function handler
 
-  const state = {
+  const state = createState({
     afterStep: {
       insideCount: 0,
       output: 0,
@@ -80,12 +80,11 @@ test("bookend with steps", async () => {
       insideCount: 0,
       output: 0,
     },
-    done: false,
     normalStep: {
       insideCount: 0,
       output: 0,
     },
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
@@ -103,7 +102,6 @@ test("bookend with steps", async () => {
           return state.afterStep.insideCount;
         });
 
-        state.done = true;
         return output;
       };
   }
@@ -117,7 +115,8 @@ test("bookend with steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.normalStep.output = await step.run("step-1", () => {
         state.normalStep.insideCount++;
         return state.normalStep.insideCount;
@@ -127,9 +126,7 @@ test("bookend with steps", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.beforeStep).toEqual({
     insideCount: 1,
@@ -147,10 +144,7 @@ test("bookend with steps", async () => {
 
 describe("modify output", () => {
   test("1 middleware", async () => {
-    const state = {
-      done: false,
-      transformedResults: [] as unknown[],
-    };
+    const state = createState({ transformedResults: [] as unknown[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
       override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -169,26 +163,22 @@ describe("modify output", () => {
     const fn = client.createFunction(
       { id: "fn", retries: 0 },
       { event: eventName },
-      async () => {
-        state.done = true;
+      async ({ runId }) => {
+        state.runId = runId;
         return "original result";
       },
     );
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await waitFor(async () => {
-      expect(state.done).toBe(true);
-    });
+    const output = await state.waitForRunComplete();
 
     expect(state.transformedResults).toEqual(["original result"]);
+    expect(output).toEqual({ wrapped: "original result" });
   });
 
   test("2 middleware", async () => {
-    const state = {
-      done: false,
-      logs: [] as string[],
-    };
+    const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
       override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -215,17 +205,16 @@ describe("modify output", () => {
     const fn = client.createFunction(
       { id: "fn", retries: 0 },
       { event: eventName },
-      async () => {
-        state.done = true;
+      async ({ runId }) => {
+        state.runId = runId;
         return "result";
       },
     );
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await waitFor(async () => {
-      expect(state.done).toBe(true);
-    });
+    const output = await state.waitForRunComplete();
+    expect(output).toEqual("mw1(mw2(result))");
 
     // Onion order: inner middleware (mw2) sees result first, outer (mw1) sees
     // wrapped result
@@ -249,10 +238,7 @@ describe("modify error", () => {
   }
 
   test("transform error", async () => {
-    const state = {
-      done: false,
-      capturedErrors: [] as Error[],
-    };
+    const state = createState({ capturedErrors: [] as Error[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
       override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -274,17 +260,15 @@ describe("modify error", () => {
     const fn = client.createFunction(
       { id: "fn", retries: 0 },
       { event: eventName },
-      async () => {
-        state.done = true;
+      async ({ runId }) => {
+        state.runId = runId;
         throw new OriginalError("original");
       },
     );
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await waitFor(async () => {
-      expect(state.done).toBe(true);
-    });
+    await state.waitForRunFailed();
 
     expect(state.capturedErrors).toHaveLength(1);
     expect(state.capturedErrors[0]).toBeInstanceOf(OriginalError);
@@ -292,10 +276,7 @@ describe("modify error", () => {
   });
 
   test("multiple middleware error in onion order", async () => {
-    const state = {
-      done: false,
-      logs: [] as string[],
-    };
+    const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
       override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -330,17 +311,15 @@ describe("modify error", () => {
     const fn = client.createFunction(
       { id: "fn", retries: 0 },
       { event: eventName },
-      async () => {
-        state.done = true;
+      async ({ runId }) => {
+        state.runId = runId;
         throw new Error("error");
       },
     );
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await waitFor(async () => {
-      expect(state.done).toBe(true);
-    });
+    await state.waitForRunFailed();
 
     // Onion order: inner middleware (mw2) sees error first, outer (mw1) sees
     // wrapped error
@@ -348,11 +327,7 @@ describe("modify error", () => {
   });
 
   test("error not caught when success", async () => {
-    const state = {
-      done: false,
-      outputCalls: 0,
-      errorCalls: 0,
-    };
+    const state = createState({ outputCalls: 0, errorCalls: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
       override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -376,27 +351,21 @@ describe("modify error", () => {
     const fn = client.createFunction(
       { id: "fn", retries: 0 },
       { event: eventName },
-      async () => {
-        state.done = true;
+      async ({ runId }) => {
+        state.runId = runId;
       },
     );
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await waitFor(async () => {
-      expect(state.done).toBe(true);
-    });
+    await state.waitForRunComplete();
 
     expect(state.outputCalls).toBe(1);
     expect(state.errorCalls).toBe(0);
   });
 
   test("success not reached when error", async () => {
-    const state = {
-      done: false,
-      outputCalls: 0,
-      errorCalls: 0,
-    };
+    const state = createState({ outputCalls: 0, errorCalls: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
       override async wrapFunctionHandler(next: () => Promise<unknown>) {
@@ -420,17 +389,15 @@ describe("modify error", () => {
     const fn = client.createFunction(
       { id: "fn", retries: 0 },
       { event: eventName },
-      async () => {
-        state.done = true;
+      async ({ runId }) => {
+        state.runId = runId;
         throw new Error("function error");
       },
     );
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await waitFor(async () => {
-      expect(state.done).toBe(true);
-    });
+    await state.waitForRunFailed();
 
     expect(state.outputCalls).toBe(0);
     expect(state.errorCalls).toBe(1);

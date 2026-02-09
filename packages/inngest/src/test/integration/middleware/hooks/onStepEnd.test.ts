@@ -3,18 +3,17 @@ import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
+  createState,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("1 step", async () => {
-  const state = {
+  const state = createState({
     calls: [] as Middleware.OnStepEndArgs[],
-    done: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepEnd(args: Middleware.OnStepEndArgs) {
@@ -31,20 +30,18 @@ test("1 step", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("my-step", () => {
         return "step result";
       });
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
     {
@@ -62,10 +59,9 @@ test("1 step", async () => {
 });
 
 test("multiple steps", async () => {
-  const state = {
+  const state = createState({
     calls: [] as Middleware.OnStepEndArgs[],
-    done: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepEnd(args: Middleware.OnStepEndArgs) {
@@ -83,19 +79,17 @@ test("multiple steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("step-1", () => "result 1");
       await step.sendEvent("step-2", { name: "test-event", data: {} });
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
     {
@@ -124,11 +118,10 @@ test("multiple steps", async () => {
 });
 
 test("step error does not call onStepEnd", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     endCalls: 0,
     errorCalls: 0,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepEnd() {
@@ -149,32 +142,29 @@ test("step error does not call onStepEnd", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       try {
         await step.run("failing-step", () => {
           throw new Error("step failed");
         });
       } catch {}
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.endCalls).toBe(0);
   expect(state.errorCalls).toBe(1);
 });
 
 test("memoized step does not call onStepEnd", async () => {
-  const state = {
+  const state = createState({
     calls: 0,
-    done: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepEnd() {
@@ -192,21 +182,19 @@ test("memoized step does not call onStepEnd", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       // First step will be executed, then memoized on second run
       await step.run("step-1", () => "result 1");
       // Second step triggers a new run where step-1 is memoized
       await step.run("step-2", () => "result 2");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.calls).toBe(2);
 });

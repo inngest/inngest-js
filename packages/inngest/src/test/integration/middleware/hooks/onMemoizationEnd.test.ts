@@ -1,15 +1,14 @@
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../../utils.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("no steps", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     logs: [] as string[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onMemoizationEnd() {
@@ -27,27 +26,24 @@ test("no steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
+    async ({ runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.logs).toEqual(["mw", "fn: top"]);
 });
 
 test("1 step", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     logs: [] as string[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onMemoizationEnd() {
@@ -65,22 +61,20 @@ test("1 step", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
       await step.run("my-step", () => {
         state.logs.push("step: inside");
       });
       state.logs.push("fn: bottom");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.logs).toEqual([
     // 1st request
@@ -96,10 +90,9 @@ test("1 step", async () => {
 });
 
 test("2 steps", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     logs: [] as string[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onMemoizationEnd() {
@@ -117,7 +110,8 @@ test("2 steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
       await step.run("step-1", () => {
         state.logs.push("step-1: inside");
@@ -127,16 +121,13 @@ test("2 steps", async () => {
         state.logs.push("step-2: inside");
       });
       state.logs.push("fn: bottom");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.logs).toEqual([
     // 1st request

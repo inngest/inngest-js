@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
+  createState,
   randomSuffix,
   sleep,
   testNameFromFileUrl,
@@ -11,10 +12,9 @@ import {
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("receives request info", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     hookArgs: [] as Middleware.WrapRequestArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override wrapRequest: Middleware.BaseMiddleware["wrapRequest"] = async (
@@ -35,16 +35,14 @@ test("receives request info", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.hookArgs.length).toBe(1);
   const hookArgs = state.hookArgs[0]!;
@@ -95,10 +93,9 @@ test("throwing rejects the request", async () => {
 });
 
 test("next() resolves with response", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     response: null as Middleware.Response | null,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override async wrapRequest(next: () => Promise<Middleware.Response>) {
@@ -118,17 +115,15 @@ test("next() resolves with response", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
       return "output";
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.response).toEqual({
     status: 200,
@@ -140,10 +135,9 @@ test("next() resolves with response", async () => {
 });
 
 test("multiple middleware in onion order", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     logs: [] as string[],
-  };
+  });
 
   class Mw1 extends Middleware.BaseMiddleware {
     override async wrapRequest(next: () => Promise<Middleware.Response>) {
@@ -172,16 +166,14 @@ test("multiple middleware in onion order", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Filter to just the first set of wrap request logs (first execution)
   const wrapRequestLogs = state.logs.filter(

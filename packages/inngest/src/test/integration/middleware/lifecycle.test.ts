@@ -1,15 +1,19 @@
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
-import { randomSuffix, testNameFromFileUrl, waitFor } from "../utils.ts";
+import {
+  createState,
+  randomSuffix,
+  testNameFromFileUrl,
+  waitFor,
+} from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("state does not bleed between requests", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     counters: [] as number[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     counter = 0;
@@ -30,27 +34,22 @@ test("state does not bleed between requests", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("my-step", () => "result");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   // First invocation
-  state.done = false;
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Second invocation
-  state.done = false;
+  state.runId = null;
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Each invocation should start counter from 0, so each push is 1
   // (not 1 then 2, which would happen if state bled across requests)
@@ -60,10 +59,9 @@ test("state does not bleed between requests", async () => {
 });
 
 test("each request gets a fresh instance", async () => {
-  const state = {
+  const state = createState({
     instances: [] as Middleware.BaseMiddleware[],
-    done: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepStart() {
@@ -81,27 +79,22 @@ test("each request gets a fresh instance", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("my-step", () => "result");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   // First invocation
-  state.done = false;
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Second invocation
-  state.done = false;
+  state.runId = null;
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Each request should get a different middleware object instance
   expect(state.instances.length).toBeGreaterThanOrEqual(2);
@@ -110,10 +103,9 @@ test("each request gets a fresh instance", async () => {
 });
 
 test("middleware state is consistent within a single request", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     dataInWrap: null as string | null,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     data = "";
@@ -141,17 +133,15 @@ test("middleware state is consistent within a single request", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async () => {
-      state.done = true;
+    async ({ runId }) => {
+      state.runId = runId;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // The same instance was used throughout the request lifecycle
   expect(state.dataInWrap).toBe("set-in-transform");

@@ -3,19 +3,18 @@ import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   anyContext,
+  createState,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("1 step", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     onStepStartCalls: [] as Middleware.OnStepStartArgs[],
     logs: [] as string[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepStart(args: Middleware.OnStepStartArgs) {
@@ -34,23 +33,21 @@ test("1 step", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       state.logs.push("fn: top");
       await step.run("my-step", () => {
         state.logs.push("step: inside");
         return "result";
       });
       state.logs.push("fn: bottom");
-      state.done = true;
     },
   );
 
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.logs).toEqual([
     // 1st request (fresh execution)
@@ -78,10 +75,9 @@ test("1 step", async () => {
 });
 
 test("multiple steps", async () => {
-  const state = {
-    done: false,
+  const state = createState({
     onStepStartCalls: [] as Middleware.OnStepStartArgs[],
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepStart(args: Middleware.OnStepStartArgs) {
@@ -98,18 +94,16 @@ test("multiple steps", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.run("step-1", () => "result1");
       await step.sendEvent("step-2", { name: randomSuffix("other-evt") });
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.onStepStartCalls).toHaveLength(2);
   expect(state.onStepStartCalls).toEqual([
@@ -137,10 +131,9 @@ test("multiple steps", async () => {
 });
 
 test("unsupported step kinds", async () => {
-  const state = {
+  const state = createState({
     count: 0,
-    done: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override onStepStart() {
@@ -158,14 +151,14 @@ test("unsupported step kinds", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       await step.invoke("invoke", { function: childFn });
       await step.sleep("sleep", "1s");
       await step.waitForEvent("waitForEvent", {
         event: randomSuffix("never"),
         timeout: "1s",
       });
-      state.done = true;
     },
   );
   const childFn = client.createFunction(
@@ -177,8 +170,6 @@ test("unsupported step kinds", async () => {
   await createTestApp({ client, functions: [fn, childFn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
   expect(state.count).toEqual(0);
 });

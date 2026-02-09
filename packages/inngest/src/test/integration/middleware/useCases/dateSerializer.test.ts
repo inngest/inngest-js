@@ -5,10 +5,10 @@ import type { Jsonify } from "../../../../types.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   BaseSerializerMiddleware,
+  createState,
   isRecord,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -17,10 +17,9 @@ test("step.run", async () => {
   // Return a Date object from a step and expect the Date object to exist in the
   // step output
 
-  const state = {
-    done: false,
+  const state = createState({
     stepOutputs: [] as { date: Date; int: number }[],
-  };
+  });
 
   const eventName = randomSuffix("evt");
   const client = new Inngest({
@@ -31,23 +30,20 @@ test("step.run", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       const output = await step.run("my-step", () => {
         return { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 };
       });
       expectTypeOf(output).not.toBeAny();
       expectTypeOf(output).toEqualTypeOf<{ date: Date; int: number }>();
       state.stepOutputs.push(output);
-
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.stepOutputs).toEqual([
     { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
@@ -58,11 +54,10 @@ test("event.data", async () => {
   // Send an event with a Date object and expect the Date object to exist in the
   // event data
 
-  const state = {
-    done: false,
+  const state = createState({
     eventData: null as { date: Date; int: number } | null,
     eventsData: [] as { date: Date; int: number }[],
-  };
+  });
 
   const et = eventType(randomSuffix("evt"), {
     schema: z.object({
@@ -78,15 +73,14 @@ test("event.data", async () => {
   const fn = client.createFunction(
     { id: "fn", retries: 0 },
     et,
-    async ({ event, events }) => {
+    async ({ event, events, runId }) => {
+      state.runId = runId;
       expectTypeOf(event.data).not.toBeAny();
       state.eventData = event.data;
       state.eventsData = events.map((event) => {
         expectTypeOf(event.data).not.toBeAny();
         return event.data;
       });
-
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
@@ -97,9 +91,7 @@ test("event.data", async () => {
       int: 42,
     }),
   );
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.eventsData).toEqual([
     { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
@@ -116,12 +108,11 @@ test("step.invoke", async () => {
   // output. In other words, a Date object flows through:
   // Client send -> Parent fn -> Child fn -> Parent fn
 
-  const state = {
-    done: false,
+  const state = createState({
     eventData: null as { date: Date; int: number } | null,
     eventsData: [] as { date: Date; int: number }[],
     stepOutputs: [] as { date: Date; int: number }[],
-  };
+  });
 
   const eventName = randomSuffix("evt");
   const client = new Inngest({
@@ -132,7 +123,8 @@ test("step.invoke", async () => {
   const parentFn = client.createFunction(
     { id: "parent-fn", retries: 0 },
     { event: eventName },
-    async ({ step }) => {
+    async ({ step, runId }) => {
+      state.runId = runId;
       const output = await step.invoke("a", {
         data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
         function: childFn,
@@ -140,8 +132,6 @@ test("step.invoke", async () => {
       expectTypeOf(output).not.toBeAny();
       expectTypeOf(output).toEqualTypeOf<{ date: Date; int: number }>();
       state.stepOutputs.push(output);
-
-      state.done = true;
     },
   );
   const childFn = client.createFunction(
@@ -161,9 +151,7 @@ test("step.invoke", async () => {
   await createTestApp({ client, functions: [parentFn, childFn] });
 
   await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   expect(state.eventsData).toEqual([
     {
