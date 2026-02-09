@@ -3,6 +3,7 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 import {
+  defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
   internalEvents,
@@ -266,6 +267,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               event: this.fnArg.event as APIStepPayload,
               steps,
               executionVersion: this.version,
+              retries: this.fnArg.maxAttempts ?? defaultMaxRetries,
             }),
           CHECKPOINT_RETRY_OPTIONS,
         );
@@ -566,24 +568,30 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         // Otherwise we're good to start executing things right now.
         const result = await this.executeStep(steps[0]);
 
+        const transformed = await stepRanHandler(result);
+        if (transformed.type !== "step-ran") {
+          throw new Error(
+            "Unexpected checkpoint handler result type after running step in sync mode",
+          );
+        }
+
         if (result.error) {
-          return this.checkpointAndSwitchToAsync([result]);
+          return this.checkpointAndSwitchToAsync([transformed.step]);
         }
 
         // Resume the step with original data for user code
+        //
+        // Note: We should likely also pass this through `transformOutput` and
+        // then `transformInput` to mimic the entire middleware cycle, to ensure
+        // that any transformations that purposefully skew the resulting type
+        // are supported.
         const stepToResume = this.resumeStepWithResult(result);
 
-        // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: result.data },
-          step: result,
-        });
-        const transformedData = transformedOutput?.result?.data ?? result.data;
-
-        // Create a copy for checkpointing with transformed data
-        const stepForCheckpoint = { ...stepToResume, data: transformedData };
+        // Checkpoint with transformed data from middleware
+        const stepForCheckpoint = {
+          ...stepToResume,
+          data: transformed.step.data,
+        };
 
         return void (await this.checkpoint([stepForCheckpoint]));
       },
@@ -1041,20 +1049,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
         const metadata = this.state.metadata?.get(id);
 
+        // Serialize the error so it survives JSON.stringify (raw Error
+        // objects have non-enumerable properties that get dropped).
+        // This is critical for checkpoint requests where the error is
+        // sent as JSON in the request body.
+        const serialized = serializeError(error);
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,
             op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
+            error: serialized,
             ...(metadata && metadata.length > 0 ? { metadata } : {}),
           };
         } else {
           return {
             ...outgoingOp,
             op: StepOpCode.StepFailed,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
+            error: serialized,
             ...(metadata && metadata.length > 0 ? { metadata } : {}),
           };
         }
