@@ -1553,6 +1553,25 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
+
+          // Grab "force step plan" flag from headers
+          let die = false;
+          const dieHeader = await actions.headers(
+            "getting step plan force control for forced execution",
+            headerKeys.InngestForceStepPlan,
+          );
+          if (dieHeader) {
+            const parsed = parseAsBoolean(dieHeader);
+            if (typeof parsed === "boolean") {
+              die = parsed;
+            } else {
+              this.log(
+                "warn",
+                `Received invalid value for ${headerKeys.InngestForceStepPlan} header: ${dieHeader}. Expected a boolean value. Defaulting to "false".`,
+              );
+            }
+          }
+
           body = {
             event: {},
             events: [],
@@ -1561,9 +1580,12 @@ export class InngestCommHandler<
             sdkDecided: true,
             ctx: {
               attempt: 0,
-              disable_immediate_execution: false,
+              disable_immediate_execution: die,
               use_api: true,
-              max_attempts: 3,
+              // This execution path doesn't control max attempts; it's already
+              // been reported and Inngest is now in control of when to stop, so
+              // we remove this restriction.
+              max_attempts: Infinity,
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
