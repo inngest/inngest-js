@@ -30,8 +30,8 @@ describe("output", async () => {
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
-          const output = await next({ stepOptions, input });
+        return async ({ next }) => {
+          const output = await next();
           state.hook.outputs.push(output);
           if (stepInfo.memoized) {
             return output;
@@ -89,8 +89,8 @@ describe("output", async () => {
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
-          const output = await next({ stepOptions, input });
+        return async ({ next }) => {
+          const output = await next();
           state.hook.outputs.push(output);
           if (stepInfo.memoized) {
             return output;
@@ -105,8 +105,8 @@ describe("output", async () => {
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
-          const output = await next({ stepOptions, input });
+        return async ({ next }) => {
+          const output = await next();
           state.hook.outputs.push(output);
           if (stepInfo.memoized) {
             return output;
@@ -185,9 +185,9 @@ describe("error", async () => {
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
+        return async ({ next }) => {
           try {
-            await next({ stepOptions, input });
+            await next();
           } catch (error) {
             state.mw.errors.push(error);
             if (stepInfo.memoized) {
@@ -260,9 +260,9 @@ describe("error", async () => {
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
+        return async ({ next }) => {
           try {
-            await next({ stepOptions, input });
+            await next();
           } catch (error) {
             state.mw1.errors.push(error);
             if (stepInfo.memoized) {
@@ -278,9 +278,9 @@ describe("error", async () => {
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
+        return async ({ next }) => {
           try {
-            await next({ stepOptions, input });
+            await next();
           } catch (error) {
             state.mw2.errors.push(error);
             if (stepInfo.memoized) {
@@ -355,9 +355,9 @@ test("wrap step handler", async () => {
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override wrapStep(): Middleware.WrapStepReturn {
-      return ({ next, stepOptions, input }) => {
+      return ({ next }) => {
         state.handlerWrapped = true;
-        return next({ stepOptions, input });
+        return next();
       };
     }
   }
@@ -398,9 +398,9 @@ test("multiple middleware in correct order (reverse/wrapping)", async () => {
 
   class Mw1 extends Middleware.BaseMiddleware {
     override wrapStep(): Middleware.WrapStepReturn {
-      return async ({ next, stepOptions, input }) => {
+      return async ({ next }) => {
         state.logs.push("mw1 before");
-        const result = await next({ stepOptions, input });
+        const result = await next();
         state.logs.push("mw1 after");
         return result;
       };
@@ -409,9 +409,9 @@ test("multiple middleware in correct order (reverse/wrapping)", async () => {
 
   class Mw2 extends Middleware.BaseMiddleware {
     override wrapStep(): Middleware.WrapStepReturn {
-      return async ({ next, stepOptions, input }) => {
+      return async ({ next }) => {
         state.logs.push("mw2 before");
-        const result = await next({ stepOptions, input });
+        const result = await next();
         state.logs.push("mw2 after");
         return result;
       };
@@ -471,7 +471,7 @@ test("called when both fresh and memoized", async () => {
         id: stepInfo.options.id,
         memoized: stepInfo.memoized,
       });
-      return ({ next, stepOptions, input }) => next({ stepOptions, input });
+      return ({ next }) => next();
     }
   }
 
@@ -527,15 +527,19 @@ describe("change step ID", async () => {
         state.onStepStartCalls.push(arg);
       }
 
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
+      override transformStepInput(
+        arg: Middleware.TransformStepInputArgs,
+      ): Middleware.TransformStepInputArgs {
         if (changeStepID) {
-          stepInfo.options.id = "new";
+          arg.stepOptions.id = "new";
         } else {
           changeStepID = true;
         }
-        return ({ next, stepOptions, input }) => next({ stepOptions, input });
+        return arg;
+      }
+
+      override wrapStep(): Middleware.WrapStepReturn {
+        return ({ next }) => next();
       }
     }
 
@@ -619,18 +623,21 @@ describe("change step ID", async () => {
         state.onStepStartCalls.push(arg);
       }
 
-      override wrapStep(
-        stepInfo: Middleware.StepInfo,
-      ): Middleware.WrapStepReturn {
-        if (stepInfo.options.id === "step-2") {
+      override transformStepInput(
+        arg: Middleware.TransformStepInputArgs,
+      ): Middleware.TransformStepInputArgs {
+        if (arg.stepOptions.id === "step-2") {
           if (changeStepID) {
-            stepInfo.options.id = "step-1";
+            arg.stepOptions.id = "step-1";
           } else {
             changeStepID = true;
           }
         }
+        return arg;
+      }
 
-        return ({ next, stepOptions, input }) => next({ stepOptions, input });
+      override wrapStep(): Middleware.WrapStepReturn {
+        return ({ next }) => next();
       }
     }
 
@@ -738,12 +745,12 @@ test("bookend step.sleep", async () => {
       stepInfo: Middleware.StepInfo,
     ): Middleware.WrapStepReturn {
       if (stepInfo.options.id.endsWith("-prepend")) {
-        return ({ next, stepOptions, input }) => next({ stepOptions, input });
+        return ({ next }) => next();
       }
 
       const prependStepId = stepInfo.options.id + "-prepend";
 
-      return async ({ next, ctx, stepOptions, input }) => {
+      return async ({ next, ctx }) => {
         state.beforeStep.output = await ctx.step.run(
           prependStepId,
           async () => {
@@ -753,7 +760,7 @@ test("bookend step.sleep", async () => {
         );
 
         // The normal step
-        const output = await next({ stepOptions, input });
+        const output = await next();
 
         state.afterStep.output = await ctx.step.run(prependStepId, async () => {
           state.afterStep.insideCount++;
@@ -820,17 +827,17 @@ test("bookend with steps", async () => {
       stepInfo: Middleware.StepInfo,
     ): Middleware.WrapStepReturn {
       if (["before", "after"].includes(stepInfo.options.id)) {
-        return ({ next, stepOptions, input }) => next({ stepOptions, input });
+        return ({ next }) => next();
       }
 
-      return async ({ next, ctx, stepOptions, input }) => {
+      return async ({ next, ctx }) => {
         state.beforeStep.output = await ctx.step.run("before", async () => {
           state.beforeStep.insideCount++;
           return state.beforeStep.insideCount;
         });
 
         // The normal step
-        const output = await next({ stepOptions, input });
+        const output = await next();
 
         state.afterStep.output = await ctx.step.run("after", async () => {
           state.afterStep.insideCount++;
@@ -900,35 +907,31 @@ test("change step input", async () => {
   };
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapStep(
-      stepInfo: Middleware.StepInfo,
-    ): Middleware.WrapStepReturn {
-      if (!stepInfo.memoized) {
-        state.unmemoizedCounts[stepInfo.stepKind] ??= 0;
-        state.unmemoizedCounts[stepInfo.stepKind]++;
+    override transformStepInput(
+      arg: Middleware.TransformStepInputArgs,
+    ): Middleware.TransformStepInputArgs {
+      if (!arg.stepInfo.memoized) {
+        state.unmemoizedCounts[arg.stepInfo.stepKind] ??= 0;
+        state.unmemoizedCounts[arg.stepInfo.stepKind]++;
       }
 
-      // Modify stepInfo.input directly in the outer function for step types
-      // where input is read before the handler chain runs (invoke, sleep,
-      // waitForEvent).
-      if (stepInfo.stepKind === "invoke") {
+      if (arg.stepInfo.stepKind === "invoke") {
         // @ts-expect-error - input is unknown[]
-        stepInfo.input[0].payload.data = { value: 2 };
-      } else if (stepInfo.stepKind === "sleep") {
-        stepInfo.input = ["1s"];
-      } else if (stepInfo.stepKind === "waitForEvent") {
+        arg.input[0].payload.data = { value: 2 };
+      } else if (arg.stepInfo.stepKind === "run") {
+        arg.input = [2];
+      } else if (arg.stepInfo.stepKind === "sleep") {
+        arg.input = ["1s"];
+      } else if (arg.stepInfo.stepKind === "waitForEvent") {
         // @ts-expect-error - input is unknown[]
-        stepInfo.input[0].timeout = "1s";
+        arg.input[0].timeout = "1s";
       }
 
-      return ({ next, stepOptions, input }) => {
-        // Modify input through the next chain for step.run (handler runs
-        // during discovery, so chain-based modifications work).
-        if (stepInfo.stepKind === "run") {
-          return next({ stepOptions, input: [2] });
-        }
-        return next({ stepOptions, input });
-      };
+      return arg;
+    }
+
+    override wrapStep(): Middleware.WrapStepReturn {
+      return ({ next }) => next();
     }
   }
 
@@ -1038,8 +1041,8 @@ test("2 middleware with staticTransform", async () => {
     override wrapStep(
       stepInfo: Middleware.StepInfo,
     ): Middleware.WrapStepReturn {
-      return async ({ next, stepOptions, input }) => {
-        const output = await next({ stepOptions, input });
+      return async ({ next }) => {
+        const output = await next();
         if (stepInfo.memoized) {
           return output;
         }
@@ -1070,8 +1073,8 @@ test("2 middleware with staticTransform", async () => {
     override wrapStep(
       stepInfo: Middleware.StepInfo,
     ): Middleware.WrapStepReturn {
-      return async ({ next, stepOptions, input }) => {
-        const output = await next({ stepOptions, input });
+      return async ({ next }) => {
+        const output = await next();
         if (stepInfo.memoized) {
           return output;
         }

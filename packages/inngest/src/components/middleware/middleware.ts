@@ -52,6 +52,20 @@ export namespace Middleware {
       };
 
   /**
+   * The argument passed to `transformStepInput`.
+   */
+  export type TransformStepInputArgs = {
+    /** Read-only step metadata. */
+    readonly stepInfo: Readonly<
+      Pick<StepInfo, "hashedId" | "memoized" | "stepKind">
+    >;
+    /** Mutable step options (id, name). */
+    stepOptions: StepOptions;
+    /** Mutable step input args. */
+    input: unknown[];
+  };
+
+  /**
    * The argument passed to `transformFunctionInput`.
    */
   export type TransformFunctionInputArgs = {
@@ -69,13 +83,8 @@ export namespace Middleware {
   }) => Promise<unknown>;
 
   export type WrapStepReturn = (args: {
-    next: (args: {
-      stepOptions: StepOptions;
-      input: unknown[];
-    }) => Promise<unknown>;
+    next: () => Promise<unknown>;
     ctx: Context.Any;
-    stepOptions: StepOptions;
-    input: unknown[];
   }) => Promise<unknown>;
 
   /**
@@ -298,6 +307,15 @@ export namespace Middleware {
     transformClientInput?(arg: Middleware.TransformClientInputArgs): unknown;
 
     /**
+     * Called once per step before the `wrapStep` chain. Use this to modify step
+     * options (e.g. the step ID) or step input args.
+     *
+     * Return the (potentially modified) arg object. Each middleware builds on
+     * the previous middleware's result (forward order).
+     */
+    transformStepInput?(arg: TransformStepInputArgs): TransformStepInputArgs;
+
+    /**
      * Called once per run before execution. Use this to modify the function's
      * input context (event data, step tools, custom properties) and memoized
      * step data.
@@ -341,9 +359,10 @@ export namespace Middleware {
      * Called many times per step, when finding it.
      *
      * Use to:
-     * - Modify step options and input
      * - Modify step output/error
      * - Run arbitrary code before/after the step
+     *
+     * To modify step options or input, use `transformStepInput` instead.
      */
     wrapStep?(stepInfo: StepInfo): WrapStepReturn;
   }

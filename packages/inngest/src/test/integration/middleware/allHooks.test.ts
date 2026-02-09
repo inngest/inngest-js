@@ -47,14 +47,23 @@ test("all hooks fire in correct order with 2 middleware", async () => {
         };
       }
 
+      override transformStepInput(
+        arg: Middleware.TransformStepInputArgs,
+      ): Middleware.TransformStepInputArgs {
+        state.logs.push(
+          `transformStepInput(${arg.stepInfo.memoized ? "memo" : "fresh"}) (${name})`,
+        );
+        return arg;
+      }
+
       override wrapStep(
         stepInfo: Middleware.StepInfo,
       ): Middleware.WrapStepReturn {
-        return async ({ next, stepOptions, input }) => {
+        return async ({ next }) => {
           state.logs.push(
             `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): before (${name})`,
           );
-          const result = await next({ stepOptions, input });
+          const result = await next();
           state.logs.push(
             `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): after (${name})`,
           );
@@ -136,6 +145,8 @@ test("all hooks fire in correct order with 2 middleware", async () => {
     "wrapFunctionHandler: before (mw1)",
     "wrapFunctionHandler: before (mw2)",
     "fn: top",
+    "transformStepInput(fresh) (mw1)", // Forward order, before wrapStep
+    "transformStepInput(fresh) (mw2)",
     "wrapStep(fresh): before (mw1)",
     "wrapStep(fresh): before (mw2)",
     "onStepStart (mw1)",
@@ -161,7 +172,9 @@ test("all hooks fire in correct order with 2 middleware", async () => {
     "wrapFunctionHandler: before (mw1)",
     "wrapFunctionHandler: before (mw2)",
     "fn: top",
-    "onMemoizationEnd (mw1)",
+    "transformStepInput(memo) (mw1)", // Forward order, before wrapStep
+    "transformStepInput(memo) (mw2)",
+    "onMemoizationEnd (mw1)", // Fires after all memoized steps seen
     "onMemoizationEnd (mw2)",
     "wrapStep(memo): before (mw1)",
     "wrapStep(memo): before (mw2)",

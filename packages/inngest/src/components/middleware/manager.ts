@@ -1,4 +1,4 @@
-import type { Context, StepOptions } from "../../types.ts";
+import type { Context } from "../../types.ts";
 import { StepOpCode } from "../../types.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
 import type { Middleware } from "./middleware.ts";
@@ -67,6 +67,16 @@ export class MiddlewareManager {
       input: stepInput,
     });
 
+    // Apply transformStepInput middleware (forward order)
+    const originalInput = stepInfo.input;
+    const transformed = this.transformStepInput(stepInfo);
+    stepInfo.options = transformed.stepOptions;
+    // Preserve undefined if input wasn't changed from the initial empty array
+    stepInfo.input =
+      originalInput === undefined && transformed.input.length === 0
+        ? undefined
+        : transformed.input;
+
     // Deferred handler pattern — actual handler set later based on memoization
     let actualHandler: (() => Promise<unknown>) | undefined;
     const middlewareEntryPoint = async () => {
@@ -79,12 +89,12 @@ export class MiddlewareManager {
       actualHandler = handler;
     };
 
-    const wrapped = this.wrapStepHandler(middlewareEntryPoint, stepInfo);
+    const wrappedHandler = this.wrapStepHandler(middlewareEntryPoint, stepInfo);
 
     return {
-      wrappedHandler: wrapped.handler,
+      wrappedHandler,
       setActualHandler,
-      stepInfo: wrapped.stepInfo,
+      stepInfo,
     };
   }
 
@@ -175,14 +185,39 @@ export class MiddlewareManager {
   }
 
   /**
+   * Apply transformStepInput middleware in forward order.
+   * Each middleware builds on the previous result.
+   */
+  private transformStepInput(
+    stepInfo: Middleware.StepInfo,
+  ): Middleware.TransformStepInputArgs {
+    let result: Middleware.TransformStepInputArgs = {
+      stepInfo: {
+        hashedId: stepInfo.hashedId,
+        memoized: stepInfo.memoized,
+        stepKind: stepInfo.stepKind,
+      },
+      stepOptions: { ...stepInfo.options },
+      input: [...(stepInfo.input ?? [])],
+    };
+
+    for (const mw of this.middleware) {
+      if (mw?.transformStepInput) {
+        result = mw.transformStepInput(result);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Wrap a step handler with wrapStep middlewares (reverse order for
-   * onion layering).  Returns the wrapped handler and potentially modified
-   * stepInfo.
+   * onion layering). Returns the wrapped handler.
    */
   wrapStepHandler(
     handler: () => Promise<unknown>,
     stepInfo: Middleware.StepInfo,
-  ): { handler: () => Promise<unknown>; stepInfo: Middleware.StepInfo } {
+  ): () => Promise<unknown> {
     // Collect transform functions by calling wrapStep
     // in reverse order (so first middleware becomes outermost in chain)
     const transforms: Middleware.WrapStepReturn[] = [];
@@ -194,38 +229,19 @@ export class MiddlewareManager {
     }
 
     if (transforms.length === 0) {
-      return { handler, stepInfo };
+      return handler;
     }
 
     // Build next chain from innermost to outermost.
-    // Innermost: write final stepOptions/input back to stepInfo, then call handler.
-    const originalInput = stepInfo.input;
-    let chain: (args: {
-      stepOptions: StepOptions;
-      input: unknown[];
-    }) => Promise<unknown> = async ({ stepOptions, input }) => {
-      stepInfo.options = stepOptions;
-      // Preserve undefined if input wasn't changed from the initial empty array
-      stepInfo.input =
-        originalInput === undefined && input.length === 0 ? undefined : input;
-      return handler();
-    };
+    let chain: () => Promise<unknown> = handler;
 
     const ctx = this.fnArg;
     for (const transform of transforms) {
       const next = chain;
-      chain = ({ stepOptions, input }) =>
-        transform({ next, ctx, stepOptions, input });
+      chain = () => transform({ next, ctx });
     }
 
-    const outerChain = chain;
-    const wrappedHandler = () =>
-      outerChain({
-        stepOptions: { ...stepInfo.options },
-        input: [...(stepInfo.input ?? [])],
-      });
-
-    return { handler: wrappedHandler, stepInfo };
+    return chain;
   }
 
   onStepStart(stepInfo: Middleware.StepInfo): void {
