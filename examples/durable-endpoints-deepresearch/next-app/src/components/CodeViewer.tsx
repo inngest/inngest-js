@@ -5,7 +5,7 @@ import type { StepStatuses, StepParams } from "@/types";
 
 // Source code to display (showing the research workflow)
 const SOURCE_CODE = `// Durable Endpoint: Each step.run() is persisted and can retry on failure
-export const researchHandler = wrap(async (req: Request) => {
+export const researchHandler = inngest.endpoint(async (req: Request) => {
   const { topic, clarifications, researchId } = parseParams(req);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -80,13 +80,38 @@ function highlightSyntax(code: string): React.ReactNode[] {
   let key = 0;
 
   const keywords = new Set([
-    "const", "let", "var", "function", "return", "if", "else", "for", "while",
-    "async", "await", "new", "export", "import", "from", "true", "false",
-    "null", "undefined", "typeof", "instanceof", "class", "extends",
+    "const",
+    "let",
+    "var",
+    "function",
+    "return",
+    "if",
+    "else",
+    "for",
+    "while",
+    "async",
+    "await",
+    "new",
+    "export",
+    "import",
+    "from",
+    "true",
+    "false",
+    "null",
+    "undefined",
+    "typeof",
+    "instanceof",
+    "class",
+    "extends",
   ]);
 
   const types = new Set([
-    "Request", "Response", "Promise", "step", "Exa", "anthropic",
+    "Request",
+    "Response",
+    "Promise",
+    "step",
+    "Exa",
+    "anthropic",
   ]);
 
   while (i < code.length) {
@@ -97,7 +122,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-gray-400 italic">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -114,7 +139,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-green-600">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -132,7 +157,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-green-600">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -145,7 +170,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-orange-500">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -161,25 +186,25 @@ function highlightSyntax(code: string): React.ReactNode[] {
         tokens.push(
           <span key={key++} className="text-purple-600 font-medium">
             {word}
-          </span>
+          </span>,
         );
       } else if (types.has(word)) {
         tokens.push(
           <span key={key++} className="text-blue-600">
             {word}
-          </span>
+          </span>,
         );
       } else if (code[end] === "(") {
         tokens.push(
           <span key={key++} className="text-amber-600">
             {word}
-          </span>
+          </span>,
         );
       } else {
         tokens.push(
           <span key={key++} className="text-gray-800">
             {word}
-          </span>
+          </span>,
         );
       }
       i = end;
@@ -191,7 +216,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-gray-600">
           {code[i]}
-        </span>
+        </span>,
       );
       i++;
       continue;
