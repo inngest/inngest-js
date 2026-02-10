@@ -106,7 +106,7 @@ export const serve = (
         queryString: (key) => c.req.query(key),
         headers: (key) => c.req.header(key),
         method: () => c.req.method,
-        body: () => c.req.json(),
+        body: () => c.req.text(),
         env: () => env(c) as Env,
       };
     },

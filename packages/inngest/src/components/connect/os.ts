@@ -85,12 +85,12 @@ export function onShutdown(signals: string[], fn: () => void) {
   // Deno
   try {
     if (Deno) {
-      // biome-ignore lint/complexity/noForEach: <explanation>
+      // biome-ignore lint/complexity/noForEach: intentional
       signals.forEach((signal) => {
         Deno.addSignalListener(signal, fn);
       });
       return () => {
-        // biome-ignore lint/complexity/noForEach: <explanation>
+        // biome-ignore lint/complexity/noForEach: intentional
         signals.forEach((signal) => {
           Deno.removeSignalListener(signal, fn);
         });
@@ -103,12 +103,12 @@ export function onShutdown(signals: string[], fn: () => void) {
   // Node, Bun
   try {
     if (process) {
-      // biome-ignore lint/complexity/noForEach: <explanation>
+      // biome-ignore lint/complexity/noForEach: intentional
       signals.forEach((signal) => {
         process.on(signal, fn);
       });
       return () => {
-        // biome-ignore lint/complexity/noForEach: <explanation>
+        // biome-ignore lint/complexity/noForEach: intentional
         signals.forEach((signal) => {
           process.removeListener(signal, fn);
         });

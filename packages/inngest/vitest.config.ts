@@ -13,7 +13,7 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "**/test/**"],
     logHeapUsage: true,
     fileParallelism: true,
-    silent: true,
+    silent: "passed-only",
     hideSkippedTests: true,
     typecheck: {
       tsconfig: "./tsconfig.types.json",

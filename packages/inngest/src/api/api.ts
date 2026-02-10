@@ -448,7 +448,9 @@ export class InngestApi {
       json = await res.json();
     } catch {
       return err({
-        error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+        error: `Failed to update metadata: ${res.status} ${
+          res.statusText
+        } - ${await resClone.text()}`,
         status: res.status,
       });
     }
@@ -470,6 +472,8 @@ export class InngestApi {
   async checkpointNewRun(args: {
     runId: string;
     event: APIStepPayload;
+    executionVersion: ExecutionVersion;
+    retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({
@@ -477,6 +481,8 @@ export class InngestApi {
       event: args.event,
       steps: args.steps,
       ts: new Date().valueOf(),
+      request_version: args.executionVersion,
+      retries: args.retries,
     });
 
     const result = await this.req("/v1/checkpoint", {
@@ -499,7 +505,9 @@ export class InngestApi {
     }
 
     throw new Error(
-      `Failed to checkpoint new run: ${res.status} ${res.statusText} - ${await res.text()}`,
+      `Failed to checkpoint new run: ${res.status} ${
+        res.statusText
+      } - ${await res.text()}`,
     );
   }
 
@@ -534,7 +542,9 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint steps: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint steps: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
   }
@@ -570,8 +580,30 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint async: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint async: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
+  }
+
+  /**
+   * Fetch the output of a completed run using a token.
+   *
+   * This uses token-based auth (not signing key) and is intended for use by
+   * proxy endpoints that fetch results on behalf of users.
+   *
+   * @param runId - The ID of the run to fetch output for
+   * @param token - The token used to authenticate the request
+   * @returns The raw Response from the API
+   */
+  async getRunOutput(runId: string, token: string): Promise<Response> {
+    const url = await this.getTargetUrl(`/v1/http/runs/${runId}/output`);
+    url.searchParams.set("token", token);
+
+    return this.fetch(url.toString(), {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

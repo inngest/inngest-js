@@ -74,7 +74,7 @@ export const serve = (
     ) => {
       return {
         method: () => reqMethod || event.request.method || "",
-        body: () => event.request.json(),
+        body: () => event.request.text(),
         headers: (key) => event.request.headers.get(key),
         url: () => {
           const protocol =
