@@ -8,16 +8,29 @@ import {
 const defaultLogger = new DefaultLogger();
 let globalLogger: Logger | undefined;
 
-const warnedKeys = new Set<string>();
+const loggedKeys = new Set<string>();
+
+/**
+ * Log a message exactly once per process lifetime.
+ * Subsequent calls with the same `key` are no-ops.
+ */
+export function logOnce(
+  logger: Logger,
+  level: "debug" | "info" | "warn" | "error",
+  key: string,
+  ...args: LogArg[]
+): void {
+  if (loggedKeys.has(key)) return;
+  loggedKeys.add(key);
+  logger[level](...args);
+}
 
 /**
  * Log a warning exactly once per process lifetime.
  * Subsequent calls with the same `key` are no-ops.
  */
 export function warnOnce(logger: Logger, key: string, ...args: LogArg[]): void {
-  if (warnedKeys.has(key)) return;
-  warnedKeys.add(key);
-  logger.warn(...args);
+  logOnce(logger, "warn", key, ...args);
 }
 
 export function setGlobalLogger(logger: Logger): void {

@@ -1,10 +1,8 @@
 import canonicalize from "canonicalize";
 import hashjs from "hash.js";
-import { getLogger } from "./log.ts";
+import { getLogger, logOnce } from "./log.ts";
 
 const { hmac, sha256 } = hashjs;
-
-let hasLoggedCryptoImplementation = false;
 
 /**
  * Send an HTTP request with the given signing key. If the response is a 401 or
@@ -111,16 +109,14 @@ export async function signDataWithKey(
 ): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
 
-  if (!hasLoggedCryptoImplementation) {
-    hasLoggedCryptoImplementation = true;
-    if (subtle) {
-      getLogger().debug("Using native Web Crypto for request signing");
-    } else {
-      getLogger().debug(
-        "Using hash.js fallback for request signing (native crypto unavailable)",
-      );
-    }
-  }
+  logOnce(
+    getLogger(),
+    "debug",
+    "crypto-implementation",
+    subtle
+      ? "Using native Web Crypto for request signing"
+      : "Using hash.js fallback for request signing (native crypto unavailable)",
+  );
 
   if (subtle) {
     try {
