@@ -190,3 +190,96 @@ describe("getLogger", () => {
     expect(loggerFromHelper).toBe(loggerFromCtx);
   });
 });
+
+describe("warnOnce", () => {
+  afterEach(async () => {
+    vi.resetModules();
+  });
+
+  test("logs the warning on the first call", async () => {
+    const { warnOnce } = await import("./log.ts");
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    warnOnce(logger, "test-key", "something is deprecated");
+
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith("something is deprecated");
+  });
+
+  test("does not log on subsequent calls with the same key", async () => {
+    const { warnOnce } = await import("./log.ts");
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    warnOnce(logger, "test-key", "something is deprecated");
+    warnOnce(logger, "test-key", "something is deprecated");
+    warnOnce(logger, "test-key", "something is deprecated");
+
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  test("logs separately for different keys", async () => {
+    const { warnOnce } = await import("./log.ts");
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    warnOnce(logger, "key-a", "warning A");
+    warnOnce(logger, "key-b", "warning B");
+
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith("warning A");
+    expect(logger.warn).toHaveBeenCalledWith("warning B");
+  });
+
+  test("passes multiple args to logger.warn", async () => {
+    const { warnOnce } = await import("./log.ts");
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    warnOnce(logger, "test-key", "message", { extra: true });
+
+    expect(logger.warn).toHaveBeenCalledWith("message", { extra: true });
+  });
+
+  test("resets state when module is re-imported", async () => {
+    const { warnOnce } = await import("./log.ts");
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    warnOnce(logger, "test-key", "first");
+    expect(logger.warn).toHaveBeenCalledOnce();
+
+    // vi.resetModules() in afterEach gives us a fresh Set on next import
+    vi.resetModules();
+    const { warnOnce: freshWarnOnce } = await import("./log.ts");
+
+    freshWarnOnce(logger, "test-key", "second");
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+  });
+});

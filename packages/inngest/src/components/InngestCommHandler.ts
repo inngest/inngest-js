@@ -31,6 +31,7 @@ import {
   undefinedToNull,
   versionSchema,
 } from "../helpers/functions.ts";
+import { formatLogMessage, warnOnce } from "../helpers/log.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
@@ -502,8 +503,6 @@ export class InngestCommHandler<
    *
    * To also provide a custom path, use `servePath`.
    */
-  private static _warnedServeHost = false;
-
   protected get serveOrigin(): string | undefined {
     if (this._serveOrigin) {
       return this._serveOrigin;
@@ -516,12 +515,14 @@ export class InngestCommHandler<
 
     const envHost = this.env[envKeys.InngestServeHost];
     if (envHost) {
-      if (!InngestCommHandler._warnedServeHost) {
-        InngestCommHandler._warnedServeHost = true;
-        this.client.logger.warn(
-          "INNGEST_SERVE_HOST is deprecated and will be removed in the future. Please update to use INNGEST_SERVE_ORIGIN instead.",
-        );
-      }
+      warnOnce(
+        this.client.logger,
+        "serve-host-deprecated",
+        formatLogMessage({
+          message: `${logPrefix} INNGEST_SERVE_HOST is deprecated.`,
+          action: "Use INNGEST_SERVE_ORIGIN instead.",
+        }),
+      );
       return envHost;
     }
 
@@ -589,12 +590,23 @@ export class InngestCommHandler<
       return false;
     }
 
-    // TODO: if we detect that someone is using 'allow' or 'force', we should log a warning
+    const envStreaming = this.env[envKeys.InngestStreaming];
+    if (envStreaming === "allow" || envStreaming === "force") {
+      warnOnce(
+        this.client.logger,
+        "streaming-allow-force-deprecated",
+        formatLogMessage({
+          message: `${logPrefix} INNGEST_STREAMING="${envStreaming}" is deprecated and will be treated as true.`,
+          action: "Set INNGEST_STREAMING=true instead.",
+        }),
+      );
+    }
+
     const streamingRequested =
       this.streaming === true ||
       parseAsBoolean(this.env[envKeys.InngestStreaming]) === true ||
-      this.env[envKeys.InngestStreaming] === "allow" ||
-      this.env[envKeys.InngestStreaming] === "force";
+      envStreaming === "allow" ||
+      envStreaming === "force";
 
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {

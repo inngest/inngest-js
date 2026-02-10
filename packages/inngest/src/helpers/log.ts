@@ -1,8 +1,24 @@
 import { getAsyncCtxSync } from "../components/execution/als.ts";
-import { DefaultLogger, type Logger } from "../middleware/logger.ts";
+import {
+  DefaultLogger,
+  type LogArg,
+  type Logger,
+} from "../middleware/logger.ts";
 
 const defaultLogger = new DefaultLogger();
 let globalLogger: Logger | undefined;
+
+const warnedKeys = new Set<string>();
+
+/**
+ * Log a warning exactly once per process lifetime.
+ * Subsequent calls with the same `key` are no-ops.
+ */
+export function warnOnce(logger: Logger, key: string, ...args: LogArg[]): void {
+  if (warnedKeys.has(key)) return;
+  warnedKeys.add(key);
+  logger.warn(...args);
+}
 
 export function setGlobalLogger(logger: Logger): void {
   globalLogger = logger;
