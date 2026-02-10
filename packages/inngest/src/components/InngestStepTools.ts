@@ -1139,28 +1139,35 @@ export interface ParallelOptions {
  *
  * @example
  * ```ts
- * const winner = await parallel({ mode: "race" }, async () => {
+ * // Defaults to "race" mode
+ * const winner = await parallel(async () => {
  *   return Promise.race([
  *     step.run("a", () => "a"),
  *     step.run("b", () => "b"),
  *     step.run("c", () => "c"),
  *   ]);
  * });
- * ```
  *
- * Without this helper, you would need to manually tag each step:
- * ```ts
- * const winner = await Promise.race([
- *   step.run({ id: "a", parallelMode: "race" }, () => "a"),
- *   step.run({ id: "b", parallelMode: "race" }, () => "b"),
- *   step.run({ id: "c", parallelMode: "race" }, () => "c"),
- * ]);
+ * // Or explicitly specify the mode
+ * const winner = await parallel({ mode: "race" }, async () => {
+ *   return Promise.race([
+ *     step.run("a", () => "a"),
+ *     step.run("b", () => "b"),
+ *   ]);
+ * });
  * ```
  */
 export const parallel = async <T>(
-  options: ParallelOptions,
-  callback: () => Promise<T>,
+  optionsOrCallback: ParallelOptions | (() => Promise<T>),
+  maybeCallback?: () => Promise<T>,
 ): Promise<T> => {
+  const options: ParallelOptions =
+    typeof optionsOrCallback === "function" ? {} : optionsOrCallback;
+  const callback =
+    typeof optionsOrCallback === "function"
+      ? optionsOrCallback
+      : maybeCallback!;
+
   const currentCtx = getAsyncCtxSync();
 
   if (!currentCtx?.execution) {
@@ -1184,7 +1191,7 @@ export const parallel = async <T>(
     ...currentCtx,
     execution: {
       ...currentCtx.execution,
-      parallelMode: options.mode,
+      parallelMode: options.mode ?? "race",
     },
   };
 

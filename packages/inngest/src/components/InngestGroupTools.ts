@@ -8,22 +8,32 @@ import { type ParallelOptions, parallel } from "./InngestStepTools.ts";
 export interface GroupTools {
   /**
    * Run a callback where all steps automatically receive a `parallelMode`
-   * option, removing the need to tag each step individually.
+   * option, removing the need to tag each step individually. Defaults to
+   * `"race"` mode.
    *
    * @example
    * ```ts
-   * const winner = await group.parallel({ mode: "race" }, async () => {
+   * // Defaults to "race" mode
+   * const winner = await group.parallel(async () => {
    *   return Promise.race([
    *     step.run("a", () => "a"),
    *     step.run("b", () => "b"),
    *     step.run("c", () => "c"),
    *   ]);
    * });
+   *
+   * // Or explicitly specify the mode
+   * const winner = await group.parallel({ mode: "race" }, async () => {
+   *   return Promise.race([
+   *     step.run("a", () => "a"),
+   *     step.run("b", () => "b"),
+   *   ]);
+   * });
    * ```
    */
   parallel: <T>(
-    options: ParallelOptions,
-    callback: () => Promise<T>,
+    optionsOrCallback: ParallelOptions | (() => Promise<T>),
+    maybeCallback?: () => Promise<T>,
   ) => Promise<T>;
 }
 

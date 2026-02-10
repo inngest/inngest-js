@@ -212,7 +212,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
         { id: "test-fn" },
         { event: "test/event" },
         async ({ step, group }) => {
-          await group.parallel({ mode: "race" }, async () => {
+          await group.parallel(async () => {
             return Promise.race([
               step.run("a", () => "a"),
               step.run("b", () => "b"),
@@ -247,7 +247,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
           // This step is outside group.parallel() - should NOT have parallelMode
           const outside = step.run("outside", () => "outside");
 
-          await group.parallel({ mode: "race" }, async () => {
+          await group.parallel(async () => {
             return Promise.race([
               step.run("inside-a", () => "a"),
               step.run("inside-b", () => "b"),
@@ -321,7 +321,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
         { id: "test-fn" },
         { event: "test/event" },
         async ({ step, group }) => {
-          await group.parallel({ mode: "race" }, async () => {
+          await group.parallel(async () => {
             return Promise.race([
               step.run("work", () => "done"),
               step.sleep("timeout", "10s"),
