@@ -275,6 +275,7 @@ const inngest = new Inngest({
   events: EventPayload[],  // Batch of events (if applicable)
   runId: string,          // Unique execution identifier
   step: StepTools,        // Step execution utilities
+  group: GroupTools,      // Tools for grouping/coordinating steps (e.g. group.parallel())
   attempt: number,        // Retry attempt number
   logger: Logger          // Structured logging
 }

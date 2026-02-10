@@ -15,6 +15,7 @@ import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
+import type { createGroupTools } from "./components/InngestGroupTools.ts";
 import type {
   ExtendSendEventWithMiddleware,
   InngestMiddleware,
@@ -503,6 +504,11 @@ export type BaseContext<TClient extends Inngest.Any> = {
   step: ReturnType<typeof createStepTools<TClient>>;
 
   /**
+   * Tools for grouping and coordinating steps.
+   */
+  group: ReturnType<typeof createGroupTools>;
+
+  /**
    * The current zero-indexed attempt number for this function execution. The
    * first attempt will be `0`, the second `1`, and so on. The attempt number
    * is incremented every time the function throws an error and is retried.
@@ -806,15 +812,12 @@ export interface ClientOptions {
   appVersion?: string;
 
   /**
-   * If `true`, parallel steps within functions are optimized to reduce traffic
-   * during `Promise` resolution, which can hugely reduce the time taken and
-   * number of requests for each run.
+   * Optimizes parallel steps to reduce traffic during `Promise` resolution,
+   * reducing time and requests per run. `Promise.*()` waits for all promises
+   * to settle before resolving. Use `group.parallel()` for `Promise.race()`
+   * semantics.
    *
-   * Note that this will be the default behaviour in v4 and in its current form
-   * will cause `Promise.*()` to wait for all promises to settle before
-   * resolving.
-   *
-   * @default false
+   * @default true
    */
   optimizeParallelism?: boolean;
 
@@ -1465,6 +1468,18 @@ export interface StepOptions {
    * changed at any time without affecting the step's behaviour.
    */
   name?: string;
+
+  /**
+   * The parallel execution mode for this step. Used with optimized parallelism
+   * to control how steps behave in parallel execution contexts.
+   *
+   * - `"race"`: Indicates this step is part of a `Promise.race()` group. When
+   *   one step in the race completes, the executor can cancel remaining steps.
+   *
+   * Can be set directly on step options or automatically via
+   * `group.parallel()`.
+   */
+  parallelMode?: "race";
 }
 
 /**

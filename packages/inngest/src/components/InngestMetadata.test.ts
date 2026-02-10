@@ -3,6 +3,7 @@ import type { u } from "vitest/dist/chunks/reporters.d.BFLkQcL6.js";
 import type { unknown } from "zod";
 import * as experimental from "../experimental";
 import type { KnownKeys } from "../helpers/types.ts";
+import * as als from "./execution/als.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   buildTarget,
@@ -55,7 +56,7 @@ describe("buildTarget", () => {
         ctx: { runId: "run-1", attempt: 2 },
         executingStep: { id: "step-1" },
       },
-    } as unknown as experimental.AsyncContext);
+    } as unknown as als.AsyncContext);
 
     expect(target).toEqual({
       run_id: "run-1",
@@ -70,7 +71,7 @@ describe("buildTarget", () => {
         ctx: { runId: "current-run", attempt: 1 },
         executingStep: { id: "step-ctx" },
       },
-    } as unknown as experimental.AsyncContext);
+    } as unknown as als.AsyncContext);
 
     expect(target).toEqual({ run_id: "other-run" });
   });
@@ -81,7 +82,7 @@ describe("buildTarget", () => {
         ctx: { runId: "current-run", attempt: 1 },
         executingStep: { id: "step-ctx" },
       },
-    } as unknown as experimental.AsyncContext);
+    } as unknown as als.AsyncContext);
 
     expect(target).toEqual({
       run_id: "other-run",
@@ -110,7 +111,7 @@ describe("buildTarget", () => {
             ctx: { runId: "run-1" },
             // no executingStep - we're in a function but not inside step.run()
           },
-        } as unknown as experimental.AsyncContext),
+        } as unknown as als.AsyncContext),
       ).toThrow("you are not inside a step.run() callback");
     });
 
@@ -121,7 +122,7 @@ describe("buildTarget", () => {
             ctx: { runId: "current-run" },
             executingStep: { id: "step-1" },
           },
-        } as unknown as experimental.AsyncContext),
+        } as unknown as als.AsyncContext),
       ).toThrow("you are targeting a different run");
     });
 
@@ -131,7 +132,7 @@ describe("buildTarget", () => {
           ctx: { runId: "run-1" },
           executingStep: { id: "step-1" },
         },
-      } as unknown as experimental.AsyncContext);
+      } as unknown as als.AsyncContext);
 
       expect(target).toEqual({
         run_id: "run-1",
@@ -148,7 +149,7 @@ describe("buildTarget", () => {
             ctx: { runId: "run-1", attempt: 0 },
             // no executingStep
           },
-        } as unknown as experimental.AsyncContext),
+        } as unknown as als.AsyncContext),
       ).toThrow(
         "attempt() was called without a value, but you are not inside a step.run() callback",
       );
@@ -160,7 +161,7 @@ describe("buildTarget", () => {
           ctx: { runId: "run-1", attempt: 2 },
           executingStep: { id: "step-1" },
         },
-      } as unknown as experimental.AsyncContext);
+      } as unknown as als.AsyncContext);
 
       expect(target).toEqual({
         run_id: "run-1",
@@ -182,8 +183,8 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
-      ctx as unknown as experimental.AsyncContext,
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
     );
 
     const client = mockClient();
@@ -211,8 +212,8 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
-      ctx as unknown as experimental.AsyncContext,
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
     );
 
     const client = mockClient();
@@ -240,8 +241,8 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
-      ctx as unknown as experimental.AsyncContext,
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
     );
 
     const client = mockClient();

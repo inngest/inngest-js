@@ -95,6 +95,30 @@ serve({ client, functions, streaming: "force" });
 serve({ client, functions, streaming: true });
 ```
 
+## Optimized Parallelism Now Default
+
+`optimizeParallelism` is now `true` by default, reducing traffic and latency for parallel steps. This changes `Promise.all()`, `Promise.allSettled()`, etc. to wait for all promises to settle before resolving.
+
+If you were using `Promise.race()` and relying on early resolution, use the new `group.parallel()` helper available on the function context:
+
+```typescript
+// Old behavior (no longer works as expected with optimized parallelism)
+const winner = await Promise.race([
+  step.run("a", () => "a"),
+  step.run("b", () => "b"),
+]);
+
+// New approach using group.parallel() from the function context
+const winner = await group.parallel(async () => {
+  return Promise.race([
+    step.run("a", () => "a"),
+    step.run("b", () => "b"),
+  ]);
+});
+```
+
+To revert to v3 behavior, set `optimizeParallelism: false` on your client or function.
+
 ## Edge Environment Improvements
 
 In v4, fetch and configuration are now resolved lazily at first use rather than eagerly at client construction. This means you no longer need to manually bind `globalThis.fetch` before creating an Inngest client in edge environments (Cloudflare Workers, Vercel Edge, Deno, etc.).

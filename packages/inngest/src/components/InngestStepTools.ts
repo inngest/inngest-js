@@ -1,7 +1,7 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
-import { getAsyncCtx } from "../experimental";
+
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { getLogger } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -26,6 +26,7 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
 } from "../types.ts";
+import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
@@ -179,9 +180,23 @@ export const createStepTools = <TClient extends Inngest.Any>(
     matchOp: MatchOpFn<T>,
     opts?: StepToolOptions<T>,
   ): T => {
+    const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
+      const op = matchOp(stepOptions, ...rest);
+
+      // Explicit option takes precedence, then check ALS context
+      const parallelMode =
+        stepOptions.parallelMode ?? getAsyncCtxSync()?.execution?.parallelMode;
+
+      if (parallelMode) {
+        op.opts = { ...op.opts, parallelMode };
+      }
+
+      return op;
+    };
+
     return (async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
-      return stepHandler({ args: parsedArgs, matchOp, opts });
+      return stepHandler({ args: parsedArgs, matchOp: wrappedMatchOp, opts });
     }) as T;
   };
 

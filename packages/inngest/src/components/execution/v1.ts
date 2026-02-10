@@ -40,6 +40,7 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
   MetadataOpcode,
@@ -1227,6 +1228,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
+      group: createGroupTools(),
     } as Context.Any;
 
     /**

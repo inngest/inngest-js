@@ -36,6 +36,12 @@ export interface AsyncContext {
      * execution or within the main function body.
      */
     executingStep?: StepOptions;
+
+    /**
+     * If present, indicates the parallel mode that should be applied to steps
+     * created within this context. Set by `group.parallel()`.
+     */
+    parallelMode?: "race";
   };
 }
 
@@ -45,9 +51,14 @@ export interface AsyncContext {
  */
 const alsSymbol = Symbol.for("inngest:als");
 
+/**
+ * Cache structure that stores both the promise and resolved ALS instance.
+ * This allows synchronous access after initialization.
+ */
 type ALSCache = {
   promise: Promise<AsyncLocalStorageIsh>;
   resolved?: AsyncLocalStorageIsh;
+  isFallback?: boolean;
 };
 
 /**
@@ -82,6 +93,7 @@ const initializeALS = async (
     const { AsyncLocalStorage } = await import("node:async_hooks");
     const als = new AsyncLocalStorage<AsyncContext>();
     cache.resolved = als;
+    cache.isFallback = false;
     return als;
   } catch {
     const fallback: AsyncLocalStorageIsh = {
@@ -89,11 +101,20 @@ const initializeALS = async (
       run: (_, fn) => fn(),
     };
     cache.resolved = fallback;
+    cache.isFallback = true;
     console.warn(
       "node:async_hooks is not supported in this runtime. Async context is disabled.",
     );
     return fallback;
   }
+};
+
+/**
+ * Check if AsyncLocalStorage is unavailable and we're using the fallback.
+ * Returns `undefined` if ALS hasn't been initialized yet.
+ */
+export const isALSFallback = (): boolean | undefined => {
+  return getCache().isFallback;
 };
 
 /**
@@ -104,8 +125,8 @@ export const getAsyncCtx = async (): Promise<AsyncContext | undefined> => {
 };
 
 /**
- * Retrieve the async context for the current execution. Returns undefined if ALS
- * hasn't been init'd yet.
+ * Retrieve the async context for the current execution synchronously.
+ * Returns undefined if ALS hasn't been initialized yet.
  */
 export const getAsyncCtxSync = (): AsyncContext | undefined => {
   return getCache().resolved?.getStore();
