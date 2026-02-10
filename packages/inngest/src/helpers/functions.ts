@@ -1,9 +1,9 @@
 import { ZodError, z } from "zod/v3";
 import type { InngestApi } from "../api/api.ts";
-import { stepsSchemas } from "../api/schema.ts";
+import { stepSchema } from "../api/schema.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
 import { err, ok, type Result } from "../types.ts";
-import { ExecutionVersion } from "./consts.ts";
+import type { ExecutionVersion } from "./consts.ts";
 import { formatLogMessage, getLogger } from "./log.ts";
 import type { Await } from "./types.ts";
 
@@ -95,6 +95,11 @@ export const versionSchema = z
       };
     }
 
+    if (v === 0) {
+      getLogger().error("V0 execution version is no longer supported"); // TODO: improve?
+      throw new Error("V0 execution version is no longer supported");
+    }
+
     if (v === -1) {
       return {
         sdkDecided: true,
@@ -114,7 +119,7 @@ const fnDataVersionSchema = z.object({
 
 export const parseFnData = (data: unknown, headerVersion?: unknown) => {
   let version: ExecutionVersion | undefined;
-  let sdkDecided: boolean;
+  let sdkDecided: boolean = true;
 
   try {
     if (typeof headerVersion !== "undefined") {
@@ -133,110 +138,39 @@ export const parseFnData = (data: unknown, headerVersion?: unknown) => {
       sdkDecided = parsedVersionData.version.sdkDecided;
     }
 
-    const versionHandlers = {
-      [ExecutionVersion.V0]: () =>
-        ({
-          version: ExecutionVersion.V0,
-          sdkDecided,
-          ...z
+    return {
+      version,
+      sdkDecided,
+      ...z
+        .object({
+          event: z.record(z.any()),
+          events: z.array(z.record(z.any())).default([]),
+          steps: stepSchema,
+          ctx: z
             .object({
-              event: z.record(z.any()),
-              events: z.array(z.record(z.any())).default([]),
-              steps: stepsSchemas[ExecutionVersion.V0],
-              ctx: z
-                .object({
-                  run_id: z.string(),
-                  attempt: z.number().default(0),
-                  stack: z
-                    .object({
-                      stack: z
-                        .array(z.string())
-                        .nullable()
-                        .transform((v) => (Array.isArray(v) ? v : [])),
-                      current: z.number(),
-                    })
-                    .optional()
-                    .nullable(),
-                })
-                .optional()
-                .nullable(),
+              run_id: z.string(),
+              fn_id: z.string().optional(),
+              attempt: z.number().default(0),
+              max_attempts: z.number().optional(),
+              disable_immediate_execution: z.boolean().default(false),
               use_api: z.boolean().default(false),
-            })
-            .parse(data),
-        }) as const,
-
-      [ExecutionVersion.V1]: () =>
-        ({
-          version: ExecutionVersion.V1,
-          sdkDecided,
-          ...z
-            .object({
-              event: z.record(z.any()),
-              events: z.array(z.record(z.any())).default([]),
-              steps: stepsSchemas[ExecutionVersion.V1],
-              ctx: z
+              qi_id: z.string().optional(),
+              stack: z
                 .object({
-                  run_id: z.string(),
-                  fn_id: z.string().optional(),
-                  attempt: z.number().default(0),
-                  max_attempts: z.number().optional(),
-                  disable_immediate_execution: z.boolean().default(false),
-                  use_api: z.boolean().default(false),
-                  qi_id: z.string().optional(),
                   stack: z
-                    .object({
-                      stack: z
-                        .array(z.string())
-                        .nullable()
-                        .transform((v) => (Array.isArray(v) ? v : [])),
-                      current: z.number(),
-                    })
-                    .optional()
-                    .nullable(),
+                    .array(z.string())
+                    .nullable()
+                    .transform((v) => (Array.isArray(v) ? v : [])),
+                  current: z.number(),
                 })
                 .optional()
                 .nullable(),
             })
-            .parse(data),
-        }) as const,
-
-      [ExecutionVersion.V2]: () =>
-        ({
-          version: ExecutionVersion.V2,
-          sdkDecided,
-          ...z
-            .object({
-              event: z.record(z.any()),
-              events: z.array(z.record(z.any())).default([]),
-              steps: stepsSchemas[ExecutionVersion.V2],
-              ctx: z
-                .object({
-                  run_id: z.string(),
-                  fn_id: z.string().optional(),
-                  attempt: z.number().default(0),
-                  max_attempts: z.number().optional(),
-                  disable_immediate_execution: z.boolean().default(false),
-                  use_api: z.boolean().default(false),
-                  qi_id: z.string().optional(),
-                  stack: z
-                    .object({
-                      stack: z
-                        .array(z.string())
-                        .nullable()
-                        .transform((v) => (Array.isArray(v) ? v : [])),
-                      current: z.number(),
-                    })
-                    .optional()
-                    .nullable(),
-                })
-                .optional()
-                .nullable(),
-            })
-            .parse(data),
-        }) as const,
-    } satisfies Record<ExecutionVersion, () => unknown>;
-
-    return versionHandlers[version]();
+            .optional()
+            .nullable(),
+        })
+        .parse(data),
+    } as const;
   } catch (err) {
     throw new Error(parseFailureErr(err));
   }
@@ -247,26 +181,14 @@ type ParseErr = string;
 export const fetchAllFnData = async ({
   data,
   api,
-  version,
 }: {
   data: FnData;
   api: InngestApi;
-  version: ExecutionVersion;
 }): Promise<Result<FnData, ParseErr>> => {
   const result = { ...data };
 
-  // Ugly pattern, but ensures we always check every execution model correctly.
-  const shouldFetchData: Record<ExecutionVersion, () => boolean> = {
-    [ExecutionVersion.V0]: () =>
-      result.version === ExecutionVersion.V0 && result.use_api,
-    [ExecutionVersion.V1]: () =>
-      result.version === ExecutionVersion.V1 && Boolean(result.ctx?.use_api),
-    [ExecutionVersion.V2]: () =>
-      result.version === ExecutionVersion.V2 && Boolean(result.ctx?.use_api),
-  };
-
   try {
-    if (shouldFetchData[result.version]()) {
+    if (result.ctx?.use_api) {
       if (!result.ctx?.run_id) {
         return err(
           formatLogMessage({
@@ -279,7 +201,7 @@ export const fetchAllFnData = async ({
 
       const [evtResp, stepResp] = await Promise.all([
         api.getRunBatch(result.ctx.run_id),
-        api.getRunSteps(result.ctx.run_id, version),
+        api.getRunSteps(result.ctx.run_id),
       ]);
 
       if (evtResp.ok) {

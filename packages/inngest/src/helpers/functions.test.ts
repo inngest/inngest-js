@@ -17,7 +17,7 @@ const generateEvent = (): EventPayload => {
 describe("#parseFnData", () => {
   const specs: {
     name: string;
-    data: Extract<FnData, { version: ExecutionVersion.V1 }>;
+    data: FnData;
     isOk: boolean;
   }[] = [
     {

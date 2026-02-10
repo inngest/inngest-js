@@ -13,7 +13,7 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { formatLogMessage, getLogger } from "../../helpers/log.ts";
+import { formatLogMessage } from "../../helpers/log.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -21,6 +21,7 @@ import {
   type GoInterval,
   goIntervalTiming,
   resolveAfterPending,
+  resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
@@ -72,14 +73,17 @@ import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
 
-export const createV2InngestExecution: InngestExecutionFactory = (options) => {
-  return new V2InngestExecution(options);
+export const createExecutionEngine: InngestExecutionFactory = (options) => {
+  return new InngestExecutionEngine(options);
 };
 
-class V2InngestExecution extends InngestExecution implements IInngestExecution {
+class InngestExecutionEngine
+  extends InngestExecution
+  implements IInngestExecution
+{
   public version = ExecutionVersion.V2;
 
-  private state: V2ExecutionState;
+  private state: ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
@@ -139,7 +143,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     this.initializeCheckpointRuntimeTimer(this.state);
 
     this.debug(
-      "created new V2 execution for run;",
+      "created new V1 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
         : "discovering steps",
@@ -153,7 +157,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    */
   public start() {
     if (!this.execution) {
-      this.debug("starting V2 execution");
+      this.debug("starting V1 execution");
 
       const tracer = trace.getTracer("inngest", version);
 
@@ -384,11 +388,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       return transformResult;
     };
 
-    const maybeReturnNewSteps = async (
-      steps: FoundStep[],
-    ): Promise<ExecutionResult | undefined> => {
-      const newSteps = await this.filterNewSteps(Array.from(steps.values()));
-
+    const maybeReturnNewSteps = async (): Promise<
+      ExecutionResult | undefined
+    > => {
+      const newSteps = await this.filterNewSteps(
+        Array.from(this.state.steps.values()),
+      );
       if (newSteps) {
         return {
           type: "steps-found",
@@ -590,7 +595,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return stepRanHandler(stepResult);
         }
 
-        return maybeReturnNewSteps(steps);
+        return maybeReturnNewSteps();
       },
 
       /**
@@ -699,7 +704,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               return await attemptCheckpointAndResume(stepResult);
             }
 
-            return maybeReturnNewSteps(steps);
+            return maybeReturnNewSteps();
           }
 
           // If we have stepsToResume, resume as many as possible and resume execution
@@ -810,9 +815,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       return;
     }
 
-    /**
-     * Gather any steps that aren't memoized and report them.
-     */
     const newSteps = foundSteps.reduce((acc, step) => {
       if (!step.hasStepState) {
         acc.push(step);
@@ -971,7 +973,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return {
           ...outgoingOp,
           data: await resultPromise,
-          ...(metadata && metadata.length > 0 ? { metadata } : {}),
+          ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
@@ -998,7 +1000,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
-            ...(metadata && metadata.length > 0 ? { metadata } : {}),
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         } else {
           return {
@@ -1006,7 +1008,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepFailed,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
-            ...(metadata && metadata.length > 0 ? { metadata } : {}),
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         }
       })
@@ -1169,12 +1171,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     };
   }
 
-  private createExecutionState(): V2ExecutionState {
+  private createExecutionState(): ExecutionState {
     const d = createDeferredPromiseWithStack<Checkpoint>();
     let checkpointResolve = d.deferred.resolve;
     const checkpointResults = d.results;
 
-    const loop: V2ExecutionState["loop"] = (async function* (
+    const loop: ExecutionState["loop"] = (async function* (
       cleanUp?: () => void,
     ) {
       try {
@@ -1196,7 +1198,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     const stepsToFulfill = Object.keys(this.options.stepState).length;
 
-    const state: V2ExecutionState = {
+    const state: ExecutionState = {
       stepState: this.options.stepState,
       stepsToFulfill,
       steps: new Map(),
@@ -1273,6 +1275,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const expectedNextStepIndexes: Map<string, number> = new Map();
 
     /**
+     * An ordered list of step IDs that have yet to be handled in this
+     * execution. Used to ensure that we handle steps in the order they were
+     * found and based on the `stepCompletionOrder` in this execution's state.
+     */
+    const remainingStepCompletionOrder: string[] =
+      this.state.stepCompletionOrder.slice();
+
+    /**
      * A promise that's used to ensure that step reporting cannot be run more than
      * once in a given asynchronous time span.
      */
@@ -1285,6 +1295,49 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     let beforeExecHooksPromise: Promise<void> | undefined;
 
     /**
+     * A flag used to ensure that we only warn about parallel indexing once per
+     * execution to avoid spamming the console.
+     */
+    let warnOfParallelIndexing = false;
+
+    /**
+     * Counts the number of times we've extended this tick.
+     */
+    let tickExtensionCount = 0;
+
+    /**
+     * Given a colliding step ID, maybe warn the user about parallel indexing.
+     */
+    const maybeWarnOfParallelIndexing = (userlandCollisionId: string) => {
+      if (warnOfParallelIndexing) {
+        return;
+      }
+
+      const hashedCollisionId = _internals.hashId(userlandCollisionId);
+
+      const stepExists = this.state.steps.has(hashedCollisionId);
+      if (stepExists) {
+        const stepFoundThisTick = foundStepsToReport.has(hashedCollisionId);
+        if (!stepFoundThisTick) {
+          warnOfParallelIndexing = true;
+
+          this.options.client["warnMetadata"](
+            { run_id: this.fnArg.runId },
+            ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+            formatLogMessage({
+              message:
+                "We detected that you have multiple steps with the same ID.",
+              explanation: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${userlandCollisionId}". Your function is still running, though it may exhibit unexpected behaviour. Using the same IDs across parallel chains of work can cause unexpected behaviour.`,
+              action:
+                "We recommend using a unique ID for each step, especially those happening in parallel.",
+              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+            }),
+          );
+        }
+      }
+    };
+
+    /**
      * A helper used to report steps to the core loop. Used after adding an item
      * to `foundStepsToReport`.
      */
@@ -1294,7 +1347,15 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = resolveAfterPending()
+      let extensionPromise: Promise<void>;
+      if (++tickExtensionCount >= 10) {
+        tickExtensionCount = 0;
+        extensionPromise = resolveNextTick();
+      } else {
+        extensionPromise = resolveAfterPending();
+      }
+
+      foundStepsReportPromise = extensionPromise
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
@@ -1311,36 +1372,36 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         .then(() => {
           foundStepsReportPromise = undefined;
 
-          for (const [hashedId, step] of unhandledFoundStepsToReport) {
-            // Note that we only run `step.handle()` if `step.hasStepState` is
-            // `true`. This gives us a chance to handle checkpointing in another
-            // part of the loop.
-            if (
-              (this.options.stepMode === StepMode.Async || step.hasStepState) &&
-              step.handle()
-            ) {
-              unhandledFoundStepsToReport.delete(hashedId);
+          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
+            const nextStepId = remainingStepCompletionOrder[i];
+            if (!nextStepId) {
+              // Strange - skip this empty index
+              continue;
+            }
 
-              if (step.fulfilled) {
-                foundStepsToReport.delete(step.id);
-              }
+            const handled = unhandledFoundStepsToReport
+              .get(nextStepId)
+              ?.handle();
+            if (handled) {
+              remainingStepCompletionOrder.splice(i, 1);
+              unhandledFoundStepsToReport.delete(nextStepId);
+              return void reportNextTick();
             }
           }
 
-          if (foundStepsToReport.size) {
-            const steps = [...foundStepsToReport.values()] as [
-              FoundStep,
-              ...FoundStep[],
-            ];
+          // If we've handled no steps in this "tick," roll up everything we've
+          // found and report it.
+          const steps = [...foundStepsToReport.values()] as [
+            FoundStep,
+            ...FoundStep[],
+          ];
+          foundStepsToReport.clear();
+          unhandledFoundStepsToReport.clear();
 
-            foundStepsToReport.clear();
-            unhandledFoundStepsToReport.clear();
-
-            return void this.state.setCheckpoint({
-              type: "steps-found",
-              steps: steps,
-            });
-          }
+          return void this.state.setCheckpoint({
+            type: "steps-found",
+            steps: steps,
+          });
         });
     };
 
@@ -1393,6 +1454,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
       if (this.state.steps.has(_internals.hashId(opId.id))) {
         const originalId = opId.id;
+        maybeWarnOfParallelIndexing(originalId);
 
         const expectedNextIndex = expectedNextStepIndexes.get(originalId) ?? 1;
         for (let i = expectedNextIndex; ; i++) {
@@ -1497,7 +1559,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                       // Unreachable
                       throw new Error("Missing event option in waitForEvent");
                     }
-
                     try {
                       await validateEvents(
                         [result.data],
@@ -1566,13 +1627,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     userlandStep.timing = resultOp.timing;
     userlandStep.op = resultOp.op;
     userlandStep.id = resultOp.id;
-    userlandStep.hasStepState = true;
-
-    getLogger().debug(`resumeStepWithResult: resuming step ${resultOp.id}`);
 
     if (resume) {
-      getLogger().debug(`resumeStepWithResult: handling step ${resultOp.id}`);
       userlandStep.fulfilled = true;
+      userlandStep.hasStepState = true;
       this.state.stepState[resultOp.id] = userlandStep;
 
       userlandStep.handle();
@@ -1597,7 +1655,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     return this.options.fn["onFailureFn"];
   }
 
-  private initializeTimer(state: V2ExecutionState): void {
+  private initializeTimer(state: ExecutionState): void {
     if (!this.options.requestedRunStep) {
       return;
     }
@@ -1619,7 +1677,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     });
   }
 
-  private initializeCheckpointRuntimeTimer(state: V2ExecutionState): void {
+  private initializeCheckpointRuntimeTimer(state: ExecutionState): void {
     this.debug(
       "initializing checkpointing runtime timers",
       this.options.checkpointingConfig,
@@ -1772,7 +1830,7 @@ type CheckpointHandlers = Record<
   }
 >;
 
-export interface V2ExecutionState {
+export interface ExecutionState {
   /**
    * A value that indicates that we're executing this step. Can be used to
    * ensure steps are not accidentally nested until we support this across all

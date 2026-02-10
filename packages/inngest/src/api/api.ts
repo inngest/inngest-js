@@ -1,6 +1,5 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import type { ExecutionVersion } from "../helpers/consts.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
@@ -18,7 +17,7 @@ import {
   type ErrorResponse,
   errorSchema,
   type StepsResponse,
-  stepsSchemas,
+  stepSchema,
 } from "./schema.ts";
 
 type FetchT = typeof fetch;
@@ -150,7 +149,6 @@ export class InngestApi {
 
   async getRunSteps(
     runId: string,
-    version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const result = await this.req(`/v0/runs/${runId}/actions`);
     if (result.ok) {
@@ -158,7 +156,7 @@ export class InngestApi {
       const data: unknown = await res.json();
 
       if (res.ok) {
-        return ok(stepsSchemas[version].parse(data));
+        return ok(stepSchema.parse(data));
       }
 
       return err(errorSchema.parse(data));
@@ -444,7 +442,7 @@ export class InngestApi {
   async checkpointNewRun(args: {
     runId: string;
     event: APIStepPayload;
-    executionVersion: ExecutionVersion;
+    executionVersion: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({

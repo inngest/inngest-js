@@ -1,5 +1,5 @@
 import {
-  ExecutionVersion,
+  type ExecutionVersion,
   internalEvents,
   queryKeys,
 } from "../helpers/consts.ts";
@@ -16,13 +16,11 @@ import {
   type TimeStr,
   type TimeStrBatch,
 } from "../types.ts";
+import { createExecutionEngine } from "./execution/engine.ts";
 import type {
   IInngestExecution,
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
-import { createV0InngestExecution } from "./execution/v0.ts";
-import { createV1InngestExecution } from "./execution/v1.ts";
-import { createV2InngestExecution } from "./execution/v2.ts";
 import type { Inngest } from "./Inngest.ts";
 import type {
   InngestMiddleware,
@@ -290,13 +288,7 @@ export class InngestFunction<
       ...opts.partialOptions,
     };
 
-    const versionHandlers = {
-      [ExecutionVersion.V2]: () => createV2InngestExecution(options),
-      [ExecutionVersion.V1]: () => createV1InngestExecution(options),
-      [ExecutionVersion.V0]: () => createV0InngestExecution(options),
-    } satisfies Record<ExecutionVersion, () => IInngestExecution>;
-
-    return versionHandlers[opts.version]();
+    return createExecutionEngine(options);
   }
 
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK

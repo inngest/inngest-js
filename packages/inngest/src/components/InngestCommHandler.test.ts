@@ -1,8 +1,65 @@
 import httpMocks from "node-mocks-http";
-import { envKeys, headerKeys } from "../helpers/consts.ts";
+import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
 import { InngestCommHandler } from "../index.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
+
+/**
+ * Helper to run a POST request through a Next.js serve handler and capture
+ * the full response including status, body, and headers.
+ */
+const runHandler = async (
+  handler: ReturnType<typeof serve>,
+  opts?: {
+    body?: Record<string, unknown>;
+    env?: Record<string, string>;
+    actionOverrides?: Record<string, unknown>;
+  },
+) => {
+  const body = opts?.body ?? {
+    ctx: { fn_id: "test-test", run_id: "run-123", step_id: "step" },
+    event: { name: "demo/event.sent", data: {} },
+    events: [{ name: "demo/event.sent", data: {} }],
+    steps: {},
+    use_api: false,
+  };
+
+  const req = httpMocks.createRequest({
+    method: "POST",
+    url: "/api/inngest?fnId=test-test&stepId=step",
+    headers: {
+      host: "localhost:3000",
+      "content-type": "application/json",
+      "content-length": `${JSON.stringify(body).length}`,
+      [headerKeys.InngestRunId]: "run-123",
+      [headerKeys.Signature]: "",
+    },
+    body,
+  });
+  const res = httpMocks.createResponse();
+
+  const prevEnv = process.env;
+  if (opts?.env) {
+    process.env = { ...prevEnv, ...opts.env };
+  }
+
+  try {
+    const args: unknown[] = [req, res];
+    if (opts?.actionOverrides) {
+      args.push({ actionOverrides: opts.actionOverrides });
+    }
+
+    await (handler as (...args: unknown[]) => Promise<unknown>)(...args);
+
+    return {
+      status: res.statusCode,
+      body: res._getData(),
+      headers: res.getHeaders() as Record<string, string>,
+    };
+  } finally {
+    process.env = prevEnv;
+  }
+};
 
 describe("ServeHandler", () => {
   describe("functions argument", () => {
@@ -40,57 +97,6 @@ describe("ServeHandler", () => {
       { id: "test", triggers: [{ event: "demo/event.sent" }] },
       () => "test",
     );
-
-    const runHandler = async (
-      handler: ReturnType<typeof serve>,
-      opts?: {
-        env?: Record<string, string>;
-        actionOverrides?: Record<string, unknown>;
-      },
-    ) => {
-      const body = {
-        ctx: { fn_id: "test-test", run_id: "run-123", step_id: "step" },
-        event: { name: "demo/event.sent", data: {} },
-        events: [{ name: "demo/event.sent", data: {} }],
-        steps: {},
-        use_api: false,
-      };
-
-      const req = httpMocks.createRequest({
-        method: "POST",
-        url: "/api/inngest?fnId=test-test&stepId=step",
-        headers: {
-          host: "localhost:3000",
-          "content-type": "application/json",
-          "content-length": `${JSON.stringify(body).length}`,
-          [headerKeys.InngestRunId]: "run-123",
-          [headerKeys.Signature]: "",
-        },
-        body,
-      });
-      const res = httpMocks.createResponse();
-
-      const prevEnv = process.env;
-      if (opts?.env) {
-        process.env = { ...prevEnv, ...opts.env };
-      }
-
-      try {
-        const args: unknown[] = [req, res];
-        if (opts?.actionOverrides) {
-          args.push({ actionOverrides: opts.actionOverrides });
-        }
-
-        await (handler as (...args: unknown[]) => Promise<unknown>)(...args);
-
-        return {
-          status: res.statusCode,
-          body: res._getData(),
-        };
-      } finally {
-        process.env = prevEnv;
-      }
-    };
 
     test("throws error when streaming is true but handler doesn't support it", async () => {
       const handler = serve({
@@ -278,5 +284,76 @@ describe("ServeHandler", () => {
       );
       expect(deprecationCalls).toHaveLength(1);
     });
+  });
+});
+
+describe("response version header", () => {
+  const inngest = createClient({ id: "test", isDev: true });
+
+  const fn = inngest.createFunction(
+    { id: "test" },
+    { event: "demo/event.sent" },
+    () => "test",
+  );
+
+  const handler = serve({ client: inngest, functions: [fn] });
+
+  test("echoes V1 request version in response header", async () => {
+    const result = await runHandler(handler, {
+      body: {
+        version: ExecutionVersion.V1,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V1.toString(),
+    );
+  });
+
+  test("echoes V2 request version in response header", async () => {
+    const result = await runHandler(handler, {
+      body: {
+        version: ExecutionVersion.V2,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
+  });
+
+  test("defaults to V2 when no version in request (optimized parallelism bumps V1 to V2)", async () => {
+    const result = await runHandler(handler);
+
+    expect(result.status).toBe(200);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
   });
 });
