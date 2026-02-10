@@ -99,24 +99,22 @@ serve({ client, functions, streaming: true });
 
 `optimizeParallelism` is now `true` by default, reducing traffic and latency for parallel steps. This changes `Promise.all()`, `Promise.allSettled()`, etc. to wait for all promises to settle before resolving.
 
-If you were using `Promise.race()` and relying on early resolution, use the new `parallel()` helper:
+If you were using `Promise.race()` and relying on early resolution, use the new `group.parallel()` helper available on the function context:
 
 ```typescript
-import { parallel } from "inngest/experimental";
-
 // Old behavior (no longer works as expected with optimized parallelism)
 const winner = await Promise.race([
   step.run("a", () => "a"),
   step.run("b", () => "b"),
 ]);
 
-// New approach
-const winner = await parallel({ mode: "race" }, () =>
-  Promise.race([
+// New approach using group.parallel() from the function context
+const winner = await group.parallel(async () => {
+  return Promise.race([
     step.run("a", () => "a"),
     step.run("b", () => "b"),
-  ])
-);
+  ]);
+});
 ```
 
 To revert to v3 behavior, set `optimizeParallelism: false` on your client or function.

@@ -814,8 +814,8 @@ export interface ClientOptions {
   /**
    * Optimizes parallel steps to reduce traffic during `Promise` resolution,
    * reducing time and requests per run. `Promise.*()` waits for all promises
-   * to settle before resolving. Use the `parallel()` helper from
-   * `inngest/experimental` for `Promise.race()` semantics.
+   * to settle before resolving. Use `group.parallel()` for `Promise.race()`
+   * semantics.
    *
    * @default true
    */
@@ -1476,8 +1476,8 @@ export interface StepOptions {
    * - `"race"`: Indicates this step is part of a `Promise.race()` group. When
    *   one step in the race completes, the executor can cancel remaining steps.
    *
-   * Can be set directly on step options or automatically via the `parallel()`
-   * helper from `inngest/experimental`.
+   * Can be set directly on step options or automatically via
+   * `group.parallel()`.
    */
   parallelMode?: "race";
 }

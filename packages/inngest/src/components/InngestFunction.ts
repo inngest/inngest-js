@@ -727,8 +727,8 @@ export namespace InngestFunction {
     /**
      * Optimizes parallel steps to reduce traffic during `Promise` resolution,
      * reducing time and requests per run. `Promise.*()` waits for all promises
-     * to settle before resolving. Use the `parallel()` helper from
-     * `inngest/experimental` for `Promise.race()` semantics.
+     * to settle before resolving. Use `group.parallel()` for `Promise.race()`
+     * semantics.
      *
      * Overrides the client-level setting.
      *

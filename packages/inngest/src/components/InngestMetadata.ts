@@ -1,7 +1,7 @@
-import { type AsyncContext, getAsyncCtx } from "../experimental";
 import { getLogger } from "../helpers/log.ts";
 import type { Simplify } from "../helpers/types.ts";
 import type { MetadataTarget } from "../types.ts";
+import { type AsyncContext, getAsyncCtx } from "./execution/als.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestMiddleware } from "./InngestMiddleware.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";

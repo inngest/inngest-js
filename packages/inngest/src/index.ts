@@ -52,7 +52,6 @@ export { InngestCommHandler } from "./components/InngestCommHandler.ts";
 export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
-export type { GroupTools } from "./components/InngestGroupTools.ts";
 export type {
   MiddlewareOptions,
   MiddlewareRegisterFn,

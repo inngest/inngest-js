@@ -39,7 +39,7 @@ export interface AsyncContext {
 
     /**
      * If present, indicates the parallel mode that should be applied to steps
-     * created within this context. Set by the `parallel()` helper.
+     * created within this context. Set by `group.parallel()`.
      */
     parallelMode?: "race";
   };

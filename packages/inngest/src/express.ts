@@ -26,7 +26,6 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import { ExecutionVersion, headerKeys } from "./helpers/consts.ts";
 import type { Either } from "./helpers/types.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 

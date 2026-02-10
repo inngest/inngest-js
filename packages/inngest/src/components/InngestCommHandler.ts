@@ -1,6 +1,5 @@
 import debug from "debug";
 import { z } from "zod/v3";
-import { getAsyncCtx } from "../experimental";
 import {
   debugPrefix,
   defaultMaxRetries,
@@ -57,6 +56,7 @@ import {
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
+import { getAsyncCtx } from "./execution/als.ts";
 import {
   type ExecutionResult,
   type ExecutionResultHandler,
