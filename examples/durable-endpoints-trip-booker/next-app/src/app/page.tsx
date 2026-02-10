@@ -601,7 +601,14 @@ export default function Home() {
               <div>
                 <h1 className="text-xl font-bold">SkyBook</h1>
                 <p className="text-blue-200 text-xs">
-                  Powered by Durable Endpoints
+                  Powered by{" "}
+                  <a
+                    href="https://www.inngest.com/docs/learn/durable-endpoints"
+                    target="_blank"
+                    className="underline hover:text-white"
+                  >
+                    Durable Endpoints
+                  </a>
                 </p>
               </div>
             </div>
