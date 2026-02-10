@@ -1,9 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-
-const BUN_API_URL =
-  process.env.NEXT_PUBLIC_BUN_API_URL || "http://localhost:4000";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // Generate a UUID for booking correlation
 function generateBookingId(): string {
@@ -19,7 +16,7 @@ const STEPS = [
 ];
 
 // Source code to display (showing complex multi-API orchestration)
-const SOURCE_CODE = `export const bookingHandler = wrap(async (req: Request) => {
+const SOURCE_CODE = `export const GET = inngest.endpoint(async (req: NextRequest) => {
   const { bookingId, origin, destination, date } = parseRequest(req);
 
   // Step 1: Search across multiple airline APIs
@@ -70,10 +67,10 @@ const SOURCE_CODE = `export const bookingHandler = wrap(async (req: Request) => 
 
 // Line ranges for each step in the source code
 const STEP_LINE_RANGES: Record<string, { start: number; end: number }> = {
-  "search-availability": { start: 4, end: 12 },
-  "reserve-flight": { start: 14, end: 23 },
-  "process-payment": { start: 25, end: 35 },
-  "confirm-booking": { start: 37, end: 44 },
+  "search-availability": { start: 4, end: 13 },
+  "reserve-flight": { start: 15, end: 25 },
+  "process-payment": { start: 27, end: 37 },
+  "confirm-booking": { start: 39, end: 45 },
 };
 
 // TypeScript syntax highlighter
@@ -143,7 +140,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-gray-400 italic">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -160,7 +157,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-green-600">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -178,7 +175,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-green-600">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -191,7 +188,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-orange-500">
           {code.slice(i, end)}
-        </span>
+        </span>,
       );
       i = end;
       continue;
@@ -207,26 +204,26 @@ function highlightSyntax(code: string): React.ReactNode[] {
         tokens.push(
           <span key={key++} className="text-purple-600 font-medium">
             {word}
-          </span>
+          </span>,
         );
       } else if (types.has(word)) {
         tokens.push(
           <span key={key++} className="text-blue-600">
             {word}
-          </span>
+          </span>,
         );
       } else if (code[end] === "(") {
         // Function call
         tokens.push(
           <span key={key++} className="text-amber-600">
             {word}
-          </span>
+          </span>,
         );
       } else {
         tokens.push(
           <span key={key++} className="text-gray-800">
             {word}
-          </span>
+          </span>,
         );
       }
       i = end;
@@ -238,7 +235,7 @@ function highlightSyntax(code: string): React.ReactNode[] {
       tokens.push(
         <span key={key++} className="text-gray-600">
           {code[i]}
-        </span>
+        </span>,
       );
       i++;
       continue;
@@ -277,7 +274,7 @@ export default function Home() {
   const [isBooking, setIsBooking] = useState(false);
   const [currentBookingId, setCurrentBookingId] = useState<string | null>(null);
   const [stepStatuses, setStepStatuses] = useState<Record<string, StepStatus>>(
-    () => Object.fromEntries(STEPS.map((s) => [s.id, "pending"]))
+    () => Object.fromEntries(STEPS.map((s) => [s.id, "pending"])),
   );
   const [activeStep, setActiveStep] = useState<string | null>(null);
   const [currentSubStep, setCurrentSubStep] = useState<string | null>(null);
@@ -315,10 +312,82 @@ export default function Home() {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
-  const addLog = (stepId: string, type: LogEntry["type"], message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev, { timestamp, stepId, type, message }]);
-  };
+  const addLog = useCallback(
+    (stepId: string, type: LogEntry["type"], message: string) => {
+      const timestamp = new Date().toLocaleTimeString();
+      setLogs((prev) => [...prev, { timestamp, stepId, type, message }]);
+    },
+    [],
+  );
+
+  // Process events from polling response
+  const processEvents = useCallback(
+    (events: any[]) => {
+      for (const data of events) {
+        if (data.type === "step-start") {
+          setActiveStep(data.stepId);
+          setCurrentSubStep(null);
+          setStepStatuses((prev) => ({ ...prev, [data.stepId]: "running" }));
+          addLog(
+            data.stepId,
+            "start",
+            data.message || `${data.stepId}: started`,
+          );
+        } else if (data.type === "step-progress") {
+          setCurrentSubStep(data.message);
+          addLog(
+            data.stepId,
+            "progress",
+            data.message || `${data.stepId}: processing...`,
+          );
+        } else if (data.type === "step-retry") {
+          addLog(
+            data.stepId,
+            "retry",
+            `⚠️ ${data.message || "Retrying..."} (attempt ${data.retryCount})`,
+          );
+        } else if (data.type === "step-complete") {
+          setStepStatuses((prev) => ({ ...prev, [data.stepId]: "completed" }));
+          setCurrentSubStep(null);
+          addLog(
+            data.stepId,
+            "complete",
+            data.message || `${data.stepId}: completed`,
+          );
+        } else if (data.type === "step-error") {
+          if (data.retryCount) {
+            setStepStatuses((prev) => ({
+              ...prev,
+              [data.stepId]: "retrying",
+            }));
+            addLog(
+              data.stepId,
+              "retry",
+              `⚠️ ${data.message || data.error} (attempt ${
+                data.retryCount
+              }, Inngest retrying...)`,
+            );
+          } else {
+            setStepStatuses((prev) => ({ ...prev, [data.stepId]: "error" }));
+            setError(data.error);
+            addLog(
+              data.stepId,
+              "error",
+              `${data.stepId}: ERROR - ${data.error}`,
+            );
+            setIsBooking(false);
+          }
+        } else if (data.type === "complete") {
+          setResult(data.result);
+          setActiveStep(null);
+          setCurrentSubStep(null);
+          setIsBooking(false);
+          addLog("done", "complete", data.message || "Booking complete!");
+        }
+      }
+    },
+    [addLog],
+  );
 
   const handleBooking = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -335,101 +404,58 @@ export default function Home() {
     setCurrentBookingId(bookingId);
     addLog("init", "info", `Generated booking ID: ${bookingId}`);
 
-    // 2. Connect to SSE events endpoint first
-    addLog("init", "info", `Connecting to SSE events...`);
-    const eventSource = new EventSource(
-      `${BUN_API_URL}/api/booking/events?bookingId=${encodeURIComponent(
-        bookingId
-      )}`
-    );
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === "connected") {
-        addLog("init", "info", `SSE connected, starting durable endpoint...`);
-
-        // 3. Now call the durable endpoint
-        fetch(
-          `${BUN_API_URL}/api/booking?bookingId=${encodeURIComponent(
-            bookingId
-          )}&origin=${encodeURIComponent(
-            origin
-          )}&destination=${encodeURIComponent(
-            destination
-          )}&date=${encodeURIComponent(date)}`
-        )
-          .then((res) => res.json())
-          .then((data) => {
-            if (!data.success) {
-              setError(data.error || "Booking failed");
-            }
-          })
-          .catch((err) => {
-            setError(err.message);
-            setIsBooking(false);
-            eventSource.close();
-          });
-      } else if (data.type === "step-start") {
-        setActiveStep(data.stepId);
-        setCurrentSubStep(null);
-        setStepStatuses((prev) => ({ ...prev, [data.stepId]: "running" }));
-        addLog(data.stepId, "start", data.message || `${data.stepId}: started`);
-      } else if (data.type === "step-progress") {
-        setCurrentSubStep(data.message);
-        addLog(
-          data.stepId,
-          "progress",
-          data.message || `${data.stepId}: processing...`
-        );
-      } else if (data.type === "step-retry") {
-        addLog(
-          data.stepId,
-          "retry",
-          `⚠️ ${data.message || "Retrying..."} (attempt ${data.retryCount})`
-        );
-      } else if (data.type === "step-complete") {
-        setStepStatuses((prev) => ({ ...prev, [data.stepId]: "completed" }));
-        setCurrentSubStep(null);
-        addLog(
-          data.stepId,
-          "complete",
-          data.message || `${data.stepId}: completed`
-        );
-      } else if (data.type === "step-error") {
-        // If retryCount is present, Inngest will retry - show retrying status
-        if (data.retryCount) {
-          setStepStatuses((prev) => ({ ...prev, [data.stepId]: "retrying" }));
-          addLog(
-            data.stepId,
-            "retry",
-            `⚠️ ${data.message || data.error} (attempt ${
-              data.retryCount
-            }, Inngest retrying...)`
-          );
-        } else {
-          // Terminal error - no retry
-          setStepStatuses((prev) => ({ ...prev, [data.stepId]: "error" }));
-          setError(data.error);
-          addLog(data.stepId, "error", `${data.stepId}: ERROR - ${data.error}`);
-          setIsBooking(false);
-          eventSource.close();
+    // 2. Start the durable endpoint (non-blocking)
+    addLog("init", "info", `Starting durable endpoint...`);
+    fetch(
+      `/api/booking?bookingId=${encodeURIComponent(
+        bookingId,
+      )}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(
+        destination,
+      )}&date=${encodeURIComponent(date)}`,
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.success) {
+          setError(data.error || "Booking failed");
         }
-      } else if (data.type === "complete") {
-        setResult(data.result);
-        setActiveStep(null);
-        setCurrentSubStep(null);
+      })
+      .catch((err) => {
+        setError(err.message);
         setIsBooking(false);
-        addLog("done", "complete", data.message || "Booking complete!");
-        eventSource.close();
+      });
+
+    // 3. Poll for progress events
+    let cursor = 0;
+    let polling = true;
+
+    const poll = async () => {
+      while (polling) {
+        try {
+          const res = await fetch(
+            `/api/booking/events?bookingId=${encodeURIComponent(
+              bookingId,
+            )}&cursor=${cursor}`,
+          );
+          const data = await res.json();
+
+          if (data.events && data.events.length > 0) {
+            processEvents(data.events);
+          }
+          cursor = data.cursor;
+
+          if (data.status === "complete" || data.status === "error") {
+            polling = false;
+            break;
+          }
+        } catch {
+          // Ignore polling errors, will retry
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     };
 
-    eventSource.onerror = () => {
-      setError("SSE connection lost");
-      setIsBooking(false);
-      eventSource.close();
-    };
+    poll();
   };
 
   // Render status indicator
@@ -514,7 +540,7 @@ export default function Home() {
 
     // Determine line status based on step statuses
     const getLineStatus = (
-      lineNum: number
+      lineNum: number,
     ): "completed" | "running" | "error" | "retrying" | null => {
       for (const [stepId, range] of Object.entries(STEP_LINE_RANGES)) {
         if (lineNum >= range.start && lineNum <= range.end) {
@@ -554,7 +580,9 @@ export default function Home() {
           <span className="w-10 text-right pr-3 text-gray-400 select-none text-xs">
             {lineNum}
           </span>
-          <span className="flex-1 whitespace-pre">{highlightSyntax(line)}</span>
+          <span className="flex-1 whitespace-pre max-w-[200px]">
+            {highlightSyntax(line)}
+          </span>
         </div>
       );
     });

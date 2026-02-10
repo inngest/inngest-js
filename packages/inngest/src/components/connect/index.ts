@@ -26,7 +26,7 @@ import {
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import type { Capabilities, FunctionConfig } from "../../types.ts";
 import { version } from "../../version.ts";
-import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
+import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import type { Inngest } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -74,7 +74,7 @@ const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 type ConnectCommHandler = InngestCommHandler<
   [GatewayExecutorRequestData],
   SDKResponse,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   any
 >;
 
@@ -461,7 +461,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                 sdkVersion: `inngest-js:v${version}`,
                 requestVersion: parseInt(
                   headers[headerKeys.RequestVersion] ??
-                    PREFERRED_EXECUTION_VERSION.toString(),
+                    PREFERRED_ASYNC_EXECUTION_VERSION.toString(),
                   10,
                 ),
                 systemTraceCtx: msg.systemTraceCtx,
@@ -649,7 +649,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
       | undefined;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
     const websocketConnectedPromise = new Promise((resolve, reject) => {
       resolveWebsocketConnected = resolve;

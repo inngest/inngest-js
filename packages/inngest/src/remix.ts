@@ -104,7 +104,7 @@ export const serve = (
 
           return;
         },
-        body: () => req.json(),
+        body: () => req.text(),
         headers: (key) => req.headers.get(key),
         method: () => req.method,
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
