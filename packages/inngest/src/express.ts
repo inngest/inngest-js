@@ -102,7 +102,6 @@ export const serve = (options: ServeHandlerOptions): any => {
             res.setHeader(name, value);
           }
 
-          res.setHeader(headerKeys.RequestVersion, ExecutionVersion.V2);
           return res.status(status).send(body);
         },
 

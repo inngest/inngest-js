@@ -78,7 +78,7 @@ export const createV1InngestExecution: InngestExecutionFactory = (options) => {
 };
 
 class V1InngestExecution extends InngestExecution implements IInngestExecution {
-  public version = ExecutionVersion.V2;
+  public version = ExecutionVersion.V1;
 
   private state: V1ExecutionState;
   private fnArg: Context.Any;
