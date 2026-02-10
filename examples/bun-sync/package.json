@@ -10,6 +10,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "inngest": "^3.50.1-pr-1284.0"
+    "inngest": "../../packages/inngest/inngest.tgz"
   }
 }

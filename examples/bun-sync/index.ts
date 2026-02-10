@@ -1,21 +1,17 @@
 import { Inngest, step } from "inngest";
-import { endpointAdapter } from "inngest/edge";
+import { createExperimentalEndpointWrapper } from "inngest/edge";
 
-const inngest = new Inngest({ id: "bun-sync-example", endpointAdapter });
+const wrap = createExperimentalEndpointWrapper({
+  client: new Inngest({ id: "bun-sync-example" }),
+});
 
 const server = Bun.serve({
   port: 3000,
   routes: {
-    "/": inngest.endpoint(async (_) => {
+    "/": wrap(async (_) => {
       const foo = await step.run("example/step", async () => {
         return "Hello from step!";
       });
-
-      await step.run("step-2", () => {
-        throw new Error("test");
-      });
-
-      await step.run("step-3", () => {});
 
       return new Response(`Step result: ${foo}`);
     }),
