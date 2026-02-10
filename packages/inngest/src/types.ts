@@ -15,6 +15,7 @@ import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
+import type { createGroupTools } from "./components/InngestGroupTools.ts";
 import type {
   ExtendSendEventWithMiddleware,
   InngestMiddleware,
@@ -501,6 +502,11 @@ export type BaseContext<TClient extends Inngest.Any> = {
   runId: string;
 
   step: ReturnType<typeof createStepTools<TClient>>;
+
+  /**
+   * Tools for grouping and coordinating steps.
+   */
+  group: ReturnType<typeof createGroupTools>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The

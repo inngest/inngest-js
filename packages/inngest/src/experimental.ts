@@ -12,8 +12,3 @@ export { extendedTracesMiddleware } from "./components/execution/otel/middleware
 export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components/execution/otel/processor.ts";
 // Step Metadata
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
-// Parallel helper
-export {
-  type ParallelOptions,
-  parallel,
-} from "./components/InngestStepTools.ts";

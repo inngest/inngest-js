@@ -3,7 +3,6 @@ import { ExecutionVersion } from "../helpers/consts.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
 import { InngestCommHandler } from "./InngestCommHandler.ts";
-import { parallel } from "./InngestStepTools.ts";
 
 describe("EXE-1135: Default to optimized parallelism", () => {
   describe("shouldOptimizeParallelism precedence", () => {
@@ -206,14 +205,14 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     });
   });
 
-  describe("parallel() helper", () => {
+  describe("group.parallel() helper", () => {
     test("automatically sets parallelMode on steps inside callback", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
         { id: "test-fn" },
         { event: "test/event" },
-        async ({ step }) => {
-          await parallel({ mode: "race" }, async () => {
+        async ({ step, group }) => {
+          await group.parallel({ mode: "race" }, async () => {
             return Promise.race([
               step.run("a", () => "a"),
               step.run("b", () => "b"),
@@ -244,11 +243,11 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       const fn = client.createFunction(
         { id: "test-fn" },
         { event: "test/event" },
-        async ({ step }) => {
-          // This step is outside parallel() - should NOT have parallelMode
+        async ({ step, group }) => {
+          // This step is outside group.parallel() - should NOT have parallelMode
           const outside = step.run("outside", () => "outside");
 
-          await parallel({ mode: "race" }, async () => {
+          await group.parallel({ mode: "race" }, async () => {
             return Promise.race([
               step.run("inside-a", () => "a"),
               step.run("inside-b", () => "b"),
@@ -284,13 +283,13 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       }
     });
 
-    test("parallel() context applies to all steps in callback", async () => {
+    test("group.parallel() context applies to all steps in callback", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
         { id: "test-fn" },
         { event: "test/event" },
-        async ({ step }) => {
-          await parallel({ mode: "race" }, async () => {
+        async ({ step, group }) => {
+          await group.parallel({ mode: "race" }, async () => {
             return Promise.race([
               step.run("a", () => "a"),
               step.run({ id: "b" }, () => "b"),
@@ -321,8 +320,8 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       const fn = client.createFunction(
         { id: "test-fn" },
         { event: "test/event" },
-        async ({ step }) => {
-          await parallel({ mode: "race" }, async () => {
+        async ({ step, group }) => {
+          await group.parallel({ mode: "race" }, async () => {
             return Promise.race([
               step.run("work", () => "done"),
               step.sleep("timeout", "10s"),

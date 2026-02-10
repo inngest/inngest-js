@@ -29,6 +29,7 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
   MetadataOpcode,
@@ -485,6 +486,7 @@ export class V0InngestExecution
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
+      group: createGroupTools(),
     } as Context.Any;
 
     if (this.options.isFailureHandler) {
