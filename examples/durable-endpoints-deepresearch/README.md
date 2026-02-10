@@ -15,12 +15,12 @@ An AI-powered deep research assistant showcasing [Inngest's Durable Endpoints](h
 
 ```typescript
 import { Inngest, step } from "inngest";
-import { endpointAdapter } from "inngest/edge";
+import { endpointAdapter } from "inngest/next";
 
 const inngest = new Inngest({ id: "my-app", endpointAdapter });
 
-// Regular endpoint becomes durable
-export const handler = inngest.endpoint(async (req) => {
+// Regular Next.js route handler becomes durable
+export const GET = inngest.endpoint(async (req) => {
   // Each step.run() is persisted and can retry independently
   const data = await step.run("fetch-data", async () => {
     return await fetchExternalAPI(); // Retries on failure
@@ -36,13 +36,13 @@ export const handler = inngest.endpoint(async (req) => {
 
 ### Benefits Over Traditional Approaches
 
-| Traditional API | Durable Endpoint |
-|----------------|------------------|
-| Fails completely on any error | Retries failed steps, preserves progress |
-| Timeout after 30s-60s | Can run for hours |
-| Requires separate job queue for reliability | Built-in durability |
-| Manual retry logic needed | Automatic with memoization |
-| Lost work on crashes | Resumes from last checkpoint |
+| Traditional API                             | Durable Endpoint                         |
+| ------------------------------------------- | ---------------------------------------- |
+| Fails completely on any error               | Retries failed steps, preserves progress |
+| Timeout after 30s-60s                       | Can run for hours                        |
+| Requires separate job queue for reliability | Built-in durability                      |
+| Manual retry logic needed                   | Automatic with memoization               |
+| Lost work on crashes                        | Resumes from last checkpoint             |
 
 ## Features
 
@@ -57,7 +57,6 @@ export const handler = inngest.endpoint(async (req) => {
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) installed
 - [Node.js](https://nodejs.org) 20+ installed
 - [Anthropic API key](https://console.anthropic.com/)
 - [Exa API key](https://exa.ai/)
@@ -66,22 +65,12 @@ export const handler = inngest.endpoint(async (req) => {
 
 ```bash
 git clone https://github.com/inngest/inngest-js.git
-cd inngest-js/examples/durable-endpoints-deepresearch
+cd inngest-js/examples/durable-endpoints-deepresearch/next-app
 ```
 
 ### Install Dependencies
 
-**Backend (Express API):**
-
 ```bash
-cd express-api
-bun install
-```
-
-**Frontend (Next.js):**
-
-```bash
-cd ../next-app
 npm install
 # or
 pnpm install
@@ -89,32 +78,16 @@ pnpm install
 
 ### Configure Environment Variables
 
-Create `express-api/.env`:
+Create `next-app/.env.local`:
 
 ```bash
 EXA_API_KEY=your_exa_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
-Optionally create `next-app/.env.local`:
+### Start the Development Server
 
 ```bash
-NEXT_PUBLIC_BUN_API_URL=http://localhost:4000
-```
-
-### Start the Development Servers
-
-**Terminal 1 - Backend (port 4000):**
-
-```bash
-cd express-api
-bun run dev
-```
-
-**Terminal 2 - Frontend (port 3000):**
-
-```bash
-cd next-app
 npm run dev
 ```
 
@@ -129,6 +102,7 @@ http://localhost:3000?injectFailure=search&failureRate=0.3
 ```
 
 Options:
+
 - `injectFailure`: Step type to fail (`search`, `learn`, or `report`)
 - `failureRate`: Probability of failure (0.0 to 1.0, default: 0.3)
 
@@ -138,22 +112,24 @@ Watch the Execution Log to see retries and recoveries in action.
 
 ```
 durable-endpoints-deepresearch/
-├── express-api/                    # Bun backend with Durable Endpoints
-│   └── src/
-│       ├── index.ts                # Express server setup
-│       └── routes/
-│           ├── research.ts         # Main endpoint handlers (clarify, research, events)
-│           ├── deep-research.ts    # Recursive research algorithm
-│           ├── llm.ts              # LLM functions (Claude via Vercel AI SDK)
-│           ├── search.ts           # Exa search integration
-│           ├── event-store.ts      # Polling-based progress events
-│           ├── types.ts            # TypeScript type definitions
-│           └── utils.ts            # Helper functions
-│
-└── next-app/                       # Next.js frontend
+└── next-app/                       # Next.js full-stack app
     └── src/
         ├── app/
-        │   └── page.tsx            # Main page with split view
+        │   ├── page.tsx            # Main page with split view
+        │   └── api/research/
+        │       ├── route.ts        # Main durable research endpoint
+        │       ├── clarify/
+        │       │   └── route.ts    # Durable clarification endpoint
+        │       └── events/
+        │           └── route.ts    # Polling endpoint for progress events
+        ├── inngest/
+        │   ├── client.ts           # Inngest client with Next.js adapter
+        │   ├── deep-research.ts    # Recursive research algorithm
+        │   ├── llm.ts              # LLM functions (Claude via Vercel AI SDK)
+        │   ├── search.ts           # Exa search integration
+        │   ├── event-store.ts      # Polling-based progress events
+        │   ├── types.ts            # Backend type definitions
+        │   └── utils.ts            # Helper functions
         ├── components/
         │   ├── TopicInput.tsx      # Research topic input form
         │   ├── ClarificationForm.tsx  # Clarification Q&A
@@ -166,17 +142,6 @@ durable-endpoints-deepresearch/
         │   └── useResearch.ts      # Research state management & polling
         └── types.ts                # Frontend type definitions
 ```
-
-### Key Files Explained
-
-| File | Purpose |
-|------|---------|
-| `research.ts` | Durable endpoint handlers using `inngest.endpoint()` |
-| `deep-research.ts` | Recursive parallel search with `step.run()` for durability |
-| `llm.ts` | Claude integration for queries, learnings, and report generation |
-| `event-store.ts` | In-memory event store for polling-based progress updates |
-| `useResearch.ts` | React hook managing research state and event polling |
-| `CodeViewer.tsx` | Syntax-highlighted code view with active step highlighting |
 
 ## DeepResearch Algorithm
 
@@ -236,64 +201,19 @@ All accumulated learnings + sources
 └─────────────────────────────────┘
 ```
 
-### Durability Model
-
-Each `step.run()` provides:
-
-1. **Memoization**: Results are cached; re-execution returns cached value
-2. **Independent Retry**: Failed steps retry without re-running completed steps
-3. **Parallel Safety**: `Promise.all` with multiple `step.run()` calls execute in parallel
-
-```typescript
-// Parallel search - all queries execute concurrently
-const searchResults = await Promise.all(
-  queries.map((q) =>
-    step.run(`search-${hash(q.query)}`, async () => {
-      return await searchExa(q.query);
-    })
-  )
-);
-
-// Side effects happen OUTSIDE steps (for proper memoization)
-for (const { results } of searchResults) {
-  emitProgress(researchId, { type: "source-found", ... });
-  accumulated.sources.push(...results);
-}
-```
-
-## API Reference
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/research/clarify?topic=...` | GET | Generate 3-4 clarification questions |
-| `/api/research?researchId=...&topic=...&clarifications=...&depth=...&breadth=...` | GET | Start durable deep research |
-| `/api/research/events?researchId=...&cursor=...` | GET | Poll for progress events |
-
-### Query Parameters
-
-**`/api/research`**:
-- `researchId` (required): Unique identifier for tracking
-- `topic` (required): Research topic
-- `clarifications` (optional): JSON object of user answers
-- `depth` (optional): Recursion depth (default: 3)
-- `breadth` (optional): Queries per level (default: 3)
-- `injectFailure` (optional): Step type to fail for demos
-- `failureRate` (optional): Failure probability (default: 0.3)
-
 ## Technology Stack
 
-- **Runtime**: [Bun](https://bun.sh)
+- **Framework**: [Next.js](https://nextjs.org) 15 + React 19
 - **Durability**: [Inngest Durable Endpoints](https://www.inngest.com/docs)
 - **LLM**: [Vercel AI SDK](https://sdk.vercel.ai/) + Anthropic Claude Sonnet
 - **Search**: [Exa API](https://exa.ai/)
-- **Frontend**: Next.js 15 + React 19 + TailwindCSS
+- **Styling**: TailwindCSS
 
 ## Learn More
 
-- [Inngest Documentation](https://www.inngest.com/docs) - Learn about Inngest features
-- [Durable Endpoints Guide](https://www.inngest.com/docs/features/inngest-functions/durable-endpoints) - Deep dive into durability
-- [Vercel AI SDK](https://sdk.vercel.ai/docs) - AI integration patterns
-- [Exa API](https://docs.exa.ai/) - Neural search documentation
+- [Inngest Documentation](https://www.inngest.com/docs)
+- [Durable Endpoints Guide](https://www.inngest.com/docs/learn/rest-endpoints)
+- [Exa API](https://docs.exa.ai/)
 
 ## License
 
