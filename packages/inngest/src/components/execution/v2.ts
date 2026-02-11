@@ -1568,7 +1568,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               async () => {
                 if (typeof result.data !== "undefined") {
                   // Validate waitForEvent results against the schema if present
-                  if (opId.op === StepOpCode.WaitForEvent && result.data !== null) {
+                  if (
+                    opId.op === StepOpCode.WaitForEvent &&
+                    result.data !== null
+                  ) {
                     const { event } = (step.rawArgs?.[1] ?? {}) as {
                       event: unknown;
                     };
