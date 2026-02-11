@@ -16,9 +16,8 @@ type CatchAll =
   | Inngest.InngestCommHandler
   | Inngest.InngestFunction.Any
   | Inngest.InngestFunctionReference.Any
-  | Inngest.InngestMiddleware.Any
+  | Inngest.Middleware
   | Inngest.Logger
-  | Inngest.MiddlewareOptions
   | Inngest.NonRetriableError
   | Inngest.OutgoingOp
   | Inngest.ProxyLogger
@@ -34,57 +33,56 @@ type CatchAll =
   | Inngest.TimeStr
   | Inngest.UnionKeys<any>;
 
+class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
+  onRunStart(arg: Inngest.Middleware.OnRunStartArgs) {
+    console.log("onRunStart", arg);
+  }
+
+  onRunEnd(arg: Inngest.Middleware.OnRunEndArgs) {
+    console.log("onRunEnd", arg);
+  }
+
+  onStepStart(arg: Inngest.Middleware.OnStepStartArgs) {
+    console.log("onStepStart", arg);
+  }
+
+  onStepEnd(arg: Inngest.Middleware.OnStepEndArgs) {
+    console.log("onStepEnd", arg);
+  }
+
+  onStepError(arg: Inngest.Middleware.OnStepErrorArgs) {
+    console.log("onStepError", arg);
+  }
+
+  onMemoizationEnd() {
+    console.log("onMemoizationEnd");
+  }
+
+  async wrapFunctionHandler(next: () => Promise<unknown>) {
+    console.log("wrapFunctionHandler:before");
+    const result = await next();
+    console.log("wrapFunctionHandler:after");
+    return result;
+  }
+
+  async wrapStep(next: () => Promise<unknown>) {
+    console.log("wrapStep:before");
+    const result = await next();
+    console.log("wrapStep:after");
+    return result;
+  }
+
+  async wrapRequest(next: () => Promise<Response>) {
+    console.log("wrapRequest:before");
+    const result = await next();
+    console.log("wrapRequest:after");
+    return result;
+  }
+}
+
 export const inngest = new Inngest.Inngest({
   id: "me",
-  middleware: [
-    new Inngest.InngestMiddleware({
-      name: "foo",
-      init() {
-        return {
-          onFunctionRun(ctx) {
-            console.log(ctx);
-
-            return {
-              transformInput(ctx) {
-                console.log("transformInput", ctx);
-              },
-              afterExecution() {
-                console.log("afterExecution");
-              },
-              afterMemoization() {
-                console.log("afterMemoization");
-              },
-              beforeExecution() {
-                console.log("beforeExecution");
-              },
-              beforeMemoization() {
-                console.log("beforeMemoization");
-              },
-              beforeResponse() {
-                console.log("beforeResponse");
-              },
-              transformOutput(ctx) {
-                console.log("transformOutput", ctx);
-              },
-              finished() {
-                console.log("finished");
-              },
-            };
-          },
-          onSendEvent() {
-            return {
-              transformInput(ctx) {
-                console.log(ctx);
-              },
-              transformOutput(ctx) {
-                console.log(ctx);
-              },
-            };
-          },
-        };
-      },
-    }),
-  ],
+  middleware: [MyMiddleware],
 });
 
 void inngest.send({ name: "foo", data: { foo: "bar" } });

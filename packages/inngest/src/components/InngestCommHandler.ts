@@ -72,6 +72,7 @@ import {
   type CreateExecutionOptions,
   InngestFunction,
 } from "./InngestFunction.ts";
+import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -1070,19 +1071,10 @@ export class InngestCommHandler<
 
     const signatureValidation = this.validateSignature(signature, body);
 
-    const actionRes = timer.wrap("action", () =>
-      this.handleAction({
-        actions,
-        timer,
-        getHeaders,
-        reqArgs: args,
-        signatureValidation,
-        body,
-        method,
-        forceExecution: Boolean(forceExecution),
-        fns,
-      }),
-    );
+    // Create middleware instances once; shared by wrapRequest and execution hooks.
+    // Starts with client-level middleware; function-level middleware is appended
+    // for POST requests once the target function is known.
+    const mwInstances = this.client.middleware.map((Cls) => new Cls());
 
     /**
      * Prepares an action response by merging returned data to provide
@@ -1136,6 +1128,86 @@ export class InngestCommHandler<
       };
     };
 
+    // Build the inner handler that wraps handleAction + prepareActionRes.
+    // We capture `version` via closure so it can be passed to transformResponse.
+    let actionResponseVersion: ExecutionVersion | null | undefined;
+
+    const handleAndPrepare = async (): Promise<ActionResponse> => {
+      const rawRes = await timer.wrap("action", () =>
+        this.handleAction({
+          actions,
+          timer,
+          getHeaders,
+          reqArgs: args,
+          signatureValidation,
+          body,
+          method,
+          forceExecution: Boolean(forceExecution),
+          fns,
+          mwInstances,
+        }),
+      );
+      actionResponseVersion = rawRes.version;
+      return prepareActionRes(rawRes);
+    };
+
+    // Only wrap POST requests with the wrapRequest middleware chain.
+    // GET/PUT (introspection, registration) bypass the middleware.
+    let chainResult: Promise<Middleware.Response>;
+    if (method === "POST") {
+      const url = await actions.url("building requestInfo for middleware");
+
+      // Append function-level middleware so it is scoped to this function only.
+      const fnId = url.searchParams.get(queryKeys.FnId);
+      const matchedFn = fnId ? this.fns[fnId] : undefined;
+      const fnMw = matchedFn?.fn?.opts?.middleware ?? [];
+      mwInstances.push(...fnMw.map((Cls) => new Cls()));
+
+      const requestInfo: Middleware.Request = {
+        headers: Object.freeze({ ...(await getHeaders()) }),
+        method,
+        url,
+        body: () => Promise.resolve(body),
+      };
+
+      const innerHandler = async (): Promise<Middleware.Response> => {
+        const prepared = await handleAndPrepare();
+        return {
+          status: prepared.status,
+          headers: prepared.headers,
+          body: prepared.body,
+        };
+      };
+
+      const wrappedHandler = buildWrapRequestChain(
+        mwInstances,
+        innerHandler,
+        requestInfo,
+      );
+
+      // Start eagerly (matches prior behavior where handleAction starts before
+      // the shouldStream check).
+      chainResult = wrappedHandler();
+    } else {
+      chainResult = handleAndPrepare().then((prepared) => ({
+        status: prepared.status,
+        headers: prepared.headers,
+        body: prepared.body,
+      }));
+    }
+
+    // Attach error handling: if wrapRequest middleware throws, convert to 500.
+    const safeChainResult = chainResult.catch(
+      (err): Middleware.Response => ({
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+        body: stringify({
+          type: "internal",
+          ...serializeError(err as Error),
+        }),
+      }),
+    );
+
     let shouldStream: boolean;
     try {
       shouldStream = await this.shouldStream(actions);
@@ -1161,8 +1233,13 @@ export class InngestCommHandler<
          * Errors are handled by `handleAction` here to ensure that an
          * appropriate response is always given.
          */
-        void actionRes.then((res) => {
-          return finalize(prepareActionRes(res));
+        void safeChainResult.then((res) => {
+          return finalize(
+            Promise.resolve({
+              ...res,
+              version: actionResponseVersion,
+            }),
+          );
         });
 
         return timer.wrap("res", async () => {
@@ -1180,8 +1257,11 @@ export class InngestCommHandler<
     }
 
     return timer.wrap("res", async () => {
-      return actionRes.then(prepareActionRes).then((actionRes) => {
-        return actions.transformResponse("sending back response", actionRes);
+      return safeChainResult.then((res) => {
+        return actions.transformResponse("sending back response", {
+          ...res,
+          version: actionResponseVersion,
+        });
       });
     });
   }
@@ -1327,6 +1407,7 @@ export class InngestCommHandler<
     method,
     forceExecution,
     fns,
+    mwInstances,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
@@ -1337,6 +1418,7 @@ export class InngestCommHandler<
     method: string;
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
+    mwInstances?: Middleware.BaseMiddleware[];
   }): Promise<ActionResponse> {
     // This is when the request body is completely missing. This commonly
     // happens when the HTTP framework doesn't have body parsing middleware,
@@ -1506,17 +1588,25 @@ export class InngestCommHandler<
           // no-op
         }
 
+        const resolvedHeaders = await getHeaders();
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
           stepId,
           timer,
           reqArgs,
-          headers: await getHeaders(),
+          headers: resolvedHeaders,
           fn,
           forceExecution,
           actions,
           headerReqVersion,
+          requestInfo: {
+            headers: Object.freeze({ ...resolvedHeaders }),
+            method,
+            url,
+            body: () => Promise.resolve(body),
+          },
+          mwInstances,
         });
         const stepOutput = await result;
 
@@ -1827,6 +1917,8 @@ export class InngestCommHandler<
     fn,
     forceExecution,
     headerReqVersion,
+    requestInfo,
+    mwInstances,
   }: {
     actions: HandlerResponseWithErrors;
     functionId: string;
@@ -1838,6 +1930,8 @@ export class InngestCommHandler<
     fn: { fn: InngestFunction.Any; onFailure: boolean };
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
+    requestInfo?: InngestExecutionOptions["requestInfo"];
+    mwInstances?: Middleware.BaseMiddleware[];
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     if (!fn) {
       throw new Error(`Could not find function with ID "${functionId}"`);
@@ -1929,6 +2023,8 @@ export class InngestCommHandler<
               reqArgs,
               headers,
               createResponse,
+              requestInfo,
+              middlewareInstances: mwInstances,
             },
           };
         },
@@ -1984,6 +2080,8 @@ export class InngestCommHandler<
               reqArgs,
               headers,
               createResponse,
+              requestInfo,
+              middlewareInstances: mwInstances,
             },
           };
         },
@@ -2038,6 +2136,8 @@ export class InngestCommHandler<
               reqArgs,
               headers,
               createResponse,
+              requestInfo,
+              middlewareInstances: mwInstances,
             },
           };
         },

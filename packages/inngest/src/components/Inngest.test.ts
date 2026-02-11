@@ -8,7 +8,7 @@ import {
   type GetFunctionOutput,
   type GetStepTools,
   Inngest,
-  InngestMiddleware,
+  Middleware,
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
@@ -528,29 +528,22 @@ describe("send", () => {
         id: "test",
         eventKey: testEventKey,
         middleware: [
-          new InngestMiddleware({
-            name: "Test",
-            init() {
-              return {
-                onSendEvent() {
-                  return {
-                    transformInput(ctx) {
-                      return {
-                        payloads: ctx.payloads.map((payload) => ({
-                          ...payload,
-
-                          data: {
-                            ...payload.data,
-                            bar: true,
-                          },
-                        })),
-                      };
-                    },
-                  };
-                },
-              };
-            },
-          }),
+          class extends Middleware.BaseMiddleware {
+            override transformClientInput(
+              arg: Middleware.TransformClientInputArgs,
+            ) {
+              if (arg.method === "send") {
+                return arg.input.map((payload) => ({
+                  ...payload,
+                  data: {
+                    ...payload.data,
+                    bar: true,
+                  },
+                }));
+              }
+              return arg.input;
+            }
+          },
         ],
       });
 
@@ -582,24 +575,14 @@ describe("send", () => {
         id: "test",
         eventKey: testEventKey,
         middleware: [
-          new InngestMiddleware({
-            name: "Test",
-            init() {
+          class extends Middleware.BaseMiddleware {
+            override async wrapClientRequest(next: () => Promise<unknown>) {
+              const result = (await next()) as { ids: string[] };
               return {
-                onSendEvent() {
-                  return {
-                    transformOutput({ result }) {
-                      return {
-                        result: {
-                          ids: result.ids.map((id) => `${id}-bar`),
-                        },
-                      };
-                    },
-                  };
-                },
+                ids: result.ids.map((id) => `${id}-bar`),
               };
-            },
-          }),
+            }
+          },
         ],
       });
 
@@ -901,18 +884,19 @@ describe("helper types", () => {
   const inngest = new Inngest({
     id: "test",
     middleware: [
-      new InngestMiddleware({
-        name: "",
-        init: () => ({
-          onFunctionRun: () => ({
-            transformInput: () => ({
-              ctx: {
-                foo: "bar",
-              } as const,
-            }),
-          }),
-        }),
-      }),
+      class extends Middleware.BaseMiddleware {
+        override transformFunctionInput(
+          arg: Middleware.TransformFunctionInputArgs,
+        ) {
+          return {
+            ...arg,
+            ctx: {
+              ...arg.ctx,
+              foo: "bar" as const,
+            },
+          };
+        }
+      },
     ],
   });
 

@@ -34,8 +34,14 @@ import type {
   SimplifyDeep,
   SingleOrArray,
 } from "../helpers/types.ts";
-import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import {
+  DefaultLogger,
+  type Logger,
+  ProxyLogger,
+} from "../middleware/logger.ts";
+import {
+  type ApplyAllMiddlewareCtxExtensions,
+  type ApplyAllMiddlewareStepExtensions,
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
@@ -55,15 +61,9 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
-import {
-  type ExtendWithMiddleware,
-  getHookStack,
-  InngestMiddleware,
-  type MiddlewareRegisterFn,
-  type MiddlewareRegisterReturn,
-  type SendEventHookStack,
-} from "./InngestMiddleware.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
+import { buildWrapClientRequestChain } from "./middleware/manager.ts";
+import { Middleware, type MiddlewareClass } from "./middleware/middleware.ts";
 import type { Realtime } from "./realtime/types";
 import {
   type HandlerWithTriggers,
@@ -85,7 +85,7 @@ type FetchT = typeof fetch;
  *
  * @public
  */
-export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
+export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
   get [Symbol.toStringTag](): typeof Inngest.Tag {
@@ -116,10 +116,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private localFns: InngestFunction.Any[] = [];
 
   /**
-   * A promise that resolves when the middleware stack has been initialized and
-   * the client is ready to be used.
+   * Middleware instances that provide simpler hooks.
    */
-  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
+  readonly middleware: MiddlewareClass[];
 
   private _env: Env = {};
 
@@ -303,10 +302,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       setGlobalLogger(logger);
     }
 
-    this.middleware = this.initializeMiddleware([
-      ...builtInMiddleware,
-      ...(middleware || []),
-    ]);
+    this.middleware = [
+      ...builtInMiddleware(logger ?? new DefaultLogger(), this.logLevel),
+      ...(middleware ?? []),
+    ];
+
+    for (const mw of this.middleware) {
+      mw.onRegister?.({ client: this });
+    }
 
     this._appVersion = appVersion;
   }
@@ -316,7 +319,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * has been initialized.
    */
   public get ready(): Promise<void> {
-    return this.middleware.then(() => {});
+    return Promise.resolve();
   }
 
   /**
@@ -330,41 +333,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     this._env = { ...this._env, ...env };
 
     return this;
-  }
-
-  /**
-   * Initialize all passed middleware, running the `register` function on each
-   * in sequence and returning the requested hook registrations.
-   */
-  private async initializeMiddleware(
-    middleware: InngestMiddleware.Like[] = [],
-    opts?: {
-      registerInput?: Omit<Parameters<MiddlewareRegisterFn>[0], "client">;
-      prefixStack?: Promise<MiddlewareRegisterReturn[]>;
-    },
-  ): Promise<MiddlewareRegisterReturn[]> {
-    /**
-     * Wait for the prefix stack to run first; do not trigger ours before this
-     * is complete.
-     */
-    const prefix = await (opts?.prefixStack ?? []);
-
-    const stack = middleware.reduce<Promise<MiddlewareRegisterReturn[]>>(
-      async (acc, m) => {
-        // Be explicit about waiting for the previous middleware to finish
-        const prev = await acc;
-        const next = await (m as InngestMiddleware.Any).init({
-          client: this,
-          logger: this.logger,
-          ...opts?.registerInput,
-        });
-
-        return [...prev, next];
-      },
-      Promise.resolve([]),
-    );
-
-    return [...prefix, ...(await stack)];
   }
 
   get mode(): Mode {
@@ -691,40 +659,38 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       maxAttempts = 1;
     }
 
-    const hooks = await getHookStack(
-      this.middleware,
-      "onSendEvent",
-      undefined,
-      {
-        transformInput: (prev, output) => {
-          return { ...prev, ...output };
-        },
-        transformOutput(prev, output) {
-          return {
-            result: { ...prev.result, ...output?.result },
-          };
-        },
-      },
-    );
-
     let payloads: EventPayload[] = Array.isArray(payload)
       ? (payload as EventPayload[])
       : payload
         ? ([payload] as [EventPayload])
         : [];
 
+    // Instantiate fresh middleware per send() call.
+    // Include client middleware plus all function-level middleware so that
+    // transformClientInput fires for every registered middleware class.
+    const fnMiddleware = this.localFns.flatMap(
+      (fn) => fn.opts.middleware ?? [],
+    );
+    const mwInstances = [...this.middleware, ...fnMiddleware].map(
+      (Cls) => new Cls(),
+    );
+    for (const mw of mwInstances) {
+      if (mw?.transformClientInput) {
+        const transformed = mw.transformClientInput({
+          method: "send",
+          input: payloads,
+        });
+        if (transformed !== undefined) {
+          payloads = transformed as EventPayload[];
+        }
+      }
+    }
+
     // Validate payloads that have a validate method (from `EventType.create()`)
     for (const payload of payloads) {
       if (isValidatable(payload)) {
         await payload.validate();
       }
-    }
-
-    const inputChanges = await hooks.transformInput?.({
-      payloads: [...payloads],
-    });
-    if (inputChanges?.payloads) {
-      payloads = [...inputChanges.payloads];
     }
 
     // Ensure that we always add "ts" and "data" fields to events. "ts" is auto-
@@ -740,17 +706,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       };
     });
 
-    const applyHookToOutput = async (
-      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0],
-    ): Promise<SendEventOutput<TClientOpts>> => {
-      const hookOutput = await hooks.transformOutput?.(arg);
-      return {
-        ...arg.result,
-        ...hookOutput?.result,
-        // 🤮
-      } as unknown as SendEventOutput<TClientOpts>;
-    };
-
     /**
      * It can be valid for a user to send an empty list of events; if this
      * happens, show a warning that this may not be intended, but don't throw.
@@ -764,7 +719,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         }),
       );
 
-      return await applyHookToOutput({ result: { ids: [] } });
+      return { ids: [] } as SendEventOutput<TClientOpts>;
     }
 
     /**
@@ -781,43 +736,53 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       );
     }
 
-    const body = await retryWithBackoff(
-      async () => {
-        let rawBody: unknown;
-        let body: SendEventResponse | undefined;
+    const innerHandler = async () => {
+      const body = await retryWithBackoff(
+        async () => {
+          let rawBody: unknown;
+          let body: SendEventResponse | undefined;
 
-        // We don't need to do fallback auth here because this uses event keys and
-        // not signing keys
-        const url = new URL(
-          `e/${this.eventKey ?? dummyEventKey}`,
-          this.eventBaseUrl,
-        );
-        const response = await this.fetch(url.href, {
-          method: "POST",
-          body: stringify(payloads),
-          headers: { ...this.headers, ...headers },
-        });
+          // We don't need to do fallback auth here because this uses event keys and
+          // not signing keys
+          const url = new URL(
+            `e/${this.eventKey ?? dummyEventKey}`,
+            this.eventBaseUrl,
+          );
+          const response = await this.fetch(url.href, {
+            method: "POST",
+            body: stringify(payloads),
+            headers: { ...this.headers, ...headers },
+          });
 
-        try {
-          rawBody = await response.json();
-          body = await sendEventResponseSchema.parseAsync(rawBody);
-        } catch (_err) {
-          throw await this.getResponseError(response, rawBody);
-        }
+          try {
+            rawBody = await response.json();
+            body = await sendEventResponseSchema.parseAsync(rawBody);
+          } catch (_err) {
+            throw await this.getResponseError(response, rawBody);
+          }
 
-        if (body.status !== 200 || body.error) {
-          throw await this.getResponseError(response, rawBody, body.error);
-        }
+          if (body.status !== 200 || body.error) {
+            throw await this.getResponseError(response, rawBody, body.error);
+          }
 
-        return body;
-      },
-      {
-        maxAttempts,
-        baseDelay: 100,
-      },
+          return body;
+        },
+        {
+          maxAttempts,
+          baseDelay: 100,
+        },
+      );
+
+      return { ids: body.ids } as SendEventOutput<TClientOpts>;
+    };
+
+    const wrappedHandler = buildWrapClientRequestChain(
+      mwInstances,
+      innerHandler,
+      payloads,
     );
 
-    return await applyHookToOutput({ result: { ids: body.ids } });
+    return (await wrappedHandler()) as SendEventOutput<TClientOpts>;
   }
 
   public createFunction: Inngest.CreateFunction<this> = (
@@ -843,6 +808,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   ) => {
     const options = this.sanitizeOptions(rawOptions);
     const triggers = this.sanitizeTriggers(rawTrigger);
+
+    for (const mw of options.middleware ?? []) {
+      mw.onRegister?.({ client: this });
+    }
 
     return new InngestFunction(
       this,
@@ -901,84 +870,71 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 }
 
 /**
- * Default middleware that is included in every client, placed after the user's
- * middleware on the client but before function-level middleware.
- *
- * It is defined here to ensure that comments are included in the generated TS
- * definitions. Without this, we infer the stack of built-in middleware without
- * comments, losing a lot of value.
- *
- * If this is moved, please ensure that using this package in another project
- * can correctly access comments on mutated input and output.
- *
- * This return pattern mimics the output of a `satisfies` suffix; it's used as
- * we support versions of TypeScript prior to the introduction of `satisfies`.
+ * Default middleware that is included in every client, placed before the user's
+ * middleware. Returns new-style `MiddlewareClass` constructors. Uses a closure
+ * so the no-arg constructors can capture the base logger and log level.
  */
-export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
-  m: T,
-): T => m)([
-  new InngestMiddleware({
-    name: "Inngest: Logger",
-    init({ client }) {
-      return {
-        onFunctionRun(arg) {
-          const { ctx } = arg;
+export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
+  return [
+    class LoggerMiddleware extends Middleware.BaseMiddleware {
+      #proxyLogger = new ProxyLogger(baseLogger, logLevel);
 
-          const metadata = {
-            runID: ctx.runId,
-            eventName: ctx.event.name,
-            functionName: arg.fn.name,
-          };
+      override transformFunctionInput(
+        arg: Middleware.TransformFunctionInputArgs,
+      ) {
+        let logger: Logger = baseLogger;
 
-          let providedLogger: Logger = client["logger"];
-          // create a child logger if the provided logger has child logger implementation
+        // Create a child logger with run metadata if supported
+        if ("child" in logger) {
           try {
-            if ("child" in providedLogger) {
-              type ChildLoggerFn = (
-                metadata: Record<string, unknown>,
-              ) => Logger;
-              providedLogger = (providedLogger.child as ChildLoggerFn)(
-                metadata,
-              );
-            }
+            logger = (
+              logger.child as (meta: Record<string, unknown>) => Logger
+            )({
+              runID: arg.ctx.runId,
+              eventName: arg.ctx.event.name,
+            });
           } catch (err) {
-            providedLogger.error(
-              'failed to create "childLogger" with error: ',
-              err,
-            );
-            // no-op
+            logger.error('failed to create "childLogger" with error: ', err);
           }
-          const logger = new ProxyLogger(providedLogger, client.logLevel);
+        }
 
-          return {
-            transformInput() {
-              return {
-                ctx: {
-                  /**
-                   * The passed in logger from the user.
-                   * Defaults to a console logger if not provided.
-                   */
-                  logger: logger as Logger,
-                },
-              };
-            },
-            beforeExecution() {
-              logger.enable();
-            },
-            transformOutput({ result: { error } }) {
-              if (error) {
-                logger.error(error);
-              }
-            },
-            async beforeResponse() {
-              await logger.flush();
-            },
-          };
-        },
-      };
+        this.#proxyLogger = new ProxyLogger(logger, logLevel);
+
+        return {
+          ...arg,
+          ctx: Object.assign({}, arg.ctx, {
+            logger: this.#proxyLogger as Logger,
+          }),
+        };
+      }
+
+      override onMemoizationEnd() {
+        this.#proxyLogger.enable();
+      }
+
+      override onStepError(arg: Middleware.OnStepErrorArgs) {
+        this.#proxyLogger.error(arg.error);
+      }
+
+      override wrapFunctionHandler(
+        next: () => Promise<unknown>,
+      ): Promise<unknown> {
+        return next()
+          .catch((err: unknown) => {
+            this.#proxyLogger.error(err);
+            throw err;
+          })
+          .finally(() => this.#proxyLogger.flush());
+      }
+
+      override wrapRequest(
+        next: () => Promise<Middleware.Response>,
+      ): Promise<Middleware.Response> {
+        return next().finally(() => this.#proxyLogger.flush());
+      }
     },
-  }),
-]);
+  ] as const;
+}
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -1016,47 +972,54 @@ export namespace Inngest {
   >;
 
   export type CreateFunction<TClient extends Inngest.Any> = <
-    TMiddleware extends InngestMiddleware.Stack,
     const TTrigger extends SingleOrArray<InngestFunction.Trigger<string>>,
+    const TFnMiddleware extends MiddlewareClass[] | undefined = undefined,
     THandler extends Handler.Any = HandlerWithTriggers<
-      ReturnType<typeof createStepTools<TClient>>,
+      ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
       AsArray<TTrigger>,
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
-          TMiddleware,
-        ]
-      >
+      ApplyAllMiddlewareCtxExtensions<
+        [...ReturnType<typeof builtInMiddleware>]
+      > &
+        ApplyAllMiddlewareCtxExtensions<
+          ClientOptionsFromInngest<TClient>["middleware"]
+        > & {
+          step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
+            ApplyAllMiddlewareStepExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            >;
+        }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
-      ReturnType<typeof createStepTools<TClient>>,
+      ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
       AsArray<TTrigger>,
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
-          TMiddleware,
-        ],
-        FailureEventArgs<EventPayload>
-      >
+      ApplyAllMiddlewareCtxExtensions<
+        [...ReturnType<typeof builtInMiddleware>]
+      > &
+        FailureEventArgs<EventPayload> &
+        ApplyAllMiddlewareCtxExtensions<
+          ClientOptionsFromInngest<TClient>["middleware"]
+        > & {
+          step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
+            ApplyAllMiddlewareStepExtensions<
+              ClientOptionsFromInngest<TClient>["middleware"]
+            >;
+        }
     >,
   >(
     options: Omit<
-      InngestFunction.Options<TMiddleware, AsArray<TTrigger>, TFailureHandler>,
+      InngestFunction.Options<AsArray<TTrigger>, TFailureHandler>,
       "triggers"
-    >,
+    > & { middleware?: TFnMiddleware },
     trigger: TTrigger,
     handler: THandler,
   ) => InngestFunction<
     Omit<
-      InngestFunction.Options<TMiddleware, AsArray<TTrigger>, TFailureHandler>,
+      InngestFunction.Options<AsArray<TTrigger>, TFailureHandler>,
       "triggers"
     >,
     THandler,
     TFailureHandler,
     TClient,
-    TMiddleware,
     AsArray<TTrigger>
   >;
 }
@@ -1099,12 +1062,15 @@ export type GetStepTools<TInngest extends Inngest.Any> =
 export type GetFunctionInput<TClient extends Inngest.Any> = Parameters<
   Handler<
     TClient,
-    ExtendWithMiddleware<
-      [
-        typeof builtInMiddleware,
-        NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
-      ]
-    >
+    ApplyAllMiddlewareCtxExtensions<[...ReturnType<typeof builtInMiddleware>]> &
+      ApplyAllMiddlewareCtxExtensions<
+        ClientOptionsFromInngest<TClient>["middleware"]
+      > & {
+        step: ReturnType<typeof createStepTools<TClient>> &
+          ApplyAllMiddlewareStepExtensions<
+            ClientOptionsFromInngest<TClient>["middleware"]
+          >;
+      }
   >
 >[0];
 
@@ -1137,7 +1103,7 @@ export type GetFunctionOutput<
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-> = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
+> = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
     : SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
@@ -1160,6 +1126,51 @@ export type GetFunctionOutputFromReferenceInngestFunction<
     ? null
     : SimplifyDeep<Jsonify<IOutput>>
   : unknown;
+
+/**
+ * A helper type to extract the raw (non-Jsonified) output type of an Inngest
+ * function. This is used when middleware transforms will handle serialization.
+ *
+ * @internal
+ */
+export type GetFunctionOutputRaw<
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends InngestFunction.Any
+  ? GetFunctionOutputRawFromInngestFunction<TFunction>
+  : TFunction extends InngestFunctionReference.Any
+    ? GetFunctionOutputRawFromReferenceInngestFunction<TFunction>
+    : unknown;
+
+/**
+ * @internal
+ */
+export type GetFunctionOutputRawFromInngestFunction<
+  TFunction extends InngestFunction.Any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+> = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
+  ? VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>
+  : unknown;
+
+/**
+ * @internal
+ */
+export type GetFunctionOutputRawFromReferenceInngestFunction<
+  TFunction extends InngestFunctionReference.Any,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+> = TFunction extends InngestFunctionReference<any, infer IOutput>
+  ? VoidToNull<SimplifyDeep<IOutput>>
+  : unknown;
+
+/**
+ * Helper type that converts void/undefined/never to null.
+ * Uses ReturnType trick to check for void without directly using void in type position.
+ * @internal
+ */
+type VoidToNull<T> = IsNever<T> extends true
+  ? null
+  : T extends ReturnType<() => void>
+    ? null
+    : T;
 
 /**
  * A helper type to extract the inferred options from a given Inngest instance.

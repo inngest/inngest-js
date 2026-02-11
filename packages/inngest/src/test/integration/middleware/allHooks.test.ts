@@ -1,0 +1,231 @@
+import { describe, expect, test } from "vitest";
+import type { MiddlewareClass } from "../../../components/middleware/middleware.ts";
+import { Inngest, Middleware } from "../../../index.ts";
+import { createTestApp } from "../../devServerTestHarness.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../utils.ts";
+
+const testFileName = testNameFromFileUrl(import.meta.url);
+
+describe("all hooks fire in correct order with 2 middleware", () => {
+  const levels = [
+    "client", // Only client middleware
+    "function", // Only function middleware
+    "mixed", // Client and function middleware
+  ] as const;
+  for (const level of levels) {
+    test(level, async () => {
+      const state = createState({
+        logs: [] as string[],
+      });
+
+      function createMW(name: string) {
+        return class extends Middleware.BaseMiddleware {
+          static override onRegister() {
+            state.logs.push(`onRegister (${name})`);
+          }
+
+          override transformClientInput(
+            arg: Middleware.TransformClientInputArgs,
+          ) {
+            state.logs.push(`transformClientInput (${name})`);
+            return arg.input;
+          }
+
+          override async wrapClientRequest(next: () => Promise<unknown>) {
+            state.logs.push(`wrapClientRequest: before (${name})`);
+            const result = await next();
+            state.logs.push(`wrapClientRequest: after (${name})`);
+            return result;
+          }
+
+          override async wrapRequest(next: () => Promise<Middleware.Response>) {
+            state.logs.push(`wrapRequest: before (${name})`);
+            const res = await next();
+            state.logs.push(`wrapRequest: after (${name})`);
+            return res;
+          }
+
+          override transformFunctionInput(
+            arg: Middleware.TransformFunctionInputArgs,
+          ) {
+            state.logs.push(`transformFunctionInput (${name})`);
+            return arg;
+          }
+
+          override onMemoizationEnd() {
+            state.logs.push(`onMemoizationEnd (${name})`);
+          }
+
+          override async wrapFunctionHandler(next: () => Promise<unknown>) {
+            state.logs.push(`wrapFunctionHandler: before (${name})`);
+            const result = await next();
+            state.logs.push(`wrapFunctionHandler: after (${name})`);
+            return result;
+          }
+
+          override transformStepInput(
+            arg: Middleware.TransformStepInputArgs,
+          ): Middleware.TransformStepInputArgs {
+            state.logs.push(
+              `transformStepInput(${arg.stepInfo.memoized ? "memo" : "fresh"}) (${name})`,
+            );
+            return arg;
+          }
+
+          override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+            next,
+            { stepInfo },
+          ) => {
+            state.logs.push(
+              `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): before (${name})`,
+            );
+            const result = await next();
+            state.logs.push(
+              `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): after (${name})`,
+            );
+            return result;
+          };
+
+          override onStepStart() {
+            state.logs.push(`onStepStart (${name})`);
+          }
+
+          override onStepEnd() {
+            state.logs.push(`onStepEnd (${name})`);
+          }
+
+          override onStepError() {
+            state.logs.push(`onStepError (${name})`);
+          }
+
+          override onRunStart() {
+            state.logs.push(`onRunStart (${name})`);
+          }
+
+          override onRunEnd() {
+            state.logs.push(`onRunEnd (${name})`);
+          }
+
+          override onRunError() {
+            state.logs.push(`onRunError (${name})`);
+          }
+        };
+      }
+
+      const Mw1 = createMW("mw1");
+      const Mw2 = createMW("mw2");
+
+      let clientMiddleware: MiddlewareClass[] = [];
+      if (level === "client") {
+        clientMiddleware = [Mw1, Mw2];
+      } else if (level === "mixed") {
+        clientMiddleware = [Mw1];
+      }
+
+      let functionMiddleware: MiddlewareClass[] = [];
+      if (level === "function") {
+        functionMiddleware = [Mw1, Mw2];
+      } else if (level === "mixed") {
+        functionMiddleware = [Mw2];
+      }
+
+      const eventName = randomSuffix("evt");
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: clientMiddleware,
+      });
+
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          middleware: functionMiddleware,
+        },
+        { event: eventName },
+        async ({ step, runId }) => {
+          state.runId = runId;
+          state.logs.push("fn: top");
+          await step.run("my-step", () => {
+            state.logs.push("step: inside");
+            return "result";
+          });
+          state.logs.push("fn: bottom");
+        },
+      );
+
+      await createTestApp({ client, functions: [fn] });
+
+      await client.send({ name: eventName });
+      await state.waitForRunComplete();
+
+      expect(state.logs).toEqual([
+        "onRegister (mw1)",
+        "onRegister (mw2)",
+
+        // client.send() - forward order
+        "transformClientInput (mw1)",
+        "transformClientInput (mw2)",
+        "wrapClientRequest: before (mw1)",
+        "wrapClientRequest: before (mw2)",
+        "wrapClientRequest: after (mw2)",
+        "wrapClientRequest: after (mw1)",
+
+        // --- Request 1: fresh step discovered and executed ---
+        "wrapRequest: before (mw1)",
+        "wrapRequest: before (mw2)",
+        "transformFunctionInput (mw1)",
+        "transformFunctionInput (mw2)",
+        "onRunStart (mw1)",
+        "onRunStart (mw2)",
+        "onMemoizationEnd (mw1)", // Fires immediately (no memoized state)
+        "onMemoizationEnd (mw2)",
+        "wrapFunctionHandler: before (mw1)",
+        "wrapFunctionHandler: before (mw2)",
+        "fn: top",
+        "transformStepInput(fresh) (mw1)", // Forward order, before wrapStep
+        "transformStepInput(fresh) (mw2)",
+        "wrapStep(fresh): before (mw1)",
+        "wrapStep(fresh): before (mw2)",
+        "onStepStart (mw1)",
+        "onStepStart (mw2)",
+        "step: inside",
+        "wrapStep(fresh): after (mw2)", // Onion unwind
+        "wrapStep(fresh): after (mw1)",
+        "onStepEnd (mw1)", // Fires after wrapStep resolves (observes transformed output)
+        "onStepEnd (mw2)",
+        // NOTE: wrapFunctionHandler "after" does NOT fire here. Step discovery
+        // interrupts the function via control flow, so next() in
+        // wrapFunctionHandler never resolves. Use try/finally for cleanup.
+        // onRunEnd does NOT fire here either (interrupted).
+        "wrapRequest: after (mw2)",
+        "wrapRequest: after (mw1)",
+
+        // --- Request 2: memoized step, function completes ---
+        "wrapRequest: before (mw1)",
+        "wrapRequest: before (mw2)",
+        "transformFunctionInput (mw1)",
+        "transformFunctionInput (mw2)",
+        // onRunStart does NOT fire here (memoized steps present)
+        "wrapFunctionHandler: before (mw1)",
+        "wrapFunctionHandler: before (mw2)",
+        "fn: top",
+        "transformStepInput(memo) (mw1)", // Forward order, before wrapStep
+        "transformStepInput(memo) (mw2)",
+        "onMemoizationEnd (mw1)", // Fires after all memoized steps seen
+        "onMemoizationEnd (mw2)",
+        "wrapStep(memo): before (mw1)",
+        "wrapStep(memo): before (mw2)",
+        "wrapStep(memo): after (mw2)",
+        "wrapStep(memo): after (mw1)",
+        "fn: bottom",
+        "wrapFunctionHandler: after (mw2)", // Only unwinds when function completes
+        "wrapFunctionHandler: after (mw1)",
+        "onRunEnd (mw1)",
+        "onRunEnd (mw2)",
+        "wrapRequest: after (mw2)",
+        "wrapRequest: after (mw1)",
+      ]);
+    });
+  }
+});

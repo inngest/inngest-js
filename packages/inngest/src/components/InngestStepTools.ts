@@ -13,6 +13,7 @@ import type {
   SimplifyDeep,
 } from "../helpers/types.ts";
 import {
+  type ApplyAllMiddlewareTransforms,
   type Context,
   type EventPayload,
   type HashedOp,
@@ -31,7 +32,7 @@ import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
-  GetFunctionOutput,
+  GetFunctionOutputRaw,
   GetStepTools,
   Inngest,
 } from "./Inngest.ts";
@@ -43,8 +44,49 @@ import {
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import type { Middleware, MiddlewareClass } from "./middleware/index.ts";
 import type { Realtime } from "./realtime/types.ts";
 import type { EventType } from "./triggers/triggers.ts";
+
+/**
+ * Middleware context for a step, created during step registration.
+ *
+ * This exists to support middleware changing step IDs via `wrapStep`.
+ * The context is created early so middleware can transform the ID (affecting
+ * memoization lookup), but the actual handler is set later based on whether
+ * we're returning memoized data or executing fresh.
+ *
+ * The "deferred handler" pattern works as follows:
+ * 1. Middleware can change `stepInfo.options.id` via `wrapStep`
+ * 2. The changed ID affects which memoized state is used
+ * 3. We need to wrap the handler BEFORE knowing what handler to use
+ * 4. We don't know the handler until after memoization lookup
+ *
+ * Solution: Create a placeholder handler, wrap it with middleware, use the
+ * (potentially changed) ID for memoization lookup, then set the actual
+ * handler based on memoization status via `setActualHandler`.
+ */
+export interface StepMiddlewareContext {
+  /**
+   * The middleware pipeline entry point. Call this to execute the step
+   * through all middleware transformations.
+   */
+  wrappedHandler: () => Promise<unknown>;
+
+  /**
+   * Step info after middleware transformations. The `options.id` may differ from
+   * the original if middleware modified it via `wrapStep`.
+   */
+  stepInfo: Middleware.StepInfo;
+
+  /**
+   * Sets the handler that the middleware pipeline will eventually call.
+   * Called after memoization lookup to set either:
+   * - A handler returning memoized data, OR
+   * - A handler executing the step fresh
+   */
+  setActualHandler: (handler: () => Promise<unknown>) => void;
+}
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -89,6 +131,30 @@ export interface FoundStep extends HashedOp {
   // TODO This is used to track the input we want for this step. Might be
   // present in ctx from Executor.
   input?: unknown;
+
+  /**
+   * Required middleware context for this step.
+   * Always populated before memoization lookup so that middleware can
+   * change the step ID and affect which memoized state is used.
+   */
+  middleware: StepMiddlewareContext;
+
+  /**
+   * For new steps where wrappedHandler is called during discovery,
+   * this holds the resolve/reject to be called when executeStep runs.
+   */
+  executionDeferred?: {
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+  };
+
+  /**
+   * For new steps where wrappedHandler is called during discovery,
+   * this holds the promise for the middleware-transformed result.
+   * executeStep should use this result (which includes serialization)
+   * instead of the raw handler result.
+   */
+  transformedResultPromise?: Promise<unknown>;
 }
 
 export type MatchOpFn<
@@ -155,7 +221,24 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <TClient extends Inngest.Any>(
+/**
+ * Merge client-level and function-level middleware into a single array type
+ * for use with ApplyAllMiddlewareTransforms etc.
+ */
+type MergedMiddleware<
+  TClient extends Inngest.Any,
+  TFnMiddleware extends MiddlewareClass[] | undefined,
+> = [
+  ...(ClientOptionsFromInngest<TClient>["middleware"] extends MiddlewareClass[]
+    ? ClientOptionsFromInngest<TClient>["middleware"]
+    : []),
+  ...(TFnMiddleware extends MiddlewareClass[] ? TFnMiddleware : []),
+];
+
+export const createStepTools = <
+  TClient extends Inngest.Any,
+  TFnMiddleware extends MiddlewareClass[] | undefined = undefined,
+>(
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler,
@@ -233,12 +316,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         ...input: Parameters<TFn>
       ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
         SimplifyDeep<
-          Jsonify<
+          ApplyAllMiddlewareTransforms<
+            MergedMiddleware<TClient, TFnMiddleware>,
             TFn extends (...args: Parameters<TFn>) => Promise<infer U>
               ? Awaited<U extends void ? null : U>
               : ReturnType<TFn> extends void
@@ -671,6 +751,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         name: msTimeStr,
         displayName: name ?? id,
         userland: { id },
+        opts: { input: [time] },
       };
     }),
 
@@ -732,7 +813,14 @@ export const createStepTools = <TClient extends Inngest.Any>(
       <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>,
-      ) => InvocationResult<GetFunctionOutput<TFunction>>
+      ) => InvocationResult<
+        SimplifyDeep<
+          ApplyAllMiddlewareTransforms<
+            MergedMiddleware<TClient, TFnMiddleware>,
+            GetFunctionOutputRaw<TFunction>
+          >
+        >
+      >
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
       // available for this tool.

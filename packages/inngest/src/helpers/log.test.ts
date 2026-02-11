@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: it's fine
+
 const alsSymbol = Symbol.for("inngest:als");
 
 /**
@@ -188,6 +190,194 @@ describe("getLogger", () => {
 
     expect(result).toBe("done");
     expect(loggerFromHelper).toBe(loggerFromCtx);
+  });
+});
+
+describe("builtInMiddleware", () => {
+  afterEach(() => {
+    vi.resetModules();
+    delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
+  });
+
+  test("flushes logger after successful execution", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const flush = vi.fn();
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      flush,
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const fn = inngest.createFunction(
+      { id: "test" },
+      { event: "" },
+      () => "done",
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(flush).toHaveBeenCalled();
+  });
+
+  test("flushes logger even when function throws", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const flush = vi.fn();
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      flush,
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const fn = inngest.createFunction(
+      { id: "test", retries: 0 },
+      { event: "" },
+      () => {
+        throw new Error("boom");
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(flush).toHaveBeenCalled();
+  });
+
+  test("forwards log calls to underlying logger during execution", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const fn = inngest.createFunction(
+      { id: "test" },
+      { event: "" },
+      ({ logger }) => {
+        logger.info("hello");
+        return "done";
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(customLogger.info).toHaveBeenCalledWith("hello");
+  });
+
+  test("logs errors on function failure", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const err = new Error("boom");
+    const fn = inngest.createFunction(
+      { id: "test", retries: 0 },
+      { event: "" },
+      () => {
+        throw err;
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(customLogger.error).toHaveBeenCalledWith(err);
+  });
+
+  test("creates child logger when .child() is available", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const childLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      child: vi.fn().mockReturnValue(childLogger),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const fn = inngest.createFunction(
+      { id: "test" },
+      { event: "" },
+      ({ logger }) => {
+        logger.info("hello");
+        return "done";
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(customLogger.child).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runID: expect.any(String),
+        eventName: expect.any(String),
+      }),
+    );
+    expect(childLogger.info).toHaveBeenCalledWith("hello");
+    expect(customLogger.info).not.toHaveBeenCalledWith("hello");
+  });
+
+  test("creates a new logger per execution", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const loggers: unknown[] = [];
+    const fn = inngest.createFunction(
+      { id: "test" },
+      { event: "" },
+      ({ logger }) => {
+        loggers.push(logger);
+        return "done";
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+    await t.execute();
+
+    expect(loggers).toHaveLength(2);
+    expect(loggers[0]).not.toBe(loggers[1]);
   });
 });
 

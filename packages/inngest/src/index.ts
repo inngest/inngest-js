@@ -52,13 +52,8 @@ export { InngestCommHandler } from "./components/InngestCommHandler.ts";
 export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
-export type {
-  MiddlewareOptions,
-  MiddlewareRegisterFn,
-  MiddlewareRegisterReturn,
-} from "./components/InngestMiddleware";
-export { InngestMiddleware } from "./components/InngestMiddleware.ts";
 export { step } from "./components/InngestStepTools.ts";
+export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { StepError } from "./components/StepError.ts";
@@ -71,7 +66,6 @@ export {
 export {
   isInngest,
   isInngestFunction,
-  isInngestMiddleware,
   isInngestRequest,
 } from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";

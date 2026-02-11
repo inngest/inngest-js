@@ -20,14 +20,10 @@ import type {
   IInngestExecution,
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
-import { createV0InngestExecution } from "./execution/v0.ts";
 import { createV1InngestExecution } from "./execution/v1.ts";
 import { createV2InngestExecution } from "./execution/v2.ts";
 import type { Inngest } from "./Inngest.ts";
-import type {
-  InngestMiddleware,
-  MiddlewareRegisterReturn,
-} from "./InngestMiddleware.ts";
+import type { MiddlewareClass } from "./middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
@@ -40,15 +36,10 @@ import type { EventTypeWithAnySchema } from "./triggers/triggers.ts";
  * @public
  */
 export class InngestFunction<
-  TFnOpts extends InngestFunction.Options<
-    TMiddleware,
-    TTriggers,
-    TFailureHandler
-  >,
+  TFnOpts extends InngestFunction.Options<TTriggers, TFailureHandler>,
   THandler extends Handler.Any,
   TFailureHandler extends Handler.Any,
   TClient extends Inngest.Any = Inngest.Any,
-  TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
   TTriggers extends
     InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
 > implements InngestFunction.Like
@@ -65,7 +56,6 @@ export class InngestFunction<
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
   protected readonly client: TClient;
-  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -87,14 +77,6 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
-
-    this.middleware = this.client["initializeMiddleware"](
-      this.opts.middleware,
-      {
-        registerInput: { fn: this, logger: this.client.logger },
-        prefixStack: this.client["middleware"],
-      },
-    );
   }
 
   /**
@@ -293,7 +275,9 @@ export class InngestFunction<
     const versionHandlers = {
       [ExecutionVersion.V2]: () => createV2InngestExecution(options),
       [ExecutionVersion.V1]: () => createV1InngestExecution(options),
-      [ExecutionVersion.V0]: () => createV0InngestExecution(options),
+      [ExecutionVersion.V0]: () => {
+        throw new Error("V0 is no longer supported");
+      },
     } satisfies Record<ExecutionVersion, () => IInngestExecution>;
 
     return versionHandlers[opts.version]();
@@ -363,11 +347,9 @@ export namespace InngestFunction {
    */
   export type Any = InngestFunction<
     // biome-ignore lint/suspicious/noExplicitAny: intentional
-    any,
+    InngestFunction.Options<any, any>,
     Handler.Any,
     Handler.Any,
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
-    any,
     // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
     // biome-ignore lint/suspicious/noExplicitAny: intentional
@@ -395,7 +377,7 @@ export namespace InngestFunction {
 
   export type GetOptions<T extends InngestFunction.Any> =
     // biome-ignore lint/suspicious/noExplicitAny: intentional
-    T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
+    T extends InngestFunction<infer O, any, any, any, any> ? O : never;
 
   /**
    * A set of options for configuring an Inngest function.
@@ -403,7 +385,6 @@ export namespace InngestFunction {
    * @public
    */
   export interface Options<
-    TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
     TTriggers extends
       InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
     TFailureHandler extends Handler.Any = Handler.Any,
@@ -706,23 +687,8 @@ export namespace InngestFunction {
      * Inngest functionality.
      *
      * See {@link https://innge.st/middleware}
-     *
-     * @example
-     *
-     * ```ts
-     * export const inngest = new Inngest({
-     *   middleware: [
-     *     new InngestMiddleware({
-     *       name: "My Middleware",
-     *       init: () => {
-     *         // ...
-     *       }
-     *     })
-     *   ]
-     * });
-     * ```
      */
-    middleware?: TMiddleware;
+    middleware?: MiddlewareClass[];
 
     /**
      * Optimizes parallel steps to reduce traffic during `Promise` resolution,
