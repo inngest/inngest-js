@@ -16,7 +16,7 @@ type CatchAll =
   | Inngest.InngestCommHandler
   | Inngest.InngestFunction.Any
   | Inngest.InngestFunctionReference.Any
-  | Inngest.Middleware
+  | typeof Inngest.Middleware
   | Inngest.Logger
   | Inngest.NonRetriableError
   | Inngest.OutgoingOp
@@ -72,7 +72,7 @@ class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
     return result;
   }
 
-  async wrapRequest(next: () => Promise<Response>) {
+  async wrapRequest(next: () => Promise<Inngest.Middleware.Response>) {
     console.log("wrapRequest:before");
     const result = await next();
     console.log("wrapRequest:after");
