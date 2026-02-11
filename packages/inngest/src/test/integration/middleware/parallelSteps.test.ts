@@ -138,18 +138,14 @@ test("info hooks for parallel steps", async () => {
     "fn: top",
     "onMemoizationEnd",
 
-    // 6th request: post-parallel discovery
-    "fn: top",
-    "onMemoizationEnd",
-
-    // 7th request: target step-3
+    // 6th request: target step-3
     "fn: top",
     "onMemoizationEnd",
     "onStepStart",
     "step-3: inside",
     "onStepEnd",
 
-    // 8th request
+    // 7th request
     "fn: top",
     "onMemoizationEnd",
     "fn: bottom",

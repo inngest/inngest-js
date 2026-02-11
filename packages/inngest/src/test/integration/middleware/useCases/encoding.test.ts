@@ -98,6 +98,7 @@ test("base64 encoding/decoding middleware", async () => {
       maxAttempts: 1,
       event: expect.any(Object),
       events: [expect.any(Object)],
+      group: expect.any(Object),
       logger: expect.any(Object),
       runId: expect.any(String),
       step: expect.any(Object),

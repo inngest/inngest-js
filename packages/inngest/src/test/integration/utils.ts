@@ -185,6 +185,7 @@ export const anyContext = {
   attempt: expect.any(Number),
   event: anyEvent,
   events: [anyEvent],
+  group: expect.any(Object),
   logger: expect.any(Object),
   maxAttempts: expect.any(Number),
   runId: expect.any(String),
