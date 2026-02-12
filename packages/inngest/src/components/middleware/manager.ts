@@ -36,6 +36,11 @@ export class MiddlewareManager {
   private readonly getStepState: () => Record<string, MemoizedOp>;
   private readonly middleware: Middleware.BaseMiddleware[];
 
+  /**
+   * Whether any middleware defines `transformStepInput`.
+   */
+  private readonly hasTransformStepInput: boolean;
+
   constructor(
     fnArg: Context.Any,
     getStepState: () => Record<string, MemoizedOp>,
@@ -44,6 +49,10 @@ export class MiddlewareManager {
     this.fnArg = fnArg;
     this.getStepState = getStepState;
     this.middleware = middleware;
+
+    this.hasTransformStepInput = middleware.some(
+      (mw) => !!mw?.transformStepInput,
+    );
   }
 
   hasMiddleware(): boolean {
@@ -69,15 +78,19 @@ export class MiddlewareManager {
       input: stepInput,
     });
 
-    // Apply transformStepInput middleware (forward order)
-    const originalInput = stepInfo.input;
-    const transformed = this.transformStepInput(stepInfo);
-    stepInfo.options = transformed.stepOptions;
-    // Preserve undefined if input wasn't changed from the initial empty array
-    stepInfo.input =
-      originalInput === undefined && transformed.input.length === 0
-        ? undefined
-        : transformed.input;
+    // Only run transformStepInput if at least one middleware defines it.  This
+    // avoids some allocations that are unnecessary when no middleware will read
+    // or mutate them.
+    if (this.hasTransformStepInput) {
+      const originalInput = stepInfo.input;
+      const transformed = this.transformStepInput(stepInfo);
+      stepInfo.options = transformed.stepOptions;
+      // Preserve undefined if input wasn't changed from the initial empty array
+      stepInfo.input =
+        originalInput === undefined && transformed.input.length === 0
+          ? undefined
+          : transformed.input;
+    }
 
     // Deferred handler pattern — actual handler set later based on memoization
     let actualHandler: (() => Promise<unknown>) | undefined;
