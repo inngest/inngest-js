@@ -822,10 +822,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   public createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
-    rawTrigger,
     handler,
   ) => {
-    const fn = this._createFunction(rawOptions, rawTrigger, handler);
+    const fn = this._createFunction(rawOptions, handler);
 
     this.localFns.push(fn);
 
@@ -838,65 +837,35 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
-    rawTrigger,
     handler,
   ) => {
-    const options = this.sanitizeOptions(rawOptions);
-    const triggers = this.sanitizeTriggers(rawTrigger);
+    const options = {
+      ...rawOptions,
+      triggers: this.sanitizeTriggers(rawOptions.triggers),
+    };
 
-    return new InngestFunction(
-      this,
-      {
-        ...options,
-        triggers,
-      },
-      handler,
-    );
+    return new InngestFunction(this, options, handler);
   };
 
   /**
    * Runtime-only validation.
    */
-  private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
-    if (Object.hasOwn(options, "fns")) {
-      // v2 -> v3 migration warning
-      this.logger.warn(
-        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
-    }
-
-    if (typeof options === "string") {
-      // v2 -> v3 runtime migraton warning
-      this.logger.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
-
-      return { id: options as string } as T;
-    }
-
-    return options;
-  }
-
-  /**
-   * Runtime-only validation.
-   */
   private sanitizeTriggers<
-    T extends SingleOrArray<InngestFunction.Trigger<string>>,
-  >(triggers: T): AsArray<T> {
-    if (typeof triggers === "string") {
-      // v2 -> v3 migration warning
-      this.logger.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
+    T extends SingleOrArray<InngestFunction.Trigger<string>> | undefined,
+  >(
+    triggers: T | undefined,
+  ): T extends undefined ? [] : AsArray<NonNullable<T>> {
+    type Result = T extends undefined ? [] : AsArray<NonNullable<T>>;
 
-      return [{ event: triggers as string }] as AsArray<T>;
+    if (triggers === undefined) {
+      return [] as Result;
     }
 
     if (!Array.isArray(triggers)) {
-      return [triggers] as AsArray<T>;
+      return [triggers] as Result;
     }
 
-    return triggers as AsArray<T>;
+    return triggers as Result;
   }
 }
 
@@ -1015,12 +984,37 @@ export namespace Inngest {
     NonNullable<ClientOptionsFromInngest<TClient>["endpointAdapter"]>
   >;
 
+  type ResolveTriggers<T> = T extends undefined ? [] : AsArray<NonNullable<T>>;
+
+  /**
+   * Input type for createFunction that accepts raw trigger input (single, array, or undefined)
+   * while keeping all other fields from InngestFunction.Options.
+   */
+  export type CreateFunctionInput<
+    TMiddleware extends InngestMiddleware.Stack,
+    TTriggers extends
+      | SingleOrArray<InngestFunction.Trigger<string>>
+      | undefined,
+    TFailureHandler extends Handler.Any,
+  > = Omit<
+    InngestFunction.Options<
+      TMiddleware,
+      InngestFunction.Trigger<string>[],
+      TFailureHandler
+    >,
+    "triggers"
+  > & {
+    triggers?: TTriggers;
+  };
+
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
-    const TTrigger extends SingleOrArray<InngestFunction.Trigger<string>>,
+    const TTriggers extends
+      | SingleOrArray<InngestFunction.Trigger<string>>
+      | undefined = undefined,
     THandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient>>,
-      AsArray<TTrigger>,
+      ResolveTriggers<TTriggers>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -1031,7 +1025,7 @@ export namespace Inngest {
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient>>,
-      AsArray<TTrigger>,
+      ResolveTriggers<TTriggers>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -1042,22 +1036,19 @@ export namespace Inngest {
       >
     >,
   >(
-    options: Omit<
-      InngestFunction.Options<TMiddleware, AsArray<TTrigger>, TFailureHandler>,
-      "triggers"
-    >,
-    trigger: TTrigger,
+    options: CreateFunctionInput<TMiddleware, TTriggers, TFailureHandler>,
     handler: THandler,
   ) => InngestFunction<
-    Omit<
-      InngestFunction.Options<TMiddleware, AsArray<TTrigger>, TFailureHandler>,
-      "triggers"
+    InngestFunction.Options<
+      TMiddleware,
+      ResolveTriggers<TTriggers>,
+      TFailureHandler
     >,
     THandler,
     TFailureHandler,
     TClient,
     TMiddleware,
-    AsArray<TTrigger>
+    ResolveTriggers<TTriggers>
   >;
 }
 

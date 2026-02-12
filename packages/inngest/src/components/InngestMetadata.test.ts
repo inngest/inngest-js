@@ -272,8 +272,7 @@ describe("MetadataBuilder.update", () => {
     });
 
     inngestWithoutMiddleware.createFunction(
-      { id: "test" },
-      { event: "foo" },
+      { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "metadata">>(false);
       },
@@ -286,8 +285,7 @@ describe("MetadataBuilder.update", () => {
     });
 
     inngestWithMiddleware.createFunction(
-      { id: "test" },
-      { event: "foo" },
+      { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "metadata">>(true);
         assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
@@ -385,105 +383,110 @@ describe("MetadataBuilder.update", () => {
       >
     >(true);
 
-    inngest.createFunction({ id: "test" }, { event: "foo" }, ({ step }) => {
-      assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
+    inngest.createFunction(
+      { id: "test", triggers: [{ event: "foo" }] },
+      ({ step }) => {
+        assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
 
-      assertType<
-        HasProperty<
-          ReturnType<typeof step.metadata>,
-          "run" | "step" | "attempt" | "span" | "update" | "do"
-        >
-      >(true);
+        assertType<
+          HasProperty<
+            ReturnType<typeof step.metadata>,
+            "run" | "step" | "attempt" | "span" | "update" | "do"
+          >
+        >(true);
 
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["run"]>,
-          "step" | "attempt" | "span" | "update" | "do",
-          "run"
-        >
-      >(true);
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["run"]>,
+            "step" | "attempt" | "span" | "update" | "do",
+            "run"
+          >
+        >(true);
 
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["step"]>,
-          "attempt" | "span" | "update" | "do",
-          "run" | "step"
-        >
-      >(true);
-
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["step"]>,
-          "attempt" | "span" | "update" | "do",
-          "run" | "step"
-        >
-      >(true);
-
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
-          "span" | "update" | "do",
-          "run" | "step" | "attempt"
-        >
-      >(true);
-
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["span"]>,
-          "update" | "do",
-          "run" | "step" | "attempt" | "span"
-        >
-      >(true);
-
-      assertType<
-        Equal<
-          [
-            ReturnType<
-              ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
-            >,
+        assertType<
+          HasProperty<
             ReturnType<ReturnType<typeof step.metadata>["step"]>,
-          ]
-        >
-      >(true);
+            "attempt" | "span" | "update" | "do",
+            "run" | "step"
+          >
+        >(true);
 
-      assertType<
-        Equal<
-          [
-            ReturnType<
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["step"]>,
+            "attempt" | "span" | "update" | "do",
+            "run" | "step"
+          >
+        >(true);
+
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
+            "span" | "update" | "do",
+            "run" | "step" | "attempt"
+          >
+        >(true);
+
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["span"]>,
+            "update" | "do",
+            "run" | "step" | "attempt" | "span"
+          >
+        >(true);
+
+        assertType<
+          Equal<
+            [
               ReturnType<
                 ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
-              >["attempt"]
-            >,
-            ReturnType<
-              ReturnType<ReturnType<typeof step.metadata>["step"]>["attempt"]
-            >,
-            ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
-          ]
-        >
-      >(true);
+              >,
+              ReturnType<ReturnType<typeof step.metadata>["step"]>,
+            ]
+          >
+        >(true);
 
-      assertType<
-        Equal<
-          [
-            ReturnType<
+        assertType<
+          Equal<
+            [
               ReturnType<
                 ReturnType<
                   ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
                 >["attempt"]
-              >["span"]
-            >,
-            ReturnType<
+              >,
               ReturnType<
                 ReturnType<ReturnType<typeof step.metadata>["step"]>["attempt"]
-              >["span"]
-            >,
-            ReturnType<
-              ReturnType<ReturnType<typeof step.metadata>["attempt"]>["span"]
-            >,
-            ReturnType<ReturnType<typeof step.metadata>["span"]>,
-          ]
-        >
-      >(true);
-    });
+              >,
+              ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
+            ]
+          >
+        >(true);
+
+        assertType<
+          Equal<
+            [
+              ReturnType<
+                ReturnType<
+                  ReturnType<
+                    ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
+                  >["attempt"]
+                >["span"]
+              >,
+              ReturnType<
+                ReturnType<
+                  ReturnType<
+                    ReturnType<typeof step.metadata>["step"]
+                  >["attempt"]
+                >["span"]
+              >,
+              ReturnType<
+                ReturnType<ReturnType<typeof step.metadata>["attempt"]>["span"]
+              >,
+              ReturnType<ReturnType<typeof step.metadata>["span"]>,
+            ]
+          >
+        >(true);
+      },
+    );
   });
 });

@@ -10,8 +10,11 @@ describe("StepFailed response contains minimal serialized error and retriable fa
 
   it("NonRetriableError -> StepFailed includes serialized marker in data and retriable=false", async () => {
     const fn = inngest.createFunction(
-      { id: "test-stepfailed-response", retries: 1 },
-      { event: "test/event" },
+      {
+        id: "test-stepfailed-response",
+        retries: 1,
+        triggers: [{ event: "test/event" }],
+      },
       async ({ step }) => {
         await step.run("fails-immediately", () => {
           throw new NonRetriableError("boom");

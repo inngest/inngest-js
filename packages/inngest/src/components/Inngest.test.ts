@@ -691,11 +691,11 @@ describe("createFunction", () => {
         inngest.createFunction(
           {
             id: "test",
+            triggers: [{ event: "test" }],
             onFailure: ({ attempt }) => {
               assertType<number>(attempt);
             },
           },
-          { event: "test" },
           ({ attempt }) => {
             assertType<number>(attempt);
           },
@@ -708,8 +708,7 @@ describe("createFunction", () => {
 
       test("allows name to be an object", () => {
         inngest.createFunction(
-          { id: "test" },
-          { event: "test" },
+          { id: "test", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
@@ -721,8 +720,7 @@ describe("createFunction", () => {
       test("name as an object must contain a name property", () => {
         inngest.createFunction(
           // @ts-expect-error Must contain name property
-          { foo: "bar" },
-          { event: "test" },
+          { foo: "bar", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
@@ -733,8 +731,7 @@ describe("createFunction", () => {
 
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction(
-          { id: "test" },
-          { event: "test" },
+          { id: "test", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
@@ -745,8 +742,7 @@ describe("createFunction", () => {
 
       test("allows trigger to be an object with a cron property", () => {
         inngest.createFunction(
-          { id: "test" },
-          { cron: "test" },
+          { id: "test", triggers: [{ cron: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
             // Cron triggers have empty data, and invoked events also have empty data (without schema)
@@ -756,18 +752,20 @@ describe("createFunction", () => {
       });
 
       test("disallows trigger with unknown properties", () => {
-        // @ts-expect-error Unknown property
-        inngest.createFunction({ id: "test" }, { foo: "bar" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<{}>(event.data);
-        });
+        inngest.createFunction(
+          // @ts-expect-error Unknown property
+          { id: "test", triggers: [{ foo: "bar" }] },
+          ({ event }) => {
+            assertType<string>(event.name);
+            assertType<{}>(event.data);
+          },
+        );
       });
 
       test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          { id: "test" },
           // @ts-expect-error Both event and cron
-          { event: "test", cron: "test" },
+          { id: "test", triggers: [{ event: "test", cron: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
             assertType<{}>(event.data);
@@ -947,8 +945,7 @@ describe("helper types", () => {
   describe("type GetFunctionOutput", () => {
     test("returns output of an async `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
 
         async () => {
           return "foo" as const;
@@ -962,8 +959,7 @@ describe("helper types", () => {
 
     test("returns output of a sync `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
         () => {
           return "foo" as const;
         },
@@ -976,8 +972,7 @@ describe("helper types", () => {
 
     test("returns output of an `InngestFunctionReference` to an async `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
 
         async () => {
           return "foo" as const;
@@ -993,8 +988,7 @@ describe("helper types", () => {
 
     test("returns output of an `InngestFunctionReference` to a sync `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
         () => {
           return "foo" as const;
         },

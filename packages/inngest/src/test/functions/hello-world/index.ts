@@ -1,7 +1,6 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { id: "hello-world" },
-  { event: "demo/hello.world" },
+  { id: "hello-world", triggers: [{ event: "demo/hello.world" }] },
   () => "Hello, Inngest!",
 );

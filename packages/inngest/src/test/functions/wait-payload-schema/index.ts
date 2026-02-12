@@ -13,8 +13,7 @@ const et = eventType(`${name}/resolve`, {
 });
 
 export default inngest.createFunction(
-  { id: name },
-  { event: name },
+  { id: name, triggers: [{ event: name }] },
   async ({ step }) => {
     const matched = await step.waitForEvent("wait", {
       event: et,

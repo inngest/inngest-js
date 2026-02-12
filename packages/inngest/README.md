@@ -75,8 +75,7 @@ const inngest = new Inngest({ id: "my-app" });
 // This function will be invoked by Inngest via HTTP any time
 // the "app/user.signup" event is sent to to Inngest
 export default inngest.createFunction(
-  { id: "user-onboarding-communication" },
-  { event: "app/user.signup" },
+  { id: "user-onboarding-communication", triggers: [{ event: "app/user.signup" }] },
   async ({ event, step }) => {
     await step.run("Send welcome email", async () => {
       await sendEmail({

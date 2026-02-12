@@ -11,8 +11,7 @@ describe("ServeHandler", () => {
 
       const functions = [
         inngest.createFunction(
-          { id: "test" },
-          { event: "demo/event.sent" },
+          { id: "test", triggers: [{ event: "demo/event.sent" }] },
           () => "test",
         ),
       ];
@@ -25,8 +24,7 @@ describe("ServeHandler", () => {
 
       const functions = [
         inngest.createFunction(
-          { id: "test" },
-          { event: "demo/event.sent" },
+          { id: "test", triggers: [{ event: "demo/event.sent" }] },
           () => "test",
         ),
       ] as const;
@@ -39,8 +37,7 @@ describe("ServeHandler", () => {
     const inngest = createClient({ id: "test", isDev: true });
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "demo/event.sent" },
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
       () => "test",
     );
 
@@ -180,8 +177,7 @@ describe("ServeHandler", () => {
       const inngest = createClient({ id: "test", isDev: true });
       const warnSpy = vi.spyOn(inngest["logger"], "warn");
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "demo/event.sent" },
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
       );
 
@@ -202,8 +198,7 @@ describe("ServeHandler", () => {
       const inngest = createClient({ id: "test", isDev: true });
       const warnSpy = vi.spyOn(inngest["logger"], "warn");
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "demo/event.sent" },
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
       );
 
@@ -224,8 +219,7 @@ describe("ServeHandler", () => {
       const inngest = createClient({ id: "test", isDev: true });
       const warnSpy = vi.spyOn(inngest["logger"], "warn");
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "demo/event.sent" },
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
       );
 
@@ -246,8 +240,7 @@ describe("ServeHandler", () => {
       const inngest = createClient({ id: "test", isDev: true });
       const warnSpy = vi.spyOn(inngest["logger"], "warn");
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "demo/event.sent" },
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
       );
 
@@ -266,8 +259,7 @@ describe("ServeHandler", () => {
       const inngest = createClient({ id: "test", isDev: true });
       const warnSpy = vi.spyOn(inngest["logger"], "warn");
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "demo/event.sent" },
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
       );
 

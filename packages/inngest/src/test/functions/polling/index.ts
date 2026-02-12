@@ -1,8 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { id: "polling" },
-  { event: "demo/polling" },
+  { id: "polling", triggers: [{ event: "demo/polling" }] },
   async ({ step }) => {
     const poll = async () => {
       let timedOut = false;
