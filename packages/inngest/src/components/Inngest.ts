@@ -839,36 +839,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     rawOptions,
     handler,
   ) => {
-    const options = this.sanitizeOptions({
+    const options = {
       ...rawOptions,
       triggers: this.sanitizeTriggers(rawOptions.triggers),
-    });
+    };
 
     return new InngestFunction(this, options, handler);
   };
-
-  /**
-   * Runtime-only validation.
-   */
-  private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
-    if (Object.hasOwn(options, "fns")) {
-      // v2 -> v3 migration warning
-      this.logger.warn(
-        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
-    }
-
-    if (typeof options === "string") {
-      // v2 -> v3 runtime migraton warning
-      this.logger.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
-
-      return { id: options as string } as T;
-    }
-
-    return options;
-  }
 
   /**
    * Runtime-only validation.
