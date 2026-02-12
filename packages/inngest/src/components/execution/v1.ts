@@ -242,7 +242,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
       }
     } catch (error) {
-      return await this.transformOutput({ error });
+      return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
     }
@@ -933,10 +933,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // return the serialized result via transformedResultPromise.
           foundStep.executionDeferred!.resolve(rawData);
 
-          // Try to get the middleware-transformed result. If the middleware
-          // injects steps (via step.run), transformedResultPromise will block
-          // until those steps complete. We use a short timeout to avoid blocking
-          // in that case and fall back to raw data.
+          // Prefer the middleware-transformed result (e.g. serialization).
+          // If the middleware pipeline hasn't resolved synchronously, it's
+          // because middleware injected its own steps which block indefinitely
+          // — fall back to raw data so we don't hang.
           let data: unknown = rawData;
           if (foundStep.transformedResultPromise) {
             data = await Promise.race([
@@ -945,7 +945,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             ]);
           }
 
-          // Call onStepEnd for each middleware
           this.middlewareManager.onStepEnd(stepInfo, rawData);
 
           return {
@@ -957,52 +956,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         .catch<OutgoingOp>((error) => {
           // Reject the deferred - this unblocks the middleware pipeline with error
           foundStep.executionDeferred!.reject(error);
-
-          let errorIsRetriable = true;
-
-          if (
-            error instanceof NonRetriableError ||
-            // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-            (error as any)?.name === "NonRetriableError"
-          ) {
-            errorIsRetriable = false;
-          } else if (
-            this.fnArg.maxAttempts &&
-            this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-          ) {
-            errorIsRetriable = false;
-          }
-
-          const metadata = this.state.metadata?.get(id);
-
-          // Call onStepError for each middleware
-          this.middlewareManager.onStepError(
-            stepInfo,
-            error,
-            !errorIsRetriable,
-          );
-
-          if (errorIsRetriable) {
-            return {
-              ...outgoingOp,
-              op: StepOpCode.StepError,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-              error,
-              ...(metadata && metadata.length > 0
-                ? { metadata: metadata }
-                : {}),
-            };
-          } else {
-            return {
-              ...outgoingOp,
-              op: StepOpCode.StepFailed,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-              error,
-              ...(metadata && metadata.length > 0
-                ? { metadata: metadata }
-                : {}),
-            };
-          }
+          return this.buildStepErrorOp(outgoingOp, id, stepInfo, error);
         })
         .then((op) => ({
           ...op,
@@ -1027,7 +981,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const metadata = this.state.metadata?.get(id);
         const data = await resultPromise;
 
-        // Call onStepEnd for each middleware
         this.middlewareManager.onStepEnd(stepInfo, data);
 
         return {
@@ -1037,43 +990,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         };
       })
       .catch<OutgoingOp>((error) => {
-        let errorIsRetriable = true;
-
-        if (
-          error instanceof NonRetriableError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (error as any)?.name === "NonRetriableError"
-        ) {
-          errorIsRetriable = false;
-        } else if (
-          this.fnArg.maxAttempts &&
-          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-        ) {
-          errorIsRetriable = false;
-        }
-
-        const metadata = this.state.metadata?.get(id);
-
-        // Call onStepError for each middleware
-        this.middlewareManager.onStepError(stepInfo, error, !errorIsRetriable);
-
-        if (errorIsRetriable) {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        } else {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepFailed,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        }
+        return this.buildStepErrorOp(outgoingOp, id, stepInfo, error);
       })
       .then((op) => ({
         ...op,
@@ -1127,30 +1044,60 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           err = new Error(String(error));
         }
 
-        let isFinalAttempt = false;
-
-        if (
-          err instanceof NonRetriableError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (err as any)?.name === "NonRetriableError"
-        ) {
-          isFinalAttempt = true;
-        } else if (
-          this.fnArg.maxAttempts &&
-          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-        ) {
-          isFinalAttempt = true;
-        }
-
-        this.middlewareManager.onRunError(err, isFinalAttempt);
+        this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
+  }
+
+  /**
+   * Whether this error will not be retried (NonRetriableError or last attempt).
+   */
+  private isFinalAttempt(error: unknown): boolean {
+    if (
+      error instanceof NonRetriableError ||
+      // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+      (error as any)?.name === "NonRetriableError"
+    ) {
+      return true;
+    }
+
+    return Boolean(
+      this.fnArg.maxAttempts &&
+        this.fnArg.maxAttempts - 1 === this.fnArg.attempt,
+    );
   }
 
   private maybeCallOnMemoizationEnd(): void {
     if (this.state.onMemoizationEndCalled) return;
     this.state.onMemoizationEndCalled = true;
     this.middlewareManager.onMemoizationEnd();
+  }
+
+  /**
+   * Build the OutgoingOp for a failed step, notifying middleware and choosing
+   * retriable vs non-retriable opcode.
+   */
+  private buildStepErrorOp(
+    outgoingOp: OutgoingOp,
+    id: string,
+    stepInfo: Middleware.StepInfo,
+    error: unknown,
+  ): OutgoingOp {
+    const isFinal = this.isFinalAttempt(error);
+    const metadata = this.state.metadata?.get(id);
+
+    this.middlewareManager.onStepError(
+      stepInfo,
+      error instanceof Error ? error : new Error(String(error)),
+      isFinal,
+    );
+
+    return {
+      ...outgoingOp,
+      op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+      error,
+      ...(metadata && metadata.length > 0 ? { metadata } : {}),
+    };
   }
 
   /**
@@ -1577,7 +1524,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
-        rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
+        rawArgs: fnArgs, // TODO(tonyhb): Should this be the original args before input modification?
         hashedId,
         input: stepState?.input,
 
@@ -1678,22 +1625,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.hasSteps = true;
       pushStepToReport(step);
 
-      // For new, non-memoized steps with a handler, kick off the middleware
-      // pipeline during discovery so middleware can inject steps. The deferred
-      // promise bridges discovery to executeStep(), which resolves it later.
+      // Start the middleware pipeline during discovery (not in executeStep)
+      // so that middleware like encryption can inject their own steps into the
+      // discovery phase. The deferred promise acts as a bridge: wrappedHandler()
+      // runs the middleware chain now, but blocks on executionDeferred until
+      // executeStep() resolves it with the real result later.
       if (!isFulfilled && !stepState && step.fn) {
-        const executionDeferred = createDeferredPromise<unknown>();
+        const deferred = createDeferredPromise<unknown>();
+        step.executionDeferred = deferred;
 
-        step.executionDeferred = {
-          resolve: (value: unknown) => {
-            executionDeferred.resolve(value);
-          },
-          reject: (error: unknown) => {
-            executionDeferred.reject(error);
-          },
-        };
-
-        setActualHandler(() => executionDeferred.promise);
+        setActualHandler(() => deferred.promise);
 
         step.transformedResultPromise = wrappedHandler();
         step.transformedResultPromise.catch(() => {});
@@ -1731,21 +1672,19 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const originalId = opId.userland.id;
     let hashedId = _internals.hashId(opId.id);
 
-    // 2. Preliminary memoization lookup for middleware to see correct memoized status
-    const preliminaryMemoized = Boolean(this.state.stepState[hashedId]);
-
-    // 3. Apply middleware (stepKind derivation, input extraction, deferred handler)
+    // 2. Apply middleware (stepKind, input extraction, deferred handler).
+    //    Pass preliminary memoization status so middleware sees it.
     const prepared = this.middlewareManager.applyToStep({
       op: opId.op,
       opts: opId.opts,
       hashedId,
       userlandId: opId.userland.id,
       displayName: opId.displayName ?? opId.userland.id,
-      memoized: preliminaryMemoized,
+      memoized: Boolean(this.state.stepState[hashedId]),
     });
     const { stepInfo, entryPoint, setActualHandler } = prepared;
 
-    // 4. If middleware changed the step ID, re-resolve collisions
+    // 3. If middleware changed the step ID, re-resolve collisions
     if (stepInfo.options.id !== originalId) {
       opId.id = stepInfo.options.id;
       opId.userland.id = stepInfo.options.id;
@@ -1769,7 +1708,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       stepInfo.hashedId = hashedId;
     }
 
-    // 5. Final memoization lookup with potentially modified hashedId
+    // 4. Final memoization lookup with potentially modified hashedId.
+    //    Also marks step as seen and may trigger onMemoizationEnd.
     const stepState = this.state.stepState[hashedId];
     let isFulfilled = false;
     if (stepState) {
@@ -1783,14 +1723,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       if (typeof stepState.input === "undefined") {
         isFulfilled = true;
       }
-      // Update memoized status based on final lookup (may differ if ID changed)
       stepInfo.memoized = true;
     } else {
-      // ID may have changed to a non-memoized ID
       stepInfo.memoized = false;
     }
 
-    // 6. Build wrapStep chain after all mutations so middleware sees final values
+    // 5. Build wrapStep chain after all mutations so middleware sees final values
     const wrappedHandler = this.middlewareManager.wrapStepHandler(
       entryPoint,
       stepInfo,
