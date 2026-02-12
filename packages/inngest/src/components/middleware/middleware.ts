@@ -5,6 +5,7 @@ import type { Jsonify } from "../../helpers/jsonify.ts";
 import type { Context, EventPayload, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { createStepTools } from "../InngestStepTools.ts";
+import type { OpenStringUnion } from "./types.ts";
 
 /**
  * Default transform. Applies the same transform as `JSON.stringify`.
@@ -175,13 +176,16 @@ export namespace Middleware {
     isFinalAttempt: boolean;
   }>;
 
-  export type StepKind =
+  export type StepKind = OpenStringUnion<
+    | "ai.infer"
+    | "ai.wrap"
     | "invoke"
+    | "realtime.publish"
     | "run"
     | "sendEvent"
     | "sleep"
     | "waitForEvent"
-    | "unknown";
+  >;
 
   export type StepInfo = {
     /**

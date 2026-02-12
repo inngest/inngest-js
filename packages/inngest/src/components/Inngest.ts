@@ -62,7 +62,7 @@ import {
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
-import { buildWrapClientRequestChain } from "./middleware/manager.ts";
+import { buildWrapClientRequestChain } from "./middleware/index.ts";
 import { Middleware, type MiddlewareClass } from "./middleware/middleware.ts";
 import type { Realtime } from "./realtime/types";
 import {

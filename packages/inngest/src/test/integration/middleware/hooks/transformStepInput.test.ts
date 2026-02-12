@@ -21,7 +21,10 @@ test("modify step.run input (1 middleware)", async () => {
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
       if (arg.stepInfo.stepKind === "run") {
-        arg.input = [42];
+        return {
+          ...arg,
+          input: [42],
+        };
       }
       return arg;
     }
@@ -66,7 +69,10 @@ test("modify step.run input (2 middleware, forward order)", async () => {
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
       if (arg.stepInfo.stepKind === "run") {
-        arg.input = [(arg.input[0] as number) * 10];
+        return {
+          ...arg,
+          input: [(arg.input[0] as number) * 10],
+        };
       }
       return arg;
     }
@@ -77,7 +83,10 @@ test("modify step.run input (2 middleware, forward order)", async () => {
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
       if (arg.stepInfo.stepKind === "run") {
-        arg.input = [(arg.input[0] as number) + 5];
+        return {
+          ...arg,
+          input: [(arg.input[0] as number) + 5],
+        };
       }
       return arg;
     }
@@ -113,81 +122,214 @@ test("modify step.run input (2 middleware, forward order)", async () => {
   expect(state.run).toEqual({ input: 15 });
 });
 
-test("modify step options (change step ID)", async () => {
-  const state = createState({
-    step1: {
-      insideCount: 0,
-      output: 0,
-    },
-    onStepStartCalls: [] as Middleware.OnStepStartArgs[],
-  });
+describe("change step ID", async () => {
+  test("new step ID", async () => {
+    // Change a step ID after it already ran, so that the step is treated as
+    // fresh again. This means the step runs twice, with a different ID each
+    // time
 
-  let changeStepID = false;
-  class MW extends Middleware.BaseMiddleware {
-    override onStepStart(arg: Middleware.OnStepStartArgs) {
-      state.onStepStartCalls.push(arg);
-    }
+    const state = createState({
+      step1: {
+        insideCount: 0,
+        output: 0,
+      },
+      onStepStartCalls: [] as Middleware.OnStepStartArgs[],
+    });
 
-    override transformStepInput(
-      arg: Middleware.TransformStepInputArgs,
-    ): Middleware.TransformStepInputArgs {
-      if (changeStepID) {
-        arg.stepOptions.id = "new";
-      } else {
-        changeStepID = true;
+    let changeStepID = false;
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override onStepStart(arg: Middleware.OnStepStartArgs) {
+        state.onStepStartCalls.push(arg);
       }
-      return arg;
+
+      override transformStepInput(
+        arg: Middleware.TransformStepInputArgs,
+      ): Middleware.TransformStepInputArgs {
+        if (changeStepID) {
+          return {
+            ...arg,
+            stepOptions: {
+              ...arg.stepOptions,
+              id: "new",
+            },
+          };
+        }
+        changeStepID = true;
+        return arg;
+      }
     }
-  }
 
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [MW],
-  });
-  const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
-    async ({ step, runId }) => {
-      state.runId = runId;
-      state.step1.output = await step.run("step-1", () => {
-        state.step1.insideCount++;
-        return state.step1.insideCount;
-      });
-    },
-  );
-  await createTestApp({ client, functions: [fn] });
-
-  await client.send({ name: eventName });
-  await state.waitForRunComplete();
-
-  expect(state.step1).toEqual({
-    insideCount: 2,
-    output: 2,
-  });
-  expect(state.onStepStartCalls).toEqual([
-    {
-      ctx: anyContext,
-      stepInfo: {
-        hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
-        input: undefined,
-        memoized: false,
-        options: { id: "step-1", name: "step-1" },
-        stepKind: "run",
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0 },
+      { event: eventName },
+      async ({ step, runId }) => {
+        state.step1.output = await step.run("step-1", () => {
+          state.step1.insideCount++;
+          return state.step1.insideCount;
+        });
+        state.runId = runId;
       },
-    },
-    {
-      ctx: anyContext,
-      stepInfo: {
-        hashedId: "c2a6b03f190dfb2b4aa91f8af8d477a9bc3401dc",
-        input: undefined,
-        memoized: false,
-        options: { id: "new", name: "step-1" },
-        stepKind: "run",
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunComplete();
+
+    expect(state.step1).toEqual({
+      insideCount: 2,
+      output: 2,
+    });
+    expect(state.onStepStartCalls).toEqual([
+      {
+        ctx: anyContext,
+        stepInfo: {
+          hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
+          input: undefined,
+          memoized: false,
+          options: { id: "step-1", name: "step-1" },
+          stepKind: "run",
+        },
       },
-    },
-  ]);
+      {
+        ctx: anyContext,
+        stepInfo: {
+          hashedId: "c2a6b03f190dfb2b4aa91f8af8d477a9bc3401dc",
+          input: undefined,
+          memoized: false,
+          options: { id: "new", name: "step-1" },
+          stepKind: "run",
+        },
+      },
+    ]);
+  });
+
+  test("existing", async () => {
+    // Change a step ID after it already ran, so that the step is treated as
+    // fresh again. This means the step runs twice, with a different ID each
+    // time.
+    //
+    // The changed step ID is the same as a preexisting step ID, which will be
+    // deduped (via the implicit index suffix). This test ensures we run thru
+    // the step ID deduping logic after the middleware hook runs
+
+    const state = createState({
+      step1: {
+        insideCount: 0,
+        output: 0,
+      },
+      step2: {
+        insideCount: 0,
+        output: 0,
+      },
+      onStepStartCalls: [] as Middleware.OnStepStartArgs[],
+    });
+
+    let changeStepID = false;
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override onStepStart(arg: Middleware.OnStepStartArgs) {
+        state.onStepStartCalls.push(arg);
+      }
+
+      override transformStepInput(
+        arg: Middleware.TransformStepInputArgs,
+      ): Middleware.TransformStepInputArgs {
+        if (arg.stepOptions.id === "step-2") {
+          if (changeStepID) {
+            return {
+              ...arg,
+              stepOptions: {
+                ...arg.stepOptions,
+                id: "step-1",
+              },
+            };
+          }
+          changeStepID = true;
+        }
+        return arg;
+      }
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0 },
+      { event: eventName },
+      async ({ step, runId }) => {
+        state.step1.output = await step.run("step-1", () => {
+          state.step1.insideCount++;
+          return state.step1.insideCount;
+        });
+
+        state.step2.output = await step.run("step-2", () => {
+          state.step2.insideCount++;
+          return state.step2.insideCount;
+        });
+        state.runId = runId;
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunComplete();
+
+    expect(state.step1).toEqual({
+      insideCount: 1,
+      output: 1,
+    });
+    expect(state.step2).toEqual({
+      insideCount: 2,
+      output: 2,
+    });
+
+    expect(state.onStepStartCalls).toEqual([
+      {
+        ctx: anyContext,
+        stepInfo: {
+          hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
+          input: undefined,
+          memoized: false,
+          options: { id: "step-1", name: "step-1" },
+          stepKind: "run",
+        },
+      },
+      {
+        ctx: anyContext,
+        stepInfo: {
+          hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
+          input: undefined,
+          memoized: false,
+          options: { id: "step-2", name: "step-2" },
+          stepKind: "run",
+        },
+      },
+      {
+        ctx: anyContext,
+        stepInfo: {
+          hashedId: "853cb1e68d4c9c2ad16aabbef8c346b559cbb55c",
+          input: undefined,
+          memoized: false,
+          options: {
+            // TODO: Stop exposing the "implicit index suffix" imeplementation
+            // detail
+            id: "step-1:1",
+
+            name: "step-2",
+          },
+          stepKind: "run",
+        },
+      },
+    ]);
+  });
 });
 
 test("modify all step kinds", async () => {
@@ -198,26 +340,62 @@ test("modify all step kinds", async () => {
       afterTime: null as Date | null,
       beforeTime: null as Date | null,
     },
+    sleepUntil: {
+      afterTime: null as Date | null,
+      beforeTime: null as Date | null,
+    },
     waitForEvent: {
       afterTime: null as Date | null,
       beforeTime: null as Date | null,
     },
+    unmemoizedCounts: {} as Record<Middleware.StepKind, number>,
   });
 
   class MW extends Middleware.BaseMiddleware {
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
+      if (!arg.stepInfo.memoized) {
+        state.unmemoizedCounts[arg.stepInfo.stepKind] ??= 0;
+        state.unmemoizedCounts[arg.stepInfo.stepKind]++;
+      }
+
       if (arg.stepInfo.stepKind === "invoke") {
-        // @ts-expect-error - input is unknown[]
-        arg.input[0].payload.data = { value: 2 };
+        return {
+          ...arg,
+          input: [
+            {
+              // @ts-expect-error - input is unknown[]
+              ...arg.input[0],
+              payload: {
+                // @ts-expect-error - input is unknown[]
+                ...arg.input[0].payload,
+                data: { value: 2 },
+              },
+            },
+          ],
+        };
       } else if (arg.stepInfo.stepKind === "run") {
-        arg.input = [2];
+        return {
+          ...arg,
+          input: [2],
+        };
       } else if (arg.stepInfo.stepKind === "sleep") {
-        arg.input = ["1s"];
+        return {
+          ...arg,
+          input: ["1s"],
+        };
       } else if (arg.stepInfo.stepKind === "waitForEvent") {
-        // @ts-expect-error - input is unknown[]
-        arg.input[0].timeout = "1s";
+        return {
+          ...arg,
+          input: [
+            {
+              // @ts-expect-error - input is unknown[]
+              ...arg.input[0],
+              timeout: "1s",
+            },
+          ],
+        };
       }
       return arg;
     }
@@ -249,6 +427,10 @@ test("modify all step kinds", async () => {
       await step.sleep("sleep", "60s");
       state.sleep.afterTime ??= new Date();
 
+      state.sleepUntil.beforeTime ??= new Date();
+      await step.sleepUntil("sleep-until", new Date(Date.now() + 60000));
+      state.sleepUntil.afterTime ??= new Date();
+
       state.waitForEvent.beforeTime ??= new Date();
       await step.waitForEvent("wait-for-event", {
         event: randomSuffix("never"),
@@ -270,18 +452,39 @@ test("modify all step kinds", async () => {
   await state.waitForRunComplete();
 
   expect(state.invoke).toEqual({ input: 2 });
+
+  // Middleware overrode the `step.run` input
   expect(state.run).toEqual({ input: 2 });
 
+  // Middleware overrode the `step.sleep` duration
   const sleepDur =
     state.sleep.afterTime!.getTime() - state.sleep.beforeTime!.getTime();
   expect(sleepDur).toBeGreaterThan(900);
   expect(sleepDur).toBeLessThan(1500);
 
+  // Middleware overrode the `step.sleepUntil` duration
+  const sleepUntilDur =
+    state.sleepUntil.afterTime!.getTime() -
+    state.sleepUntil.beforeTime!.getTime();
+  expect(sleepUntilDur).toBeGreaterThan(900);
+  expect(sleepUntilDur).toBeLessThan(1500);
+
+  // Middleware overrode the `step.waitForEvent` timeout
   const waitForEventDur =
     state.waitForEvent.afterTime!.getTime() -
     state.waitForEvent.beforeTime!.getTime();
   expect(waitForEventDur).toBeGreaterThan(900);
   expect(waitForEventDur).toBeLessThan(1500);
+
+  expect(state.unmemoizedCounts).toEqual({
+    invoke: 1,
+    run: 1,
+
+    // `step.sleepUntil` has the same stepKind as `step.sleep`
+    sleep: 2,
+
+    waitForEvent: 1,
+  });
 });
 
 test("called for memoized and fresh", async () => {

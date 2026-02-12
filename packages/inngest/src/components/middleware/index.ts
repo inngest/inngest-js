@@ -1,6 +1,4 @@
 export {
-  buildWrapClientRequestChain,
-  buildWrapRequestChain,
   MiddlewareManager,
   type PreparedStep,
 } from "./manager.ts";
@@ -9,3 +7,8 @@ export {
   Middleware,
   type MiddlewareClass,
 } from "./middleware.ts";
+
+export {
+  buildWrapClientRequestChain,
+  buildWrapRequestChain,
+} from "./utils.ts";

@@ -22,11 +22,7 @@ import {
 } from "../../helpers/promises.ts";
 import { timeStr } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
-import {
-  isRecord,
-  type MaybePromise,
-  type Simplify,
-} from "../../helpers/types.ts";
+import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
   type APIStepPayload,
   type Context,
@@ -57,6 +53,7 @@ import {
 } from "../InngestStepTools.ts";
 import { MiddlewareManager } from "../middleware/index.ts";
 import type { Middleware } from "../middleware/middleware.ts";
+import { UnreachableError } from "../middleware/utils.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
@@ -846,20 +843,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         userland: step.userland,
       };
 
-      // For `step.invoke`, use the transformed input from middleware
-      if (step.op === StepOpCode.InvokeFunction) {
-        const opts = step.middleware.stepInfo.input?.[0];
-        if (!isRecord(opts)) {
-          // Unreachable unless middleware is misconfigured
-          throw new Error("Invoke opts must be a record");
-        }
-
-        return {
-          ...baseOp,
-          opts,
-        };
-      }
-
       return baseOp;
     }) as [OutgoingOp, ...OutgoingOp[]];
 
@@ -867,8 +850,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private async executeStep(foundStep: FoundStep): Promise<OutgoingOp> {
-    const { id, name, opts, fn, rawArgs, displayName, userland, hashedId } =
-      foundStep;
+    const { id, name, opts, fn, displayName, userland, hashedId } = foundStep;
     const { stepInfo, wrappedHandler, setActualHandler } = foundStep.middleware;
 
     this.debug(`preparing to execute step "${id}"`);
@@ -898,17 +880,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     let interval: GoInterval | undefined;
 
-    // Build the actual handler that checks if input was modified by middleware
-    const stepInput = Array.isArray(opts?.input) ? opts.input : undefined;
-
-    const actualHandler: () => Promise<unknown> = () => {
-      // If stepInfo.input was mutated, call user function with new args
-      if (stepInfo.input !== stepInput && rawArgs) {
-        const userFn = rawArgs[1] as (...args: unknown[]) => unknown;
-        return runAsPromise(() => userFn(...(stepInfo.input as unknown[])));
-      }
-      return runAsPromise(fn);
-    };
+    const actualHandler: () => Promise<unknown> = () => runAsPromise(fn);
 
     this.maybeCallOnMemoizationEnd();
     this.middlewareManager.onStepStart(stepInfo);
@@ -1515,6 +1487,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         }
       }
 
+      // If transformStepInput middleware may have changed the input, update fnArgs
+      // so fn() uses the transformed values. Skip if replay already set extraOpts.
+      if (!extraOpts && Array.isArray(stepInfo.input)) {
+        fnArgs = [...args.slice(0, 2), ...stepInfo.input];
+      }
+
       // Update step name for Sleep if middleware modified input
       if (opId.op === StepOpCode.Sleep && Array.isArray(stepInfo.input)) {
         // @ts-expect-error - input is unknown[]
@@ -1525,7 +1503,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
-        rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
+        rawArgs: fnArgs,
         hashedId,
         input: stepState?.input,
 
@@ -1626,10 +1604,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.hasSteps = true;
       pushStepToReport(step);
 
-      // For new, non-memoized steps with a handler, kick off the middleware
-      // pipeline during discovery so middleware can inject steps. The deferred
-      // promise bridges discovery to executeStep(), which resolves it later.
       if (!isFulfilled && !stepState && step.fn) {
+        // New, never-seen step with a handler (e.g. `step.run`). Kick off the
+        // middleware wrapStep chain now so it runs during discovery, not later
+        // in executeStep.
+        //
+        // This is necessary so that middleware can inject their
+        // own steps
         const executionDeferred = createDeferredPromise<unknown>();
 
         step.executionDeferred = {
@@ -1662,11 +1643,11 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     expectedNextStepIndexes: Map<string, number>,
   ): MiddlewareApplicationResult {
     // 1. Resolve initial collision with original ID
-    const initialCollision = resolveStepIdCollision(
-      opId.id,
-      this.state.steps,
-      expectedNextStepIndexes,
-    );
+    const initialCollision = resolveStepIdCollision({
+      baseId: opId.id,
+      expectedIndexes: expectedNextStepIndexes,
+      stepsMap: this.state.steps,
+    });
     if (initialCollision.finalId !== opId.id) {
       opId.id = initialCollision.finalId;
       if (initialCollision.index !== undefined) {
@@ -1677,30 +1658,37 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const originalId = opId.userland.id;
     let hashedId = _internals.hashId(opId.id);
 
-    // 2. Preliminary memoization lookup for middleware to see correct memoized status
-    const preliminaryMemoized = Boolean(this.state.stepState[hashedId]);
-
-    // 3. Apply middleware (stepKind derivation, input extraction, deferred handler)
+    // 2. Apply middleware (stepKind, input extraction, deferred handler).
+    //    Pass preliminary memoization status so middleware sees it.
     const prepared = this.middlewareManager.applyToStep({
+      displayName: opId.displayName ?? opId.userland.id,
+      hashedId,
+      memoized:
+        Boolean(this.state.stepState[hashedId]) &&
+        typeof this.state.stepState[hashedId]?.input === "undefined",
       op: opId.op,
       opts: opId.opts,
-      hashedId,
       userlandId: opId.userland.id,
-      displayName: opId.displayName ?? opId.userland.id,
-      memoized: preliminaryMemoized,
     });
-    const { stepInfo, entryPoint, setActualHandler } = prepared;
+    const { entryPoint, opName, opOpts, setActualHandler, stepInfo } = prepared;
 
-    // 4. If middleware changed the step ID, re-resolve collisions
+    if (opName !== undefined) {
+      opId.name = opName;
+    }
+    if (opOpts !== undefined) {
+      opId.opts = opOpts;
+    }
+
+    // 3. If middleware changed the step ID, re-resolve collisions
     if (stepInfo.options.id !== originalId) {
       opId.id = stepInfo.options.id;
       opId.userland.id = stepInfo.options.id;
 
-      const secondCollision = resolveStepIdCollision(
-        stepInfo.options.id,
-        this.state.steps,
-        expectedNextStepIndexes,
-      );
+      const secondCollision = resolveStepIdCollision({
+        baseId: stepInfo.options.id,
+        expectedIndexes: expectedNextStepIndexes,
+        stepsMap: this.state.steps,
+      });
       if (secondCollision.finalId !== stepInfo.options.id) {
         opId.id = secondCollision.finalId;
         opId.userland.id = secondCollision.finalId;
@@ -1715,7 +1703,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       stepInfo.hashedId = hashedId;
     }
 
-    // 5. Final memoization lookup with potentially modified hashedId
+    // 4. Final memoization lookup with potentially modified hashedId
     const stepState = this.state.stepState[hashedId];
     let isFulfilled = false;
     if (stepState) {
@@ -1730,13 +1718,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         isFulfilled = true;
       }
       // Update memoized status based on final lookup (may differ if ID changed)
-      stepInfo.memoized = true;
+      stepInfo.memoized = isFulfilled;
     } else {
       // ID may have changed to a non-memoized ID
       stepInfo.memoized = false;
     }
 
-    // 6. Build wrapStep chain after all mutations so middleware sees final values
+    // 5. Build wrapStep chain after all mutations so middleware sees final values
     const wrappedHandler = this.middlewareManager.wrapStepHandler(
       entryPoint,
       stepInfo,
@@ -2072,21 +2060,26 @@ interface MiddlewareApplicationResult {
  * @param expectedIndexes - Map tracking expected next index for each base ID
  * @returns The final ID to use and optional index
  */
-function resolveStepIdCollision(
-  baseId: string,
-  stepsMap: Map<string, FoundStep>,
-  expectedIndexes: Map<string, number>,
-): CollisionResolutionResult {
+function resolveStepIdCollision({
+  baseId,
+  expectedIndexes,
+  stepsMap,
+}: {
+  baseId: string;
+  expectedIndexes: Map<string, number>;
+  stepsMap: Map<string, FoundStep>;
+}): CollisionResolutionResult {
   const hashedBaseId = hashId(baseId);
 
-  // No collision - return original ID
   if (!stepsMap.has(hashedBaseId)) {
+    // No collision. Return original ID
     return { finalId: baseId };
   }
 
-  // Collision detected - find next available index
+  // Collision detected. Find next available index
   const expectedNextIndex = expectedIndexes.get(baseId) ?? 1;
-  for (let i = expectedNextIndex; ; i++) {
+  const maxIndex = expectedNextIndex + stepsMap.size + 1;
+  for (let i = expectedNextIndex; i < maxIndex; i++) {
     const indexedId = baseId + STEP_INDEXING_SUFFIX + i;
     const hashedIndexedId = hashId(indexedId);
 
@@ -2095,6 +2088,10 @@ function resolveStepIdCollision(
       return { finalId: indexedId, index: i };
     }
   }
+
+  throw new UnreachableError(
+    `Could not resolve step ID collision for "${baseId}" after ${stepsMap.size + 1} attempts`,
+  );
 }
 
 export const _internals = { hashOp, hashId, resolveStepIdCollision };

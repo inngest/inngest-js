@@ -51,34 +51,13 @@ import type { EventType } from "./triggers/triggers.ts";
 /**
  * Middleware context for a step, created during step registration.
  *
- * This exists to support middleware changing step IDs via `wrapStep`.
- * The context is created early so middleware can transform the ID (affecting
- * memoization lookup), but the actual handler is set later based on whether
- * we're returning memoized data or executing fresh.
- *
- * The "deferred handler" pattern works as follows:
- * 1. Middleware can change `stepInfo.options.id` via `wrapStep`
- * 2. The changed ID affects which memoized state is used
- * 3. We need to wrap the handler BEFORE knowing what handler to use
- * 4. We don't know the handler until after memoization lookup
- *
- * Solution: Create a placeholder handler, wrap it with middleware, use the
- * (potentially changed) ID for memoization lookup, then set the actual
- * handler based on memoization status via `setActualHandler`.
+ * Uses a "deferred handler" pattern: the `wrapStep` middleware chain starts
+ * during discovery (so middleware can inject its own steps), but the real
+ * handler isn't known until after the memoization lookup. `setActualHandler`
+ * bridges the gap — the chain blocks on a deferred promise that is resolved
+ * once `executeStep` determines the real result.
  */
 export interface StepMiddlewareContext {
-  /**
-   * The middleware pipeline entry point. Call this to execute the step
-   * through all middleware transformations.
-   */
-  wrappedHandler: () => Promise<unknown>;
-
-  /**
-   * Step info after middleware transformations. The `options.id` may differ from
-   * the original if middleware modified it via `wrapStep`.
-   */
-  stepInfo: Middleware.StepInfo;
-
   /**
    * Sets the handler that the middleware pipeline will eventually call.
    * Called after memoization lookup to set either:
@@ -86,6 +65,18 @@ export interface StepMiddlewareContext {
    * - A handler executing the step fresh
    */
   setActualHandler: (handler: () => Promise<unknown>) => void;
+
+  /**
+   * Step info after middleware transformations. The `options.id` may differ
+   * from the original if middleware modified it via `transformStepInput`.
+   */
+  stepInfo: Middleware.StepInfo;
+
+  /**
+   * The middleware pipeline entry point. Call this to execute the step
+   * through all middleware transformations.
+   */
+  wrappedHandler: () => Promise<unknown>;
 }
 
 export interface FoundStep extends HashedOp {
@@ -133,15 +124,18 @@ export interface FoundStep extends HashedOp {
   input?: unknown;
 
   /**
-   * Required middleware context for this step.
-   * Always populated before memoization lookup so that middleware can
-   * change the step ID and affect which memoized state is used.
+   * Middleware context for this step. Holds the `wrapStep` chain entry point
+   * and the deferred handler setter used by `executeStep`.
    */
   middleware: StepMiddlewareContext;
 
   /**
    * For new steps where wrappedHandler is called during discovery,
    * this holds the resolve/reject to be called when executeStep runs.
+   *
+   * Is undefined when any of the following is true:
+   * - The step is fulfilled
+   * - The step has no handler (`step.sleep`, `step.waitForSignal`, etc.)
    */
   executionDeferred?: {
     resolve: (value: unknown) => void;
@@ -149,10 +143,10 @@ export interface FoundStep extends HashedOp {
   };
 
   /**
-   * For new steps where wrappedHandler is called during discovery,
-   * this holds the promise for the middleware-transformed result.
-   * executeStep should use this result (which includes serialization)
-   * instead of the raw handler result.
+   * For new steps where `wrappedHandler` is called during discovery, this holds
+   * the promise for the middleware-transformed result. `executeStep` should use
+   * this result (which includes serialization) instead of the raw handler
+   * result.
    */
   transformedResultPromise?: Promise<unknown>;
 }
@@ -751,7 +745,6 @@ export const createStepTools = <
         name: msTimeStr,
         displayName: name ?? id,
         userland: { id },
-        opts: { input: [time] },
       };
     }),
 

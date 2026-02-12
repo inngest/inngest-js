@@ -1,7 +1,13 @@
-import type { Context } from "../../types.ts";
-import { StepOpCode } from "../../types.ts";
+import { timeStr } from "../../helpers/strings.ts";
+import type { Context, StepOpCode } from "../../types.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
 import type { Middleware } from "./middleware.ts";
+import {
+  isTimeStrInput,
+  optsFromStepInput,
+  stepInputFromOpts,
+  stepKindFromOpCode,
+} from "./utils.ts";
 
 export interface StepInfoOptions {
   hashedId: string;
@@ -23,6 +29,20 @@ export interface ApplyToStepInput {
 
 export interface PreparedStep {
   entryPoint: () => Promise<unknown>;
+
+  /**
+   * Only used for sleep steps. The sleep's wake-up time must be in the op name,
+   * and that may be changed by the `transformStepInput` hook. The user-facing
+   * name is actually the op's `displayName` field (yes, that's confusing).
+   */
+  opName?: string;
+
+  /**
+   * For step kinds where middleware input maps to the outgoing op's opts
+   * (e.g. invoke, waitForEvent). Derived by reversing `stepInputFromOpts`.
+   */
+  opOpts?: Record<string, unknown>;
+
   setActualHandler: (handler: () => Promise<unknown>) => void;
   stepInfo: Middleware.StepInfo;
 }
@@ -34,12 +54,19 @@ export interface PreparedStep {
 export class MiddlewareManager {
   private readonly fnArg: Context.Any;
   private readonly getStepState: () => Record<string, MemoizedOp>;
-  private readonly middleware: Middleware.BaseMiddleware[];
 
   /**
-   * Whether any middleware defines `transformStepInput`.
+   * Whether any middleware defines `transformStepInput`. Used for perf
+   * optimization.
    */
   private readonly hasTransformStepInput: boolean;
+
+  /**
+   * Whether memoization has ended. Used for idempotency.
+   */
+  private memoizationEnded = false;
+
+  private readonly middleware: Middleware.BaseMiddleware[];
 
   constructor(
     fnArg: Context.Any,
@@ -67,7 +94,7 @@ export class MiddlewareManager {
    */
   applyToStep(input: ApplyToStepInput): PreparedStep {
     const stepKind = stepKindFromOpCode(input.op, input.opts);
-    const stepInput = stepInputFromOp(stepKind, input.opts);
+    const stepInput = stepInputFromOpts(stepKind, input.opts);
 
     const stepInfo = this.buildStepInfo({
       hashedId: input.hashedId,
@@ -92,6 +119,21 @@ export class MiddlewareManager {
           : transformed.input;
     }
 
+    // For sleep steps, if middleware transformed the input, re-derive the op
+    // name (which encodes the wake-up time). If there's no input, the matchOp
+    // already set the name directly.
+    let opName: string | undefined;
+    if (stepKind === "sleep" && stepInfo.input !== undefined) {
+      if (!isTimeStrInput(stepInfo.input[0])) {
+        throw new Error("Sleep time must be a string, number, or Date");
+      }
+      opName = timeStr(stepInfo.input[0]);
+    }
+
+    // Reverse the input→opts mapping for step kinds where the whole opts
+    // object was wrapped as input (e.g. invoke, waitForEvent).
+    const opOpts = optsFromStepInput(stepKind, stepInfo.input);
+
     // Deferred handler pattern — actual handler set later based on memoization
     let actualHandler: (() => Promise<unknown>) | undefined;
     const entryPoint = async () => {
@@ -106,6 +148,8 @@ export class MiddlewareManager {
 
     return {
       entryPoint,
+      opName,
+      opOpts,
       setActualHandler,
       stepInfo,
     };
@@ -263,7 +307,15 @@ export class MiddlewareManager {
     }
   }
 
+  /**
+   * Idempotent: safe to call from every code path that might end memoization.
+   */
   onMemoizationEnd(): void {
+    if (this.memoizationEnded) {
+      return;
+    }
+    this.memoizationEnded = true;
+
     for (const mw of this.middleware) {
       if (mw?.onMemoizationEnd) {
         mw.onMemoizationEnd();
@@ -297,76 +349,4 @@ export class MiddlewareManager {
       }
     }
   }
-}
-
-function stepKindFromOpCode(
-  op: StepOpCode,
-  opts?: Record<string, unknown>,
-): Middleware.StepKind {
-  switch (op) {
-    case StepOpCode.InvokeFunction:
-      return "invoke";
-    case StepOpCode.StepPlanned:
-      return opts?.type === "step.sendEvent" ? "sendEvent" : "run";
-    case StepOpCode.Sleep:
-      return "sleep";
-    case StepOpCode.WaitForEvent:
-      return "waitForEvent";
-    default:
-      return "unknown";
-  }
-}
-
-function stepInputFromOp(
-  stepKind: Middleware.StepKind,
-  opts?: Record<string, unknown>,
-): unknown[] | undefined {
-  if (stepKind === "invoke" || stepKind === "waitForEvent") {
-    return [opts];
-  }
-  return Array.isArray(opts?.input) ? (opts.input as unknown[]) : undefined;
-}
-
-/**
- * Build an onion-style middleware chain for `wrapRequest`.
- *
- * Iterates in reverse order (so first middleware is outermost)
- * and returns a zero-arg function that kicks off the chain.
- */
-export function buildWrapRequestChain(
-  middleware: Middleware.BaseMiddleware[],
-  handler: () => Promise<Middleware.Response>,
-  requestInfo: Middleware.Request,
-): () => Promise<Middleware.Response> {
-  let chain: () => Promise<Middleware.Response> = handler;
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.wrapRequest) {
-      const next = chain;
-      chain = () => mw.wrapRequest!(next, { requestInfo });
-    }
-  }
-  return chain;
-}
-
-/**
- * Build an onion-style middleware chain for `wrapClientRequest`.
- *
- * Same pattern as `buildWrapRequestChain` but wraps the outgoing HTTP call
- * in `client.send()` instead of the incoming execution request.
- */
-export function buildWrapClientRequestChain(
-  middleware: Middleware.BaseMiddleware[],
-  handler: () => Promise<unknown>,
-  payloads: Middleware.WrapClientRequestArgs["payloads"],
-): () => Promise<unknown> {
-  let chain: () => Promise<unknown> = handler;
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.wrapClientRequest) {
-      const next = chain;
-      chain = () => mw.wrapClientRequest!(next, { payloads });
-    }
-  }
-  return chain;
 }
