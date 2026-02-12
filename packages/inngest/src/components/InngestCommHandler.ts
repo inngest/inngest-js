@@ -901,7 +901,6 @@ export class InngestCommHandler<
     const exeVersion = ExecutionVersion.V2;
 
     const exe = fn["createExecution"]({
-      version: exeVersion,
       partialOptions: {
         client: this.client,
         data: {
@@ -1842,16 +1841,7 @@ export class InngestCommHandler<
     // Try to get the request version from headers before falling back to
     // parsing it from the body.
     const immediateFnData = parseFnData(data, headerReqVersion);
-    let { version, sdkDecided } = immediateFnData;
-
-    // Handle opting in to optimized parallelism in v3.
-    if (
-      version === ExecutionVersion.V1 &&
-      sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.()
-    ) {
-      version = ExecutionVersion.V2;
-    }
+    const version = ExecutionVersion.V2;
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
@@ -1901,8 +1891,6 @@ export class InngestCommHandler<
       );
 
       const executionOptions: CreateExecutionOptions = {
-        version:
-          checkpointingConfig && sdkDecided ? ExecutionVersion.V2 : version,
         partialOptions: {
           client: this.client,
           runId: ctx?.run_id || "",

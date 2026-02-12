@@ -392,13 +392,13 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       {
         fnOpt: false,
         clientOpt: undefined,
-        expectedVersion: ExecutionVersion.V1,
+        expectedVersion: ExecutionVersion.V2,
         desc: "function opt-out",
       },
       {
         fnOpt: undefined,
         clientOpt: false,
-        expectedVersion: ExecutionVersion.V1,
+        expectedVersion: ExecutionVersion.V2,
         desc: "client opt-out",
       },
     ])(

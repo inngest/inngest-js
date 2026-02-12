@@ -1,8 +1,4 @@
-import {
-  type ExecutionVersion,
-  internalEvents,
-  queryKeys,
-} from "../helpers/consts.ts";
+import { internalEvents, queryKeys } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
 import {
@@ -765,6 +761,5 @@ export namespace InngestFunction {
 }
 
 export type CreateExecutionOptions = {
-  version: ExecutionVersion;
   partialOptions: Omit<InngestExecutionOptions, "fn">;
 };

@@ -298,7 +298,7 @@ describe("response version header", () => {
 
   const handler = serve({ client: inngest, functions: [fn] });
 
-  test("echoes V1 request version in response header", async () => {
+  test("responds with V2 even when request sends V1", async () => {
     const result = await runHandler(handler, {
       body: {
         version: ExecutionVersion.V1,
@@ -319,11 +319,11 @@ describe("response version header", () => {
 
     expect(result.status).toBe(200);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
-      ExecutionVersion.V1.toString(),
+      ExecutionVersion.V2.toString(),
     );
   });
 
-  test("echoes V2 request version in response header", async () => {
+  test("responds with V2 when request sends V2", async () => {
     const result = await runHandler(handler, {
       body: {
         version: ExecutionVersion.V2,
@@ -348,7 +348,7 @@ describe("response version header", () => {
     );
   });
 
-  test("defaults to V2 when no version in request (optimized parallelism bumps V1 to V2)", async () => {
+  test("responds with V2 when no version in request", async () => {
     const result = await runHandler(handler);
 
     expect(result.status).toBe(200);
