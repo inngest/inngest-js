@@ -1,4 +1,4 @@
-import type z from "zod";
+import type { z } from "zod/v3";
 import type { stepsSchemas } from "../../api/schema.ts";
 import type { ExecutionVersion } from "../../helpers/consts.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
