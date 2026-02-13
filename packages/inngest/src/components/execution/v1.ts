@@ -1612,23 +1612,31 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       this.state.steps.set(hashedId, step);
       this.state.hasSteps = true;
-      pushStepToReport(step);
 
-      if (!isFulfilled && !stepState && step.fn) {
+      const isNewStepWithHandler = !isFulfilled && !stepState && step.fn;
+      if (isNewStepWithHandler) {
         // New, never-seen step with a handler (e.g. `step.run`). Kick off the
         // middleware wrapStep chain now so it runs during discovery, not later
         // in executeStep.
         //
-        // This is necessary so that middleware can inject their
-        // own steps
-
+        // This is necessary so that middleware can inject their own steps.
+        // Reporting is deferred to the center of the onion so that if
+        // middleware throws or injects prerequisites, the step is never
+        // reported.
         const deferred = createDeferredPromise<unknown>();
         step.executionDeferred = deferred;
 
-        setActualHandler(() => deferred.promise);
+        setActualHandler(() => {
+          pushStepToReport(step);
+          return deferred.promise;
+        });
 
         step.transformedResultPromise = wrappedHandler();
-        step.transformedResultPromise.catch(() => {});
+        step.transformedResultPromise.catch((error) => {
+          reject(error);
+        });
+      } else {
+        pushStepToReport(step);
       }
 
       return promise;

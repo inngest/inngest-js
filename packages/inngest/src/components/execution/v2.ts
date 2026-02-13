@@ -1376,7 +1376,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             unhandledFoundStepsToReport.delete(hashedId);
 
             if (step.fulfilled) {
-              foundStepsToReport.delete(step.id);
+              foundStepsToReport.delete(hashedId);
             }
           }
         }
@@ -1580,15 +1580,17 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                     Promise.resolve(result.data),
                   );
 
-                  step.middleware.wrappedHandler().then(resolve);
+                  step.middleware.wrappedHandler().then(resolve, reject);
                 } else {
                   const stepError = new StepError(opId.id, result.error);
                   this.state.recentlyRejectedStepError = stepError;
 
-                  // Set inner handler to reject with step error
-                  step.middleware.setActualHandler(() =>
-                    Promise.reject(stepError),
-                  );
+                  // Set inner handler to throw step error (throw
+                  // instead of Promise.reject to avoid unhandled
+                  // rejection from the temporarily-unhandled promise)
+                  step.middleware.setActualHandler(() => {
+                    throw stepError;
+                  });
 
                   step.middleware.wrappedHandler().catch(reject);
                 }
@@ -1602,15 +1604,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
       this.state.steps.set(hashedId, step);
       this.state.hasSteps = true;
-      pushStepToReport(step);
 
       if (!isFulfilled && !stepState && step.fn) {
         // New, never-seen step with a handler (e.g. `step.run`). Kick off the
         // middleware wrapStep chain now so it runs during discovery, not later
         // in executeStep.
         //
-        // This is necessary so that middleware can inject their
-        // own steps
+        // This is necessary so that middleware can inject their own steps.
+        // Reporting is deferred to the center of the onion so that if
+        // middleware throws or injects prerequisites, the step is never
+        // reported.
         const executionDeferred = createDeferredPromise<unknown>();
 
         step.executionDeferred = {
@@ -1622,10 +1625,25 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           },
         };
 
-        setActualHandler(() => executionDeferred.promise);
+        setActualHandler(() => {
+          pushStepToReport(step);
+          return executionDeferred.promise;
+        });
 
         step.transformedResultPromise = wrappedHandler();
-        step.transformedResultPromise.catch(() => {});
+        step.transformedResultPromise.catch((error) => {
+          reject(error);
+        });
+      } else {
+        pushStepToReport(step);
+
+        // For fulfilled steps, handle immediately so memoized
+        // results propagate through middleware without waiting
+        // for reportNextTick. This ensures error propagation
+        // completes before dependent steps are executed.
+        if (isFulfilled) {
+          step.handle();
+        }
       }
 
       return promise;

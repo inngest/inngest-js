@@ -749,3 +749,154 @@ test("2 middleware with staticTransform", async () => {
     mwNone: "original",
   });
 });
+
+describe("throws", () => {
+  test("in hook", async () => {
+    // Errors in the hook are treated as function-level errors
+
+    const state = createState({
+      fn: { count: 0 },
+      hook: { count: 0 },
+      step: { count: 0 },
+    });
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override wrapStep = async () => {
+        state.hook.count++;
+        throw new Error("oh no");
+      };
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0 },
+      { event: eventName },
+      async ({ step, runId }) => {
+        state.runId = runId;
+        state.fn.count++;
+        await step.run("normal-step", () => {
+          state.step.count++;
+        });
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunFailed();
+
+    expect(state.fn).toEqual({ count: 1 });
+    expect(state.hook).toEqual({ count: 1 });
+    expect(state.step).toEqual({ count: 0 });
+  });
+
+  test("in hook step", async () => {
+    // Errors in the hook are treated as function-level errors
+
+    const state = createState({
+      fn: { count: 0 },
+      hook: { count: 0 },
+      hookStep: { count: 0 },
+      step: { count: 0 },
+    });
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+        next,
+        { ctx, stepInfo },
+      ) => {
+        state.hook.count++;
+
+        if (stepInfo.options.id === "hook-step") {
+          return next();
+        }
+
+        await ctx.step.run("hook-step", () => {
+          state.hookStep.count++;
+          throw new Error("oh no");
+        });
+        return next();
+      };
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0 },
+      { event: eventName },
+      async ({ step, runId }) => {
+        console.log("fn");
+        state.runId = runId;
+        state.fn.count++;
+        await step.run("normal-step", () => {
+          state.step.count++;
+        });
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunFailed();
+
+    expect(state.fn).toEqual({ count: 2 });
+
+    // 4 because the `wrapStep` method *also* runs for the step defined in the
+    // hook
+    expect(state.hook).toEqual({ count: 4 });
+
+    expect(state.hookStep).toEqual({ count: 1 });
+    expect(state.step).toEqual({ count: 0 });
+  });
+
+  test("in normal step", async () => {
+    // Errors in the normal step are treated as step-level errors
+
+    const state = createState({
+      fn: { count: 0 },
+      hook: { count: 0 },
+      step: { count: 0 },
+    });
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override wrapStep = async (next: () => Promise<unknown>) => {
+        state.hook.count++;
+        return next();
+      };
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0 },
+      { event: eventName },
+      async ({ step, runId }) => {
+        state.runId = runId;
+        state.fn.count++;
+        await step.run("normal-step", () => {
+          state.step.count++;
+          throw new Error("oh no");
+        });
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunFailed();
+
+    expect(state.fn).toEqual({ count: 2 });
+    expect(state.hook).toEqual({ count: 2 });
+    expect(state.step).toEqual({ count: 1 });
+  });
+});
