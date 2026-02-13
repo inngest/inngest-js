@@ -291,8 +291,7 @@ describe("response version header", () => {
   const inngest = createClient({ id: "test", isDev: true });
 
   const fn = inngest.createFunction(
-    { id: "test" },
-    { event: "demo/event.sent" },
+    { id: "test", triggers: [{ event: "demo/event.sent" }] },
     () => "test",
   );
 
