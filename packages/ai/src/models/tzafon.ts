@@ -1,5 +1,5 @@
 import { type AiAdapter } from "../adapter.js";
-import { type OpenAiAiAdapter } from "../adapters/openai.js";
+import { type TzafonAiAdapter } from "../adapters/tzafon.js";
 import { envKeys, processEnv } from "../env";
 
 /**
@@ -25,7 +25,7 @@ export const tzafon: AiAdapter.ModelCreator<
   return {
     url: url.href,
     authKey,
-    format: "openai-chat",
+    format: "tzafon",
     onCall(_, body) {
       Object.assign(body, options.defaultParameters);
       body.model ||= options.model;
@@ -75,7 +75,7 @@ export namespace Tzafon {
   /**
    * A Tzafon model using the OpenAI-compatible format for I/O.
    */
-  export interface AiModel extends OpenAiAiAdapter {
+  export interface AiModel extends TzafonAiAdapter {
     options: AiModelOptions;
   }
 }
