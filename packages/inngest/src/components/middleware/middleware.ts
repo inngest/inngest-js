@@ -184,6 +184,10 @@ export namespace Middleware {
     isFinalAttempt: boolean;
   }>;
 
+  /**
+   * The kind of step. This union may be extended in the future, and will not be
+   * considered a breaking change.
+   */
   export type StepKind = OpenStringUnion<
     | "ai.infer"
     | "ai.wrap"
