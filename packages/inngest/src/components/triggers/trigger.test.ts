@@ -340,6 +340,28 @@ describe("eventType with schema", () => {
     );
   });
 
+  test("same event name different schemas", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", { schema: z.object({ a: z.string() }) }),
+          eventType("event-1", { schema: z.object({ b: z.number() }) }),
+        ],
+      },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: number }>();
+      },
+    );
+  });
+
   test("wildcard", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
