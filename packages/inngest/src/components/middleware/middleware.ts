@@ -148,9 +148,9 @@ export namespace Middleware {
   }>;
 
   /**
-   * The argument passed to `onStepEnd`.
+   * The argument passed to `onStepComplete`.
    */
-  export type OnStepEndArgs = DeepReadonly<{
+  export type OnStepCompleteArgs = DeepReadonly<{
     stepInfo: StepInfo;
     ctx: Context.Any;
     data: unknown;
@@ -162,9 +162,12 @@ export namespace Middleware {
   export type OnRunStartArgs = DeepReadonly<{ ctx: Context.Any }>;
 
   /**
-   * The argument passed to `onRunEnd`.
+   * The argument passed to `onRunComplete`.
    */
-  export type OnRunEndArgs = DeepReadonly<{ ctx: Context.Any; data: unknown }>;
+  export type OnRunCompleteArgs = DeepReadonly<{
+    ctx: Context.Any;
+    data: unknown;
+  }>;
 
   /**
    * The argument passed to `onRunError`.
@@ -275,7 +278,7 @@ export namespace Middleware {
      * Calls after the `wrapStep` chain resolves, so `data` reflects any
      * transformations applied by `wrapStep` middleware.
      */
-    onStepEnd?(arg: Middleware.OnStepEndArgs): void;
+    onStepComplete?(arg: Middleware.OnStepCompleteArgs): void;
 
     /**
      * Called each time a step errors. Only called for `step.run` and
@@ -301,11 +304,11 @@ export namespace Middleware {
      * value (after `wrapFunctionHandler` transformations). Does NOT fire when
      * the function errors — `onRunError` fires instead.
      */
-    onRunEnd?(arg: Middleware.OnRunEndArgs): void;
+    onRunComplete?(arg: Middleware.OnRunCompleteArgs): void;
 
     /**
      * Called when the function throws an error. Receives the error instance.
-     * Does NOT fire when the function succeeds — `onRunEnd` fires instead.
+     * Does NOT fire when the function succeeds — `onRunComplete` fires instead.
      */
     onRunError?(arg: Middleware.OnRunErrorArgs): void;
 

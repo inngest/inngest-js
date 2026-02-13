@@ -38,16 +38,16 @@ class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
     console.log("onRunStart", arg);
   }
 
-  onRunEnd(arg: Inngest.Middleware.OnRunEndArgs) {
-    console.log("onRunEnd", arg);
+  onRunComplete(arg: Inngest.Middleware.OnRunCompleteArgs) {
+    console.log("onRunComplete", arg);
   }
 
   onStepStart(arg: Inngest.Middleware.OnStepStartArgs) {
     console.log("onStepStart", arg);
   }
 
-  onStepEnd(arg: Inngest.Middleware.OnStepEndArgs) {
-    console.log("onStepEnd", arg);
+  onStepComplete(arg: Inngest.Middleware.OnStepCompleteArgs) {
+    console.log("onStepComplete", arg);
   }
 
   onStepError(arg: Inngest.Middleware.OnStepErrorArgs) {

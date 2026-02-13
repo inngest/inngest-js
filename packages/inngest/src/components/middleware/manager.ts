@@ -294,16 +294,16 @@ export class MiddlewareManager {
     }
   }
 
-  onStepEnd(stepInfo: Middleware.StepInfo, data: unknown): void {
+  onStepComplete(stepInfo: Middleware.StepInfo, data: unknown): void {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
-      if (mw?.onStepEnd) {
+      if (mw?.onStepComplete) {
         try {
-          mw.onStepEnd({ stepInfo, ctx, data });
+          mw.onStepComplete({ stepInfo, ctx, data });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
-            hook: "onStepEnd",
+            hook: "onStepComplete",
             mw: mw.constructor.name,
           });
         }
@@ -373,16 +373,16 @@ export class MiddlewareManager {
     }
   }
 
-  onRunEnd(data: unknown): void {
+  onRunComplete(data: unknown): void {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
-      if (mw?.onRunEnd) {
+      if (mw?.onRunComplete) {
         try {
-          mw.onRunEnd({ ctx, data });
+          mw.onRunComplete({ ctx, data });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
-            hook: "onRunEnd",
+            hook: "onRunComplete",
             mw: mw.constructor.name,
           });
         }

@@ -38,16 +38,16 @@ test("info hooks for parallel steps", async () => {
       state.logs.push("onStepStart");
     }
 
-    override onStepEnd() {
-      state.logs.push("onStepEnd");
+    override onStepComplete() {
+      state.logs.push("onStepComplete");
     }
 
     override onRunStart() {
       state.logs.push("onRunStart");
     }
 
-    override onRunEnd() {
-      state.logs.push("onRunEnd");
+    override onRunComplete() {
+      state.logs.push("onRunComplete");
     }
   }
 
@@ -120,7 +120,7 @@ test("info hooks for parallel steps", async () => {
     "fn: top",
     "onStepStart",
     "step-1: inside",
-    "onStepEnd",
+    "onStepComplete",
 
     // 2nd request
     "fn: top",
@@ -131,7 +131,7 @@ test("info hooks for parallel steps", async () => {
     "onMemoizationEnd",
     "onStepStart",
     "step-2-a: inside",
-    "onStepEnd",
+    "onStepComplete",
 
     // 5th request: post-parallel discovery
     "fn: top",
@@ -142,12 +142,12 @@ test("info hooks for parallel steps", async () => {
     "onMemoizationEnd",
     "onStepStart",
     "step-3: inside",
-    "onStepEnd",
+    "onStepComplete",
 
     // 7th request
     "fn: top",
     "onMemoizationEnd",
     "fn: bottom",
-    "onRunEnd",
+    "onRunComplete",
   ]);
 });

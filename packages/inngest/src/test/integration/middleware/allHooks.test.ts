@@ -94,8 +94,8 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             state.logs.push(`onStepStart (${name})`);
           }
 
-          override onStepEnd() {
-            state.logs.push(`onStepEnd (${name})`);
+          override onStepComplete() {
+            state.logs.push(`onStepComplete (${name})`);
           }
 
           override onStepError() {
@@ -106,8 +106,8 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             state.logs.push(`onRunStart (${name})`);
           }
 
-          override onRunEnd() {
-            state.logs.push(`onRunEnd (${name})`);
+          override onRunComplete() {
+            state.logs.push(`onRunComplete (${name})`);
           }
 
           override onRunError() {
@@ -196,12 +196,12 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "step: inside",
         "wrapStep(fresh): after (mw2)", // Onion unwind
         "wrapStep(fresh): after (mw1)",
-        "onStepEnd (mw1)", // Fires after wrapStep resolves (observes transformed output)
-        "onStepEnd (mw2)",
+        "onStepComplete (mw1)", // Fires after wrapStep resolves (observes transformed output)
+        "onStepComplete (mw2)",
         // NOTE: wrapFunctionHandler "after" does NOT fire here. Step discovery
         // interrupts the function via control flow, so next() in
         // wrapFunctionHandler never resolves. Use try/finally for cleanup.
-        // onRunEnd does NOT fire here either (interrupted).
+        // onRunComplete does NOT fire here either (interrupted).
         "wrapRequest: after (mw2)",
         "wrapRequest: after (mw1)",
 
@@ -225,8 +225,8 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "fn: bottom",
         "wrapFunctionHandler: after (mw2)", // Only unwinds when function completes
         "wrapFunctionHandler: after (mw1)",
-        "onRunEnd (mw1)",
-        "onRunEnd (mw2)",
+        "onRunComplete (mw1)",
+        "onRunComplete (mw2)",
         "wrapRequest: after (mw2)",
         "wrapRequest: after (mw1)",
       ]);

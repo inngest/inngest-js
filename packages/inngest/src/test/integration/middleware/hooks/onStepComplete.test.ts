@@ -12,11 +12,11 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("1 step", async () => {
   const state = createState({
-    calls: [] as Middleware.OnStepEndArgs[],
+    calls: [] as Middleware.OnStepCompleteArgs[],
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd(args: Middleware.OnStepEndArgs) {
+    override onStepComplete(args: Middleware.OnStepCompleteArgs) {
       state.calls.push(args);
     }
   }
@@ -59,11 +59,11 @@ test("1 step", async () => {
 
 test("multiple steps", async () => {
   const state = createState({
-    calls: [] as Middleware.OnStepEndArgs[],
+    calls: [] as Middleware.OnStepCompleteArgs[],
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd(args: Middleware.OnStepEndArgs) {
+    override onStepComplete(args: Middleware.OnStepCompleteArgs) {
       state.calls.push(args);
     }
   }
@@ -115,14 +115,14 @@ test("multiple steps", async () => {
   ]);
 });
 
-test("step error does not call onStepEnd", async () => {
+test("step error does not call onStepComplete", async () => {
   const state = createState({
     endCalls: 0,
     errorCalls: 0,
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd() {
+    override onStepComplete() {
       state.endCalls++;
     }
     override onStepError() {
@@ -158,13 +158,13 @@ test("step error does not call onStepEnd", async () => {
   expect(state.errorCalls).toBe(1);
 });
 
-test("memoized step does not call onStepEnd", async () => {
+test("memoized step does not call onStepComplete", async () => {
   const state = createState({
     calls: 0,
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd() {
+    override onStepComplete() {
       state.calls++;
     }
   }
@@ -203,7 +203,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepEnd() {
+    override onStepComplete() {
       state.hook.count++;
       throw new Error("oh no");
     }
@@ -232,7 +232,7 @@ test("throws", async () => {
   expect(state.hook).toEqual({ count: 1 });
   expect(consoleSpy).toHaveBeenCalledWith("middleware error", {
     error: expect.any(Error),
-    hook: "onStepEnd",
+    hook: "onStepComplete",
     mw: "TestMiddleware",
   });
 

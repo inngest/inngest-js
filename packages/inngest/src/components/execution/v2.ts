@@ -920,8 +920,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             ]);
           }
 
-          // Call onStepEnd for each middleware
-          this.middlewareManager.onStepEnd(stepInfo, rawData);
+          // Call onStepComplete for each middleware
+          this.middlewareManager.onStepComplete(stepInfo, rawData);
 
           return {
             ...outgoingOp,
@@ -1002,8 +1002,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         const metadata = this.state.metadata?.get(id);
         const data = await resultPromise;
 
-        // Call onStepEnd for each middleware
-        this.middlewareManager.onStepEnd(stepInfo, data);
+        // Call onStepComplete for each middleware
+        this.middlewareManager.onStepComplete(stepInfo, data);
 
         return {
           ...outgoingOp,
@@ -1094,7 +1094,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
      */
     runAsPromise(runHandler)
       .then((data) => {
-        this.middlewareManager.onRunEnd(data);
+        this.middlewareManager.onRunComplete(data);
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch((error) => {

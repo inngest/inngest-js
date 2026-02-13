@@ -12,11 +12,11 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("fires when function completes with data", async () => {
   const state = createState({
-    calls: [] as Middleware.OnRunEndArgs[],
+    calls: [] as Middleware.OnRunCompleteArgs[],
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd(args: Middleware.OnRunEndArgs) {
+    override onRunComplete(args: Middleware.OnRunCompleteArgs) {
       state.calls.push(args);
     }
   }
@@ -54,7 +54,7 @@ test("does NOT fire when function errors", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd() {
+    override onRunComplete() {
       state.endCalls++;
     }
     override onRunError() {
@@ -88,11 +88,11 @@ test("does NOT fire when function errors", async () => {
 
 test("fires with no steps", async () => {
   const state = createState({
-    calls: [] as Middleware.OnRunEndArgs[],
+    calls: [] as Middleware.OnRunCompleteArgs[],
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd(args: Middleware.OnRunEndArgs) {
+    override onRunComplete(args: Middleware.OnRunCompleteArgs) {
       state.calls.push(args);
     }
   }
@@ -129,7 +129,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunEnd() {
+    override onRunComplete() {
       state.hook.count++;
       throw new Error("oh no");
     }
@@ -157,7 +157,7 @@ test("throws", async () => {
   expect(state.hook).toEqual({ count: 1 });
   expect(consoleSpy).toHaveBeenCalledWith("middleware error", {
     error: expect.any(Error),
-    hook: "onRunEnd",
+    hook: "onRunComplete",
     mw: "TestMiddleware",
   });
 
