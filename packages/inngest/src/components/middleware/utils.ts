@@ -86,6 +86,8 @@ export function stepKindFromOpCode(
     if (opts?.type === "step.ai.wrap") {
       return "ai.wrap";
     }
+  } else if (op === StepOpCode.Gateway) {
+    return "fetch";
   } else if (op === StepOpCode.InvokeFunction) {
     return "invoke";
   } else if (op === StepOpCode.StepPlanned) {

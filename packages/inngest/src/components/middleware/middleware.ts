@@ -187,6 +187,7 @@ export namespace Middleware {
   export type StepKind = OpenStringUnion<
     | "ai.infer"
     | "ai.wrap"
+    | "fetch"
     | "invoke"
     | "realtime.publish"
     | "run"
