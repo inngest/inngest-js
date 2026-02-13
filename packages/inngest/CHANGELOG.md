@@ -1,5 +1,88 @@
 # inngest
 
+## 3.52.0
+
+### Minor Changes
+
+- [#1288](https://github.com/inngest/inngest-js/pull/1288) [`daf858f0`](https://github.com/inngest/inngest-js/commit/daf858f0c51d92941958ad02b499d6a6a7643a76) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add the ability to create Durable Endpoint Proxies, used to redirect to Inngest run results using a user's own domain.
+
+  ```ts
+  import { Inngest, step } from "inngest";
+  import { endpointAdapter } from "inngest/edge";
+
+  const inngest = new Inngest({
+    id: "bun-sync-example",
+    endpointAdapter: endpointAdapter.withOptions({
+      asyncRedirectUrl: "/poll",
+    }),
+  });
+
+  const server = Bun.serve({
+    port: 3000,
+    routes: {
+      "/": inngest.endpoint(async (_req) => {
+        const foo = await step.run("example/step", async () => {
+          return "Hello from step!";
+        });
+
+        return new Response(`Step result: ${foo}`);
+      }),
+
+      // Proxy endpoint - fetches results from Inngest and decrypts if needed
+      "/poll": inngest.endpointProxy(),
+    },
+  });
+
+  console.log(`Listening on ${server.hostname}:${server.port}`);
+  ```
+
+- [#1284](https://github.com/inngest/inngest-js/pull/1284) [`5717c64b`](https://github.com/inngest/inngest-js/commit/5717c64babe40857e961638ff742c7aa23495328) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add a Durable Endpoints Next.js Adapter
+
+  ```ts
+  // app/api/my-endpoint/route.ts
+  import { Inngest, step } from "inngest";
+  import { endpointAdapter } from "inngest/next";
+
+  const inngest = new Inngest({
+    id: "my-app",
+    endpointAdapter,
+  });
+
+  export const GET = inngest.endpoint(async (req) => {
+    const foo = await step.run("my-step", () => ({ foo: "bar" }));
+
+    return new Response(`Result: ${JSON.stringify(foo)}`);
+  });
+  ```
+
+### Patch Changes
+
+- [#1297](https://github.com/inngest/inngest-js/pull/1297) [`32b59507`](https://github.com/inngest/inngest-js/commit/32b595073e73ac3e7c414366c2d6b29fddeccce6) Thanks [@ptts](https://github.com/ptts)! - Fix `extendProvider()` failing to extend existing OTel providers by unwrapping the `ProxyTracerProvider` returned by `trace.getTracerProvider()`. Previously, the proxy wrapper hid the underlying provider's `addSpanProcessor` method, causing `"auto"` mode to fall through to `createProvider()` and register duplicate instrumentations.
+
+- [#1292](https://github.com/inngest/inngest-js/pull/1292) [`9c8f5d94`](https://github.com/inngest/inngest-js/commit/9c8f5d94bdd634f25391fafb592ad7bb7e16c710) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix Durable Endpoints not capturing and obeying step plan forcing, resulting in strange behaviour during parallel flows
+
+- [#1285](https://github.com/inngest/inngest-js/pull/1285) [`9a7b0528`](https://github.com/inngest/inngest-js/commit/9a7b052814b954cc5c2751646e8eecc1e4f36b64) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Handle checkpointing failures more gracefully across async checkpointing and Durable Endpoints
+
+## 3.51.0
+
+### Minor Changes
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `isInngestRequest()` export for lightly checking if a `Request` looks like it comes from Inngest
+
+### Patch Changes
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Stabilise execution version when switching from sync to async
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use endpoint adapters for experimental Durable Endpoints instead of wrappers
+
+- [#1250](https://github.com/inngest/inngest-js/pull/1250) [`ad078067`](https://github.com/inngest/inngest-js/commit/ad078067f1fb4d17a1dcb43403fc4e3ac853e3fa) Thanks [@Linell](https://github.com/Linell)! - NonRetriableError && RetryAfterError instanceof checks help resolve issues of errors not working as expected in monorepos.
+
+- [#1168](https://github.com/inngest/inngest-js/pull/1168) [`4371be38`](https://github.com/inngest/inngest-js/commit/4371be389801d6bc9a243cee380e4f5a1ad8b82c) Thanks [@Linell](https://github.com/Linell)! - Add Anthropic Open Telemetry instrumentation so that calls to the Anthropic API are automatically captured.
+
+- [#1269](https://github.com/inngest/inngest-js/pull/1269) [`8e377c27`](https://github.com/inngest/inngest-js/commit/8e377c27ddb8611c179ccc1008bc7be566de1744) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Rename `http/run.started` event created from Durable Endpoints to `inngest/http.request`
+
+- [#1266](https://github.com/inngest/inngest-js/pull/1266) [`b6361ee1`](https://github.com/inngest/inngest-js/commit/b6361ee19a0b9df077c7ef44fa46bf1e47192cb5) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix issue where middleware transformOutput is not called.
+
 ## 3.50.0
 
 ### Minor Changes
