@@ -995,6 +995,46 @@ describe("helper types", () => {
 
       assertType<IsEqual<Expected, Actual>>(true);
     });
+
+    test("applies functionOutputTransform from client middleware", () => {
+      // A custom transform that preserves Date instead of Jsonify-ing to string
+      interface PreserveDate extends Middleware.StaticTransform {
+        Out: this["In"] extends Date ? Date : this["In"];
+      }
+
+      class DateMiddleware extends Middleware.BaseMiddleware {
+        declare functionOutputTransform: PreserveDate;
+      }
+
+      const mwClient = new Inngest({
+        id: "test",
+        middleware: [DateMiddleware],
+      });
+
+      const fn = mwClient.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async () => {
+          return new Date() as Date;
+        },
+      );
+
+      // With the middleware, Date should be preserved (not turned into string)
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Actual, Date>>(true);
+    });
+
+    test("falls back to Jsonify when no middleware declares functionOutputTransform", () => {
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async () => {
+          return { date: new Date(), value: "hello" as const };
+        },
+      );
+
+      // Date becomes string via Jsonify, string literal preserved
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Actual, { date: string; value: "hello" }>>(true);
+    });
   });
 
   describe("type GetStepTools", () => {

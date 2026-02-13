@@ -243,7 +243,12 @@ export namespace Middleware {
     }
 
     /**
-     * Declare this to specify how `step.run` output types are transformed.
+     * Declare this to specify how function return types are transformed.
+     * Used by `GetFunctionOutput` to determine the public output type of a
+     * function.
+     *
+     * Must match the same structure as `StaticTransform` to imitate
+     * higher-kinded types.
      *
      * @example
      * ```ts
@@ -252,13 +257,33 @@ export namespace Middleware {
      * }
      *
      * class MyMiddleware extends Middleware.BaseMiddleware {
-     *   declare outputTransform: PreserveDate;
+     *   declare functionOutputTransform: PreserveDate;
      * }
      * ```
      *
      * @default Middleware.DefaultStaticTransform (Date -> string, functions removed, etc.)
      */
-    declare outputTransform: DefaultStaticTransform;
+    declare functionOutputTransform: DefaultStaticTransform;
+
+    /**
+     * Declare this to specify how `step.run` output types are transformed.
+     *
+     * Must match the same of `StaticTransform` to imitate higher-kinded types.
+     *
+     * @example
+     * ```ts
+     * interface PreserveDate extends Middleware.StaticTransform {
+     *   Out: this["In"] extends Date ? Date : Jsonify<this["In"]>;
+     * }
+     *
+     * class MyMiddleware extends Middleware.BaseMiddleware {
+     *   declare stepOutputTransform: PreserveDate;
+     * }
+     * ```
+     *
+     * @default Middleware.DefaultStaticTransform (Date -> string, functions removed, etc.)
+     */
+    declare stepOutputTransform: DefaultStaticTransform;
 
     /**
      * Called once per request, after memoization completes.

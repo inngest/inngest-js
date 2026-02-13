@@ -64,7 +64,10 @@ describe("stepKindFromOpCode", () => {
   test("unhandled opcode returns 'unknown'", () => {
     expect(stepKindFromOpCode(StepOpCode.StepRun)).toBe("unknown");
     expect(stepKindFromOpCode(StepOpCode.Step)).toBe("unknown");
-    expect(stepKindFromOpCode(StepOpCode.Gateway)).toBe("unknown");
+  });
+
+  test("Gateway returns 'fetch'", () => {
+    expect(stepKindFromOpCode(StepOpCode.Gateway)).toBe("fetch");
   });
 });
 

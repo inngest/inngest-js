@@ -589,8 +589,8 @@ test("bookend with steps", async () => {
   });
 });
 
-test("2 middleware with outputTransform", async () => {
-  // Ensure that both output modification and outputTransform are applied in
+test("2 middleware with stepOutputTransform", async () => {
+  // Ensure that both output modification and stepOutputTransform are applied in
   // reverse order
 
   // Replace the "mw1" and "mwBoth" fields
@@ -601,7 +601,7 @@ test("2 middleware with outputTransform", async () => {
     Out: ReplaceMW1Fields<this["In"]>;
   }
   class MW1 extends Middleware.BaseMiddleware {
-    declare outputTransform: MW1StaticTransform;
+    declare stepOutputTransform: MW1StaticTransform;
 
     override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
       const output = await next();
@@ -629,7 +629,7 @@ test("2 middleware with outputTransform", async () => {
   }
 
   class MW2 extends Middleware.BaseMiddleware {
-    declare outputTransform: MW2StaticTransform;
+    declare stepOutputTransform: MW2StaticTransform;
 
     override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
       const output = await next();

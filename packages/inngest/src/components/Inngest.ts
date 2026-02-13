@@ -42,6 +42,7 @@ import {
 import {
   type ApplyAllMiddlewareCtxExtensions,
   type ApplyAllMiddlewareStepExtensions,
+  type ApplyAllMiddlewareTransforms,
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
@@ -1083,11 +1084,25 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
+> = TFunction extends InngestFunction<
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-> = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
-  ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
+  any,
+  infer IHandler,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  any,
+  infer TClient,
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  any
+>
+  ? IsNever<
+      VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>
+    > extends true
     ? null
-    : SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
+    : ApplyAllMiddlewareTransforms<
+        ClientOptionsFromInngest<TClient>["middleware"],
+        VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>,
+        "functionOutputTransform"
+      >
   : unknown;
 
 /**
@@ -1129,7 +1144,7 @@ export type GetFunctionOutputRawFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
-  ? VoidToNull<SimplifyDeep<Awaited<ReturnType<IHandler>>>>
+  ? VoidToNull<Awaited<ReturnType<IHandler>>>
   : unknown;
 
 /**

@@ -676,26 +676,42 @@ export type SendEventOutputWithMiddleware<_TOpts extends ClientOptions> =
   SendEventBaseOutput;
 
 /**
- * Extract the output transformer from a middleware class (constructor).
+ * Discriminator for which output transform to extract from middleware.
  */
-type GetMiddlewareTransformer<T> = T extends MiddlewareClass
-  ? InstanceType<T> extends {
-      outputTransform: infer TTransform extends Middleware.StaticTransform;
+type TransformKind = "functionOutputTransform" | "stepOutputTransform";
+
+/**
+ * Extract the `functionOutputTransform` from a middleware class.
+ */
+type GetMiddlewareRunTransformer<TMw> = TMw extends MiddlewareClass
+  ? InstanceType<TMw> extends {
+      functionOutputTransform: infer TTransform extends
+        Middleware.StaticTransform;
     }
     ? TTransform
     : DefaultStaticTransform
   : DefaultStaticTransform;
 
 /**
- * Extract the output transformer from a middleware array.
- * Returns the first middleware's transformer for backwards compatibility.
- * Use `ApplyAllMiddlewareTransforms` for composing multiple transforms.
+ * Extract the `stepOutputTransform` from a middleware class.
  */
-export type ExtractMiddlewareTransformer<
-  TMw extends MiddlewareClass[] | undefined,
-> = TMw extends [infer First, ...infer _Rest]
-  ? GetMiddlewareTransformer<First>
+type GetMiddlewareStepTransformer<TMw> = TMw extends MiddlewareClass
+  ? InstanceType<TMw> extends {
+      stepOutputTransform: infer TTransform extends Middleware.StaticTransform;
+    }
+    ? TTransform
+    : DefaultStaticTransform
   : DefaultStaticTransform;
+
+/**
+ * Dispatch to the correct transformer extractor based on `TKind`.
+ */
+type GetMiddlewareTransformerByKind<
+  TMw,
+  TKind extends TransformKind,
+> = TKind extends "functionOutputTransform"
+  ? GetMiddlewareRunTransformer<TMw>
+  : GetMiddlewareStepTransformer<TMw>;
 
 /**
  * Apply all middleware transforms in sequence.
@@ -705,8 +721,9 @@ export type ExtractMiddlewareTransformer<
 export type ApplyAllMiddlewareTransforms<
   TMw extends MiddlewareClass[] | undefined,
   T,
+  TKind extends TransformKind = "stepOutputTransform",
 > = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
-  ? ApplyMiddlewareTransformsInternal<TMw, T>
+  ? ApplyMiddlewareTransformsInternal<TMw, T, TKind>
   : Jsonify<T>; // No middleware or empty array - apply default Jsonify
 
 /**
@@ -721,10 +738,15 @@ export type ApplyAllMiddlewareTransforms<
 type ApplyMiddlewareTransformsInternal<
   TMw extends MiddlewareClass[] | undefined,
   T,
+  TKind extends TransformKind,
 > = TMw extends [...infer Rest extends MiddlewareClass[], infer Last]
   ? ApplyMiddlewareTransformsInternal<
       Rest,
-      ApplyMiddlewareStaticTransform<GetMiddlewareTransformer<Last>, T>
+      ApplyMiddlewareStaticTransform<
+        GetMiddlewareTransformerByKind<Last, TKind>,
+        T
+      >,
+      TKind
     >
   : T;
 

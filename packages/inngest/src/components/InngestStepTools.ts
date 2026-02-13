@@ -806,7 +806,8 @@ export const createStepTools = <
       ) => InvocationResult<
         ApplyAllMiddlewareTransforms<
           MergedMiddleware<TClient, TFnMiddleware>,
-          GetFunctionOutputRaw<TFunction>
+          GetFunctionOutputRaw<TFunction>,
+          "functionOutputTransform"
         >
       >
     >(({ id, name }, invokeOpts) => {
