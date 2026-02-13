@@ -40,18 +40,22 @@ test("base64 encoding/decoding middleware", async () => {
   });
 
   class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
-    constructor() {
-      super({
-        recursive: false,
-        deserialize: (value: Serialized): unknown => {
-          return JSON.parse(
-            Buffer.from(value.value, "base64").toString("utf-8"),
-          );
-        },
-        isSerialized,
-        needsSerialize: (value: unknown): boolean => !isSerialized(value),
-        serialize: encode,
-      });
+    protected override readonly recursive = false;
+
+    protected isSerialized(value: unknown): value is Serialized {
+      return isSerialized(value);
+    }
+
+    protected needsSerialize(value: unknown): boolean {
+      return !isSerialized(value);
+    }
+
+    protected serialize(value: unknown): Serialized {
+      return encode(value);
+    }
+
+    protected deserialize(value: Serialized): unknown {
+      return JSON.parse(Buffer.from(value.value, "base64").toString("utf-8"));
     }
 
     // Override so we can capture the pre-transformed args

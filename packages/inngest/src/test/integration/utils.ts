@@ -39,34 +39,22 @@ export function assertStepError(
   }
 }
 
-interface BaseSerializerMiddlewareOpts<TSerialized> {
-  deserialize(value: unknown): unknown;
-  isSerialized(value: unknown): value is TSerialized;
-  needsSerialize(value: unknown): boolean;
-  recursive?: boolean;
-  serialize(value: unknown): TSerialized;
-}
-
 export abstract class BaseSerializerMiddleware<
   TSerialized,
 > extends Middleware.BaseMiddleware {
-  private readonly opts: BaseSerializerMiddlewareOpts<TSerialized>;
+  protected abstract deserialize(value: TSerialized): unknown;
+  protected abstract isSerialized(value: unknown): value is TSerialized;
+  protected abstract needsSerialize(value: unknown): boolean;
+  protected abstract serialize(value: unknown): TSerialized;
 
-  constructor(opts: BaseSerializerMiddlewareOpts<TSerialized>) {
-    super();
-    this.opts = opts;
-  }
+  protected readonly recursive: boolean = true;
 
-  private canRecurse(): boolean {
-    return this.opts.recursive ?? true;
-  }
-
-  deserialize(value: unknown): unknown {
-    if (this.opts.isSerialized(value)) {
-      return this.opts.deserialize(value);
+  private _deserialize(value: unknown): unknown {
+    if (this.isSerialized(value)) {
+      return this.deserialize(value);
     }
 
-    if (!this.canRecurse()) {
+    if (!this.recursive) {
       return value;
     }
 
@@ -74,37 +62,37 @@ export abstract class BaseSerializerMiddleware<
       return Object.fromEntries(
         Object.entries(value).map(([key, value]) => [
           key,
-          this.deserialize(value),
+          this._deserialize(value),
         ]),
       );
     }
 
     if (Array.isArray(value)) {
-      return value.map(this.deserialize);
+      return value.map(this._deserialize);
     }
 
     return value;
   }
 
-  serialize(value: unknown): unknown {
-    if (this.opts.needsSerialize(value)) {
-      return this.opts.serialize(value);
+  private _serialize(value: unknown): unknown {
+    if (this.needsSerialize(value)) {
+      return this.serialize(value);
     }
 
-    if (!this.canRecurse()) {
+    if (!this.recursive) {
       return value;
     }
 
     if (isRecord(value)) {
       return Object.fromEntries(
         Object.entries(value).map(([key, value]) => {
-          return [key, this.serialize(value)];
+          return [key, this._serialize(value)];
         }),
       );
     }
 
     if (Array.isArray(value)) {
-      return value.map(this.serialize);
+      return value.map(this._serialize);
     }
 
     return value;
@@ -119,12 +107,12 @@ export abstract class BaseSerializerMiddleware<
         ...arg.ctx,
         event: {
           ...arg.ctx.event,
-          data: this.deserialize(arg.ctx.event.data),
+          data: this._deserialize(arg.ctx.event.data),
         },
         // @ts-expect-error - It's OK
         events: arg.ctx.events.map((event) => ({
           ...event,
-          data: this.deserialize(event.data),
+          data: this._deserialize(event.data),
         })),
       },
     };
@@ -134,7 +122,7 @@ export abstract class BaseSerializerMiddleware<
     next,
   }: Middleware.WrapFunctionHandlerArgs) {
     const output = await next();
-    return this.serialize(output);
+    return this._serialize(output);
   }
 
   override transformStepInput(
@@ -143,7 +131,7 @@ export abstract class BaseSerializerMiddleware<
     // For invoke steps, serialize input so it's available before the handler
     // chain runs (invoke steps are reported to the server before execution).
     if (arg.stepInfo.stepKind === "invoke") {
-      arg.input = arg.input.map((i) => this.serialize(i));
+      arg.input = arg.input.map((i) => this._serialize(i));
     }
     return arg;
   }
@@ -151,16 +139,16 @@ export abstract class BaseSerializerMiddleware<
   override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
     const result = await next();
     if (stepInfo.memoized) {
-      return this.deserialize(result);
+      return this._deserialize(result);
     }
-    return this.serialize(result);
+    return this._serialize(result);
   }
 
   override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
     return arg.events.map((event) => {
       let data = undefined;
       if (event.data) {
-        data = this.serialize(event.data) as Record<string, unknown>;
+        data = this._serialize(event.data) as Record<string, unknown>;
       }
 
       return {

@@ -377,29 +377,28 @@ class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
   declare functionOutputTransform: PreserveDate;
   declare stepOutputTransform: PreserveDate;
 
-  constructor() {
-    super({
-      deserialize: (value: Serialized) => {
-        return new Date(value.value);
-      },
-      isSerialized: (value: unknown): value is Serialized => {
-        if (!isRecord(value)) {
-          return false;
-        }
-        return Object.hasOwn(value, serializedMarker);
-      },
-      needsSerialize: (value: unknown): boolean => {
-        return value instanceof Date;
-      },
-      serialize: (value: Date): Serialized => {
-        if (value instanceof Date) {
-          return {
-            [serializedMarker]: true,
-            value: value.toISOString(),
-          };
-        }
-        return value;
-      },
-    });
+  protected deserialize(value: Serialized): unknown {
+    return new Date(value.value);
+  }
+
+  protected isSerialized(value: unknown): value is Serialized {
+    if (!isRecord(value)) {
+      return false;
+    }
+    return Object.hasOwn(value, serializedMarker);
+  }
+
+  protected needsSerialize(value: unknown): boolean {
+    return value instanceof Date;
+  }
+
+  protected serialize(value: unknown): Serialized {
+    if (value instanceof Date) {
+      return {
+        [serializedMarker]: true,
+        value: value.toISOString(),
+      };
+    }
+    return value as Serialized;
   }
 }
