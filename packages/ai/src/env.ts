@@ -72,4 +72,5 @@ export enum envKeys {
   DeepSeekApiKey = "DEEPSEEK_API_KEY",
   GrokApiKey = "XAI_API_KEY",
   AzureOpenAiApiKey = "AZURE_OPENAI_API_KEY",
+  TzafonApiKey = "TZAFON_API_KEY",
 }
