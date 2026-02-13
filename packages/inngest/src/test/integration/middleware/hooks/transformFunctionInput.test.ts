@@ -226,7 +226,7 @@ test("add step method", async () => {
           ...arg.ctx,
           step: {
             ...arg.ctx.step,
-            myStep: (id: string) => arg.ctx.step.run(id, () => "result"),
+            myStep: (id: string) => arg.ctx.step.run(id, () => "replaced"),
           },
         },
       };
@@ -244,9 +244,7 @@ test("add step method", async () => {
     async ({ step, runId }) => {
       state.runId = runId;
       state.stepOutputs.push(
-        await step.run("my-step", () => {
-          return "original";
-        }),
+        await step.myStep("my-step"),
       );
     },
   );
@@ -255,5 +253,5 @@ test("add step method", async () => {
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();
 
-  expect(state.stepOutputs).toEqual(["original"]);
+  expect(state.stepOutputs).toEqual(["replaced"]);
 });
