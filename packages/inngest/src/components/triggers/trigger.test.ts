@@ -351,7 +351,7 @@ describe("eventType with schema", () => {
         ],
       },
       ({ event }) => {
-        expectTypeOf(event.name).not.toBeAny()
+        expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/function.invoked"
         >();
