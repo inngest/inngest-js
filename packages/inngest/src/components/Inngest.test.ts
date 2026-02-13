@@ -529,19 +529,16 @@ describe("send", () => {
         eventKey: testEventKey,
         middleware: [
           class extends Middleware.BaseMiddleware {
-            override transformClientInput(
-              arg: Middleware.TransformClientInputArgs,
+            override transformSendEvent(
+              arg: Middleware.TransformSendEventArgs,
             ) {
-              if (arg.method === "send" && Array.isArray(arg.input)) {
-                return arg.input.map((payload) => ({
-                  ...payload,
-                  data: {
-                    ...payload.data,
-                    bar: true,
-                  },
-                }));
-              }
-              return arg.input;
+              return arg.events.map((payload) => ({
+                ...payload,
+                data: {
+                  ...payload.data,
+                  bar: true,
+                },
+              }));
             }
           },
         ],
@@ -576,10 +573,10 @@ describe("send", () => {
         eventKey: testEventKey,
         middleware: [
           class extends Middleware.BaseMiddleware {
-            override async wrapClientRequest({
+            override async wrapSendEvent({
               next,
-            }: Middleware.WrapClientRequestArgs) {
-              const result = (await next()) as { ids: string[] };
+            }: Middleware.WrapSendEventArgs) {
+              const result = await next();
               return {
                 ids: result.ids.map((id) => `${id}-bar`),
               };

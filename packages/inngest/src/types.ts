@@ -680,7 +680,7 @@ export type SendEventOutputWithMiddleware<_TOpts extends ClientOptions> =
  */
 type GetMiddlewareTransformer<T> = T extends MiddlewareClass
   ? InstanceType<T> extends {
-      staticTransform: infer TTransform extends Middleware.StaticTransform;
+      outputTransform: infer TTransform extends Middleware.StaticTransform;
     }
     ? TTransform
     : DefaultStaticTransform

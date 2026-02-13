@@ -24,19 +24,15 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             state.logs.push(`onRegister (${name})`);
           }
 
-          override transformClientInput(
-            arg: Middleware.TransformClientInputArgs,
-          ) {
-            state.logs.push(`transformClientInput (${name})`);
-            return arg.input;
+          override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
+            state.logs.push(`transformSendEvent (${name})`);
+            return arg.events;
           }
 
-          override async wrapClientRequest({
-            next,
-          }: Middleware.WrapClientRequestArgs) {
-            state.logs.push(`wrapClientRequest: before (${name})`);
+          override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
+            state.logs.push(`wrapSendEvent: before (${name})`);
             const result = await next();
-            state.logs.push(`wrapClientRequest: after (${name})`);
+            state.logs.push(`wrapSendEvent: after (${name})`);
             return result;
           }
 
@@ -168,12 +164,12 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "onRegister (mw2)",
 
         // client.send() - forward order
-        "transformClientInput (mw1)",
-        "transformClientInput (mw2)",
-        "wrapClientRequest: before (mw1)",
-        "wrapClientRequest: before (mw2)",
-        "wrapClientRequest: after (mw2)",
-        "wrapClientRequest: after (mw1)",
+        "transformSendEvent (mw1)",
+        "transformSendEvent (mw2)",
+        "wrapSendEvent: before (mw1)",
+        "wrapSendEvent: before (mw2)",
+        "wrapSendEvent: after (mw2)",
+        "wrapSendEvent: after (mw1)",
 
         // --- Request 1: fresh step discovered and executed ---
         "wrapRequest: before (mw1)",

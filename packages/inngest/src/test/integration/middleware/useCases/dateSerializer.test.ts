@@ -374,7 +374,7 @@ type Serialized = {
 };
 
 class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
-  declare staticTransform: PreserveDate;
+  declare outputTransform: PreserveDate;
 
   constructor() {
     super({

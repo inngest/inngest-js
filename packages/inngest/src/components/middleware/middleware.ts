@@ -2,7 +2,12 @@ import type { z } from "zod/v3";
 import type { stepsSchemas } from "../../api/schema.ts";
 import type { ExecutionVersion } from "../../helpers/consts.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
-import type { Context, EventPayload, StepOptions } from "../../types.ts";
+import type {
+  Context,
+  EventPayload,
+  SendEventBaseOutput,
+  StepOptions,
+} from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { createStepTools } from "../InngestStepTools.ts";
 import type { OpenStringUnion } from "./types.ts";
@@ -43,9 +48,8 @@ export namespace Middleware {
 
   // It's be nice to make this statically type safe, but it's unclear how to do
   // that in a way that allows for adding new methods without breaking changes.
-  export type TransformClientInputArgs = {
-    method: string;
-    input: unknown;
+  export type TransformSendEventArgs = {
+    events: EventPayload<Record<string, unknown>>[];
   };
 
   /**
@@ -98,9 +102,9 @@ export namespace Middleware {
     runId: string;
   }>;
 
-  export type WrapClientRequestArgs = DeepReadonly<{
-    next: () => Promise<unknown>;
-    payloads: EventPayload<Record<string, unknown>>[];
+  export type WrapSendEventArgs = DeepReadonly<{
+    next: () => Promise<SendEventBaseOutput>;
+    events: EventPayload<Record<string, unknown>>[];
   }>;
 
   export type WrapStepArgs = DeepReadonly<{
@@ -248,13 +252,13 @@ export namespace Middleware {
      * }
      *
      * class MyMiddleware extends Middleware.BaseMiddleware {
-     *   declare staticTransform: PreserveDate;
+     *   declare outputTransform: PreserveDate;
      * }
      * ```
      *
      * @default Middleware.DefaultStaticTransform (Date -> string, functions removed, etc.)
      */
-    declare staticTransform: DefaultStaticTransform;
+    declare outputTransform: DefaultStaticTransform;
 
     /**
      * Called once per request, after memoization completes.
@@ -316,7 +320,9 @@ export namespace Middleware {
      * Return the transformed input. The returned value will be passed to the
      * next middleware and ultimately used as the input.
      */
-    transformClientInput?(arg: Middleware.TransformClientInputArgs): unknown;
+    transformSendEvent?(
+      arg: Middleware.TransformSendEventArgs,
+    ): EventPayload<Record<string, unknown>>[];
 
     /**
      * Called once per step before the `wrapStep` chain. Use this to modify step
@@ -358,8 +364,7 @@ export namespace Middleware {
      * - Output/error transformation
      * - Logging, timing, or other cross-cutting concerns
      *
-     * Call `args.next()` to execute the inner handler (or next middleware).
-     * Uses onion/callback-chain pattern (same as `wrapStep`).
+     * Must call `args.next()` to continue processing.
      *
      * **Important:** `next()` only resolves when the function completes. On
      * requests where a fresh step is discovered, control flow is interrupted
@@ -372,20 +377,17 @@ export namespace Middleware {
      * Called once per request before any other hooks. Use this to validate
      * or inspect the incoming HTTP request (headers, method, URL, body).
      *
-     * Call `args.next()` to continue processing. Throwing rejects the request.
-     *
-     * Uses the same onion/callback-chain pattern as `wrapFunctionHandler`.
+     * Must call `args.next()` to continue processing.
      */
     wrapRequest?(args: WrapRequestArgs): Promise<Response>;
 
     /**
-     * Called once per `client.send()` call. Use this to wrap the outgoing
-     * HTTP request to the Inngest API.
+     * Called once per `client.send()` and `step.sendEvent()` call. Use this to
+     * wrap the outgoing HTTP request to the Inngest API.
      *
-     * Call `args.next()` to continue processing. Uses the same
-     * onion/callback-chain pattern as `wrapRequest`.
+     * Must call `args.next()` to continue processing.
      */
-    wrapClientRequest?(args: WrapClientRequestArgs): Promise<unknown>;
+    wrapSendEvent?(args: WrapSendEventArgs): Promise<SendEventBaseOutput>;
 
     /**
      * Called many times per step, when finding it.
@@ -394,7 +396,7 @@ export namespace Middleware {
      * - Modify step output/error
      * - Run arbitrary code before/after the step
      *
-     * To modify step options or input, use `transformStepInput` instead.
+     * Must call `args.next()` to continue processing.
      */
     wrapStep?(args: WrapStepArgs): Promise<unknown>;
   }

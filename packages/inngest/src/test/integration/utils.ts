@@ -156,15 +156,18 @@ export abstract class BaseSerializerMiddleware<
     return this.serialize(result);
   }
 
-  override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-    if (arg.method === "send" && Array.isArray(arg.input)) {
-      return arg.input.map((event) => ({
-        ...event,
-        data: event.data ? this.serialize(event.data) : event.data,
-      }));
-    }
+  override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
+    return arg.events.map((event) => {
+      let data = undefined;
+      if (event.data) {
+        data = this.serialize(event.data) as Record<string, unknown>;
+      }
 
-    return arg.input;
+      return {
+        ...event,
+        data,
+      };
+    });
   }
 }
 

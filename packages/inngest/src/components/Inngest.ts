@@ -667,7 +667,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     // Instantiate fresh middleware per send() call.
     // Include client middleware plus all function-level middleware so that
-    // transformClientInput fires for every registered middleware class.
+    // transformSendEvent fires for every registered middleware class.
     const fnMiddleware = this.localFns.flatMap(
       (fn) => fn.opts.middleware ?? [],
     );
@@ -675,13 +675,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       (Cls) => new Cls(),
     );
     for (const mw of mwInstances) {
-      if (mw?.transformClientInput) {
-        const transformed = mw.transformClientInput({
-          method: "send",
-          input: payloads,
+      if (mw?.transformSendEvent) {
+        const transformed = mw.transformSendEvent({
+          events: payloads,
         });
         if (transformed !== undefined) {
-          payloads = transformed as EventPayload[];
+          payloads = transformed;
         }
       }
     }

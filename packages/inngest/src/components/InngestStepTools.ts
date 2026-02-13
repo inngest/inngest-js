@@ -10,7 +10,6 @@ import type {
   ExclusiveKeys,
   ParametersExceptFirst,
   SendEventPayload,
-  SimplifyDeep,
 } from "../helpers/types.ts";
 import {
   type ApplyAllMiddlewareTransforms,
@@ -310,15 +309,13 @@ export const createStepTools = <
          */
         ...input: Parameters<TFn>
       ) => Promise<
-        SimplifyDeep<
-          ApplyAllMiddlewareTransforms<
-            MergedMiddleware<TClient, TFnMiddleware>,
-            TFn extends (...args: Parameters<TFn>) => Promise<infer U>
-              ? Awaited<U extends void ? null : U>
-              : ReturnType<TFn> extends void
-                ? null
-                : ReturnType<TFn>
-          >
+        ApplyAllMiddlewareTransforms<
+          MergedMiddleware<TClient, TFnMiddleware>,
+          TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+            ? Awaited<U extends void ? null : U>
+            : ReturnType<TFn> extends void
+              ? null
+              : ReturnType<TFn>
         >
       >
     >(
@@ -807,11 +804,9 @@ export const createStepTools = <
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>,
       ) => InvocationResult<
-        SimplifyDeep<
-          ApplyAllMiddlewareTransforms<
-            MergedMiddleware<TClient, TFnMiddleware>,
-            GetFunctionOutputRaw<TFunction>
-          >
+        ApplyAllMiddlewareTransforms<
+          MergedMiddleware<TClient, TFnMiddleware>,
+          GetFunctionOutputRaw<TFunction>
         >
       >
     >(({ id, name }, invokeOpts) => {

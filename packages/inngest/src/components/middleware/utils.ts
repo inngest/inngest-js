@@ -1,6 +1,6 @@
 import { getLogger } from "../../helpers/log";
 import { isRecord } from "../../helpers/types";
-import { StepOpCode } from "../../types";
+import { type SendEventBaseOutput, StepOpCode } from "../../types";
 import type { Middleware } from "./middleware";
 import type { ExtractLiteralStrings } from "./types";
 
@@ -22,15 +22,15 @@ export function isTimeStrInput(
  */
 export function buildWrapClientRequestChain(
   middleware: Middleware.BaseMiddleware[],
-  handler: () => Promise<unknown>,
-  payloads: Middleware.WrapClientRequestArgs["payloads"],
-): () => Promise<unknown> {
-  let chain: () => Promise<unknown> = handler;
+  handler: () => Promise<SendEventBaseOutput>,
+  payloads: Middleware.WrapSendEventArgs["events"],
+): () => Promise<SendEventBaseOutput> {
+  let chain: () => Promise<SendEventBaseOutput> = handler;
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
-    if (mw?.wrapClientRequest) {
+    if (mw?.wrapSendEvent) {
       const next = chain;
-      chain = () => mw.wrapClientRequest!({ next, payloads });
+      chain = () => mw.wrapSendEvent!({ next, events: payloads });
     }
   }
   return chain;

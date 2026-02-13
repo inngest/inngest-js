@@ -11,19 +11,15 @@ test("transform event data before sending", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-      if (arg.method === "send" && Array.isArray(arg.input)) {
-        // Transform the event payloads - add an "injected" field
-        return arg.input.map((event) => ({
-          ...event,
-          data: {
-            ...event.data,
-            injected: "value",
-          },
-        }));
-      }
-
-      return arg.input;
+    override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
+      // Transform the event payloads - add an "injected" field
+      return arg.events.map((event) => ({
+        ...event,
+        data: {
+          ...event.data,
+          injected: "value",
+        },
+      }));
     }
   }
 
@@ -58,34 +54,26 @@ test("multiple middleware transform in order", async () => {
   });
 
   class Mw1 extends Middleware.BaseMiddleware {
-    override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-      if (arg.method === "send" && Array.isArray(arg.input)) {
-        return arg.input.map((event) => ({
-          ...event,
-          data: {
-            ...event.data,
-            mw1: "first",
-          },
-        }));
-      }
-
-      return arg.input;
+    override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
+      return arg.events.map((event) => ({
+        ...event,
+        data: {
+          ...event.data,
+          mw1: "first",
+        },
+      }));
     }
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
-    override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-      if (arg.method === "send" && Array.isArray(arg.input)) {
-        return arg.input.map((event) => ({
-          ...event,
-          data: {
-            ...event.data,
-            mw2: "second",
-          },
-        }));
-      }
-
-      return arg.input;
+    override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
+      return arg.events.map((event) => ({
+        ...event,
+        data: {
+          ...event.data,
+          mw2: "second",
+        },
+      }));
     }
   }
 
