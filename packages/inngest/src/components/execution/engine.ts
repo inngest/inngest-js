@@ -1583,6 +1583,16 @@ class InngestExecutionEngine
             // the values are fully resolved before continuing.
             void Promise.all([result.data, result.error, result.input]).then(
               async () => {
+                // The wrapStep chain is about to fire again to resolve the
+                // step promise through middleware (e.g. deserialization).
+                // Mark the step as memoized so middleware can distinguish
+                // this from the original execution call.
+                //
+                // This need for this change was discovered when checkpointing +
+                // middleware's "double `wrapStep` call" behavior had `memoized:
+                // false` on the 2nd call
+                step.middleware.stepInfo.memoized = true;
+
                 if (typeof result.data !== "undefined") {
                   // Validate waitForEvent results against the schema if present
                   // Skip validation if result.data is null (timeout case)

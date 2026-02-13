@@ -243,9 +243,7 @@ test("add step method", async () => {
     { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
-      state.stepOutputs.push(
-        await step.myStep("my-step"),
-      );
+      state.stepOutputs.push(await step.myStep("my-step"));
     },
   );
   await createTestApp({ client, functions: [fn] });

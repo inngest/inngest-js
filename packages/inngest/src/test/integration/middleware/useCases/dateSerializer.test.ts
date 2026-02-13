@@ -9,6 +9,7 @@ import {
   isRecord,
   randomSuffix,
   testNameFromFileUrl,
+  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -26,7 +27,7 @@ describe("client level", () => {
     const client = new Inngest({
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [EncodingMiddleware],
+      middleware: [DateSerializerMiddleware],
     });
     const fn = client.createFunction(
       { id: "fn", retries: 0, triggers: [{ event: eventName }] },
@@ -68,7 +69,7 @@ describe("client level", () => {
     const client = new Inngest({
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [EncodingMiddleware],
+      middleware: [DateSerializerMiddleware],
     });
     const fn = client.createFunction(
       { id: "fn", retries: 0, triggers: [et] },
@@ -117,7 +118,7 @@ describe("client level", () => {
     const client = new Inngest({
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [EncodingMiddleware],
+      middleware: [DateSerializerMiddleware],
     });
     const parentFn = client.createFunction(
       { id: "parent-fn", retries: 0, triggers: [{ event: eventName }] },
@@ -194,7 +195,7 @@ describe("function level", () => {
       {
         id: "fn",
         retries: 0,
-        middleware: [EncodingMiddleware],
+        middleware: [DateSerializerMiddleware],
         triggers: [{ event: eventName }],
       },
       async ({ step, runId }) => {
@@ -240,7 +241,7 @@ describe("function level", () => {
       {
         id: "fn",
         retries: 0,
-        middleware: [EncodingMiddleware],
+        middleware: [DateSerializerMiddleware],
         triggers: [et],
       },
       async ({ event, events, runId }) => {
@@ -293,7 +294,7 @@ describe("function level", () => {
       {
         id: "parent-fn",
         retries: 0,
-        middleware: [EncodingMiddleware],
+        middleware: [DateSerializerMiddleware],
         triggers: [{ event: eventName }],
       },
       async ({ step, runId }) => {
@@ -311,7 +312,7 @@ describe("function level", () => {
       {
         id: "child-fn",
         retries: 0,
-        middleware: [EncodingMiddleware],
+        middleware: [DateSerializerMiddleware],
         triggers: [invoke(z.object({ date: z.date(), int: z.number() }))],
       },
       async ({ event, events }) => {
@@ -352,6 +353,98 @@ describe("function level", () => {
   });
 });
 
+test("with checkpointing", async () => {
+  // Serialization and deserialization works with checkpointing. This test
+  // exists because there's a nuance with `wrapStep`: it calls twice when a
+  // `step.run` is executed. 1st call is for serializing the output and sending
+  // it to the Inngest Server, and the 2nd call is for deserializing the output
+  // and using it within the function handler.
+
+  const state = createState({
+    done: false,
+    stepOutputs: [] as Date[],
+    wrapStepCalls: [] as { id: string; memoized: boolean; output: unknown }[],
+  });
+
+  class MW extends DateSerializerMiddleware {
+    override async wrapStep(args: Middleware.WrapStepArgs) {
+      console.log(args);
+
+      const output = await super.wrapStep(args);
+      state.wrapStepCalls.push({
+        id: args.stepInfo.options.id,
+        memoized: args.stepInfo.memoized,
+        output,
+      });
+      return output;
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    checkpointing: true,
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [MW],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      const output = await step.run("my-step", () => {
+        return new Date("2026-02-03T00:00:00.000Z");
+      });
+      expectTypeOf(output).not.toBeAny();
+      expectTypeOf(output).toEqualTypeOf<Date>();
+      state.stepOutputs.push(output);
+
+      // Sleep to ensure we reenter the function
+      await step.sleep("zzz", "1s");
+
+      state.done = true;
+    },
+  );
+  await createTestApp({ client, functions: [fn] });
+  await client.send({ name: eventName });
+  await waitFor(() => {
+    expect(state.done).toBe(true);
+  });
+
+  // Always deserialized within the function handler
+  expect(state.stepOutputs).toEqual([
+    new Date("2026-02-03T00:00:00.000Z"),
+    new Date("2026-02-03T00:00:00.000Z"),
+  ]);
+  expect(state.wrapStepCalls).toEqual([
+    // --- Request 1: execute `step.run` and then plan `step.sleep` ---
+    // First call returns serialized output, since it needs to be sent to the
+    // Inngest Server
+    {
+      id: "my-step",
+      memoized: false,
+      output: {
+        [serializedMarker]: true,
+        value: "2026-02-03T00:00:00.000Z",
+      },
+    },
+    // Second call returns deserialized output, since it's being used within the
+    // function handler
+    {
+      id: "my-step",
+      memoized: true,
+      output: new Date("2026-02-03T00:00:00.000Z"),
+    },
+
+    // --- Request 2: wake `step.sleep` ---
+    {
+      id: "my-step",
+      memoized: true,
+      output: new Date("2026-02-03T00:00:00.000Z"),
+    },
+    { id: "zzz", memoized: true, output: null },
+  ]);
+});
+
 // Normal TypeScript type that preserves Date objects, else jsonifies
 type PreservedDate<T> = T extends Date
   ? Date
@@ -373,7 +466,7 @@ type Serialized = {
   value: string;
 };
 
-class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
+class DateSerializerMiddleware extends BaseSerializerMiddleware<Serialized> {
   declare functionOutputTransform: PreserveDate;
   declare stepOutputTransform: PreserveDate;
 
