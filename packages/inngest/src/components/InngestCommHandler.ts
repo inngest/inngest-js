@@ -36,7 +36,7 @@ import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
-import type { MaybePromise } from "../helpers/types.ts";
+import { isRecord, type MaybePromise } from "../helpers/types.ts";
 import {
   type APIStepPayload,
   AsyncResponseType,
@@ -1170,6 +1170,16 @@ export class InngestCommHandler<
         body: () => Promise.resolve(body),
       };
 
+      let runId = "";
+      if (
+        isRecord(body) &&
+        isRecord(body.ctx) &&
+        body.ctx.run_id &&
+        typeof body.ctx.run_id === "string"
+      ) {
+        runId = body.ctx.run_id;
+      }
+
       const innerHandler = async (): Promise<Middleware.Response> => {
         const prepared = await handleAndPrepare();
         return {
@@ -1179,11 +1189,12 @@ export class InngestCommHandler<
         };
       };
 
-      const wrappedHandler = buildWrapRequestChain(
-        mwInstances,
-        innerHandler,
+      const wrappedHandler = buildWrapRequestChain({
+        handler: innerHandler,
+        middleware: mwInstances,
         requestInfo,
-      );
+        runId,
+      });
 
       // Start eagerly (matches prior behavior where handleAction starts before
       // the shouldStream check).

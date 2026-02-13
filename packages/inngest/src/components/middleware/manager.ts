@@ -225,7 +225,7 @@ export class MiddlewareManager {
       const mw = this.middleware[i];
       if (mw?.wrapFunctionHandler) {
         const next = chain;
-        chain = () => mw.wrapFunctionHandler!(next, { ctx });
+        chain = () => mw.wrapFunctionHandler!({ next, ctx });
       }
     }
     return chain;
@@ -271,7 +271,7 @@ export class MiddlewareManager {
       const mw = this.middleware[i];
       if (mw?.wrapStep) {
         const next = chain;
-        chain = () => mw.wrapStep!(next, { stepInfo, ctx });
+        chain = () => mw.wrapStep!({ next, stepInfo, ctx });
       }
     }
     return chain;

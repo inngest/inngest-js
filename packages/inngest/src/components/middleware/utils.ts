@@ -30,7 +30,7 @@ export function buildWrapClientRequestChain(
     const mw = middleware[i];
     if (mw?.wrapClientRequest) {
       const next = chain;
-      chain = () => mw.wrapClientRequest!(next, { payloads });
+      chain = () => mw.wrapClientRequest!({ next, payloads });
     }
   }
   return chain;
@@ -42,17 +42,23 @@ export function buildWrapClientRequestChain(
  * Iterates in reverse order (so first middleware is outermost)
  * and returns a zero-arg function that kicks off the chain.
  */
-export function buildWrapRequestChain(
-  middleware: Middleware.BaseMiddleware[],
-  handler: () => Promise<Middleware.Response>,
-  requestInfo: Middleware.Request,
-): () => Promise<Middleware.Response> {
+export function buildWrapRequestChain({
+  handler,
+  middleware,
+  requestInfo,
+  runId,
+}: {
+  handler: () => Promise<Middleware.Response>;
+  middleware: Middleware.BaseMiddleware[];
+  requestInfo: Middleware.Request;
+  runId: string;
+}): () => Promise<Middleware.Response> {
   let chain: () => Promise<Middleware.Response> = handler;
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (mw?.wrapRequest) {
       const next = chain;
-      chain = () => mw.wrapRequest!(next, { requestInfo });
+      chain = () => mw.wrapRequest!({ next, requestInfo, runId });
     }
   }
   return chain;

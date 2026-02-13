@@ -93,18 +93,23 @@ export namespace Middleware {
 
   export type WrapFunctionHandlerArgs = DeepReadonly<{
     ctx: Context.Any;
+    next: () => Promise<unknown>;
   }>;
 
   export type WrapRequestArgs = DeepReadonly<{
+    next: () => Promise<Response>;
     requestInfo: Request;
+    runId: string;
   }>;
 
   export type WrapClientRequestArgs = DeepReadonly<{
+    next: () => Promise<unknown>;
     payloads: EventPayload<Record<string, unknown>>[];
   }>;
 
   export type WrapStepArgs = DeepReadonly<{
     ctx: Context.Any;
+    next: () => Promise<unknown>;
     stepInfo: StepInfo;
   }>;
 
@@ -344,7 +349,7 @@ export namespace Middleware {
      * - Output/error transformation
      * - Logging, timing, or other cross-cutting concerns
      *
-     * Call `next()` to execute the inner handler (or next middleware).
+     * Call `args.next()` to execute the inner handler (or next middleware).
      * Uses onion/callback-chain pattern (same as `wrapStep`).
      *
      * **Important:** `next()` only resolves when the function completes. On
@@ -352,35 +357,26 @@ export namespace Middleware {
      * and `next()` never resolves. Use `try/finally` for cleanup that must
      * run on every request.
      */
-    wrapFunctionHandler?(
-      next: () => Promise<unknown>,
-      args: WrapFunctionHandlerArgs,
-    ): Promise<unknown>;
+    wrapFunctionHandler?(args: WrapFunctionHandlerArgs): Promise<unknown>;
 
     /**
      * Called once per request before any other hooks. Use this to validate
      * or inspect the incoming HTTP request (headers, method, URL, body).
      *
-     * Call `next()` to continue processing. Throwing rejects the request.
+     * Call `args.next()` to continue processing. Throwing rejects the request.
      *
      * Uses the same onion/callback-chain pattern as `wrapFunctionHandler`.
      */
-    wrapRequest?(
-      next: () => Promise<Response>,
-      args: WrapRequestArgs,
-    ): Promise<Response>;
+    wrapRequest?(args: WrapRequestArgs): Promise<Response>;
 
     /**
      * Called once per `client.send()` call. Use this to wrap the outgoing
      * HTTP request to the Inngest API.
      *
-     * Call `next()` to continue processing. Uses the same onion/callback-chain
-     * pattern as `wrapRequest`.
+     * Call `args.next()` to continue processing. Uses the same
+     * onion/callback-chain pattern as `wrapRequest`.
      */
-    wrapClientRequest?(
-      next: () => Promise<unknown>,
-      args: WrapClientRequestArgs,
-    ): Promise<unknown>;
+    wrapClientRequest?(args: WrapClientRequestArgs): Promise<unknown>;
 
     /**
      * Called many times per step, when finding it.
@@ -391,10 +387,7 @@ export namespace Middleware {
      *
      * To modify step options or input, use `transformStepInput` instead.
      */
-    wrapStep?(
-      next: () => Promise<unknown>,
-      args: WrapStepArgs,
-    ): Promise<unknown>;
+    wrapStep?(args: WrapStepArgs): Promise<unknown>;
   }
 }
 

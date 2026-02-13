@@ -10,17 +10,18 @@ import {
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("receives request info", async () => {
+test("receives request info and runId", async () => {
   const state = createState({
-    hookArgs: [] as Middleware.WrapRequestArgs[],
+    hookArgs: [] as Omit<Middleware.WrapRequestArgs, "next">[],
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapRequest: Middleware.BaseMiddleware["wrapRequest"] = async (
+    override wrapRequest = async ({
       next,
-      { requestInfo },
-    ) => {
-      state.hookArgs.push({ requestInfo });
+      requestInfo,
+      runId,
+    }: Middleware.WrapRequestArgs) => {
+      state.hookArgs.push({ requestInfo, runId });
       return next();
     };
   }
@@ -51,18 +52,22 @@ test("receives request info", async () => {
       method: "POST",
       url: expect.any(URL),
     },
+    runId: expect.any(String),
   });
 
-  console.log(await hookArgs.requestInfo.body());
+  expect(hookArgs.runId).toEqual(state.runId);
 });
 
 test("throwing rejects the request", async () => {
-  const state = {
+  const state = createState({
     fnCalled: false,
-  };
+  });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override async wrapRequest(): Promise<Middleware.Response> {
+    override async wrapRequest({
+      runId,
+    }: Middleware.WrapRequestArgs): Promise<Middleware.Response> {
+      state.runId = runId;
       throw new Error("request rejected");
     }
   }
@@ -82,9 +87,7 @@ test("throwing rejects the request", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-
-  // Wait enough time for the function to have potentially been called
-  await sleep(3000);
+  await state.waitForRunFailed();
 
   expect(state.fnCalled).toBe(false);
 });
@@ -95,9 +98,8 @@ test("next() resolves with response", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override async wrapRequest(next: () => Promise<Middleware.Response>) {
+    override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       const res = await next();
-      console.log(res);
       state.response = res;
       return res;
     }
@@ -136,7 +138,7 @@ test("multiple middleware in onion order", async () => {
   });
 
   class Mw1 extends Middleware.BaseMiddleware {
-    override async wrapRequest(next: () => Promise<Middleware.Response>) {
+    override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       state.logs.push("mw1: before");
       const result = await next();
       state.logs.push("mw1: after");
@@ -145,7 +147,7 @@ test("multiple middleware in onion order", async () => {
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
-    override async wrapRequest(next: () => Promise<Middleware.Response>) {
+    override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       state.logs.push("mw2: before");
       const result = await next();
       state.logs.push("mw2: after");
@@ -186,16 +188,18 @@ describe("throws", () => {
   test("in hook", async () => {
     // Errors in the hook reject the request; function never runs
 
-    const state = {
+    const state = createState({
       fn: { count: 0 },
       hook: { count: 0 },
-    };
+    });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapRequest = async () => {
+      override async wrapRequest({ next, runId }: Middleware.WrapRequestArgs) {
+        state.runId = runId;
         state.hook.count++;
         throw new Error("oh no");
-      };
+        return next();
+      }
     }
 
     const eventName = randomSuffix("evt");
@@ -213,7 +217,7 @@ describe("throws", () => {
     await createTestApp({ client, functions: [fn] });
 
     await client.send({ name: eventName });
-    await sleep(3000);
+    await state.waitForRunFailed();
 
     expect(state.fn).toEqual({ count: 0 });
     expect(state.hook.count).toBeGreaterThanOrEqual(1);
@@ -228,12 +232,10 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapRequest = async (
-        next: () => Promise<Middleware.Response>,
-      ) => {
+      override wrapRequest({ next }: Middleware.WrapRequestArgs) {
         state.hook.count++;
         return next();
-      };
+      }
     }
 
     const eventName = randomSuffix("evt");

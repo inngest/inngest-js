@@ -20,9 +20,11 @@ test("async local storage context via wrapFunctionHandler", async () => {
   const asyncLocalStorage = new AsyncLocalStorage<RunContext>();
 
   class AsyncLocalStorageMiddleware extends Middleware.BaseMiddleware {
-    override wrapFunctionHandler = async (next: () => Promise<unknown>) => {
+    override async wrapFunctionHandler({
+      next,
+    }: Middleware.WrapFunctionHandlerArgs) {
       return asyncLocalStorage.run({ msg: "hi" }, next);
-    };
+    }
   }
 
   const eventName = randomSuffix("evt");

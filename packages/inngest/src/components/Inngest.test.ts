@@ -576,7 +576,9 @@ describe("send", () => {
         eventKey: testEventKey,
         middleware: [
           class extends Middleware.BaseMiddleware {
-            override async wrapClientRequest(next: () => Promise<unknown>) {
+            override async wrapClientRequest({
+              next,
+            }: Middleware.WrapClientRequestArgs) {
               const result = (await next()) as { ids: string[] };
               return {
                 ids: result.ids.map((id) => `${id}-bar`),

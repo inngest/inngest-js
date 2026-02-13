@@ -58,21 +58,23 @@ class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
     console.log("onMemoizationEnd");
   }
 
-  async wrapFunctionHandler(next: () => Promise<unknown>) {
+  override async wrapFunctionHandler({
+    next,
+  }: Inngest.Middleware.WrapFunctionHandlerArgs) {
     console.log("wrapFunctionHandler:before");
     const result = await next();
     console.log("wrapFunctionHandler:after");
     return result;
   }
 
-  async wrapStep(next: () => Promise<unknown>) {
+  override async wrapStep({ next }: Inngest.Middleware.WrapStepArgs) {
     console.log("wrapStep:before");
     const result = await next();
     console.log("wrapStep:after");
     return result;
   }
 
-  async wrapRequest(next: () => Promise<Inngest.Middleware.Response>) {
+  override async wrapRequest({ next }: Inngest.Middleware.WrapRequestArgs) {
     console.log("wrapRequest:before");
     const result = await next();
     console.log("wrapRequest:after");

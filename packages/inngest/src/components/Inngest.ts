@@ -885,9 +885,9 @@ export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
         this.#proxyLogger.error(arg.error);
       }
 
-      override wrapFunctionHandler(
-        next: () => Promise<unknown>,
-      ): Promise<unknown> {
+      override wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         return next()
           .catch((err: unknown) => {
             this.#proxyLogger.error(err);
@@ -896,9 +896,7 @@ export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
           .finally(() => this.#proxyLogger.flush());
       }
 
-      override wrapRequest(
-        next: () => Promise<Middleware.Response>,
-      ): Promise<Middleware.Response> {
+      override wrapRequest({ next }: Middleware.WrapRequestArgs) {
         return next().finally(() => this.#proxyLogger.flush());
       }
     },

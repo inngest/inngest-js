@@ -31,14 +31,16 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             return arg.input;
           }
 
-          override async wrapClientRequest(next: () => Promise<unknown>) {
+          override async wrapClientRequest({
+            next,
+          }: Middleware.WrapClientRequestArgs) {
             state.logs.push(`wrapClientRequest: before (${name})`);
             const result = await next();
             state.logs.push(`wrapClientRequest: after (${name})`);
             return result;
           }
 
-          override async wrapRequest(next: () => Promise<Middleware.Response>) {
+          override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
             state.logs.push(`wrapRequest: before (${name})`);
             const res = await next();
             state.logs.push(`wrapRequest: after (${name})`);
@@ -56,7 +58,9 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             state.logs.push(`onMemoizationEnd (${name})`);
           }
 
-          override async wrapFunctionHandler(next: () => Promise<unknown>) {
+          override async wrapFunctionHandler({
+            next,
+          }: Middleware.WrapFunctionHandlerArgs) {
             state.logs.push(`wrapFunctionHandler: before (${name})`);
             const result = await next();
             state.logs.push(`wrapFunctionHandler: after (${name})`);
@@ -72,10 +76,10 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             return arg;
           }
 
-          override wrapStep: Middleware.BaseMiddleware["wrapStep"] = async (
+          override wrapStep = async ({
             next,
-            { stepInfo },
-          ) => {
+            stepInfo,
+          }: Middleware.WrapStepArgs) => {
             state.logs.push(
               `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): before (${name})`,
             );

@@ -1,11 +1,7 @@
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
-import {
-  createState,
-  randomSuffix,
-  testNameFromFileUrl,
-} from "../../utils.ts";
+import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -15,7 +11,7 @@ test("fires once per run (not on memoized requests)", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunStart(args: Middleware.OnRunStartArgs) {
+    override onRunStart() {
       state.count++;
     }
   }

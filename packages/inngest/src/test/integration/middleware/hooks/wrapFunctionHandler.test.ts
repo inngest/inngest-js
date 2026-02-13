@@ -22,7 +22,9 @@ test("multiple middleware in correct order", async () => {
   const state = createState({ logs: [] as string[] });
 
   class Mw1 extends Middleware.BaseMiddleware {
-    override async wrapFunctionHandler(next: () => Promise<unknown>) {
+    override async wrapFunctionHandler({
+      next,
+    }: Middleware.WrapFunctionHandlerArgs) {
       state.logs.push("mw1: before handler");
       const result = await next();
       state.logs.push("mw1: after handler");
@@ -31,7 +33,9 @@ test("multiple middleware in correct order", async () => {
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
-    override async wrapFunctionHandler(next: () => Promise<unknown>) {
+    override async wrapFunctionHandler({
+      next,
+    }: Middleware.WrapFunctionHandlerArgs) {
       state.logs.push("mw2: before handler");
       const result = await next();
       state.logs.push("mw2: after handler");
@@ -87,7 +91,7 @@ test("bookend with steps", async () => {
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
-      async (next, { ctx }) => {
+      async ({ ctx, next }) => {
         state.beforeStep.output = await ctx.step.run("before", async () => {
           state.beforeStep.insideCount++;
           return state.beforeStep.insideCount;
@@ -145,7 +149,9 @@ describe("modify output", () => {
     const state = createState({ transformedResults: [] as unknown[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         const output = await next();
         state.transformedResults.push(output);
         return { wrapped: output };
@@ -178,7 +184,9 @@ describe("modify output", () => {
     const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         const output = await next();
         state.logs.push(`mw1: ${output}`);
         return `mw1(${output})`;
@@ -186,7 +194,9 @@ describe("modify output", () => {
     }
 
     class Mw2 extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         const output = await next();
         state.logs.push(`mw2: ${output}`);
         return `mw2(${output})`;
@@ -237,7 +247,9 @@ describe("modify error", () => {
     const state = createState({ capturedErrors: [] as Error[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         try {
           return await next();
         } catch (error) {
@@ -274,7 +286,9 @@ describe("modify error", () => {
     const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         try {
           return await next();
         } catch (error) {
@@ -286,7 +300,9 @@ describe("modify error", () => {
     }
 
     class Mw2 extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         try {
           return await next();
         } catch (error) {
@@ -324,7 +340,9 @@ describe("modify error", () => {
     const state = createState({ outputCalls: 0, errorCalls: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         try {
           const output = await next();
           state.outputCalls++;
@@ -361,7 +379,9 @@ describe("modify error", () => {
     const state = createState({ outputCalls: 0, errorCalls: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         try {
           const output = await next();
           state.outputCalls++;
@@ -399,7 +419,9 @@ describe("modify error", () => {
     const state = createState({ fnCallCount: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override async wrapFunctionHandler(next: () => Promise<unknown>) {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         try {
           return await next();
         } catch (error) {
@@ -443,7 +465,7 @@ describe("throws", () => {
 
     class TestMiddleware extends Middleware.BaseMiddleware {
       override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
-        async (_next, { ctx }) => {
+        async ({ ctx }) => {
           state.runId = ctx.runId;
           state.hook.count++;
           throw new Error("oh no");
@@ -482,7 +504,7 @@ describe("throws", () => {
 
     class TestMiddleware extends Middleware.BaseMiddleware {
       override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
-        async (next, { ctx }) => {
+        async ({ ctx, next }) => {
           state.runId = ctx.runId;
           state.hook.count++;
           await ctx.step.run("hook-step", () => {
@@ -524,7 +546,9 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
-      override wrapFunctionHandler = async (next: () => Promise<unknown>) => {
+      override wrapFunctionHandler = async ({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) => {
         state.hook.count++;
         return next();
       };

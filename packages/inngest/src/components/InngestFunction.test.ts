@@ -73,9 +73,9 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
         );
       }
 
-      override async wrapFunctionHandler(
-        next: () => Promise<unknown>,
-      ): Promise<unknown> {
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
         await this.#delay();
         return next();
       }

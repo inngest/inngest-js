@@ -216,8 +216,7 @@ describe("builtInMiddleware", () => {
 
     const inngest = new Inngest({ id: "test", logger: customLogger });
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       () => "done",
     );
 
@@ -242,8 +241,7 @@ describe("builtInMiddleware", () => {
 
     const inngest = new Inngest({ id: "test", logger: customLogger });
     const fn = inngest.createFunction(
-      { id: "test", retries: 0 },
-      { event: "" },
+      { id: "test", retries: 0, triggers: [{ event: "" }] },
       () => {
         throw new Error("boom");
       },
@@ -268,8 +266,7 @@ describe("builtInMiddleware", () => {
 
     const inngest = new Inngest({ id: "test", logger: customLogger });
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ logger }) => {
         logger.info("hello");
         return "done";
@@ -297,8 +294,7 @@ describe("builtInMiddleware", () => {
     const inngest = new Inngest({ id: "test", logger: customLogger });
     const err = new Error("boom");
     const fn = inngest.createFunction(
-      { id: "test", retries: 0 },
-      { event: "" },
+      { id: "test", retries: 0, triggers: [{ event: "" }] },
       () => {
         throw err;
       },
@@ -331,8 +327,7 @@ describe("builtInMiddleware", () => {
 
     const inngest = new Inngest({ id: "test", logger: customLogger });
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ logger }) => {
         logger.info("hello");
         return "done";
@@ -366,8 +361,7 @@ describe("builtInMiddleware", () => {
     const inngest = new Inngest({ id: "test", logger: customLogger });
     const loggers: unknown[] = [];
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ logger }) => {
         loggers.push(logger);
         return "done";

@@ -130,7 +130,9 @@ export abstract class BaseSerializerMiddleware<
     };
   }
 
-  override async wrapFunctionHandler(next: () => Promise<unknown>) {
+  override async wrapFunctionHandler({
+    next,
+  }: Middleware.WrapFunctionHandlerArgs) {
     const output = await next();
     return this.serialize(output);
   }
@@ -146,10 +148,7 @@ export abstract class BaseSerializerMiddleware<
     return arg;
   }
 
-  override async wrapStep(
-    next: () => Promise<unknown>,
-    { stepInfo }: { stepInfo: Middleware.StepInfo; ctx: Context.Any },
-  ) {
+  override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
     const result = await next();
     if (stepInfo.memoized) {
       return this.deserialize(result);
@@ -287,7 +286,7 @@ export class BaseState {
   runId: string | null = null;
 
   async waitForRunId(): Promise<string> {
-    return vitest.waitFor(async () => {
+    return waitFor(async () => {
       expect(this.runId).not.toBeNull();
       return this.runId!;
     });

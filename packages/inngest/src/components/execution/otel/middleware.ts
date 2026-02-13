@@ -166,9 +166,7 @@ export const extendedTracesMiddleware = ({
       };
     }
 
-    override wrapRequest(
-      next: () => Promise<Middleware.Response>,
-    ): Promise<Middleware.Response> {
+    override wrapRequest({ next }: Middleware.WrapRequestArgs) {
       return next().finally(() => processor?.forceFlush());
     }
   }
