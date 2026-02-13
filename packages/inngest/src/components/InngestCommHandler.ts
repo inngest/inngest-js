@@ -2398,7 +2398,7 @@ export class InngestCommHandler<
       // If we're here, we're in production; lack of a signing key is an error.
       if (!this.client.signingKey) {
         throw new Error(
-          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`,
+          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/env/production/manage/signing-key`,
         );
       }
 
