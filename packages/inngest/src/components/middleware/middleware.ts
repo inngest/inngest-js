@@ -41,16 +41,12 @@ export namespace Middleware {
    */
   export type StepTools = ReturnType<typeof createStepTools<Inngest.Any>>;
 
-  export type TransformClientInputArgs =
-    | {
-        method: "send";
-        input: EventPayload<Record<string, unknown>>[];
-      }
-    // This type is just to ensure that adding a new method isn't a breaking change
-    | {
-        method: "other";
-        input: unknown;
-      };
+  // It's be nice to make this statically type safe, but it's unclear how to do
+  // that in a way that allows for adding new methods without breaking changes.
+  export type TransformClientInputArgs = {
+    method: string;
+    input: unknown;
+  };
 
   /**
    * The argument passed to `transformStepInput`.

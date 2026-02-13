@@ -1,5 +1,5 @@
 import path from "path";
-import { type Context, Middleware } from "../../../src/index.ts";
+import { Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";
 import { DEV_SERVER_URL } from "../devServerTestHarness.ts";
 
@@ -157,14 +157,14 @@ export abstract class BaseSerializerMiddleware<
   }
 
   override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-    if (arg.method !== "send") {
-      return arg.input;
+    if (arg.method === "send" && Array.isArray(arg.input)) {
+      return arg.input.map((event) => ({
+        ...event,
+        data: event.data ? this.serialize(event.data) : event.data,
+      }));
     }
 
-    return arg.input.map((event) => ({
-      ...event,
-      data: event.data ? this.serialize(event.data) : event.data,
-    }));
+    return arg.input;
   }
 }
 

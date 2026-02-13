@@ -111,8 +111,6 @@ test("info hooks for parallel steps", async () => {
     output: "step-3: output",
   });
 
-  console.log(state.logs);
-
   expect(state.logs).toEqual([
     // 1st request
     "onMemoizationEnd",

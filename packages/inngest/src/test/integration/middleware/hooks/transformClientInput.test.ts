@@ -12,18 +12,18 @@ test("transform event data before sending", async () => {
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-      if (arg.method !== "send") {
-        return arg.input;
+      if (arg.method === "send" && Array.isArray(arg.input)) {
+        // Transform the event payloads - add an "injected" field
+        return arg.input.map((event) => ({
+          ...event,
+          data: {
+            ...event.data,
+            injected: "value",
+          },
+        }));
       }
 
-      // Transform the event payloads - add an "injected" field
-      return arg.input.map((event) => ({
-        ...event,
-        data: {
-          ...event.data,
-          injected: "value",
-        },
-      }));
+      return arg.input;
     }
   }
 
@@ -59,33 +59,33 @@ test("multiple middleware transform in order", async () => {
 
   class Mw1 extends Middleware.BaseMiddleware {
     override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-      if (arg.method !== "send") {
-        return arg.input;
+      if (arg.method === "send" && Array.isArray(arg.input)) {
+        return arg.input.map((event) => ({
+          ...event,
+          data: {
+            ...event.data,
+            mw1: "first",
+          },
+        }));
       }
 
-      return arg.input.map((event) => ({
-        ...event,
-        data: {
-          ...event.data,
-          mw1: "first",
-        },
-      }));
+      return arg.input;
     }
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
     override transformClientInput(arg: Middleware.TransformClientInputArgs) {
-      if (arg.method !== "send") {
-        return arg.input;
+      if (arg.method === "send" && Array.isArray(arg.input)) {
+        return arg.input.map((event) => ({
+          ...event,
+          data: {
+            ...event.data,
+            mw2: "second",
+          },
+        }));
       }
 
-      return arg.input.map((event) => ({
-        ...event,
-        data: {
-          ...event.data,
-          mw2: "second",
-        },
-      }));
+      return arg.input;
     }
   }
 

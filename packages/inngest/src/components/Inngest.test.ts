@@ -532,7 +532,7 @@ describe("send", () => {
             override transformClientInput(
               arg: Middleware.TransformClientInputArgs,
             ) {
-              if (arg.method === "send") {
+              if (arg.method === "send" && Array.isArray(arg.input)) {
                 return arg.input.map((payload) => ({
                   ...payload,
                   data: {
