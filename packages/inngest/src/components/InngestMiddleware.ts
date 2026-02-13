@@ -238,9 +238,15 @@ export const getHookStack = async <
     }
   }
 
-  // Cache each function in the stack to ensure each can only be called once
+  // Cache each function in the stack to ensure each can only be called once.
+  // Except for transformOutput, which needs to be called multiple times (e.g.,
+  // for each step during checkpointing).
   for (const k of Object.keys(ret)) {
     const key = k as keyof typeof ret;
+
+    if (key === "transformOutput") {
+      continue;
+    }
 
     ret[key] = cacheFn(
       ret[key] as (...args: unknown[]) => unknown,
