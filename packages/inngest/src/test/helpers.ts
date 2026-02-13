@@ -8,7 +8,6 @@ import {
   type IInngestExecution,
   type InngestExecution,
   type InngestExecutionOptions,
-  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "../components/execution/InngestExecution.ts";
 import {
   type HandlerResponse,
@@ -20,7 +19,6 @@ import {
   getStepOptions,
 } from "../components/InngestStepTools.ts";
 import {
-  type ExecutionVersion,
   envKeys,
   headerKeys,
   queryKeys,
@@ -93,7 +91,6 @@ export const getStepTools = (
       () => undefined,
     )
     ["createExecution"]({
-      version: PREFERRED_ASYNC_EXECUTION_VERSION,
       partialOptions: {
         client,
         data: fromPartial({
@@ -135,7 +132,6 @@ export const runFnWithStack = async (
   fn: InngestFunction.Any,
   stepState: InngestExecutionOptions["stepState"],
   opts?: {
-    executionVersion?: ExecutionVersion;
     runStep?: string;
     onFailure?: boolean;
     event?: EventPayload;
@@ -144,7 +140,6 @@ export const runFnWithStack = async (
   },
 ) => {
   const execution = fn["createExecution"]({
-    version: opts?.executionVersion ?? PREFERRED_ASYNC_EXECUTION_VERSION,
     partialOptions: {
       client: fn["client"],
       data: fromPartial({

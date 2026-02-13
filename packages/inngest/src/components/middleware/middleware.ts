@@ -1,6 +1,5 @@
 import type { z } from "zod/v3";
-import type { stepsSchemas } from "../../api/schema.ts";
-import type { ExecutionVersion } from "../../helpers/consts.ts";
+import type { stepSchema } from "../../api/schema.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
 import type {
   Context,
@@ -71,7 +70,7 @@ export namespace Middleware {
    */
   export type TransformFunctionInputArgs = {
     ctx: Context.Any;
-    steps: z.infer<(typeof stepsSchemas)[ExecutionVersion.V2]>;
+    steps: z.infer<typeof stepSchema>;
   };
 
   /**

@@ -85,16 +85,6 @@ export interface MemoizedOp extends IncomingOp {
  * new runs, not existing ones.
  */
 export const PREFERRED_ASYNC_EXECUTION_VERSION =
-  ExecutionVersion.V1 satisfies ExecutionVersion;
-
-/**
- * The preferred execution version that will be used by the SDK when handling
- * checkpointed runs where the Executor is allowing us to choose.
- *
- * Changing this should not ever be a breaking change, as this will only change
- * new runs, not existing ones.
- */
-export const PREFERRED_CHECKPOINTING_EXECUTION_VERSION =
   ExecutionVersion.V2 satisfies ExecutionVersion;
 
 /**

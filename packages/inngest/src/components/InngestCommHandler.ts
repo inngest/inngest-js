@@ -20,7 +20,6 @@ import {
   getPlatformName,
   inngestHeaders,
   parseAsBoolean,
-  platformSupportsStreaming,
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
@@ -47,26 +46,23 @@ import {
   functionConfigSchema,
   type InBandRegisterRequest,
   inBandSyncRequestBodySchema,
-  type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   StepMode,
   StepOpCode,
-  type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
 import { getAsyncCtx } from "./execution/als.ts";
+import { _internals } from "./execution/engine.ts";
 import {
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
   PREFERRED_ASYNC_EXECUTION_VERSION,
-  PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
-import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
@@ -92,6 +88,21 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly InngestFunction.Like[];
 }
 
+/**
+ * Parameters passed to the asyncRedirectUrl function.
+ */
+export interface AsyncRedirectUrlParams {
+  /**
+   * The unique identifier for this run.
+   */
+  runId: string;
+
+  /**
+   * The token used to authenticate the request to fetch run output.
+   */
+  token: string;
+}
+
 export interface SyncHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
@@ -105,6 +116,30 @@ export interface SyncHandlerOptions extends RegisterOptions {
    * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
    */
   asyncResponse?: AsyncResponseValue;
+
+  /**
+   * Custom URL to redirect to when switching from sync to async mode.
+   *
+   * Can be:
+   * - A string path (e.g., "/api/inngest/poll") - resolved relative to request origin
+   * - A function that receives `{ runId, token }` and returns a full URL
+   *
+   * When a string path is provided, `runId` and `token` query parameters are
+   * automatically appended.
+   *
+   * @example
+   * ```ts
+   * // String path - resolved relative to request origin
+   * asyncRedirectUrl: "/api/inngest/poll"
+   *
+   * // Function - full control over URL construction
+   * asyncRedirectUrl: ({ runId, token }) =>
+   *   `https://my-app.com/poll?run=${runId}&t=${token}`
+   * ```
+   */
+  asyncRedirectUrl?:
+    | string
+    | ((params: AsyncRedirectUrlParams) => string | Promise<string>);
 
   /**
    * If defined, this sets the function ID that represents this endpoint.
@@ -753,6 +788,7 @@ export class InngestCommHandler<
           asyncMode:
             this._options.syncOptions?.asyncResponse ??
             AsyncResponseType.Redirect,
+          asyncRedirectUrl: this._options.syncOptions?.asyncRedirectUrl,
           fn,
         });
       }) as THandler);
@@ -839,8 +875,7 @@ export class InngestCommHandler<
       url.searchParams.toString(),
     );
 
-    // TODO For body, we can add `textBody()` to the actions
-    const bodyPromise = actions.textBody!(reason).then((body) => {
+    const bodyPromise = actions.body(reason).then((body) => {
       return typeof body === "string" ? body : stringify(body);
     });
 
@@ -875,12 +910,14 @@ export class InngestCommHandler<
     actions,
     fn,
     asyncMode,
+    asyncRedirectUrl,
     args,
   }: {
     timer: ServerTiming;
     actions: HandlerResponseWithErrors;
     fn: InngestFunction.Any;
     asyncMode: AsyncResponseValue;
+    asyncRedirectUrl: SyncHandlerOptions["asyncRedirectUrl"];
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
@@ -903,10 +940,9 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
-    const exeVersion = PREFERRED_CHECKPOINTING_EXECUTION_VERSION;
+    const exeVersion = ExecutionVersion.V2;
 
     const exe = fn["createExecution"]({
-      version: exeVersion,
       partialOptions: {
         client: this.client,
         data: {
@@ -954,10 +990,19 @@ export class InngestCommHandler<
           "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
         );
       },
-      "function-rejected": () => {
-        throw new Error(
-          "We should not get the result 'function-rejected' when checkpointing. This is a bug in the `inngest` SDK",
-        );
+      "function-rejected": (result) => {
+        return actions.transformResponse("creating sync error response", {
+          status: result.retriable ? 500 : 400,
+          headers: {
+            "Content-Type": "application/json",
+            [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+            ...(typeof result.retriable === "string"
+              ? { [headerKeys.RetryAfter]: result.retriable }
+              : {}),
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(result.error)),
+        });
       },
       "function-resolved": ({ data }) => {
         // We're done and we didn't call any step tools, so just return the
@@ -967,16 +1012,35 @@ export class InngestCommHandler<
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
           case AsyncResponseType.Redirect: {
+            let redirectUrl: string;
+
+            if (asyncRedirectUrl) {
+              if (typeof asyncRedirectUrl === "function") {
+                // Full control: user provides complete URL
+                redirectUrl = await asyncRedirectUrl({ runId, token });
+              } else {
+                // String path: resolve relative to request origin
+                // new URL("/api/poll", "https://example.com") → "https://example.com/api/poll"
+                // new URL("https://other.com/poll", "https://example.com") → "https://other.com/poll"
+                const baseUrl = await actions.url("getting request origin");
+                const url = new URL(asyncRedirectUrl, baseUrl.origin);
+                url.searchParams.set("runId", runId);
+                url.searchParams.set("token", token);
+                redirectUrl = url.toString();
+              }
+            } else {
+              // Default: redirect to Inngest API
+              redirectUrl = await this.client["inngestApi"]
+                ["getTargetUrl"](`/v1/http/runs/${runId}/output?token=${token}`)
+                .then((url) => url.toString());
+            }
+
             return actions.transformResponse(
               "creating sync->async redirect response",
               {
                 status: 302,
                 headers: {
-                  [headerKeys.Location]: await this.client["inngestApi"]
-                    ["getTargetUrl"](
-                      `/v1/http/runs/${runId}/output?token=${token}`,
-                    )
-                    .then((url) => url.toString()),
+                  [headerKeys.Location]: redirectUrl,
                 },
                 version: exeVersion,
                 body: "",
@@ -1483,6 +1547,24 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
+
+          // Grab "force step plan" flag from headers
+          let die = false;
+          const dieHeader = await actions.headers(
+            "getting step plan force control for forced execution",
+            headerKeys.InngestForceStepPlan,
+          );
+          if (dieHeader) {
+            const parsed = parseAsBoolean(dieHeader);
+            if (typeof parsed === "boolean") {
+              die = parsed;
+            } else {
+              this.client.logger.warn(
+                `Received invalid value for ${headerKeys.InngestForceStepPlan} header: ${dieHeader}. Expected a boolean value. Defaulting to "false".`,
+              );
+            }
+          }
+
           body = {
             event: {},
             events: [],
@@ -1491,9 +1573,12 @@ export class InngestCommHandler<
             sdkDecided: true,
             ctx: {
               attempt: 0,
-              disable_immediate_execution: false,
+              disable_immediate_execution: die,
               use_api: true,
-              max_attempts: 3,
+              // This execution path doesn't control max attempts; it's already
+              // been reported and Inngest is now in control of when to stop, so
+              // we remove this restriction.
+              max_attempts: Infinity,
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
@@ -1951,42 +2036,27 @@ export class InngestCommHandler<
     // Try to get the request version from headers before falling back to
     // parsing it from the body.
     const immediateFnData = parseFnData(data, headerReqVersion);
-    let { version, sdkDecided } = immediateFnData;
+    const { sdkDecided } = immediateFnData;
+    let version = ExecutionVersion.V2;
 
-    // Handle opting in to optimized parallelism in v3.
+    // Handle opting out of optimized parallelism
     if (
-      version === ExecutionVersion.V1 &&
+      version === ExecutionVersion.V2 &&
       sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.()
+      fn.fn["shouldOptimizeParallelism"]?.() === false
     ) {
-      version = ExecutionVersion.V2;
+      version = ExecutionVersion.V1;
     }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
         data: immediateFnData,
         api: this.client["inngestApi"],
-        version,
       });
 
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);
       }
-
-      type ExecutionStarter<V> = (
-        fnData: V extends ExecutionVersion
-          ? Extract<FnData, { version: V }>
-          : FnData,
-      ) => MaybePromise<CreateExecutionOptions>;
-
-      type GenericExecutionStarters = Record<
-        ExecutionVersion,
-        ExecutionStarter<unknown>
-      >;
-
-      type ExecutionStarters = {
-        [V in ExecutionVersion]: ExecutionStarter<V>;
-      };
 
       const createResponse =
         forceExecution && actions.experimentalTransformSyncResponse
@@ -2000,163 +2070,61 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const executionStarters = ((s: ExecutionStarters) =>
-        s as GenericExecutionStarters)({
-        [ExecutionVersion.V0]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, data]) => {
-            return {
-              ...acc,
+      const { event, events, steps, ctx } = anyFnData.value;
 
-              [id]: { id, data },
-            };
-          }, {});
+      const stepState = Object.entries(steps ?? {}).reduce<
+        InngestExecutionOptions["stepState"]
+      >((acc, [id, result]) => {
+        return {
+          ...acc,
+          [id]:
+            result.type === "data"
+              ? { id, data: result.data }
+              : result.type === "input"
+                ? { id, input: result.input }
+                : { id, error: result.error },
+        };
+      }, {});
 
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: StepMode.Async,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-              },
-              stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
-              timer,
-              isFailureHandler: fn.onFailure,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-              requestInfo,
-              middlewareInstances: mwInstances,
-            },
-          };
-        },
-        [ExecutionVersion.V1]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, result]) => {
-            return {
-              ...acc,
-              [id]:
-                result.type === "data"
-                  ? { id, data: result.data }
-                  : result.type === "input"
-                    ? { id, input: result.input }
-                    : { id, error: result.error },
-            };
-          }, {});
+      const requestedRunStep =
+        stepId === "step" ? undefined : stepId || undefined;
 
-          const requestedRunStep =
-            stepId === "step" ? undefined : stepId || undefined;
-
-          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
-            requestedRunStep,
-            ctx?.fn_id,
-            Boolean(ctx?.disable_immediate_execution),
-          );
-
-          return {
-            version:
-              checkpointingConfig && sdkDecided ? ExecutionVersion.V2 : version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: checkpointingConfig
-                ? StepMode.AsyncCheckpointing
-                : StepMode.Async,
-              checkpointingConfig,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-                maxAttempts: ctx?.max_attempts,
-              },
-              internalFnId: ctx?.fn_id,
-              queueItemId: ctx?.qi_id,
-              stepState,
-              requestedRunStep,
-              timer,
-              isFailureHandler: fn.onFailure,
-              disableImmediateExecution: ctx?.disable_immediate_execution,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-              requestInfo,
-              middlewareInstances: mwInstances,
-            },
-          };
-        },
-        [ExecutionVersion.V2]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, result]) => {
-            return {
-              ...acc,
-              [id]:
-                result.type === "data"
-                  ? { id, data: result.data }
-                  : result.type === "input"
-                    ? { id, input: result.input }
-                    : { id, error: result.error },
-            };
-          }, {});
-
-          const requestedRunStep =
-            stepId === "step" ? undefined : stepId || undefined;
-
-          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
-            requestedRunStep,
-            ctx?.fn_id,
-            Boolean(ctx?.disable_immediate_execution),
-          );
-
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: checkpointingConfig
-                ? StepMode.AsyncCheckpointing
-                : StepMode.Async,
-              checkpointingConfig,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-                maxAttempts: ctx?.max_attempts,
-              },
-              internalFnId: ctx?.fn_id,
-              queueItemId: ctx?.qi_id,
-              stepState,
-              requestedRunStep,
-              timer,
-              isFailureHandler: fn.onFailure,
-              disableImmediateExecution: ctx?.disable_immediate_execution,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-              requestInfo,
-              middlewareInstances: mwInstances,
-            },
-          };
-        },
-      });
-
-      const executionOptions = await executionStarters[version](
-        anyFnData.value,
+      const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+        requestedRunStep,
+        ctx?.fn_id,
+        Boolean(ctx?.disable_immediate_execution),
       );
+
+      const executionOptions: CreateExecutionOptions = {
+        partialOptions: {
+          client: this.client,
+          runId: ctx?.run_id || "",
+          stepMode: checkpointingConfig
+            ? StepMode.AsyncCheckpointing
+            : StepMode.Async,
+          checkpointingConfig,
+          data: {
+            event: event as EventPayload,
+            events: events as [EventPayload, ...EventPayload[]],
+            runId: ctx?.run_id || "",
+            attempt: ctx?.attempt ?? 0,
+            maxAttempts: ctx?.max_attempts,
+          },
+          internalFnId: ctx?.fn_id,
+          queueItemId: ctx?.qi_id,
+          stepState,
+          requestedRunStep,
+          timer,
+          isFailureHandler: fn.onFailure,
+          disableImmediateExecution: ctx?.disable_immediate_execution,
+          stepCompletionOrder: ctx?.stack?.stack ?? [],
+          reqArgs,
+          headers,
+          createResponse,
+          requestInfo,
+          middlewareInstances: mwInstances,
+        },
+      };
 
       return fn.fn["createExecution"](executionOptions).start();
     });
@@ -2537,7 +2505,7 @@ export class InngestCommHandler<
       // If we're here, we're in production; lack of a signing key is an error.
       if (!this.client.signingKey) {
         throw new Error(
-          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`,
+          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/env/production/manage/signing-key`,
         );
       }
 
@@ -2663,7 +2631,6 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   body: () => MaybePromise<any>;
-  textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 

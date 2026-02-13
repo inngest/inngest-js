@@ -1,47 +1,35 @@
 import fetch, { Headers, Response } from "cross-fetch";
 import * as EdgeHandler from "./edge.ts";
-import { testFramework } from "./test/helpers.ts";
+import { endpointAdapter } from "./edge.ts";
+import { Inngest } from "./index.ts";
+import { createClient, testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
 const originalHeaders = globalThis.Headers;
 
+// Shared setup/teardown for edge environment globals
+const setupEdgeGlobals = () => {
+  vi.resetModules();
+  Object.defineProperties(globalThis, {
+    fetch: { value: fetch, configurable: true },
+    Response: { value: Response, configurable: true },
+    Headers: { value: Headers, configurable: true },
+  });
+};
+
+const teardownEdgeGlobals = () => {
+  Object.defineProperties(globalThis, {
+    fetch: { value: originalFetch, configurable: true },
+    Response: { value: originalResponse, configurable: true },
+    Headers: { value: originalHeaders, configurable: true },
+  });
+};
+
 testFramework("Edge", EdgeHandler, {
   lifecycleChanges: () => {
-    beforeEach(() => {
-      vi.resetModules();
-
-      Object.defineProperties(globalThis, {
-        /**
-         * Fake a global `fetch` value, which is available as as a Web Standard
-         * API.
-         */
-        fetch: { value: fetch, configurable: true },
-
-        /**
-         * Fake a global `Response` class, which is used to create new responses
-         * for the handler.
-         */
-        Response: { value: Response, configurable: true },
-
-        /**
-         * Fake a global `Headers` class, which is used to create new Headers
-         * objects during response building.
-         */
-        Headers: { value: Headers, configurable: true },
-      });
-    });
-
-    afterEach(() => {
-      /**
-       * Reset all changes made to the global scope
-       */
-      Object.defineProperties(globalThis, {
-        fetch: { value: originalFetch, configurable: true },
-        Response: { value: originalResponse, configurable: true },
-        Headers: { value: originalHeaders, configurable: true },
-      });
-    });
+    beforeEach(setupEdgeGlobals);
+    afterEach(teardownEdgeGlobals);
   },
   transformReq: (req) => {
     const headers = new Headers();
@@ -72,4 +60,108 @@ testFramework("Edge", EdgeHandler, {
       headers,
     };
   },
+});
+
+describe("Edge endpointAdapter", () => {
+  beforeEach(setupEdgeGlobals);
+  afterEach(teardownEdgeGlobals);
+
+  // Helper to create client with endpointAdapter
+  const createProxyClient = () =>
+    createClient({ id: "test", isDev: true, endpointAdapter });
+
+  describe("endpointAdapter interface", () => {
+    test("has createProxyHandler and withOptions", () => {
+      expect(typeof endpointAdapter.createProxyHandler).toBe("function");
+      expect(typeof endpointAdapter.withOptions).toBe("function");
+    });
+
+    test("withOptions returns adapter with same interface", () => {
+      const configured = endpointAdapter.withOptions({
+        asyncRedirectUrl: "/api/poll",
+      });
+
+      expect(configured.withOptions).toBeDefined();
+      expect(configured.createProxyHandler).toBeDefined();
+    });
+  });
+
+  describe("proxy handler", () => {
+    test("creates a callable proxy handler", () => {
+      expect(typeof createProxyClient().endpointProxy()).toBe("function");
+    });
+
+    test("handles CORS preflight", async () => {
+      const res = await createProxyClient().endpointProxy()(
+        new Request("https://example.com/api/poll", { method: "OPTIONS" }),
+      );
+
+      expect(res).toBeInstanceOf(Response);
+      expect(res.status).toBe(204);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+      expect(res.headers.get("Access-Control-Allow-Methods")).toBe(
+        "GET, OPTIONS",
+      );
+    });
+
+    test("returns 400 for missing parameters", async () => {
+      const res = await createProxyClient().endpointProxy()(
+        new Request("https://example.com/api/poll", { method: "GET" }),
+      );
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe(
+        "Missing runId or token query parameter",
+      );
+    });
+
+    test("extracts runId and token from query params", async () => {
+      const mockGetRunOutput = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: "test-result" }), {
+          status: 200,
+        }),
+      );
+
+      const inngest = createProxyClient();
+      inngest["inngestApi"]["getRunOutput"] = mockGetRunOutput;
+
+      const res = await inngest.endpointProxy()(
+        new Request(
+          "https://example.com/api/poll?runId=run-123&token=token-abc",
+          { method: "GET" },
+        ),
+      );
+
+      expect(mockGetRunOutput).toHaveBeenCalledWith("run-123", "token-abc");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ data: "test-result" });
+    });
+  });
+
+  describe("integration with Inngest client", () => {
+    test("client can create endpoint and proxy handlers", () => {
+      const inngest = new Inngest({
+        id: "test-app",
+        isDev: true,
+        endpointAdapter,
+      });
+
+      expect(typeof inngest.endpoint(async () => new Response("OK"))).toBe(
+        "function",
+      );
+      expect(typeof inngest.endpointProxy()).toBe("function");
+    });
+
+    test("asyncRedirectUrl can be configured via withOptions", () => {
+      const inngest = new Inngest({
+        id: "test-app",
+        isDev: true,
+        endpointAdapter: endpointAdapter.withOptions({
+          asyncRedirectUrl: "/custom/poll/path",
+        }),
+      });
+
+      expect(typeof inngest.endpointProxy()).toBe("function");
+    });
+  });
 });

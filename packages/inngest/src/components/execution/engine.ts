@@ -2,14 +2,23 @@ import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
-import { ExecutionVersion, headerKeys } from "../../helpers/consts.ts";
+
+
+import {
+  defaultMaxRetries,
+  ExecutionVersion,
+  headerKeys,
+  internalEvents,
+} from "../../helpers/consts.ts";
+
+
 import {
   deserializeError,
   ErrCode,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { formatLogMessage, getLogger } from "../../helpers/log.ts";
+import { formatLogMessage } from "../../helpers/log.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -18,9 +27,9 @@ import {
   goIntervalTiming,
   resolveAfterPending,
   resolveNextTick,
+  retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
-import { timeStr } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
@@ -36,7 +45,6 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import { version } from "../../version.ts";
-import type { Inngest } from "../Inngest.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
@@ -71,14 +79,27 @@ import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
 
-export const createV2InngestExecution: InngestExecutionFactory = (options) => {
-  return new V2InngestExecution(options);
+/**
+ * Retry configuration for checkpoint operations.
+ *
+ * Checkpoint calls use exponential backoff with jitter to handle transient
+ * network failures (e.g., dev server temporarily down, cloud hiccup). If
+ * retries exhaust, the error propagates up - for Sync mode this results in a
+ * 500 error, for AsyncCheckpointing the caller handles fallback.
+ */
+const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+
+export const createExecutionEngine: InngestExecutionFactory = (options) => {
+  return new InngestExecutionEngine(options);
 };
 
-class V2InngestExecution extends InngestExecution implements IInngestExecution {
+class InngestExecutionEngine
+  extends InngestExecution
+  implements IInngestExecution
+{
   public version = ExecutionVersion.V2;
 
-  private state: V2ExecutionState;
+  private state: ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
@@ -147,7 +168,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     this.initializeCheckpointRuntimeTimer(this.state);
 
     this.debug(
-      "created new V2 execution for run;",
+      "created new V1 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
         : "discovering steps",
@@ -161,7 +182,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    */
   public start() {
     if (!this.execution) {
-      this.debug("starting V2 execution");
+      this.debug("starting V1 execution");
 
       const tracer = trace.getTracer("inngest", version);
 
@@ -255,12 +276,17 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
-        const res = await this.options.client["inngestApi"].checkpointNewRun({
-          runId: this.fnArg.runId,
-          event: this.fnArg.event as APIStepPayload,
-          steps,
-          executionVersion: this.version,
-        });
+        const res = await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointNewRun({
+              runId: this.fnArg.runId,
+              event: this.fnArg.event as APIStepPayload,
+              steps,
+              executionVersion: this.version,
+              retries: this.fnArg.maxAttempts ?? defaultMaxRetries,
+            }),
+          CHECKPOINT_RETRY_OPTIONS,
+        );
 
         this.state.checkpointedRun = {
           appId: res.data.app_id,
@@ -268,12 +294,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           token: res.data.token,
         };
       } else {
-        await this.options.client["inngestApi"].checkpointSteps({
-          appId: this.state.checkpointedRun.appId,
-          fnId: this.state.checkpointedRun.fnId,
-          runId: this.fnArg.runId,
-          steps,
-        });
+        await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointSteps({
+              appId: this.state.checkpointedRun!.appId,
+              fnId: this.state.checkpointedRun!.fnId,
+              runId: this.fnArg.runId,
+              steps,
+            }),
+          CHECKPOINT_RETRY_OPTIONS,
+        );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
       if (!this.options.queueItemId) {
@@ -288,12 +318,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      await this.options.client["inngestApi"].checkpointStepsAsync({
-        runId: this.fnArg.runId,
-        fnId: this.options.internalFnId,
-        queueItemId: this.options.queueItemId,
-        steps,
-      });
+      await retryWithBackoff(
+        () =>
+          this.options.client["inngestApi"].checkpointStepsAsync({
+            runId: this.fnArg.runId,
+            fnId: this.options.internalFnId!,
+            queueItemId: this.options.queueItemId!,
+            steps,
+          }),
+        CHECKPOINT_RETRY_OPTIONS,
+      );
     } else {
       throw new Error(
         "Checkpointing is only supported in Sync and AsyncCheckpointing step modes. This is a bug in the Inngest SDK.",
@@ -345,7 +379,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const stepRanHandler = async (
       stepResult: OutgoingOp,
     ): Promise<ExecutionResult> => {
-      const transformResult = this.transformOutput(stepResult);
+      const transformResult = await this.transformOutput(stepResult);
 
       /**
        * Transforming output will always return either function rejection or
@@ -390,11 +424,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       return transformResult;
     };
 
-    const maybeReturnNewSteps = async (
-      steps: FoundStep[],
-    ): Promise<ExecutionResult | undefined> => {
-      const newSteps = await this.filterNewSteps(Array.from(steps.values()));
-
+    const maybeReturnNewSteps = async (): Promise<
+      ExecutionResult | undefined
+    > => {
+      const newSteps = await this.filterNewSteps(
+        Array.from(this.state.steps.values()),
+      );
       if (newSteps) {
         return {
           type: "steps-found",
@@ -415,9 +450,23 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
-        this.state.checkpointingStepBuffer.push(
-          this.resumeStepWithResult(stepResult, resume),
-        );
+        const stepToResume = this.resumeStepWithResult(stepResult, resume);
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: stepResult.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? stepResult.data;
+
+        // Buffer a copy with transformed data for checkpointing
+        this.state.checkpointingStepBuffer.push({
+          ...stepToResume,
+          data: transformedData,
+        });
       }
 
       if (
@@ -471,35 +520,35 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: checkpoint.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(checkpoint.data),
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 
-        // Done - just return the value
-        return {
-          type: "function-resolved",
-          ctx: this.fnArg,
-          ops: this.ops,
-          data: checkpoint.data,
-        };
+        // Apply middleware transformation before returning
+        return await this.transformOutput({ data: checkpoint.data });
       },
 
-      "function-rejected": (checkpoint) => {
+      "function-rejected": async (checkpoint) => {
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
         if (this.inFinalAttempt()) {
-          return {
-            type: "function-rejected",
-            ctx: this.fnArg,
-            error: checkpoint.error,
-            ops: this.ops,
-            retriable: false,
-          };
+          // Apply middleware transformation before returning
+          return await this.transformOutput({ error: checkpoint.error });
         }
 
         // Otherwise, checkpoint the error and switch to async mode
@@ -540,9 +589,22 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return this.checkpointAndSwitchToAsync([result]);
         }
 
-        return void (await this.checkpoint([
-          this.resumeStepWithResult(result),
-        ]));
+        // Resume the step with original data for user code
+        const stepToResume = this.resumeStepWithResult(result);
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: result.data },
+          step: undefined,
+        });
+        const transformedData = transformedOutput?.result?.data ?? result.data;
+
+        // Create a copy for checkpointing with transformed data
+        const stepForCheckpoint = { ...stepToResume, data: transformedData };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {
@@ -596,7 +658,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return stepRanHandler(stepResult);
         }
 
-        return maybeReturnNewSteps(steps);
+        return maybeReturnNewSteps();
       },
 
       /**
@@ -705,7 +767,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               return await attemptCheckpointAndResume(stepResult);
             }
 
-            return maybeReturnNewSteps(steps);
+            return maybeReturnNewSteps();
           }
 
           // If we have stepsToResume, resume as many as possible and resume execution
@@ -816,9 +878,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       return;
     }
 
-    /**
-     * Gather any steps that aren't memoized and report them.
-     */
     const newSteps = foundSteps.reduce((acc, step) => {
       if (!step.hasStepState) {
         acc.push(step);
@@ -831,7 +890,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       return;
     }
 
-    this.maybeCallOnMemoizationEnd();
+    this.middlewareManager.onMemoizationEnd();
 
     const stepList = newSteps.map<OutgoingOp>((step) => {
       const baseOp = {
@@ -880,9 +939,11 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     let interval: GoInterval | undefined;
 
-    const actualHandler: () => Promise<unknown> = () => runAsPromise(fn);
+    // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
+    // the `transformStepInput` middleware hook already ran).
+    const actualHandler = () => runAsPromise(fn);
 
-    this.maybeCallOnMemoizationEnd();
+    this.middlewareManager.onMemoizationEnd();
     this.middlewareManager.onStepStart(stepInfo);
 
     // If wrappedHandler was already called during discovery, execute the actual
@@ -899,6 +960,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           }
         })
         .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
+          if (!foundStep.executionDeferred) {
+            throw new UnreachableError("executionDeferred is undefined");
+          }
+
           interval = _interval;
           const metadata = this.state.metadata?.get(id);
           const rawData = await resultPromise;
@@ -906,12 +971,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           // Resolve the deferred - this unblocks the middleware pipeline from
           // discovery. The middleware can now continue and will eventually
           // return the serialized result via transformedResultPromise.
-          foundStep.executionDeferred!.resolve(rawData);
+          foundStep.executionDeferred.resolve(rawData);
 
-          // Try to get the middleware-transformed result. If the middleware
-          // injects steps (via step.run), transformedResultPromise will block
-          // until those steps complete. We use a short timeout to avoid blocking
-          // in that case and fall back to raw data.
+          // Prefer the middleware-transformed result (e.g. serialization).
+          // If the middleware pipeline hasn't resolved synchronously, it's
+          // because middleware injected its own steps which block indefinitely
+          // — fall back to raw data so we don't hang.
           let data: unknown = rawData;
           if (foundStep.transformedResultPromise) {
             data = await Promise.race([
@@ -920,7 +985,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             ]);
           }
 
-          // Call onStepComplete for each middleware
           this.middlewareManager.onStepComplete(stepInfo, rawData);
 
           return {
@@ -930,54 +994,18 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           };
         })
         .catch<OutgoingOp>((error) => {
+          if (!foundStep.executionDeferred) {
+            throw new UnreachableError("executionDeferred is undefined");
+          }
+
           // Reject the deferred - this unblocks the middleware pipeline with error
-          foundStep.executionDeferred!.reject(error);
-
-          let errorIsRetriable = true;
-
-          if (
-            error instanceof NonRetriableError ||
-            // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-            (error as any)?.name === "NonRetriableError"
-          ) {
-            errorIsRetriable = false;
-          } else if (
-            this.fnArg.maxAttempts &&
-            this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-          ) {
-            errorIsRetriable = false;
-          }
-
-          const metadata = this.state.metadata?.get(id);
-
-          // Call onStepError for each middleware
-          this.middlewareManager.onStepError(
-            stepInfo,
+          foundStep.executionDeferred.reject(error);
+          return this.buildStepErrorOp({
             error,
-            !errorIsRetriable,
-          );
-
-          if (errorIsRetriable) {
-            return {
-              ...outgoingOp,
-              op: StepOpCode.StepError,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-              error,
-              ...(metadata && metadata.length > 0
-                ? { metadata: metadata }
-                : {}),
-            };
-          } else {
-            return {
-              ...outgoingOp,
-              op: StepOpCode.StepFailed,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-              error,
-              ...(metadata && metadata.length > 0
-                ? { metadata: metadata }
-                : {}),
-            };
-          }
+            id,
+            outgoingOp,
+            stepInfo,
+          });
         })
         .then((op) => ({
           ...op,
@@ -1002,7 +1030,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         const metadata = this.state.metadata?.get(id);
         const data = await resultPromise;
 
-        // Call onStepComplete for each middleware
         this.middlewareManager.onStepComplete(stepInfo, data);
 
         return {
@@ -1012,43 +1039,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         };
       })
       .catch<OutgoingOp>((error) => {
-        let errorIsRetriable = true;
-
-        if (
-          error instanceof NonRetriableError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (error as any)?.name === "NonRetriableError"
-        ) {
-          errorIsRetriable = false;
-        } else if (
-          this.fnArg.maxAttempts &&
-          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-        ) {
-          errorIsRetriable = false;
-        }
-
-        const metadata = this.state.metadata?.get(id);
-
-        // Call onStepError for each middleware
-        this.middlewareManager.onStepError(stepInfo, error, !errorIsRetriable);
-
-        if (errorIsRetriable) {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        } else {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepFailed,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        }
+        return this.buildStepErrorOp({
+          error,
+          id,
+          outgoingOp,
+          stepInfo,
+        });
       })
       .then((op) => ({
         ...op,
@@ -1071,15 +1067,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const fnInputResult = this.middlewareManager.transformFunctionInput();
     this.applyFunctionInputMutations(fnInputResult);
 
-    if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
-      this.middlewareManager.onRunStart();
+    if (this.state.allStateUsed()) {
+      this.middlewareManager.onMemoizationEnd();
     }
 
-    /**
-     * If we had no state to begin with, immediately end the memoization phase.
-     */
-    if (this.state.allStateUsed()) {
-      this.maybeCallOnMemoizationEnd();
+    if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
+      this.middlewareManager.onRunStart();
     }
 
     const innerHandler: () => Promise<unknown> = async () => {
@@ -1089,9 +1082,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     const runHandler = this.middlewareManager.wrapRunHandler(innerHandler);
 
-    /**
-     * Trigger the user's function.
-     */
     runAsPromise(runHandler)
       .then((data) => {
         this.middlewareManager.onRunComplete(data);
@@ -1108,24 +1098,59 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           err = new Error(String(error));
         }
 
-        let isFinalAttempt = false;
-
-        if (
-          err instanceof NonRetriableError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (err as any)?.name === "NonRetriableError"
-        ) {
-          isFinalAttempt = true;
-        } else if (
-          this.fnArg.maxAttempts &&
-          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-        ) {
-          isFinalAttempt = true;
-        }
-
-        this.middlewareManager.onRunError(err, isFinalAttempt);
+        this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
+  }
+
+  /**
+   * Whether this error will not be retried (NonRetriableError or last attempt).
+   */
+  private isFinalAttempt(error: unknown): boolean {
+    if (
+      error instanceof NonRetriableError ||
+      // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+      (error as any)?.name === "NonRetriableError"
+    ) {
+      return true;
+    }
+
+    return Boolean(
+      this.fnArg.maxAttempts &&
+        this.fnArg.maxAttempts - 1 === this.fnArg.attempt,
+    );
+  }
+
+  /**
+   * Build the OutgoingOp for a failed step, notifying middleware and choosing
+   * retriable vs non-retriable opcode.
+   */
+  private buildStepErrorOp({
+    error,
+    id,
+    outgoingOp,
+    stepInfo,
+  }: {
+    error: unknown;
+    id: string;
+    outgoingOp: OutgoingOp;
+    stepInfo: Middleware.StepInfo;
+  }): OutgoingOp {
+    const isFinal = this.isFinalAttempt(error);
+    const metadata = this.state.metadata?.get(id);
+
+    this.middlewareManager.onStepError(
+      stepInfo,
+      error instanceof Error ? error : new Error(String(error)),
+      isFinal,
+    );
+
+    return {
+      ...outgoingOp,
+      error,
+      op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+      ...(metadata && metadata.length > 0 ? { metadata } : {}),
+    };
   }
 
   /**
@@ -1146,55 +1171,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     await validateEvents(events, triggers);
   }
 
-  private maybeCallOnMemoizationEnd(): void {
-    if (this.state.onMemoizationEndCalled) return;
-    this.state.onMemoizationEndCalled = true;
-    this.middlewareManager.onMemoizationEnd();
-  }
-
   /**
-   * Apply mutations from transformFunctionInput back to execution state.
-   * Allows middleware to modify event data, step tools, memoized step data,
-   * and inject custom fields into the handler context.
-   */
-  private applyFunctionInputMutations(
-    result: Middleware.TransformFunctionInputArgs,
-  ): void {
-    const { event, events, step, ...extensions } = result.ctx;
-
-    // Mutate in place so the ALS store's reference to this.fnArg stays valid.
-    if (event !== this.fnArg.event) {
-      this.fnArg.event = event;
-    }
-
-    if (events !== this.fnArg.events) {
-      this.fnArg.events = events;
-    }
-
-    if (step !== this.fnArg.step) {
-      this.fnArg.step = step;
-    }
-
-    if (Object.keys(extensions).length > 0) {
-      Object.assign(this.fnArg, extensions);
-    }
-
-    // Apply step data mutations
-    for (const [hashedId, stepData] of Object.entries(result.steps)) {
-      const existing = this.state.stepState[hashedId];
-      if (
-        existing &&
-        stepData &&
-        stepData.type === "data" &&
-        stepData.data !== existing.data
-      ) {
-        this.state.stepState[hashedId] = { ...existing, data: stepData.data };
-      }
-    }
-  }
-
-  /**
-   * Transform output before returning.
+   * Using middleware, transform output before returning.
    */
   private transformOutput(dataOrError: {
     data?: unknown;
@@ -1242,12 +1220,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     };
   }
 
-  private createExecutionState(): V2ExecutionState {
+  private createExecutionState(): ExecutionState {
     const d = createDeferredPromiseWithStack<Checkpoint>();
     let checkpointResolve = d.deferred.resolve;
     const checkpointResults = d.results;
 
-    const loop: V2ExecutionState["loop"] = (async function* (
+    const loop: ExecutionState["loop"] = (async function* (
       cleanUp?: () => void,
     ) {
       try {
@@ -1269,7 +1247,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     const stepsToFulfill = Object.keys(this.options.stepState).length;
 
-    const state: V2ExecutionState = {
+    const state: ExecutionState = {
       stepState: this.options.stepState,
       stepsToFulfill,
       steps: new Map(),
@@ -1287,7 +1265,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       },
       checkpointingStepBuffer: [],
       metadata: new Map(),
-      onMemoizationEndCalled: false,
     };
 
     return state;
@@ -1323,6 +1300,47 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     return this.options.transformCtx?.(fnArg) ?? fnArg;
   }
 
+  /**
+   * Apply mutations from `transformFunctionInput` back to execution state.
+   * Allows middleware to modify event data, step tools, memoized step data,
+   * and inject custom fields into the handler context.
+   */
+  private applyFunctionInputMutations(
+    result: Middleware.TransformFunctionInputArgs,
+  ): void {
+    const { event, events, step, ...extensions } = result.ctx;
+
+    // Mutate in place so the ALS store's reference to this.fnArg stays valid.
+    if (event !== this.fnArg.event) {
+      this.fnArg.event = event;
+    }
+
+    if (events !== this.fnArg.events) {
+      this.fnArg.events = events;
+    }
+
+    if (step !== this.fnArg.step) {
+      this.fnArg.step = step;
+    }
+
+    if (Object.keys(extensions).length > 0) {
+      Object.assign(this.fnArg, extensions);
+    }
+
+    // Apply step data mutations
+    for (const [hashedId, stepData] of Object.entries(result.steps)) {
+      const existing = this.state.stepState[hashedId];
+      if (
+        existing &&
+        stepData &&
+        stepData.type === "data" &&
+        stepData.data !== existing.data
+      ) {
+        this.state.stepState[hashedId] = { ...existing, data: stepData.data };
+      }
+    }
+  }
+
   private createStepTools(): ReturnType<typeof createStepTools> {
     /**
      * A list of steps that have been found and are being rolled up before being
@@ -1347,10 +1365,61 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const expectedNextStepIndexes: Map<string, number> = new Map();
 
     /**
+     * An ordered list of step IDs that have yet to be handled in this
+     * execution. Used to ensure that we handle steps in the order they were
+     * found and based on the `stepCompletionOrder` in this execution's state.
+     */
+    const remainingStepCompletionOrder: string[] =
+      this.state.stepCompletionOrder.slice();
+
+    /**
      * A promise that's used to ensure that step reporting cannot be run more than
      * once in a given asynchronous time span.
      */
     let foundStepsReportPromise: Promise<void> | undefined;
+
+    /**
+     * A flag used to ensure that we only warn about parallel indexing once per
+     * execution to avoid spamming the console.
+     */
+    let warnOfParallelIndexing = false;
+
+    /**
+     * Counts the number of times we've extended this tick.
+     */
+    let tickExtensionCount = 0;
+
+    /**
+     * Given a colliding step ID, maybe warn the user about parallel indexing.
+     */
+    const maybeWarnOfParallelIndexing = (userlandCollisionId: string) => {
+      if (warnOfParallelIndexing) {
+        return;
+      }
+
+      const hashedCollisionId = _internals.hashId(userlandCollisionId);
+
+      const stepExists = this.state.steps.has(hashedCollisionId);
+      if (stepExists) {
+        const stepFoundThisTick = foundStepsToReport.has(hashedCollisionId);
+        if (!stepFoundThisTick) {
+          warnOfParallelIndexing = true;
+
+          this.options.client["warnMetadata"](
+            { run_id: this.fnArg.runId },
+            ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+            formatLogMessage({
+              message:
+                "We detected that you have multiple steps with the same ID.",
+              explanation: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${userlandCollisionId}". Your function is still running, though it may exhibit unexpected behaviour. Using the same IDs across parallel chains of work can cause unexpected behaviour.`,
+              action:
+                "We recommend using a unique ID for each step, especially those happening in parallel.",
+              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+            }),
+          );
+        }
+      }
+    };
 
     /**
      * A helper used to report steps to the core loop. Used after adding an item
@@ -1362,39 +1431,45 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = resolveAfterPending().then(() => {
+      let extensionPromise: Promise<void>;
+      if (++tickExtensionCount >= 10) {
+        tickExtensionCount = 0;
+        extensionPromise = resolveNextTick();
+      } else {
+        extensionPromise = resolveAfterPending();
+      }
+
+      foundStepsReportPromise = extensionPromise.then(() => {
         foundStepsReportPromise = undefined;
 
-        for (const [hashedId, step] of unhandledFoundStepsToReport) {
-          // Note that we only run `step.handle()` if `step.hasStepState` is
-          // `true`. This gives us a chance to handle checkpointing in another
-          // part of the loop.
-          if (
-            (this.options.stepMode === StepMode.Async || step.hasStepState) &&
-            step.handle()
-          ) {
-            unhandledFoundStepsToReport.delete(hashedId);
+        for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
+          const nextStepId = remainingStepCompletionOrder[i];
+          if (!nextStepId) {
+            // Strange - skip this empty index
+            continue;
+          }
 
-            if (step.fulfilled) {
-              foundStepsToReport.delete(hashedId);
-            }
+          const handled = unhandledFoundStepsToReport.get(nextStepId)?.handle();
+          if (handled) {
+            remainingStepCompletionOrder.splice(i, 1);
+            unhandledFoundStepsToReport.delete(nextStepId);
+            return void reportNextTick();
           }
         }
 
-        if (foundStepsToReport.size) {
-          const steps = [...foundStepsToReport.values()] as [
-            FoundStep,
-            ...FoundStep[],
-          ];
+        // If we've handled no steps in this "tick," roll up everything we've
+        // found and report it.
+        const steps = [...foundStepsToReport.values()] as [
+          FoundStep,
+          ...FoundStep[],
+        ];
+        foundStepsToReport.clear();
+        unhandledFoundStepsToReport.clear();
 
-          foundStepsToReport.clear();
-          unhandledFoundStepsToReport.clear();
-
-          return void this.state.setCheckpoint({
-            type: "steps-found",
-            steps: steps,
-          });
-        }
+        return void this.state.setCheckpoint({
+          type: "steps-found",
+          steps: steps,
+        });
       });
     };
 
@@ -1447,12 +1522,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       // memoization lookup)
       const {
         hashedId,
-        stepInfo,
-        wrappedHandler,
-        setActualHandler,
-        stepState,
         isFulfilled,
-      } = this.applyMiddlewareToStep(opId, expectedNextStepIndexes);
+        setActualHandler,
+        stepInfo,
+        stepState,
+        wrappedHandler,
+      } = this.applyMiddlewareToStep(
+        opId,
+        expectedNextStepIndexes,
+        maybeWarnOfParallelIndexing,
+      );
 
       const { promise, resolve, reject } = createDeferredPromise();
 
@@ -1487,19 +1566,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         }
       }
 
-      // If transformStepInput middleware may have changed the input, update fnArgs
-      // so fn() uses the transformed values. Skip if replay already set extraOpts.
+      // If transformStepInput middleware may have changed the input, update
+      // `fnArgs` so `fn` uses the transformed values. Skip if replay already
+      // set `extraOpts`.
       if (!extraOpts && Array.isArray(stepInfo.input)) {
         fnArgs = [...args.slice(0, 2), ...stepInfo.input];
       }
 
-      // Update step name for Sleep if middleware modified input
-      if (opId.op === StepOpCode.Sleep && Array.isArray(stepInfo.input)) {
-        // @ts-expect-error - input is unknown[]
-        opId.name = timeStr(stepInfo.input[0]);
-      }
-
-      // Build FoundStep with middleware context
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
@@ -1546,6 +1619,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               async () => {
                 if (typeof result.data !== "undefined") {
                   // Validate waitForEvent results against the schema if present
+                  // Skip validation if result.data is null (timeout case)
                   if (
                     opId.op === StepOpCode.WaitForEvent &&
                     result.data !== null
@@ -1557,7 +1631,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                       // Unreachable
                       throw new Error("Missing event option in waitForEvent");
                     }
-
                     try {
                       await validateEvents(
                         [result.data],
@@ -1580,17 +1653,15 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                     Promise.resolve(result.data),
                   );
 
-                  step.middleware.wrappedHandler().then(resolve, reject);
+                  step.middleware.wrappedHandler().then(resolve);
                 } else {
                   const stepError = new StepError(opId.id, result.error);
                   this.state.recentlyRejectedStepError = stepError;
 
-                  // Set inner handler to throw step error (throw
-                  // instead of Promise.reject to avoid unhandled
-                  // rejection from the temporarily-unhandled promise)
-                  step.middleware.setActualHandler(() => {
-                    throw stepError;
-                  });
+                  // Set inner handler to reject with step error
+                  step.middleware.setActualHandler(() =>
+                    Promise.reject(stepError),
+                  );
 
                   step.middleware.wrappedHandler().catch(reject);
                 }
@@ -1605,7 +1676,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.steps.set(hashedId, step);
       this.state.hasSteps = true;
 
-      if (!isFulfilled && !stepState && step.fn) {
+      const isNewStepWithHandler = !isFulfilled && !stepState && step.fn;
+      if (isNewStepWithHandler) {
         // New, never-seen step with a handler (e.g. `step.run`). Kick off the
         // middleware wrapStep chain now so it runs during discovery, not later
         // in executeStep.
@@ -1614,20 +1686,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         // Reporting is deferred to the center of the onion so that if
         // middleware throws or injects prerequisites, the step is never
         // reported.
-        const executionDeferred = createDeferredPromise<unknown>();
-
-        step.executionDeferred = {
-          resolve: (value: unknown) => {
-            executionDeferred.resolve(value);
-          },
-          reject: (error: unknown) => {
-            executionDeferred.reject(error);
-          },
-        };
+        const deferred = createDeferredPromise<unknown>();
+        step.executionDeferred = deferred;
 
         setActualHandler(() => {
           pushStepToReport(step);
-          return executionDeferred.promise;
+          return deferred.promise;
         });
 
         step.transformedResultPromise = wrappedHandler();
@@ -1636,14 +1700,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         });
       } else {
         pushStepToReport(step);
-
-        // For fulfilled steps, handle immediately so memoized
-        // results propagate through middleware without waiting
-        // for reportNextTick. This ensures error propagation
-        // completes before dependent steps are executed.
-        if (isFulfilled) {
-          step.handle();
-        }
       }
 
       return promise;
@@ -1659,6 +1715,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   private applyMiddlewareToStep(
     opId: HashedOp,
     expectedNextStepIndexes: Map<string, number>,
+    maybeWarnOfParallelIndexing: (userlandCollisionId: string) => void,
   ): MiddlewareApplicationResult {
     // 1. Resolve initial collision with original ID
     const initialCollision = resolveStepIdCollision({
@@ -1667,6 +1724,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       stepsMap: this.state.steps,
     });
     if (initialCollision.finalId !== opId.id) {
+      maybeWarnOfParallelIndexing(opId.id);
       opId.id = initialCollision.finalId;
       if (initialCollision.index !== undefined) {
         opId.userland.index = initialCollision.index;
@@ -1721,7 +1779,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       stepInfo.hashedId = hashedId;
     }
 
-    // 4. Final memoization lookup with potentially modified hashedId
+    // 4. Final memoization lookup with potentially modified hashedId.
+    //    Also marks step as seen and may trigger onMemoizationEnd.
     const stepState = this.state.stepState[hashedId];
     let isFulfilled = false;
     if (stepState) {
@@ -1729,16 +1788,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.remainingStepsToBeSeen.delete(hashedId);
 
       if (this.state.allStateUsed()) {
-        this.maybeCallOnMemoizationEnd();
+        this.middlewareManager.onMemoizationEnd();
       }
 
       if (typeof stepState.input === "undefined") {
         isFulfilled = true;
       }
-      // Update memoized status based on final lookup (may differ if ID changed)
       stepInfo.memoized = isFulfilled;
     } else {
-      // ID may have changed to a non-memoized ID
       stepInfo.memoized = false;
     }
 
@@ -1800,7 +1857,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     return this.options.fn["onFailureFn"];
   }
 
-  private initializeTimer(state: V2ExecutionState): void {
+  private initializeTimer(state: ExecutionState): void {
     if (!this.options.requestedRunStep) {
       return;
     }
@@ -1808,7 +1865,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
     void this.timeout.then(() => {
-      this.maybeCallOnMemoizationEnd();
+      this.middlewareManager.onMemoizationEnd();
       state.setCheckpoint({
         type: "step-not-found",
         step: {
@@ -1819,7 +1876,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     });
   }
 
-  private initializeCheckpointRuntimeTimer(state: V2ExecutionState): void {
+  private initializeCheckpointRuntimeTimer(state: ExecutionState): void {
     this.debug(
       "initializing checkpointing runtime timers",
       this.options.checkpointingConfig,
@@ -1841,7 +1898,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
 
         void this.checkpointingMaxRuntimeTimer.then(() => {
-          this.maybeCallOnMemoizationEnd();
+          this.middlewareManager.onMemoizationEnd();
           state.setCheckpoint({
             type: "checkpointing-runtime-reached",
           });
@@ -1930,7 +1987,7 @@ type CheckpointHandlers = Record<
   }
 >;
 
-export interface V2ExecutionState {
+export interface ExecutionState {
   /**
    * A value that indicates that we're executing this step. Can be used to
    * ensure steps are not accidentally nested until we support this across all
@@ -1993,12 +2050,6 @@ export interface V2ExecutionState {
   remainingStepsToBeSeen: Set<string>;
 
   /**
-   * Whether `onMemoizationEnd` has already been called this request. Ensures
-   * exactly-once semantics across all call sites.
-   */
-  onMemoizationEndCalled: boolean;
-
-  /**
    * If defined, this is the error that purposefully thrown when memoizing step
    * state in order to support per-step errors.
    *
@@ -2047,14 +2098,12 @@ const hashOp = (op: OutgoingOp): OutgoingOp => {
 };
 
 /**
- * Exported for testing.
- */
-/**
  * Result of resolving a step ID collision.
  */
 interface CollisionResolutionResult {
   /** The final ID to use (either original or with index suffix). */
   finalId: string;
+
   /** The index used, if collision was detected. */
   index?: number;
 }
@@ -2062,11 +2111,11 @@ interface CollisionResolutionResult {
 /** Result of applying middleware to a step. */
 interface MiddlewareApplicationResult {
   hashedId: string;
-  stepInfo: Middleware.StepInfo;
-  wrappedHandler: () => Promise<unknown>;
-  setActualHandler: (handler: () => Promise<unknown>) => void;
-  stepState: MemoizedOp | undefined;
   isFulfilled: boolean;
+  setActualHandler: (handler: () => Promise<unknown>) => void;
+  stepInfo: Middleware.StepInfo;
+  stepState: MemoizedOp | undefined;
+  wrappedHandler: () => Promise<unknown>;
 }
 
 /**
@@ -2112,4 +2161,7 @@ function resolveStepIdCollision({
   );
 }
 
+/**
+ * Exported for testing.
+ */
 export const _internals = { hashOp, hashId, resolveStepIdCollision };

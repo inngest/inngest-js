@@ -609,7 +609,7 @@ export class InngestTestEngine {
     const execution = (options.function as InngestFunction.Any)[
       "createExecution"
     ]({
-      version: InngestExecution.ExecutionVersion.V1,
+      version: InngestExecution.ExecutionVersion.V2,
       partialOptions: {
         runId,
         client: (options.function as InngestFunction.Any)["client"],

@@ -18,7 +18,7 @@ import {
   type ErrorResponse,
   errorSchema,
   type StepsResponse,
-  stepsSchemas,
+  stepSchema,
 } from "./schema.ts";
 
 type FetchT = typeof fetch;
@@ -150,7 +150,6 @@ export class InngestApi {
 
   async getRunSteps(
     runId: string,
-    version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const result = await this.req(`/v0/runs/${runId}/actions`);
     if (result.ok) {
@@ -158,7 +157,7 @@ export class InngestApi {
       const data: unknown = await res.json();
 
       if (res.ok) {
-        return ok(stepsSchemas[version].parse(data));
+        return ok(stepSchema.parse(data));
       }
 
       return err(errorSchema.parse(data));
@@ -445,6 +444,7 @@ export class InngestApi {
     runId: string;
     event: APIStepPayload;
     executionVersion: ExecutionVersion;
+    retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({
@@ -453,6 +453,7 @@ export class InngestApi {
       steps: args.steps,
       ts: new Date().valueOf(),
       request_version: args.executionVersion,
+      retries: args.retries,
     });
 
     const result = await this.req("/v1/checkpoint", {
@@ -555,5 +556,25 @@ export class InngestApi {
         } - ${await res.text()}`,
       );
     }
+  }
+
+  /**
+   * Fetch the output of a completed run using a token.
+   *
+   * This uses token-based auth (not signing key) and is intended for use by
+   * proxy endpoints that fetch results on behalf of users.
+   *
+   * @param runId - The ID of the run to fetch output for
+   * @param token - The token used to authenticate the request
+   * @returns The raw Response from the API
+   */
+  async getRunOutput(runId: string, token: string): Promise<Response> {
+    const url = await this.getTargetUrl(`/v1/http/runs/${runId}/output`);
+    url.searchParams.set("token", token);
+
+    return this._fetch()(url.toString(), {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

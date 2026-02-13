@@ -149,6 +149,7 @@ export enum headerKeys {
   TraceState = "tracestate",
   InngestRunId = "x-run-id",
   InngestStepId = "x-inngest-step-id",
+  InngestForceStepPlan = "x-inngest-force-step-plan",
 }
 
 /**
@@ -203,14 +204,6 @@ export enum syncKind {
  * accounted for for a given operation.
  */
 export enum ExecutionVersion {
-  /**
-   * Very legacy, initial version of the executor. Uses hashed op objects and
-   * `pos` to determine the order of execution and which ops to run.
-   *
-   * Very stubborn about determinism.
-   */
-  V0 = 0,
-
   /**
    * Uses a more flexible approach to execution and is more lenient about
    * determinism, allowing non-step async actions and non-determinism.
