@@ -355,4 +355,74 @@ describe("response version header", () => {
       ExecutionVersion.V2.toString(),
     );
   });
+
+  test("responds with V1 when function opts out of optimized parallelism", async () => {
+    const client = createClient({ id: "test", isDev: true });
+
+    const optedOutFn = client.createFunction(
+      {
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+        optimizeParallelism: false,
+      },
+      () => "test",
+    );
+
+    const optedOutHandler = serve({ client, functions: [optedOutFn] });
+
+    const result = await runHandler(optedOutHandler);
+
+    expect(result.status).toBe(200);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V1.toString(),
+    );
+  });
+
+  test("responds with V1 when client opts out of optimized parallelism", async () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      optimizeParallelism: false,
+    });
+
+    const fn = client.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+
+    const handler = serve({ client, functions: [fn] });
+
+    const result = await runHandler(handler);
+
+    expect(result.status).toBe(200);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V1.toString(),
+    );
+  });
+
+  test("function-level optimizeParallelism overrides client-level", async () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      optimizeParallelism: false,
+    });
+
+    const fnWithOverride = client.createFunction(
+      {
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+        optimizeParallelism: true,
+      },
+      () => "test",
+    );
+
+    const handler = serve({ client, functions: [fnWithOverride] });
+
+    const result = await runHandler(handler);
+
+    expect(result.status).toBe(200);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
+  });
 });

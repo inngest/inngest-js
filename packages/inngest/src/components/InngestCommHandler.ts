@@ -1841,7 +1841,17 @@ export class InngestCommHandler<
     // Try to get the request version from headers before falling back to
     // parsing it from the body.
     const immediateFnData = parseFnData(data, headerReqVersion);
-    const version = ExecutionVersion.V2;
+    const { sdkDecided } = immediateFnData;
+    let version = ExecutionVersion.V2;
+
+    // Handle opting out of optimized parallelism
+    if (
+      version === ExecutionVersion.V2 &&
+      sdkDecided &&
+      fn.fn["shouldOptimizeParallelism"]?.() === false
+    ) {
+      version = ExecutionVersion.V1;
+    }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
