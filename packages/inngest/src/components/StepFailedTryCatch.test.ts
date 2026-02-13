@@ -1,9 +1,9 @@
 import { serializeError } from "../helpers/errors";
 import { StepMode } from "../types";
 import {
-  createV1InngestExecution,
+  createExecutionEngine,
   _internals as v1Internals,
-} from "./execution/v1";
+} from "./execution/engine.ts";
 import { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
@@ -35,7 +35,7 @@ describe("StepFailed OpCode with try/catch", () => {
 
     // Simulate memoized step state with a failed step
     const stepHashedId = v1Internals.hashId("failing-step");
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {
@@ -99,7 +99,7 @@ describe("StepFailed OpCode with try/catch", () => {
 
     // Simulate that we're at max attempts with a memoized failed step
     const stepHashedId = v1Internals.hashId("failing-step-2");
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {
@@ -157,7 +157,7 @@ describe("StepFailed OpCode with try/catch", () => {
     );
 
     const stepHashedId = v1Internals.hashId("error-shaped");
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {

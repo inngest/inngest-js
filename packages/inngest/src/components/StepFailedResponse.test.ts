@@ -1,6 +1,6 @@
 import { isSerializedError } from "../helpers/errors";
 import { StepMode, StepOpCode } from "../types";
-import { createV1InngestExecution } from "./execution/v1";
+import { createExecutionEngine } from "./execution/engine.ts";
 import { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
@@ -22,7 +22,7 @@ describe("StepFailed response contains minimal serialized error and retriable fa
       },
     );
 
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {

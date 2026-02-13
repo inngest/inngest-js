@@ -1,4 +1,3 @@
-import { ExecutionVersion } from "../helpers/consts.ts";
 import type { IsEqual, IsUnknown } from "../helpers/types.ts";
 import { createClient, runFnWithStack, testClientId } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
@@ -546,7 +545,7 @@ describe("stacking and inference", () => {
           throw new Error("test error");
         });
 
-        await runFnWithStack(fn, {}, { executionVersion: ExecutionVersion.V1 });
+        await runFnWithStack(fn, {});
 
         expect(error).toBeInstanceOf(Error);
       });
@@ -592,11 +591,7 @@ describe("stacking and inference", () => {
           throw new Error("test error");
         });
 
-        const res = await runFnWithStack(
-          fn,
-          {},
-          { executionVersion: ExecutionVersion.V1 },
-        );
+        const res = await runFnWithStack(fn, {});
 
         expect(res).toMatchObject({
           type: "function-rejected",
@@ -630,11 +625,7 @@ describe("stacking and inference", () => {
           throw new Error("test error");
         });
 
-        const res = await runFnWithStack(
-          fn,
-          {},
-          { executionVersion: ExecutionVersion.V1 },
-        );
+        const res = await runFnWithStack(fn, {});
 
         expect(res).toMatchObject({
           type: "function-rejected",
@@ -700,11 +691,7 @@ describe("stacking and inference", () => {
             },
           );
 
-          const res = await runFnWithStack(
-            fn,
-            {},
-            { executionVersion: ExecutionVersion.V1 },
-          );
+          const res = await runFnWithStack(fn, {});
 
           expect(res).toMatchObject({
             steps: [
@@ -753,11 +740,7 @@ describe("stacking and inference", () => {
             },
           );
 
-          const res = await runFnWithStack(
-            fn,
-            {},
-            { executionVersion: ExecutionVersion.V1 },
-          );
+          const res = await runFnWithStack(fn, {});
 
           expect(res).toMatchObject({
             steps: [
@@ -811,11 +794,7 @@ describe("stacking and inference", () => {
             },
           );
 
-          const res = await runFnWithStack(
-            fn,
-            {},
-            { executionVersion: ExecutionVersion.V1 },
-          );
+          const res = await runFnWithStack(fn, {});
 
           expect(res).toMatchObject({
             steps: [
@@ -872,11 +851,7 @@ describe("stacking and inference", () => {
             },
           );
 
-          await runFnWithStack(
-            fn,
-            {},
-            { executionVersion: ExecutionVersion.V1 },
-          );
+          await runFnWithStack(fn, {});
 
           expect(onSendEventSpy).toHaveBeenCalledTimes(2);
           expect(transformInputSpy).toHaveBeenCalledTimes(2);

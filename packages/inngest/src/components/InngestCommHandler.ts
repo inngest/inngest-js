@@ -20,7 +20,6 @@ import {
   getPlatformName,
   inngestHeaders,
   parseAsBoolean,
-  platformSupportsStreaming,
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
@@ -47,26 +46,23 @@ import {
   functionConfigSchema,
   type InBandRegisterRequest,
   inBandSyncRequestBodySchema,
-  type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   StepMode,
   StepOpCode,
-  type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
 import { getAsyncCtx } from "./execution/als.ts";
+import { _internals } from "./execution/engine.ts";
 import {
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
   PREFERRED_ASYNC_EXECUTION_VERSION,
-  PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
-import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
@@ -902,10 +898,9 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
-    const exeVersion = PREFERRED_CHECKPOINTING_EXECUTION_VERSION;
+    const exeVersion = ExecutionVersion.V2;
 
     const exe = fn["createExecution"]({
-      version: exeVersion,
       partialOptions: {
         client: this.client,
         data: {
@@ -1846,42 +1841,27 @@ export class InngestCommHandler<
     // Try to get the request version from headers before falling back to
     // parsing it from the body.
     const immediateFnData = parseFnData(data, headerReqVersion);
-    let { version, sdkDecided } = immediateFnData;
+    const { sdkDecided } = immediateFnData;
+    let version = ExecutionVersion.V2;
 
-    // Handle opting in to optimized parallelism in v3.
+    // Handle opting out of optimized parallelism
     if (
-      version === ExecutionVersion.V1 &&
+      version === ExecutionVersion.V2 &&
       sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.()
+      fn.fn["shouldOptimizeParallelism"]?.() === false
     ) {
-      version = ExecutionVersion.V2;
+      version = ExecutionVersion.V1;
     }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
         data: immediateFnData,
         api: this.client["inngestApi"],
-        version,
       });
 
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);
       }
-
-      type ExecutionStarter<V> = (
-        fnData: V extends ExecutionVersion
-          ? Extract<FnData, { version: V }>
-          : FnData,
-      ) => MaybePromise<CreateExecutionOptions>;
-
-      type GenericExecutionStarters = Record<
-        ExecutionVersion,
-        ExecutionStarter<unknown>
-      >;
-
-      type ExecutionStarters = {
-        [V in ExecutionVersion]: ExecutionStarter<V>;
-      };
 
       const createResponse =
         forceExecution && actions.experimentalTransformSyncResponse
@@ -1895,157 +1875,59 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const executionStarters = ((s: ExecutionStarters) =>
-        s as GenericExecutionStarters)({
-        [ExecutionVersion.V0]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, data]) => {
-            return {
-              ...acc,
+      const { event, events, steps, ctx } = anyFnData.value;
 
-              [id]: { id, data },
-            };
-          }, {});
+      const stepState = Object.entries(steps ?? {}).reduce<
+        InngestExecutionOptions["stepState"]
+      >((acc, [id, result]) => {
+        return {
+          ...acc,
+          [id]:
+            result.type === "data"
+              ? { id, data: result.data }
+              : result.type === "input"
+                ? { id, input: result.input }
+                : { id, error: result.error },
+        };
+      }, {});
 
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: StepMode.Async,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-              },
-              stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
-              timer,
-              isFailureHandler: fn.onFailure,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-            },
-          };
-        },
-        [ExecutionVersion.V1]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, result]) => {
-            return {
-              ...acc,
-              [id]:
-                result.type === "data"
-                  ? { id, data: result.data }
-                  : result.type === "input"
-                    ? { id, input: result.input }
-                    : { id, error: result.error },
-            };
-          }, {});
+      const requestedRunStep =
+        stepId === "step" ? undefined : stepId || undefined;
 
-          const requestedRunStep =
-            stepId === "step" ? undefined : stepId || undefined;
-
-          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
-            requestedRunStep,
-            ctx?.fn_id,
-            Boolean(ctx?.disable_immediate_execution),
-          );
-
-          return {
-            version:
-              checkpointingConfig && sdkDecided ? ExecutionVersion.V2 : version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: checkpointingConfig
-                ? StepMode.AsyncCheckpointing
-                : StepMode.Async,
-              checkpointingConfig,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-                maxAttempts: ctx?.max_attempts,
-              },
-              internalFnId: ctx?.fn_id,
-              queueItemId: ctx?.qi_id,
-              stepState,
-              requestedRunStep,
-              timer,
-              isFailureHandler: fn.onFailure,
-              disableImmediateExecution: ctx?.disable_immediate_execution,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-            },
-          };
-        },
-        [ExecutionVersion.V2]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, result]) => {
-            return {
-              ...acc,
-              [id]:
-                result.type === "data"
-                  ? { id, data: result.data }
-                  : result.type === "input"
-                    ? { id, input: result.input }
-                    : { id, error: result.error },
-            };
-          }, {});
-
-          const requestedRunStep =
-            stepId === "step" ? undefined : stepId || undefined;
-
-          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
-            requestedRunStep,
-            ctx?.fn_id,
-            Boolean(ctx?.disable_immediate_execution),
-          );
-
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: checkpointingConfig
-                ? StepMode.AsyncCheckpointing
-                : StepMode.Async,
-              checkpointingConfig,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-                maxAttempts: ctx?.max_attempts,
-              },
-              internalFnId: ctx?.fn_id,
-              queueItemId: ctx?.qi_id,
-              stepState,
-              requestedRunStep,
-              timer,
-              isFailureHandler: fn.onFailure,
-              disableImmediateExecution: ctx?.disable_immediate_execution,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-            },
-          };
-        },
-      });
-
-      const executionOptions = await executionStarters[version](
-        anyFnData.value,
+      const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+        requestedRunStep,
+        ctx?.fn_id,
+        Boolean(ctx?.disable_immediate_execution),
       );
+
+      const executionOptions: CreateExecutionOptions = {
+        partialOptions: {
+          client: this.client,
+          runId: ctx?.run_id || "",
+          stepMode: checkpointingConfig
+            ? StepMode.AsyncCheckpointing
+            : StepMode.Async,
+          checkpointingConfig,
+          data: {
+            event: event as EventPayload,
+            events: events as [EventPayload, ...EventPayload[]],
+            runId: ctx?.run_id || "",
+            attempt: ctx?.attempt ?? 0,
+            maxAttempts: ctx?.max_attempts,
+          },
+          internalFnId: ctx?.fn_id,
+          queueItemId: ctx?.qi_id,
+          stepState,
+          requestedRunStep,
+          timer,
+          isFailureHandler: fn.onFailure,
+          disableImmediateExecution: ctx?.disable_immediate_execution,
+          stepCompletionOrder: ctx?.stack?.stack ?? [],
+          reqArgs,
+          headers,
+          createResponse,
+        },
+      };
 
       return fn.fn["createExecution"](executionOptions).start();
     });

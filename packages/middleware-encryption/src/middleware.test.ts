@@ -256,7 +256,7 @@ const runFn = async ({
   const runId = "test-run";
 
   const execution = fn["createExecution"]({
-    version: InngestExecution.ExecutionVersion.V1,
+    version: InngestExecution.ExecutionVersion.V2,
     partialOptions: {
       client: fn["client"],
       data: {

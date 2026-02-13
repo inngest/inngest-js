@@ -18,7 +18,7 @@ import {
   type ErrorResponse,
   errorSchema,
   type StepsResponse,
-  stepsSchemas,
+  stepSchema,
 } from "./schema.ts";
 
 type FetchT = typeof fetch;
@@ -150,7 +150,6 @@ export class InngestApi {
 
   async getRunSteps(
     runId: string,
-    version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const result = await this.req(`/v0/runs/${runId}/actions`);
     if (result.ok) {
@@ -158,7 +157,7 @@ export class InngestApi {
       const data: unknown = await res.json();
 
       if (res.ok) {
-        return ok(stepsSchemas[version].parse(data));
+        return ok(stepSchema.parse(data));
       }
 
       return err(errorSchema.parse(data));
