@@ -88,7 +88,10 @@ export const getStepTools = (
   executionOptions: Partial<InngestExecutionOptions> = {},
 ) => {
   const execution = client
-    .createFunction({ id: "test" }, { event: "test" }, () => undefined)
+    .createFunction(
+      { id: "test", triggers: [{ event: "test" }] },
+      () => undefined,
+    )
     ["createExecution"]({
       version: PREFERRED_ASYNC_EXECUTION_VERSION,
       partialOptions: {
@@ -850,8 +853,7 @@ export const testFramework = (
               });
 
             const fn1 = inngestCloud.createFunction(
-              { id: "fn1" },
-              { event: "demo/event.sent" },
+              { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
               () => "fn1",
             );
             const serveOrigin = "https://example.com";
@@ -899,8 +901,7 @@ export const testFramework = (
               });
 
             const fn1 = inngestCloud.createFunction(
-              { id: "fn1" },
-              { event: "demo/event.sent" },
+              { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
               () => "fn1",
             );
             const servePath = "/foo/bar/inngest/endpoint";
@@ -986,8 +987,7 @@ export const testFramework = (
             });
 
           const fn1 = inngestCloud.createFunction(
-            { id: "fn1" },
-            { event: "demo/event.sent" },
+            { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
             () => "fn1",
           );
           const serveOrigin = "https://example.com";
@@ -1037,8 +1037,7 @@ export const testFramework = (
             });
 
           const fn1 = inngestCloud.createFunction(
-            { id: "fn1" },
-            { event: "demo/event.sent" },
+            { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
             () => "fn1",
           );
           const serveOrigin = "https://new-origin.com";
@@ -1090,8 +1089,7 @@ export const testFramework = (
             });
 
           const fn1 = inngestCloud.createFunction(
-            { id: "fn1" },
-            { event: "demo/event.sent" },
+            { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
             () => "fn1",
           );
           const serveHost = "https://old-host.com";
@@ -1453,8 +1451,11 @@ export const testFramework = (
           const client = createClient({ id: "test", isDev: true });
 
           const fn = client.createFunction(
-            { name: "Test", id: "test" },
-            { event: "demo/event.sent" },
+            {
+              name: "Test",
+              id: "test",
+              triggers: [{ event: "demo/event.sent" }],
+            },
             () => "fn",
           );
 
@@ -1473,8 +1474,11 @@ export const testFramework = (
         const client = createClient({ id: "test" });
 
         const fn = client.createFunction(
-          { name: "Test", id: "test" },
-          { event: "demo/event.sent" },
+          {
+            name: "Test",
+            id: "test",
+            triggers: [{ event: "demo/event.sent" }],
+          },
           () => "fn",
         );
         const env = {
@@ -1765,8 +1769,11 @@ export const testFramework = (
 
       describe("malformed payloads", () => {
         const fn = inngest.createFunction(
-          { name: "Test", id: "test" },
-          { event: "demo/event.sent" },
+          {
+            name: "Test",
+            id: "test",
+            triggers: [{ event: "demo/event.sent" }],
+          },
           () => "fn",
         );
         const env = {

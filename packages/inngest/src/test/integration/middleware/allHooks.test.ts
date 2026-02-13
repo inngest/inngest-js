@@ -141,8 +141,8 @@ describe("all hooks fire in correct order with 2 middleware", () => {
           id: "fn",
           retries: 0,
           middleware: functionMiddleware,
+          triggers: [{ event: eventName }],
         },
-        { event: eventName },
         async ({ step, runId }) => {
           state.runId = runId;
           state.logs.push("fn: top");

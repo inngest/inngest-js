@@ -1,8 +1,7 @@
 import { inngest } from "./inngest";
 
 export const simpleSleepFunction = inngest.createFunction(
-  { id: "simple-sleep-function" },
-  { event: "demo/simple.sleep" },
+  { id: "simple-sleep-function", triggers: [{ event: "demo/simple.sleep" }] },
   async ({ step }) => {
     await step.sleep("wait-10s", "5s");
     return { message: "Function completed after 5 seconds!" };
@@ -10,8 +9,7 @@ export const simpleSleepFunction = inngest.createFunction(
 );
 
 export const multiStepStreamingFunction = inngest.createFunction(
-  { id: "multi-step-streaming-function" },
-  { event: "demo/multistep.start" },
+  { id: "multi-step-streaming-function", triggers: [{ event: "demo/multistep.start" }] },
   async ({ step, publish, event }) => {
     await publish({
       channel: `multi-step-streaming-function.${event.data.uuid}`,
@@ -60,8 +58,7 @@ export const multiStepStreamingFunction = inngest.createFunction(
 );
 
 export const failingFunction = inngest.createFunction(
-  { id: "failing-function", retries: 1 },
-  { event: "demo/failing.function" },
+  { id: "failing-function", retries: 1, triggers: [{ event: "demo/failing.function" }] },
   async ({ step }) => {
     // first step sleeps for 5 seconds
     await step.sleep("wait-5s", "5s");
@@ -81,8 +78,8 @@ export const throttledFunction = inngest.createFunction(
       limit: 2,
       period: "2s",
     },
+    triggers: [{ event: "demo/throttled.function" }],
   },
-  { event: "demo/throttled.function" },
   async ({ step }) => {
     // first step sleeps for 1 second
     await step.sleep("wait-1s", "1s");

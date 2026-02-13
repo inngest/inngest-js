@@ -18,8 +18,7 @@
  * ```ts
  * const myFn = inngest.createFunction({
  *  id: "my-function",
- * }, {
- *   event: "user/created",
+ *  triggers: [{ event: "user/created" }],
  * }, async ({ event, step }) => {
  *   console.log("User created:", event.data);
  * });

@@ -29,8 +29,7 @@ test("fires once per run (not on memoized requests)", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       await step.run("my-step", () => "result");
       state.runId = runId;
@@ -64,8 +63,7 @@ test("fires even when function errors", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
       throw new Error("fn error");
@@ -99,8 +97,7 @@ test("fires with no steps", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
       return "hello";

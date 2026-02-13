@@ -32,8 +32,7 @@ test("async local storage context via wrapFunctionHandler", async () => {
     middleware: [AsyncLocalStorageMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       const context = asyncLocalStorage.getStore();

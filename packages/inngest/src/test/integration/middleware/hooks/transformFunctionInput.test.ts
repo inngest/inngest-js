@@ -34,8 +34,7 @@ test("same as ctx in function handler", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async (ctx) => {
       state.runId = ctx.runId;
       state.fn.ctx = ctx;
@@ -86,8 +85,7 @@ test("modify event data", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ event, runId }) => {
       state.runId = runId;
       state.receivedEventData = event.data;
@@ -144,8 +142,7 @@ test("modify memoized step data", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       const output = await step.run("my-step", () => {
@@ -196,8 +193,7 @@ test("dependency injection", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ db, runId }) => {
       state.runId = runId;
       expectTypeOf(db).not.toBeAny();
@@ -244,8 +240,7 @@ test("add step method", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       state.stepOutputs.push(

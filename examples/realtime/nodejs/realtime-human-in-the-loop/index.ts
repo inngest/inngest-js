@@ -42,8 +42,7 @@ export const agenticWorkflowChannel = channel("agentic-workflow").addTopic(
 
 // Define the main workflow function
 export const agenticWorkflow = inngest.createFunction(
-  { id: "agentic-workflow" }, // Unique function ID
-  { event: "agentic-workflow/start" }, // Triggered by this event
+  { id: "agentic-workflow", triggers: [{ event: "agentic-workflow/start" }] }, // Unique function ID, triggered by this event
   async ({ step, publish, logger }) => {
     logger.info("Starting agentic workflow");
 

@@ -35,8 +35,7 @@ test("1 step", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       try {
@@ -90,8 +89,7 @@ test("multiple steps with errors", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       try {
@@ -168,8 +166,7 @@ test("no errors", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("step-1", () => "success");
@@ -202,8 +199,7 @@ test("multiple attempts", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 1 },
-    { event: eventName },
+    { id: "fn", retries: 1, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       try {

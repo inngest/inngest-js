@@ -151,10 +151,13 @@ describe("getLogger", () => {
 
     let loggerFromHelper: unknown;
 
-    const fn = inngest.createFunction({ id: "test" }, { event: "" }, () => {
-      loggerFromHelper = getLogger();
-      return "done";
-    });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "" }] },
+      () => {
+        loggerFromHelper = getLogger();
+        return "done";
+      },
+    );
 
     // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
@@ -175,8 +178,7 @@ describe("getLogger", () => {
     let loggerFromCtx: unknown;
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ logger }) => {
         loggerFromCtx = logger;
         loggerFromHelper = getLogger();

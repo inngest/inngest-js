@@ -1,8 +1,11 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { id: "handling-step-errors", retries: 1 },
-  { event: "demo/handling.step.errors" },
+  {
+    id: "handling-step-errors",
+    retries: 1,
+    triggers: [{ event: "demo/handling.step.errors" }],
+  },
   async ({ step }) => {
     try {
       await step.run("a", () => {

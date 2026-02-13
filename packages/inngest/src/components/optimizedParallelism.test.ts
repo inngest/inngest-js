@@ -50,8 +50,8 @@ describe("EXE-1135: Default to optimized parallelism", () => {
           {
             id: "test-fn",
             ...(fn !== undefined && { optimizeParallelism: fn }),
+            triggers: [{ event: "test/event" }],
           },
-          { event: "test/event" },
           async ({ step }) => {
             await step.run("a", () => "a");
           },
@@ -66,8 +66,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("propagates parallelMode to step.run ops", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           await Promise.race([
             step.run({ id: "a", parallelMode: "race" }, () => "a"),
@@ -95,8 +94,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("omits parallelMode from ops when not specified", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           await Promise.all([
             step.run("a", () => "a"),
@@ -122,8 +120,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("propagates parallelMode to step.sleep ops", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           await Promise.race([
             step.run({ id: "a", parallelMode: "race" }, () => "a"),
@@ -149,8 +146,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("propagates parallelMode to step.waitForEvent ops", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step }) => {
           await Promise.race([
             step.run({ id: "work", parallelMode: "race" }, () => "done"),
@@ -180,8 +176,11 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("propagates parallelMode even when optimizeParallelism is false", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn", optimizeParallelism: false },
-        { event: "test/event" },
+        {
+          id: "test-fn",
+          optimizeParallelism: false,
+          triggers: [{ event: "test/event" }],
+        },
         async ({ step }) => {
           await Promise.race([
             step.run({ id: "a", parallelMode: "race" }, () => "a"),
@@ -209,8 +208,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("automatically sets parallelMode on steps inside callback", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step, group }) => {
           await group.parallel(async () => {
             return Promise.race([
@@ -241,8 +239,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("does not affect steps outside the callback", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step, group }) => {
           // This step is outside group.parallel() - should NOT have parallelMode
           const outside = step.run("outside", () => "outside");
@@ -286,8 +283,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("group.parallel() context applies to all steps in callback", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step, group }) => {
           await group.parallel({ mode: "race" }, async () => {
             return Promise.race([
@@ -318,8 +314,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test("works with all step types (sleep, waitForEvent)", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
-        { id: "test-fn" },
-        { event: "test/event" },
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
         async ({ step, group }) => {
           await group.parallel(async () => {
             return Promise.race([
@@ -418,8 +413,8 @@ describe("EXE-1135: Default to optimized parallelism", () => {
           {
             id: "test-fn",
             ...(fnOpt !== undefined && { optimizeParallelism: fnOpt }),
+            triggers: [{ event: "test/event" }],
           },
-          { event: "test/event" },
           async () => "done",
         );
 

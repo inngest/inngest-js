@@ -24,8 +24,7 @@ test("no steps", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
       state.logs.push("fn: top");
@@ -59,8 +58,7 @@ test("1 step", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       state.logs.push("fn: top");
@@ -108,8 +106,7 @@ test("2 steps", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       state.logs.push("fn: top");

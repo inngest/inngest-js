@@ -26,8 +26,8 @@ test("function-level middleware only on that function", async () => {
       id: "fn-1",
       retries: 0,
       middleware: [MW],
+      triggers: [{ event: fnWithMwEventName }],
     },
-    { event: fnWithMwEventName },
     async ({ runId }) => {
       fnWithMwState.runId = runId;
     },
@@ -37,8 +37,8 @@ test("function-level middleware only on that function", async () => {
     {
       id: "fn-2",
       retries: 0,
+      triggers: [{ event: fnWithoutMwEventName }],
     },
-    { event: fnWithoutMwEventName },
     async ({ runId }) => {
       fnWithoutMwState.runId = runId;
     },

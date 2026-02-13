@@ -31,8 +31,7 @@ test("1 step", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       state.logs.push("fn: top");
@@ -92,8 +91,7 @@ test("multiple steps", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("step-1", () => "result1");
@@ -149,8 +147,7 @@ test("unsupported step kinds", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.invoke("invoke", { function: childFn });
@@ -163,7 +160,6 @@ test("unsupported step kinds", async () => {
   );
   const childFn = client.createFunction(
     { id: "child-fn", retries: 0 },
-    [],
     () => {},
   );
 

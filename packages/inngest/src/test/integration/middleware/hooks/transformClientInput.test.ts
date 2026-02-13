@@ -35,8 +35,7 @@ test("transform event data before sending", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ event, runId }) => {
       state.runId = runId;
       state.receivedEventData = event.data;
@@ -98,8 +97,7 @@ test("multiple middleware transform in order", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ event, runId }) => {
       state.runId = runId;
       state.receivedEventData = event.data;

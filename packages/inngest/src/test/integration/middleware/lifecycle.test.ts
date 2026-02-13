@@ -32,8 +32,7 @@ test("state does not bleed between requests", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("my-step", () => "result");
@@ -77,8 +76,7 @@ test("each request gets a fresh instance", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("my-step", () => "result");
@@ -131,8 +129,7 @@ test("middleware state is consistent within a single request", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
     },

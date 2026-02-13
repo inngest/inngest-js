@@ -52,8 +52,7 @@ describe("output", async () => {
       middleware: [MW],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.step.output = await step.run("my-step", async () => {
           state.step.insideCount++;
@@ -122,8 +121,7 @@ describe("output", async () => {
       middleware: [MW1, MW2],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.step.output = await step.run("my-step", async () => {
           state.step.insideCount++;
@@ -200,8 +198,7 @@ describe("error", async () => {
       middleware: [MW],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         try {
           await step.run("my-step", async () => {
@@ -209,7 +206,6 @@ describe("error", async () => {
             throw new InsideStepError("original");
           });
         } catch (error) {
-          console.log("caught", error);
           state.step.error = error;
         }
         state.runId = runId;
@@ -288,8 +284,7 @@ describe("error", async () => {
       middleware: [MW1, MW2],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         try {
           await step.run("my-step", async () => {
@@ -297,7 +292,6 @@ describe("error", async () => {
             throw new InsideStepError("original");
           });
         } catch (error) {
-          console.log("caught", error);
           state.step.error = error;
         }
         state.runId = runId;
@@ -353,8 +347,7 @@ test("wrap step handler", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.stepResult = await step.run("my-step", async () => {
         return "step result";
@@ -402,8 +395,7 @@ test("multiple middleware in correct order (reverse/wrapping)", async () => {
     middleware: [Mw1, Mw2],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       await step.run("my-step", async () => {
         state.logs.push("step executed");
@@ -457,8 +449,7 @@ test("called when both fresh and memoized", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       await step.run("step-1", async () => "result-1");
       await step.run("step-2", async () => "result-2");
@@ -532,8 +523,7 @@ test("bookend step.sleep", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.sleep("zzz", "1s");
@@ -605,8 +595,7 @@ test("bookend with steps", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.normalStep.output = await step.run("step-1", () => {
         state.normalStep.insideCount++;
@@ -718,8 +707,7 @@ test("2 middleware with staticTransform", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       const output = await step.run("my-step", () => {
         return {
@@ -774,8 +762,7 @@ describe("throws", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.runId = runId;
         state.fn.count++;
@@ -830,10 +817,8 @@ describe("throws", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
-        console.log("fn");
         state.runId = runId;
         state.fn.count++;
         await step.run("normal-step", () => {
@@ -879,8 +864,7 @@ describe("throws", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.runId = runId;
         state.fn.count++;

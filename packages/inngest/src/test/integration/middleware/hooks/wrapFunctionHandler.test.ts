@@ -46,8 +46,7 @@ test("multiple middleware in correct order", async () => {
     middleware: [Mw1, Mw2],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
       state.logs.push("fn: top");
@@ -113,8 +112,7 @@ test("bookend with steps", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       state.normalStep.output = await step.run("step-1", () => {
@@ -161,8 +159,7 @@ describe("modify output", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
         return "original result";
@@ -203,8 +200,7 @@ describe("modify output", () => {
       middleware: [Mw1, Mw2],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
         return "result";
@@ -258,8 +254,7 @@ describe("modify error", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
         throw new OriginalError("original");
@@ -309,8 +304,7 @@ describe("modify error", () => {
       middleware: [Mw1, Mw2],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
         throw new Error("error");
@@ -349,8 +343,7 @@ describe("modify error", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
       },
@@ -387,8 +380,7 @@ describe("modify error", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
         throw new Error("function error");
@@ -423,8 +415,7 @@ describe("modify error", () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 2 },
-      { event: eventName },
+      { id: "fn", retries: 2, triggers: [{ event: eventName }] },
       async ({ runId }) => {
         state.runId = runId;
         state.fnCallCount++;
@@ -438,5 +429,127 @@ describe("modify error", () => {
 
     // Function should only run once — NonRetriableError prevents retries
     expect(state.fnCallCount).toBe(1);
+  });
+});
+
+describe("throws", () => {
+  test("in hook", async () => {
+    // Errors in the hook are treated as function-level errors
+
+    const state = createState({
+      fn: { count: 0 },
+      hook: { count: 0 },
+    });
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
+        async (_next, { ctx }) => {
+          state.runId = ctx.runId;
+          state.hook.count++;
+          throw new Error("oh no");
+        };
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+      async () => {
+        state.fn.count++;
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunFailed();
+
+    expect(state.fn).toEqual({ count: 0 });
+    expect(state.hook).toEqual({ count: 1 });
+  });
+
+  test("in hook step", async () => {
+    // Errors in a step created by the hook are treated as function-level errors
+
+    const state = createState({
+      fn: { count: 0 },
+      hook: { count: 0 },
+      hookStep: { count: 0 },
+    });
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
+        async (next, { ctx }) => {
+          state.runId = ctx.runId;
+          state.hook.count++;
+          await ctx.step.run("hook-step", () => {
+            state.hookStep.count++;
+            throw new Error("oh no");
+          });
+          return next();
+        };
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+      async () => {
+        state.fn.count++;
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunFailed();
+
+    expect(state.fn).toEqual({ count: 0 });
+    expect(state.hook).toEqual({ count: 2 });
+    expect(state.hookStep).toEqual({ count: 1 });
+  });
+
+  test("in function", async () => {
+    // Errors in the function handler are treated as function-level errors
+
+    const state = createState({
+      fn: { count: 0 },
+      hook: { count: 0 },
+    });
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      override wrapFunctionHandler = async (next: () => Promise<unknown>) => {
+        state.hook.count++;
+        return next();
+      };
+    }
+
+    const eventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+      async ({ runId }) => {
+        state.runId = runId;
+        state.fn.count++;
+        throw new Error("oh no");
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    await client.send({ name: eventName });
+    await state.waitForRunFailed();
+
+    expect(state.fn).toEqual({ count: 1 });
+    expect(state.hook).toEqual({ count: 1 });
   });
 });

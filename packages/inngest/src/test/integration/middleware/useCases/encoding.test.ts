@@ -71,8 +71,7 @@ test("base64 encoding/decoding middleware", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       const step1Output = await step.run("step-1", () => {

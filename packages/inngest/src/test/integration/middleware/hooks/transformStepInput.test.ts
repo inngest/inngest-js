@@ -37,8 +37,7 @@ test("modify step.run input (1 middleware)", async () => {
     middleware: [MW],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run(
@@ -99,8 +98,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
     middleware: [MW1, MW2],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run(
@@ -166,8 +164,7 @@ describe("change step ID", async () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.step1.output = await step.run("step-1", () => {
           state.step1.insideCount++;
@@ -262,8 +259,7 @@ describe("change step ID", async () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.step1.output = await step.run("step-1", () => {
           state.step1.insideCount++;
@@ -408,8 +404,7 @@ test("modify all step kinds", async () => {
     middleware: [MW],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.invoke("invoke", { function: childFn, data: { value: 1 } });
@@ -440,8 +435,11 @@ test("modify all step kinds", async () => {
     },
   );
   const childFn = client.createFunction(
-    { id: "child", retries: 0 },
-    invoke(z.object({ value: z.number() })),
+    {
+      id: "child",
+      retries: 0,
+      triggers: [invoke(z.object({ value: z.number() }))],
+    },
     async ({ event }) => {
       state.invoke.input = event.data.value;
     },
@@ -511,8 +509,7 @@ test("called for memoized and fresh", async () => {
     middleware: [MW],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("step-1", async () => "result-1");

@@ -37,8 +37,7 @@ test("fires when function throws", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
       throw new MyError("fn error");
@@ -81,8 +80,7 @@ test("does NOT fire when function succeeds", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("my-step", () => "result");
@@ -117,8 +115,7 @@ test("fires when function throws after steps complete", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0 },
-    { event: eventName },
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("my-step", () => "result");
@@ -156,8 +153,7 @@ test("multiple attempts", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 1 },
-    { event: eventName },
+    { id: "fn", retries: 1, triggers: [{ event: eventName }] },
     async ({ runId }) => {
       state.runId = runId;
       state.attempts++;

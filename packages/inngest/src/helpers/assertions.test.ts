@@ -18,8 +18,7 @@ describe("isInngestFunction", () => {
     const inngest = new Inngest({ id: "test" });
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "user/created" },
+      { id: "test", triggers: [{ event: "user/created" }] },
       () => undefined,
     );
 

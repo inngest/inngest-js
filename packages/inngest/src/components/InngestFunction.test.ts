@@ -422,8 +422,7 @@ describe("runFn", () => {
         const B = vi.fn(() => "B");
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await run("A", A);
             await run("B", B);
@@ -499,8 +498,7 @@ describe("runFn", () => {
         const B = vi.fn(() => "B");
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { waitForEvent, run } }) => {
             const foo = await waitForEvent("wait-id", {
               event: "foo",
@@ -599,8 +597,7 @@ describe("runFn", () => {
         const C = vi.fn(() => "C");
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await Promise.all([run("A", A), run("B", B)]);
             await run("C", C);
@@ -776,8 +773,7 @@ describe("runFn", () => {
         const BWins = vi.fn(() => Promise.resolve("B wins"));
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             const winner = await Promise.race([run("A", A), run("B", B)]);
 
@@ -941,8 +937,7 @@ describe("runFn", () => {
         const BWins = vi.fn(() => Promise.resolve("B wins"));
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             const winner = await Promise.race([
               run("A", A),
@@ -1029,8 +1024,7 @@ describe("runFn", () => {
         const id = "A";
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await run(id, A);
             await run(id, B);
@@ -1118,8 +1112,7 @@ describe("runFn", () => {
         const id = "A";
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await Promise.all([run(id, A), run(id, B), run(id, C)]);
           },
@@ -1175,8 +1168,7 @@ describe("runFn", () => {
         const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await run(id, A);
             await wait(200);
@@ -1243,8 +1235,7 @@ describe("runFn", () => {
         const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await Promise.all([run(id, A), run(id, B)]);
             await wait(200);
@@ -1302,8 +1293,7 @@ describe("runFn", () => {
         const BFailed = vi.fn(() => "B failed");
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             return Promise.all([
               run("A", A),
@@ -1456,8 +1446,7 @@ describe("runFn", () => {
         });
 
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await run("A", A);
           },
@@ -1495,8 +1484,7 @@ describe("runFn", () => {
       "throws a NonRetriableError when thrown inside the main function body",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             throw new NonRetriableError("Error message");
           },
@@ -1530,8 +1518,7 @@ describe("runFn", () => {
         });
 
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async ({ step: { run } }) => {
             await run("A", A);
           },
@@ -1578,8 +1565,7 @@ describe("runFn", () => {
       "detects NonRetriableError by name when instanceof fails",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             const error = new Error("Simulated monorepo error");
             error.name = "NonRetriableError";
@@ -1614,8 +1600,7 @@ describe("runFn", () => {
       "detects RetryAfterError by name when instanceof fails",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             const error = new Error(
               "Simulated monorepo retry error",
@@ -1654,8 +1639,7 @@ describe("runFn", () => {
       "throws a retriable error when a string is thrown inside the main function body",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             throw "foo";
           },
@@ -1685,8 +1669,7 @@ describe("runFn", () => {
       "throws a retriable error when an empty object is thrown inside the main function body",
       () => {
         const fn = inngest.createFunction(
-          { id: "Foo" },
-          { event: "foo" },
+          { id: "Foo", triggers: [{ event: "foo" }] },
           async () => {
             throw {};
           },
@@ -1721,12 +1704,12 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           {
             id: "name",
+            triggers: [{ event: "foo" }],
             onFailure: async ({ step: { run } }) => {
               await run("A", A);
               await run("B", B);
             },
           },
-          { event: "foo" },
           () => undefined,
         );
 
@@ -1823,8 +1806,7 @@ describe("runFn", () => {
         });
 
         const fn = inngest.createFunction(
-          { id: "name" },
-          { event: "foo" },
+          { id: "name", triggers: [{ event: "foo" }] },
           async ({ step: { run }, logger }) => {
             assertType<typeof logger extends Logger ? true : false>(true);
             logger.info("info1");
@@ -1925,13 +1907,13 @@ describe("runFn", () => {
           inngest.createFunction(
             {
               id: "test",
+              triggers: [{ event: "test" }],
               onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
                 assertType<Error>(error);
               },
             },
-            { event: "test" },
             () => {
               // no-op
             },
@@ -1950,11 +1932,11 @@ describe("runFn", () => {
       const fn = inngest.createFunction(
         {
           id: "testfn",
+          triggers: [{ event: "foo" }],
           onFailure: () => {
             // no-op
           },
         },
-        { event: "foo" },
         () => {
           // no-op
         },
@@ -2011,8 +1993,11 @@ describe("runFn", () => {
 
         test("allows any event name", () => {
           inngest.createFunction(
-            { id: "test", cancelOn: [{ event: "anything" }] },
-            { event: "test" },
+            {
+              id: "test",
+              cancelOn: [{ event: "anything" }],
+              triggers: [{ event: "test" }],
+            },
             () => {
               // no-op
             },
@@ -2024,8 +2009,8 @@ describe("runFn", () => {
             {
               id: "test",
               cancelOn: [{ event: "anything", match: "data.anything" }],
+              triggers: [{ event: "test" }],
             },
-            { event: "test" },
             () => {
               // no-op
             },
@@ -2042,8 +2027,11 @@ describe("runFn", () => {
       });
 
       const fn = inngest.createFunction(
-        { id: "testfn", cancelOn: [{ event: "baz", match: "data.title" }] },
-        { event: "foo" },
+        {
+          id: "testfn",
+          cancelOn: [{ event: "baz", match: "data.title" }],
+          triggers: [{ event: "foo" }],
+        },
         () => {
           // no-op
         },

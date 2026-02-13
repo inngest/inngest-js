@@ -29,8 +29,7 @@ describe("client level", () => {
       middleware: [EncodingMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      { event: eventName },
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.runId = runId;
         const output = await step.run("my-step", () => {
@@ -72,8 +71,7 @@ describe("client level", () => {
       middleware: [EncodingMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0 },
-      et,
+      { id: "fn", retries: 0, triggers: [et] },
       async ({ event, events, runId }) => {
         state.runId = runId;
         expectTypeOf(event.data).not.toBeAny();
@@ -122,8 +120,7 @@ describe("client level", () => {
       middleware: [EncodingMiddleware],
     });
     const parentFn = client.createFunction(
-      { id: "parent-fn", retries: 0 },
-      { event: eventName },
+      { id: "parent-fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.runId = runId;
         const output = await step.invoke("a", {
@@ -136,8 +133,11 @@ describe("client level", () => {
       },
     );
     const childFn = client.createFunction(
-      { id: "child-fn", retries: 0 },
-      invoke(z.object({ date: z.date(), int: z.number() })),
+      {
+        id: "child-fn",
+        retries: 0,
+        triggers: [invoke(z.object({ date: z.date(), int: z.number() }))],
+      },
       async ({ event, events }) => {
         expectTypeOf(event.data).not.toBeAny();
         state.eventData = event.data;
@@ -191,8 +191,12 @@ describe("function level", () => {
       isDev: true,
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0, middleware: [EncodingMiddleware] },
-      { event: eventName },
+      {
+        id: "fn",
+        retries: 0,
+        middleware: [EncodingMiddleware],
+        triggers: [{ event: eventName }],
+      },
       async ({ step, runId }) => {
         state.runId = runId;
         const output = await step.run("my-step", () => {
@@ -233,8 +237,12 @@ describe("function level", () => {
       isDev: true,
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0, middleware: [EncodingMiddleware] },
-      et,
+      {
+        id: "fn",
+        retries: 0,
+        middleware: [EncodingMiddleware],
+        triggers: [et],
+      },
       async ({ event, events, runId }) => {
         state.runId = runId;
         expectTypeOf(event.data).not.toBeAny();
@@ -282,8 +290,12 @@ describe("function level", () => {
       isDev: true,
     });
     const parentFn = client.createFunction(
-      { id: "parent-fn", retries: 0, middleware: [EncodingMiddleware] },
-      { event: eventName },
+      {
+        id: "parent-fn",
+        retries: 0,
+        middleware: [EncodingMiddleware],
+        triggers: [{ event: eventName }],
+      },
       async ({ step, runId }) => {
         state.runId = runId;
         const output = await step.invoke("a", {
@@ -296,8 +308,12 @@ describe("function level", () => {
       },
     );
     const childFn = client.createFunction(
-      { id: "child-fn", retries: 0, middleware: [EncodingMiddleware] },
-      invoke(z.object({ date: z.date(), int: z.number() })),
+      {
+        id: "child-fn",
+        retries: 0,
+        middleware: [EncodingMiddleware],
+        triggers: [invoke(z.object({ date: z.date(), int: z.number() }))],
+      },
       async ({ event, events }) => {
         expectTypeOf(event.data).not.toBeAny();
         state.eventData = event.data;
