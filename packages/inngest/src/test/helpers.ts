@@ -19,6 +19,7 @@ import {
   getStepOptions,
 } from "../components/InngestStepTools.ts";
 import {
+  type ExecutionVersion,
   envKeys,
   headerKeys,
   queryKeys,

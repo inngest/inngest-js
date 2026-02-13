@@ -159,7 +159,6 @@ describe("getLogger", () => {
       },
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
     await t.execute();
 
@@ -186,7 +185,6 @@ describe("getLogger", () => {
       },
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
     const { result } = await t.execute();
 

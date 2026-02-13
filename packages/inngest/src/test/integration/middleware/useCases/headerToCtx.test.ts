@@ -56,8 +56,9 @@ test("request headers available in function ctx via middleware", async () => {
   await state.waitForRunComplete();
 
   // Verify that the function received headers injected from the request
-  expect(state.receivedHeaders).toBeDefined();
-  expect(state.receivedHeaders).toEqual(expect.objectContaining({
-    "Content-Type": expect.any(String),
-  }));
+  expect(state.receivedHeaders).toEqual(
+    expect.objectContaining({
+      "Content-Type": expect.any(String),
+    }),
+  );
 });

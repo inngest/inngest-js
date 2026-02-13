@@ -65,12 +65,9 @@ import {
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
-
-
+import { step } from "./InngestStepTools.ts";
 import { buildWrapClientRequestChain } from "./middleware/index.ts";
 import { Middleware, type MiddlewareClass } from "./middleware/middleware.ts";
-import { step } from "./InngestStepTools.ts";
-
 
 import type { Realtime } from "./realtime/types";
 import {
@@ -654,12 +651,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   /**
    * Decrypt a proxy response using the client's middleware stack.
    *
-   * This is called internally by proxy handlers to decrypt E2E encrypted
-   * function results. It runs the `transformInput` hook which handles
-   * decryption in encryption middleware.
-   *
-   * Uses type assertions because we're creating a minimal "fake" execution
-   * context just to run the decryption middleware hooks - not a full execution.
+   * Runs `transformFunctionInput` on each middleware instance to decrypt
+   * step data (used by encryption middleware).
    *
    * @internal
    */
@@ -667,67 +660,39 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private async decryptProxyResult<T extends { data?: unknown }>(
     result: T,
   ): Promise<T> {
-    // If there's no data, nothing to decrypt
     if (!result.data) {
       return result;
     }
 
-    // Create a minimal context for the middleware
-    // We pass result.data as a "step" since that's what encryption middleware
-    // expects to decrypt in transformInput
+    const mwInstances = this.middleware.map((Cls) => new Cls());
+
     const dummyEvent = { name: "__proxy__", data: {} };
+    const dummyCtx = {
+      event: dummyEvent,
+      events: [dummyEvent],
+      runId: "__proxy__",
+      attempt: 0,
+      step,
+    } as unknown as BaseContext<Inngest.Any>;
 
-    // The middleware system expects a full execution context. We create a
-    // context that satisfies the types while containing minimal real data.
-    // The encryption middleware only uses `steps[].data` for decryption.
-    const proxyFn = {
-      id: () => "__proxy__",
-      name: "__proxy__",
-    } as InngestFunction.Any;
-
-    const hooks = await getHookStack(
-      this.middleware,
-      "onFunctionRun",
-      {
-        ctx: { event: dummyEvent, runId: "__proxy__" },
-        fn: proxyFn,
-        steps: [{ id: "__result__", data: result.data }],
-        reqArgs: [] as readonly unknown[],
+    let transformArgs: Middleware.TransformFunctionInputArgs = {
+      ctx: dummyCtx,
+      steps: {
+        __result__: { type: "data" as const, data: result.data },
       },
-      {
-        transformInput: (prev, output) => ({
-          ctx: { ...prev.ctx, ...output?.ctx },
-          fn: proxyFn,
-          steps: prev.steps.map((step, i) => ({
-            ...step,
-            ...output?.steps?.[i],
-          })),
-          reqArgs: prev.reqArgs,
-        }),
-        transformOutput: (prev, output) => ({
-          result: { ...prev.result, ...output?.result },
-        }),
-      },
-    );
+    };
 
-    // The middleware system only needs certain ctx properties for decryption.
-    // We cast to satisfy the full BaseContext type since group is unused here.
-    const transformed = await hooks.transformInput?.({
-      ctx: {
-        event: dummyEvent,
-        events: [dummyEvent],
-        runId: "__proxy__",
-        attempt: 0,
-        step,
-      } as unknown as Record<string, unknown> &
-        Readonly<BaseContext<Inngest.Any>>,
-      fn: proxyFn,
-      reqArgs: [],
-      steps: [{ id: "__result__", data: result.data }],
-    });
+    for (const mw of mwInstances) {
+      if (mw.transformFunctionInput) {
+        transformArgs = mw.transformFunctionInput(transformArgs);
+      }
+    }
 
-    // Extract decrypted data from the steps
-    const decryptedData = transformed?.steps?.[0]?.data ?? result.data;
+    const decryptedStep = transformArgs.steps?.__result__;
+    let decryptedData = result.data;
+    if (decryptedStep && "data" in decryptedStep) {
+      decryptedData = decryptedStep.data;
+    }
 
     return { ...result, data: decryptedData };
   }

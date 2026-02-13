@@ -3,14 +3,12 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 
-
 import {
   defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
   internalEvents,
 } from "../../helpers/consts.ts";
-
 
 import {
   deserializeError,
@@ -452,20 +450,9 @@ class InngestExecutionEngine
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
-        // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: stepResult.data },
-          step: undefined,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? stepResult.data;
-
-        // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
-          data: transformedData,
+          data: stepResult.data,
         });
       }
 
@@ -520,21 +507,11 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
-        // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: checkpoint.data },
-          step: undefined,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? checkpoint.data;
-
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(transformedData),
+            data: await this.options.createResponse!(checkpoint.data),
           },
         ]);
 
@@ -593,18 +570,7 @@ class InngestExecutionEngine
         const stepToResume = this.resumeStepWithResult(result);
 
         // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: result.data },
-          step: undefined,
-        });
-        const transformedData = transformedOutput?.result?.data ?? result.data;
-
-        // Create a copy for checkpointing with transformed data
-        const stepForCheckpoint = { ...stepToResume, data: transformedData };
-
-        return void (await this.checkpoint([stepForCheckpoint]));
+        return void (await this.checkpoint([stepToResume]));
       },
 
       "checkpointing-runtime-reached": () => {

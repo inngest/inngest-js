@@ -18,7 +18,6 @@ import type {
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
 
-
 import type { Inngest } from "./Inngest.ts";
 import type { MiddlewareClass } from "./middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "./triggers/triggers.ts";
