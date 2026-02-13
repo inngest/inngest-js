@@ -105,7 +105,7 @@ describe("client level", () => {
     // Invoke a function with a Date object and expect the Date object to exist in
     // the child function's event data and the parent function's `step.invoke`
     // output. In other words, a Date object flows through:
-    // Client send -> Parent fn -> Child fn -> Parent fn
+    // Parent fn -> Child fn -> Parent fn
 
     const state = createState({
       eventData: null as { date: Date; int: number } | null,

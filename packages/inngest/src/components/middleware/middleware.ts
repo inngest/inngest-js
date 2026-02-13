@@ -222,16 +222,12 @@ export namespace Middleware {
   /**
    * Base class for creating middleware. Extend this class to create custom
    * middleware with hooks for step execution.
-   *
-   * @example
-   * ```ts
-   * class MyMiddleware extends Middleware.BaseMiddleware {
-   *   onStepStart(arg: Middleware.OnStepStartArgs) {
-   *     console.log(`Starting step: ${stepInfo.options.id}`);
-   *   }
-   * }
-   * ```
    */
+  // @privateRemark
+  // Methods are nullish instead of noops as a performance optimization. This is
+  // primarily because of `wrapStep`. Each defined `wrapStep` method adds 1 more
+  // promise to the chain for each step. This chain runs every time the step
+  // completes/errors (even when memoized).
   export class BaseMiddleware {
     /**
      * Called once when the middleware class is added to an Inngest client or
@@ -329,6 +325,14 @@ export namespace Middleware {
      * Return the (potentially modified) arg object. Each middleware builds on
      * the previous middleware's result (forward order).
      */
+    // @privateRemark
+    // Step input transformation could happen in `wrapStep`, but we chose not to
+    // for the following reasons:
+    // 1. `wrapStep` may have a negative performance impact under certain
+    //    workloads.
+    // 2. `wrapStep` is a little more complicated to use.
+    // 3. Since `transformFunctionInput` must exist, having this hook
+    //    establishes a consistent pattern for input transformation.
     transformStepInput?(arg: TransformStepInputArgs): TransformStepInputArgs;
 
     /**
@@ -339,6 +343,11 @@ export namespace Middleware {
      * Return the (potentially modified) arg object. Each middleware builds on
      * the previous middleware's result.
      */
+    // @privateRemark
+    // Input transformation can't happen in `wrapFunctionHandler` because that
+    // prevents static type inference for the transformation. For example, if
+    // the user added `ctx.db` in `wrapFunctionHandler` then the static types
+    // wouldn't show `ctx.db` in the function handler.
     transformFunctionInput?(
       arg: Middleware.TransformFunctionInputArgs,
     ): Middleware.TransformFunctionInputArgs;
