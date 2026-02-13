@@ -115,8 +115,8 @@ test("info hooks for parallel steps", async () => {
 
   expect(state.logs).toEqual([
     // 1st request
-    "onRunStart",
     "onMemoizationEnd",
+    "onRunStart",
     "fn: top",
     "onStepStart",
     "step-1: inside",

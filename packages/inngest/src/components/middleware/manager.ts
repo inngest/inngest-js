@@ -1,3 +1,4 @@
+import { getLogger } from "../../helpers/log.ts";
 import { timeStr } from "../../helpers/strings.ts";
 import type { Context, StepOpCode } from "../../types.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
@@ -280,7 +281,15 @@ export class MiddlewareManager {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepStart) {
-        mw.onStepStart({ stepInfo, ctx });
+        try {
+          mw.onStepStart({ stepInfo, ctx });
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onStepStart",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }
@@ -289,7 +298,15 @@ export class MiddlewareManager {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepEnd) {
-        mw.onStepEnd({ stepInfo, ctx, data });
+        try {
+          mw.onStepEnd({ stepInfo, ctx, data });
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onStepEnd",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }
@@ -302,7 +319,15 @@ export class MiddlewareManager {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepError) {
-        mw.onStepError({ stepInfo, ctx, error, isFinalAttempt });
+        try {
+          mw.onStepError({ stepInfo, ctx, error, isFinalAttempt });
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onStepError",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }
@@ -318,7 +343,15 @@ export class MiddlewareManager {
 
     for (const mw of this.middleware) {
       if (mw?.onMemoizationEnd) {
-        mw.onMemoizationEnd();
+        try {
+          mw.onMemoizationEnd();
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onMemoizationEnd",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }
@@ -327,7 +360,15 @@ export class MiddlewareManager {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunStart) {
-        mw.onRunStart({ ctx });
+        try {
+          mw.onRunStart({ ctx });
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onRunStart",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }
@@ -336,7 +377,15 @@ export class MiddlewareManager {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunEnd) {
-        mw.onRunEnd({ ctx, data });
+        try {
+          mw.onRunEnd({ ctx, data });
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onRunEnd",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }
@@ -345,7 +394,15 @@ export class MiddlewareManager {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunError) {
-        mw.onRunError({ ctx, error, isFinalAttempt });
+        try {
+          mw.onRunError({ ctx, error, isFinalAttempt });
+        } catch (error) {
+          getLogger().error("middleware error", {
+            error,
+            hook: "onRunError",
+            mw: mw.constructor.name,
+          });
+        }
       }
     }
   }

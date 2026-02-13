@@ -1004,12 +1004,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const fnInputResult = this.middlewareManager.transformFunctionInput();
     this.applyFunctionInputMutations(fnInputResult);
 
-    if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
-      this.middlewareManager.onRunStart();
-    }
-
     if (this.state.allStateUsed()) {
       this.middlewareManager.onMemoizationEnd();
+    }
+
+    if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
+      this.middlewareManager.onRunStart();
     }
 
     const innerHandler: () => Promise<unknown> = async () => {

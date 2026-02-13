@@ -246,3 +246,51 @@ test("multiple attempts", async () => {
   expect(error.name).toBe("MyError");
   expect(error.message).toBe("my error");
 });
+
+test("throws", async () => {
+  const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  const state = createState({
+    hook: { count: 0 },
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onStepError() {
+      state.hook.count++;
+      throw new Error("oh no");
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      try {
+        await step.run("my-step", () => {
+          throw new Error("step error");
+        });
+      } catch {}
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  expect(state.hook).toEqual({ count: 1 });
+  expect(consoleSpy).toHaveBeenCalledWith("middleware error", {
+    error: expect.any(Error),
+    hook: "onStepError",
+    mw: "TestMiddleware",
+  });
+
+  consoleSpy.mockRestore();
+});

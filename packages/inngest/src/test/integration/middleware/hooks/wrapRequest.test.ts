@@ -6,7 +6,6 @@ import {
   randomSuffix,
   sleep,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);

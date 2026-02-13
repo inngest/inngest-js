@@ -2,7 +2,6 @@ import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  anyContext,
   createState,
   randomSuffix,
   testNameFromFileUrl,
@@ -111,4 +110,47 @@ test("fires with no steps", async () => {
 
   // No steps = 1 request = 1 call
   expect(state.count).toBe(1);
+});
+
+test("throws", async () => {
+  const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  const state = createState({
+    hook: { count: 0 },
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onRunStart() {
+      state.hook.count++;
+      throw new Error("oh no");
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ runId }) => {
+      state.runId = runId;
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  expect(state.hook).toEqual({ count: 1 });
+  expect(consoleSpy).toHaveBeenCalledWith("middleware error", {
+    error: expect.any(Error),
+    hook: "onRunStart",
+    mw: "TestMiddleware",
+  });
+
+  consoleSpy.mockRestore();
 });

@@ -169,3 +169,47 @@ test("unsupported step kinds", async () => {
   await state.waitForRunComplete();
   expect(state.count).toEqual(0);
 });
+
+test("throws", async () => {
+  const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  const state = createState({
+    hook: { count: 0 },
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override onStepStart() {
+      state.hook.count++;
+      throw new Error("oh no");
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      await step.run("my-step", () => "result");
+    },
+  );
+
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  expect(state.hook).toEqual({ count: 1 });
+  expect(consoleSpy).toHaveBeenCalledWith("middleware error", {
+    error: expect.any(Error),
+    hook: "onStepStart",
+    mw: "TestMiddleware",
+  });
+
+  consoleSpy.mockRestore();
+});

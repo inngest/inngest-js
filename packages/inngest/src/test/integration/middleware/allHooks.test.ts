@@ -176,10 +176,10 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "wrapRequest: before (mw2)",
         "transformFunctionInput (mw1)",
         "transformFunctionInput (mw2)",
-        "onRunStart (mw1)",
-        "onRunStart (mw2)",
         "onMemoizationEnd (mw1)", // Fires immediately (no memoized state)
         "onMemoizationEnd (mw2)",
+        "onRunStart (mw1)",
+        "onRunStart (mw2)",
         "wrapFunctionHandler: before (mw1)",
         "wrapFunctionHandler: before (mw2)",
         "fn: top",
