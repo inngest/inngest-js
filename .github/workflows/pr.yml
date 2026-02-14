@@ -166,6 +166,7 @@ jobs:
       - uses: "./.github/actions/setup-and-build"
       - uses: "CodSpeedHQ/action@v4"
         with:
+          mode: "walltime"
           run: "pnpm bench"
 
   "eslint-plugin_test":
