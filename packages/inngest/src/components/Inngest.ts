@@ -992,12 +992,10 @@ export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
       override wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
-        return next()
-          .catch((err: unknown) => {
-            this.#proxyLogger.error(err);
-            throw err;
-          })
-          .finally(() => this.#proxyLogger.flush());
+        return next().catch((err: unknown) => {
+          this.#proxyLogger.error(err);
+          throw err;
+        });
       }
 
       override wrapRequest({ next }: Middleware.WrapRequestArgs) {

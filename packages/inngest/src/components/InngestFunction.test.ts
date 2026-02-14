@@ -15,7 +15,7 @@ const clearConsole = () => {
 };
 
 import { fromPartial } from "@total-typescript/shoehorn";
-import type { Mock, MockInstance } from "vitest";
+import type { Mock } from "vitest";
 import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
@@ -130,15 +130,14 @@ describe("runFn", () => {
         describe("success", () => {
           let fn: InngestFunction.Any;
           let ret: ExecutionResult;
-          let flush: MockInstance<() => void>;
 
           beforeAll(async () => {
             vi.restoreAllMocks();
-            flush = vi
-              .spyOn(ProxyLogger.prototype, "flush")
-              .mockImplementation(async () => {
+            vi.spyOn(ProxyLogger.prototype, "flush").mockImplementation(
+              async () => {
                 /* noop */
-              });
+              },
+            );
 
             fn = new InngestFunction(
               createClient(opts),
@@ -172,10 +171,6 @@ describe("runFn", () => {
             expect((ret as ExecutionResults["function-resolved"]).data).toBe(
               stepRet,
             );
-          });
-
-          test("should attempt to flush logs", () => {
-            expect(flush).toHaveBeenCalledTimes(1);
           });
         });
 
@@ -278,18 +273,11 @@ describe("runFn", () => {
             let tools: T;
             let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
             let retErr: Error | undefined;
-            let flush: MockInstance<() => void>;
-
             beforeAll(() => {
               vi.restoreAllMocks();
               vi.resetModules();
               clearLogger();
               clearConsole();
-              flush = vi
-                .spyOn(ProxyLogger.prototype, "flush")
-                .mockImplementation(async () => {
-                  /* noop */
-                });
               hashDataSpy = getHashDataSpy();
               tools = createTools();
             });
@@ -381,11 +369,6 @@ describe("runFn", () => {
                   expect(step).not.toHaveBeenCalled();
                 }
               });
-            });
-
-            test("should attempt to flush logs", () => {
-              // could be flushed multiple times so no specifying counts
-              expect(flush).toHaveBeenCalled();
             });
 
             if (

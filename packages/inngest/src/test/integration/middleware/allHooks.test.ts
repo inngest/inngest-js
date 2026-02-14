@@ -356,13 +356,7 @@ test("all hooks fire in correct order with checkpointing", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-
-  // With checkpointing, the dev server may not record a finalization span,
-  // so we wait for the last middleware hook instead of using
-  // waitForRunComplete.
-  await waitFor(() => {
-    expect(state.logs).toContain("wrapRequest: after");
-  });
+  await state.waitForRunComplete();
 
   expect(state.logs).toEqual([
     "onRegister",

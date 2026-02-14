@@ -199,57 +199,8 @@ describe("builtInMiddleware", () => {
     delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
   });
 
-  test("flushes logger after successful execution", async () => {
-    const { Inngest } = await import("../index.ts");
-    const { InngestTestEngine } = await import("@inngest/test");
-
-    const flush = vi.fn();
-    const customLogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      flush,
-    };
-
-    const inngest = new Inngest({ id: "test", logger: customLogger });
-    const fn = inngest.createFunction(
-      { id: "test", triggers: [{ event: "" }] },
-      () => "done",
-    );
-
-    const t = new InngestTestEngine({ function: fn as any });
-    await t.execute();
-
-    expect(flush).toHaveBeenCalled();
-  });
-
-  test("flushes logger even when function throws", async () => {
-    const { Inngest } = await import("../index.ts");
-    const { InngestTestEngine } = await import("@inngest/test");
-
-    const flush = vi.fn();
-    const customLogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      flush,
-    };
-
-    const inngest = new Inngest({ id: "test", logger: customLogger });
-    const fn = inngest.createFunction(
-      { id: "test", retries: 0, triggers: [{ event: "" }] },
-      () => {
-        throw new Error("boom");
-      },
-    );
-
-    const t = new InngestTestEngine({ function: fn as any });
-    await t.execute();
-
-    expect(flush).toHaveBeenCalled();
-  });
+  // Flush behavior is tested in src/test/integration/logger.test.ts where
+  // wrapRequest (the flush mechanism) is exercised through the full HTTP stack.
 
   test("forwards log calls to underlying logger during execution", async () => {
     const { Inngest } = await import("../index.ts");

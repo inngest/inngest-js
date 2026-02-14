@@ -1,4 +1,5 @@
 import path from "path";
+import { z } from "zod/v3";
 import { Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";
 import { DEV_SERVER_URL } from "../devServerTestHarness.ts";
@@ -203,8 +204,6 @@ async function fetchRunResult(
 ): Promise<RunResult> {
   const deadline = Date.now() + timeout;
 
-  // Poll for a FINALIZATION span with an outputID.
-  let outputID: string | undefined;
   while (Date.now() < deadline) {
     const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
       method: "POST",
@@ -212,65 +211,44 @@ async function fetchRunResult(
       body: JSON.stringify({
         query: `query ($runId: String!) {
           run(runID: $runId) {
-            trace(preview: true) {
-              stepType outputID status
-              childrenSpans {
-                stepType outputID status
-                childrenSpans { stepType outputID status }
-              }
-            }
+            output
+            status
           }
         }`,
         variables: { runId },
       }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+    const data = await res.json();
+    const json = z
+      .object({
+        data: z.object({
+          run: z.nullable(
+            z.object({
+              output: z.nullable(z.string()),
+              status: z.string(),
+            }),
+          ),
+        }),
+      })
+      .parse(data);
+    if (json.data.run?.output) {
+      const parsed = JSON.parse(json.data.run.output);
 
-    const json = await res.json();
-    const find = (span: Record<string, unknown>): string | undefined => {
-      if (span.stepType === "FINALIZATION" && span.outputID) {
-        return span.outputID as string;
+      if (json.data.run.status === "COMPLETED") {
+        return { data: parsed };
       }
-      if (Array.isArray(span.childrenSpans)) {
-        for (const child of span.childrenSpans) {
-          const id = find(child as Record<string, unknown>);
-          if (id) return id;
-        }
+      if (json.data.run.status === "FAILED") {
+        return { error: parsed };
       }
-      return undefined;
-    };
+    }
 
-    const trace = json?.data?.run?.trace;
-    if (trace) outputID = find(trace);
-    if (outputID) break;
     await sleep(400);
   }
-  if (!outputID) {
-    throw new Error(`Timed out waiting for finalization of run ${runId}`);
-  }
 
-  // Fetch the output blob.
-  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: `query ($outputId: String!) {
-        runTraceSpanOutputByID(outputID: $outputId) {
-          data
-          error { name message stack cause }
-        }
-      }`,
-      variables: { outputId: outputID },
-    }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-
-  const json = await res.json();
-  const payload = json?.data?.runTraceSpanOutputByID;
-  if (payload.error) {
-    return { error: payload.error };
-  }
-  return { data: JSON.parse(payload.data) };
+  throw new Error(`Timed out waiting for run ${runId} to end`);
 }
 
 export class BaseState {
@@ -306,7 +284,7 @@ export class BaseState {
 }
 
 export function createState<T extends Record<string, unknown>>(
-  initial: T,
+  initial?: T,
 ): BaseState & T {
   return Object.assign(new BaseState(), initial);
 }

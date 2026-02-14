@@ -361,7 +361,6 @@ test("with checkpointing", async () => {
   // and using it within the function handler.
 
   const state = createState({
-    done: false,
     stepOutputs: [] as Date[],
     wrapStepCalls: [] as { id: string; memoized: boolean; output: unknown }[],
   });
@@ -400,15 +399,11 @@ test("with checkpointing", async () => {
 
       // Sleep to ensure we reenter the function
       await step.sleep("zzz", "1s");
-
-      state.done = true;
     },
   );
   await createTestApp({ client, functions: [fn] });
   await client.send({ name: eventName });
-  await waitFor(() => {
-    expect(state.done).toBe(true);
-  });
+  await state.waitForRunComplete();
 
   // Always deserialized within the function handler
   expect(state.stepOutputs).toEqual([

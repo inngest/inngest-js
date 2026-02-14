@@ -598,6 +598,13 @@ class InngestExecutionEngine
        * The user's function has completed and returned a value.
        */
       "function-resolved": async ({ data }) => {
+        // Check for unreported new steps (e.g. from Promise.race where
+        // the winning branch completed before losing branches reported)
+        const newStepsResult = await maybeReturnNewSteps();
+        if (newStepsResult) {
+          return newStepsResult;
+        }
+
         // We need to do this even here for async, as we could be returning
         // data from an API endpoint, even if we were triggered async.
         if (this.options.createResponse) {
