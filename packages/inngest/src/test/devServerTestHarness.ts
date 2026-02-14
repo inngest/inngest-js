@@ -38,6 +38,8 @@ export async function startDevServer(): Promise<void> {
         DEV_SERVER_PORT.toString(),
         "--retry-interval",
         "1",
+        "--tick",
+        "10",
       ],
       {
         stdio: ["ignore", "pipe", "pipe"],

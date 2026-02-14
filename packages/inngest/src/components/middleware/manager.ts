@@ -85,8 +85,8 @@ export class MiddlewareManager {
     this.getStepState = getStepState;
     this.middleware = middleware;
 
-    this.hasTransformStepInput = middleware.some(
-      (mw) => Boolean(mw?.transformStepInput),
+    this.hasTransformStepInput = middleware.some((mw) =>
+      Boolean(mw?.transformStepInput),
     );
   }
 
@@ -300,11 +300,11 @@ export class MiddlewareManager {
             });
           };
 
-          return mw
-            .wrapStep!({ next: guardedNext, stepInfo, ctx })
-            .finally(() => {
+          return mw.wrapStep!({ next: guardedNext, stepInfo, ctx }).finally(
+            () => {
               this.activeWrapStep.delete(mw);
-            });
+            },
+          );
         };
       }
     }
