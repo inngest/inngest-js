@@ -8,6 +8,7 @@ import {
   optsFromStepInput,
   stepInputFromOpts,
   stepKindFromOpCode,
+  UnreachableError,
 } from "./utils.ts";
 
 export interface StepInfoOptions {
@@ -69,6 +70,12 @@ export class MiddlewareManager {
 
   private readonly middleware: Middleware.BaseMiddleware[];
 
+  /**
+   * Infinite recursion guard for `wrapStep`. Prevents a middleware from
+   * wrapping steps it creates inside its own `wrapStep` via `ctx.step.run`.
+   */
+  private readonly activeWrapStep = new Set<Middleware.BaseMiddleware>();
+
   constructor(
     fnArg: Context.Any,
     getStepState: () => Record<string, MemoizedOp>,
@@ -79,7 +86,7 @@ export class MiddlewareManager {
     this.middleware = middleware;
 
     this.hasTransformStepInput = middleware.some(
-      (mw) => !!mw?.transformStepInput,
+      (mw) => Boolean(mw?.transformStepInput),
     );
   }
 
@@ -271,7 +278,34 @@ export class MiddlewareManager {
       const mw = this.middleware[i];
       if (mw?.wrapStep) {
         const next = chain;
-        chain = () => mw.wrapStep!({ next, stepInfo, ctx });
+        chain = () => {
+          if (!mw.wrapStep) {
+            throw new UnreachableError("wrapStep is undefined");
+          }
+
+          // Infinite recursion guard: skip if this middleware is already
+          // executing
+          if (this.activeWrapStep.has(mw)) {
+            return next();
+          }
+
+          this.activeWrapStep.add(mw);
+
+          // Remove from active while inside next() so only the middleware
+          // that directly calls ctx.step.run() is guarded.
+          const guardedNext = () => {
+            this.activeWrapStep.delete(mw);
+            return next().finally(() => {
+              this.activeWrapStep.add(mw);
+            });
+          };
+
+          return mw
+            .wrapStep!({ next: guardedNext, stepInfo, ctx })
+            .finally(() => {
+              this.activeWrapStep.delete(mw);
+            });
+        };
       }
     }
     return chain;

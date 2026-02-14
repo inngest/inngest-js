@@ -367,8 +367,6 @@ test("with checkpointing", async () => {
 
   class MW extends DateSerializerMiddleware {
     override async wrapStep(args: Middleware.WrapStepArgs) {
-      console.log(args);
-
       const output = await super.wrapStep(args);
       state.wrapStepCalls.push({
         id: args.stepInfo.options.id,

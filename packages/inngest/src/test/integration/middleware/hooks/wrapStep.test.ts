@@ -698,6 +698,68 @@ test("2 middleware with stepOutputTransform", async () => {
   });
 });
 
+test("infinite recursion protection", async () => {
+  // Creating a step inside `wrapStep` doesn't result in infinite recursion
+
+  const state = createState({
+    mw1: { stepIds: new Set<string>() },
+    mw2: { stepIds: new Set<string>() },
+    mw3: { stepIds: new Set<string>() },
+    newStep: { count: 0 },
+    normalStep: { count: 0 },
+  });
+
+  class MW1 extends Middleware.BaseMiddleware {
+    override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
+      state.mw1.stepIds.add(stepInfo.options.id);
+      return next();
+    }
+  }
+
+  class MW2 extends Middleware.BaseMiddleware {
+    override async wrapStep({ ctx, next, stepInfo }: Middleware.WrapStepArgs) {
+      state.mw2.stepIds.add(stepInfo.options.id);
+      await ctx.step.run("new", () => {
+        state.newStep.count++;
+      });
+      return next();
+    }
+  }
+
+  class MW3 extends Middleware.BaseMiddleware {
+    override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
+      state.mw3.stepIds.add(stepInfo.options.id);
+      return next();
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [MW1, MW2, MW3],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      await step.run("normal", () => {
+        state.normalStep.count++;
+      });
+    },
+  );
+  await createTestApp({ client, functions: [fn] });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  expect(state.newStep).toEqual({ count: 1 });
+  expect(state.normalStep).toEqual({ count: 1 });
+  expect(state.mw1.stepIds).toEqual(new Set(["normal", "new"]));
+  expect(state.mw2.stepIds).toEqual(new Set(["normal"]));
+  expect(state.mw3.stepIds).toEqual(new Set(["normal", "new"]));
+});
+
 describe("throws", () => {
   test("in hook", async () => {
     // Errors in the hook are treated as function-level errors
@@ -794,9 +856,9 @@ describe("throws", () => {
 
     expect(state.fn).toEqual({ count: 2 });
 
-    // 4 because the `wrapStep` method *also* runs for the step defined in the
-    // hook
-    expect(state.hook).toEqual({ count: 4 });
+    // 2 because the middleware is auto-skipped for "hook-step" (recursion
+    // protection skips a middleware for steps it creates inside wrapStep)
+    expect(state.hook).toEqual({ count: 2 });
 
     expect(state.hookStep).toEqual({ count: 1 });
     expect(state.step).toEqual({ count: 0 });
