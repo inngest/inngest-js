@@ -167,7 +167,7 @@ jobs:
       - uses: "CodSpeedHQ/action@v4"
         with:
           mode: "walltime"
-          run: "pnpm bench"
+          run: "pnpm -C packages/inngest bench"
 
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
