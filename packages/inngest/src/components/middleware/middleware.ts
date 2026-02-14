@@ -237,15 +237,6 @@ export namespace Middleware {
   // completes/errors (even when memoized).
   export class BaseMiddleware {
     /**
-     * Called once when the middleware class is added to an Inngest client or
-     * Inngest function. Use this for one-time setup that needs a reference to
-     * the client instance (e.g. registering processors, setting feature flags).
-     */
-    static onRegister(args: Middleware.OnRegisterArgs): void {
-      // no-op by default
-    }
-
-    /**
      * Declare this to specify how function return types are transformed.
      * Used by `GetFunctionOutput` to determine the public output type of a
      * function.
@@ -264,7 +255,7 @@ export namespace Middleware {
      * }
      * ```
      *
-     * @default Middleware.DefaultStaticTransform (Date -> string, functions removed, etc.)
+     * @default Middleware.DefaultStaticTransform (e.g. Date -> string)
      */
     declare functionOutputTransform: DefaultStaticTransform;
 
@@ -284,9 +275,16 @@ export namespace Middleware {
      * }
      * ```
      *
-     * @default Middleware.DefaultStaticTransform (Date -> string, functions removed, etc.)
+     * @default Middleware.DefaultStaticTransform (e.g. Date -> string)
      */
     declare stepOutputTransform: DefaultStaticTransform;
+
+    /**
+     * Called once when the middleware class is added to an Inngest client or
+     * Inngest function. Use this for one-time setup that needs a reference to
+     * the client instance (e.g. registering processors, setting feature flags).
+     */
+    static onRegister?(args: Middleware.OnRegisterArgs): void;
 
     /**
      * Called once per request, after memoization completes.
@@ -299,6 +297,26 @@ export namespace Middleware {
      * then this is calls.
      */
     onMemoizationEnd?(): void;
+
+    /**
+     * Called when the function completes successfully. Receives the return
+     * value (after `wrapFunctionHandler` transformations). Does NOT fire when
+     * the function errors — `onRunError` fires instead.
+     */
+    onRunComplete?(arg: Middleware.OnRunCompleteArgs): void;
+
+    /**
+     * Called when the function throws an error. Receives the error instance.
+     * Does NOT fire when the function succeeds — `onRunComplete` fires instead.
+     */
+    onRunError?(arg: Middleware.OnRunErrorArgs): void;
+
+    /**
+     * Called once per run on the very first request (0 memoized steps,
+     * attempt 0). Does NOT fire on subsequent requests where steps are
+     * being replayed.
+     */
+    onRunStart?(arg: Middleware.OnRunStartArgs): void;
 
     /**
      * Called each time a step successfully completes. Only called for `step.run`
@@ -322,24 +340,21 @@ export namespace Middleware {
     onStepStart?(arg: Middleware.OnStepStartArgs): void;
 
     /**
-     * Called once per run on the very first request (0 memoized steps,
-     * attempt 0). Does NOT fire on subsequent requests where steps are
-     * being replayed.
+     * Called once per run before execution. Use this to modify the function's
+     * input context (event data, step tools, custom properties) and memoized
+     * step data.
+     *
+     * Return the (potentially modified) arg object. Each middleware builds on
+     * the previous middleware's result.
      */
-    onRunStart?(arg: Middleware.OnRunStartArgs): void;
-
-    /**
-     * Called when the function completes successfully. Receives the return
-     * value (after `wrapFunctionHandler` transformations). Does NOT fire when
-     * the function errors — `onRunError` fires instead.
-     */
-    onRunComplete?(arg: Middleware.OnRunCompleteArgs): void;
-
-    /**
-     * Called when the function throws an error. Receives the error instance.
-     * Does NOT fire when the function succeeds — `onRunComplete` fires instead.
-     */
-    onRunError?(arg: Middleware.OnRunErrorArgs): void;
+    // @privateRemark
+    // Input transformation can't happen in `wrapFunctionHandler` because that
+    // prevents static type inference for the transformation. For example, if
+    // the user added `ctx.db` in `wrapFunctionHandler` then the static types
+    // wouldn't show `ctx.db` in the function handler.
+    transformFunctionInput?(
+      arg: Middleware.TransformFunctionInputArgs,
+    ): Middleware.TransformFunctionInputArgs;
 
     /**
      * Called when passing input to a client method. Currently, this is only for
@@ -368,23 +383,6 @@ export namespace Middleware {
     // 3. Since `transformFunctionInput` must exist, having this hook
     //    establishes a consistent pattern for input transformation.
     transformStepInput?(arg: TransformStepInputArgs): TransformStepInputArgs;
-
-    /**
-     * Called once per run before execution. Use this to modify the function's
-     * input context (event data, step tools, custom properties) and memoized
-     * step data.
-     *
-     * Return the (potentially modified) arg object. Each middleware builds on
-     * the previous middleware's result.
-     */
-    // @privateRemark
-    // Input transformation can't happen in `wrapFunctionHandler` because that
-    // prevents static type inference for the transformation. For example, if
-    // the user added `ctx.db` in `wrapFunctionHandler` then the static types
-    // wouldn't show `ctx.db` in the function handler.
-    transformFunctionInput?(
-      arg: Middleware.TransformFunctionInputArgs,
-    ): Middleware.TransformFunctionInputArgs;
 
     /**
      * Called once per run. Use this to wrap the handler for:

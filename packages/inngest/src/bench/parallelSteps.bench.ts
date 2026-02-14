@@ -1,10 +1,9 @@
 import { describe } from "vitest";
-import { Middleware } from "../components/middleware/middleware.ts";
-import { makeBench, stepPayload } from "./util.ts";
+import { createBench, createMiddleware, stepPayload } from "./util.ts";
 
 describe("100 parallel step.run", () => {
-  makeBench({
-    name: "0 wrapStep",
+  createBench({
+    name: "0 middleware",
     setup: (client, eventName, onDone) =>
       client.createFunction(
         { id: "fn", retries: 0, triggers: [{ event: eventName }] },
@@ -19,19 +18,13 @@ describe("100 parallel step.run", () => {
       ),
   });
 
-  makeBench({
-    name: "1 wrapStep",
+  createBench({
+    name: "1 middleware",
     setup: (client, eventName, onDone) => {
-      class MW extends Middleware.BaseMiddleware {
-        override async wrapStep({ next }: Middleware.WrapStepArgs) {
-          return next();
-        }
-      }
-
       return client.createFunction(
         {
           id: "fn",
-          middleware: [MW],
+          middleware: [createMiddleware()],
           retries: 0,
           triggers: [{ event: eventName }],
         },
@@ -47,18 +40,12 @@ describe("100 parallel step.run", () => {
     },
   });
 
-  makeBench({
-    name: "5 wrapStep",
+  createBench({
+    name: "5 middleware",
     setup: (client, eventName, onDone) => {
       const middleware = [];
       for (let i = 0; i < 100; i++) {
-        class MW extends Middleware.BaseMiddleware {
-          override async wrapStep({ next }: Middleware.WrapStepArgs) {
-            return next();
-          }
-        }
-
-        middleware.push(MW);
+        middleware.push(createMiddleware());
       }
 
       return client.createFunction(
@@ -75,19 +62,13 @@ describe("100 parallel step.run", () => {
     },
   });
 
-  makeBench({
-    name: "5 wrapStep; checkpointing",
+  createBench({
+    name: "5 middleware; checkpointing",
     checkpointing: true,
     setup: (client, eventName, onDone) => {
       const middleware = [];
       for (let i = 0; i < 100; i++) {
-        class MW extends Middleware.BaseMiddleware {
-          override async wrapStep({ next }: Middleware.WrapStepArgs) {
-            return next();
-          }
-        }
-
-        middleware.push(MW);
+        middleware.push(createMiddleware());
       }
 
       return client.createFunction(

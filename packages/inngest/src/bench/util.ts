@@ -1,5 +1,10 @@
 import { bench, describe } from "vitest";
-import { Inngest, type InngestFunction } from "../index.ts";
+import {
+  type EventPayload,
+  Inngest,
+  type InngestFunction,
+  Middleware,
+} from "../index.ts";
 import { createTestApp, type TestApp } from "../test/devServerTestHarness.ts";
 
 export function randomSuffix(value: string): string {
@@ -27,12 +32,12 @@ export function stepPayload() {
 
 // -- Bench scaffolding --------------------------------------------------
 
-interface MakeBenchOptions {
+interface CreateBenchOptions {
   checkpointing?: boolean;
+
   /** Name shown in the benchmark table and describe block. */
   name: string;
-  /** Number of concurrent function runs per iteration (default 10). */
-  runs?: number;
+
   /**
    * Create and return the Inngest function under test.
    * Call `onDone()` at the end of your handler to signal completion.
@@ -49,8 +54,8 @@ interface MakeBenchOptions {
  * all function runs to complete. Handles lazy app init and the
  * send-then-poll loop.
  */
-export function makeBench(options: MakeBenchOptions) {
-  const runs = options.runs ?? 1;
+export function createBench(options: CreateBenchOptions) {
+  const runs = 1;
 
   describe(options.name, () => {
     let completed = 0;
@@ -93,4 +98,52 @@ export function makeBench(options: MakeBenchOptions) {
       { iterations: 5, warmupIterations: 1, warmupTime: 0, time: 0 },
     );
   });
+}
+
+export function createMiddleware() {
+  return class MW extends Middleware.BaseMiddleware {
+    override onMemoizationEnd() {}
+    override onStepStart() {}
+    override onStepComplete() {}
+    override onStepError() {}
+    override onRunStart() {}
+    override onRunComplete() {}
+    override onRunError() {}
+
+    override transformSendEvent(
+      arg: Middleware.TransformSendEventArgs,
+    ): EventPayload<Record<string, unknown>>[] {
+      return arg.events;
+    }
+
+    override transformStepInput(
+      arg: Middleware.TransformStepInputArgs,
+    ): Middleware.TransformStepInputArgs {
+      return arg;
+    }
+
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ): Middleware.TransformFunctionInputArgs {
+      return arg;
+    }
+
+    override async wrapFunctionHandler({
+      next,
+    }: Middleware.WrapFunctionHandlerArgs) {
+      return next();
+    }
+
+    override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
+      return next();
+    }
+
+    override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
+      return next();
+    }
+
+    override async wrapStep({ next }: Middleware.WrapStepArgs) {
+      return next();
+    }
+  };
 }
