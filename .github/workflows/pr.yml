@@ -153,6 +153,21 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run test:integration
 
+  bench:
+    name: "bench"
+    runs-on: "ubuntu-latest"
+    permissions:
+      id-token: "write"
+    defaults:
+      run:
+        working-directory: "packages/inngest"
+    steps:
+      - uses: "actions/checkout@v3"
+      - uses: "./.github/actions/setup-and-build"
+      - uses: "CodSpeedHQ/action@v4"
+        with:
+          run: "pnpm bench"
+
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
     runs-on: ubuntu-latest
