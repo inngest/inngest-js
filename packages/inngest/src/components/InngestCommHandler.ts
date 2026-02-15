@@ -1736,20 +1736,25 @@ export class InngestCommHandler<
             };
           },
           "step-not-found": (result) => {
+            // we want to show the names and IDs of any steps that were found during the
+            // run process
             const missingStepId = result.step.displayName || result.step.id;
-            const foundStepsSummary = result.foundSteps
-              .map((step) => {
-                const name = step.displayName || step.name || step.id;
-                return `${name} (${step.id})`;
-              })
-              .join(", ");
-            const foundStepsSuffix = foundStepsSummary
-              ? ` Found unreplayed steps: ${foundStepsSummary}${
-                  result.totalFoundSteps > result.foundSteps.length
-                    ? ` (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`
-                    : ""
-                }.`
-              : "";
+
+            let error = `Could not find step "${missingStepId}" to run; timed out.`
+
+            if (result.foundSteps.length > 0) {
+              const foundStepsSummary = result.foundSteps
+                .map((step) => {
+                  const name = step.displayName || step.name || step.id;
+                  return `${name} (${step.id})`;
+                })
+                .join("\n");
+              error = `${error} Found new steps: \n${foundStepsSummary}.`
+            }
+
+            if (result.totalFoundSteps > result.foundSteps.length) {
+              error = `${error} (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`
+            }
 
             return {
               status: 500,
@@ -1758,7 +1763,7 @@ export class InngestCommHandler<
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
-                error: `Could not find step "${missingStepId}" to run; timed out.${foundStepsSuffix}`,
+                error,
                 requestedStep: result.step.id,
                 foundSteps: result.foundSteps,
                 totalFoundSteps: result.totalFoundSteps,
