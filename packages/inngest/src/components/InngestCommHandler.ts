@@ -1740,7 +1740,7 @@ export class InngestCommHandler<
             // run process
             const missingStepId = result.step.displayName || result.step.id;
 
-            let error = `Could not find step "${missingStepId}" to run; timed out.`
+            let error = `Could not find step "${missingStepId}" to run; timed out.`;
 
             if (result.foundSteps.length > 0) {
               const foundStepsSummary = result.foundSteps
@@ -1749,11 +1749,11 @@ export class InngestCommHandler<
                   return `${name} (${step.id})`;
                 })
                 .join("\n");
-              error = `${error} Found new steps: \n${foundStepsSummary}.`
+              error = `${error} Found new steps: \n${foundStepsSummary}.`;
             }
 
             if (result.totalFoundSteps > result.foundSteps.length) {
-              error = `${error} (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`
+              error = `${error} (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`;
             }
 
             return {

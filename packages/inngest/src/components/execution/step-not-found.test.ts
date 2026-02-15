@@ -2,12 +2,15 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
-import { StepMode, type IncomingOp } from "../../types.ts";
+import { type IncomingOp, StepMode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import { _internals as v1Internals } from "./v1.ts";
 import { _internals as v2Internals } from "./v2.ts";
 
-const hashByVersion: Record<ExecutionVersion.V1 | ExecutionVersion.V2, (id: string) => string> = {
+const hashByVersion: Record<
+  ExecutionVersion.V1 | ExecutionVersion.V2,
+  (id: string) => string
+> = {
   [ExecutionVersion.V1]: v1Internals.hashId,
   [ExecutionVersion.V2]: v2Internals.hashId,
 };
@@ -31,7 +34,9 @@ const runMissingStepExecution = async ({
       triggers: [{ event: "foo" }],
     },
     async ({ step }) => {
-      await Promise.all(stepIds.map((stepId) => step.run(stepId, () => stepId)));
+      await Promise.all(
+        stepIds.map((stepId) => step.run(stepId, () => stepId)),
+      );
     },
   );
 
@@ -128,7 +133,9 @@ describe("step-not-found diagnostics", () => {
       const foundStepIds = result.foundSteps.map((step) => step.id);
       expect(result.totalFoundSteps).toBe(29);
       expect(result.foundSteps).toHaveLength(25);
-      expect(foundStepIds).toEqual([...foundStepIds].sort((a, b) => a.localeCompare(b)));
+      expect(foundStepIds).toEqual(
+        [...foundStepIds].sort((a, b) => a.localeCompare(b)),
+      );
       expect(foundStepIds).not.toContain(hashByVersion[version]("step-0"));
     },
   );
