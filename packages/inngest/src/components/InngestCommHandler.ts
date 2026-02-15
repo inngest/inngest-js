@@ -1736,6 +1736,21 @@ export class InngestCommHandler<
             };
           },
           "step-not-found": (result) => {
+            const missingStepId = result.step.displayName || result.step.id;
+            const foundStepsSummary = result.foundSteps
+              .map((step) => {
+                const name = step.displayName || step.name || step.id;
+                return `${name} (${step.id})`;
+              })
+              .join(", ");
+            const foundStepsSuffix = foundStepsSummary
+              ? ` Found unreplayed steps: ${foundStepsSummary}${
+                  result.totalFoundSteps > result.foundSteps.length
+                    ? ` (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`
+                    : ""
+                }.`
+              : "";
+
             return {
               status: 500,
               headers: {
@@ -1743,9 +1758,10 @@ export class InngestCommHandler<
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
-                error: `Could not find step "${
-                  result.step.displayName || result.step.id
-                }" to run; timed out`,
+                error: `Could not find step "${missingStepId}" to run; timed out.${foundStepsSuffix}`,
+                requestedStep: result.step.id,
+                foundSteps: result.foundSteps,
+                totalFoundSteps: result.totalFoundSteps,
               }),
               version,
             };

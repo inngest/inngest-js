@@ -68,6 +68,7 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
+  type StepNotFoundFoundStep,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 
@@ -82,6 +83,7 @@ const { sha1 } = hashjs;
  * 500 error, for AsyncCheckpointing the caller handles fallback.
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -648,12 +650,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * While trying to find a step that Inngest has told us to run, we've
        * timed out or have otherwise decided that it doesn't exist.
        */
-      "step-not-found": ({ step }) => {
+      "step-not-found": ({ step, foundSteps, totalFoundSteps }) => {
         return {
           type: "step-not-found",
           ctx: this.fnArg,
           ops: this.ops,
           step,
+          foundSteps,
+          totalFoundSteps,
         };
       },
 
@@ -1671,6 +1675,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
     void this.timeout.then(async () => {
+      const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
+
       await this.state.hooks?.afterMemoization?.();
       await this.state.hooks?.beforeExecution?.();
       await this.state.hooks?.afterExecution?.();
@@ -1681,8 +1687,29 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           id: this.options.requestedRunStep as string,
           op: StepOpCode.StepNotFound,
         },
+        foundSteps,
+        totalFoundSteps,
       });
     });
+  }
+
+  private getStepNotFoundDetails(): {
+    foundSteps: StepNotFoundFoundStep[];
+    totalFoundSteps: number;
+  } {
+    const foundSteps = [...this.state.steps.values()]
+      .filter((step) => !step.hasStepState)
+      .map<StepNotFoundFoundStep>((step) => ({
+        id: step.hashedId,
+        name: step.name,
+        displayName: step.displayName,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    return {
+      foundSteps: foundSteps.slice(0, STEP_NOT_FOUND_MAX_FOUND_STEPS),
+      totalFoundSteps: foundSteps.length,
+    };
   }
 
   private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
@@ -1800,7 +1827,11 @@ export interface Checkpoints {
   "steps-found": { steps: [FoundStep, ...FoundStep[]] };
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: StepNotFoundFoundStep[];
+    totalFoundSteps: number;
+  };
   "checkpointing-runtime-reached": {};
   "checkpointing-buffer-interval-reached": {};
 }
