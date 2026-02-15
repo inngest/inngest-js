@@ -73,7 +73,14 @@ const runMissingStepExecution = async ({
   (execution as { timeoutDuration?: number }).timeoutDuration = 50;
 
   const executionPromise = execution.start();
-  await vi.advanceTimersByTimeAsync(1_000);
+  let settled = false;
+  void executionPromise.finally(() => {
+    settled = true;
+  });
+
+  for (let i = 0; i < 200 && !settled; i++) {
+    await vi.advanceTimersByTimeAsync(50);
+  }
 
   return await executionPromise;
 };
