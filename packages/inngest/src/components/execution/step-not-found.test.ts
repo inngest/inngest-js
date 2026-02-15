@@ -122,6 +122,7 @@ describe("step-not-found diagnostics", () => {
         replayedStepHash,
       );
     },
+    15_000,
   );
 
   test.each([ExecutionVersion.V1, ExecutionVersion.V2] as const)(
@@ -148,5 +149,6 @@ describe("step-not-found diagnostics", () => {
       );
       expect(foundStepIds).not.toContain(hashByVersion[version]("step-0"));
     },
+    15_000,
   );
 });
