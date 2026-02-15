@@ -68,9 +68,12 @@ const runMissingStepExecution = async ({
       queueItemId: "fake-queue-item-id",
     },
   });
+  // requestedRunStep timers can reset while steps are discovered; shorten this
+  // for deterministic, fast fake-timer tests.
+  (execution as { timeoutDuration?: number }).timeoutDuration = 50;
 
   const executionPromise = execution.start();
-  await vi.advanceTimersByTimeAsync(11_000);
+  await vi.advanceTimersByTimeAsync(1_000);
 
   return await executionPromise;
 };
