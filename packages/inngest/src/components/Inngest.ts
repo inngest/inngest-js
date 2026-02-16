@@ -664,7 +664,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       return result;
     }
 
-    const mwInstances = this.middleware.map((Cls) => new Cls());
+    const mwInstances = this.middleware.map((Cls) => {
+      return new Cls({ client: this });
+    });
 
     const dummyEvent = { name: "__proxy__", data: {} };
     const dummyCtx = {
@@ -777,7 +779,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       (fn) => fn.opts.middleware ?? [],
     );
     const mwInstances = [...this.middleware, ...fnMiddleware].map(
-      (Cls) => new Cls(),
+      (Cls) => new Cls({ client: this }),
     );
     for (const mw of mwInstances) {
       if (mw?.transformSendEvent) {

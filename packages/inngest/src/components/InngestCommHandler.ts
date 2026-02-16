@@ -1138,7 +1138,9 @@ export class InngestCommHandler<
     // Create middleware instances once; shared by wrapRequest and execution hooks.
     // Starts with client-level middleware; function-level middleware is appended
     // for POST requests once the target function is known.
-    const mwInstances = this.client.middleware.map((Cls) => new Cls());
+    const mwInstances = this.client.middleware.map(
+      (Cls) => new Cls({ client: this.client }),
+    );
 
     /**
      * Prepares an action response by merging returned data to provide
@@ -1225,7 +1227,11 @@ export class InngestCommHandler<
       const fnId = url.searchParams.get(queryKeys.FnId);
       const matchedFn = fnId ? this.fns[fnId] : undefined;
       const fnMw = matchedFn?.fn?.opts?.middleware ?? [];
-      mwInstances.push(...fnMw.map((Cls) => new Cls()));
+      mwInstances.push(
+        ...fnMw.map((Cls) => {
+          return new Cls({ client: this.client });
+        }),
+      );
 
       const requestInfo: Middleware.Request = {
         headers: Object.freeze({ ...(await getHeaders()) }),

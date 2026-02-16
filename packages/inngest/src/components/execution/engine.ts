@@ -155,7 +155,9 @@ class InngestExecutionEngine
     this.fnArg = this.createFnArg();
     const mwInstances =
       this.options.middlewareInstances ??
-      (this.options.client.middleware || []).map((Cls) => new Cls());
+      (this.options.client.middleware || []).map((Cls) => {
+        return new Cls({ client: this.options.client });
+      });
     this.middlewareManager = new MiddlewareManager(
       this.fnArg,
       () => this.state.stepState,

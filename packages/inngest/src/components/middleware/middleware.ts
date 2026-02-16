@@ -237,6 +237,8 @@ export namespace Middleware {
   // promise to the chain for each step. This chain runs every time the step
   // completes/errors (even when memoized).
   export class BaseMiddleware {
+    readonly client: Inngest.Any;
+
     /**
      * Declare this to specify how function return types are transformed.
      * Used by `GetFunctionOutput` to determine the public output type of a
@@ -279,6 +281,10 @@ export namespace Middleware {
      * @default Middleware.DefaultStaticTransform (e.g. Date -> string)
      */
     declare stepOutputTransform: DefaultStaticTransform;
+
+    constructor({ client }: { client: Inngest.Any }) {
+      this.client = client;
+    }
 
     /**
      * Called once when the middleware class is added to an Inngest client or
@@ -435,7 +441,9 @@ export namespace Middleware {
  * A no-arg constructor for a BaseMiddleware subclass. Used in client options
  * so that fresh instances are created per-request.
  */
-export type MiddlewareClass = (new () => Middleware.BaseMiddleware) & {
+export type MiddlewareClass = (new (args: {
+  client: Inngest.Any;
+}) => Middleware.BaseMiddleware) & {
   // Static methods aren't captured by `new () => ...`, so we repeat it here.
   onRegister?(arg: Middleware.OnRegisterArgs): void;
 };
