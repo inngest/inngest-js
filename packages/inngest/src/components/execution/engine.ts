@@ -863,7 +863,7 @@ class InngestExecutionEngine
       return;
     }
 
-    this.middlewareManager.onMemoizationEnd();
+    await this.middlewareManager.onMemoizationEnd();
 
     const stepList = newSteps.map<OutgoingOp>((step) => {
       const baseOp = {
@@ -916,8 +916,8 @@ class InngestExecutionEngine
     // the `transformStepInput` middleware hook already ran).
     const actualHandler = () => runAsPromise(fn);
 
-    this.middlewareManager.onMemoizationEnd();
-    this.middlewareManager.onStepStart(stepInfo);
+    await this.middlewareManager.onMemoizationEnd();
+    await this.middlewareManager.onStepStart(stepInfo);
 
     // If wrappedHandler was already called during discovery, execute the actual
     // handler directly and resolve the deferred promise. The middleware is
@@ -958,7 +958,7 @@ class InngestExecutionEngine
             ]);
           }
 
-          this.middlewareManager.onStepComplete(stepInfo, rawData);
+          await this.middlewareManager.onStepComplete(stepInfo, rawData);
 
           return {
             ...outgoingOp,
@@ -1003,7 +1003,7 @@ class InngestExecutionEngine
         const metadata = this.state.metadata?.get(id);
         const data = await resultPromise;
 
-        this.middlewareManager.onStepComplete(stepInfo, data);
+        await this.middlewareManager.onStepComplete(stepInfo, data);
 
         return {
           ...outgoingOp,
@@ -1037,15 +1037,15 @@ class InngestExecutionEngine
     void this.checkpointingMaxRuntimeTimer?.start();
     void this.checkpointingMaxBufferIntervalTimer?.start();
 
-    const fnInputResult = this.middlewareManager.transformFunctionInput();
+    const fnInputResult = await this.middlewareManager.transformFunctionInput();
     this.applyFunctionInputMutations(fnInputResult);
 
     if (this.state.allStateUsed()) {
-      this.middlewareManager.onMemoizationEnd();
+      await this.middlewareManager.onMemoizationEnd();
     }
 
     if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
-      this.middlewareManager.onRunStart();
+      await this.middlewareManager.onRunStart();
     }
 
     const innerHandler: () => Promise<unknown> = async () => {
@@ -1056,11 +1056,11 @@ class InngestExecutionEngine
     const runHandler = this.middlewareManager.wrapRunHandler(innerHandler);
 
     runAsPromise(runHandler)
-      .then((data) => {
-        this.middlewareManager.onRunComplete(data);
+      .then(async (data) => {
+        await this.middlewareManager.onRunComplete(data);
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
-      .catch((error) => {
+      .catch(async (error) => {
         // Preserve Error instances; stringify non-Error throws (e.g. `throw {}`)
         let err: Error;
         if (error instanceof Error) {
@@ -1071,7 +1071,7 @@ class InngestExecutionEngine
           err = new Error(String(error));
         }
 
-        this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
+        await this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
   }
@@ -1098,7 +1098,7 @@ class InngestExecutionEngine
    * Build the OutgoingOp for a failed step, notifying middleware and choosing
    * retriable vs non-retriable opcode.
    */
-  private buildStepErrorOp({
+  private async buildStepErrorOp({
     error,
     id,
     outgoingOp,
@@ -1108,11 +1108,11 @@ class InngestExecutionEngine
     id: string;
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
-  }): OutgoingOp {
+  }): Promise<OutgoingOp> {
     const isFinal = this.isFinalAttempt(error);
     const metadata = this.state.metadata?.get(id);
 
-    this.middlewareManager.onStepError(
+    await this.middlewareManager.onStepError(
       stepInfo,
       error instanceof Error ? error : new Error(String(error)),
       isFinal,
@@ -1500,7 +1500,7 @@ class InngestExecutionEngine
         stepInfo,
         stepState,
         wrappedHandler,
-      } = this.applyMiddlewareToStep(
+      } = await this.applyMiddlewareToStep(
         opId,
         expectedNextStepIndexes,
         maybeWarnOfParallelIndexing,
@@ -1695,11 +1695,11 @@ class InngestExecutionEngine
    * Applies middleware transformations to a step, resolves ID collisions,
    * and performs memoization lookup.
    */
-  private applyMiddlewareToStep(
+  private async applyMiddlewareToStep(
     opId: HashedOp,
     expectedNextStepIndexes: Map<string, number>,
     maybeWarnOfParallelIndexing: (userlandCollisionId: string) => void,
-  ): MiddlewareApplicationResult {
+  ): Promise<MiddlewareApplicationResult> {
     // 1. Resolve initial collision with original ID
     const initialCollision = resolveStepIdCollision({
       baseId: opId.id,
@@ -1719,7 +1719,7 @@ class InngestExecutionEngine
 
     // 2. Apply middleware (stepKind, input extraction, deferred handler).
     //    Pass preliminary memoization status so middleware sees it.
-    const prepared = this.middlewareManager.applyToStep({
+    const prepared = await this.middlewareManager.applyToStep({
       displayName: opId.displayName ?? opId.userland.id,
       hashedId,
       memoized:
@@ -1771,7 +1771,7 @@ class InngestExecutionEngine
       this.state.remainingStepsToBeSeen.delete(hashedId);
 
       if (this.state.allStateUsed()) {
-        this.middlewareManager.onMemoizationEnd();
+        await this.middlewareManager.onMemoizationEnd();
       }
 
       if (typeof stepState.input === "undefined") {
@@ -1847,8 +1847,8 @@ class InngestExecutionEngine
 
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
-    void this.timeout.then(() => {
-      this.middlewareManager.onMemoizationEnd();
+    void this.timeout.then(async () => {
+      await this.middlewareManager.onMemoizationEnd();
       state.setCheckpoint({
         type: "step-not-found",
         step: {
@@ -1880,8 +1880,8 @@ class InngestExecutionEngine
       if (Number.isFinite(maxRuntimeMs) && maxRuntimeMs > 0) {
         this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
 
-        void this.checkpointingMaxRuntimeTimer.then(() => {
-          this.middlewareManager.onMemoizationEnd();
+        void this.checkpointingMaxRuntimeTimer.then(async () => {
+          await this.middlewareManager.onMemoizationEnd();
           state.setCheckpoint({
             type: "checkpointing-runtime-reached",
           });

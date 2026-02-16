@@ -684,7 +684,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     for (const mw of mwInstances) {
       if (mw.transformFunctionInput) {
-        transformArgs = mw.transformFunctionInput(transformArgs);
+        transformArgs = await mw.transformFunctionInput(transformArgs);
       }
     }
 
@@ -781,7 +781,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     );
     for (const mw of mwInstances) {
       if (mw?.transformSendEvent) {
-        const transformed = mw.transformSendEvent({
+        const transformed = await mw.transformSendEvent({
           events: payloads,
         });
         if (transformed !== undefined) {

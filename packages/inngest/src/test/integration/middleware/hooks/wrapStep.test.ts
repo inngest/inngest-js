@@ -463,10 +463,6 @@ test("bookend step.sleep", async () => {
     }
 
     override async wrapStep({ ctx, next, stepInfo }: Middleware.WrapStepArgs) {
-      if (stepInfo.options.id.endsWith("-prepend")) {
-        return next();
-      }
-
       const prependStepId = stepInfo.options.id + "-prepend";
 
       state.beforeStep.output = await ctx.step.run(prependStepId, async () => {
@@ -534,10 +530,6 @@ test("bookend with steps", async () => {
 
   class TestMiddleware extends Middleware.BaseMiddleware {
     override async wrapStep({ ctx, next, stepInfo }: Middleware.WrapStepArgs) {
-      if (["before", "after"].includes(stepInfo.options.id)) {
-        return next();
-      }
-
       state.beforeStep.output = await ctx.step.run("before", async () => {
         state.beforeStep.insideCount++;
         return state.beforeStep.insideCount;
@@ -820,10 +812,6 @@ describe("throws", () => {
         stepInfo,
       }: Middleware.WrapStepArgs) {
         state.hook.count++;
-
-        if (stepInfo.options.id === "hook-step") {
-          return next();
-        }
 
         await ctx.step.run("hook-step", () => {
           state.hookStep.count++;

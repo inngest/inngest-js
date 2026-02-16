@@ -1,6 +1,7 @@
 import type { z } from "zod/v3";
 import type { stepSchema } from "../../api/schema.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
+import type { MaybePromise } from "../../helpers/types.ts";
 import type {
   Context,
   EventPayload,
@@ -296,27 +297,27 @@ export namespace Middleware {
      * If a new step is found before resolving/rejecting all memoized steps,
      * then this is calls.
      */
-    onMemoizationEnd?(): void;
+    onMemoizationEnd?(): MaybePromise<void>;
 
     /**
      * Called when the function completes successfully. Receives the return
      * value (after `wrapFunctionHandler` transformations). Does NOT fire when
      * the function errors — `onRunError` fires instead.
      */
-    onRunComplete?(arg: Middleware.OnRunCompleteArgs): void;
+    onRunComplete?(arg: Middleware.OnRunCompleteArgs): MaybePromise<void>;
 
     /**
      * Called when the function throws an error. Receives the error instance.
      * Does NOT fire when the function succeeds — `onRunComplete` fires instead.
      */
-    onRunError?(arg: Middleware.OnRunErrorArgs): void;
+    onRunError?(arg: Middleware.OnRunErrorArgs): MaybePromise<void>;
 
     /**
      * Called once per run on the very first request (0 memoized steps,
      * attempt 0). Does NOT fire on subsequent requests where steps are
      * being replayed.
      */
-    onRunStart?(arg: Middleware.OnRunStartArgs): void;
+    onRunStart?(arg: Middleware.OnRunStartArgs): MaybePromise<void>;
 
     /**
      * Called each time a step successfully completes. Only called for `step.run`
@@ -325,19 +326,19 @@ export namespace Middleware {
      * Calls after the `wrapStep` chain resolves, so `data` reflects any
      * transformations applied by `wrapStep` middleware.
      */
-    onStepComplete?(arg: Middleware.OnStepCompleteArgs): void;
+    onStepComplete?(arg: Middleware.OnStepCompleteArgs): MaybePromise<void>;
 
     /**
      * Called each time a step errors. Only called for `step.run` and
      * `step.sendEvent`. Never called for memoized errors.
      */
-    onStepError?(arg: Middleware.OnStepErrorArgs): void;
+    onStepError?(arg: Middleware.OnStepErrorArgs): MaybePromise<void>;
 
     /**
      * Called 1 time per step before running its handler. Only called for
      * `step.run` and `step.sendEvent`.
      */
-    onStepStart?(arg: Middleware.OnStepStartArgs): void;
+    onStepStart?(arg: Middleware.OnStepStartArgs): MaybePromise<void>;
 
     /**
      * Called once per run before execution. Use this to modify the function's
@@ -354,7 +355,7 @@ export namespace Middleware {
     // wouldn't show `ctx.db` in the function handler.
     transformFunctionInput?(
       arg: Middleware.TransformFunctionInputArgs,
-    ): Middleware.TransformFunctionInputArgs;
+    ): MaybePromise<Middleware.TransformFunctionInputArgs>;
 
     /**
      * Called when passing input to a client method. Currently, this is only for
@@ -365,7 +366,7 @@ export namespace Middleware {
      */
     transformSendEvent?(
       arg: Middleware.TransformSendEventArgs,
-    ): EventPayload<Record<string, unknown>>[];
+    ): MaybePromise<EventPayload<Record<string, unknown>>[]>;
 
     /**
      * Called once per step before the `wrapStep` chain. Use this to modify step
@@ -382,7 +383,9 @@ export namespace Middleware {
     // 2. `wrapStep` is a little more complicated to use.
     // 3. Since `transformFunctionInput` must exist, having this hook
     //    establishes a consistent pattern for input transformation.
-    transformStepInput?(arg: TransformStepInputArgs): TransformStepInputArgs;
+    transformStepInput?(
+      arg: TransformStepInputArgs,
+    ): MaybePromise<TransformStepInputArgs>;
 
     /**
      * Called once per run. Use this to wrap the handler for:

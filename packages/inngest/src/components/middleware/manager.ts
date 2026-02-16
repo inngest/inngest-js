@@ -64,7 +64,8 @@ export class MiddlewareManager {
   private readonly hasTransformStepInput: boolean;
 
   /**
-   * Whether memoization has ended. Used for idempotency.
+   * Whether memoization has ended. Used for idempotency, since memoization must
+   * only call once per request.
    */
   private memoizationEnded = false;
 
@@ -95,12 +96,12 @@ export class MiddlewareManager {
   }
 
   /**
-   * Derives step-kind, extracts input, runs transformStepInput middleware,
+   * Derives step-kind, extracts input, runs `transformStepInput` middleware,
    * and creates a deferred handler entry point. Does NOT build the wrapStep
    * chain — the caller should do that after any post-processing (e.g. ID
    * collision resolution) so middleware sees final values.
    */
-  applyToStep(input: ApplyToStepInput): PreparedStep {
+  async applyToStep(input: ApplyToStepInput): Promise<PreparedStep> {
     const stepKind = stepKindFromOpCode(input.op, input.opts);
     const stepInput = stepInputFromOpts(stepKind, input.opts);
 
@@ -118,13 +119,15 @@ export class MiddlewareManager {
     // or mutate them.
     if (this.hasTransformStepInput) {
       const originalInput = stepInfo.input;
-      const transformed = this.transformStepInput(stepInfo);
+      const transformed = await this.transformStepInput(stepInfo);
       stepInfo.options = transformed.stepOptions;
+
       // Preserve undefined if input wasn't changed from the initial empty array
-      stepInfo.input =
-        originalInput === undefined && transformed.input.length === 0
-          ? undefined
-          : transformed.input;
+      if (originalInput === undefined && transformed.input.length === 0) {
+        stepInfo.input = undefined;
+      } else {
+        stepInfo.input = transformed.input;
+      }
     }
 
     // For sleep steps, if middleware transformed the input, re-derive the op
@@ -206,7 +209,7 @@ export class MiddlewareManager {
    * Apply transformFunctionInput middleware in forward order.
    * Each middleware builds on the previous result.
    */
-  transformFunctionInput(): Middleware.TransformFunctionInputArgs {
+  async transformFunctionInput(): Promise<Middleware.TransformFunctionInputArgs> {
     let result: Middleware.TransformFunctionInputArgs = {
       ctx: this.fnArg,
       steps: this.buildSteps(),
@@ -214,7 +217,7 @@ export class MiddlewareManager {
 
     for (const mw of this.middleware) {
       if (mw?.transformFunctionInput) {
-        result = mw.transformFunctionInput(result);
+        result = await mw.transformFunctionInput(result);
       }
     }
 
@@ -242,9 +245,9 @@ export class MiddlewareManager {
    * Apply transformStepInput middleware in forward order.
    * Each middleware builds on the previous result.
    */
-  private transformStepInput(
+  private async transformStepInput(
     stepInfo: Middleware.StepInfo,
-  ): Middleware.TransformStepInputArgs {
+  ): Promise<Middleware.TransformStepInputArgs> {
     let result: Middleware.TransformStepInputArgs = {
       stepInfo: {
         hashedId: stepInfo.hashedId,
@@ -257,7 +260,7 @@ export class MiddlewareManager {
 
     for (const mw of this.middleware) {
       if (mw?.transformStepInput) {
-        result = mw.transformStepInput(result);
+        result = await mw.transformStepInput(result);
       }
     }
 
@@ -311,12 +314,12 @@ export class MiddlewareManager {
     return chain;
   }
 
-  onStepStart(stepInfo: Middleware.StepInfo): void {
+  async onStepStart(stepInfo: Middleware.StepInfo): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepStart) {
         try {
-          mw.onStepStart({ stepInfo, ctx });
+          await mw.onStepStart({ stepInfo, ctx });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -328,12 +331,15 @@ export class MiddlewareManager {
     }
   }
 
-  onStepComplete(stepInfo: Middleware.StepInfo, data: unknown): void {
+  async onStepComplete(
+    stepInfo: Middleware.StepInfo,
+    data: unknown,
+  ): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepComplete) {
         try {
-          mw.onStepComplete({ stepInfo, ctx, data });
+          await mw.onStepComplete({ stepInfo, ctx, data });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -345,16 +351,16 @@ export class MiddlewareManager {
     }
   }
 
-  onStepError(
+  async onStepError(
     stepInfo: Middleware.StepInfo,
     error: Error,
     isFinalAttempt: boolean,
-  ): void {
+  ): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepError) {
         try {
-          mw.onStepError({ stepInfo, ctx, error, isFinalAttempt });
+          await mw.onStepError({ stepInfo, ctx, error, isFinalAttempt });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -369,7 +375,7 @@ export class MiddlewareManager {
   /**
    * Idempotent: safe to call from every code path that might end memoization.
    */
-  onMemoizationEnd(): void {
+  async onMemoizationEnd(): Promise<void> {
     if (this.memoizationEnded) {
       return;
     }
@@ -378,7 +384,7 @@ export class MiddlewareManager {
     for (const mw of this.middleware) {
       if (mw?.onMemoizationEnd) {
         try {
-          mw.onMemoizationEnd();
+          await mw.onMemoizationEnd();
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -390,12 +396,12 @@ export class MiddlewareManager {
     }
   }
 
-  onRunStart(): void {
+  async onRunStart(): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunStart) {
         try {
-          mw.onRunStart({ ctx });
+          await mw.onRunStart({ ctx });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -407,12 +413,12 @@ export class MiddlewareManager {
     }
   }
 
-  onRunComplete(data: unknown): void {
+  async onRunComplete(data: unknown): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunComplete) {
         try {
-          mw.onRunComplete({ ctx, data });
+          await mw.onRunComplete({ ctx, data });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -424,12 +430,12 @@ export class MiddlewareManager {
     }
   }
 
-  onRunError(error: Error, isFinalAttempt: boolean): void {
+  async onRunError(error: Error, isFinalAttempt: boolean): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunError) {
         try {
-          mw.onRunError({ ctx, error, isFinalAttempt });
+          await mw.onRunError({ ctx, error, isFinalAttempt });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
