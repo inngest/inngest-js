@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.49.3",
+  "version": "3.52.0",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.cjs",
   "module": "./index.js",
@@ -282,6 +282,7 @@
     "@opentelemetry/resources": ">=2.0.0 <3.0.0",
     "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0",
     "@standard-schema/spec": "^1.0.0",
+    "@traceloop/instrumentation-anthropic": "^0.20.0",
     "@types/debug": "^4.1.12",
     "@types/ms": "~2.1.0",
     "canonicalize": "^1.0.8",

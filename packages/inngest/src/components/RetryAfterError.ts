@@ -45,6 +45,8 @@ export class RetryAfterError extends Error {
   ) {
     super(message);
 
+    this.name = "RetryAfterError";
+
     if (retryAfter instanceof Date) {
       this.retryAfter = retryAfter.toISOString();
     } else {

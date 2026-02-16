@@ -7,6 +7,7 @@ import type {
 } from "../helpers/types.ts";
 import type * as z from "../helpers/validators/zod.ts";
 import type {
+  APIStepPayload,
   CancelledEventPayload,
   EventPayload,
   FailureEventPayload,
@@ -283,6 +284,7 @@ export class EventSchemas<
     [internalEvents.FunctionInvoked]: InvokedEventPayload;
     [internalEvents.FunctionCancelled]: CancelledEventPayload;
     [internalEvents.ScheduledTimer]: ScheduledTimerEventPayload;
+    [internalEvents.HttpRequest]: APIStepPayload;
   }>,
 > {
   protected runtimeSchemas: Record<string, unknown> = {};

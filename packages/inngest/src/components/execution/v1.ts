@@ -3,6 +3,7 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 import {
+  defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
   internalEvents,
@@ -23,6 +24,7 @@ import {
   goIntervalTiming,
   resolveAfterPending,
   resolveNextTick,
+  retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
@@ -71,6 +73,16 @@ import {
 import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
+
+/**
+ * Retry configuration for checkpoint operations.
+ *
+ * Checkpoint calls use exponential backoff with jitter to handle transient
+ * network failures (e.g., dev server temporarily down, cloud hiccup). If
+ * retries exhaust, the error propagates up - for Sync mode this results in a
+ * 500 error, for AsyncCheckpointing the caller handles fallback.
+ */
+const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -249,11 +261,17 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
-        const res = await this.options.client["inngestApi"].checkpointNewRun({
-          runId: this.fnArg.runId,
-          event: this.fnArg.event as APIStepPayload,
-          steps,
-        });
+        const res = await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointNewRun({
+              runId: this.fnArg.runId,
+              event: this.fnArg.event as APIStepPayload,
+              steps,
+              executionVersion: this.version,
+              retries: this.fnArg.maxAttempts ?? defaultMaxRetries,
+            }),
+          CHECKPOINT_RETRY_OPTIONS,
+        );
 
         this.state.checkpointedRun = {
           appId: res.data.app_id,
@@ -261,12 +279,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           token: res.data.token,
         };
       } else {
-        await this.options.client["inngestApi"].checkpointSteps({
-          appId: this.state.checkpointedRun.appId,
-          fnId: this.state.checkpointedRun.fnId,
-          runId: this.fnArg.runId,
-          steps,
-        });
+        await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointSteps({
+              appId: this.state.checkpointedRun!.appId,
+              fnId: this.state.checkpointedRun!.fnId,
+              runId: this.fnArg.runId,
+              steps,
+            }),
+          CHECKPOINT_RETRY_OPTIONS,
+        );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
       if (!this.options.queueItemId) {
@@ -281,12 +303,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      await this.options.client["inngestApi"].checkpointStepsAsync({
-        runId: this.fnArg.runId,
-        fnId: this.options.internalFnId,
-        queueItemId: this.options.queueItemId,
-        steps,
-      });
+      await retryWithBackoff(
+        () =>
+          this.options.client["inngestApi"].checkpointStepsAsync({
+            runId: this.fnArg.runId,
+            fnId: this.options.internalFnId!,
+            queueItemId: this.options.queueItemId!,
+            steps,
+          }),
+        CHECKPOINT_RETRY_OPTIONS,
+      );
     } else {
       throw new Error(
         "Checkpointing is only supported in Sync and AsyncCheckpointing step modes. This is a bug in the Inngest SDK.",
@@ -409,9 +435,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
-        this.state.checkpointingStepBuffer.push(
-          this.resumeStepWithResult(stepResult, resume),
-        );
+        const stepToResume = this.resumeStepWithResult(stepResult, resume);
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: stepResult.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? stepResult.data;
+
+        // Buffer a copy with transformed data for checkpointing
+        this.state.checkpointingStepBuffer.push({
+          ...stepToResume,
+          data: transformedData,
+        });
       }
 
       if (
@@ -465,35 +505,35 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: checkpoint.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(checkpoint.data),
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 
-        // Done - just return the value
-        return {
-          type: "function-resolved",
-          ctx: this.fnArg,
-          ops: this.ops,
-          data: checkpoint.data,
-        };
+        // Apply middleware transformation before returning
+        return await this.transformOutput({ data: checkpoint.data });
       },
 
-      "function-rejected": (checkpoint) => {
+      "function-rejected": async (checkpoint) => {
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
         if (this.inFinalAttempt()) {
-          return {
-            type: "function-rejected",
-            ctx: this.fnArg,
-            error: checkpoint.error,
-            ops: this.ops,
-            retriable: false,
-          };
+          // Apply middleware transformation before returning
+          return await this.transformOutput({ error: checkpoint.error });
         }
 
         // Otherwise, checkpoint the error and switch to async mode
@@ -534,9 +574,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           return this.checkpointAndSwitchToAsync([result]);
         }
 
-        return void (await this.checkpoint([
-          this.resumeStepWithResult(result),
-        ]));
+        // Resume the step with original data for user code
+        const stepToResume = this.resumeStepWithResult(result);
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: result.data },
+          step: undefined,
+        });
+        const transformedData = transformedOutput?.result?.data ?? result.data;
+
+        // Create a copy for checkpointing with transformed data
+        const stepForCheckpoint = { ...stepToResume, data: transformedData };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {
@@ -974,7 +1027,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       .catch<OutgoingOp>((error) => {
         let errorIsRetriable = true;
 
-        if (error instanceof NonRetriableError) {
+        if (
+          error instanceof NonRetriableError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "NonRetriableError"
+        ) {
           errorIsRetriable = false;
         } else if (
           this.fnArg.maxAttempts &&
@@ -1107,11 +1164,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
+        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+        (error as any)?.name === "NonRetriableError" ||
         (error instanceof StepError &&
           error === this.state.recentlyRejectedStepError)
       );
-      if (retriable && error instanceof RetryAfterError) {
-        retriable = error.retryAfter;
+      if (
+        retriable &&
+        (error instanceof RetryAfterError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "RetryAfterError")
+      ) {
+        retriable = (error as RetryAfterError).retryAfter;
       }
 
       const serializedError = minifyPrettyError(serializeError(error));

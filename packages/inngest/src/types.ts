@@ -16,6 +16,7 @@ import type {
   GetEvents,
   Inngest,
 } from "./components/Inngest.ts";
+import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type {
@@ -23,7 +24,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { internalEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -85,7 +86,7 @@ export const jsonErrorSchema = baseJsonErrorSchema
  * The payload for an API endpoint running steps.
  */
 export type APIStepPayload = {
-  name: `${knownEvents.HttpRunStarted}`;
+  name: `${internalEvents.HttpRequest}`;
   data: {
     /**
      * The domain that served the original request.
@@ -958,6 +959,12 @@ export interface ClientOptions {
    * the parameters directly if necessary.
    */
   checkpointing?: CheckpointingOptions;
+
+  /**
+   * An optional endpoint adapter to use when creating Durable Endpoints using
+   * `inngest.endpoint()`.
+   */
+  endpointAdapter?: InngestEndpointAdapter.Like;
 }
 
 export type CheckpointingOptions =

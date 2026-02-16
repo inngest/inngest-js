@@ -11,6 +11,7 @@ import {
   envKeys,
   forwardedHeaders,
   headerKeys,
+  internalEvents,
   logPrefix,
   probe as probeEnum,
   queryKeys,
@@ -36,6 +37,7 @@ import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
+  versionSchema,
 } from "../helpers/functions.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
@@ -97,6 +99,21 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly InngestFunction.Like[];
 }
 
+/**
+ * Parameters passed to the asyncRedirectUrl function.
+ */
+export interface AsyncRedirectUrlParams {
+  /**
+   * The unique identifier for this run.
+   */
+  runId: string;
+
+  /**
+   * The token used to authenticate the request to fetch run output.
+   */
+  token: string;
+}
+
 export interface SyncHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
@@ -110,6 +127,30 @@ export interface SyncHandlerOptions extends RegisterOptions {
    * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
    */
   asyncResponse?: AsyncResponseValue;
+
+  /**
+   * Custom URL to redirect to when switching from sync to async mode.
+   *
+   * Can be:
+   * - A string path (e.g., "/api/inngest/poll") - resolved relative to request origin
+   * - A function that receives `{ runId, token }` and returns a full URL
+   *
+   * When a string path is provided, `runId` and `token` query parameters are
+   * automatically appended.
+   *
+   * @example
+   * ```ts
+   * // String path - resolved relative to request origin
+   * asyncRedirectUrl: "/api/inngest/poll"
+   *
+   * // Function - full control over URL construction
+   * asyncRedirectUrl: ({ runId, token }) =>
+   *   `https://my-app.com/poll?run=${runId}&t=${token}`
+   * ```
+   */
+  asyncRedirectUrl?:
+    | string
+    | ((params: AsyncRedirectUrlParams) => string | Promise<string>);
 
   /**
    * If defined, this sets the function ID that represents this endpoint.
@@ -146,6 +187,8 @@ export interface SyncHandlerOptions extends RegisterOptions {
     | 19
     | 20;
 }
+
+export type SyncAdapterOptions = Omit<SyncHandlerOptions, "client">;
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
   /**
@@ -842,6 +885,7 @@ export class InngestCommHandler<
           asyncMode:
             this._options.syncOptions?.asyncResponse ??
             AsyncResponseType.Redirect,
+          asyncRedirectUrl: this._options.syncOptions?.asyncRedirectUrl,
           fn,
         });
       }) as THandler);
@@ -893,9 +937,8 @@ export class InngestCommHandler<
   }
 
   /**
-   * Given a set of actions that let us access the incoming request, create a
-   * `http/run.started` event that repesents a run starting from an HTTP
-   * request.
+   * Given a set of actions that let us access the incoming request, create an
+   * event that repesents a run starting from an HTTP request.
    */
   private async createHttpEvent(
     actions: HandlerResponseWithErrors,
@@ -929,8 +972,7 @@ export class InngestCommHandler<
       url.searchParams.toString(),
     );
 
-    // TODO For body, we can add `textBody()` to the actions
-    const bodyPromise = actions.textBody!(reason).then((body) => {
+    const bodyPromise = actions.body(reason).then((body) => {
       return typeof body === "string" ? body : stringify(body);
     });
 
@@ -946,7 +988,7 @@ export class InngestCommHandler<
       ]);
 
     return {
-      name: "http/run.started",
+      name: internalEvents.HttpRequest,
       data: {
         content_type: contentType,
         domain,
@@ -965,12 +1007,14 @@ export class InngestCommHandler<
     actions,
     fn,
     asyncMode,
+    asyncRedirectUrl,
     args,
   }: {
     timer: ServerTiming;
     actions: HandlerResponseWithErrors;
     fn: InngestFunction.Any;
     asyncMode: AsyncResponseValue;
+    asyncRedirectUrl: SyncHandlerOptions["asyncRedirectUrl"];
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
@@ -1044,10 +1088,19 @@ export class InngestCommHandler<
           "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
         );
       },
-      "function-rejected": () => {
-        throw new Error(
-          "We should not get the result 'function-rejected' when checkpointing. This is a bug in the `inngest` SDK",
-        );
+      "function-rejected": (result) => {
+        return actions.transformResponse("creating sync error response", {
+          status: result.retriable ? 500 : 400,
+          headers: {
+            "Content-Type": "application/json",
+            [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+            ...(typeof result.retriable === "string"
+              ? { [headerKeys.RetryAfter]: result.retriable }
+              : {}),
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(result.error)),
+        });
       },
       "function-resolved": ({ data }) => {
         // We're done and we didn't call any step tools, so just return the
@@ -1057,16 +1110,35 @@ export class InngestCommHandler<
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
           case AsyncResponseType.Redirect: {
+            let redirectUrl: string;
+
+            if (asyncRedirectUrl) {
+              if (typeof asyncRedirectUrl === "function") {
+                // Full control: user provides complete URL
+                redirectUrl = await asyncRedirectUrl({ runId, token });
+              } else {
+                // String path: resolve relative to request origin
+                // new URL("/api/poll", "https://example.com") → "https://example.com/api/poll"
+                // new URL("https://other.com/poll", "https://example.com") → "https://other.com/poll"
+                const baseUrl = await actions.url("getting request origin");
+                const url = new URL(asyncRedirectUrl, baseUrl.origin);
+                url.searchParams.set("runId", runId);
+                url.searchParams.set("token", token);
+                redirectUrl = url.toString();
+              }
+            } else {
+              // Default: redirect to Inngest API
+              redirectUrl = await this.client["inngestApi"]
+                ["getTargetUrl"](`/v1/http/runs/${runId}/output?token=${token}`)
+                .then((url) => url.toString());
+            }
+
             return actions.transformResponse(
               "creating sync->async redirect response",
               {
                 status: 302,
                 headers: {
-                  [headerKeys.Location]: await this.client["inngestApi"]
-                    ["getTargetUrl"](
-                      `/v1/http/runs/${runId}/output?token=${token}`,
-                    )
-                    .then((url) => url.toString()),
+                  [headerKeys.Location]: redirectUrl,
                 },
                 version: exeVersion,
                 body: "",
@@ -1131,15 +1203,6 @@ export class InngestCommHandler<
 
     const methodP = actions.method("starting to handle request");
 
-    const contentLength = await actions
-      .headers("checking signature for request", headerKeys.ContentLength)
-      .then((value) => {
-        if (!value) {
-          return undefined;
-        }
-        return Number.parseInt(value, 10);
-      });
-
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1147,16 +1210,21 @@ export class InngestCommHandler<
           return headerSignature ?? undefined;
         }),
       methodP,
-      methodP.then((method) => {
+      methodP.then(async (method) => {
         if (method === "POST" || method === "PUT") {
-          if (!contentLength) {
-            // Return empty string because req.json() will throw an error.
-            return "";
-          }
-
-          return actions.body(
+          const body = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
+          if (!body) {
+            // Empty body can happen with PUT requests
+            return "";
+          }
+          // Some adapters return strings (req.text()), others return
+          // pre-parsed objects (req.body). Handle both cases.
+          if (typeof body === "string") {
+            return JSON.parse(body);
+          }
+          return body;
         }
 
         return "";
@@ -1432,10 +1500,10 @@ export class InngestCommHandler<
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
   }): Promise<ActionResponse> {
-    // This is when the request body is completely missing; it does not
-    // include an empty body. This commonly happens when the HTTP framework
-    // doesn't have body parsing middleware.
-    const isMissingBody = rawBody === undefined;
+    // This is when the request body is completely missing. This commonly
+    // happens when the HTTP framework doesn't have body parsing middleware,
+    // or for PUT requests that don't require a body.
+    const isMissingBody = !rawBody;
     let body = rawBody;
 
     try {
@@ -1485,6 +1553,25 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
+
+          // Grab "force step plan" flag from headers
+          let die = false;
+          const dieHeader = await actions.headers(
+            "getting step plan force control for forced execution",
+            headerKeys.InngestForceStepPlan,
+          );
+          if (dieHeader) {
+            const parsed = parseAsBoolean(dieHeader);
+            if (typeof parsed === "boolean") {
+              die = parsed;
+            } else {
+              this.log(
+                "warn",
+                `Received invalid value for ${headerKeys.InngestForceStepPlan} header: ${dieHeader}. Expected a boolean value. Defaulting to "false".`,
+              );
+            }
+          }
+
           body = {
             event: {},
             events: [],
@@ -1493,9 +1580,12 @@ export class InngestCommHandler<
             sdkDecided: true,
             ctx: {
               attempt: 0,
-              disable_immediate_execution: false,
+              disable_immediate_execution: die,
               use_api: true,
-              max_attempts: 3,
+              // This execution path doesn't control max attempts; it's already
+              // been reported and Inngest is now in control of when to stop, so
+              // we remove this restriction.
+              max_attempts: Infinity,
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
@@ -1576,6 +1666,32 @@ export class InngestCommHandler<
           )) ||
           null;
 
+        // Try get the request version from headers for sync executions.
+        let headerReqVersion: ExecutionVersion | undefined;
+
+        try {
+          const rawVersionHeader = await actions.headers(
+            "processing run request",
+            headerKeys.RequestVersion,
+          );
+
+          // We only obey the request version header if it's actually a number,
+          // even though the underlying schema allows more values; that schema
+          // is intended to _always_ find a valid version and made for request
+          // bodies.
+          //
+          // Note that the header will be a `string` at this point.
+          if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
+            const res = versionSchema.parse(Number(rawVersionHeader));
+
+            if (!res.sdkDecided) {
+              headerReqVersion = res.version;
+            }
+          }
+        } catch {
+          // no-op
+        }
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
@@ -1586,6 +1702,7 @@ export class InngestCommHandler<
           fn,
           forceExecution,
           actions,
+          headerReqVersion,
         });
         const stepOutput = await result;
 
@@ -1896,6 +2013,7 @@ export class InngestCommHandler<
     headers,
     fn,
     forceExecution,
+    headerReqVersion,
   }: {
     actions: HandlerResponseWithErrors;
     functionId: string;
@@ -1906,13 +2024,16 @@ export class InngestCommHandler<
     headers: Record<string, string>;
     fn: { fn: InngestFunction.Any; onFailure: boolean };
     forceExecution: boolean;
+    headerReqVersion?: ExecutionVersion;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(data);
+    // Try to get the request version from headers before falling back to
+    // parsing it from the body.
+    const immediateFnData = parseFnData(data, headerReqVersion);
     let { version, sdkDecided } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.
@@ -2687,7 +2808,6 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   body: () => MaybePromise<any>;
-  textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
