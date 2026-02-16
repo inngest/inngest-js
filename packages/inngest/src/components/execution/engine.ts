@@ -2123,8 +2123,11 @@ function resolveStepIdCollision({
 }): CollisionResolutionResult {
   const hashedBaseId = hashId(baseId);
 
-  if (!stepsMap.has(hashedBaseId)) {
-    // No collision. Return original ID
+  // Check both stepsMap (steps added to state) and expectedIndexes (claimed by
+  // concurrent in-progress step handlers that haven't been added to state yet).
+  if (!stepsMap.has(hashedBaseId) && !expectedIndexes.has(baseId)) {
+    // No collision. Claim this base ID so concurrent callers detect collision.
+    expectedIndexes.set(baseId, 1);
     return { finalId: baseId };
   }
 
