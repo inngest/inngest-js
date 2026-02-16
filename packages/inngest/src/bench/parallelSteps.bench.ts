@@ -44,7 +44,7 @@ describe("100 parallel step.run", () => {
     name: "5 middleware",
     setup: (client, eventName, onDone) => {
       const middleware = [];
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 5; i++) {
         middleware.push(createMiddleware());
       }
 
@@ -67,7 +67,7 @@ describe("100 parallel step.run", () => {
     checkpointing: true,
     setup: (client, eventName, onDone) => {
       const middleware = [];
-      for (let i = 0; i < 100; i++) {
+      for (let i = 0; i < 5; i++) {
         middleware.push(createMiddleware());
       }
 
