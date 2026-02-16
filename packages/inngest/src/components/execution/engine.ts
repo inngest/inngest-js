@@ -153,6 +153,8 @@ class InngestExecutionEngine
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
+
+    // Setup middleware
     const mwInstances =
       this.options.middlewareInstances ??
       (this.options.client.middleware || []).map((Cls) => {
@@ -163,6 +165,7 @@ class InngestExecutionEngine
       () => this.state.stepState,
       mwInstances,
     );
+
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.initializeTimer(this.state);
     this.initializeCheckpointRuntimeTimer(this.state);
@@ -600,7 +603,7 @@ class InngestExecutionEngine
        * The user's function has completed and returned a value.
        */
       "function-resolved": async ({ data }) => {
-        // Check for unreported new steps (e.g. from Promise.race where
+        // Check for unreported new steps (e.g. from `Promise.race` where
         // the winning branch completed before losing branches reported)
         const newStepsResult = await maybeReturnNewSteps();
         if (newStepsResult) {
@@ -675,14 +678,16 @@ class InngestExecutionEngine
               op: StepOpCode.RunComplete,
               id: _internals.hashId("complete"), // ID is not important here
               data: output.data,
-            }) as [OutgoingOp, ...OutgoingOp[]];
+            });
 
-            return {
-              type: "steps-found",
-              ctx: output.ctx,
-              ops: output.ops,
-              steps,
-            };
+            if (isNonEmpty(steps)) {
+              return {
+                type: "steps-found",
+                ctx: output.ctx,
+                ops: output.ops,
+                steps,
+              };
+            }
           }
 
           return;
@@ -868,7 +873,7 @@ class InngestExecutionEngine
     await this.middlewareManager.onMemoizationEnd();
 
     const stepList = newSteps.map<OutgoingOp>((step) => {
-      const baseOp = {
+      return {
         displayName: step.displayName,
         op: step.op,
         id: step.hashedId,
@@ -876,9 +881,11 @@ class InngestExecutionEngine
         opts: step.opts,
         userland: step.userland,
       };
+    });
 
-      return baseOp;
-    }) as [OutgoingOp, ...OutgoingOp[]];
+    if (!isNonEmpty(stepList)) {
+      throw new UnreachableError("stepList is empty");
+    }
 
     return stepList;
   }
@@ -1434,12 +1441,13 @@ class InngestExecutionEngine
 
         // If we've handled no steps in this "tick," roll up everything we've
         // found and report it.
-        const steps = [...foundStepsToReport.values()] as [
-          FoundStep,
-          ...FoundStep[],
-        ];
+        const steps = [...foundStepsToReport.values()];
         foundStepsToReport.clear();
         unhandledFoundStepsToReport.clear();
+
+        if (!isNonEmpty(steps)) {
+          return;
+        }
 
         return void this.state.setCheckpoint({
           type: "steps-found",
@@ -2147,6 +2155,10 @@ function resolveStepIdCollision({
   throw new UnreachableError(
     `Could not resolve step ID collision for "${baseId}" after ${stepsMap.size + 1} attempts`,
   );
+}
+
+function isNonEmpty<T>(arr: T[]): arr is [T, ...T[]] {
+  return arr.length > 0;
 }
 
 /**
