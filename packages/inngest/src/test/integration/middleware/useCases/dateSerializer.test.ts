@@ -6,10 +6,10 @@ import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   BaseSerializerMiddleware,
   createState,
+  fetchEvent,
   isRecord,
   randomSuffix,
   testNameFromFileUrl,
-  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -436,6 +436,126 @@ test("with checkpointing", async () => {
     },
     { id: "zzz", memoized: true, output: null },
   ]);
+});
+
+describe("outgoing event data is serialized", () => {
+  test("client.send", async () => {
+    // When sending an event via the client, event data is serialized before
+    // sending to the Inngest Server. But within the triggered Inngest function,
+    // the event data is deserialized.
+
+    const state = createState({
+      event: null as { data: { date: Date; int: number } } | null,
+    });
+
+    const sentEventName = randomSuffix("evt-sent");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [DateSerializerMiddleware],
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: eventType(sentEventName, {
+          schema: z.object({ date: z.date(), int: z.number() }),
+        }),
+      },
+      async ({ event, runId }) => {
+        state.runId = runId;
+        expectTypeOf(event.data).not.toBeAny();
+        state.event = event;
+      },
+    );
+    await createTestApp({ client, functions: [fn] });
+
+    const { ids } = await client.send({
+      data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
+      name: sentEventName,
+    });
+    await state.waitForRunComplete();
+
+    // Serialized on the Dev Server
+    const eventFromDevServer = await fetchEvent(ids[0]!);
+    expect(eventFromDevServer.data).toEqual({
+      date: {
+        [serializedMarker]: true,
+        value: "2026-02-03T00:00:00.000Z",
+      },
+      int: 42,
+    });
+
+    // Deserialized within the function handler
+    expect(state.event?.data).toEqual({
+      date: new Date("2026-02-03T00:00:00.000Z"),
+      int: 42,
+    });
+  });
+
+  test("step.sendEvent", async () => {
+    // When sending an event via `step.sendEvent`, event data is serialized
+    // before sending to the Inngest Server. But within the triggered Inngest
+    // function, the event data is deserialized.
+
+    const state = createState({
+      childEvent: null as { data: { date: Date; int: number } } | null,
+      childEventId: null as string | null,
+    });
+
+    const parentEventName = randomSuffix("evt");
+    const childEventName = randomSuffix("evt");
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [DateSerializerMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0, triggers: [{ event: parentEventName }] },
+      async ({ step, runId }) => {
+        state.runId = runId;
+        const { ids } = await step.sendEvent("send-it", {
+          name: childEventName,
+          data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
+        });
+        state.childEventId = ids[0]!;
+      },
+    );
+    const childFn = client.createFunction(
+      {
+        id: "child-fn",
+        retries: 0,
+        triggers: eventType(childEventName, {
+          schema: z.object({ date: z.date(), int: z.number() }),
+        }),
+      },
+      async ({ event, runId }) => {
+        state.runId = runId;
+        expectTypeOf(event.data).not.toBeAny();
+        state.childEvent = event;
+      },
+    );
+    await createTestApp({ client, functions: [fn, childFn] });
+
+    await client.send({ name: parentEventName });
+    await state.waitForRunComplete();
+
+    // Serialized on the Dev Server
+    const eventFromDevServer = await fetchEvent(state.childEventId!);
+    expect(eventFromDevServer.data).toEqual({
+      date: {
+        [serializedMarker]: true,
+        value: "2026-02-03T00:00:00.000Z",
+      },
+      int: 42,
+    });
+
+    // Deserialized within the function handler
+    expect(state.childEvent?.data).toEqual({
+      date: new Date("2026-02-03T00:00:00.000Z"),
+      int: 42,
+    });
+  });
 });
 
 // Normal TypeScript type that preserves Date objects, else jsonifies

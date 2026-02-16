@@ -69,7 +69,7 @@ export abstract class BaseSerializerMiddleware<
     }
 
     if (Array.isArray(value)) {
-      return value.map(this._deserialize);
+      return value.map((v) => this._deserialize(v));
     }
 
     return value;
@@ -93,7 +93,7 @@ export abstract class BaseSerializerMiddleware<
     }
 
     if (Array.isArray(value)) {
-      return value.map(this._serialize);
+      return value.map((v) => this._serialize(v));
     }
 
     return value;
@@ -287,4 +287,59 @@ export function createState<T extends Record<string, unknown>>(
   initial?: T,
 ): BaseState & T {
   return Object.assign(new BaseState(), initial);
+}
+
+const fetchEventSchema = z.object({
+  data: z.object({
+    eventV2: z.object({
+      idempotencyKey: z.string().optional(),
+      name: z.string(),
+      raw: z.string(),
+    }),
+  }),
+});
+
+/**
+ * Query the Dev Server's GraphQL API for an event with the given name.
+ * Polls until the event appears, then returns its parsed payload.
+ */
+export async function fetchEvent(id: string): Promise<{
+  data: Record<string, unknown>;
+  idempotencyKey: string | null;
+  name: string;
+}> {
+  return waitFor(async () => {
+    const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `query Event($id: ULID!) {
+          eventV2(id: $id) {
+            idempotencyKey
+            name
+            raw
+          }
+        }`,
+        variables: { id },
+        operationName: "Event",
+      }),
+    });
+
+    expect(res.ok).toBe(true);
+
+    const raw = await res.json();
+    console.log(raw);
+    const parsed = fetchEventSchema.parse(raw).data.eventV2;
+
+    const data = JSON.parse(parsed.raw).data;
+    if (!isRecord(data)) {
+      throw new Error("Event data is not a record");
+    }
+
+    return {
+      data,
+      idempotencyKey: parsed.idempotencyKey ?? null,
+      name: parsed.name,
+    };
+  });
 }
