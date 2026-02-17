@@ -33,7 +33,7 @@ export interface ExecutionResults {
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": {
     step: OutgoingOp;
-    foundSteps: StepNotFoundFoundStep[];
+    foundSteps: BasicFoundStep[];
     totalFoundSteps: number;
   };
 
@@ -57,7 +57,7 @@ export type ExecutionResult = {
   >;
 }[keyof ExecutionResults];
 
-export interface StepNotFoundFoundStep {
+export interface BasicFoundStep {
   id: string;
   displayName?: string;
 }

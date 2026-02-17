@@ -62,13 +62,13 @@ import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
+  type BasicFoundStep,
   type ExecutionResult,
   type IInngestExecution,
   InngestExecution,
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-  type StepNotFoundFoundStep,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 
@@ -1694,12 +1694,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private getStepNotFoundDetails(): {
-    foundSteps: StepNotFoundFoundStep[];
+    foundSteps: BasicFoundStep[];
     totalFoundSteps: number;
   } {
     const foundSteps = [...this.state.steps.values()]
       .filter((step) => !step.hasStepState)
-      .map<StepNotFoundFoundStep>((step) => ({
+      .map<BasicFoundStep>((step) => ({
         id: step.hashedId,
         name: step.name,
         displayName: step.displayName,
@@ -1829,7 +1829,7 @@ export interface Checkpoints {
   "function-resolved": { data: unknown };
   "step-not-found": {
     step: OutgoingOp;
-    foundSteps: StepNotFoundFoundStep[];
+    foundSteps: BasicFoundStep[];
     totalFoundSteps: number;
   };
   "checkpointing-runtime-reached": {};
