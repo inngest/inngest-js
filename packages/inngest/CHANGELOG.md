@@ -1,5 +1,15 @@
 # inngest
 
+## 3.52.1
+
+### Patch Changes
+
+- [#1258](https://github.com/inngest/inngest-js/pull/1258) [`e17a148f`](https://github.com/inngest/inngest-js/commit/e17a148f90a7d68d93ebc7c924d3b6a910ceafd7) Thanks [@amh4r](https://github.com/amh4r)! - Connect: add worker thread support
+
+- [#1313](https://github.com/inngest/inngest-js/pull/1313) [`bbdab785`](https://github.com/inngest/inngest-js/commit/bbdab785ecab84e3284d524511d4fc925f3b199c) Thanks [@tonyhb](https://github.com/tonyhb)! - Add step names and IDs to step not found error
+
+- [#1306](https://github.com/inngest/inngest-js/pull/1306) [`b74bd1b9`](https://github.com/inngest/inngest-js/commit/b74bd1b939c0e6444fbb4d7ac798f3cb37f01f8d) Thanks [@amh4r](https://github.com/amh4r)! - Add a log before the 405 response
+
 ## 3.52.0
 
 ### Minor Changes
