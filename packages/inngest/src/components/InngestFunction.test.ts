@@ -4387,7 +4387,11 @@ describe("runFn", () => {
 
         // Find the call where step was supposed to be defined
         const stepCall = transformOutputCalls.find(
-          (call) => call.result && typeof call.result === "object" && "data" in call.result && (call.result as Record<string, unknown>).data === "step-result",
+          (call) =>
+            call.result &&
+            typeof call.result === "object" &&
+            "data" in call.result &&
+            (call.result as Record<string, unknown>).data === "step-result",
         );
 
         expect(stepCall).toBeDefined();
