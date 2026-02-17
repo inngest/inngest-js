@@ -4326,5 +4326,75 @@ describe("runFn", () => {
         });
       });
     });
+
+    describe("transformOutput step parameter", () => {
+      test("step should be defined when transformOutput is called after a step runs", async () => {
+        const transformOutputCalls: Array<{
+          step: unknown;
+          result: unknown;
+        }> = [];
+
+        const clientWithMiddleware = createClient({
+          ...opts,
+          middleware: [
+            new InngestMiddleware({
+              name: "StepParamTest",
+              init: () => ({
+                onFunctionRun: () => ({
+                  transformOutput(ctx: { step?: unknown; result: unknown }) {
+                    transformOutputCalls.push({
+                      step: ctx.step,
+                      result: ctx.result,
+                    });
+                  },
+                }),
+              }),
+            }),
+          ],
+        });
+
+        const fn = new InngestFunction(
+          clientWithMiddleware,
+          {
+            id: "StepParamTest",
+            triggers: [{ event: "foo" }],
+          },
+          async ({ step }) => {
+            await step.run("my-step", () => "step-result");
+            return "done";
+          },
+        );
+
+        // First call: step "my-step" will execute (no memoized state)
+        const execution = fn["createExecution"]({
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
+          partialOptions: {
+            client: fn["client"],
+            data: fromPartial({
+              runId: "run-1",
+              event: { name: "foo", data: { foo: "foo" } },
+            }),
+            runId: "run-1",
+            stepState: {},
+            stepCompletionOrder: [],
+            reqArgs: [],
+            headers: {},
+            stepMode: StepMode.Async,
+          },
+        });
+
+        await execution.start();
+
+        // Find the call where step was supposed to be defined
+        const stepCall = transformOutputCalls.find(
+          (call) => call.result && typeof call.result === "object" && "data" in call.result && (call.result as Record<string, unknown>).data === "step-result",
+        );
+
+        expect(stepCall).toBeDefined();
+        // BUG: step is undefined here because .finally() deletes
+        // this.state.executingStep before .then() flows to transformOutput
+        expect(stepCall?.step).toBeDefined();
+      });
+    });
   });
 });
