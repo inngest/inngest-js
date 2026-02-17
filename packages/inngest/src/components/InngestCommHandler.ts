@@ -1758,6 +1758,26 @@ export class InngestCommHandler<
             };
           },
           "step-not-found": (result) => {
+            // we want to show the names and IDs of any steps that were found during the
+            // run process
+            const missingStepId = result.step.displayName || result.step.id;
+
+            let error = `Could not find step "${missingStepId}" to run; timed out.`;
+
+            if (result.foundSteps.length > 0) {
+              const foundStepsSummary = result.foundSteps
+                .map((step) => {
+                  const name = step.displayName || step.id;
+                  return `${name} (${step.id})`;
+                })
+                .join("\n");
+              error = `${error} Found new steps: \n${foundStepsSummary}.`;
+            }
+
+            if (result.totalFoundSteps > result.foundSteps.length) {
+              error = `${error} (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`;
+            }
+
             return {
               status: 500,
               headers: {
@@ -1765,9 +1785,10 @@ export class InngestCommHandler<
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
-                error: `Could not find step "${
-                  result.step.displayName || result.step.id
-                }" to run; timed out`,
+                error,
+                requestedStep: result.step.id,
+                foundSteps: result.foundSteps,
+                totalFoundSteps: result.totalFoundSteps,
               }),
               version,
             };
