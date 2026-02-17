@@ -59,7 +59,6 @@ export type ExecutionResult = {
 
 export interface StepNotFoundFoundStep {
   id: string;
-  name?: string;
   displayName?: string;
 }
 
