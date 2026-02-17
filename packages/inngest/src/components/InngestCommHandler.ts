@@ -1745,7 +1745,7 @@ export class InngestCommHandler<
             if (result.foundSteps.length > 0) {
               const foundStepsSummary = result.foundSteps
                 .map((step) => {
-                  const name = step.displayName || step.name || step.id;
+                  const name = step.displayName || step.id;
                   return `${name} (${step.id})`;
                 })
                 .join("\n");
