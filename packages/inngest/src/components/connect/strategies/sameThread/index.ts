@@ -1,4 +1,3 @@
-import debug, { type Debugger } from "debug";
 import { SDKResponse } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { MessageBuffer } from "../../buffer.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
@@ -15,14 +14,12 @@ const ResponseAcknowledgeDeadline = 5_000;
  */
 export class SameThreadStrategy extends BaseStrategy {
   private readonly config: StrategyConfig;
-  protected readonly debugLog: Debugger;
   private readonly messageBuffer: MessageBuffer;
   private readonly core: ConnectionCore;
 
   constructor(config: StrategyConfig) {
     super();
     this.config = config;
-    this.debugLog = debug("inngest:connect");
 
     // Create the connection core with callbacks
     this.core = new ConnectionCore(

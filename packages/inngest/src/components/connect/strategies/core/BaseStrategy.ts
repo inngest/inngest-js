@@ -1,4 +1,4 @@
-import type { Debugger } from "debug";
+import debug, { type Debugger } from "debug";
 import { onShutdown } from "../../os.ts";
 import { ConnectionState } from "../../types.ts";
 import type { ConnectionStrategy } from "./types.ts";
@@ -15,9 +15,10 @@ export abstract class BaseStrategy implements ConnectionStrategy {
     | undefined;
   protected cleanupShutdownSignal: (() => void) | undefined;
 
-  protected abstract readonly debugLog: Debugger;
+  protected readonly debugLog: Debugger;
 
   constructor() {
+    this.debugLog = debug("inngest:connect");
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
     });

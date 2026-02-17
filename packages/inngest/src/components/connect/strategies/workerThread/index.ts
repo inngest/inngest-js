@@ -9,7 +9,6 @@
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
-import debug, { type Debugger } from "debug";
 import {
   GatewayExecutorRequestData,
   SDKResponse,
@@ -32,7 +31,6 @@ import type {
  */
 export class WorkerThreadStrategy extends BaseStrategy {
   private readonly config: StrategyConfig;
-  protected readonly debugLog: Debugger;
   private worker: Worker | undefined;
 
   private _connectionId: string | undefined;
@@ -40,7 +38,6 @@ export class WorkerThreadStrategy extends BaseStrategy {
   constructor(config: StrategyConfig) {
     super();
     this.config = config;
-    this.debugLog = debug("inngest:connect");
   }
 
   get connectionId(): string | undefined {
