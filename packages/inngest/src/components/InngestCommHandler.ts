@@ -2013,10 +2013,15 @@ export class InngestCommHandler<
       };
     }
 
+    this.log(
+      "error",
+      `Received unhandled HTTP method "${method}" (type: ${typeof method}); expected POST, PUT, or GET`,
+    );
+
     return {
       status: 405,
       body: JSON.stringify({
-        message: "No action found; request was likely not POST, PUT, or GET",
+        message: `No action found; expected POST, PUT, or GET but received "${method}"`,
         mode: this._mode,
       }),
       headers: {},
