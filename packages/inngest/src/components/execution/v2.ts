@@ -1018,7 +1018,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
-        delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -1157,11 +1156,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError } as Partial<OutgoingOp>;
 
-    const isStepExecution = Boolean(this.state.executingStep);
+    const step = this.state.executingStep;
+    delete this.state.executingStep;
+
+    const isStepExecution = Boolean(step);
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
-      step: this.state.executingStep,
+      step,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
