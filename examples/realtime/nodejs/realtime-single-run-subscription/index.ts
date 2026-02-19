@@ -8,21 +8,15 @@ import {
   subscribe,
   topic,
 } from "@inngest/realtime";
-import { EventSchemas, Inngest } from "inngest";
+import { Inngest } from "inngest";
 import { serve } from "inngest/node";
 import { createServer } from "node:http";
 import { z } from "zod";
 
-// Initialize the Inngest client with an ID, middleware, and event schemas
+// Initialize the Inngest client with an ID and middleware
 const app = new Inngest({
   id: "realtime-single-run", // Unique identifier for this Inngest app
   middleware: [realtimeMiddleware()], // Enables realtime features
-  schemas: new EventSchemas().fromZod({
-    // Define the event for processing uploads
-    "app/process-upload": {
-      data: z.object({ uploadId: z.string(), uuid: z.string() }),
-    },
-  }),
 });
 
 // Create a channel for uploads, parameterized by uuid, with a topic for statuses

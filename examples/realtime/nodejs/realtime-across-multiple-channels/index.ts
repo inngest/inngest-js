@@ -7,19 +7,15 @@ import {
   subscribe,
   topic,
 } from "@inngest/realtime";
-import { EventSchemas, Inngest } from "inngest";
+import { Inngest } from "inngest";
 import { serve } from "inngest/node";
 import { createServer } from "node:http";
 import { z } from "zod";
 
-// Initialize the Inngest client with an ID, middleware, and event schemas
+// Initialize the Inngest client with an ID and middleware
 const app = new Inngest({
   id: "realtime-simple", // Unique identifier for this Inngest app
   middleware: [realtimeMiddleware()], // Enables realtime features
-  schemas: new EventSchemas().fromZod({
-    // Define the event for liking a post
-    "app/post.like": { data: z.object({ postId: z.string() }) },
-  }),
 });
 
 // Create a global channel for logs
