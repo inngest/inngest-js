@@ -43,7 +43,7 @@ import {
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
-import type { Middleware, MiddlewareClass } from "./middleware/index.ts";
+import type { Middleware } from "./middleware/index.ts";
 import type { Realtime } from "./realtime/types.ts";
 import type { EventType } from "./triggers/triggers.ts";
 
@@ -221,17 +221,17 @@ export const STEP_INDEXING_SUFFIX = ":";
  */
 type MergedMiddleware<
   TClient extends Inngest.Any,
-  TFnMiddleware extends MiddlewareClass[] | undefined,
+  TFnMiddleware extends Middleware.Class[] | undefined,
 > = [
-  ...(ClientOptionsFromInngest<TClient>["middleware"] extends MiddlewareClass[]
+  ...(ClientOptionsFromInngest<TClient>["middleware"] extends Middleware.Class[]
     ? ClientOptionsFromInngest<TClient>["middleware"]
     : []),
-  ...(TFnMiddleware extends MiddlewareClass[] ? TFnMiddleware : []),
+  ...(TFnMiddleware extends Middleware.Class[] ? TFnMiddleware : []),
 ];
 
 export const createStepTools = <
   TClient extends Inngest.Any,
-  TFnMiddleware extends MiddlewareClass[] | undefined = undefined,
+  TFnMiddleware extends Middleware.Class[] | undefined = undefined,
 >(
   client: TClient,
   execution: InngestExecution,

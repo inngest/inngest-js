@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import type { MiddlewareClass } from "../../../components/middleware/middleware.ts";
 import { Inngest, Middleware } from "../../../index.ts";
 import { createTestApp } from "../../devServerTestHarness.ts";
 import {
@@ -135,14 +134,14 @@ describe("all hooks fire in correct order with 2 middleware", () => {
       const Mw1 = createMW("mw1");
       const Mw2 = createMW("mw2");
 
-      let clientMiddleware: MiddlewareClass[] = [];
+      let clientMiddleware: Middleware.Class[] = [];
       if (level === "client") {
         clientMiddleware = [Mw1, Mw2];
       } else if (level === "mixed") {
         clientMiddleware = [Mw1];
       }
 
-      let functionMiddleware: MiddlewareClass[] = [];
+      let functionMiddleware: Middleware.Class[] = [];
       if (level === "function") {
         functionMiddleware = [Mw1, Mw2];
       } else if (level === "mixed") {

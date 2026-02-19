@@ -2,13 +2,9 @@ export {
   MiddlewareManager,
   type PreparedStep,
 } from "./manager.ts";
-export {
-  type DefaultStaticTransform,
-  Middleware,
-  type MiddlewareClass,
-} from "./middleware.ts";
+export { Middleware } from "./middleware.ts";
 
 export {
-  buildWrapClientRequestChain,
   buildWrapRequestChain,
+  buildWrapSendEventChain,
 } from "./utils.ts";

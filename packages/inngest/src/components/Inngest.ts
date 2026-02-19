@@ -66,8 +66,7 @@ import {
 } from "./InngestMetadata.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
-import { buildWrapClientRequestChain } from "./middleware/index.ts";
-import { Middleware, type MiddlewareClass } from "./middleware/middleware.ts";
+import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
 
 import type { Realtime } from "./realtime/types";
 import {
@@ -123,7 +122,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   /**
    * Middleware instances that provide simpler hooks.
    */
-  readonly middleware: MiddlewareClass[];
+  readonly middleware: Middleware.Class[];
 
   private _env: Env = {};
 
@@ -693,7 +692,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     const decryptedStep = transformArgs.steps?.__result__;
     let decryptedData = result.data;
     if (decryptedStep && "data" in decryptedStep) {
-      decryptedData = decryptedStep.data;
+      decryptedData = decryptedStep.data as typeof decryptedData;
     }
 
     return { ...result, data: decryptedData };
@@ -882,7 +881,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       return { ids: body.ids } as SendEventOutput<TClientOpts>;
     };
 
-    const wrappedHandler = buildWrapClientRequestChain(
+    const wrappedHandler = buildWrapSendEventChain(
       mwInstances,
       innerHandler,
       payloads,
@@ -946,7 +945,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
 /**
  * Default middleware that is included in every client, placed before the user's
- * middleware. Returns new-style `MiddlewareClass` constructors. Uses a closure
+ * middleware. Returns new-style `Middleware.Class` constructors. Uses a closure
  * so the no-arg constructors can capture the base logger and log level.
  */
 export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
@@ -1049,7 +1048,7 @@ export namespace Inngest {
    * while keeping all other fields from InngestFunction.Options.
    */
   export type CreateFunctionInput<
-    TFnMiddleware extends MiddlewareClass[] | undefined,
+    TFnMiddleware extends Middleware.Class[] | undefined,
     TTriggers extends
       | SingleOrArray<InngestFunction.Trigger<string>>
       | undefined,
@@ -1080,7 +1079,7 @@ export namespace Inngest {
     const TTriggers extends
       | SingleOrArray<InngestFunction.Trigger<string>>
       | undefined = undefined,
-    const TFnMiddleware extends MiddlewareClass[] | undefined = undefined,
+    const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
     THandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
       ResolveTriggers<TTriggers>,

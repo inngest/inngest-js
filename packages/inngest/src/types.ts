@@ -17,11 +17,7 @@ import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type { createGroupTools } from "./components/InngestGroupTools.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type {
-  DefaultStaticTransform,
-  Middleware,
-  MiddlewareClass,
-} from "./components/middleware/index.ts";
+import type { Middleware } from "./components/middleware/index.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,
@@ -683,25 +679,25 @@ type TransformKind = "functionOutputTransform" | "stepOutputTransform";
 /**
  * Extract the `functionOutputTransform` from a middleware class.
  */
-type GetMiddlewareRunTransformer<TMw> = TMw extends MiddlewareClass
+type GetMiddlewareRunTransformer<TMw> = TMw extends Middleware.Class
   ? InstanceType<TMw> extends {
       functionOutputTransform: infer TTransform extends
         Middleware.StaticTransform;
     }
     ? TTransform
-    : DefaultStaticTransform
-  : DefaultStaticTransform;
+    : Middleware.DefaultStaticTransform
+  : Middleware.DefaultStaticTransform;
 
 /**
  * Extract the `stepOutputTransform` from a middleware class.
  */
-type GetMiddlewareStepTransformer<TMw> = TMw extends MiddlewareClass
+type GetMiddlewareStepTransformer<TMw> = TMw extends Middleware.Class
   ? InstanceType<TMw> extends {
       stepOutputTransform: infer TTransform extends Middleware.StaticTransform;
     }
     ? TTransform
-    : DefaultStaticTransform
-  : DefaultStaticTransform;
+    : Middleware.DefaultStaticTransform
+  : Middleware.DefaultStaticTransform;
 
 /**
  * Dispatch to the correct transformer extractor based on `TKind`.
@@ -719,10 +715,10 @@ type GetMiddlewareTransformerByKind<
  * When no middleware is provided, applies Jsonify as the default transform.
  */
 export type ApplyAllMiddlewareTransforms<
-  TMw extends MiddlewareClass[] | undefined,
+  TMw extends Middleware.Class[] | undefined,
   T,
   TKind extends TransformKind = "stepOutputTransform",
-> = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
   ? ApplyMiddlewareTransformsInternal<TMw, T, TKind>
   : Jsonify<T>; // No middleware or empty array - apply default Jsonify
 
@@ -736,10 +732,10 @@ export type ApplyAllMiddlewareTransforms<
  * input `T`, this gives `MW1(MW2(T))`.
  */
 type ApplyMiddlewareTransformsInternal<
-  TMw extends MiddlewareClass[] | undefined,
+  TMw extends Middleware.Class[] | undefined,
   T,
   TKind extends TransformKind,
-> = TMw extends [...infer Rest extends MiddlewareClass[], infer Last]
+> = TMw extends [...infer Rest extends Middleware.Class[], infer Last]
   ? ApplyMiddlewareTransformsInternal<
       Rest,
       ApplyMiddlewareStaticTransform<
@@ -772,7 +768,7 @@ export type ApplyMiddlewareStaticTransform<
  * Looks at the return type of `transformFunctionInput` and extracts additional
  * properties on `ctx` (excluding base `TransformFunctionInputArgs["ctx"]` properties).
  */
-type GetMiddlewareCtxExtensions<T> = T extends MiddlewareClass
+type GetMiddlewareCtxExtensions<T> = T extends Middleware.Class
   ? InstanceType<T> extends {
       transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
         ctx: infer TCtx;
@@ -788,8 +784,8 @@ type GetMiddlewareCtxExtensions<T> = T extends MiddlewareClass
  * When no middleware is provided, returns an empty object.
  */
 export type ApplyAllMiddlewareCtxExtensions<
-  TMw extends MiddlewareClass[] | undefined,
-> = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
   ? ApplyMiddlewareCtxExtensionsInternal<TMw>
   : {};
 
@@ -797,8 +793,8 @@ export type ApplyAllMiddlewareCtxExtensions<
  * Internal helper that recursively merges middleware ctx extensions.
  */
 type ApplyMiddlewareCtxExtensionsInternal<
-  TMw extends MiddlewareClass[] | undefined,
-> = TMw extends [infer First, ...infer Rest extends MiddlewareClass[]]
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
   ? GetMiddlewareCtxExtensions<First> &
       ApplyMiddlewareCtxExtensionsInternal<Rest>
   : {};
@@ -808,7 +804,7 @@ type ApplyMiddlewareCtxExtensionsInternal<
  * Looks at the return type of `transformFunctionInput` and extracts additional
  * properties on `ctx.step` (excluding base `StepTools` properties).
  */
-type GetMiddlewareStepExtensions<T> = T extends MiddlewareClass
+type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
   ? InstanceType<T> extends {
       transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
         ctx: { step: infer TStep };
@@ -824,8 +820,8 @@ type GetMiddlewareStepExtensions<T> = T extends MiddlewareClass
  * When no middleware is provided, returns an empty object.
  */
 export type ApplyAllMiddlewareStepExtensions<
-  TMw extends MiddlewareClass[] | undefined,
-> = TMw extends [MiddlewareClass, ...MiddlewareClass[]]
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
   ? ApplyMiddlewareStepExtensionsInternal<TMw>
   : {};
 
@@ -833,8 +829,8 @@ export type ApplyAllMiddlewareStepExtensions<
  * Internal helper that recursively merges middleware step extensions.
  */
 type ApplyMiddlewareStepExtensionsInternal<
-  TMw extends MiddlewareClass[] | undefined,
-> = TMw extends [infer First, ...infer Rest extends MiddlewareClass[]]
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
   ? GetMiddlewareStepExtensions<First> &
       ApplyMiddlewareStepExtensionsInternal<Rest>
   : {};
@@ -961,7 +957,7 @@ export interface ClientOptions {
    * Each class is instantiated fresh per-request so that middleware can safely
    * use `this` for request-scoped state.
    */
-  middleware?: MiddlewareClass[];
+  middleware?: Middleware.Class[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will

@@ -19,7 +19,7 @@ import type {
 } from "./execution/InngestExecution.ts";
 
 import type { Inngest } from "./Inngest.ts";
-import type { MiddlewareClass } from "./middleware/middleware.ts";
+import type { Middleware } from "./middleware/middleware.ts";
 import type { EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
@@ -676,7 +676,7 @@ export namespace InngestFunction {
      *
      * See {@link https://innge.st/middleware}
      */
-    middleware?: MiddlewareClass[];
+    middleware?: Middleware.Class[];
 
     /**
      * Optimizes parallel steps to reduce traffic during `Promise` resolution,

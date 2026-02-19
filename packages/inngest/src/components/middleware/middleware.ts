@@ -1,23 +1,15 @@
-import type { z } from "zod/v3";
-import type { stepSchema } from "../../api/schema.ts";
 import type { Jsonify } from "../../helpers/jsonify.ts";
 import type { MaybePromise } from "../../helpers/types.ts";
 import type {
   Context,
   EventPayload,
+  JsonError,
   SendEventBaseOutput,
   StepOptions,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { createStepTools } from "../InngestStepTools.ts";
 import type { OpenStringUnion } from "./types.ts";
-
-/**
- * Default transform. Applies the same transform as `JSON.stringify`.
- */
-export interface DefaultStaticTransform extends Middleware.StaticTransform {
-  Out: Jsonify<this["In"]>;
-}
 
 /**
  * Namespace containing middleware-related types and base class.
@@ -39,6 +31,13 @@ export namespace Middleware {
     In: unknown;
     Out: unknown;
   };
+
+  /**
+   * Default transform. Applies the same transform as `JSON.stringify`.
+   */
+  export interface DefaultStaticTransform extends StaticTransform {
+    Out: Jsonify<this["In"]>;
+  }
 
   /**
    * The step tools available to middleware for extending step functionality.
@@ -72,11 +71,24 @@ export namespace Middleware {
   }>;
 
   /**
+   * A single memoized step entry received in `transformFunctionInput`.
+   */
+  type MemoizedStep =
+    | { type: "data"; data: unknown }
+    | { type: "error"; error: JsonError }
+    | { type: "input"; input: unknown };
+
+  /**
+   * Memoized step state keyed by hashed step ID.
+   */
+  type MemoizedSteps = Record<string, MemoizedStep>;
+
+  /**
    * The argument passed to `transformFunctionInput`.
    */
   export type TransformFunctionInputArgs = {
     ctx: Context.Any;
-    steps: z.infer<typeof stepSchema>;
+    steps: MemoizedSteps;
   };
 
   /**
@@ -131,6 +143,11 @@ export namespace Middleware {
     headers: Record<string, string>;
     status: number;
   };
+
+  /**
+   * The argument passed to `onMemoizationEnd`.
+   */
+  export type OnMemoizationEndArgs = DeepReadonly<{ ctx: Context.Any }>;
 
   /**
    * The argument passed to `onStepStart`.
@@ -315,8 +332,10 @@ export namespace Middleware {
      *
      * If a new step is found before resolving/rejecting all memoized steps,
      * then this calls.
+     *
+     * Do not mutate arguments.
      */
-    onMemoizationEnd?(): MaybePromise<void>;
+    onMemoizationEnd?(arg: Middleware.OnMemoizationEndArgs): MaybePromise<void>;
 
     /**
      * Called when the run completes successfully. Does NOT call when the run
@@ -504,18 +523,18 @@ export namespace Middleware {
     // serialization and `wrapStep` can be responsible for deserialization.
     wrapStepHandler?(args: WrapStepHandlerArgs): Promise<unknown>;
   }
-}
 
-/**
- * A no-arg constructor for a BaseMiddleware subclass. Used in client options
- * so that fresh instances are created per-request.
- */
-export type MiddlewareClass = (new (args: {
-  client: Inngest.Any;
-}) => Middleware.BaseMiddleware) & {
-  // Static methods aren't captured by `new () => ...`, so we repeat it here.
-  onRegister?(arg: Middleware.OnRegisterArgs): void;
-};
+  /**
+   * A no-arg constructor for a BaseMiddleware subclass. Used in client and
+   * function options so that fresh instances are created per-request.
+   */
+  export type Class = (new (args: {
+    client: Inngest.Any;
+  }) => BaseMiddleware) & {
+    // Static methods aren't captured by `new () => ...`, so we repeat it here.
+    onRegister?(arg: OnRegisterArgs): void;
+  };
+}
 
 type DeepReadonly<T> = T extends (infer U)[]
   ? readonly DeepReadonly<U>[]

@@ -15,12 +15,12 @@ export function isTimeStrInput(
 }
 
 /**
- * Build an onion-style middleware chain for `wrapClientRequest`.
+ * Build an onion-style middleware chain for `wrapSendEvent`.
  *
  * Same pattern as `buildWrapRequestChain` but wraps the outgoing HTTP call
  * in `client.send()` instead of the incoming execution request.
  */
-export function buildWrapClientRequestChain(
+export function buildWrapSendEventChain(
   middleware: Middleware.BaseMiddleware[],
   handler: () => Promise<SendEventBaseOutput>,
   payloads: Middleware.WrapSendEventArgs["events"],

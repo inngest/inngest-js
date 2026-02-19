@@ -402,10 +402,11 @@ export class MiddlewareManager {
     }
     this.memoizationEnded = true;
 
+    const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onMemoizationEnd) {
         try {
-          await mw.onMemoizationEnd();
+          await mw.onMemoizationEnd({ ctx });
         } catch (error) {
           getLogger().error("middleware error", {
             error,

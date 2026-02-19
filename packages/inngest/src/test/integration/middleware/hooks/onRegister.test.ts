@@ -110,6 +110,48 @@ test("receives the client instance", async () => {
   expect(state.receivedClient).toBe(client);
 });
 
+test("throwing in client middleware propagates to caller", () => {
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    static override onRegister() {
+      throw new Error("register failed");
+    }
+  }
+
+  expect(
+    () =>
+      new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: [TestMiddleware],
+      }),
+  ).toThrow("register failed");
+});
+
+test("throwing in function middleware propagates to caller", () => {
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    static override onRegister() {
+      throw new Error("register failed");
+    }
+  }
+
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  expect(() =>
+    client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        middleware: [TestMiddleware],
+        triggers: [{ event: "test" }],
+      },
+      async () => {},
+    ),
+  ).toThrow("register failed");
+});
+
 test("called for both client and function middleware", async () => {
   const state = createState({
     logs: [] as string[],

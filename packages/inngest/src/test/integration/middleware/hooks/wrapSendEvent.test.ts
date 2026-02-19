@@ -127,6 +127,59 @@ test("receives events in args", async () => {
   ]);
 });
 
+test("fires for step.sendEvent", async () => {
+  const state = createState({
+    logs: [] as string[],
+    receivedEvents: null as unknown,
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    override async wrapSendEvent({
+      events,
+      next,
+    }: Middleware.WrapSendEventArgs) {
+      state.logs.push("wrapSendEvent");
+      state.receivedEvents = events;
+      return next();
+    }
+  }
+
+  const triggerEventName = randomSuffix("evt");
+  const sentEventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: triggerEventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      await step.sendEvent("send-it", {
+        name: sentEventName,
+        data: { hello: "world" },
+      });
+    },
+  );
+  await createTestApp({ client, functions: [fn] });
+
+  // wrapSendEvent fires for client.send (triggering the function)
+  await client.send({ name: triggerEventName });
+  await state.waitForRunComplete();
+
+  // wrapSendEvent should have fired twice: once for client.send, once for
+  // step.sendEvent
+  expect(state.logs).toEqual(["wrapSendEvent", "wrapSendEvent"]);
+
+  // Last call should have the step.sendEvent payload
+  expect(state.receivedEvents).toEqual([
+    expect.objectContaining({
+      name: sentEventName,
+      data: { hello: "world" },
+    }),
+  ]);
+});
+
 test("throwing rejects the send", async () => {
   class TestMiddleware extends Middleware.BaseMiddleware {
     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
