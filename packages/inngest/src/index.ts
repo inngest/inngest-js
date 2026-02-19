@@ -61,6 +61,7 @@ export {
   EventType,
   eventType,
   invoke,
+  staticSchema,
 } from "./components/triggers/triggers.ts";
 export {
   isInngest,

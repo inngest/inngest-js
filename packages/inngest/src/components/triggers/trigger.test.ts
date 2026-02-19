@@ -4,7 +4,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { Inngest } from "../Inngest.ts";
-import { cron, eventType, invoke } from "./triggers.ts";
+import { cron, eventType, invoke, staticSchema } from "./triggers.ts";
 
 describe("cron", () => {
   test("return", () => {
@@ -647,5 +647,41 @@ describe("mixed triggers", () => {
         >();
       },
     );
+  });
+});
+
+describe("staticSchema", () => {
+  type Payload = { userId: string; email?: string };
+  const et = eventType("user/created", {
+    schema: staticSchema<Payload>(),
+  });
+
+  test("validate is a no-op passthrough", async () => {
+    // Invalid data passes validation, since the schema is just for static types
+
+    // @ts-expect-error - Intentionally invalid data
+    const event = et.create({ userId: 123 });
+
+    // Won't throw
+    await event.validate();
+  });
+
+  test("event.data is typed in createFunction", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "fn", triggers: [et] }, ({ event }) => {
+      expectTypeOf(event.data).not.toBeAny();
+      expectTypeOf(event.data.userId).toEqualTypeOf<string>();
+      expectTypeOf(event.data.email).toEqualTypeOf<string | undefined>();
+    });
+  });
+
+  test("event.name is typed in createFunction", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "fn", triggers: [et] }, ({ event }) => {
+      expectTypeOf(event.name).not.toBeAny();
+      expectTypeOf(event.name).toEqualTypeOf<
+        "user/created" | "inngest/function.invoked"
+      >();
+    });
   });
 });

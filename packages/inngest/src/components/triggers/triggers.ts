@@ -254,6 +254,24 @@ export function eventType<
 }
 
 /**
+ * Create a type-only schema that provides TypeScript types without runtime
+ * validation. Returns a hardcoded StandardSchemaV1 whose `validate` is a
+ * passthrough, so invalid data will not be rejected at runtime. Use this when
+ * you want event type safety without pulling in a validation library like Zod.
+ */
+export function staticSchema<
+  TSchema extends Record<string, unknown>,
+>(): StandardSchemaV1<TSchema> {
+  return {
+    "~standard": {
+      version: 1,
+      vendor: "inngest",
+      validate: (value) => ({ value: value as TSchema }),
+    },
+  };
+}
+
+/**
  * Create an invoke trigger for function-to-function calls.
  *
  * This creates a trigger that allows your function to be invoked directly by
