@@ -18,8 +18,67 @@ class MyError extends Error {
   }
 }
 
-test("fires when function throws", async () => {
+describe("args", () => {
+  for (const level of ["client", "function"] as const) {
+    test(`level: ${level}`, async () => {
+      const state = createState({
+        hookArgs: [] as Middleware.OnRunErrorArgs[],
+      });
+
+      class TestMiddleware extends Middleware.BaseMiddleware {
+        override onRunError(args: Middleware.OnRunErrorArgs) {
+          state.hookArgs.push(args);
+        }
+      }
+
+      let clientMiddleware: Middleware.Class[] = [];
+      let functionMiddleware: Middleware.Class[] = [];
+      if (level === "client") {
+        clientMiddleware = [TestMiddleware];
+      } else {
+        functionMiddleware = [TestMiddleware];
+      }
+
+      const eventName = randomSuffix("evt");
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: clientMiddleware,
+      });
+
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          middleware: functionMiddleware,
+          triggers: [{ event: eventName }],
+        },
+        async ({ runId }) => {
+          state.runId = runId;
+          throw new MyError("fn error");
+        },
+      );
+
+      await createTestApp({ client, functions: [fn] });
+
+      await client.send({ name: eventName });
+      await state.waitForRunFailed();
+
+      expect(state.hookArgs).toEqual([
+        {
+          ctx: anyContext,
+          error: expect.any(MyError),
+          functionInfo: { id: "fn" },
+          isFinalAttempt: true,
+        },
+      ]);
+    });
+  }
+});
+
+test("multiple attempts", async () => {
   const state = createState({
+    attempts: 0,
     calls: [] as Middleware.OnRunErrorArgs[],
   });
 
@@ -37,9 +96,14 @@ test("fires when function throws", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    {
+      id: "fn",
+      retries: 1,
+      triggers: [{ event: eventName }],
+    },
     async ({ runId }) => {
       state.runId = runId;
+      state.attempts++;
       throw new MyError("fn error");
     },
   );
@@ -47,18 +111,23 @@ test("fires when function throws", async () => {
   await createTestApp({ client, functions: [fn] });
 
   await client.send({ name: eventName });
-  await state.waitForRunFailed();
+  await waitFor(async () => {
+    expect(state.attempts).toBe(2);
+  });
 
-  expect(state.calls).toHaveLength(1);
+  expect(state.calls).toHaveLength(2);
   expect(state.calls[0]).toEqual({
     ctx: anyContext,
     error: expect.any(MyError),
+    functionInfo: { id: "fn" },
+    isFinalAttempt: false,
+  });
+  expect(state.calls[1]).toEqual({
+    ctx: anyContext,
+    error: expect.any(MyError),
+    functionInfo: { id: "fn" },
     isFinalAttempt: true,
   });
-
-  const { error } = state.calls[0]!;
-  expect(error.name).toBe("MyError");
-  expect(error.message).toBe("fn error");
 });
 
 test("does NOT fire when function succeeds", async () => {
@@ -131,54 +200,6 @@ test("fires when function throws after steps complete", async () => {
   expect(state.calls).toHaveLength(1);
   expect(state.calls[0]!.error.message).toBe("after steps");
   expect(state.calls[0]!.isFinalAttempt).toBe(true);
-});
-
-test("multiple attempts", async () => {
-  const state = createState({
-    attempts: 0,
-    calls: [] as Middleware.OnRunErrorArgs[],
-  });
-
-  class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunError(args: Middleware.OnRunErrorArgs) {
-      state.calls.push(args);
-    }
-  }
-
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [TestMiddleware],
-  });
-
-  const fn = client.createFunction(
-    { id: "fn", retries: 1, triggers: [{ event: eventName }] },
-    async ({ runId }) => {
-      state.runId = runId;
-      state.attempts++;
-      throw new MyError("fn error");
-    },
-  );
-
-  await createTestApp({ client, functions: [fn] });
-
-  await client.send({ name: eventName });
-  await waitFor(async () => {
-    expect(state.attempts).toBe(2);
-  });
-
-  expect(state.calls).toHaveLength(2);
-  expect(state.calls[0]).toEqual({
-    ctx: anyContext,
-    error: expect.any(MyError),
-    isFinalAttempt: false,
-  });
-  expect(state.calls[1]).toEqual({
-    ctx: anyContext,
-    error: expect.any(MyError),
-    isFinalAttempt: true,
-  });
 });
 
 test("throws", async () => {

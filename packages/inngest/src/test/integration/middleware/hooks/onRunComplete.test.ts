@@ -10,7 +10,62 @@ import {
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("fires when function completes with data", async () => {
+describe("args", () => {
+  for (const level of ["client", "function"] as const) {
+    test(`level: ${level}`, async () => {
+      const state = createState({
+        hookArgs: [] as Middleware.OnRunCompleteArgs[],
+      });
+
+      class TestMiddleware extends Middleware.BaseMiddleware {
+        override onRunComplete(args: Middleware.OnRunCompleteArgs) {
+          state.hookArgs.push(args);
+        }
+      }
+
+      let clientMiddleware: Middleware.Class[] = [];
+      let functionMiddleware: Middleware.Class[] = [];
+      if (level === "client") {
+        clientMiddleware = [TestMiddleware];
+      } else {
+        functionMiddleware = [TestMiddleware];
+      }
+
+      const eventName = randomSuffix("evt");
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: clientMiddleware,
+      });
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          middleware: functionMiddleware,
+          triggers: [{ event: eventName }],
+        },
+        async ({ runId }) => {
+          state.runId = runId;
+          return "fn result";
+        },
+      );
+      await createTestApp({ client, functions: [fn] });
+
+      await client.send({ name: eventName });
+      await state.waitForRunComplete();
+
+      expect(state.hookArgs).toEqual([
+        {
+          ctx: anyContext,
+          functionInfo: { id: "fn" },
+          output: "fn result",
+        },
+      ]);
+    });
+  }
+});
+
+test("with steps", async () => {
   const state = createState({
     calls: [] as Middleware.OnRunCompleteArgs[],
   });
@@ -29,7 +84,11 @@ test("fires when function completes with data", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    {
+      id: "fn",
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
     async ({ step, runId }) => {
       await step.run("my-step", () => "step result");
       state.runId = runId;
@@ -44,7 +103,11 @@ test("fires when function completes with data", async () => {
 
   // Only fires on the completing request (request 2), not on step discovery (request 1)
   expect(state.calls).toHaveLength(1);
-  expect(state.calls[0]).toEqual({ ctx: anyContext, output: "fn result" });
+  expect(state.calls[0]).toEqual({
+    ctx: anyContext,
+    functionInfo: { id: "fn" },
+    output: "fn result",
+  });
 });
 
 test("does NOT fire when function errors", async () => {
@@ -84,41 +147,6 @@ test("does NOT fire when function errors", async () => {
 
   expect(state.endCalls).toBe(0);
   expect(state.errorCalls).toBe(1);
-});
-
-test("fires with no steps", async () => {
-  const state = createState({
-    calls: [] as Middleware.OnRunCompleteArgs[],
-  });
-
-  class TestMiddleware extends Middleware.BaseMiddleware {
-    override onRunComplete(args: Middleware.OnRunCompleteArgs) {
-      state.calls.push(args);
-    }
-  }
-
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [TestMiddleware],
-  });
-
-  const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
-    async ({ runId }) => {
-      state.runId = runId;
-      return "no-step result";
-    },
-  );
-
-  await createTestApp({ client, functions: [fn] });
-
-  await client.send({ name: eventName });
-  await state.waitForRunComplete();
-
-  expect(state.calls).toHaveLength(1);
-  expect(state.calls[0]).toEqual({ ctx: anyContext, output: "no-step result" });
 });
 
 test("throws", async () => {

@@ -10,52 +10,69 @@ import {
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("receives request info and runId", async () => {
-  const state = createState({
-    hookArgs: [] as Omit<Middleware.WrapRequestArgs, "next">[],
-  });
+describe("args", () => {
+  for (const level of ["client", "function"] as const) {
+    test(`level: ${level}`, async () => {
+      const state = createState({
+        hookArgs: [] as Omit<Middleware.WrapRequestArgs, "next">[],
+      });
 
-  class TestMiddleware extends Middleware.BaseMiddleware {
-    override wrapRequest = async ({
-      next,
-      requestInfo,
-      runId,
-    }: Middleware.WrapRequestArgs) => {
-      state.hookArgs.push({ requestInfo, runId });
-      return next();
-    };
+      class TestMiddleware extends Middleware.BaseMiddleware {
+        override wrapRequest = async ({
+          next,
+          functionInfo,
+          requestInfo,
+          runId,
+        }: Middleware.WrapRequestArgs) => {
+          state.hookArgs.push({ functionInfo, requestInfo, runId });
+          return next();
+        };
+      }
+
+      let clientMiddleware: Middleware.Class[] = [];
+      let functionMiddleware: Middleware.Class[] = [];
+      if (level === "client") {
+        clientMiddleware = [TestMiddleware];
+      } else if (level === "function") {
+        functionMiddleware = [TestMiddleware];
+      }
+
+      const eventName = randomSuffix("evt");
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: clientMiddleware,
+      });
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          middleware: functionMiddleware,
+          triggers: [{ event: eventName }],
+        },
+        async ({ runId }) => {
+          state.runId = runId;
+        },
+      );
+      await createTestApp({ client, functions: [fn] });
+
+      await client.send({ name: eventName });
+      await state.waitForRunComplete();
+
+      expect(state.hookArgs).toEqual([
+        {
+          functionInfo: { id: "fn" },
+          requestInfo: {
+            body: expect.any(Function),
+            headers: expect.any(Object),
+            method: "POST",
+            url: expect.any(URL),
+          },
+          runId: state.runId,
+        },
+      ]);
+    });
   }
-
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [TestMiddleware],
-  });
-  const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
-    async ({ runId }) => {
-      state.runId = runId;
-    },
-  );
-  await createTestApp({ client, functions: [fn] });
-
-  await client.send({ name: eventName });
-  await state.waitForRunComplete();
-
-  expect(state.hookArgs.length).toBe(1);
-  const hookArgs = state.hookArgs[0]!;
-  expect(hookArgs).toEqual({
-    requestInfo: {
-      body: expect.any(Function),
-      headers: expect.any(Object),
-      method: "POST",
-      url: expect.any(URL),
-    },
-    runId: expect.any(String),
-  });
-
-  expect(hookArgs.runId).toEqual(state.runId);
 });
 
 test("throwing rejects the request", async () => {

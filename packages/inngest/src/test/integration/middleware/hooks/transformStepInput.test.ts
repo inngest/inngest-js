@@ -11,6 +11,80 @@ import {
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
+describe("args", () => {
+  for (const level of ["client", "function"] as const) {
+    test(`level: ${level}`, async () => {
+      const state = createState({
+        hookArgs: [] as Middleware.TransformStepInputArgs[],
+      });
+
+      class TestMiddleware extends Middleware.BaseMiddleware {
+        override transformStepInput(
+          arg: Middleware.TransformStepInputArgs,
+        ): Middleware.TransformStepInputArgs {
+          state.hookArgs.push(arg);
+          return arg;
+        }
+      }
+
+      let clientMiddleware: Middleware.Class[] = [];
+      let functionMiddleware: Middleware.Class[] = [];
+      if (level === "client") {
+        clientMiddleware = [TestMiddleware];
+      } else {
+        functionMiddleware = [TestMiddleware];
+      }
+
+      const eventName = randomSuffix("evt");
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: clientMiddleware,
+      });
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          middleware: functionMiddleware,
+          triggers: [{ event: eventName }],
+        },
+        async ({ step, runId }) => {
+          state.runId = runId;
+          await step.run("my-step", () => "result");
+        },
+      );
+      await createTestApp({ client, functions: [fn] });
+
+      await client.send({ name: eventName });
+      await state.waitForRunComplete();
+
+      // Called twice: once fresh (request 1), once memoized (request 2)
+      expect(state.hookArgs).toEqual([
+        {
+          functionInfo: { id: "fn" },
+          stepInfo: {
+            hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
+            memoized: false,
+            stepKind: "run",
+          },
+          stepOptions: { id: "my-step", name: "my-step" },
+          input: [],
+        },
+        {
+          functionInfo: { id: "fn" },
+          stepInfo: {
+            hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
+            memoized: true,
+            stepKind: "run",
+          },
+          stepOptions: { id: "my-step", name: "my-step" },
+          input: [],
+        },
+      ]);
+    });
+  }
+});
+
 test("modify step.run input (1 middleware)", async () => {
   const state = createState({
     run: { input: 0 },
@@ -120,7 +194,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
   expect(state.run).toEqual({ input: 15 });
 });
 
-describe("change step ID", async () => {
+describe("change step ID", () => {
   test("new step ID", async () => {
     // Change a step ID after it already ran, so that the step is treated as
     // fresh again. This means the step runs twice, with a different ID each
@@ -164,7 +238,11 @@ describe("change step ID", async () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+      {
+        id: "fn",
+        retries: 0,
+        triggers: [{ event: eventName }],
+      },
       async ({ step, runId }) => {
         state.step1.output = await step.run("step-1", () => {
           state.step1.insideCount++;
@@ -185,6 +263,7 @@ describe("change step ID", async () => {
     expect(state.onStepStartCalls).toEqual([
       {
         ctx: anyContext,
+        functionInfo: { id: "fn" },
         stepInfo: {
           hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
           input: undefined,
@@ -195,6 +274,7 @@ describe("change step ID", async () => {
       },
       {
         ctx: anyContext,
+        functionInfo: { id: "fn" },
         stepInfo: {
           hashedId: "c2a6b03f190dfb2b4aa91f8af8d477a9bc3401dc",
           input: undefined,
@@ -259,7 +339,11 @@ describe("change step ID", async () => {
       middleware: [TestMiddleware],
     });
     const fn = client.createFunction(
-      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+      {
+        id: "fn",
+        retries: 0,
+        triggers: [{ event: eventName }],
+      },
       async ({ step, runId }) => {
         state.step1.output = await step.run("step-1", () => {
           state.step1.insideCount++;
@@ -290,6 +374,7 @@ describe("change step ID", async () => {
     expect(state.onStepStartCalls).toEqual([
       {
         ctx: anyContext,
+        functionInfo: { id: "fn" },
         stepInfo: {
           hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
           input: undefined,
@@ -300,6 +385,7 @@ describe("change step ID", async () => {
       },
       {
         ctx: anyContext,
+        functionInfo: { id: "fn" },
         stepInfo: {
           hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
           input: undefined,
@@ -310,6 +396,7 @@ describe("change step ID", async () => {
       },
       {
         ctx: anyContext,
+        functionInfo: { id: "fn" },
         stepInfo: {
           hashedId: "853cb1e68d4c9c2ad16aabbef8c346b559cbb55c",
           input: undefined,

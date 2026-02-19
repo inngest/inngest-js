@@ -24,13 +24,14 @@ export function buildWrapSendEventChain(
   middleware: Middleware.BaseMiddleware[],
   handler: () => Promise<SendEventBaseOutput>,
   payloads: Middleware.WrapSendEventArgs["events"],
+  functionInfo: Middleware.FunctionInfo | null,
 ): () => Promise<SendEventBaseOutput> {
   let chain: () => Promise<SendEventBaseOutput> = handler;
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (mw?.wrapSendEvent) {
       const next = chain;
-      chain = () => mw.wrapSendEvent!({ next, events: payloads });
+      chain = () => mw.wrapSendEvent!({ next, events: payloads, functionInfo });
     }
   }
   return chain;
@@ -43,11 +44,13 @@ export function buildWrapSendEventChain(
  * and returns a zero-arg function that kicks off the chain.
  */
 export function buildWrapRequestChain({
+  functionInfo,
   handler,
   middleware,
   requestInfo,
   runId,
 }: {
+  functionInfo: Middleware.FunctionInfo;
   handler: () => Promise<Middleware.Response>;
   middleware: Middleware.BaseMiddleware[];
   requestInfo: Middleware.Request;
@@ -58,7 +61,7 @@ export function buildWrapRequestChain({
     const mw = middleware[i];
     if (mw?.wrapRequest) {
       const next = chain;
-      chain = () => mw.wrapRequest!({ next, requestInfo, runId });
+      chain = () => mw.wrapRequest!({ next, requestInfo, runId, functionInfo });
     }
   }
   return chain;

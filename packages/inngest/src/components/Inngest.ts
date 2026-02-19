@@ -312,7 +312,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     ];
 
     for (const mw of this.middleware) {
-      mw.onRegister?.({ client: this });
+      mw.onRegister?.({ client: this, functionInfo: null });
     }
 
     this._appVersion = appVersion;
@@ -678,6 +678,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     let transformArgs: Middleware.TransformFunctionInputArgs = {
       ctx: dummyCtx,
+      functionInfo: { id: "__proxy__" },
       steps: {
         __result__: { type: "data" as const, data: result.data },
       },
@@ -726,7 +727,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       ...(options?.env ? { [headerKeys.Environment]: options.env } : {}),
     };
 
-    return this._send({ payload, headers });
+    return this._send({
+      payload,
+      headers,
+      fnMiddleware: [],
+      fnInfo: null,
+    });
   }
 
   /**
@@ -736,9 +742,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private async _send({
     payload,
     headers,
+    fnInfo,
+    fnMiddleware,
   }: {
     payload: SendEventPayload;
     headers?: Record<string, string>;
+    fnInfo: Middleware.FunctionInfo | null;
+    fnMiddleware: Middleware.Class[];
   }): Promise<SendEventOutput<TClientOpts>> {
     const nowMillis = new Date().getTime();
 
@@ -772,11 +782,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         : [];
 
     // Instantiate fresh middleware per send() call.
-    // Include client middleware plus all function-level middleware so that
-    // transformSendEvent fires for every registered middleware class.
-    const fnMiddleware = this.localFns.flatMap(
-      (fn) => fn.opts.middleware ?? [],
-    );
     const mwInstances = [...this.middleware, ...fnMiddleware].map(
       (Cls) => new Cls({ client: this }),
     );
@@ -784,6 +789,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       if (mw?.transformSendEvent) {
         const transformed = await mw.transformSendEvent({
           events: payloads,
+          functionInfo: fnInfo ?? null,
         });
         if (transformed !== undefined) {
           payloads = transformed.events;
@@ -885,6 +891,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       mwInstances,
       innerHandler,
       payloads,
+      fnInfo,
     );
 
     return (await wrappedHandler()) as SendEventOutput<TClientOpts>;
@@ -915,7 +922,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     };
 
     for (const mw of options.middleware ?? []) {
-      mw.onRegister?.({ client: this });
+      mw.onRegister?.({ client: this, functionInfo: { id: options.id } });
     }
 
     return new InngestFunction(this, options, handler);

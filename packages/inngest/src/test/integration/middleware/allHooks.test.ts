@@ -178,17 +178,36 @@ describe("all hooks fire in correct order with 2 middleware", () => {
       await client.send({ name: eventName });
       await state.waitForRunComplete();
 
+      // Build expected logs based on level. Function-level middleware does NOT
+      // fire `transformSendEvent`/`wrapSendEvent` during `client.send()`: only
+      // during `step.sendEvent()`.
+      const sendEventLogs: string[] = [];
+      if (level === "client") {
+        sendEventLogs.push(
+          "transformSendEvent (mw1)",
+          "transformSendEvent (mw2)",
+          "wrapSendEvent: before (mw1)",
+          "wrapSendEvent: before (mw2)",
+          "wrapSendEvent: after (mw2)",
+          "wrapSendEvent: after (mw1)",
+        );
+      } else if (level === "mixed") {
+        // Only client-level mw1 fires
+        sendEventLogs.push(
+          "transformSendEvent (mw1)",
+          "wrapSendEvent: before (mw1)",
+          "wrapSendEvent: after (mw1)",
+        );
+      } else {
+        // Only function-level middleware, so does not fire for `client.send()`
+      }
+
       expect(state.logs).toEqual([
         "onRegister (mw1)",
         "onRegister (mw2)",
 
-        // client.send() - forward order
-        "transformSendEvent (mw1)",
-        "transformSendEvent (mw2)",
-        "wrapSendEvent: before (mw1)",
-        "wrapSendEvent: before (mw2)",
-        "wrapSendEvent: after (mw2)",
-        "wrapSendEvent: after (mw1)",
+        // client.send() - only client-level middleware fires
+        ...sendEventLogs,
 
         // --- Request 1: fresh step discovered and executed ---
         "wrapRequest: before (mw1)",

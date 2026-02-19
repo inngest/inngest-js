@@ -442,9 +442,12 @@ export const createStepTools = <
       },
       {
         fn: (_ctx, _idOrOptions, payload) => {
+          const fn = execution["options"]["fn"];
           return client["_send"]({
             payload,
             headers: execution["options"]["headers"],
+            fnMiddleware: fn.opts.middleware ?? [],
+            fnInfo: { id: fn.opts.id },
           });
         },
       },

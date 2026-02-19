@@ -10,6 +10,7 @@ import {
   isRecord,
   randomSuffix,
   testNameFromFileUrl,
+  waitFor,
 } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -219,55 +220,73 @@ describe("function level", () => {
   });
 
   test("event.data", async () => {
-    // Send an event with a Date object and expect the Date object to exist in the
-    // event data
+    // Send an event with a Date object via `step.sendEvent` and expect the Date
+    // object to exist in the child function's event data. Function-level
+    // middleware only fires for `step.sendEvent`, not `client.send`.
 
     const state = createState({
-      eventData: null as { date: Date; int: number } | null,
-      eventsData: [] as { date: Date; int: number }[],
+      childEventData: null as { date: Date; int: number } | null,
+      childEventsData: [] as { date: Date; int: number }[],
     });
 
-    const et = eventType(randomSuffix("evt"), {
+    const parentTrigger = randomSuffix("evt");
+    const childTrigger = eventType(randomSuffix("evt"), {
       schema: z.object({
         date: z.date(),
         int: z.number(),
       }),
     });
+
     const client = new Inngest({
       id: randomSuffix(testFileName),
       isDev: true,
     });
-    const fn = client.createFunction(
+
+    // Parent function has the middleware and sends the serialized event
+    const fnParent = client.createFunction(
       {
-        id: "fn",
+        id: "parent",
         retries: 0,
         middleware: [DateSerializerMiddleware],
-        triggers: [et],
+        triggers: { event: parentTrigger },
       },
-      async ({ event, events, runId }) => {
+      async ({ step, runId }) => {
         state.runId = runId;
-        expectTypeOf(event.data).not.toBeAny();
-        state.eventData = event.data;
-        state.eventsData = events.map((event) => {
-          expectTypeOf(event.data).not.toBeAny();
-          return event.data;
+        await step.sendEvent("send-it", {
+          name: childTrigger.name,
+          data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
         });
       },
     );
-    await createTestApp({ client, functions: [fn] });
 
-    await client.send(
-      et.create({
-        date: new Date("2026-02-03T00:00:00.000Z"),
-        int: 42,
-      }),
+    // Child function also has the middleware to deserialize event data
+    const fnChild = client.createFunction(
+      {
+        id: "child",
+        retries: 0,
+        middleware: [DateSerializerMiddleware],
+        triggers: childTrigger,
+      },
+      async ({ event, events }) => {
+        expectTypeOf(event.data).not.toBeAny();
+        state.childEventData = event.data;
+        state.childEventsData = events.map((event) => {
+          return event.data as { date: Date; int: number };
+        });
+      },
     );
-    await state.waitForRunComplete();
+    await createTestApp({ client, functions: [fnParent, fnChild] });
 
-    expect(state.eventsData).toEqual([
+    await client.send({ name: parentTrigger });
+    await state.waitForRunComplete();
+    await waitFor(() => {
+      expect(state.childEventData).not.toBeNull();
+    });
+
+    expect(state.childEventsData).toEqual([
       { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
     ]);
-    expect(state.eventData).toEqual({
+    expect(state.childEventData).toEqual({
       date: new Date("2026-02-03T00:00:00.000Z"),
       int: 42,
     });

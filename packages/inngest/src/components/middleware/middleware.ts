@@ -50,12 +50,14 @@ export namespace Middleware {
    */
   export type TransformSendEventArgs = {
     events: EventPayload<Record<string, unknown>>[];
+    functionInfo: FunctionInfo | null;
   };
 
   /**
    * The argument passed to `transformStepInput`.
    */
   export type TransformStepInputArgs = {
+    functionInfo: FunctionInfo;
     readonly stepInfo: Readonly<
       Pick<StepInfo, "hashedId" | "memoized" | "stepKind">
     >;
@@ -66,6 +68,7 @@ export namespace Middleware {
   /** The argument passed to `wrapStepHandler`. */
   export type WrapStepHandlerArgs = DeepReadonly<{
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     next: () => Promise<unknown>;
     stepInfo: StepInfo;
   }>;
@@ -88,6 +91,7 @@ export namespace Middleware {
    */
   export type TransformFunctionInputArgs = {
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     steps: MemoizedSteps;
   };
 
@@ -96,6 +100,7 @@ export namespace Middleware {
    */
   export type OnRegisterArgs = Readonly<{
     client: Inngest.Any;
+    functionInfo: FunctionInfo | null;
   }>;
 
   /**
@@ -111,11 +116,13 @@ export namespace Middleware {
   /** The argument passed to `wrapFunctionHandler`. */
   export type WrapFunctionHandlerArgs = DeepReadonly<{
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     next: () => Promise<unknown>;
   }>;
 
   /** The argument passed to `wrapRequest`. */
   export type WrapRequestArgs = DeepReadonly<{
+    functionInfo: FunctionInfo;
     next: () => Promise<Response>;
     requestInfo: Request;
     runId: string;
@@ -124,12 +131,14 @@ export namespace Middleware {
   /** The argument passed to `wrapSendEvent`. */
   export type WrapSendEventArgs = DeepReadonly<{
     events: EventPayload<Record<string, unknown>>[];
+    functionInfo: FunctionInfo | null;
     next: () => Promise<SendEventBaseOutput>;
   }>;
 
   /** The argument passed to `wrapStep`. */
   export type WrapStepArgs = DeepReadonly<{
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     next: () => Promise<unknown>;
     stepInfo: StepInfo;
   }>;
@@ -147,13 +156,17 @@ export namespace Middleware {
   /**
    * The argument passed to `onMemoizationEnd`.
    */
-  export type OnMemoizationEndArgs = DeepReadonly<{ ctx: Context.Any }>;
+  export type OnMemoizationEndArgs = DeepReadonly<{
+    ctx: Context.Any;
+    functionInfo: FunctionInfo;
+  }>;
 
   /**
    * The argument passed to `onStepStart`.
    */
   export type OnStepStartArgs = DeepReadonly<{
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     stepInfo: StepInfo;
   }>;
 
@@ -163,6 +176,7 @@ export namespace Middleware {
   export type OnStepErrorArgs = DeepReadonly<{
     ctx: Context.Any;
     error: Error;
+    functionInfo: FunctionInfo;
 
     /**
      * Whether this is the final attempt for the step, meaning retries are
@@ -179,6 +193,7 @@ export namespace Middleware {
    */
   export type OnStepCompleteArgs = DeepReadonly<{
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     output: unknown;
     stepInfo: StepInfo;
   }>;
@@ -186,13 +201,17 @@ export namespace Middleware {
   /**
    * The argument passed to `onRunStart`.
    */
-  export type OnRunStartArgs = DeepReadonly<{ ctx: Context.Any }>;
+  export type OnRunStartArgs = DeepReadonly<{
+    ctx: Context.Any;
+    functionInfo: FunctionInfo;
+  }>;
 
   /**
    * The argument passed to `onRunComplete`.
    */
   export type OnRunCompleteArgs = DeepReadonly<{
     ctx: Context.Any;
+    functionInfo: FunctionInfo;
     output: unknown;
   }>;
 
@@ -202,6 +221,7 @@ export namespace Middleware {
   export type OnRunErrorArgs = DeepReadonly<{
     ctx: Context.Any;
     error: Error;
+    functionInfo: FunctionInfo;
 
     /**
      * Whether this is the final attempt for the function, meaning retries are
@@ -226,6 +246,10 @@ export namespace Middleware {
     | "sleep"
     | "waitForEvent"
   >;
+
+  export type FunctionInfo = {
+    id: string;
+  };
 
   export type StepInfo = {
     /**

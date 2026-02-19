@@ -160,10 +160,14 @@ class InngestExecutionEngine
       (this.options.client.middleware || []).map((Cls) => {
         return new Cls({ client: this.options.client });
       });
+    const functionInfo: Middleware.FunctionInfo = {
+      id: this.options.fn.opts.id,
+    };
     this.middlewareManager = new MiddlewareManager(
       this.fnArg,
       () => this.state.stepState,
       mwInstances,
+      functionInfo,
     );
 
     this.checkpointHandlers = this.createCheckpointHandlers();

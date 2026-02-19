@@ -10,15 +10,74 @@ import {
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
+describe("args", () => {
+  for (const level of ["client", "function"] as const) {
+    test(`level: ${level}`, async () => {
+      const state = createState({
+        hookArgs: [] as Middleware.OnStepStartArgs[],
+      });
+
+      class TestMiddleware extends Middleware.BaseMiddleware {
+        override onStepStart(args: Middleware.OnStepStartArgs) {
+          state.hookArgs.push(args);
+        }
+      }
+
+      let clientMiddleware: Middleware.Class[] = [];
+      let functionMiddleware: Middleware.Class[] = [];
+      if (level === "client") {
+        clientMiddleware = [TestMiddleware];
+      } else {
+        functionMiddleware = [TestMiddleware];
+      }
+
+      const eventName = randomSuffix("evt");
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        middleware: clientMiddleware,
+      });
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          middleware: functionMiddleware,
+          triggers: [{ event: eventName }],
+        },
+        async ({ step, runId }) => {
+          state.runId = runId;
+          await step.run("my-step", () => "result");
+        },
+      );
+      await createTestApp({ client, functions: [fn] });
+
+      await client.send({ name: eventName });
+      await state.waitForRunComplete();
+
+      expect(state.hookArgs).toEqual([
+        {
+          ctx: anyContext,
+          functionInfo: { id: "fn" },
+          stepInfo: {
+            hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
+            input: undefined,
+            memoized: false,
+            options: { id: "my-step", name: "my-step" },
+            stepKind: "run",
+          },
+        },
+      ]);
+    });
+  }
+});
+
 test("1 step", async () => {
   const state = createState({
-    onStepStartCalls: [] as Middleware.OnStepStartArgs[],
     logs: [] as string[],
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
-    override onStepStart(args: Middleware.OnStepStartArgs) {
-      state.onStepStartCalls.push(args);
+    override onStepStart() {
       state.logs.push("mw");
     }
   }
@@ -31,7 +90,11 @@ test("1 step", async () => {
   });
 
   const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    {
+      id: "fn",
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
     async ({ step, runId }) => {
       state.runId = runId;
       state.logs.push("fn: top");
@@ -58,19 +121,6 @@ test("1 step", async () => {
     "fn: top",
     "fn: bottom",
   ]);
-
-  expect(state.onStepStartCalls).toEqual([
-    {
-      ctx: anyContext,
-      stepInfo: {
-        hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
-        input: undefined,
-        memoized: false,
-        options: { id: "my-step", name: "my-step" },
-        stepKind: "run",
-      },
-    },
-  ]);
 });
 
 test("multiple steps", async () => {
@@ -91,7 +141,11 @@ test("multiple steps", async () => {
     middleware: [TestMiddleware],
   });
   const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    {
+      id: "fn",
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
     async ({ step, runId }) => {
       state.runId = runId;
       await step.run("step-1", () => "result1");
@@ -107,6 +161,7 @@ test("multiple steps", async () => {
   expect(state.onStepStartCalls).toEqual([
     {
       ctx: anyContext,
+      functionInfo: { id: "fn" },
       stepInfo: {
         hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
         input: undefined,
@@ -117,6 +172,7 @@ test("multiple steps", async () => {
     },
     {
       ctx: anyContext,
+      functionInfo: { id: "fn" },
       stepInfo: {
         hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
         input: undefined,
