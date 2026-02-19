@@ -928,77 +928,23 @@ class InngestExecutionEngine
     await this.middlewareManager.onMemoizationEnd();
     await this.middlewareManager.onStepStart(stepInfo);
 
-    // If wrappedHandler was already called during discovery, execute the actual
-    // handler directly and resolve the deferred promise. The middleware is
-    // already waiting on this deferred promise.
-    if (foundStep.executionDeferred) {
-      return goIntervalTiming(() => actualHandler())
-        .finally(() => {
-          this.debug(`finished executing step "${id}"`);
-
-          delete this.state.executingStep;
-          if (store?.execution) {
-            delete store.execution.executingStep;
-          }
-        })
-        .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
-          if (!foundStep.executionDeferred) {
-            throw new UnreachableError("executionDeferred is undefined");
-          }
-
-          interval = _interval;
-          const metadata = this.state.metadata?.get(id);
-          const rawData = await resultPromise;
-
-          // Resolve the deferred - this unblocks the middleware pipeline from
-          // discovery. The middleware can now continue and will eventually
-          // return the serialized result via transformedResultPromise.
-          foundStep.executionDeferred.resolve(rawData);
-
-          // Prefer the middleware-transformed result (e.g. serialization).
-          // If the middleware pipeline hasn't resolved synchronously, it's
-          // because middleware injected its own steps which block indefinitely
-          // — fall back to raw data so we don't hang.
-          let data: unknown = rawData;
-          if (foundStep.transformedResultPromise) {
-            data = await Promise.race([
-              foundStep.transformedResultPromise,
-              resolveNextTick().then(() => rawData),
-            ]);
-          }
-
-          await this.middlewareManager.onStepComplete(stepInfo, rawData);
-
-          return {
-            ...outgoingOp,
-            data,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        })
-        .catch<OutgoingOp>((error) => {
-          if (!foundStep.executionDeferred) {
-            throw new UnreachableError("executionDeferred is undefined");
-          }
-
-          // Reject the deferred - this unblocks the middleware pipeline with error
-          foundStep.executionDeferred.reject(error);
-          return this.buildStepErrorOp({
-            error,
-            id,
-            outgoingOp,
-            stepInfo,
-          });
-        })
-        .then((op) => ({
-          ...op,
-          timing: interval,
-        }));
+    // If wrappedHandler hasn't been called yet (no deferred from discovery),
+    // set one up so wrapStep's next() still blocks until memoization.
+    if (!foundStep.memoizationDeferred) {
+      const deferred = createDeferredPromise<unknown>();
+      foundStep.memoizationDeferred = deferred;
+      setActualHandler(() => deferred.promise);
+      foundStep.transformedResultPromise = wrappedHandler();
+      foundStep.transformedResultPromise.catch(() => {
+        // Swallow — errors handled by handle()
+      });
     }
 
-    // Set the actual handler so the middleware pipeline can call it
-    setActualHandler(actualHandler);
+    // Build wrapStepHandler chain around the actual handler
+    const wrappedActualHandler =
+      this.middlewareManager.buildWrapStepHandlerChain(actualHandler, stepInfo);
 
-    return goIntervalTiming(() => wrappedHandler())
+    return goIntervalTiming(() => wrappedActualHandler())
       .finally(() => {
         this.debug(`finished executing step "${id}"`);
 
@@ -1010,17 +956,22 @@ class InngestExecutionEngine
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
         const metadata = this.state.metadata?.get(id);
-        const data = await resultPromise;
+        const serverData = await resultPromise;
 
-        await this.middlewareManager.onStepComplete(stepInfo, data);
+        // Don't resolve memoizationDeferred here. wrapStep's next() must
+        // block until the step is actually memoized (i.e. handle() fires
+        // with confirmed data from the server). handle() resolves it.
+        await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
         return {
           ...outgoingOp,
-          data,
+          data: serverData,
           ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
+        // Don't reject memoizationDeferred — handle() will reject it when
+        // the error is memoized.
         return this.buildStepErrorOp({
           error,
           id,
@@ -1600,6 +1551,27 @@ class InngestExecutionEngine
             // the values are fully resolved before continuing.
             void Promise.all([result.data, result.error, result.input]).then(
               async () => {
+                // If the wrapStep chain already ran during discovery in this
+                // same request (checkpointing), reuse its result instead of
+                // firing wrappedHandler() again. This prevents middleware from
+                // seeing a duplicate wrapStep call per step per request.
+                if (step.transformedResultPromise) {
+                  // Resolve the memoization deferred so wrapStep's next()
+                  // unblocks. The step data is now confirmed memoized.
+                  if (step.memoizationDeferred) {
+                    if (typeof result.data !== "undefined") {
+                      step.memoizationDeferred.resolve(await result.data);
+                    } else {
+                      const stepError = new StepError(opId.id, result.error);
+                      this.state.recentlyRejectedStepError = stepError;
+                      step.memoizationDeferred.reject(stepError);
+                    }
+                  }
+
+                  step.transformedResultPromise.then(resolve, reject);
+                  return;
+                }
+
                 // The wrapStep chain is about to fire again to resolve the
                 // step promise through middleware (e.g. deserialization).
                 // Mark the step as memoized so middleware can distinguish
@@ -1680,7 +1652,7 @@ class InngestExecutionEngine
         // middleware throws or injects prerequisites, the step is never
         // reported.
         const deferred = createDeferredPromise<unknown>();
-        step.executionDeferred = deferred;
+        step.memoizationDeferred = deferred;
 
         setActualHandler(() => {
           pushStepToReport(step);
@@ -1793,7 +1765,7 @@ class InngestExecutionEngine
     }
 
     // 5. Build wrapStep chain after all mutations so middleware sees final values
-    const wrappedHandler = this.middlewareManager.wrapStepHandler(
+    const wrappedHandler = this.middlewareManager.buildWrapStepChain(
       entryPoint,
       stepInfo,
     );

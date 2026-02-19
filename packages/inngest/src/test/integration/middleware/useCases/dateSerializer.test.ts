@@ -354,11 +354,10 @@ describe("function level", () => {
 });
 
 test("with checkpointing", async () => {
-  // Serialization and deserialization works with checkpointing. This test
-  // exists because there's a nuance with `wrapStep`: it calls twice when a
-  // `step.run` is executed. 1st call is for serializing the output and sending
-  // it to the Inngest Server, and the 2nd call is for deserializing the output
-  // and using it within the function handler.
+  // Serialization and deserialization works with checkpointing.
+  // `wrapStepHandler` handles serialization (server-bound data) and
+  // `wrapStep` handles deserialization (user-bound data). With the new
+  // design, wrapStep fires only once per step per request.
 
   const state = createState({
     stepOutputs: [] as Date[],
@@ -410,21 +409,11 @@ test("with checkpointing", async () => {
   ]);
   expect(state.wrapStepCalls).toEqual([
     // --- Request 1: execute `step.run` and then plan `step.sleep` ---
-    // First call returns serialized output, since it needs to be sent to the
-    // Inngest Server
+    // wrapStep fires once; wrapStepHandler serialized for server,
+    // wrapStep deserializes for the user function
     {
       id: "my-step",
       memoized: false,
-      output: {
-        [serializedMarker]: true,
-        value: "2026-02-03T00:00:00.000Z",
-      },
-    },
-    // Second call returns deserialized output, since it's being used within the
-    // function handler
-    {
-      id: "my-step",
-      memoized: true,
       output: new Date("2026-02-03T00:00:00.000Z"),
     },
 

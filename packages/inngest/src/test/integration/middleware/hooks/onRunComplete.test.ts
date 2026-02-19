@@ -44,7 +44,7 @@ test("fires when function completes with data", async () => {
 
   // Only fires on the completing request (request 2), not on step discovery (request 1)
   expect(state.calls).toHaveLength(1);
-  expect(state.calls[0]).toEqual({ ctx: anyContext, data: "fn result" });
+  expect(state.calls[0]).toEqual({ ctx: anyContext, output: "fn result" });
 });
 
 test("does NOT fire when function errors", async () => {
@@ -118,7 +118,7 @@ test("fires with no steps", async () => {
   await state.waitForRunComplete();
 
   expect(state.calls).toHaveLength(1);
-  expect(state.calls[0]).toEqual({ ctx: anyContext, data: "no-step result" });
+  expect(state.calls[0]).toEqual({ ctx: anyContext, output: "no-step result" });
 });
 
 test("throws", async () => {

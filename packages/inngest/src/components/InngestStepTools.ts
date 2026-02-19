@@ -130,22 +130,23 @@ export interface FoundStep extends HashedOp {
 
   /**
    * For new steps where wrappedHandler is called during discovery,
-   * this holds the resolve/reject to be called when executeStep runs.
+   * this holds the resolve/reject to be called when the step's data is
+   * memoized. Resolved with server-transformed data (post-wrapStepHandler),
+   * which unblocks wrapStep's `next()`.
    *
    * Is undefined when any of the following is true:
    * - The step is fulfilled
    * - The step has no handler (`step.sleep`, `step.waitForSignal`, etc.)
    */
-  executionDeferred?: {
+  memoizationDeferred?: {
     resolve: (value: unknown) => void;
     reject: (error: unknown) => void;
   };
 
   /**
    * For new steps where `wrappedHandler` is called during discovery, this holds
-   * the promise for the middleware-transformed result. `executeStep` should use
-   * this result (which includes serialization) instead of the raw handler
-   * result.
+   * the promise for the wrapStep-transformed result. In checkpointing mode,
+   * handle() reuses this promise to avoid a duplicate wrapStep call.
    */
   transformedResultPromise?: Promise<unknown>;
 }

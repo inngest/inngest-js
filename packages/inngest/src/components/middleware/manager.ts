@@ -271,7 +271,7 @@ export class MiddlewareManager {
    * Wrap a step handler with wrapStep middlewares (reverse order for
    * onion layering). Returns the wrapped handler.
    */
-  wrapStepHandler(
+  buildWrapStepChain(
     handler: () => Promise<unknown>,
     stepInfo: Middleware.StepInfo,
   ): () => Promise<unknown> {
@@ -333,13 +333,13 @@ export class MiddlewareManager {
 
   async onStepComplete(
     stepInfo: Middleware.StepInfo,
-    data: unknown,
+    output: unknown,
   ): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onStepComplete) {
         try {
-          await mw.onStepComplete({ stepInfo, ctx, data });
+          await mw.onStepComplete({ stepInfo, ctx, output });
         } catch (error) {
           getLogger().error("middleware error", {
             error,
@@ -349,6 +349,27 @@ export class MiddlewareManager {
         }
       }
     }
+  }
+
+  /**
+   * Build a wrapStepHandler chain around the actual step handler.
+   * Called once per `step.run` attempt (not for memoized steps).
+   * Simpler than buildWrapStepChain — no recursion guard needed.
+   */
+  buildWrapStepHandlerChain(
+    handler: () => Promise<unknown>,
+    stepInfo: Middleware.StepInfo,
+  ): () => Promise<unknown> {
+    const ctx = this.fnArg;
+    let chain: () => Promise<unknown> = handler;
+    for (let i = this.middleware.length - 1; i >= 0; i--) {
+      const mw = this.middleware[i];
+      if (mw?.wrapStepHandler) {
+        const next = chain;
+        chain = () => mw.wrapStepHandler!({ next, stepInfo, ctx });
+      }
+    }
+    return chain;
   }
 
   async onStepError(
@@ -413,12 +434,12 @@ export class MiddlewareManager {
     }
   }
 
-  async onRunComplete(data: unknown): Promise<void> {
+  async onRunComplete(output: unknown): Promise<void> {
     const ctx = this.fnArg;
     for (const mw of this.middleware) {
       if (mw?.onRunComplete) {
         try {
-          await mw.onRunComplete({ ctx, data });
+          await mw.onRunComplete({ ctx, output });
         } catch (error) {
           getLogger().error("middleware error", {
             error,

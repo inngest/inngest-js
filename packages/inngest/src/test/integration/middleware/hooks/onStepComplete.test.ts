@@ -44,7 +44,7 @@ test("1 step", async () => {
 
   expect(state.calls).toEqual([
     {
-      data: "step result",
+      output: "step result",
       ctx: anyContext,
       stepInfo: {
         hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
@@ -91,7 +91,7 @@ test("multiple steps", async () => {
 
   expect(state.calls).toEqual([
     {
-      data: "result 1",
+      output: "result 1",
       ctx: anyContext,
       stepInfo: {
         hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
@@ -102,7 +102,7 @@ test("multiple steps", async () => {
       },
     },
     {
-      data: { ids: expect.any(Array) },
+      output: { ids: expect.any(Array) },
       ctx: anyContext,
       stepInfo: {
         hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",

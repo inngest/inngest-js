@@ -137,12 +137,13 @@ export abstract class BaseSerializerMiddleware<
     return arg;
   }
 
-  override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
-    const result = await next();
-    if (stepInfo.memoized) {
-      return this._deserialize(result);
-    }
-    return this._serialize(result);
+  override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
+    const output = await next();
+    return this._serialize(output);
+  }
+
+  override async wrapStep({ next }: Middleware.WrapStepArgs) {
+    return this._deserialize(await next());
   }
 
   override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
@@ -328,7 +329,6 @@ export async function fetchEvent(id: string): Promise<{
     expect(res.ok).toBe(true);
 
     const raw = await res.json();
-    console.log(raw);
     const parsed = fetchEventSchema.parse(raw).data.eventV2;
 
     const data = JSON.parse(parsed.raw).data;
@@ -341,5 +341,19 @@ export async function fetchEvent(id: string): Promise<{
       idempotencyKey: parsed.idempotencyKey ?? null,
       name: parsed.name,
     };
+  });
+}
+
+/**
+ * Runs a test in both checkpointing modes (false and true).
+ */
+export function matrixCheckpointing(
+  name: string,
+  fn: (checkpointing: boolean) => Promise<void>,
+) {
+  describe(name, () => {
+    for (const checkpointing of [false, true]) {
+      test(`checkpointing: ${checkpointing}`, () => fn(checkpointing));
+    }
   });
 }

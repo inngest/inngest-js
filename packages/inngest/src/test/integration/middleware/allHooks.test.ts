@@ -68,11 +68,22 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             return result;
           }
 
+          override async wrapStepHandler({
+            next,
+          }: Middleware.WrapStepHandlerArgs) {
+            state.logs.push(`wrapStepHandler: before (${name})`);
+            const result = await next();
+            state.logs.push(`wrapStepHandler: after (${name})`);
+            return result;
+          }
+
           override transformStepInput(
             arg: Middleware.TransformStepInputArgs,
           ): Middleware.TransformStepInputArgs {
             state.logs.push(
-              `transformStepInput(${arg.stepInfo.memoized ? "memo" : "fresh"}) (${name})`,
+              `transformStepInput(${
+                arg.stepInfo.memoized ? "memo" : "fresh"
+              }) (${name})`,
             );
             return arg;
           }
@@ -82,11 +93,15 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             stepInfo,
           }: Middleware.WrapStepArgs) => {
             state.logs.push(
-              `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): before (${name})`,
+              `wrapStep(${
+                stepInfo.memoized ? "memo" : "fresh"
+              }): before (${name})`,
             );
             const result = await next();
             state.logs.push(
-              `wrapStep(${stepInfo.memoized ? "memo" : "fresh"}): after (${name})`,
+              `wrapStep(${
+                stepInfo.memoized ? "memo" : "fresh"
+              }): after (${name})`,
             );
             return result;
           };
@@ -194,10 +209,14 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "wrapStep(fresh): before (mw2)",
         "onStepStart (mw1)",
         "onStepStart (mw2)",
+        "wrapStepHandler: before (mw1)",
+        "wrapStepHandler: before (mw2)",
         "step: inside",
-        "wrapStep(fresh): after (mw2)", // Onion unwind
-        "wrapStep(fresh): after (mw1)",
-        "onStepComplete (mw1)", // Fires after wrapStep resolves (observes transformed output)
+        "wrapStepHandler: after (mw2)",
+        "wrapStepHandler: after (mw1)",
+        // wrapStep(fresh): after does NOT fire here — next() blocks until
+        // the step is memoized, which doesn't happen in this request.
+        "onStepComplete (mw1)",
         "onStepComplete (mw2)",
         // NOTE: wrapFunctionHandler "after" does NOT fire here. Step discovery
         // interrupts the function via control flow, so next() in
@@ -281,6 +300,13 @@ test("all hooks fire in correct order with checkpointing", async () => {
       state.logs.push(`wrapFunctionHandler: before`);
       const result = await next();
       state.logs.push(`wrapFunctionHandler: after`);
+      return result;
+    }
+
+    override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
+      state.logs.push(`wrapStepHandler: before`);
+      const result = await next();
+      state.logs.push(`wrapStepHandler: after`);
       return result;
     }
 
@@ -368,10 +394,7 @@ test("all hooks fire in correct order with checkpointing", async () => {
 
     // --- Single request: step executed, checkpointed, function completes ---
     // With checkpointing, the step executes and its result is checkpointed
-    // back to Inngest. Execution resumes in the same request: the step's
-    // handle() fires wrapStep a second time (to apply middleware to the
-    // result), then the function runs to completion without a second HTTP
-    // request.
+    // back to Inngest. Execution resumes in the same request.
     "wrapRequest: before",
     "transformFunctionInput",
     "onMemoizationEnd",
@@ -381,13 +404,13 @@ test("all hooks fire in correct order with checkpointing", async () => {
     "transformStepInput(fresh)",
     "wrapStep(fresh): before",
     "onStepStart",
+    "wrapStepHandler: before",
     "step: inside",
-    "wrapStep(fresh): after",
+    "wrapStepHandler: after",
     "onStepComplete",
-    // Second wrapStep: handle() fires the middleware chain to resolve the
-    // step promise. Marked memoized so middleware can deserialize/decrypt.
-    "wrapStep(memo): before",
-    "wrapStep(memo): after",
+    // wrapStep(fresh): after fires here — handle() resolved the
+    // memoization deferred after confirming the checkpoint.
+    "wrapStep(fresh): after",
     "fn: bottom",
     "wrapFunctionHandler: after",
     "onRunComplete",

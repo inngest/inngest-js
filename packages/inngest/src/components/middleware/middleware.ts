@@ -56,15 +56,18 @@ export namespace Middleware {
    * The argument passed to `transformStepInput`.
    */
   export type TransformStepInputArgs = {
-    /** Read-only step metadata. */
     readonly stepInfo: Readonly<
       Pick<StepInfo, "hashedId" | "memoized" | "stepKind">
     >;
-    /** Mutable step options (id, name). */
     stepOptions: StepOptions;
-    /** Mutable step input args. */
     input: unknown[];
   };
+
+  export type WrapStepHandlerArgs = DeepReadonly<{
+    ctx: Context.Any;
+    next: () => Promise<unknown>;
+    stepInfo: StepInfo;
+  }>;
 
   /**
    * The argument passed to `transformFunctionInput`.
@@ -103,8 +106,8 @@ export namespace Middleware {
   }>;
 
   export type WrapSendEventArgs = DeepReadonly<{
-    next: () => Promise<SendEventBaseOutput>;
     events: EventPayload<Record<string, unknown>>[];
+    next: () => Promise<SendEventBaseOutput>;
   }>;
 
   export type WrapStepArgs = DeepReadonly<{
@@ -118,24 +121,23 @@ export namespace Middleware {
    * This is what `next()` resolves with inside `wrapRequest`.
    */
   export type Response = {
-    status: number;
-    headers: Record<string, string>;
     body: string;
+    headers: Record<string, string>;
+    status: number;
   };
 
   /**
    * The argument passed to `onStepStart`.
    */
   export type OnStepStartArgs = DeepReadonly<{
-    stepInfo: StepInfo;
     ctx: Context.Any;
+    stepInfo: StepInfo;
   }>;
 
   /**
    * The argument passed to `onStepError`.
    */
   export type OnStepErrorArgs = DeepReadonly<{
-    stepInfo: StepInfo;
     ctx: Context.Any;
     error: Error;
 
@@ -145,15 +147,17 @@ export namespace Middleware {
      * retried.
      */
     isFinalAttempt: boolean;
+
+    stepInfo: StepInfo;
   }>;
 
   /**
    * The argument passed to `onStepComplete`.
    */
   export type OnStepCompleteArgs = DeepReadonly<{
-    stepInfo: StepInfo;
     ctx: Context.Any;
-    data: unknown;
+    output: unknown;
+    stepInfo: StepInfo;
   }>;
 
   /**
@@ -166,7 +170,7 @@ export namespace Middleware {
    */
   export type OnRunCompleteArgs = DeepReadonly<{
     ctx: Context.Any;
-    data: unknown;
+    output: unknown;
   }>;
 
   /**
@@ -240,9 +244,8 @@ export namespace Middleware {
     readonly client: Inngest.Any;
 
     /**
-     * Declare this to specify how function return types are transformed.
-     * Used by `GetFunctionOutput` to determine the public output type of a
-     * function.
+     * Declare this to statically specify how function return types are
+     * transformed. By default, the function return type is Jsonified.
      *
      * Must match the same structure as `StaticTransform` to imitate
      * higher-kinded types.
@@ -263,9 +266,11 @@ export namespace Middleware {
     declare functionOutputTransform: DefaultStaticTransform;
 
     /**
-     * Declare this to specify how `step.run` output types are transformed.
+     * Declare this to statically specify how step output types are transformed.
+     * By default, the step output type is Jsonified.
      *
-     * Must match the same of `StaticTransform` to imitate higher-kinded types.
+     * Must match the same structure as `StaticTransform` to imitate
+     * higher-kinded types.
      *
      * @example
      * ```ts
@@ -287,99 +292,116 @@ export namespace Middleware {
     }
 
     /**
-     * Called once when the middleware class is added to an Inngest client or
-     * Inngest function. Use this for one-time setup that needs a reference to
-     * the client instance (e.g. registering processors, setting feature flags).
+     * Called when the middleware class is added to an Inngest client or Inngest
+     * function. Use this for one-time setup that needs a reference to the
+     * client instance (e.g. registering processors, setting feature flags).
+     *
+     * Do not mutate arguments.
      */
     static onRegister?(args: Middleware.OnRegisterArgs): void;
 
     /**
-     * Called once per request, after memoization completes.
+     * Called 1 time per request, after memoization completes.
      *
      * If all memoized steps have been resolved/rejected, then this hook calls.
      * This is at the top of the function handler when there are 0 memoized
      * steps.
      *
      * If a new step is found before resolving/rejecting all memoized steps,
-     * then this is calls.
+     * then this calls.
      */
     onMemoizationEnd?(): MaybePromise<void>;
 
     /**
-     * Called when the function completes successfully. Receives the return
-     * value (after `wrapFunctionHandler` transformations). Does NOT fire when
-     * the function errors — `onRunError` fires instead.
+     * Called when the run completes successfully. Does NOT call when the run
+     * errors: `onRunError` calls instead.
+     *
+     * Do not mutate arguments.
      */
     onRunComplete?(arg: Middleware.OnRunCompleteArgs): MaybePromise<void>;
 
     /**
      * Called when the function throws an error. Receives the error instance.
-     * Does NOT fire when the function succeeds — `onRunComplete` fires instead.
+     * Does NOT call when the run succeeds: `onRunComplete` calls instead.
+     *
+     * Do not mutate arguments.
      */
     onRunError?(arg: Middleware.OnRunErrorArgs): MaybePromise<void>;
 
     /**
-     * Called once per run on the very first request (0 memoized steps,
-     * attempt 0). Does NOT fire on subsequent requests where steps are
-     * being replayed.
+     * Called 1 time per run on the very first request (0 memoized steps,
+     * attempt 0). Does NOT fire on subsequent requests where steps are being
+     * replayed.
+     *
+     * Do not mutate arguments.
      */
     onRunStart?(arg: Middleware.OnRunStartArgs): MaybePromise<void>;
 
     /**
-     * Called each time a step successfully completes. Only called for `step.run`
-     * and `step.sendEvent`. Never called for memoized step outputs.
+     * Called when a step successfully completes. Only called for `step.run`
+     * and `step.sendEvent`. Never called for memoized step outputs. Does NOT
+     * call when the step errors: `onStepError` calls instead.
      *
-     * Calls after the `wrapStep` chain resolves, so `data` reflects any
-     * transformations applied by `wrapStep` middleware.
+     * Do not mutate arguments.
      */
     onStepComplete?(arg: Middleware.OnStepCompleteArgs): MaybePromise<void>;
 
     /**
      * Called each time a step errors. Only called for `step.run` and
      * `step.sendEvent`. Never called for memoized errors.
+     *
+     * Do not mutate arguments.
      */
     onStepError?(arg: Middleware.OnStepErrorArgs): MaybePromise<void>;
 
     /**
      * Called 1 time per step before running its handler. Only called for
      * `step.run` and `step.sendEvent`.
+     *
+     * Do not mutate arguments.
      */
     onStepStart?(arg: Middleware.OnStepStartArgs): MaybePromise<void>;
 
     /**
-     * Called once per run before execution. Use this to modify the function's
-     * input context (event data, step tools, custom properties) and memoized
-     * step data.
+     * Called 1 time per request (likely multiple times per run).
      *
-     * Return the (potentially modified) arg object. Each middleware builds on
-     * the previous middleware's result.
+     * Use cases:
+     * - Dependency injection.
+     * - Deserialize events before passing it to the function handler.
+     *
+     * Do not mutate arguments.
      */
     // @privateRemark
-    // Input transformation can't happen in `wrapFunctionHandler` because that
-    // prevents static type inference for the transformation. For example, if
-    // the user added `ctx.db` in `wrapFunctionHandler` then the static types
-    // wouldn't show `ctx.db` in the function handler.
+    // This hook exists because `wrapFunctionHandler` can't be used for the
+    // transformation's static type inference. For example, if the user added
+    // `ctx.db` in `wrapFunctionHandler` then the static types wouldn't show
+    // `ctx.db` in the function handler.
     transformFunctionInput?(
       arg: Middleware.TransformFunctionInputArgs,
     ): MaybePromise<Middleware.TransformFunctionInputArgs>;
 
     /**
-     * Called when passing input to a client method. Currently, this is only for
-     * the `send` method.
+     * Called when sending events. This is either `step.sendEvent` or
+     * `client.send`. Return the (potentially modified) events.
      *
-     * Return the transformed input. The returned value will be passed to the
-     * next middleware and ultimately used as the input.
+     * Use cases:
+     * - Serialize event data before sending it to the Inngest Server.
+     *
+     * Do not mutate arguments.
      */
     transformSendEvent?(
       arg: Middleware.TransformSendEventArgs,
     ): MaybePromise<EventPayload<Record<string, unknown>>[]>;
 
     /**
-     * Called once per step before the `wrapStep` chain. Use this to modify step
-     * options (e.g. the step ID) or step input args.
+     * Called 1 time per step per request (likely multiple times per step).
+     * Return the (potentially modified) arg object.
      *
-     * Return the (potentially modified) arg object. Each middleware builds on
-     * the previous middleware's result (forward order).
+     * Use cases:
+     * - Modify step options (e.g. the step ID).
+     * - Modify step input args.
+     *
+     * Do not mutate arguments.
      */
     // @privateRemark
     // Step input transformation could happen in `wrapStep`, but we chose not to
@@ -394,46 +416,89 @@ export namespace Middleware {
     ): MaybePromise<TransformStepInputArgs>;
 
     /**
-     * Called once per run. Use this to wrap the handler for:
-     * - AsyncLocalStorage context
-     * - Output/error transformation
-     * - Logging, timing, or other cross-cutting concerns
+     * May call many times per run.
      *
-     * Must call `args.next()` to continue processing.
+     * Use cases:
+     * - AsyncLocalStorage context.
+     * - Function-level output/error transformation.
+     * - Prepend/append steps around the function handler.
+     *
+     * Must call `next()` to continue processing. Do not mutate arguments.
      *
      * **Important:** `next()` only resolves when the function completes. On
      * requests where a fresh step is discovered, control flow is interrupted
-     * and `next()` never resolves. Use `try/finally` for cleanup that must
-     * run on every request.
+     * and `next()` never resolves.
      */
     wrapFunctionHandler?(args: WrapFunctionHandlerArgs): Promise<unknown>;
 
     /**
-     * Called once per request before any other hooks. Use this to validate
+     * Called 1 time per request before any other hooks. Use this to validate
      * or inspect the incoming HTTP request (headers, method, URL, body).
      *
-     * Must call `args.next()` to continue processing.
+     * Use cases:
+     * - Custom auth.
+     * - Expose request data to the Inngest function handler.
+     * - Metrics.
+     *
+     * Must call `next()` to continue processing. Do not mutate arguments.
      */
     wrapRequest?(args: WrapRequestArgs): Promise<Response>;
 
     /**
-     * Called once per `client.send()` and `step.sendEvent()` call. Use this to
-     * wrap the outgoing HTTP request to the Inngest API.
+     * Called each time events are sent (either `client.send` or
+     * `step.sendEvent`).
      *
-     * Must call `args.next()` to continue processing.
+     * Use cases:
+     * - Backup events (e.g. blob store) when they fail to send.
+     * - Metrics.
+     *
+     * Must call `next()` to continue processing. Do not mutate arguments.
      */
     wrapSendEvent?(args: WrapSendEventArgs): Promise<SendEventBaseOutput>;
 
     /**
-     * Called many times per step, when finding it.
+     * May call multiple times per step, when fresh or memoized. Called for all
+     * step kinds. Depending on your use case, you may want `wrapStepHandler`
+     * instead.
      *
-     * Use to:
-     * - Modify step output/error
-     * - Run arbitrary code before/after the step
+     * Use cases:
+     * - Deserialize step output before returning it to the function handler.
+     * - Handle step failure errors (after exhausting retries).
+     * - Prepend/append steps around a step.
      *
-     * Must call `args.next()` to continue processing.
+     * Must call `next()` to continue processing. Do not mutate arguments.
+     *
+     * NOTE: `next()` only resolves when the step completes/fails. On requests
+     * where a fresh step is discovered, control flow is interrupted and
+     * `next()` never resolves.
      */
     wrapStep?(args: WrapStepArgs): Promise<unknown>;
+
+    /**
+     * Called 1 time per step attempt. Wraps the step's handler. Only called for
+     * `step.run` and `step.sendEvent`. Use this to modify the handler's
+     * returned output or thrown error before it's sent to the Inngest Server.
+     *
+     * Use cases:
+     * - Serialize step output before sending it to the Inngest Server.
+     * - Handle step attempt errors (before exhausting retries).
+     *
+     * Must call `next()` to continue processing. Do not mutate arguments.
+     */
+    // @privateRemark
+    // This hook exists because of checkpointing. For serialization middleware
+    // to work with checkpointing, we need to both:
+    // 1. Serialize the step output before sending it to the Inngest Server.
+    // 2. Deserialize the step output before returning it to the function handler.
+    //
+    // We initially solved this by calling `wrapStep` twice per step per
+    // request. But this breaks the "prepend with step" logic since we'd
+    // encounter the prepended step twice; this caused us to run the prepended
+    // step twice.
+    //
+    // Now that we have `wrapStepHandler`, it can be responsible for
+    // serialization and `wrapStep` can be responsible for deserialization.
+    wrapStepHandler?(args: WrapStepHandlerArgs): Promise<unknown>;
   }
 }
 
