@@ -31,7 +31,7 @@ describe("all hooks fire in correct order with 2 middleware", () => {
 
           override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
             state.logs.push(`transformSendEvent (${name})`);
-            return arg.events;
+            return arg;
           }
 
           override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
@@ -266,7 +266,7 @@ test("all hooks fire in correct order with checkpointing", async () => {
 
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       state.logs.push(`transformSendEvent`);
-      return arg.events;
+      return arg;
     }
 
     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {

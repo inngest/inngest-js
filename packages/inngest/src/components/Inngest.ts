@@ -787,7 +787,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
           events: payloads,
         });
         if (transformed !== undefined) {
-          payloads = transformed;
+          payloads = transformed.events;
         }
       }
     }

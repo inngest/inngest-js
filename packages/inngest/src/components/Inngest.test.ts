@@ -532,13 +532,16 @@ describe("send", () => {
             override transformSendEvent(
               arg: Middleware.TransformSendEventArgs,
             ) {
-              return arg.events.map((payload) => ({
-                ...payload,
-                data: {
-                  ...payload.data,
-                  bar: true,
-                },
-              }));
+              return {
+                ...arg,
+                events: arg.events.map((payload) => ({
+                  ...payload,
+                  data: {
+                    ...payload.data,
+                    bar: true,
+                  },
+                })),
+              };
             }
           },
         ],

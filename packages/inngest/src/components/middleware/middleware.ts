@@ -46,8 +46,9 @@ export namespace Middleware {
    */
   export type StepTools = ReturnType<typeof createStepTools<Inngest.Any>>;
 
-  // It's be nice to make this statically type safe, but it's unclear how to do
-  // that in a way that allows for adding new methods without breaking changes.
+  /**
+   * The argument passed to `transformSendEvent`.
+   */
   export type TransformSendEventArgs = {
     events: EventPayload<Record<string, unknown>>[];
   };
@@ -63,6 +64,7 @@ export namespace Middleware {
     input: unknown[];
   };
 
+  /** The argument passed to `wrapStepHandler`. */
   export type WrapStepHandlerArgs = DeepReadonly<{
     ctx: Context.Any;
     next: () => Promise<unknown>;
@@ -80,9 +82,9 @@ export namespace Middleware {
   /**
    * The argument passed to the static `onRegister` hook.
    */
-  export type OnRegisterArgs = {
+  export type OnRegisterArgs = Readonly<{
     client: Inngest.Any;
-  };
+  }>;
 
   /**
    * Information about the incoming HTTP request that triggered this execution.
@@ -94,22 +96,26 @@ export namespace Middleware {
     url: URL;
   };
 
+  /** The argument passed to `wrapFunctionHandler`. */
   export type WrapFunctionHandlerArgs = DeepReadonly<{
     ctx: Context.Any;
     next: () => Promise<unknown>;
   }>;
 
+  /** The argument passed to `wrapRequest`. */
   export type WrapRequestArgs = DeepReadonly<{
     next: () => Promise<Response>;
     requestInfo: Request;
     runId: string;
   }>;
 
+  /** The argument passed to `wrapSendEvent`. */
   export type WrapSendEventArgs = DeepReadonly<{
     events: EventPayload<Record<string, unknown>>[];
     next: () => Promise<SendEventBaseOutput>;
   }>;
 
+  /** The argument passed to `wrapStep`. */
   export type WrapStepArgs = DeepReadonly<{
     ctx: Context.Any;
     next: () => Promise<unknown>;
@@ -382,7 +388,7 @@ export namespace Middleware {
 
     /**
      * Called when sending events. This is either `step.sendEvent` or
-     * `client.send`. Return the (potentially modified) events.
+     * `client.send`. Return the (potentially modified) arg object.
      *
      * Use cases:
      * - Serialize event data before sending it to the Inngest Server.
@@ -391,7 +397,7 @@ export namespace Middleware {
      */
     transformSendEvent?(
       arg: Middleware.TransformSendEventArgs,
-    ): MaybePromise<EventPayload<Record<string, unknown>>[]>;
+    ): MaybePromise<Middleware.TransformSendEventArgs>;
 
     /**
      * Called 1 time per step per request (likely multiple times per step).

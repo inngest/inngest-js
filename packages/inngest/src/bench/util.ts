@@ -1,10 +1,5 @@
 import { bench, describe } from "vitest";
-import {
-  type EventPayload,
-  Inngest,
-  type InngestFunction,
-  Middleware,
-} from "../index.ts";
+import { Inngest, type InngestFunction, Middleware } from "../index.ts";
 import { createTestApp, type TestApp } from "../test/devServerTestHarness.ts";
 
 export function randomSuffix(value: string): string {
@@ -112,8 +107,8 @@ export function createMiddleware() {
 
     override transformSendEvent(
       arg: Middleware.TransformSendEventArgs,
-    ): EventPayload<Record<string, unknown>>[] {
-      return arg.events;
+    ): Middleware.TransformSendEventArgs {
+      return arg;
     }
 
     override transformStepInput(
