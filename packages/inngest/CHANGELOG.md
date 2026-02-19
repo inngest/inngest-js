@@ -1,5 +1,11 @@
 # inngest
 
+## 3.52.2
+
+### Patch Changes
+
+- [#1318](https://github.com/inngest/inngest-js/pull/1318) [`d81d29bc`](https://github.com/inngest/inngest-js/commit/d81d29bcc7c4584889e20972e258bc2c4fad90e2) Thanks [@amh4r](https://github.com/amh4r)! - Fix undefined step in transformOutput middleware
+
 ## 3.52.1
 
 ### Patch Changes
