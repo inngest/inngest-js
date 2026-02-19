@@ -1,3 +1,4 @@
+import type { Logger } from "../../middleware/logger.ts";
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
@@ -13,6 +14,13 @@ export interface AsyncContext {
    * or a possible one.
    */
   app: Inngest.Like;
+
+  /**
+   * The client's logger, available in any ALS-scoped code path (request
+   * handling, function execution, etc.). During function execution the
+   * execution-scoped `ctx.logger` (a ProxyLogger) takes precedence.
+   */
+  logger?: Logger;
 
   /**
    * Details of the current function execution context. If this doesn't exist,

@@ -111,13 +111,11 @@ describe("getLogger", () => {
     expect(isDefaultLogger(logger)).toBe(true);
   });
 
-  test("returns global logger when set and outside execution context", async () => {
+  test("returns ALS-scoped logger when in ALS context without execution", async () => {
     const { getAsyncLocalStorage } = await import(
       "../components/execution/als.ts"
     );
-    const { getLogger, setGlobalLogger } = await import("./log.ts");
-
-    await getAsyncLocalStorage();
+    const { getLogger } = await import("./log.ts");
 
     const customLogger = {
       info: vi.fn(),
@@ -126,26 +124,22 @@ describe("getLogger", () => {
       debug: vi.fn(),
     };
 
-    setGlobalLogger(customLogger);
+    const als = await getAsyncLocalStorage();
 
-    const logger = getLogger();
+    const loggerFromALS = als.run(
+      { app: {} as any, logger: customLogger },
+      () => {
+        return getLogger();
+      },
+    );
 
-    expect(logger).toBe(customLogger);
+    expect(loggerFromALS).toBe(customLogger);
   });
 
-  test("prefers ctx.logger over global logger during execution", async () => {
+  test("prefers ctx.logger over ALS-scoped logger during execution", async () => {
     const { Inngest } = await import("../index.ts");
     const { InngestTestEngine } = await import("@inngest/test");
-    const { getLogger, setGlobalLogger } = await import("./log.ts");
-
-    const globalCustomLogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    setGlobalLogger(globalCustomLogger);
+    const { getLogger } = await import("./log.ts");
 
     const inngest = new Inngest({ id: "test" });
 
@@ -162,7 +156,8 @@ describe("getLogger", () => {
     const t = new InngestTestEngine({ function: fn as any });
     await t.execute();
 
-    expect(loggerFromHelper).not.toBe(globalCustomLogger);
+    // During execution, getLogger() should return the ProxyLogger (ctx.logger),
+    // not the client's _logger or the defaultLogger
     expect(isDefaultLogger(loggerFromHelper)).toBe(false);
   });
 
@@ -190,6 +185,125 @@ describe("getLogger", () => {
 
     expect(result).toBe("done");
     expect(loggerFromHelper).toBe(loggerFromCtx);
+  });
+
+  test("multiple clients each resolve to their own logger via getLogger()", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+    const { getLogger } = await import("./log.ts");
+
+    const loggerA = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const loggerB = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const clientA = new Inngest({ id: "client-a", logger: loggerA });
+    const clientB = new Inngest({ id: "client-b", logger: loggerB });
+
+    let resolvedLoggerA: unknown;
+    let resolvedLoggerB: unknown;
+    let ctxLoggerA: unknown;
+    let ctxLoggerB: unknown;
+
+    const fnA = clientA.createFunction(
+      { id: "fn-a", triggers: [{ event: "" }] },
+      ({ logger }) => {
+        ctxLoggerA = logger;
+        resolvedLoggerA = getLogger();
+        return "a";
+      },
+    );
+
+    const fnB = clientB.createFunction(
+      { id: "fn-b", triggers: [{ event: "" }] },
+      ({ logger }) => {
+        ctxLoggerB = logger;
+        resolvedLoggerB = getLogger();
+        return "b";
+      },
+    );
+
+    const tA = new InngestTestEngine({ function: fnA as any });
+    const tB = new InngestTestEngine({ function: fnB as any });
+
+    await tA.execute();
+    await tB.execute();
+
+    // Each getLogger() call should return the ctx.logger for that execution
+    expect(resolvedLoggerA).toBe(ctxLoggerA);
+    expect(resolvedLoggerB).toBe(ctxLoggerB);
+
+    // The two loggers should be different from each other
+    expect(resolvedLoggerA).not.toBe(resolvedLoggerB);
+
+    // Verify each ProxyLogger wraps the correct underlying custom logger
+    (resolvedLoggerA as any).info("from A");
+    (resolvedLoggerB as any).info("from B");
+
+    expect(loggerA.info).toHaveBeenCalledWith("from A");
+    expect(loggerB.info).toHaveBeenCalledWith("from B");
+
+    expect(loggerA.info).not.toHaveBeenCalledWith("from B");
+    expect(loggerB.info).not.toHaveBeenCalledWith("from A");
+  });
+
+  test("multiple clients resolve to correct logger in ALS request-handling scope (no function execution)", async () => {
+    const { getAsyncLocalStorage } = await import(
+      "../components/execution/als.ts"
+    );
+    const { Inngest } = await import("../index.ts");
+    const { getLogger } = await import("./log.ts");
+
+    const loggerA = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const loggerB = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const clientA = new Inngest({ id: "client-a", logger: loggerA });
+    const clientB = new Inngest({ id: "client-b", logger: loggerB });
+
+    const als = await getAsyncLocalStorage();
+
+    // Simulate request-handling ALS scope for clientA
+    const loggerInScopeA = als.run(
+      { app: clientA as any, logger: (clientA as any)._logger },
+      () => getLogger(),
+    );
+
+    // Simulate request-handling ALS scope for clientB
+    const loggerInScopeB = als.run(
+      { app: clientB as any, logger: (clientB as any)._logger },
+      () => getLogger(),
+    );
+
+    // Each should resolve to its own client's logger
+    expect(loggerInScopeA).toBe(loggerA);
+    expect(loggerInScopeB).toBe(loggerB);
+    expect(loggerInScopeA).not.toBe(loggerInScopeB);
+
+    // Outside any ALS scope, should fall back to DefaultLogger
+    const loggerOutside = getLogger();
+    expect(isDefaultLogger(loggerOutside)).toBe(true);
+    expect(loggerOutside).not.toBe(loggerA);
+    expect(loggerOutside).not.toBe(loggerB);
   });
 });
 

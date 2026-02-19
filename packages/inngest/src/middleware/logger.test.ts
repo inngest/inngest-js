@@ -12,7 +12,7 @@ describe("ProxyLogger", () => {
   let logger: ProxyLogger;
 
   beforeEach(() => {
-    _internal = new DefaultLogger();
+    _internal = new DefaultLogger("info");
     logger = new ProxyLogger(_internal);
   });
 
@@ -166,7 +166,7 @@ describe("ProxyLogger", () => {
   });
 
   describe("log-level filtering", () => {
-    test("should only forward messages at or above the configured logLevel", () => {
+    test("delegates all level filtering to the underlying logger", () => {
       const mock: Logger = {
         info: vi.fn(),
         debug: vi.fn(),
@@ -174,7 +174,7 @@ describe("ProxyLogger", () => {
         error: vi.fn(),
       };
 
-      const proxy = new ProxyLogger(mock, "warn");
+      const proxy = new ProxyLogger(mock);
       proxy.enable();
 
       proxy.debug("d");
@@ -182,8 +182,10 @@ describe("ProxyLogger", () => {
       proxy.warn("w");
       proxy.error("e");
 
-      expect(mock.debug).not.toHaveBeenCalled();
-      expect(mock.info).not.toHaveBeenCalled();
+      // ProxyLogger no longer double-filters; the underlying logger
+      // (DefaultLogger or user-provided) is responsible for level filtering.
+      expect(mock.debug).toHaveBeenCalledWith("d");
+      expect(mock.info).toHaveBeenCalledWith("i");
       expect(mock.warn).toHaveBeenCalledWith("w");
       expect(mock.error).toHaveBeenCalledWith("e");
     });

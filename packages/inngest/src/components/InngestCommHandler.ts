@@ -54,7 +54,7 @@ import {
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
-import { getAsyncCtx } from "./execution/als.ts";
+import { getAsyncCtx, getAsyncLocalStorage } from "./execution/als.ts";
 import { _internals } from "./execution/engine.ts";
 import {
   type ExecutionResult,
@@ -832,10 +832,19 @@ export class InngestCommHandler<
     THandler extends (...args: Input) => Promise<Awaited<Output>>,
   >(): THandler {
     return this.wrapHandler((async (...args) => {
-      return this.handleAsyncRequest({
-        ...(await this.initRequest(...args)),
-        args,
-      });
+      const als = await getAsyncLocalStorage();
+      return als.run(
+        {
+          app: this.client,
+          logger: this.client._logger,
+        },
+        async () => {
+          return this.handleAsyncRequest({
+            ...(await this.initRequest(...args)),
+            args,
+          });
+        },
+      );
     }) as THandler);
   }
 

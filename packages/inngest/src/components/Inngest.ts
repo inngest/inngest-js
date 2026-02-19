@@ -24,7 +24,6 @@ import {
   formatLogMessage,
   getLogger,
   setDefaultLoggerLevel,
-  setGlobalLogger,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
@@ -127,6 +126,14 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   private _env: Env = {};
 
+  /**
+   * The logger instance for this client. Either a user-provided logger or a
+   * DefaultLogger configured with the client's log level.
+   *
+   * @internal
+   */
+  readonly _logger: Logger;
+
   private _appVersion: string | undefined;
 
   /**
@@ -226,7 +233,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   get logLevel(): LogLevel {
-    console.log("get logLevel", this.options.logLevel, logLevels.includes(this.options.logLevel as LogLevel));
     const level =
       this.options.logLevel || this._env[envKeys.InngestLogLevel] || "info";
 
@@ -286,7 +292,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   constructor(options: TClientOpts) {
     this.options = options;
-    console.log("options", options.logLevel);
 
     const { id, logger, middleware, appVersion } = this.options;
 
@@ -305,19 +310,14 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       fetch: () => this.fetch,
     });
 
-    if (logger) {
-      setGlobalLogger(logger);
-    }
+    this._logger = logger ?? new DefaultLogger(this.logLevel);
 
     // The default logger is initialized with "info" level. So we need to update
     // it to match the client's log level.
     setDefaultLoggerLevel(this.logLevel);
 
     this.middleware = [
-      ...builtInMiddleware(
-        logger ?? new DefaultLogger(this.logLevel),
-        this.logLevel,
-      ),
+      ...builtInMiddleware(this._logger),
       ...(middleware ?? []),
     ];
 
@@ -966,12 +966,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 /**
  * Default middleware that is included in every client, placed before the user's
  * middleware. Returns new-style `Middleware.Class` constructors. Uses a closure
- * so the no-arg constructors can capture the base logger and log level.
+ * so the no-arg constructors can capture the base logger.
  */
-export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
+export function builtInMiddleware(baseLogger: Logger) {
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
-      #proxyLogger = new ProxyLogger(baseLogger, logLevel);
+      #proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
         arg: Middleware.TransformFunctionInputArgs,
@@ -992,7 +992,7 @@ export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
           }
         }
 
-        this.#proxyLogger = new ProxyLogger(logger, logLevel);
+        this.#proxyLogger = new ProxyLogger(logger);
 
         return {
           ...arg,

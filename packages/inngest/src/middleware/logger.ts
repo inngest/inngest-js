@@ -81,7 +81,6 @@ type CallableLogLevel = keyof typeof LOG_LEVEL_RANK;
  * the configured logLevel.
  */
 function shouldLog(level: CallableLogLevel, logLevel: LogLevel): boolean {
-  console.log("shouldLog", {level, logLevel});
   if (logLevel === "silent") {
     return false;
   }
@@ -109,12 +108,10 @@ function shouldLog(level: CallableLogLevel, logLevel: LogLevel): boolean {
  */
 export class ProxyLogger implements Logger {
   private readonly logger: Logger;
-  private readonly logLevel: LogLevel;
   private enabled = false;
 
-  constructor(logger: Logger, logLevel: LogLevel = "info") {
+  constructor(logger: Logger) {
     this.logger = logger;
-    this.logLevel = logLevel;
 
     // Return a Proxy to forward arbitrary property access to the underlying
     // logger. For example, if the user provides a logger that has a `foo`
@@ -134,21 +131,21 @@ export class ProxyLogger implements Logger {
   }
 
   info(...args: LogArg[]) {
-    if (!this.enabled || !shouldLog("info", this.logLevel)) {
+    if (!this.enabled) {
       return;
     }
     this.logger.info(...args);
   }
 
   warn(...args: LogArg[]) {
-    if (!this.enabled || !shouldLog("warn", this.logLevel)) {
+    if (!this.enabled) {
       return;
     }
     this.logger.warn(...args);
   }
 
   error(...args: LogArg[]) {
-    if (!this.enabled || !shouldLog("error", this.logLevel)) {
+    if (!this.enabled) {
       return;
     }
     this.logger.error(...args);
@@ -156,11 +153,7 @@ export class ProxyLogger implements Logger {
 
   debug(...args: LogArg[]) {
     // there are loggers that don't implement "debug" by default
-    if (
-      !this.enabled ||
-      !shouldLog("debug", this.logLevel) ||
-      !(typeof this.logger.debug === "function")
-    ) {
+    if (!this.enabled || !(typeof this.logger.debug === "function")) {
       return;
     }
     this.logger.debug(...args);

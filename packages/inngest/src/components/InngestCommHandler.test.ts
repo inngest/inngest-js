@@ -181,7 +181,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["logger"], "warn");
+      const warnSpy = vi.spyOn(inngest["_logger"], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -202,7 +202,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["logger"], "warn");
+      const warnSpy = vi.spyOn(inngest["_logger"], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -223,7 +223,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["logger"], "warn");
+      const warnSpy = vi.spyOn(inngest["_logger"], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -244,7 +244,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["logger"], "warn");
+      const warnSpy = vi.spyOn(inngest["_logger"], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -263,7 +263,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["logger"], "warn");
+      const warnSpy = vi.spyOn(inngest["_logger"], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",

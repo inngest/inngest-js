@@ -197,6 +197,7 @@ class InngestExecutionEngine
         return als.run(
           {
             app: this.options.client,
+            logger: this.options.client._logger,
             execution: {
               ctx: this.fnArg,
               instance: this,

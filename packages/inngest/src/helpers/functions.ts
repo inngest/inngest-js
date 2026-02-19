@@ -96,7 +96,6 @@ export const versionSchema = z
     }
 
     if (v === 0) {
-      getLogger().error("V0 execution version is no longer supported"); // TODO: improve?
       throw new Error("V0 execution version is no longer supported");
     }
 
