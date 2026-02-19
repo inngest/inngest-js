@@ -321,8 +321,7 @@ export namespace Middleware {
     onRunComplete?(arg: Middleware.OnRunCompleteArgs): MaybePromise<void>;
 
     /**
-     * Called when the function throws an error. Receives the error instance.
-     * Does NOT call when the run succeeds: `onRunComplete` calls instead.
+     * Called when the function throws an error.
      *
      * Do not mutate arguments.
      */
@@ -330,7 +329,7 @@ export namespace Middleware {
 
     /**
      * Called 1 time per run on the very first request (0 memoized steps,
-     * attempt 0). Does NOT fire on subsequent requests where steps are being
+     * attempt 0). Does NOT call on subsequent requests where steps are being
      * replayed.
      *
      * Do not mutate arguments.
@@ -363,7 +362,8 @@ export namespace Middleware {
     onStepStart?(arg: Middleware.OnStepStartArgs): MaybePromise<void>;
 
     /**
-     * Called 1 time per request (likely multiple times per run).
+     * Called 1 time per request (likely multiple times per run). Return the
+     * (potentially modified) arg object.
      *
      * Use cases:
      * - Dependency injection.
@@ -416,7 +416,7 @@ export namespace Middleware {
     ): MaybePromise<TransformStepInputArgs>;
 
     /**
-     * May call many times per run.
+     * Called 1 time per request.
      *
      * Use cases:
      * - AsyncLocalStorage context.
@@ -432,8 +432,7 @@ export namespace Middleware {
     wrapFunctionHandler?(args: WrapFunctionHandlerArgs): Promise<unknown>;
 
     /**
-     * Called 1 time per request before any other hooks. Use this to validate
-     * or inspect the incoming HTTP request (headers, method, URL, body).
+     * Called 1 time per request.
      *
      * Use cases:
      * - Custom auth.
@@ -457,9 +456,8 @@ export namespace Middleware {
     wrapSendEvent?(args: WrapSendEventArgs): Promise<SendEventBaseOutput>;
 
     /**
-     * May call multiple times per step, when fresh or memoized. Called for all
-     * step kinds. Depending on your use case, you may want `wrapStepHandler`
-     * instead.
+     * Called 1 time per step per request. Called for all step kinds. Depending
+     * on your use case, you may want `wrapStepHandler` instead.
      *
      * Use cases:
      * - Deserialize step output before returning it to the function handler.
