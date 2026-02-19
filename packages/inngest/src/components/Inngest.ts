@@ -23,6 +23,7 @@ import type { Jsonify } from "../helpers/jsonify.ts";
 import {
   formatLogMessage,
   getLogger,
+  setDefaultLoggerLevel,
   setGlobalLogger,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
@@ -225,6 +226,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   get logLevel(): LogLevel {
+    console.log("get logLevel", this.options.logLevel, logLevels.includes(this.options.logLevel as LogLevel));
     const level =
       this.options.logLevel || this._env[envKeys.InngestLogLevel] || "info";
 
@@ -284,6 +286,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   constructor(options: TClientOpts) {
     this.options = options;
+    console.log("options", options.logLevel);
 
     const { id, logger, middleware, appVersion } = this.options;
 
@@ -306,8 +309,15 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       setGlobalLogger(logger);
     }
 
+    // The default logger is initialized with "info" level. So we need to update
+    // it to match the client's log level.
+    setDefaultLoggerLevel(this.logLevel);
+
     this.middleware = [
-      ...builtInMiddleware(logger ?? new DefaultLogger(), this.logLevel),
+      ...builtInMiddleware(
+        logger ?? new DefaultLogger(this.logLevel),
+        this.logLevel,
+      ),
       ...(middleware ?? []),
     ];
 

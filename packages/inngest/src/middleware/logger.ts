@@ -28,20 +28,38 @@ export interface Logger {
 }
 
 export class DefaultLogger implements Logger {
+  private logLevel: LogLevel;
+
+  constructor(logLevel: LogLevel) {
+    this.logLevel = logLevel;
+  }
+
   info(...args: LogArg[]) {
-    console.info(...args);
+    if (shouldLog("info", this.logLevel)) {
+      console.info(...args);
+    }
   }
 
   warn(...args: LogArg[]) {
-    console.warn(...args);
+    if (shouldLog("warn", this.logLevel)) {
+      console.warn(...args);
+    }
   }
 
   error(...args: LogArg[]) {
-    console.error(...args);
+    if (shouldLog("error", this.logLevel)) {
+      console.error(...args);
+    }
   }
 
   debug(...args: LogArg[]) {
-    console.debug(...args);
+    if (shouldLog("debug", this.logLevel)) {
+      console.debug(...args);
+    }
+  }
+
+  setLogLevel(logLevel: LogLevel) {
+    this.logLevel = logLevel;
   }
 }
 
@@ -57,6 +75,28 @@ const LOG_LEVEL_RANK = {
 } as const;
 
 type CallableLogLevel = keyof typeof LOG_LEVEL_RANK;
+
+/**
+ * Check if a message at the given level should be logged based on
+ * the configured logLevel.
+ */
+function shouldLog(level: CallableLogLevel, logLevel: LogLevel): boolean {
+  console.log("shouldLog", {level, logLevel});
+  if (logLevel === "silent") {
+    return false;
+  }
+
+  // Map configured logLevel to a callable level (fatal -> error)
+  let effectiveLevel: CallableLogLevel = "info";
+  if (logLevel === "fatal") {
+    effectiveLevel = "error";
+  } else if (logLevel in LOG_LEVEL_RANK) {
+    effectiveLevel = logLevel as CallableLogLevel;
+  }
+
+  // Log if message severity >= configured level (higher rank = more severe)
+  return LOG_LEVEL_RANK[level] >= LOG_LEVEL_RANK[effectiveLevel];
+}
 
 /**
  * ProxyLogger aims to provide a thin wrapper on user's provided logger.
@@ -94,17 +134,23 @@ export class ProxyLogger implements Logger {
   }
 
   info(...args: LogArg[]) {
-    if (!this.enabled || !this.shouldLog("info")) return;
+    if (!this.enabled || !shouldLog("info", this.logLevel)) {
+      return;
+    }
     this.logger.info(...args);
   }
 
   warn(...args: LogArg[]) {
-    if (!this.enabled || !this.shouldLog("warn")) return;
+    if (!this.enabled || !shouldLog("warn", this.logLevel)) {
+      return;
+    }
     this.logger.warn(...args);
   }
 
   error(...args: LogArg[]) {
-    if (!this.enabled || !this.shouldLog("error")) return;
+    if (!this.enabled || !shouldLog("error", this.logLevel)) {
+      return;
+    }
     this.logger.error(...args);
   }
 
@@ -112,10 +158,11 @@ export class ProxyLogger implements Logger {
     // there are loggers that don't implement "debug" by default
     if (
       !this.enabled ||
-      !this.shouldLog("debug") ||
+      !shouldLog("debug", this.logLevel) ||
       !(typeof this.logger.debug === "function")
-    )
+    ) {
       return;
+    }
     this.logger.debug(...args);
   }
 
@@ -127,27 +174,9 @@ export class ProxyLogger implements Logger {
     this.enabled = false;
   }
 
-  /**
-   * Check if a message at the given level should be logged based on configured logLevel.
-   */
-  private shouldLog(level: CallableLogLevel): boolean {
-    if (this.logLevel === "silent") return false;
-
-    // Map configured logLevel to a callable level (fatal -> error)
-    const effectiveLevel: CallableLogLevel =
-      this.logLevel === "fatal"
-        ? "error"
-        : this.logLevel in LOG_LEVEL_RANK
-          ? (this.logLevel as CallableLogLevel)
-          : "info";
-
-    // Log if message severity >= configured level (higher rank = more severe)
-    return LOG_LEVEL_RANK[level] >= LOG_LEVEL_RANK[effectiveLevel];
-  }
-
   async flush() {
     // If DefaultLogger, nothing to wait for
-    if (this.logger.constructor.name == DefaultLogger.name) {
+    if (this.logger instanceof DefaultLogger) {
       return;
     }
 

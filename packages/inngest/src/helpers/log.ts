@@ -4,8 +4,9 @@ import {
   type LogArg,
   type Logger,
 } from "../middleware/logger.ts";
+import type { LogLevel } from "../types.ts";
 
-const defaultLogger = new DefaultLogger();
+const defaultLogger = new DefaultLogger("info");
 let globalLogger: Logger | undefined;
 
 const loggedKeys = new Set<string>();
@@ -37,6 +38,10 @@ export function setGlobalLogger(logger: Logger): void {
   globalLogger = logger;
 }
 
+export function setDefaultLoggerLevel(logLevel: LogLevel): void {
+  defaultLogger.setLogLevel(logLevel);
+}
+
 export interface StructuredLogMessage {
   message: string;
   code?: string;
@@ -62,6 +67,7 @@ export function getLogger(): Logger {
   // `logger` is added to the context by the built-in logger middleware at
   // runtime, so it's not part of the static Context type.
   const fnCtx = ctx?.execution?.ctx as { logger?: Logger } | undefined;
+  console.log("getLogger", Boolean(fnCtx?.logger));
 
   if (fnCtx?.logger) {
     return fnCtx.logger;
