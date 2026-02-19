@@ -323,6 +323,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * has been initialized.
    */
   public get ready(): Promise<void> {
+    // Previously this was used to ensure that we could wait for middleware
+    // to be instantiated, but we now no longer have a set-up function
+    // that we await, so middleware is always ready to go.
     return Promise.resolve();
   }
 
