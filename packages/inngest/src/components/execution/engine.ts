@@ -2,12 +2,14 @@ import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
+
 import {
   defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
   internalEvents,
 } from "../../helpers/consts.ts";
+
 import {
   deserializeError,
   ErrCode,
@@ -30,18 +32,17 @@ import * as Temporal from "../../helpers/temporal.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
   type APIStepPayload,
-  type BaseContext,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
+  type HashedOp,
   jsonErrorSchema,
   type OutgoingOp,
   StepMode,
   StepOpCode,
 } from "../../types.ts";
 import { version } from "../../version.ts";
-import type { Inngest } from "../Inngest.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
@@ -49,15 +50,16 @@ import type {
   MetadataScope,
   MetadataUpdate,
 } from "../InngestMetadata.ts";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
   type FoundStep,
   getStepOptions,
-  invokePayloadSchema,
   STEP_INDEXING_SUFFIX,
   type StepHandler,
 } from "../InngestStepTools.ts";
+import { MiddlewareManager } from "../middleware/index.ts";
+import type { Middleware } from "../middleware/middleware.ts";
+import { UnreachableError } from "../middleware/utils.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
@@ -101,6 +103,7 @@ class InngestExecutionEngine
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private middlewareManager: MiddlewareManager;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -150,6 +153,23 @@ class InngestExecutionEngine
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
+
+    // Setup middleware
+    const mwInstances =
+      this.options.middlewareInstances ??
+      (this.options.client.middleware || []).map((Cls) => {
+        return new Cls({ client: this.options.client });
+      });
+    const functionInfo: Middleware.FunctionInfo = {
+      id: this.options.fn.opts.id,
+    };
+    this.middlewareManager = new MiddlewareManager(
+      this.fnArg,
+      () => this.state.stepState,
+      mwInstances,
+      functionInfo,
+    );
+
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.initializeTimer(this.state);
     this.initializeCheckpointRuntimeTimer(this.state);
@@ -232,7 +252,6 @@ class InngestExecutionEngine
   private async _start(): Promise<ExecutionResult> {
     try {
       const allCheckpointHandler = this.getCheckpointHandler("");
-      this.state.hooks = await this.initializeMiddleware();
       await this.startExecution();
 
       let i = 0;
@@ -248,10 +267,9 @@ class InngestExecutionEngine
         }
       }
     } catch (error) {
-      return await this.transformOutput({ error });
+      return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
-      await this.state.hooks?.beforeResponse?.();
     }
 
     /**
@@ -441,20 +459,9 @@ class InngestExecutionEngine
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
-        // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: stepResult.data },
-          step: undefined,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? stepResult.data;
-
-        // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
-          data: transformedData,
+          data: stepResult.data,
         });
       }
 
@@ -509,21 +516,11 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
-        // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: checkpoint.data },
-          step: undefined,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? checkpoint.data;
-
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(transformedData),
+            data: await this.options.createResponse!(checkpoint.data),
           },
         ]);
 
@@ -582,18 +579,7 @@ class InngestExecutionEngine
         const stepToResume = this.resumeStepWithResult(result);
 
         // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: result.data },
-          step: undefined,
-        });
-        const transformedData = transformedOutput?.result?.data ?? result.data;
-
-        // Create a copy for checkpointing with transformed data
-        const stepForCheckpoint = { ...stepToResume, data: transformedData };
-
-        return void (await this.checkpoint([stepForCheckpoint]));
+        return void (await this.checkpoint([stepToResume]));
       },
 
       "checkpointing-runtime-reached": () => {
@@ -621,6 +607,13 @@ class InngestExecutionEngine
        * The user's function has completed and returned a value.
        */
       "function-resolved": async ({ data }) => {
+        // Check for unreported new steps (e.g. from `Promise.race` where
+        // the winning branch completed before losing branches reported)
+        const newStepsResult = await maybeReturnNewSteps();
+        if (newStepsResult) {
+          return newStepsResult;
+        }
+
         // We need to do this even here for async, as we could be returning
         // data from an API endpoint, even if we were triggered async.
         if (this.options.createResponse) {
@@ -689,14 +682,16 @@ class InngestExecutionEngine
               op: StepOpCode.RunComplete,
               id: _internals.hashId("complete"), // ID is not important here
               data: output.data,
-            }) as [OutgoingOp, ...OutgoingOp[]];
+            });
 
-            return {
-              type: "steps-found",
-              ctx: output.ctx,
-              ops: output.ops,
-              steps,
-            };
+            if (isNonEmpty(steps)) {
+              return {
+                type: "steps-found",
+                ctx: output.ctx,
+                ops: output.ops,
+                steps,
+              };
+            }
           }
 
           return;
@@ -879,110 +874,33 @@ class InngestExecutionEngine
       return;
     }
 
-    /**
-     * We're finishing up; let's trigger the last of the hooks.
-     */
-    await this.state.hooks?.afterMemoization?.();
-    await this.state.hooks?.beforeExecution?.();
-    await this.state.hooks?.afterExecution?.();
+    await this.middlewareManager.onMemoizationEnd();
 
-    const stepList = newSteps.map<OutgoingOp>((step) => ({
-      displayName: step.displayName,
-      op: step.op,
-      id: step.hashedId,
-      name: step.name,
-      opts: step.opts,
-      userland: step.userland,
-    })) as [OutgoingOp, ...OutgoingOp[]];
+    const stepList = newSteps.map<OutgoingOp>((step) => {
+      return {
+        displayName: step.displayName,
+        op: step.op,
+        id: step.hashedId,
+        name: step.name,
+        opts: step.opts,
+        userland: step.userland,
+      };
+    });
 
-    /**
-     * We also run `onSendEvent` middleware hooks against `step.invoke()` steps
-     * to ensure that their `data` is transformed correctly.
-     */
-    return await this.transformNewSteps(stepList);
+    if (!isNonEmpty(stepList)) {
+      throw new UnreachableError("stepList is empty");
+    }
+
+    return stepList;
   }
 
-  /**
-   * Using middleware, transform any newly-found steps before returning them to
-   * an Inngest Server.
-   */
-  private async transformNewSteps<T extends [OutgoingOp, ...OutgoingOp[]]>(
-    steps: T,
-  ): Promise<T> {
-    return Promise.all(
-      steps.map(async (step) => {
-        if (step.op !== StepOpCode.InvokeFunction) {
-          return step;
-        }
+  private async executeStep(foundStep: FoundStep): Promise<OutgoingOp> {
+    const { id, name, opts, fn, displayName, userland, hashedId } = foundStep;
+    const { stepInfo, wrappedHandler, setActualHandler } = foundStep.middleware;
 
-        const onSendEventHooks = await getHookStack(
-          this.options.fn["middleware"],
-          "onSendEvent",
-          undefined,
-          {
-            transformInput: (prev, output) => {
-              return { ...prev, ...output };
-            },
-            transformOutput: (prev, output) => {
-              return {
-                result: { ...prev.result, ...output?.result },
-              };
-            },
-          },
-        );
-
-        /**
-         * For each event being sent, create a new `onSendEvent` hook stack to
-         * process it. We do this as middleware hooks are intended to run once
-         * during each lifecycle (onFunctionRun or onSendEvent) and here, a hook
-         * is run for every single event.
-         *
-         * This is done because a developer can use this hook to filter out
-         * events entirely; if we batch all of the events together, we can't
-         * tell which ones were filtered out if we're processing >1 invocation
-         * here.
-         */
-        const transformedPayload = await onSendEventHooks.transformInput?.({
-          payloads: [
-            {
-              ...(step.opts?.payload ?? {}),
-              name: internalEvents.FunctionInvoked,
-            },
-          ],
-        });
-
-        const newPayload = invokePayloadSchema.parse(
-          transformedPayload?.payloads?.[0] ?? {},
-        );
-
-        return {
-          ...step,
-          opts: {
-            ...step.opts,
-            payload: {
-              ...(step.opts?.payload ?? {}),
-              ...newPayload,
-            },
-          },
-        };
-      }),
-    ) as Promise<T>;
-  }
-
-  private async executeStep({
-    id,
-    name,
-    opts,
-    fn,
-    displayName,
-    userland,
-    hashedId,
-  }: FoundStep): Promise<OutgoingOp> {
     this.debug(`preparing to execute step "${id}"`);
 
     this.timeout?.clear();
-    await this.state.hooks?.afterMemoization?.();
-    await this.state.hooks?.beforeExecution?.();
 
     const outgoingOp: OutgoingOp = {
       id: hashedId,
@@ -1007,62 +925,63 @@ class InngestExecutionEngine
 
     let interval: GoInterval | undefined;
 
-    return goIntervalTiming(() => runAsPromise(fn))
-      .finally(async () => {
+    // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
+    // the `transformStepInput` middleware hook already ran).
+    const actualHandler = () => runAsPromise(fn);
+
+    await this.middlewareManager.onMemoizationEnd();
+    await this.middlewareManager.onStepStart(stepInfo);
+
+    // If wrappedHandler hasn't been called yet (no deferred from discovery),
+    // set one up so wrapStep's next() still blocks until memoization.
+    if (!foundStep.memoizationDeferred) {
+      const deferred = createDeferredPromise<unknown>();
+      foundStep.memoizationDeferred = deferred;
+      setActualHandler(() => deferred.promise);
+      foundStep.transformedResultPromise = wrappedHandler();
+      foundStep.transformedResultPromise.catch(() => {
+        // Swallow — errors handled by handle()
+      });
+    }
+
+    // Build wrapStepHandler chain around the actual handler
+    const wrappedActualHandler =
+      this.middlewareManager.buildWrapStepHandlerChain(actualHandler, stepInfo);
+
+    return goIntervalTiming(() => wrappedActualHandler())
+      .finally(() => {
         this.debug(`finished executing step "${id}"`);
 
         delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
         }
-
-        await this.state.hooks?.afterExecution?.();
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
         const metadata = this.state.metadata?.get(id);
+        const serverData = await resultPromise;
+
+        // Don't resolve memoizationDeferred here. wrapStep's next() must
+        // block until the step is actually memoized (i.e. handle() fires
+        // with confirmed data from the server). handle() resolves it.
+        await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
         return {
           ...outgoingOp,
-          data: await resultPromise,
+          data: serverData,
           ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
-        let errorIsRetriable = true;
-
-        if (
-          error instanceof NonRetriableError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (error as any)?.name === "NonRetriableError"
-        ) {
-          errorIsRetriable = false;
-        } else if (
-          this.fnArg.maxAttempts &&
-          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-        ) {
-          errorIsRetriable = false;
-        }
-
-        const metadata = this.state.metadata?.get(id);
-
-        if (errorIsRetriable) {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        } else {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepFailed,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
-          };
-        }
+        // Don't reject memoizationDeferred — handle() will reject it when
+        // the error is memoized.
+        return this.buildStepErrorOp({
+          error,
+          id,
+          outgoingOp,
+          stepInfo,
+        });
       })
       .then((op) => ({
         ...op,
@@ -1076,68 +995,99 @@ class InngestExecutionEngine
    */
   private async startExecution(): Promise<void> {
     /**
-     * Mutate input as neccessary based on middleware.
-     */
-    await this.transformInput();
-    await this.validateEventSchemas();
-
-    /**
      * Start the timer to time out the run if needed.
      */
     void this.timeout?.start();
     void this.checkpointingMaxRuntimeTimer?.start();
     void this.checkpointingMaxBufferIntervalTimer?.start();
 
-    await this.state.hooks?.beforeMemoization?.();
+    const fnInputResult = await this.middlewareManager.transformFunctionInput();
+    this.applyFunctionInputMutations(fnInputResult);
 
-    /**
-     * If we had no state to begin with, immediately end the memoization phase.
-     */
     if (this.state.allStateUsed()) {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
+      await this.middlewareManager.onMemoizationEnd();
     }
 
-    /**
-     * Trigger the user's function.
-     */
-    runAsPromise(() => this.userFnToRun(this.fnArg))
-      .finally(async () => {
-        await this.state.hooks?.afterMemoization?.();
-        await this.state.hooks?.beforeExecution?.();
-        await this.state.hooks?.afterExecution?.();
-      })
-      .then((data) => {
+    if (this.state.stepsToFulfill === 0 && this.fnArg.attempt === 0) {
+      await this.middlewareManager.onRunStart();
+    }
+
+    const innerHandler: () => Promise<unknown> = async () => {
+      await this.validateEventSchemas();
+      return this.userFnToRun(this.fnArg);
+    };
+
+    const runHandler = this.middlewareManager.wrapRunHandler(innerHandler);
+
+    runAsPromise(runHandler)
+      .then(async (data) => {
+        await this.middlewareManager.onRunComplete(data);
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
-      .catch((error) => {
-        this.state.setCheckpoint({ type: "function-rejected", error });
+      .catch(async (error) => {
+        // Preserve Error instances; stringify non-Error throws (e.g. `throw {}`)
+        let err: Error;
+        if (error instanceof Error) {
+          err = error;
+        } else if (typeof error === "object") {
+          err = new Error(JSON.stringify(error));
+        } else {
+          err = new Error(String(error));
+        }
+
+        await this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
+        this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
   }
 
   /**
-   * Using middleware, transform input before running.
+   * Whether this error will not be retried (NonRetriableError or last attempt).
    */
-  private async transformInput() {
-    const inputMutations = await this.state.hooks?.transformInput?.({
-      ctx: { ...this.fnArg },
-      steps: Object.values(this.state.stepState),
-      fn: this.options.fn,
-      reqArgs: this.options.reqArgs,
-    });
-
-    if (inputMutations?.ctx) {
-      // Merge onto the existing object rather than replacing it, because the ALS
-      // execution context holds a reference to this fn.Arg. Replacing the object
-      // would cause ALS consumers to see stale state.
-      Object.assign(this.fnArg, inputMutations.ctx);
+  private isFinalAttempt(error: unknown): boolean {
+    if (
+      error instanceof NonRetriableError ||
+      // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+      (error as any)?.name === "NonRetriableError"
+    ) {
+      return true;
     }
 
-    if (inputMutations?.steps) {
-      this.state.stepState = Object.fromEntries(
-        inputMutations.steps.map((step) => [step.id, step]),
-      );
-    }
+    return Boolean(
+      this.fnArg.maxAttempts &&
+        this.fnArg.maxAttempts - 1 === this.fnArg.attempt,
+    );
+  }
+
+  /**
+   * Build the OutgoingOp for a failed step, notifying middleware and choosing
+   * retriable vs non-retriable opcode.
+   */
+  private async buildStepErrorOp({
+    error,
+    id,
+    outgoingOp,
+    stepInfo,
+  }: {
+    error: unknown;
+    id: string;
+    outgoingOp: OutgoingOp;
+    stepInfo: Middleware.StepInfo;
+  }): Promise<OutgoingOp> {
+    const isFinal = this.isFinalAttempt(error);
+    const metadata = this.state.metadata?.get(id);
+
+    await this.middlewareManager.onStepError(
+      stepInfo,
+      error instanceof Error ? error : new Error(String(error)),
+      isFinal,
+    );
+
+    return {
+      ...outgoingOp,
+      error,
+      op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+      ...(metadata && metadata.length > 0 ? { metadata } : {}),
+    };
   }
 
   /**
@@ -1161,27 +1111,11 @@ class InngestExecutionEngine
   /**
    * Using middleware, transform output before returning.
    */
-  private async transformOutput(
-    dataOrError: Parameters<
-      NonNullable<RunHookStack["transformOutput"]>
-    >[0]["result"],
-  ): Promise<ExecutionResult> {
-    const output = { ...dataOrError } as Partial<OutgoingOp>;
-
-    const isStepExecution = Boolean(this.state.executingStep);
-
-    const transformedOutput = await this.state.hooks?.transformOutput?.({
-      result: { ...output },
-      step: this.state.executingStep,
-    });
-
-    const { data, error } = { ...output, ...transformedOutput?.result };
-
-    if (!isStepExecution) {
-      await this.state.hooks?.finished?.({
-        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
-      });
-    }
+  private transformOutput(dataOrError: {
+    data?: unknown;
+    error?: unknown;
+  }): ExecutionResult {
+    const { data, error } = dataOrError;
 
     if (typeof error !== "undefined") {
       /**
@@ -1303,6 +1237,47 @@ class InngestExecutionEngine
     return this.options.transformCtx?.(fnArg) ?? fnArg;
   }
 
+  /**
+   * Apply mutations from `transformFunctionInput` back to execution state.
+   * Allows middleware to modify event data, step tools, memoized step data,
+   * and inject custom fields into the handler context.
+   */
+  private applyFunctionInputMutations(
+    result: Middleware.TransformFunctionInputArgs,
+  ): void {
+    const { event, events, step, ...extensions } = result.ctx;
+
+    // Mutate in place so the ALS store's reference to this.fnArg stays valid.
+    if (event !== this.fnArg.event) {
+      this.fnArg.event = event;
+    }
+
+    if (events !== this.fnArg.events) {
+      this.fnArg.events = events;
+    }
+
+    if (step !== this.fnArg.step) {
+      this.fnArg.step = step;
+    }
+
+    if (Object.keys(extensions).length > 0) {
+      Object.assign(this.fnArg, extensions);
+    }
+
+    // Apply step data mutations
+    for (const [hashedId, stepData] of Object.entries(result.steps)) {
+      const existing = this.state.stepState[hashedId];
+      if (
+        existing &&
+        stepData &&
+        stepData.type === "data" &&
+        stepData.data !== existing.data
+      ) {
+        this.state.stepState[hashedId] = { ...existing, data: stepData.data };
+      }
+    }
+  }
+
   private createStepTools(): ReturnType<typeof createStepTools> {
     /**
      * A list of steps that have been found and are being rolled up before being
@@ -1339,12 +1314,6 @@ class InngestExecutionEngine
      * once in a given asynchronous time span.
      */
     let foundStepsReportPromise: Promise<void> | undefined;
-
-    /**
-     * A promise that's used to represent middleware hooks running before
-     * execution.
-     */
-    let beforeExecHooksPromise: Promise<void> | undefined;
 
     /**
      * A flag used to ensure that we only warn about parallel indexing once per
@@ -1407,54 +1376,39 @@ class InngestExecutionEngine
         extensionPromise = resolveAfterPending();
       }
 
-      foundStepsReportPromise = extensionPromise
-        /**
-         * Ensure that we wait for this promise to resolve before continuing.
-         *
-         * The groups in which steps are reported can affect how we detect some
-         * more complex determinism issues like parallel indexing. This promise
-         * can represent middleware hooks being run early, in the middle of
-         * ingesting steps to report.
-         *
-         * Because of this, it's important we wait for this middleware to resolve
-         * before continuing to report steps to ensure that all steps have a
-         * chance to be reported throughout this asynchronous action.
-         */
-        .then(() => beforeExecHooksPromise)
-        .then(() => {
-          foundStepsReportPromise = undefined;
+      foundStepsReportPromise = extensionPromise.then(() => {
+        foundStepsReportPromise = undefined;
 
-          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
-            const nextStepId = remainingStepCompletionOrder[i];
-            if (!nextStepId) {
-              // Strange - skip this empty index
-              continue;
-            }
-
-            const handled = unhandledFoundStepsToReport
-              .get(nextStepId)
-              ?.handle();
-            if (handled) {
-              remainingStepCompletionOrder.splice(i, 1);
-              unhandledFoundStepsToReport.delete(nextStepId);
-              return void reportNextTick();
-            }
+        for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
+          const nextStepId = remainingStepCompletionOrder[i];
+          if (!nextStepId) {
+            // Strange - skip this empty index
+            continue;
           }
 
-          // If we've handled no steps in this "tick," roll up everything we've
-          // found and report it.
-          const steps = [...foundStepsToReport.values()] as [
-            FoundStep,
-            ...FoundStep[],
-          ];
-          foundStepsToReport.clear();
-          unhandledFoundStepsToReport.clear();
+          const handled = unhandledFoundStepsToReport.get(nextStepId)?.handle();
+          if (handled) {
+            remainingStepCompletionOrder.splice(i, 1);
+            unhandledFoundStepsToReport.delete(nextStepId);
+            return void reportNextTick();
+          }
+        }
 
-          return void this.state.setCheckpoint({
-            type: "steps-found",
-            steps: steps,
-          });
+        // If we've handled no steps in this "tick," roll up everything we've
+        // found and report it.
+        const steps = [...foundStepsToReport.values()];
+        foundStepsToReport.clear();
+        unhandledFoundStepsToReport.clear();
+
+        if (!isNonEmpty(steps)) {
+          return;
+        }
+
+        return void this.state.setCheckpoint({
+          type: "steps-found",
+          steps: steps,
         });
+      });
     };
 
     /**
@@ -1471,8 +1425,6 @@ class InngestExecutionEngine
       matchOp,
       opts,
     }): Promise<unknown> => {
-      await beforeExecHooksPromise;
-
       const stepOptions = getStepOptions(args[0]);
       const opId = matchOp(stepOptions, ...args.slice(1));
 
@@ -1504,35 +1456,22 @@ class InngestExecutionEngine
         );
       }
 
-      if (this.state.steps.has(_internals.hashId(opId.id))) {
-        const originalId = opId.id;
-        maybeWarnOfParallelIndexing(originalId);
-
-        const expectedNextIndex = expectedNextStepIndexes.get(originalId) ?? 1;
-        for (let i = expectedNextIndex; ; i++) {
-          const newId = originalId + STEP_INDEXING_SUFFIX + i;
-
-          if (!this.state.steps.has(_internals.hashId(newId))) {
-            expectedNextStepIndexes.set(originalId, i + 1);
-            opId.id = newId;
-            opId.userland.index = i;
-            break;
-          }
-        }
-      }
+      // Apply middleware transformations (may change step ID, affecting
+      // memoization lookup)
+      const {
+        hashedId,
+        isFulfilled,
+        setActualHandler,
+        stepInfo,
+        stepState,
+        wrappedHandler,
+      } = await this.applyMiddlewareToStep(
+        opId,
+        expectedNextStepIndexes,
+        maybeWarnOfParallelIndexing,
+      );
 
       const { promise, resolve, reject } = createDeferredPromise();
-      const hashedId = _internals.hashId(opId.id);
-      const stepState = this.state.stepState[hashedId];
-      let isFulfilled = false;
-      if (stepState) {
-        stepState.seen = true;
-        this.state.remainingStepsToBeSeen.delete(hashedId);
-
-        if (typeof stepState.input === "undefined") {
-          isFulfilled = true;
-        }
-      }
 
       let extraOpts: Record<string, unknown> | undefined;
       let fnArgs = [...args];
@@ -1565,10 +1504,17 @@ class InngestExecutionEngine
         }
       }
 
+      // If transformStepInput middleware may have changed the input, update
+      // `fnArgs` so `fn` uses the transformed values. Skip if replay already
+      // set `extraOpts`.
+      if (!extraOpts && Array.isArray(stepInfo.input)) {
+        fnArgs = [...args.slice(0, 2), ...stepInfo.input];
+      }
+
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
-        rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
+        rawArgs: fnArgs,
         hashedId,
         input: stepState?.input,
 
@@ -1578,6 +1524,14 @@ class InngestExecutionEngine
         hasStepState: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
+
+        // Middleware context for deferred handler pattern
+        middleware: {
+          wrappedHandler,
+          stepInfo,
+          setActualHandler,
+        },
+
         handle: () => {
           if (step.handled) {
             return false;
@@ -1601,9 +1555,44 @@ class InngestExecutionEngine
             // the values are fully resolved before continuing.
             void Promise.all([result.data, result.error, result.input]).then(
               async () => {
+                // If the wrapStep chain already ran during discovery in this
+                // same request (checkpointing), reuse its result instead of
+                // firing wrappedHandler() again. This prevents middleware from
+                // seeing a duplicate wrapStep call per step per request.
+                if (step.transformedResultPromise) {
+                  // Resolve the memoization deferred so wrapStep's next()
+                  // unblocks. The step data is now confirmed memoized.
+                  if (step.memoizationDeferred) {
+                    if (typeof result.data !== "undefined") {
+                      step.memoizationDeferred.resolve(await result.data);
+                    } else {
+                      const stepError = new StepError(opId.id, result.error);
+                      this.state.recentlyRejectedStepError = stepError;
+                      step.memoizationDeferred.reject(stepError);
+                    }
+                  }
+
+                  step.transformedResultPromise.then(resolve, reject);
+                  return;
+                }
+
+                // The wrapStep chain is about to fire again to resolve the
+                // step promise through middleware (e.g. deserialization).
+                // Mark the step as memoized so middleware can distinguish
+                // this from the original execution call.
+                //
+                // This need for this change was discovered when checkpointing +
+                // middleware's "double `wrapStep` call" behavior had `memoized:
+                // false` on the 2nd call
+                step.middleware.stepInfo.memoized = true;
+
                 if (typeof result.data !== "undefined") {
                   // Validate waitForEvent results against the schema if present
-                  if (opId.op === StepOpCode.WaitForEvent) {
+                  // Skip validation if result.data is null (timeout case)
+                  if (
+                    opId.op === StepOpCode.WaitForEvent &&
+                    result.data !== null
+                  ) {
                     const { event } = (step.rawArgs?.[1] ?? {}) as {
                       event: unknown;
                     };
@@ -1627,13 +1616,23 @@ class InngestExecutionEngine
                       return;
                     }
                   }
-                  resolve(result.data);
-                } else {
-                  this.state.recentlyRejectedStepError = new StepError(
-                    opId.id,
-                    result.error,
+
+                  // Set inner handler to return memoized data
+                  step.middleware.setActualHandler(() =>
+                    Promise.resolve(result.data),
                   );
-                  reject(this.state.recentlyRejectedStepError);
+
+                  step.middleware.wrappedHandler().then(resolve);
+                } else {
+                  const stepError = new StepError(opId.id, result.error);
+                  this.state.recentlyRejectedStepError = stepError;
+
+                  // Set inner handler to reject with step error
+                  step.middleware.setActualHandler(() =>
+                    Promise.reject(stepError),
+                  );
+
+                  step.middleware.wrappedHandler().catch(reject);
                 }
               },
             );
@@ -1645,24 +1644,144 @@ class InngestExecutionEngine
 
       this.state.steps.set(hashedId, step);
       this.state.hasSteps = true;
-      pushStepToReport(step);
 
-      /**
-       * If this is the last piece of state we had, we've now finished
-       * memoizing.
-       */
-      if (!beforeExecHooksPromise && this.state.allStateUsed()) {
-        // biome-ignore lint/suspicious/noAssignInExpressions: intentional
-        await (beforeExecHooksPromise = (async () => {
-          await this.state.hooks?.afterMemoization?.();
-          await this.state.hooks?.beforeExecution?.();
-        })());
+      const isNewStepWithHandler = !isFulfilled && !stepState && step.fn;
+      if (isNewStepWithHandler) {
+        // New, never-seen step with a handler (e.g. `step.run`). Kick off the
+        // middleware wrapStep chain now so it runs during discovery, not later
+        // in executeStep.
+        //
+        // This is necessary so that middleware can inject their own steps.
+        // Reporting is deferred to the center of the onion so that if
+        // middleware throws or injects prerequisites, the step is never
+        // reported.
+        const deferred = createDeferredPromise<unknown>();
+        step.memoizationDeferred = deferred;
+
+        setActualHandler(() => {
+          pushStepToReport(step);
+          return deferred.promise;
+        });
+
+        step.transformedResultPromise = wrappedHandler();
+        step.transformedResultPromise.catch((error) => {
+          reject(error);
+        });
+      } else {
+        pushStepToReport(step);
       }
 
       return promise;
     };
 
     return createStepTools(this.options.client, this, stepHandler);
+  }
+
+  /**
+   * Applies middleware transformations to a step, resolves ID collisions,
+   * and performs memoization lookup.
+   */
+  private async applyMiddlewareToStep(
+    opId: HashedOp,
+    expectedNextStepIndexes: Map<string, number>,
+    maybeWarnOfParallelIndexing: (userlandCollisionId: string) => void,
+  ): Promise<MiddlewareApplicationResult> {
+    // 1. Resolve initial collision with original ID
+    const initialCollision = resolveStepIdCollision({
+      baseId: opId.id,
+      expectedIndexes: expectedNextStepIndexes,
+      stepsMap: this.state.steps,
+    });
+    if (initialCollision.finalId !== opId.id) {
+      maybeWarnOfParallelIndexing(opId.id);
+      opId.id = initialCollision.finalId;
+      if (initialCollision.index !== undefined) {
+        opId.userland.index = initialCollision.index;
+      }
+    }
+
+    const originalId = opId.userland.id;
+    let hashedId = _internals.hashId(opId.id);
+
+    // 2. Apply middleware (stepKind, input extraction, deferred handler).
+    //    Pass preliminary memoization status so middleware sees it.
+    const prepared = await this.middlewareManager.applyToStep({
+      displayName: opId.displayName ?? opId.userland.id,
+      hashedId,
+      memoized:
+        Boolean(this.state.stepState[hashedId]) &&
+        typeof this.state.stepState[hashedId]?.input === "undefined",
+      op: opId.op,
+      opts: opId.opts,
+      userlandId: opId.userland.id,
+    });
+    const { entryPoint, opName, opOpts, setActualHandler, stepInfo } = prepared;
+
+    if (opName !== undefined) {
+      opId.name = opName;
+    }
+    if (opOpts !== undefined) {
+      opId.opts = opOpts;
+    }
+
+    // 3. If middleware changed the step ID, re-resolve collisions
+    if (stepInfo.options.id !== originalId) {
+      opId.id = stepInfo.options.id;
+      opId.userland.id = stepInfo.options.id;
+
+      const secondCollision = resolveStepIdCollision({
+        baseId: stepInfo.options.id,
+        expectedIndexes: expectedNextStepIndexes,
+        stepsMap: this.state.steps,
+      });
+      if (secondCollision.finalId !== stepInfo.options.id) {
+        opId.id = secondCollision.finalId;
+        opId.userland.id = secondCollision.finalId;
+        stepInfo.options.id = secondCollision.finalId;
+        if (secondCollision.index !== undefined) {
+          opId.userland.index = secondCollision.index;
+        }
+      }
+
+      // Recompute hashedId with final ID
+      hashedId = _internals.hashId(opId.id);
+      stepInfo.hashedId = hashedId;
+    }
+
+    // 4. Final memoization lookup with potentially modified hashedId.
+    //    Also marks step as seen and may trigger onMemoizationEnd.
+    const stepState = this.state.stepState[hashedId];
+    let isFulfilled = false;
+    if (stepState) {
+      stepState.seen = true;
+      this.state.remainingStepsToBeSeen.delete(hashedId);
+
+      if (this.state.allStateUsed()) {
+        await this.middlewareManager.onMemoizationEnd();
+      }
+
+      if (typeof stepState.input === "undefined") {
+        isFulfilled = true;
+      }
+      stepInfo.memoized = isFulfilled;
+    } else {
+      stepInfo.memoized = false;
+    }
+
+    // 5. Build wrapStep chain after all mutations so middleware sees final values
+    const wrappedHandler = this.middlewareManager.buildWrapStepChain(
+      entryPoint,
+      stepInfo,
+    );
+
+    return {
+      hashedId,
+      stepInfo,
+      wrappedHandler,
+      setActualHandler,
+      stepState,
+      isFulfilled,
+    };
   }
 
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
@@ -1715,10 +1834,7 @@ class InngestExecutionEngine
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
     void this.timeout.then(async () => {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
-      await this.state.hooks?.afterExecution?.();
-
+      await this.middlewareManager.onMemoizationEnd();
       state.setCheckpoint({
         type: "step-not-found",
         step: {
@@ -1751,10 +1867,7 @@ class InngestExecutionEngine
         this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
 
         void this.checkpointingMaxRuntimeTimer.then(async () => {
-          await this.state.hooks?.afterMemoization?.();
-          await this.state.hooks?.beforeExecution?.();
-          await this.state.hooks?.afterExecution?.();
-
+          await this.middlewareManager.onMemoizationEnd();
           state.setCheckpoint({
             type: "checkpointing-runtime-reached",
           });
@@ -1795,45 +1908,6 @@ class InngestExecutionEngine
         });
       }
     }
-  }
-
-  private async initializeMiddleware(): Promise<RunHookStack> {
-    const ctx = this.options.data as Pick<
-      Readonly<BaseContext<Inngest.Any>>,
-      "event" | "events" | "runId"
-    >;
-
-    const hooks = await getHookStack(
-      this.options.fn["middleware"],
-      "onFunctionRun",
-      {
-        ctx,
-        fn: this.options.fn,
-        steps: Object.values(this.options.stepState),
-        reqArgs: this.options.reqArgs,
-      },
-      {
-        transformInput: (prev, output) => {
-          return {
-            ctx: { ...prev.ctx, ...output?.ctx },
-            fn: this.options.fn,
-            steps: prev.steps.map((step, i) => ({
-              ...step,
-              ...output?.steps?.[i],
-            })),
-            reqArgs: prev.reqArgs,
-          };
-        },
-        transformOutput: (prev, output) => {
-          return {
-            result: { ...prev.result, ...output?.result },
-            step: prev.step,
-          };
-        },
-      },
-    );
-
-    return hooks;
   }
 }
 
@@ -1927,15 +2001,6 @@ export interface ExecutionState {
   setCheckpoint: (data: Checkpoint) => void;
 
   /**
-   * Initialized middleware hooks for this execution.
-   *
-   * Middleware hooks are cached to ensure they can only be run once, which
-   * means that these hooks can be called in many different places to ensure we
-   * handle all possible execution paths.
-   */
-  hooks?: RunHookStack;
-
-  /**
    * Returns whether or not all state passed from the executor has been used to
    * fulfill found steps.
    */
@@ -2002,6 +2067,77 @@ const hashOp = (op: OutgoingOp): OutgoingOp => {
 };
 
 /**
+ * Result of resolving a step ID collision.
+ */
+interface CollisionResolutionResult {
+  /** The final ID to use (either original or with index suffix). */
+  finalId: string;
+
+  /** The index used, if collision was detected. */
+  index?: number;
+}
+
+/** Result of applying middleware to a step. */
+interface MiddlewareApplicationResult {
+  hashedId: string;
+  isFulfilled: boolean;
+  setActualHandler: (handler: () => Promise<unknown>) => void;
+  stepInfo: Middleware.StepInfo;
+  stepState: MemoizedOp | undefined;
+  wrappedHandler: () => Promise<unknown>;
+}
+
+/**
+ * Resolves step ID collisions by appending an index suffix if needed.
+ * Consolidates the duplicated collision detection logic.
+ *
+ * @param baseId - The original step ID
+ * @param stepsMap - Map of existing steps (keyed by hashed ID)
+ * @param expectedIndexes - Map tracking expected next index for each base ID
+ * @returns The final ID to use and optional index
+ */
+function resolveStepIdCollision({
+  baseId,
+  expectedIndexes,
+  stepsMap,
+}: {
+  baseId: string;
+  expectedIndexes: Map<string, number>;
+  stepsMap: Map<string, FoundStep>;
+}): CollisionResolutionResult {
+  const hashedBaseId = hashId(baseId);
+
+  // Check both stepsMap (steps added to state) and expectedIndexes (claimed by
+  // concurrent in-progress step handlers that haven't been added to state yet).
+  if (!stepsMap.has(hashedBaseId) && !expectedIndexes.has(baseId)) {
+    // No collision. Claim this base ID so concurrent callers detect collision.
+    expectedIndexes.set(baseId, 1);
+    return { finalId: baseId };
+  }
+
+  // Collision detected. Find next available index
+  const expectedNextIndex = expectedIndexes.get(baseId) ?? 1;
+  const maxIndex = expectedNextIndex + stepsMap.size + 1;
+  for (let i = expectedNextIndex; i < maxIndex; i++) {
+    const indexedId = baseId + STEP_INDEXING_SUFFIX + i;
+    const hashedIndexedId = hashId(indexedId);
+
+    if (!stepsMap.has(hashedIndexedId)) {
+      expectedIndexes.set(baseId, i + 1);
+      return { finalId: indexedId, index: i };
+    }
+  }
+
+  throw new UnreachableError(
+    `Could not resolve step ID collision for "${baseId}" after ${stepsMap.size + 1} attempts`,
+  );
+}
+
+function isNonEmpty<T>(arr: T[]): arr is [T, ...T[]] {
+  return arr.length > 0;
+}
+
+/**
  * Exported for testing.
  */
-export const _internals = { hashOp, hashId };
+export const _internals = { hashOp, hashId, resolveStepIdCollision };

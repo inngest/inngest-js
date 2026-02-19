@@ -413,3 +413,7 @@ export type KnownKeys<T> = keyof {
  * skew extension checks.
  */
 export type Public<T> = { [K in keyof T]: T[K] };
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

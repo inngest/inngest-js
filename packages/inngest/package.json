@@ -15,6 +15,7 @@
     "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.config.integration.ts",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
@@ -30,7 +31,7 @@
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run lint'",
     "local:pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest.tgz",
     "dev:example": "tsx scripts/runExample.ts",
-    "bench": "tsx test/benchmark/main.ts"
+    "bench": "vitest bench --run --config vitest.config.bench.ts"
   },
   "exports": {
     ".": {

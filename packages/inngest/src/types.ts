@@ -11,21 +11,19 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
-import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
+import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type { createGroupTools } from "./components/InngestGroupTools.ts";
-import type {
-  ExtendSendEventWithMiddleware,
-  InngestMiddleware,
-} from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
+import type { Middleware } from "./components/middleware/index.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,
 } from "./components/triggers/triggers.ts";
 import type { internalEvents } from "./helpers/consts.ts";
+import type { Jsonify } from "./helpers/jsonify.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -670,11 +668,172 @@ export type SendEventOutput<TOpts extends ClientOptions> = Omit<
 > &
   SendEventOutputWithMiddleware<TOpts>;
 
-export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
-  ExtendSendEventWithMiddleware<
-    [typeof builtInMiddleware, NonNullable<TOpts["middleware"]>],
-    SendEventBaseOutput
-  >;
+export type SendEventOutputWithMiddleware<_TOpts extends ClientOptions> =
+  SendEventBaseOutput;
+
+/**
+ * Discriminator for which output transform to extract from middleware.
+ */
+type TransformKind = "functionOutputTransform" | "stepOutputTransform";
+
+/**
+ * Extract the `functionOutputTransform` from a middleware class.
+ */
+type GetMiddlewareRunTransformer<TMw> = TMw extends Middleware.Class
+  ? InstanceType<TMw> extends {
+      functionOutputTransform: infer TTransform extends
+        Middleware.StaticTransform;
+    }
+    ? TTransform
+    : Middleware.DefaultStaticTransform
+  : Middleware.DefaultStaticTransform;
+
+/**
+ * Extract the `stepOutputTransform` from a middleware class.
+ */
+type GetMiddlewareStepTransformer<TMw> = TMw extends Middleware.Class
+  ? InstanceType<TMw> extends {
+      stepOutputTransform: infer TTransform extends Middleware.StaticTransform;
+    }
+    ? TTransform
+    : Middleware.DefaultStaticTransform
+  : Middleware.DefaultStaticTransform;
+
+/**
+ * Dispatch to the correct transformer extractor based on `TKind`.
+ */
+type GetMiddlewareTransformerByKind<
+  TMw,
+  TKind extends TransformKind,
+> = TKind extends "functionOutputTransform"
+  ? GetMiddlewareRunTransformer<TMw>
+  : GetMiddlewareStepTransformer<TMw>;
+
+/**
+ * Apply all middleware transforms in sequence.
+ * Each middleware's transform is applied to the result of the previous one.
+ * When no middleware is provided, applies Jsonify as the default transform.
+ */
+export type ApplyAllMiddlewareTransforms<
+  TMw extends Middleware.Class[] | undefined,
+  T,
+  TKind extends TransformKind = "stepOutputTransform",
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
+  ? ApplyMiddlewareTransformsInternal<TMw, T, TKind>
+  : Jsonify<T>; // No middleware or empty array - apply default Jsonify
+
+/**
+ * Internal helper that recursively applies middleware transforms.
+ * Does NOT apply Jsonify at the end, as that's only for the no-middleware case.
+ *
+ * Processes from the end of the array first to match the runtime onion model:
+ * the last middleware in the array is innermost and transforms first, while the
+ * first middleware is outermost and transforms last. For `[MW1, MW2]` with
+ * input `T`, this gives `MW1(MW2(T))`.
+ */
+type ApplyMiddlewareTransformsInternal<
+  TMw extends Middleware.Class[] | undefined,
+  T,
+  TKind extends TransformKind,
+> = TMw extends [...infer Rest extends Middleware.Class[], infer Last]
+  ? ApplyMiddlewareTransformsInternal<
+      Rest,
+      ApplyMiddlewareStaticTransform<
+        GetMiddlewareTransformerByKind<Last, TKind>,
+        T
+      >,
+      TKind
+    >
+  : T;
+
+/**
+ * Apply the output transformation using the In/Out interface pattern.
+ *
+ * @example
+ * ```ts
+ * interface PreserveDate extends MiddlewareStaticTransform {
+ *   Out: this["In"] extends Date ? Date : Jsonify<this["In"]>;
+ * }
+ *
+ * // ApplyStaticTransform<PreserveDate, Date> = Date
+ * ```
+ */
+export type ApplyMiddlewareStaticTransform<
+  TTransformer extends { In: unknown; Out: unknown },
+  T,
+> = (TTransformer & { In: T })["Out"];
+
+/**
+ * Extract the context extensions from a middleware class (constructor).
+ * Looks at the return type of `transformFunctionInput` and extracts additional
+ * properties on `ctx` (excluding base `TransformFunctionInputArgs["ctx"]` properties).
+ */
+type GetMiddlewareCtxExtensions<T> = T extends Middleware.Class
+  ? InstanceType<T> extends {
+      transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
+        ctx: infer TCtx;
+      };
+    }
+    ? Omit<TCtx, keyof Middleware.TransformFunctionInputArgs["ctx"]>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware context extensions.
+ * Each middleware's ctx extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareCtxExtensions<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
+  ? ApplyMiddlewareCtxExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware ctx extensions.
+ */
+type ApplyMiddlewareCtxExtensionsInternal<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
+  ? GetMiddlewareCtxExtensions<First> &
+      ApplyMiddlewareCtxExtensionsInternal<Rest>
+  : {};
+
+/**
+ * Extract the step extensions from a middleware class (constructor).
+ * Looks at the return type of `transformFunctionInput` and extracts additional
+ * properties on `ctx.step` (excluding base `StepTools` properties).
+ */
+type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
+  ? InstanceType<T> extends {
+      transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
+        ctx: { step: infer TStep };
+      };
+    }
+    ? Omit<TStep, keyof Middleware.StepTools>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware step extensions.
+ * Each middleware's step extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareStepExtensions<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
+  ? ApplyMiddlewareStepExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware step extensions.
+ */
+type ApplyMiddlewareStepExtensionsInternal<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
+  ? GetMiddlewareStepExtensions<First> &
+      ApplyMiddlewareStepExtensionsInternal<Rest>
+  : {};
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
@@ -793,7 +952,12 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
-  middleware?: InngestMiddleware.Stack;
+  /**
+   * Middleware classes that provide simpler hooks for common operations.
+   * Each class is instantiated fresh per-request so that middleware can safely
+   * use `this` for request-scoped state.
+   */
+  middleware?: Middleware.Class[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will
@@ -1631,8 +1795,6 @@ type HasTriggerWithSchema<T extends readonly unknown[]> = T extends readonly [
 export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
 > = TFunction extends InngestFunction<
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional

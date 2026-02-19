@@ -15,7 +15,7 @@ const clearConsole = () => {
 };
 
 import { fromPartial } from "@total-typescript/shoehorn";
-import type { Mock, MockInstance } from "vitest";
+import type { Mock } from "vitest";
 import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
@@ -25,7 +25,7 @@ import {
 import type { IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
-  InngestMiddleware,
+  Middleware,
   NonRetriableError,
   RetryAfterError,
 } from "../index.ts";
@@ -72,34 +72,20 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
    * middleware to run.
    */
   middleware: [
-    new InngestMiddleware({
-      name: "Mock",
-      init: () => {
-        const mockHook = () =>
-          new Promise<void>((resolve) => setTimeout(() => setTimeout(resolve)));
+    class MockMiddleware extends Middleware.BaseMiddleware {
+      #delay() {
+        return new Promise<void>((resolve) =>
+          setTimeout(() => setTimeout(resolve)),
+        );
+      }
 
-        return {
-          onFunctionRun: () => {
-            return {
-              afterExecution: mockHook,
-              afterMemoization: mockHook,
-              beforeExecution: mockHook,
-              beforeMemoization: mockHook,
-              beforeResponse: mockHook,
-              transformInput: mockHook,
-              transformOutput: mockHook,
-              finished: mockHook,
-            };
-          },
-          onSendEvent: () => {
-            return {
-              transformInput: mockHook,
-              transformOutput: mockHook,
-            };
-          },
-        };
-      },
-    }),
+      override async wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
+        await this.#delay();
+        return next();
+      }
+    },
   ],
 });
 
@@ -144,15 +130,14 @@ describe("runFn", () => {
         describe("success", () => {
           let fn: InngestFunction.Any;
           let ret: ExecutionResult;
-          let flush: MockInstance<() => void>;
 
           beforeAll(async () => {
             vi.restoreAllMocks();
-            flush = vi
-              .spyOn(ProxyLogger.prototype, "flush")
-              .mockImplementation(async () => {
+            vi.spyOn(ProxyLogger.prototype, "flush").mockImplementation(
+              async () => {
                 /* noop */
-              });
+              },
+            );
 
             fn = new InngestFunction(
               createClient(opts),
@@ -186,10 +171,6 @@ describe("runFn", () => {
             expect((ret as ExecutionResults["function-resolved"]).data).toBe(
               stepRet,
             );
-          });
-
-          test("should attempt to flush logs", () => {
-            expect(flush).toHaveBeenCalledTimes(1);
           });
         });
 
@@ -292,18 +273,11 @@ describe("runFn", () => {
             let tools: T;
             let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
             let retErr: Error | undefined;
-            let flush: MockInstance<() => void>;
-
             beforeAll(() => {
               vi.restoreAllMocks();
               vi.resetModules();
               clearLogger();
               clearConsole();
-              flush = vi
-                .spyOn(ProxyLogger.prototype, "flush")
-                .mockImplementation(async () => {
-                  /* noop */
-                });
               hashDataSpy = getHashDataSpy();
               tools = createTools();
             });
@@ -395,11 +369,6 @@ describe("runFn", () => {
                   expect(step).not.toHaveBeenCalled();
                 }
               });
-            });
-
-            test("should attempt to flush logs", () => {
-              // could be flushed multiple times so no specifying counts
-              expect(flush).toHaveBeenCalled();
             });
 
             if (
@@ -2026,542 +1995,10 @@ describe("runFn", () => {
     });
   });
 
-  describe("sync mode (checkpointing) middleware", () => {
-    // Helper to create a mock ActionResponse for sync mode tests
-    const mockCreateResponse = (data: unknown) => ({
-      status: 200,
-      headers: {},
-      body: JSON.stringify(data),
-      version: PREFERRED_ASYNC_EXECUTION_VERSION,
-    });
-
-    describe("function-resolved", () => {
-      test("should call transformOutput middleware in sync mode", async () => {
-        const transformOutputMock = vi.fn(({ result }) => ({
-          result: {
-            ...result,
-            data: {
-              ...result.data,
-              __extra: true,
-            },
-          },
-        }));
-
-        const clientWithMiddleware = createClient({
-          ...opts,
-          middleware: [
-            new InngestMiddleware({
-              name: "TestTransformOutput",
-              init: () => ({
-                onFunctionRun: () => ({
-                  transformOutput: transformOutputMock,
-                }),
-              }),
-            }),
-          ],
-        });
-
-        // Mock the checkpoint API to prevent actual HTTP calls
-        Object.defineProperty(clientWithMiddleware, "inngestApi", {
-          value: {
-            checkpointNewRun: vi.fn().mockResolvedValue({
-              data: { app_id: "app", fn_id: "fn", token: "token" },
-            }),
-            checkpointSteps: vi.fn().mockResolvedValue({}),
-          },
-          writable: true,
-        });
-
-        const fn = new InngestFunction(
-          clientWithMiddleware,
-          { id: "SyncTransformTest", triggers: [{ event: "foo" }] },
-          () => {
-            return { result: "success" };
-          },
-        );
-
-        const execution = fn["createExecution"]({
-          partialOptions: {
-            client: fn["client"],
-            data: fromPartial({
-              event: { name: "foo", data: { foo: "foo" } },
-            }),
-            runId: "run",
-            stepState: {},
-            stepCompletionOrder: [],
-            reqArgs: [],
-            headers: {},
-            stepMode: StepMode.Sync,
-            createResponse: mockCreateResponse,
-          },
-        });
-
-        const result = await execution.start();
-
-        expect(result.type).toBe("function-resolved");
-        // In sync mode, transformOutput is called twice:
-        // 1. Once to transform data for checkpointing
-        // 2. Once to transform data for the SDK return value
-        expect(transformOutputMock).toHaveBeenCalledTimes(2);
-        expect(transformOutputMock).toHaveBeenCalledWith(
-          expect.objectContaining({
-            result: expect.objectContaining({
-              data: { result: "success" },
-            }),
-          }),
-        );
-        // @ts-expect-error - result.data is not defined
-        expect(result.data).toMatchObject({
-          result: "success",
-          __extra: true,
-        });
-      });
-    });
-
-    describe("function-rejected", () => {
-      test("should call transformOutput middleware in sync mode on final attempt", async () => {
-        const transformOutputMock = vi.fn(({ result }) => ({ result }));
-
-        const clientWithMiddleware = createClient({
-          ...opts,
-          middleware: [
-            new InngestMiddleware({
-              name: "TestTransformOutput",
-              init: () => ({
-                onFunctionRun: () => ({
-                  transformOutput: transformOutputMock,
-                }),
-              }),
-            }),
-          ],
-        });
-
-        // Mock the checkpoint API to prevent actual HTTP calls
-        Object.defineProperty(clientWithMiddleware, "inngestApi", {
-          value: {
-            checkpointNewRun: vi.fn().mockResolvedValue({
-              data: { app_id: "app", fn_id: "fn", token: "token" },
-            }),
-            checkpointSteps: vi.fn().mockResolvedValue({}),
-          },
-          writable: true,
-        });
-
-        const testError = new Error("test error");
-
-        const fn = new InngestFunction(
-          clientWithMiddleware,
-          { id: "SyncTransformErrorTest", triggers: [{ event: "foo" }] },
-          () => {
-            throw testError;
-          },
-        );
-
-        const execution = fn["createExecution"]({
-          partialOptions: {
-            client: fn["client"],
-            data: fromPartial({
-              event: { name: "foo", data: { foo: "foo" } },
-              attempt: 2, // On attempt 2 with maxAttempts 3, this is the final attempt (2 + 1 >= 3)
-              maxAttempts: 3,
-            }),
-            runId: "run",
-            stepState: {},
-            stepCompletionOrder: [],
-            reqArgs: [],
-            headers: {},
-            stepMode: StepMode.Sync,
-            createResponse: mockCreateResponse,
-          },
-        });
-
-        const result = await execution.start();
-
-        expect(result.type).toBe("function-rejected");
-        expect(transformOutputMock).toHaveBeenCalledTimes(1);
-        expect(transformOutputMock).toHaveBeenCalledWith(
-          expect.objectContaining({
-            result: expect.objectContaining({
-              error: testError,
-            }),
-          }),
-        );
-      });
-    });
-
-    describe("step data transformation", () => {
-      test("should call transformOutput middleware for step data in sync mode (v2)", async () => {
-        const transformOutputMock = vi.fn(({ result }) => {
-          // Transform the data (simulating encryption)
-          if (result.data !== undefined) {
-            return {
-              result: { data: { encrypted: true, original: result.data } },
-            };
-          }
-          return { result };
-        });
-
-        const clientWithMiddleware = createClient({
-          ...opts,
-          middleware: [
-            new InngestMiddleware({
-              name: "TestTransformOutput",
-              init: () => ({
-                onFunctionRun: () => ({
-                  transformOutput: transformOutputMock,
-                }),
-              }),
-            }),
-          ],
-        });
-
-        const checkpointNewRun = vi.fn().mockResolvedValue({
-          data: {
-            app_id: "test",
-            fn_id: "SyncStepTransformTest",
-            token: "token",
-          },
-        });
-        const checkpointSteps = vi.fn().mockResolvedValue({});
-
-        // Mock the checkpoint API to prevent actual HTTP calls
-        Object.defineProperty(clientWithMiddleware, "inngestApi", {
-          value: {
-            checkpointNewRun,
-            checkpointSteps,
-          },
-          writable: true,
-        });
-
-        const fn = new InngestFunction(
-          clientWithMiddleware,
-          {
-            id: "SyncStepTransformTest",
-            triggers: [{ event: "foo" }],
-            checkpointing: true,
-          },
-          async ({ step }) => {
-            const result = await step.run("test-step", () => {
-              return { stepData: "hello" };
-            });
-            return { final: result };
-          },
-        );
-
-        const execution = fn["createExecution"]({
-          partialOptions: {
-            client: fn["client"],
-            data: fromPartial({
-              runId: "01KG8JS019P1M1H0N3H6N8Q761",
-              event: { name: "foo", data: { foo: "foo" } },
-            }),
-            runId: "01KG8JS019P1M1H0N3H6N8Q761",
-            stepState: {},
-            stepCompletionOrder: [],
-            reqArgs: [],
-            headers: {},
-            stepMode: StepMode.Sync,
-            createResponse: mockCreateResponse,
-            checkpointingConfig: {
-              maxRuntime: "60s",
-              bufferedSteps: 1,
-              maxInterval: "1s",
-            },
-          },
-        });
-
-        await execution.start();
-
-        // In sync mode with checkpointing, the result type depends on whether
-        // we switch to async or not. Since we have a step, we expect the
-        // execution to eventually complete or checkpoint.
-        // The transformOutput should be called for the step result.
-        expect(transformOutputMock).toHaveBeenCalled();
-
-        // Verify that transformOutput was called with step data
-        const calls = transformOutputMock.mock.calls;
-        const stepDataCall = calls.find(
-          (call) =>
-            call[0]?.result?.data !== undefined &&
-            typeof call[0]?.result?.data === "object" &&
-            "stepData" in call[0].result.data,
-        );
-        expect(stepDataCall).toBeDefined();
-        expect(checkpointNewRun).toHaveBeenCalledWith(
-          expect.objectContaining({
-            steps: expect.arrayContaining([
-              expect.objectContaining({
-                data: { encrypted: true, original: { stepData: "hello" } },
-              }),
-            ]),
-          }),
-        );
-        expect(checkpointSteps).toHaveBeenCalledWith({
-          appId: "test",
-          runId: "01KG8JS019P1M1H0N3H6N8Q761",
-          fnId: "SyncStepTransformTest",
-          steps: [
-            {
-              id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
-              op: "RunComplete",
-              data: {
-                // The final function result is { final: { stepData: "hello" } }
-                // which gets encrypted by transformOutput middleware
-                body: '{"encrypted":true,"original":{"final":{"stepData":"hello"}}}',
-                headers: {},
-                status: 200,
-                version: 2,
-              },
-            },
-          ],
-        });
-      });
-
-      test("should call transformOutput middleware for step data in sync mode (v1)", async () => {
-        const transformOutputMock = vi.fn(({ result }) => {
-          // Transform the data (simulating encryption)
-          if (result.data !== undefined) {
-            return {
-              result: { data: { encrypted: true, original: result.data } },
-            };
-          }
-          return { result };
-        });
-
-        const clientWithMiddleware = createClient({
-          ...opts,
-          middleware: [
-            new InngestMiddleware({
-              name: "TestTransformOutput",
-              init: () => ({
-                onFunctionRun: () => ({
-                  transformOutput: transformOutputMock,
-                }),
-              }),
-            }),
-          ],
-        });
-
-        const checkpointNewRun = vi.fn().mockResolvedValue({
-          data: {
-            app_id: "test",
-            fn_id: "SyncStepTransformTest",
-            token: "token",
-          },
-        });
-        const checkpointSteps = vi.fn().mockResolvedValue({});
-
-        // Mock the checkpoint API to prevent actual HTTP calls
-        Object.defineProperty(clientWithMiddleware, "inngestApi", {
-          value: {
-            checkpointNewRun,
-            checkpointSteps,
-          },
-          writable: true,
-        });
-
-        const fn = new InngestFunction(
-          clientWithMiddleware,
-          {
-            id: "SyncStepTransformTest",
-            triggers: [{ event: "foo" }],
-            checkpointing: true,
-          },
-          async ({ step }) => {
-            const result = await step.run("test-step", () => {
-              return { stepData: "hello" };
-            });
-            return { final: result };
-          },
-        );
-
-        const execution = fn["createExecution"]({
-          partialOptions: {
-            client: fn["client"],
-            data: fromPartial({
-              runId: "01KG8JS019P1M1H0N3H6N8Q761",
-              event: { name: "foo", data: { foo: "foo" } },
-            }),
-            runId: "01KG8JS019P1M1H0N3H6N8Q761",
-            stepState: {},
-            stepCompletionOrder: [],
-            reqArgs: [],
-            headers: {},
-            stepMode: StepMode.Sync,
-            createResponse: mockCreateResponse,
-            checkpointingConfig: {
-              maxRuntime: "60s",
-              bufferedSteps: 1,
-              maxInterval: "1s",
-            },
-          },
-        });
-
-        await execution.start();
-
-        // In sync mode with checkpointing, the result type depends on whether
-        // we switch to async or not. Since we have a step, we expect the
-        // execution to eventually complete or checkpoint.
-        // The transformOutput should be called for the step result.
-        expect(transformOutputMock).toHaveBeenCalled();
-
-        // Verify that transformOutput was called with step data
-        const calls = transformOutputMock.mock.calls;
-        const stepDataCall = calls.find(
-          (call) =>
-            call[0]?.result?.data !== undefined &&
-            typeof call[0]?.result?.data === "object" &&
-            "stepData" in call[0].result.data,
-        );
-        expect(stepDataCall).toBeDefined();
-        expect(checkpointNewRun).toHaveBeenCalledWith(
-          expect.objectContaining({
-            steps: expect.arrayContaining([
-              expect.objectContaining({
-                data: { encrypted: true, original: { stepData: "hello" } },
-              }),
-            ]),
-          }),
-        );
-        expect(checkpointSteps).toHaveBeenCalledWith({
-          appId: "test",
-          runId: "01KG8JS019P1M1H0N3H6N8Q761",
-          fnId: "SyncStepTransformTest",
-          steps: [
-            {
-              id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
-              op: "RunComplete",
-              data: {
-                // The final function result is { final: { stepData: "hello" } }
-                // which gets encrypted by transformOutput middleware
-                body: '{"encrypted":true,"original":{"final":{"stepData":"hello"}}}',
-                headers: {},
-                status: 200,
-                version: 2,
-              },
-            },
-          ],
-        });
-      });
-
-      test("should call transformOutput middleware for step data in async checkpointing mode", async () => {
-        const transformOutputMock = vi.fn(({ result }) => {
-          // Transform the data (simulating encryption)
-          if (result.data !== undefined) {
-            return {
-              result: { data: { encrypted: true, original: result.data } },
-            };
-          }
-          return { result };
-        });
-
-        const clientWithMiddleware = createClient({
-          ...opts,
-          middleware: [
-            new InngestMiddleware({
-              name: "TestTransformOutput",
-              init: () => ({
-                onFunctionRun: () => ({
-                  transformOutput: transformOutputMock,
-                }),
-              }),
-            }),
-          ],
-        });
-
-        const checkpointNewRun = vi.fn().mockResolvedValue({
-          data: {
-            app_id: "app",
-            fn_id: "fn",
-            token: "token",
-          },
-        });
-        const checkpointSteps = vi.fn().mockResolvedValue({});
-        const checkpointStepsAsync = vi.fn().mockResolvedValue({});
-
-        // Mock the checkpoint API to prevent actual HTTP calls
-        Object.defineProperty(clientWithMiddleware, "inngestApi", {
-          value: {
-            checkpointNewRun,
-            checkpointSteps,
-            checkpointStepsAsync,
-          },
-          writable: true,
-        });
-
-        const fn = new InngestFunction(
-          clientWithMiddleware,
-          {
-            id: "AsyncCheckpointStepTransformTest",
-            triggers: [{ event: "foo" }],
-            checkpointing: true,
-          },
-          async ({ step }) => {
-            await step.run("test-step", () => {
-              return { stepData: "hello" };
-            });
-            return { final: true };
-          },
-        );
-
-        const execution = fn["createExecution"]({
-          partialOptions: {
-            client: fn["client"],
-            data: fromPartial({
-              event: { name: "foo", data: { foo: "foo" } },
-            }),
-            runId: "run",
-            stepState: {},
-            stepCompletionOrder: [],
-            reqArgs: [],
-            headers: {},
-            stepMode: StepMode.AsyncCheckpointing,
-            queueItemId: "queue-item-id",
-            internalFnId: "internal-fn-id",
-          },
-        });
-
-        const executionResult = await execution.start();
-
-        // In async checkpointing mode, transformOutput should be called for step data
-        expect(transformOutputMock).toHaveBeenCalled();
-
-        // Verify that transformOutput was called with step data
-        const calls = transformOutputMock.mock.calls;
-        const stepDataCall = calls.find(
-          (call) =>
-            call[0]?.result?.data !== undefined &&
-            typeof call[0]?.result?.data === "object" &&
-            "stepData" in call[0].result.data,
-        );
-
-        expect(stepDataCall).toBeDefined();
-        // Async checkpointing uses checkpointStepsAsync, not checkpointNewRun or checkpointSteps
-        expect(checkpointStepsAsync).toHaveBeenCalledTimes(1);
-        expect(checkpointStepsAsync).toHaveBeenCalledWith(
-          expect.objectContaining({
-            steps: expect.arrayContaining([
-              expect.objectContaining({
-                data: { encrypted: true, original: { stepData: "hello" } },
-              }),
-            ]),
-          }),
-        );
-        expect(executionResult).toMatchObject({
-          type: "steps-found",
-          steps: expect.arrayContaining([
-            expect.objectContaining({
-              op: StepOpCode.RunComplete,
-              data: {
-                encrypted: true,
-                original: { final: true },
-              },
-            }),
-          ]),
-        });
-      });
-    });
-  });
+  // TODO: Rewrite sync mode middleware tests with new middleware system.
+  // The old InngestMiddleware transformOutput tests were removed because
+  // the new Middleware.BaseMiddleware system uses different hooks.
+  describe.todo("sync mode (checkpointing) middleware");
 });
 
 describe("PREFERRED execution version constants", () => {

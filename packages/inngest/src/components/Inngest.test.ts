@@ -8,7 +8,7 @@ import {
   type GetFunctionOutput,
   type GetStepTools,
   Inngest,
-  InngestMiddleware,
+  Middleware,
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
@@ -528,29 +528,22 @@ describe("send", () => {
         id: "test",
         eventKey: testEventKey,
         middleware: [
-          new InngestMiddleware({
-            name: "Test",
-            init() {
+          class extends Middleware.BaseMiddleware {
+            override transformSendEvent(
+              arg: Middleware.TransformSendEventArgs,
+            ) {
               return {
-                onSendEvent() {
-                  return {
-                    transformInput(ctx) {
-                      return {
-                        payloads: ctx.payloads.map((payload) => ({
-                          ...payload,
-
-                          data: {
-                            ...payload.data,
-                            bar: true,
-                          },
-                        })),
-                      };
-                    },
-                  };
-                },
+                ...arg,
+                events: arg.events.map((payload) => ({
+                  ...payload,
+                  data: {
+                    ...payload.data,
+                    bar: true,
+                  },
+                })),
               };
-            },
-          }),
+            }
+          },
         ],
       });
 
@@ -582,24 +575,16 @@ describe("send", () => {
         id: "test",
         eventKey: testEventKey,
         middleware: [
-          new InngestMiddleware({
-            name: "Test",
-            init() {
+          class extends Middleware.BaseMiddleware {
+            override async wrapSendEvent({
+              next,
+            }: Middleware.WrapSendEventArgs) {
+              const result = await next();
               return {
-                onSendEvent() {
-                  return {
-                    transformOutput({ result }) {
-                      return {
-                        result: {
-                          ids: result.ids.map((id) => `${id}-bar`),
-                        },
-                      };
-                    },
-                  };
-                },
+                ids: result.ids.map((id) => `${id}-bar`),
               };
-            },
-          }),
+            }
+          },
         ],
       });
 
@@ -899,18 +884,19 @@ describe("helper types", () => {
   const inngest = new Inngest({
     id: "test",
     middleware: [
-      new InngestMiddleware({
-        name: "",
-        init: () => ({
-          onFunctionRun: () => ({
-            transformInput: () => ({
-              ctx: {
-                foo: "bar",
-              } as const,
-            }),
-          }),
-        }),
-      }),
+      class extends Middleware.BaseMiddleware {
+        override transformFunctionInput(
+          arg: Middleware.TransformFunctionInputArgs,
+        ) {
+          return {
+            ...arg,
+            ctx: {
+              ...arg.ctx,
+              foo: "bar" as const,
+            },
+          };
+        }
+      },
     ],
   });
 
@@ -1011,6 +997,46 @@ describe("helper types", () => {
       type Actual = GetFunctionOutput<typeof ref>;
 
       assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("applies functionOutputTransform from client middleware", () => {
+      // A custom transform that preserves Date instead of Jsonify-ing to string
+      interface PreserveDate extends Middleware.StaticTransform {
+        Out: this["In"] extends Date ? Date : this["In"];
+      }
+
+      class DateMiddleware extends Middleware.BaseMiddleware {
+        declare functionOutputTransform: PreserveDate;
+      }
+
+      const mwClient = new Inngest({
+        id: "test",
+        middleware: [DateMiddleware],
+      });
+
+      const fn = mwClient.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async () => {
+          return new Date() as Date;
+        },
+      );
+
+      // With the middleware, Date should be preserved (not turned into string)
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Actual, Date>>(true);
+    });
+
+    test("falls back to Jsonify when no middleware declares functionOutputTransform", () => {
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async () => {
+          return { date: new Date(), value: "hello" as const };
+        },
+      );
+
+      // Date becomes string via Jsonify, string literal preserved
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Actual, { date: string; value: "hello" }>>(true);
     });
   });
 

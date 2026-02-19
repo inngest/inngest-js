@@ -2,7 +2,7 @@ import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
 import { getLogger } from "../../../helpers/log.ts";
 import { version } from "../../../version.ts";
-import { InngestMiddleware } from "../../InngestMiddleware.ts";
+import { Middleware } from "../../middleware/middleware.ts";
 import { clientProcessorMap } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
@@ -136,14 +136,14 @@ export const extendedTracesMiddleware = ({
     }
   }
 
-  return new InngestMiddleware({
-    name: "Inngest: Extended Traces",
-    init({ client }) {
+  class ExtendedTracesMiddleware extends Middleware.BaseMiddleware {
+    /**
+     * Called by the Inngest constructor to associate the processor with the
+     * client. Replaces the old `init({ client })` hook.
+     */
+    static override onRegister({ client }: Middleware.OnRegisterArgs) {
       // Set the logger for our otel processors and exporters.
-      // If this is called multiple times (for example by the user in some other
-      // custom code), then only the first call is set, so we don't have to
-      // worry about overwriting it here accidentally.
-      //
+      // If this is called multiple times, only the first call is set.
       debug(
         "set otel diagLogger:",
         diag.setLogger(new InngestTracesLogger(), logLevel),
@@ -152,34 +152,24 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       }
+    }
 
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ) {
       return {
-        onFunctionRun() {
-          return {
-            transformInput() {
-              return {
-                ctx: {
-                  /**
-                   * A tracer that can be used to create spans within a step
-                   * that will be displayed on the Inngest dashboard (or Dev
-                   * Server).
-                   *
-                   * Note that creating spans outside of steps when the function
-                   * contains `step.*()` calls is not currently supported.
-                   */
-                  tracer: trace.getTracer("inngest", version),
-                },
-              };
-            },
-
-            async beforeResponse() {
-              // Should this be awaited? And is it fine to flush after every
-              // execution?
-              await processor?.forceFlush();
-            },
-          };
+        ...arg,
+        ctx: {
+          ...arg.ctx,
+          tracer: trace.getTracer("inngest", version),
         },
       };
-    },
-  });
+    }
+
+    override wrapRequest({ next }: Middleware.WrapRequestArgs) {
+      return next().finally(() => processor?.forceFlush());
+    }
+  }
+
+  return ExtendedTracesMiddleware;
 };

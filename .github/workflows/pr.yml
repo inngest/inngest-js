@@ -142,6 +142,17 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run test:composite
 
+  itest:
+    name: "itest"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:integration
+
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
     runs-on: ubuntu-latest

@@ -1,11 +1,9 @@
-import { InngestMiddleware } from "../components/InngestMiddleware.ts";
+import { Middleware } from "../components/middleware/middleware.ts";
 
 /**
  * Adds properties to the function input for every function created using this
  * app.
  */
-// We can use `const` here yet due to TS constraints.
-
 // biome-ignore lint/suspicious/noExplicitAny: unknown can be troublesome here
 export const dependencyInjectionMiddleware = <TCtx extends Record<string, any>>(
   /**
@@ -13,20 +11,19 @@ export const dependencyInjectionMiddleware = <TCtx extends Record<string, any>>(
    */
   ctx: TCtx,
 ) => {
-  return new InngestMiddleware({
-    name: "Inngest: Dependency Injection",
-    init() {
+  class DependencyInjectionMiddleware extends Middleware.BaseMiddleware {
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ): Middleware.TransformFunctionInputArgs & { ctx: TCtx } {
       return {
-        onFunctionRun() {
-          return {
-            transformInput() {
-              return {
-                ctx,
-              };
-            },
-          };
+        ...arg,
+        ctx: {
+          ...arg.ctx,
+          ...ctx,
         },
       };
-    },
-  });
+    }
+  }
+
+  return DependencyInjectionMiddleware;
 };

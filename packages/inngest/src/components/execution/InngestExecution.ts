@@ -17,6 +17,7 @@ import type {
   MetadataOpcode,
   MetadataScope,
 } from "../InngestMetadata.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -125,6 +126,19 @@ export interface InngestExecutionOptions {
   timer?: ServerTiming;
   isFailureHandler?: boolean;
   disableImmediateExecution?: boolean;
+
+  /**
+   * Information about the incoming HTTP request that triggered this execution.
+   * Used by middleware `wrapRequest` hooks.
+   */
+  requestInfo?: Middleware.Request;
+
+  /**
+   * Pre-created middleware instances to use for this execution. When provided,
+   * the execution will use these instead of instantiating new ones from the
+   * client. This ensures `wrapRequest` and other hooks share state on `this`.
+   */
+  middlewareInstances?: Middleware.BaseMiddleware[];
 
   /**
    * Provide the ability to transform the context passed to the function before

@@ -398,7 +398,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    * are currently in the batcher. This is used to ensure that spans are
    * exported to the Inngest endpoint before the process exits.
    *
-   * Notably, we call this in the `beforeResponse` middleware hook to ensure
+   * Notably, we call this in the `wrapRequest` middleware hook to ensure
    * that spans for a run as exported as soon as possible and before the
    * serverless process is killed.
    */

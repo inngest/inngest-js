@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: it's fine
+
 const alsSymbol = Symbol.for("inngest:als");
 
 /**
@@ -157,7 +159,6 @@ describe("getLogger", () => {
       },
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
     await t.execute();
 
@@ -184,12 +185,144 @@ describe("getLogger", () => {
       },
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
     const { result } = await t.execute();
 
     expect(result).toBe("done");
     expect(loggerFromHelper).toBe(loggerFromCtx);
+  });
+});
+
+describe("builtInMiddleware", () => {
+  afterEach(() => {
+    vi.resetModules();
+    delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
+  });
+
+  // Flush behavior is tested in src/test/integration/logger.test.ts where
+  // wrapRequest (the flush mechanism) is exercised through the full HTTP stack.
+
+  test("forwards log calls to underlying logger during execution", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "" }] },
+      ({ logger }) => {
+        logger.info("hello");
+        return "done";
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(customLogger.info).toHaveBeenCalledWith("hello");
+  });
+
+  test("logs errors on function failure", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const err = new Error("boom");
+    const fn = inngest.createFunction(
+      { id: "test", retries: 0, triggers: [{ event: "" }] },
+      () => {
+        throw err;
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(customLogger.error).toHaveBeenCalledWith(err);
+  });
+
+  test("creates child logger when .child() is available", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const childLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      child: vi.fn().mockReturnValue(childLogger),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "" }] },
+      ({ logger }) => {
+        logger.info("hello");
+        return "done";
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+
+    expect(customLogger.child).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runID: expect.any(String),
+        eventName: expect.any(String),
+      }),
+    );
+    expect(childLogger.info).toHaveBeenCalledWith("hello");
+    expect(customLogger.info).not.toHaveBeenCalledWith("hello");
+  });
+
+  test("creates a new logger per execution", async () => {
+    const { Inngest } = await import("../index.ts");
+    const { InngestTestEngine } = await import("@inngest/test");
+
+    const customLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    const inngest = new Inngest({ id: "test", logger: customLogger });
+    const loggers: unknown[] = [];
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "" }] },
+      ({ logger }) => {
+        loggers.push(logger);
+        return "done";
+      },
+    );
+
+    const t = new InngestTestEngine({ function: fn as any });
+    await t.execute();
+    await t.execute();
+
+    expect(loggers).toHaveLength(2);
+    expect(loggers[0]).not.toBe(loggers[1]);
   });
 });
 
