@@ -1,5 +1,5 @@
-import { getLogger } from "../../helpers/log";
 import { isRecord } from "../../helpers/types";
+import type { Logger } from "../../middleware/logger";
 import { type SendEventBaseOutput, StepOpCode } from "../../types";
 import type { Middleware } from "./middleware";
 import type { ExtractLiteralStrings } from "./types";
@@ -80,7 +80,8 @@ type StepKindFromOpCodeReturn =
  */
 export function stepKindFromOpCode(
   op: StepOpCode,
-  opts?: Record<string, unknown>,
+  opts: Record<string, unknown> | undefined,
+  logger: Logger,
 ): StepKindFromOpCodeReturn {
   if (op === StepOpCode.AiGateway) {
     if (opts?.type === "step.ai.infer") {
@@ -109,7 +110,7 @@ export function stepKindFromOpCode(
     return "waitForEvent";
   }
 
-  getLogger().warn(
+  logger.warn(
     `Unknown step kind: op is "${op}" and opts.type is "${opts?.type}"`,
   );
   return "unknown";

@@ -1,7 +1,5 @@
-import debug from "debug";
 import { z } from "zod/v3";
 import {
-  debugPrefix,
   defaultMaxRetries,
   ExecutionVersion,
   envKeys,
@@ -23,11 +21,11 @@ import {
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
+  createVersionSchema,
   type FnData,
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
-  versionSchema,
 } from "../helpers/functions.ts";
 import { formatLogMessage, warnOnce } from "../helpers/log.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
@@ -36,6 +34,7 @@ import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
 import { isRecord, type MaybePromise } from "../helpers/types.ts";
+import type { Logger } from "../middleware/logger.ts";
 import {
   type APIStepPayload,
   AsyncResponseType,
@@ -488,22 +487,6 @@ export class InngestCommHandler<
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
 
-    if (this.client.logLevel === "debug") {
-      /**
-       * `debug` is an old library; sometimes its runtime detection doesn't work
-       * for newer pairings of framework/runtime.
-       *
-       * One silly symptom of this is that `Debug()` returns an anonymous
-       * function with no extra properties instead of a `Debugger` instance if
-       * the wrong code is consumed following a bad detection. This results in
-       * the following `.enable()` call failing, so we just try carefully to
-       * enable it here.
-       */
-      if (debug.enable && typeof debug.enable === "function") {
-        debug.enable(`${debugPrefix}:*`);
-      }
-    }
-
     const defaultStreamingOption: typeof this.streaming = false;
     this.streaming = z
       .boolean()
@@ -681,7 +664,7 @@ export class InngestCommHandler<
     actions: HandlerResponseWithErrors;
     getHeaders: () => Promise<Record<string, string>>;
   }> {
-    const timer = new ServerTiming();
+    const timer = new ServerTiming(this.client.logger);
     const actions = await this.getActions(timer, ...args);
 
     const [env, expectedServerKind] = await Promise.all([
@@ -1685,7 +1668,9 @@ export class InngestCommHandler<
           //
           // Note that the header will be a `string` at this point.
           if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
-            const res = versionSchema.parse(Number(rawVersionHeader));
+            const res = createVersionSchema(this.client.logger).parse(
+              Number(rawVersionHeader),
+            );
 
             if (!res.sdkDecided) {
               headerReqVersion = res.version;
@@ -2046,7 +2031,11 @@ export class InngestCommHandler<
 
     // Try to get the request version from headers before falling back to
     // parsing it from the body.
-    const immediateFnData = parseFnData(data, headerReqVersion);
+    const immediateFnData = parseFnData(
+      data,
+      headerReqVersion,
+      this.client.logger,
+    );
     const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
 
@@ -2063,6 +2052,7 @@ export class InngestCommHandler<
       const anyFnData = await fetchAllFnData({
         data: immediateFnData,
         api: this.client["inngestApi"],
+        logger: this.client.logger,
       });
 
       if (!anyFnData.ok) {
@@ -2533,6 +2523,7 @@ export class InngestCommHandler<
           allowExpiredSignatures: this.allowExpiredSignatures,
           signingKey: this.client.signingKey,
           signingKeyFallback: this.client.signingKeyFallback,
+          logger: this.client.logger,
         }),
       };
     } catch (err) {
@@ -2545,7 +2536,12 @@ export class InngestCommHandler<
     body: string,
   ): Promise<string> {
     const now = Date.now();
-    const mac = await signDataWithKey(body, key, now.toString());
+    const mac = await signDataWithKey(
+      body,
+      key,
+      now.toString(),
+      this.client.logger,
+    );
 
     return `t=${now}&s=${mac}`;
   }
@@ -2579,16 +2575,18 @@ class RequestSignature {
     body,
     signingKey,
     allowExpiredSignatures,
+    logger,
   }: {
     body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
+    logger: Logger;
   }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
       throw new Error("Signature has expired");
     }
 
-    const mac = await signDataWithKey(body, signingKey, this.timestamp);
+    const mac = await signDataWithKey(body, signingKey, this.timestamp, logger);
     if (mac !== this.signature) {
       throw new Error("Invalid signature");
     }
@@ -2599,14 +2597,21 @@ class RequestSignature {
     signingKey,
     signingKeyFallback,
     allowExpiredSignatures,
+    logger,
   }: {
     body: unknown;
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
+    logger: Logger;
   }): Promise<string> {
     try {
-      await this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+      await this.#verifySignature({
+        body,
+        signingKey,
+        allowExpiredSignatures,
+        logger,
+      });
 
       return signingKey;
     } catch (err) {
@@ -2618,6 +2623,7 @@ class RequestSignature {
         body,
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
+        logger,
       });
 
       return signingKeyFallback;

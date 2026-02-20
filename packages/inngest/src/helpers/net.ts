@@ -1,6 +1,7 @@
 import canonicalize from "canonicalize";
 import hashjs from "hash.js";
-import { getLogger, logOnce } from "./log.ts";
+import type { Logger } from "../middleware/logger.ts";
+import { logOnce } from "./log.ts";
 
 const { hmac, sha256 } = hashjs;
 
@@ -106,11 +107,12 @@ export async function signDataWithKey(
   data: unknown,
   signingKey: string,
   ts: string,
+  logger: Logger,
 ): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
 
   logOnce(
-    getLogger(),
+    logger,
     "debug",
     "crypto-implementation",
     subtle
@@ -122,10 +124,7 @@ export async function signDataWithKey(
     try {
       return await signWithNative(subtle, data, signingKey, ts);
     } catch (error) {
-      getLogger().debug(
-        "Native crypto failed, falling back to hash.js:",
-        error,
-      );
+      logger.debug("Native crypto failed, falling back to hash.js:", error);
     }
   }
   return signWithHashJs(data, signingKey, ts);

@@ -1,5 +1,5 @@
 import type { Mock, MockInstance } from "vitest";
-import { DefaultLogger, type Logger, ProxyLogger } from "./logger.ts";
+import { ConsoleLogger, type Logger, ProxyLogger } from "./logger.ts";
 
 describe("ProxyLogger", () => {
   const buffer = [
@@ -12,7 +12,7 @@ describe("ProxyLogger", () => {
   let logger: ProxyLogger;
 
   beforeEach(() => {
-    _internal = new DefaultLogger();
+    _internal = new ConsoleLogger();
     logger = new ProxyLogger(_internal);
   });
 
@@ -36,7 +36,7 @@ describe("ProxyLogger", () => {
       immediate.mockReset();
     });
 
-    test("should not try to wait for flushing if _logger is DefaultLogger", async () => {
+    test("should not try to wait for flushing if _logger is ConsoleLogger", async () => {
       populateBuf();
       await logger.flush();
       expect(immediate).toHaveBeenCalledTimes(0);
@@ -62,7 +62,7 @@ describe("ProxyLogger", () => {
       expect(immediate).toHaveBeenCalledTimes(0);
     });
 
-    test("should attempt to yield event loop with non DefaultLogger", async () => {
+    test("should attempt to yield event loop with non ConsoleLogger", async () => {
       _internal = new (class DummyLogger implements Logger {
         info(..._args: unknown[]) {}
         warn(..._args: unknown[]) {}
@@ -164,28 +164,70 @@ describe("ProxyLogger", () => {
       }).toThrow();
     });
   });
+});
 
-  describe("log-level filtering", () => {
-    test("should only forward messages at or above the configured logLevel", () => {
-      const mock: Logger = {
-        info: vi.fn(),
-        debug: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      };
+describe("ConsoleLogger log-level filtering", () => {
+  test("should only output messages at or above the configured level", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      const proxy = new ProxyLogger(mock, "warn");
-      proxy.enable();
+    const logger = new ConsoleLogger("warn");
 
-      proxy.debug("d");
-      proxy.info("i");
-      proxy.warn("w");
-      proxy.error("e");
+    logger.debug("d");
+    logger.info("i");
+    logger.warn("w");
+    logger.error("e");
 
-      expect(mock.debug).not.toHaveBeenCalled();
-      expect(mock.info).not.toHaveBeenCalled();
-      expect(mock.warn).toHaveBeenCalledWith("w");
-      expect(mock.error).toHaveBeenCalledWith("e");
-    });
+    expect(debugSpy).not.toHaveBeenCalled();
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith("w");
+    expect(errorSpy).toHaveBeenCalledWith("e");
+
+    infoSpy.mockRestore();
+    debugSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  test("silent level suppresses all output", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const logger = new ConsoleLogger("silent");
+
+    logger.debug("d");
+    logger.info("i");
+    logger.warn("w");
+    logger.error("e");
+
+    expect(debugSpy).not.toHaveBeenCalled();
+    expect(infoSpy).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    infoSpy.mockRestore();
+    debugSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  test("defaults to info level", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+    const logger = new ConsoleLogger();
+
+    logger.debug("d");
+    logger.info("i");
+
+    expect(debugSpy).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledWith("i");
+
+    infoSpy.mockRestore();
+    debugSpy.mockRestore();
   });
 });

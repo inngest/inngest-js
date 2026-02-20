@@ -31,7 +31,7 @@ import { signDataWithKey } from "../helpers/net.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { isRecord } from "../helpers/types.ts";
-import { Inngest, type InngestFunction } from "../index.ts";
+import { ConsoleLogger, Inngest, type InngestFunction } from "../index.ts";
 import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
 
 interface HandlerStandardReturn {
@@ -102,7 +102,7 @@ export const getStepTools = (
         stepCompletionOrder: [],
         isFailureHandler: false,
         requestedRunStep: undefined,
-        timer: new ServerTiming(),
+        timer: new ServerTiming(client.logger),
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
@@ -151,7 +151,7 @@ export const runFnWithStack = async (
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
       isFailureHandler: Boolean(opts?.onFailure),
       requestedRunStep: opts?.runStep,
-      timer: new ServerTiming(),
+      timer: new ServerTiming(fn["client"].logger),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
@@ -1249,7 +1249,7 @@ export const testFramework = (
             const ts = Date.now().toString();
 
             const signature = validSignature
-              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts)}`
+              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts, new ConsoleLogger("silent"))}`
               : validSignature === false
                 ? "INVALID"
                 : undefined;

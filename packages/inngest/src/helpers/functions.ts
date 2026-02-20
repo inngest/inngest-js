@@ -2,9 +2,10 @@ import { ZodError, z } from "zod/v3";
 import type { InngestApi } from "../api/api.ts";
 import { stepSchema } from "../api/schema.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
+import type { Logger } from "../middleware/logger.ts";
 import { err, ok, type Result } from "../types.ts";
 import type { ExecutionVersion } from "./consts.ts";
-import { formatLogMessage, getLogger } from "./log.ts";
+import { formatLogMessage } from "./log.ts";
 import type { Await } from "./types.ts";
 
 /**
@@ -77,47 +78,50 @@ export const undefinedToNull = (v: unknown) => {
   return isUndefined ? null : v;
 };
 
-export const versionSchema = z
-  .literal(-1)
-  .or(z.literal(0))
-  .or(z.literal(1))
-  .or(z.literal(2))
-  .optional()
-  .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
-    if (typeof v === "undefined") {
-      getLogger().debug(
-        `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
-      );
+export const createVersionSchema = (logger: Logger) =>
+  z
+    .literal(-1)
+    .or(z.literal(0))
+    .or(z.literal(1))
+    .or(z.literal(2))
+    .optional()
+    .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
+      if (typeof v === "undefined") {
+        logger.debug(
+          `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
+        );
+
+        return {
+          sdkDecided: true,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
+        };
+      }
+
+      if (v === 0) {
+        logger.error("V0 execution version is no longer supported"); // TODO: improve?
+        throw new Error("V0 execution version is no longer supported");
+      }
+
+      if (v === -1) {
+        return {
+          sdkDecided: true,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
+        };
+      }
 
       return {
-        sdkDecided: true,
-        version: PREFERRED_ASYNC_EXECUTION_VERSION,
+        sdkDecided: false,
+        version: v,
       };
-    }
+    });
 
-    if (v === 0) {
-      getLogger().error("V0 execution version is no longer supported"); // TODO: improve?
-      throw new Error("V0 execution version is no longer supported");
-    }
-
-    if (v === -1) {
-      return {
-        sdkDecided: true,
-        version: PREFERRED_ASYNC_EXECUTION_VERSION,
-      };
-    }
-
-    return {
-      sdkDecided: false,
-      version: v,
-    };
-  });
-
-const fnDataVersionSchema = z.object({
-  version: versionSchema,
-});
-
-export const parseFnData = (data: unknown, headerVersion?: unknown) => {
+export const parseFnData = (
+  data: unknown,
+  headerVersion: unknown | undefined,
+  logger: Logger,
+) => {
+  const versionSchema = createVersionSchema(logger);
+  const fnDataVersionSchema = z.object({ version: versionSchema });
   let version: ExecutionVersion | undefined;
   let sdkDecided: boolean = true;
 
@@ -181,9 +185,11 @@ type ParseErr = string;
 export const fetchAllFnData = async ({
   data,
   api,
+  logger,
 }: {
   data: FnData;
   api: InngestApi;
+  logger: Logger;
 }): Promise<Result<FnData, ParseErr>> => {
   const result = { ...data };
 
@@ -242,7 +248,7 @@ export const fetchAllFnData = async ({
 
     return ok(result);
   } catch (error) {
-    getLogger().error(error);
+    logger.error(error);
 
     return err(parseFailureErr(error));
   }

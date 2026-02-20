@@ -34,7 +34,6 @@ export enum envKeys {
   InngestServeHost = "INNGEST_SERVE_HOST", // Deprecated, use INNGEST_SERVE_ORIGIN
   InngestServePath = "INNGEST_SERVE_PATH",
   InngestServeOrigin = "INNGEST_SERVE_ORIGIN",
-  InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",

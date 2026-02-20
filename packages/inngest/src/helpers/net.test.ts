@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createFetchMock from "vitest-fetch-mock";
+import { ConsoleLogger } from "../middleware/logger.ts";
 import {
   fetchWithAuthFallback,
   signDataWithKey,
@@ -7,6 +8,7 @@ import {
 } from "./net.ts";
 
 const fetchMock = createFetchMock(vi);
+const logger = new ConsoleLogger("silent");
 
 describe("fetchWithAuthFallback", () => {
   beforeEach(() => {
@@ -176,7 +178,7 @@ describe("signing functions", () => {
         const ts = "1234567890";
 
         const hashJsResult = signWithHashJs(data, key, ts);
-        const nativeResult = await signDataWithKey(data, key, ts);
+        const nativeResult = await signDataWithKey(data, key, ts, logger);
 
         expect(nativeResult).toBe(hashJsResult);
       });
@@ -187,7 +189,7 @@ describe("signing functions", () => {
         const ts = "1234567890";
 
         const hashJsResult = signWithHashJs(data, key, ts);
-        const nativeResult = await signDataWithKey(data, key, ts);
+        const nativeResult = await signDataWithKey(data, key, ts, logger);
 
         expect(nativeResult).toBe(hashJsResult);
       });
@@ -206,7 +208,7 @@ describe("signing functions", () => {
         const key = "signkey-test-fallback";
         const ts = "5555555555";
 
-        const result = await signDataWithKey(data, key, ts);
+        const result = await signDataWithKey(data, key, ts, logger);
         const expectedResult = signWithHashJs(data, key, ts);
 
         expect(result).toBe(expectedResult);
@@ -225,7 +227,7 @@ describe("signing functions", () => {
         const key = "signkey-test-error";
         const ts = "1234567890";
 
-        const result = await signDataWithKey(data, key, ts);
+        const result = await signDataWithKey(data, key, ts, logger);
         const expectedResult = signWithHashJs(data, key, ts);
 
         expect(result).toBe(expectedResult);
@@ -263,9 +265,9 @@ describe("signing functions", () => {
         const key = "signkey-test-cached";
 
         // Call signDataWithKey multiple times with the same key
-        await signDataWithKey("data1", key, "111");
-        await signDataWithKey("data2", key, "222");
-        await signDataWithKey("data3", key, "333");
+        await signDataWithKey("data1", key, "111", logger);
+        await signDataWithKey("data2", key, "222", logger);
+        await signDataWithKey("data3", key, "333", logger);
 
         // importKey should only be called once due to caching
         expect(importKeySpy).toHaveBeenCalledTimes(1);

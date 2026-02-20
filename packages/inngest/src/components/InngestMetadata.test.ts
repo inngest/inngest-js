@@ -19,6 +19,12 @@ import type {
 const mockClient = () =>
   ({
     updateMetadata: vi.fn().mockResolvedValue(undefined),
+    logger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    },
   }) as unknown as Inngest;
 
 afterEach(() => {

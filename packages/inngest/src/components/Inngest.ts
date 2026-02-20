@@ -20,11 +20,7 @@ import {
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import {
-  formatLogMessage,
-  getLogger,
-  setGlobalLogger,
-} from "../helpers/log.ts";
+import { formatLogMessage } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
@@ -35,7 +31,7 @@ import type {
   SingleOrArray,
 } from "../helpers/types.ts";
 import {
-  DefaultLogger,
+  ConsoleLogger,
   type Logger,
   ProxyLogger,
 } from "../middleware/logger.ts";
@@ -49,8 +45,6 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
-  type LogLevel,
-  logLevels,
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
@@ -116,6 +110,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly _userProvidedFetch?: FetchT;
   private _cachedFetch?: FetchT;
+
+  private readonly _logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
 
@@ -200,8 +196,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   get fetch(): FetchT {
     if (!this._cachedFetch) {
       this._cachedFetch = this._userProvidedFetch
-        ? getFetch(this._userProvidedFetch)
-        : getFetch(globalThis.fetch);
+        ? getFetch(this._logger, this._userProvidedFetch)
+        : getFetch(this._logger, globalThis.fetch);
     }
     return this._cachedFetch;
   }
@@ -224,24 +220,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     });
   }
 
-  get logLevel(): LogLevel {
-    const level =
-      this.options.logLevel || this._env[envKeys.InngestLogLevel] || "info";
-
-    if (logLevels.includes(level as LogLevel)) {
-      return level as LogLevel;
-    }
-
-    return "info";
-  }
-
   /**
-   * The logger for this client. Returns the context-aware logger during
-   * function execution (with log level filtering and child logger support),
-   * or the global/default logger outside of execution.
+   * The base logger for this client.
    */
   get logger(): Logger {
-    return getLogger();
+    return this._logger;
   }
 
   get env(): string | null {
@@ -302,12 +285,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       fetch: () => this.fetch,
     });
 
-    if (logger) {
-      setGlobalLogger(logger);
-    }
+    this._logger = logger ?? new ConsoleLogger("debug");
 
     this.middleware = [
-      ...builtInMiddleware(logger ?? new DefaultLogger(), this.logLevel),
+      ...builtInMiddleware(this._logger),
       ...(middleware ?? []),
     ];
 
@@ -956,12 +937,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 /**
  * Default middleware that is included in every client, placed before the user's
  * middleware. Returns new-style `Middleware.Class` constructors. Uses a closure
- * so the no-arg constructors can capture the base logger and log level.
+ * so the no-arg constructors can capture the base logger.
  */
-export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
+export function builtInMiddleware(baseLogger: Logger) {
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
-      #proxyLogger = new ProxyLogger(baseLogger, logLevel);
+      #proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
         arg: Middleware.TransformFunctionInputArgs,
@@ -982,7 +963,7 @@ export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
           }
         }
 
-        this.#proxyLogger = new ProxyLogger(logger, logLevel);
+        this.#proxyLogger = new ProxyLogger(logger);
 
         return {
           ...arg,
