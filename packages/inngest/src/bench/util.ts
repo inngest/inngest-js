@@ -1,5 +1,6 @@
 import { bench, describe } from "vitest";
 import { Inngest, type InngestFunction, Middleware } from "../index.ts";
+import { ConsoleLogger } from "../middleware/logger.ts";
 import { createTestApp, type TestApp } from "../test/devServerTestHarness.ts";
 
 export function randomSuffix(value: string): string {
@@ -58,7 +59,7 @@ export function createBench(options: CreateBenchOptions) {
       checkpointing: options.checkpointing,
       id: randomSuffix("app"),
       isDev: true,
-      logLevel: "silent",
+      logger: new ConsoleLogger("silent"),
     });
     const eventName = randomSuffix("evt");
     const fn = options.setup(client, eventName, () => {

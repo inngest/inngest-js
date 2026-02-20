@@ -1,4 +1,3 @@
-import { getLogger } from "../helpers/log.ts";
 import type { Simplify } from "../helpers/types.ts";
 import type { MetadataTarget } from "../types.ts";
 import { type AsyncContext, getAsyncCtx } from "./execution/als.ts";
@@ -295,7 +294,7 @@ async function performOp(
   const isInsideRun = !!ctx?.execution;
   const isInsideStep = !!ctx?.execution?.executingStep;
   if (isInsideRun && !isInsideStep) {
-    getLogger().warn(
+    client.logger.warn(
       "inngest: metadata.update() called outside of a step. This metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
     );
   }

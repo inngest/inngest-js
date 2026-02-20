@@ -3,7 +3,6 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { getLogger } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -785,7 +784,7 @@ export const createStepTools = <
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
-        getLogger().warn(
+        client.logger.warn(
           "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
           err,
         );

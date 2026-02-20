@@ -1034,13 +1034,6 @@ export interface ClientOptions {
   signingKeyFallback?: string;
 
   /**
-   * The minimum log level to output from the Inngest library.
-   * If not provided, will search for the `INNGEST_LOG_LEVEL` environment variable,
-   * defaulting to "info".
-   */
-  logLevel?: LogLevel;
-
-  /**
    * An optional endpoint adapter to use when creating Durable Endpoints using
    * `inngest.endpoint()`.
    */

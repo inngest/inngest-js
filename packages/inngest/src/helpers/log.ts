@@ -1,12 +1,4 @@
-import { getAsyncCtxSync } from "../components/execution/als.ts";
-import {
-  DefaultLogger,
-  type LogArg,
-  type Logger,
-} from "../middleware/logger.ts";
-
-const defaultLogger = new DefaultLogger();
-let globalLogger: Logger | undefined;
+import type { LogArg, Logger } from "../middleware/logger.ts";
 
 const loggedKeys = new Set<string>();
 
@@ -20,7 +12,9 @@ export function logOnce(
   key: string,
   ...args: LogArg[]
 ): void {
-  if (loggedKeys.has(key)) return;
+  if (loggedKeys.has(key)) {
+    return;
+  }
   loggedKeys.add(key);
   logger[level](...args);
 }
@@ -31,10 +25,6 @@ export function logOnce(
  */
 export function warnOnce(logger: Logger, key: string, ...args: LogArg[]): void {
   logOnce(logger, "warn", key, ...args);
-}
-
-export function setGlobalLogger(logger: Logger): void {
-  globalLogger = logger;
 }
 
 export interface StructuredLogMessage {
@@ -55,17 +45,4 @@ export function formatLogMessage(opts: StructuredLogMessage): string {
   ]
     .filter(Boolean)
     .join(" ");
-}
-
-export function getLogger(): Logger {
-  const ctx = getAsyncCtxSync();
-  // `logger` is added to the context by the built-in logger middleware at
-  // runtime, so it's not part of the static Context type.
-  const fnCtx = ctx?.execution?.ctx as { logger?: Logger } | undefined;
-
-  if (fnCtx?.logger) {
-    return fnCtx.logger;
-  }
-
-  return globalLogger ?? defaultLogger;
 }

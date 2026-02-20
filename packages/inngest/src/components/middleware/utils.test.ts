@@ -1,73 +1,114 @@
 import { describe, expect, test } from "vitest";
+import { ConsoleLogger } from "../../middleware/logger.ts";
 import { StepOpCode } from "../../types.ts";
 import { optsFromStepInput, stepTypeFromOpCode } from "./utils.ts";
 
+const logger = new ConsoleLogger();
+
 describe("stepTypeFromOpCode", () => {
   test("StepPlanned without type returns 'run'", () => {
-    expect(stepTypeFromOpCode(StepOpCode.StepPlanned)).toBe("run");
-    expect(stepTypeFromOpCode(StepOpCode.StepPlanned, {})).toBe("run");
+    expect(stepTypeFromOpCode(StepOpCode.StepPlanned, undefined, logger)).toBe(
+      "run",
+    );
+    expect(stepTypeFromOpCode(StepOpCode.StepPlanned, {}, logger)).toBe("run");
     expect(
-      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: undefined }),
+      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: undefined }, logger),
     ).toBe("run");
   });
 
   test("StepPlanned with type 'step.sendEvent' returns 'sendEvent'", () => {
     expect(
-      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: "step.sendEvent" }),
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        { type: "step.sendEvent" },
+        logger,
+      ),
     ).toBe("sendEvent");
   });
 
   test("StepPlanned with type 'step.realtime.publish' returns 'realtime.publish'", () => {
     expect(
-      stepTypeFromOpCode(StepOpCode.StepPlanned, {
-        type: "step.realtime.publish",
-      }),
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        {
+          type: "step.realtime.publish",
+        },
+        logger,
+      ),
     ).toBe("realtime.publish");
   });
 
   test("StepPlanned with unknown type returns 'unknown'", () => {
     expect(
-      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: "step.whatever" }),
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        { type: "step.whatever" },
+        logger,
+      ),
     ).toBe("unknown");
   });
 
   test("InvokeFunction returns 'invoke'", () => {
-    expect(stepTypeFromOpCode(StepOpCode.InvokeFunction)).toBe("invoke");
+    expect(
+      stepTypeFromOpCode(StepOpCode.InvokeFunction, undefined, logger),
+    ).toBe("invoke");
   });
 
   test("Sleep returns 'sleep'", () => {
-    expect(stepTypeFromOpCode(StepOpCode.Sleep)).toBe("sleep");
+    expect(stepTypeFromOpCode(StepOpCode.Sleep, undefined, logger)).toBe(
+      "sleep",
+    );
   });
 
   test("WaitForEvent returns 'waitForEvent'", () => {
-    expect(stepTypeFromOpCode(StepOpCode.WaitForEvent)).toBe("waitForEvent");
+    expect(stepTypeFromOpCode(StepOpCode.WaitForEvent, undefined, logger)).toBe(
+      "waitForEvent",
+    );
   });
 
   test("AiGateway with type 'step.ai.infer' returns 'ai.infer'", () => {
     expect(
-      stepTypeFromOpCode(StepOpCode.AiGateway, { type: "step.ai.infer" }),
+      stepTypeFromOpCode(
+        StepOpCode.AiGateway,
+        { type: "step.ai.infer" },
+        logger,
+      ),
     ).toBe("ai.infer");
   });
 
   test("AiGateway with type 'step.ai.wrap' returns 'ai.wrap'", () => {
     expect(
-      stepTypeFromOpCode(StepOpCode.AiGateway, { type: "step.ai.wrap" }),
+      stepTypeFromOpCode(
+        StepOpCode.AiGateway,
+        { type: "step.ai.wrap" },
+        logger,
+      ),
     ).toBe("ai.wrap");
   });
 
   test("AiGateway with unknown type returns 'unknown'", () => {
     expect(
-      stepTypeFromOpCode(StepOpCode.AiGateway, { type: "something.else" }),
+      stepTypeFromOpCode(
+        StepOpCode.AiGateway,
+        { type: "something.else" },
+        logger,
+      ),
     ).toBe("unknown");
   });
 
   test("unhandled opcode returns 'unknown'", () => {
-    expect(stepTypeFromOpCode(StepOpCode.StepRun)).toBe("unknown");
-    expect(stepTypeFromOpCode(StepOpCode.Step)).toBe("unknown");
+    expect(stepTypeFromOpCode(StepOpCode.StepRun, undefined, logger)).toBe(
+      "unknown",
+    );
+    expect(stepTypeFromOpCode(StepOpCode.Step, undefined, logger)).toBe(
+      "unknown",
+    );
   });
 
   test("Gateway returns 'fetch'", () => {
-    expect(stepTypeFromOpCode(StepOpCode.Gateway)).toBe("fetch");
+    expect(stepTypeFromOpCode(StepOpCode.Gateway, undefined, logger)).toBe(
+      "fetch",
+    );
   });
 });
 
