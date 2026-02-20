@@ -7,7 +7,7 @@ import {
   isTimeStrInput,
   optsFromStepInput,
   stepInputFromOpts,
-  stepKindFromOpCode,
+  stepTypeFromOpCode,
   UnreachableError,
 } from "./utils.ts";
 
@@ -16,7 +16,7 @@ export interface StepInfoOptions {
   userlandId: string;
   displayName?: string;
   memoized: boolean;
-  stepKind: Middleware.StepKind;
+  stepType: Middleware.StepType;
   input?: unknown[];
 }
 
@@ -105,15 +105,15 @@ export class MiddlewareManager {
    * collision resolution) so middleware sees final values.
    */
   async applyToStep(input: ApplyToStepInput): Promise<PreparedStep> {
-    const stepKind = stepKindFromOpCode(input.op, input.opts);
-    const stepInput = stepInputFromOpts(stepKind, input.opts);
+    const stepType = stepTypeFromOpCode(input.op, input.opts);
+    const stepInput = stepInputFromOpts(stepType, input.opts);
 
     const stepInfo = this.buildStepInfo({
       hashedId: input.hashedId,
       userlandId: input.userlandId,
       displayName: input.displayName,
       memoized: input.memoized,
-      stepKind,
+      stepType,
       input: stepInput,
     });
 
@@ -137,7 +137,7 @@ export class MiddlewareManager {
     // name (which encodes the wake-up time). If there's no input, the matchOp
     // already set the name directly.
     let opName: string | undefined;
-    if (stepKind === "sleep" && stepInfo.input !== undefined) {
+    if (stepType === "sleep" && stepInfo.input !== undefined) {
       if (!isTimeStrInput(stepInfo.input[0])) {
         throw new Error("Sleep time must be a string, number, or Date");
       }
@@ -146,7 +146,7 @@ export class MiddlewareManager {
 
     // Reverse the input→opts mapping for step kinds where the whole opts
     // object was wrapped as input (e.g. invoke, waitForEvent).
-    const opOpts = optsFromStepInput(stepKind, stepInfo.input);
+    const opOpts = optsFromStepInput(stepType, stepInfo.input);
 
     // Deferred handler pattern — actual handler set later based on memoization
     let actualHandler: (() => Promise<unknown>) | undefined;
@@ -178,7 +178,7 @@ export class MiddlewareManager {
         id: opts.userlandId,
         ...(opts.displayName !== undefined && { name: opts.displayName }),
       },
-      stepKind: opts.stepKind,
+      stepType: opts.stepType,
     };
   }
 
@@ -261,7 +261,7 @@ export class MiddlewareManager {
       stepInfo: {
         hashedId: stepInfo.hashedId,
         memoized: stepInfo.memoized,
-        stepKind: stepInfo.stepKind,
+        stepType: stepInfo.stepType,
       },
       stepOptions: { ...stepInfo.options },
       input: [...(stepInfo.input ?? [])],

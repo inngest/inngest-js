@@ -1,25 +1,25 @@
 import { describe, expect, test } from "vitest";
 import { StepOpCode } from "../../types.ts";
-import { optsFromStepInput, stepKindFromOpCode } from "./utils.ts";
+import { optsFromStepInput, stepTypeFromOpCode } from "./utils.ts";
 
-describe("stepKindFromOpCode", () => {
+describe("stepTypeFromOpCode", () => {
   test("StepPlanned without type returns 'run'", () => {
-    expect(stepKindFromOpCode(StepOpCode.StepPlanned)).toBe("run");
-    expect(stepKindFromOpCode(StepOpCode.StepPlanned, {})).toBe("run");
+    expect(stepTypeFromOpCode(StepOpCode.StepPlanned)).toBe("run");
+    expect(stepTypeFromOpCode(StepOpCode.StepPlanned, {})).toBe("run");
     expect(
-      stepKindFromOpCode(StepOpCode.StepPlanned, { type: undefined }),
+      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: undefined }),
     ).toBe("run");
   });
 
   test("StepPlanned with type 'step.sendEvent' returns 'sendEvent'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.StepPlanned, { type: "step.sendEvent" }),
+      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: "step.sendEvent" }),
     ).toBe("sendEvent");
   });
 
   test("StepPlanned with type 'step.realtime.publish' returns 'realtime.publish'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.StepPlanned, {
+      stepTypeFromOpCode(StepOpCode.StepPlanned, {
         type: "step.realtime.publish",
       }),
     ).toBe("realtime.publish");
@@ -27,47 +27,47 @@ describe("stepKindFromOpCode", () => {
 
   test("StepPlanned with unknown type returns 'unknown'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.StepPlanned, { type: "step.whatever" }),
+      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: "step.whatever" }),
     ).toBe("unknown");
   });
 
   test("InvokeFunction returns 'invoke'", () => {
-    expect(stepKindFromOpCode(StepOpCode.InvokeFunction)).toBe("invoke");
+    expect(stepTypeFromOpCode(StepOpCode.InvokeFunction)).toBe("invoke");
   });
 
   test("Sleep returns 'sleep'", () => {
-    expect(stepKindFromOpCode(StepOpCode.Sleep)).toBe("sleep");
+    expect(stepTypeFromOpCode(StepOpCode.Sleep)).toBe("sleep");
   });
 
   test("WaitForEvent returns 'waitForEvent'", () => {
-    expect(stepKindFromOpCode(StepOpCode.WaitForEvent)).toBe("waitForEvent");
+    expect(stepTypeFromOpCode(StepOpCode.WaitForEvent)).toBe("waitForEvent");
   });
 
   test("AiGateway with type 'step.ai.infer' returns 'ai.infer'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.AiGateway, { type: "step.ai.infer" }),
+      stepTypeFromOpCode(StepOpCode.AiGateway, { type: "step.ai.infer" }),
     ).toBe("ai.infer");
   });
 
   test("AiGateway with type 'step.ai.wrap' returns 'ai.wrap'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.AiGateway, { type: "step.ai.wrap" }),
+      stepTypeFromOpCode(StepOpCode.AiGateway, { type: "step.ai.wrap" }),
     ).toBe("ai.wrap");
   });
 
   test("AiGateway with unknown type returns 'unknown'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.AiGateway, { type: "something.else" }),
+      stepTypeFromOpCode(StepOpCode.AiGateway, { type: "something.else" }),
     ).toBe("unknown");
   });
 
   test("unhandled opcode returns 'unknown'", () => {
-    expect(stepKindFromOpCode(StepOpCode.StepRun)).toBe("unknown");
-    expect(stepKindFromOpCode(StepOpCode.Step)).toBe("unknown");
+    expect(stepTypeFromOpCode(StepOpCode.StepRun)).toBe("unknown");
+    expect(stepTypeFromOpCode(StepOpCode.Step)).toBe("unknown");
   });
 
   test("Gateway returns 'fetch'", () => {
-    expect(stepKindFromOpCode(StepOpCode.Gateway)).toBe("fetch");
+    expect(stepTypeFromOpCode(StepOpCode.Gateway)).toBe("fetch");
   });
 });
 

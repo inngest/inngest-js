@@ -63,7 +63,7 @@ describe("args", () => {
             input: undefined,
             memoized: false,
             options: { id: "my-step", name: "my-step" },
-            stepKind: "run",
+            stepType: "run",
           },
         },
       ]);
@@ -167,7 +167,7 @@ test("multiple steps", async () => {
         input: undefined,
         memoized: false,
         options: { id: "step-1", name: "step-1" },
-        stepKind: "run",
+        stepType: "run",
       },
     },
     {
@@ -178,7 +178,7 @@ test("multiple steps", async () => {
         input: undefined,
         memoized: false,
         options: { id: "step-2", name: "step-2" },
-        stepKind: "sendEvent",
+        stepType: "sendEvent",
       },
     },
   ]);

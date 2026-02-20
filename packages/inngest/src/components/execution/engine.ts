@@ -1703,7 +1703,7 @@ class InngestExecutionEngine
     const originalId = opId.userland.id;
     let hashedId = _internals.hashId(opId.id);
 
-    // 2. Apply middleware (stepKind, input extraction, deferred handler).
+    // 2. Apply middleware (stepType, input extraction, deferred handler).
     //    Pass preliminary memoization status so middleware sees it.
     const prepared = await this.middlewareManager.applyToStep({
       displayName: opId.displayName ?? opId.userland.id,
