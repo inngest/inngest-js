@@ -119,12 +119,9 @@ export const extendProvider = (
  * Wrapped in try/catch because this accesses internal OTel fields that may
  * change — must never crash the host app.
  */
-function getInternalSpanProcessors(
-  provider: unknown,
-): unknown[] | undefined {
+function getInternalSpanProcessors(provider: unknown): unknown[] | undefined {
   try {
-    const active = (provider as Record<string, unknown>)
-      ?._activeSpanProcessor;
+    const active = (provider as Record<string, unknown>)?._activeSpanProcessor;
     if (typeof active !== "object" || active === null) return undefined;
 
     const arr = (active as Record<string, unknown>)._spanProcessors;
