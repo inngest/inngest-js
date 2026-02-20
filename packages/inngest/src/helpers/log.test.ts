@@ -1,6 +1,84 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: it's fine
 
+import { Writable } from "stream";
+import winston from "winston";
+import { wrapStringFirstLogger } from "./log.ts";
+
 const alsSymbol = Symbol.for("inngest:als");
+
+describe("wrapStringFirstLogger", () => {
+  function createLogger() {
+    const lines: string[] = [];
+
+    const winstonLogger = winston.createLogger({
+      level: "debug",
+      format: winston.format.json(),
+      transports: [
+        new winston.transports.Stream({
+          stream: new Writable({
+            write(chunk: Buffer, _enc: string, cb: () => void) {
+              lines.push(chunk.toString().trim());
+              cb();
+            },
+          }),
+        }),
+      ],
+    });
+
+    const logger = wrapStringFirstLogger(winstonLogger);
+    return { logger, lines };
+  }
+
+  function parseLine(lines: string[], index = 0): Record<string, unknown> {
+    return JSON.parse(lines[index]!);
+  }
+
+  test("spreads object fields and uses string as message", () => {
+    const { logger, lines } = createLogger();
+
+    logger.info({ requestId: "abc", userId: 42 }, "request received");
+
+    const entry = parseLine(lines);
+    expect(entry.message).toBe("request received");
+    expect(entry.requestId).toBe("abc");
+    expect(entry.userId).toBe(42);
+    expect(entry.level).toBe("info");
+  });
+
+  test("passes through normal string-message calls unchanged", () => {
+    const { logger, lines } = createLogger();
+
+    logger.info("just a string");
+
+    const entry = parseLine(lines);
+    expect(entry.message).toBe("just a string");
+    expect(entry.level).toBe("info");
+  });
+
+  test("works across multiple log levels", () => {
+    const { logger, lines } = createLogger();
+
+    logger.debug({ step: 1 }, "step started");
+    logger.warn({ step: 2 }, "step slow");
+    logger.error({ step: 3 }, "step failed");
+
+    expect(parseLine(lines, 0)).toMatchObject({
+      level: "debug",
+      message: "step started",
+      step: 1,
+    });
+    expect(parseLine(lines, 1)).toMatchObject({
+      level: "warn",
+      message: "step slow",
+      step: 2,
+    });
+    expect(parseLine(lines, 2)).toMatchObject({
+      level: "error",
+      message: "step failed",
+      step: 3,
+    });
+  });
+});
 
 describe("formatLogMessage", () => {
   test("returns message only when no optional fields provided", async () => {

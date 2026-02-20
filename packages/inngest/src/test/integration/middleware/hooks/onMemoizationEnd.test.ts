@@ -180,11 +180,14 @@ test("throws", async () => {
   await state.waitForRunComplete();
 
   expect(state.hook).toEqual({ count: 1 });
-  expect(consoleSpy).toHaveBeenCalledWith("middleware error", {
-    error: expect.any(Error),
-    hook: "onMemoizationEnd",
-    mw: "TestMiddleware",
-  });
+  expect(consoleSpy).toHaveBeenCalledWith(
+    {
+      error: expect.any(Error),
+      hook: "onMemoizationEnd",
+      mw: "TestMiddleware",
+    },
+    "middleware error",
+  );
 
   consoleSpy.mockRestore();
 });

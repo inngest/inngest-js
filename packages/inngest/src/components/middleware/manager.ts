@@ -338,11 +338,14 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onStepStart",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onStepStart",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }
@@ -362,11 +365,14 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onStepComplete",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onStepComplete",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }
@@ -414,11 +420,14 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onStepError",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onStepError",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }
@@ -441,11 +450,14 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onMemoizationEnd",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onMemoizationEnd",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }
@@ -460,11 +472,14 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onRunStart",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onRunStart",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }
@@ -480,11 +495,14 @@ export class MiddlewareManager {
             output,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onRunComplete",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onRunComplete",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }
@@ -501,11 +519,14 @@ export class MiddlewareManager {
             isFinalAttempt,
           });
         } catch (error) {
-          this.logger.error("middleware error", {
-            error,
-            hook: "onRunError",
-            mw: mw.constructor.name,
-          });
+          this.logger.error(
+            {
+              error,
+              hook: "onRunError",
+              mw: mw.constructor.name,
+            },
+            "middleware error",
+          );
         }
       }
     }

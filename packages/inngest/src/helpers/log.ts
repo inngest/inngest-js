@@ -1,4 +1,5 @@
 import type { LogArg, Logger } from "../middleware/logger.ts";
+import { isRecord } from "./types.ts";
 
 const loggedKeys = new Set<string>();
 
@@ -33,6 +34,37 @@ export interface StructuredLogMessage {
   explanation?: string;
   action?: string;
   docs?: string;
+}
+
+/**
+ * Wraps a string-first logger (e.g. Winston) so it accepts Pino-style
+ * object-first calls like `logger.info({ requestId: "abc" }, "message")`
+ *
+ * @example
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   logger: wrapStringFirstLogger(winstonLogger),
+ * })
+ */
+export function wrapStringFirstLogger(logger: Logger): Logger {
+  function wrap(method: keyof Logger): (...args: LogArg[]) => void {
+    return (...args: LogArg[]) => {
+      if (args.length > 1 && isRecord(args[0]) && typeof args[1] === "string") {
+        // We got 2 args: 1st is a record and 2nd is a string
+        const [fields, message, ...rest] = args;
+        logger[method](message, fields, ...rest);
+      } else {
+        logger[method](...args);
+      }
+    };
+  }
+
+  return {
+    info: wrap("info"),
+    warn: wrap("warn"),
+    error: wrap("error"),
+    debug: wrap("debug"),
+  };
 }
 
 export function formatLogMessage(opts: StructuredLogMessage): string {

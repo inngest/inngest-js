@@ -340,7 +340,8 @@
     "typescript": "^5.9.2",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.0.8",
-    "vitest-fetch-mock": "^0.4.5"
+    "vitest-fetch-mock": "^0.4.5",
+    "winston": "^3.19.0"
   },
   "peerDependencies": {
     "@sveltejs/kit": ">=1.27.3",
