@@ -1,5 +1,11 @@
 # inngest
 
+## 3.52.3
+
+### Patch Changes
+
+- [#1329](https://github.com/inngest/inngest-js/pull/1329) [`d079c0be`](https://github.com/inngest/inngest-js/commit/d079c0be84ab43995d84ee8681dda6462d281b58) Thanks [@Linell](https://github.com/Linell)! - fix: flush checkpoint buffer
+
 ## 3.52.2
 
 ### Patch Changes
