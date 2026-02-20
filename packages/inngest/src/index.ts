@@ -80,7 +80,7 @@ export type {
 } from "./helpers/types";
 export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
 export type { LogArg, Logger } from "./middleware/logger";
-export { ProxyLogger } from "./middleware/logger.ts";
+export { ConsoleLogger, ProxyLogger } from "./middleware/logger.ts";
 export type {
   BaseContext,
   ClientOptions,

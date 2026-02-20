@@ -31,7 +31,7 @@ import type {
   SingleOrArray,
 } from "../helpers/types.ts";
 import {
-  DefaultLogger,
+  ConsoleLogger,
   type Logger,
   ProxyLogger,
 } from "../middleware/logger.ts";
@@ -222,17 +222,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     });
   }
 
-  get logLevel(): LogLevel {
-    const level =
-      this.options.logLevel || this._env[envKeys.InngestLogLevel] || "info";
-
-    if (logLevels.includes(level as LogLevel)) {
-      return level as LogLevel;
-    }
-
-    return "info";
-  }
-
   /**
    * The base logger for this client.
    */
@@ -298,10 +287,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       fetch: () => this.fetch,
     });
 
-    this._logger = logger ?? new DefaultLogger();
+    this._logger = logger ?? new ConsoleLogger("debug");
 
     this.middleware = [
-      ...builtInMiddleware(this._logger, this.logLevel),
+      ...builtInMiddleware(this._logger),
       ...(middleware ?? []),
     ];
 
@@ -950,12 +939,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 /**
  * Default middleware that is included in every client, placed before the user's
  * middleware. Returns new-style `Middleware.Class` constructors. Uses a closure
- * so the no-arg constructors can capture the base logger and log level.
+ * so the no-arg constructors can capture the base logger.
  */
-export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
+export function builtInMiddleware(baseLogger: Logger) {
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
-      #proxyLogger = new ProxyLogger(baseLogger, logLevel);
+      #proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
         arg: Middleware.TransformFunctionInputArgs,
@@ -976,7 +965,7 @@ export function builtInMiddleware(baseLogger: Logger, logLevel: LogLevel) {
           }
         }
 
-        this.#proxyLogger = new ProxyLogger(logger, logLevel);
+        this.#proxyLogger = new ProxyLogger(logger);
 
         return {
           ...arg,

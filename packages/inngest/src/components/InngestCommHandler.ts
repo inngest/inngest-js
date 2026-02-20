@@ -488,20 +488,18 @@ export class InngestCommHandler<
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
 
-    if (this.client.logLevel === "debug") {
-      /**
-       * `debug` is an old library; sometimes its runtime detection doesn't work
-       * for newer pairings of framework/runtime.
-       *
-       * One silly symptom of this is that `Debug()` returns an anonymous
-       * function with no extra properties instead of a `Debugger` instance if
-       * the wrong code is consumed following a bad detection. This results in
-       * the following `.enable()` call failing, so we just try carefully to
-       * enable it here.
-       */
-      if (debug.enable && typeof debug.enable === "function") {
-        debug.enable(`${debugPrefix}:*`);
-      }
+    /**
+     * `debug` is an old library; sometimes its runtime detection doesn't work
+     * for newer pairings of framework/runtime.
+     *
+     * One silly symptom of this is that `Debug()` returns an anonymous
+     * function with no extra properties instead of a `Debugger` instance if
+     * the wrong code is consumed following a bad detection. This results in
+     * the following `.enable()` call failing, so we just try carefully to
+     * enable it here.
+     */
+    if (debug.enable && typeof debug.enable === "function") {
+      debug.enable(`${debugPrefix}:*`);
     }
 
     const defaultStreamingOption: typeof this.streaming = false;

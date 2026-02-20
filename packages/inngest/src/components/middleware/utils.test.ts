@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { DefaultLogger } from "../../middleware/logger.ts";
+import { ConsoleLogger } from "../../middleware/logger.ts";
 import { StepOpCode } from "../../types.ts";
 import { optsFromStepInput, stepKindFromOpCode } from "./utils.ts";
 
-const logger = new DefaultLogger();
+const logger = new ConsoleLogger();
 
 describe("stepKindFromOpCode", () => {
   test("StepPlanned without type returns 'run'", () => {

@@ -1,9 +1,9 @@
-import { DefaultLogger } from "../middleware/logger.ts";
+import { ConsoleLogger } from "../middleware/logger.ts";
 import type { EventPayload } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
 import { type FnData, parseFnData } from "./functions.ts";
 
-const testLogger = new DefaultLogger();
+const testLogger = new ConsoleLogger();
 
 const randomstr = (): string => {
   return (Math.random() + 1).toString(36).substring(2);
