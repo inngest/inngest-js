@@ -111,16 +111,14 @@ export async function signDataWithKey(
 ): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
 
-  if (logger) {
-    logOnce(
-      logger,
-      "debug",
-      "crypto-implementation",
-      subtle
-        ? "Using native Web Crypto for request signing"
-        : "Using hash.js fallback for request signing (native crypto unavailable)",
-    );
-  }
+  logOnce(
+    logger,
+    "debug",
+    "crypto-implementation",
+    subtle
+      ? "Using native Web Crypto for request signing"
+      : "Using hash.js fallback for request signing (native crypto unavailable)",
+  );
 
   if (subtle) {
     try {

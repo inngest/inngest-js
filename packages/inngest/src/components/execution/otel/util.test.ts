@@ -1,10 +1,7 @@
 import { trace } from "@opentelemetry/api";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
-import { ConsoleLogger } from "../../../index.ts";
 import { InngestSpanProcessor } from "./processor.ts";
 import { extendProvider } from "./util.ts";
-
-const logger = new ConsoleLogger("silent");
 
 // Simulate a provider with `addSpanProcessor` (like NodeTracerProvider or
 // OTel SDK v1 BasicTracerProvider — v2 removed this method from the class).
@@ -25,7 +22,7 @@ describe("extendProvider", () => {
     const { provider } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto", logger);
+    const result = extendProvider("auto");
 
     expect(result.success).toBe(true);
     expect((result as { processor: unknown }).processor).toBeInstanceOf(
@@ -37,7 +34,7 @@ describe("extendProvider", () => {
     const { provider } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("extendProvider", logger);
+    const result = extendProvider("extendProvider");
 
     expect(result.success).toBe(true);
   });
@@ -45,7 +42,7 @@ describe("extendProvider", () => {
   test("should return success: false when no provider is registered", () => {
     trace.disable();
 
-    const result = extendProvider("auto", logger);
+    const result = extendProvider("auto");
 
     expect(result.success).toBe(false);
   });
@@ -53,24 +50,21 @@ describe("extendProvider", () => {
   test("should warn and return success: false with behaviour 'extendProvider' when no real provider", () => {
     trace.disable();
 
-    const mockLogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = extendProvider("extendProvider", logger);
+    const result = extendProvider("extendProvider");
 
     expect(result.success).toBe(false);
-    expect(mockLogger.warn).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 
   test("should call addSpanProcessor on the underlying provider", () => {
     const { provider, addSpanProcessor } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto", logger);
+    const result = extendProvider("auto");
 
     expect(result.success).toBe(true);
     expect(addSpanProcessor).toHaveBeenCalledTimes(1);

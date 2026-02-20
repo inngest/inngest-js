@@ -72,7 +72,7 @@ export const extendedTracesMiddleware = ({
   behaviour = "auto",
   instrumentations,
   logLevel = DiagLogLevel.ERROR,
-}: ExtendedTracesMiddlewareOptions) => {
+}: ExtendedTracesMiddlewareOptions = {}) => {
   debug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
