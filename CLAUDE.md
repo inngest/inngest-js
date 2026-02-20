@@ -109,3 +109,14 @@ To test examples: `pnpm dev:example` and select from the list.
 - **Framework peer deps**: All framework dependencies are optional peer deps
 - **No ESLint**: Uses Biome instead for linting and formatting
 
+## Logging
+
+Always use Pino-style object-first logging:
+```ts
+// Bad
+logger.info("message", { key: "value" })
+
+// Good
+logger.info({ key: "value" }, "message")
+logger.info("message")
+```

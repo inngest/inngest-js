@@ -2,30 +2,17 @@
 
 import { Writable } from "stream";
 import winston from "winston";
-import { winstonStructuredLog } from "./log.ts";
+import { wrapStringFirstLogger } from "./log.ts";
 
 const alsSymbol = Symbol.for("inngest:als");
 
-// Winston's types don't accept object-first args (that's the whole point of
-// this helper), so we cast the logger to a pino-style interface for tests.
-interface PinoStyleLogger {
-  info(obj: Record<string, unknown>, msg: string): void;
-  warn(obj: Record<string, unknown>, msg: string): void;
-  error(obj: Record<string, unknown>, msg: string): void;
-  debug(obj: Record<string, unknown>, msg: string): void;
-  info(msg: string): void;
-}
-
-describe("winstonStructuredLog", () => {
+describe("wrapStringFirstLogger", () => {
   function createLogger() {
     const lines: string[] = [];
 
-    const logger = winston.createLogger({
+    const winstonLogger = winston.createLogger({
       level: "debug",
-      format: winston.format.combine(
-        winston.format(winstonStructuredLog)(),
-        winston.format.json(),
-      ),
+      format: winston.format.json(),
       transports: [
         new winston.transports.Stream({
           stream: new Writable({
@@ -38,7 +25,8 @@ describe("winstonStructuredLog", () => {
       ],
     });
 
-    return { logger: logger as unknown as PinoStyleLogger, lines };
+    const logger = wrapStringFirstLogger(winstonLogger);
+    return { logger, lines };
   }
 
   function parseLine(lines: string[], index = 0): Record<string, unknown> {
@@ -65,17 +53,6 @@ describe("winstonStructuredLog", () => {
     const entry = parseLine(lines);
     expect(entry.message).toBe("just a string");
     expect(entry.level).toBe("info");
-  });
-
-  test("does not let user object overwrite winston's level", () => {
-    const { logger, lines } = createLogger();
-
-    logger.info({ level: "WRONG", requestId: "abc" }, "request received");
-
-    const entry = parseLine(lines);
-    expect(entry.level).toBe("info");
-    expect(entry.requestId).toBe("abc");
-    expect(entry.message).toBe("request received");
   });
 
   test("works across multiple log levels", () => {

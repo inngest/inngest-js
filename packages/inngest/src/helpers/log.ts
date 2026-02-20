@@ -37,65 +37,34 @@ export interface StructuredLogMessage {
 }
 
 /**
- * Structurally compatible with winston's `TransformableInfo` so the function
- * can be passed directly to `winston.format()` without casting.
- */
-interface WinstonLogEntry {
-  level: string;
-  message: unknown;
-  [key: string | symbol]: unknown;
-}
-
-/**
- * Winston format transform that enables pino-style object-first logging. Wrap
- * with `winston.format()` and add to your `format.combine()` pipeline before
- * `format.json()`. This is a workaround for the fact that by default, Winston
- * doesn't support Pino-style object-first logging (the object will be lost).
+ * Wraps a string-first logger (e.g. Winston) so it accepts Pino-style
+ * object-first calls like `logger.info({ requestId: "abc" }, "message")`
  *
  * @example
- * const logger = winston.createLogger({
- *   format: winston.format.combine(
- *     winston.format(winstonStructuredLog)(),
- *     winston.format.json()
- *   ),
- *   transports: [new winston.transports.Console()]
- * });
- *
- * logger.info({ requestId: "abc" }, "request received");
- * // => {"level":"info","message":"request received","requestId":"abc"}
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   logger: wrapStringFirstLogger(winstonLogger),
+ * })
  */
-// @privateRemarks
-// When called as `logger.info({ requestId: "abc" }, "request received")`,
-// Winston stashes extra args in `Symbol.for("splat")` and places the object as
-// `info.message`. This transform detects that pattern, spreads the object onto
-// the log info, and replaces `message` with the string argument.
-export function winstonStructuredLog(info: WinstonLogEntry): WinstonLogEntry {
-  const splat = info[Symbol.for("splat")];
-
-  if (
-    isRecord(info.message) &&
-    Array.isArray(splat) &&
-    splat.length > 0 &&
-    typeof splat[0] === "string"
-  ) {
-    // Destructure out winston's own keys so the user's object can't
-    // accidentally overwrite them (e.g. a stray `level` field).
-    const {
-      level: _l,
-      message: _m,
-      ...fields
-    } = info.message as Record<string, unknown>;
-
-    const message: unknown = splat.shift();
-    if (typeof message !== "string") {
-      return info;
-    }
-
-    Object.assign(info, fields);
-    info.message = message;
+export function wrapStringFirstLogger(logger: Logger): Logger {
+  function wrap(method: keyof Logger): (...args: LogArg[]) => void {
+    return (...args: LogArg[]) => {
+      if (args.length > 1 && isRecord(args[0]) && typeof args[1] === "string") {
+        // We got 2 args: 1st is a record and 2nd is a string
+        const [fields, message, ...rest] = args;
+        logger[method](message, fields, ...rest);
+      } else {
+        logger[method](...args);
+      }
+    };
   }
 
-  return info;
+  return {
+    info: wrap("info"),
+    warn: wrap("warn"),
+    error: wrap("error"),
+    debug: wrap("debug"),
+  };
 }
 
 export function formatLogMessage(opts: StructuredLogMessage): string {
