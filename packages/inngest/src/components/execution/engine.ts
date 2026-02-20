@@ -168,6 +168,7 @@ class InngestExecutionEngine
       () => this.state.stepState,
       mwInstances,
       functionInfo,
+      this.options.client.logger,
     );
 
     this.checkpointHandlers = this.createCheckpointHandlers();

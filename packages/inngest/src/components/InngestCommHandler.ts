@@ -23,11 +23,11 @@ import {
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
+  createVersionSchema,
   type FnData,
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
-  versionSchema,
 } from "../helpers/functions.ts";
 import { formatLogMessage, warnOnce } from "../helpers/log.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
@@ -681,7 +681,7 @@ export class InngestCommHandler<
     actions: HandlerResponseWithErrors;
     getHeaders: () => Promise<Record<string, string>>;
   }> {
-    const timer = new ServerTiming();
+    const timer = new ServerTiming(this.client.logger);
     const actions = await this.getActions(timer, ...args);
 
     const [env, expectedServerKind] = await Promise.all([
@@ -1685,7 +1685,9 @@ export class InngestCommHandler<
           //
           // Note that the header will be a `string` at this point.
           if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
-            const res = versionSchema.parse(Number(rawVersionHeader));
+            const res = createVersionSchema(this.client.logger).parse(
+              Number(rawVersionHeader),
+            );
 
             if (!res.sdkDecided) {
               headerReqVersion = res.version;
@@ -2046,7 +2048,11 @@ export class InngestCommHandler<
 
     // Try to get the request version from headers before falling back to
     // parsing it from the body.
-    const immediateFnData = parseFnData(data, headerReqVersion);
+    const immediateFnData = parseFnData(
+      data,
+      headerReqVersion,
+      this.client.logger,
+    );
     const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
 
@@ -2063,6 +2069,7 @@ export class InngestCommHandler<
       const anyFnData = await fetchAllFnData({
         data: immediateFnData,
         api: this.client["inngestApi"],
+        logger: this.client.logger,
       });
 
       if (!anyFnData.ok) {
@@ -2545,7 +2552,12 @@ export class InngestCommHandler<
     body: string,
   ): Promise<string> {
     const now = Date.now();
-    const mac = await signDataWithKey(body, key, now.toString());
+    const mac = await signDataWithKey(
+      body,
+      key,
+      now.toString(),
+      this.client.logger,
+    );
 
     return `t=${now}&s=${mac}`;
   }

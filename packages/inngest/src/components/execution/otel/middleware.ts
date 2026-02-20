@@ -1,6 +1,6 @@
 import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
-import { getLogger } from "../../../helpers/log.ts";
+import type { Logger } from "../../../middleware/logger.ts";
 import { version } from "../../../version.ts";
 import { Middleware } from "../../middleware/middleware.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -59,6 +59,11 @@ export interface ExtendedTracesMiddlewareOptions {
    * Defaults to `DiagLogLevel.ERROR`.
    */
   logLevel?: DiagLogLevel;
+
+  /**
+   * An optional logger to use for warnings and diagnostics.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -72,6 +77,7 @@ export const extendedTracesMiddleware = ({
   behaviour = "auto",
   instrumentations,
   logLevel = DiagLogLevel.ERROR,
+  logger,
 }: ExtendedTracesMiddlewareOptions = {}) => {
   debug("behaviour:", behaviour);
 
@@ -79,7 +85,7 @@ export const extendedTracesMiddleware = ({
 
   switch (behaviour) {
     case "auto": {
-      const extended = extendProvider(behaviour);
+      const extended = extendProvider(behaviour, logger);
       if (extended.success) {
         debug("extended existing provider");
         processor = extended.processor;
@@ -93,7 +99,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      getLogger().warn("no provider found to extend and unable to create one");
+      logger?.warn("no provider found to extend and unable to create one");
 
       break;
     }
@@ -105,21 +111,21 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      getLogger().warn(
+      logger?.warn(
         "unable to create provider, Extended Traces middleware will not work",
       );
 
       break;
     }
     case "extendProvider": {
-      const extended = extendProvider(behaviour);
+      const extended = extendProvider(behaviour, logger);
       if (extended.success) {
         debug("extended existing provider");
         processor = extended.processor;
         break;
       }
 
-      getLogger().warn(
+      logger?.warn(
         'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
 
@@ -130,7 +136,7 @@ export const extendedTracesMiddleware = ({
     }
     default: {
       // unknown
-      getLogger().warn(
+      logger?.warn(
         `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
       );
     }

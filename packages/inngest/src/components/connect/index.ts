@@ -8,7 +8,6 @@ import {
   getPlatformName,
 } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
-import { getLogger } from "../../helpers/log.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import {
   ConnectMessage,
@@ -401,7 +400,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
         skipSignatureValidation: true,
         handler: (msg: GatewayExecutorRequestData) => {
           const asString = new TextDecoder().decode(msg.requestPayload);
-          const parsed = parseFnData(JSON.parse(asString));
+          const parsed = parseFnData(
+            JSON.parse(asString),
+            undefined,
+            this.inngest.logger,
+          );
 
           const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
@@ -530,7 +533,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (err instanceof ConnectionLimitError) {
-          getLogger().error(
+          this.inngest.logger.error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
           // Continue reconnecting, do not throw.

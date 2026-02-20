@@ -4,10 +4,10 @@
 // string in order to read variables.
 
 import type { Inngest } from "../components/Inngest.ts";
+import type { Logger } from "../middleware/logger.ts";
 import type { SupportedFrameworkName } from "../types.ts";
 import { version } from "../version.ts";
 import { envKeys, headerKeys } from "./consts.ts";
-import { getLogger } from "./log.ts";
 
 /**
  * @public
@@ -329,7 +329,10 @@ const CUSTOM_FETCH_MARKER = Symbol("Custom fetch implementation");
  * Given a potential fetch function, return the fetch function to use based on
  * this and the environment.
  */
-export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
+export const getFetch = (
+  givenFetch?: typeof fetch,
+  logger?: Logger,
+): typeof fetch => {
   /**
    * If we've explicitly been given a fetch function, use that.
    */
@@ -357,10 +360,10 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
           !(err instanceof Error) ||
           !err.message?.startsWith("fetch failed")
         ) {
-          getLogger().warn(
+          logger?.warn(
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
           );
-          getLogger().error(err);
+          logger?.error(err);
         }
 
         throw err;

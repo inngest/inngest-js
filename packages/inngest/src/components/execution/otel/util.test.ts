@@ -50,14 +50,17 @@ describe("extendProvider", () => {
   test("should warn and return success: false with behaviour 'extendProvider' when no real provider", () => {
     trace.disable();
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const mockLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
 
-    const result = extendProvider("extendProvider");
+    const result = extendProvider("extendProvider", mockLogger);
 
     expect(result.success).toBe(false);
-    expect(warnSpy).toHaveBeenCalled();
-
-    warnSpy.mockRestore();
+    expect(mockLogger.warn).toHaveBeenCalled();
   });
 
   test("should call addSpanProcessor on the underlying provider", () => {

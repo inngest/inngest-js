@@ -2,18 +2,6 @@
 
 const alsSymbol = Symbol.for("inngest:als");
 
-/**
- * Helper to check if something looks like a DefaultLogger (duck typing).
- * We can't use instanceof because vi.resetModules() creates new class instances.
- */
-const isDefaultLogger = (logger: unknown): boolean => {
-  return (
-    logger !== null &&
-    typeof logger === "object" &&
-    logger.constructor.name === "DefaultLogger"
-  );
-};
-
 describe("formatLogMessage", () => {
   test("returns message only when no optional fields provided", async () => {
     const { formatLogMessage } = await import("./log.ts");
@@ -81,115 +69,6 @@ describe("formatLogMessage", () => {
     expect(result).toBe(
       "Something failed The server was unavailable. To fix: Retry the request. See: https://example.com/docs [SERVER_ERROR]",
     );
-  });
-});
-
-describe("getLogger", () => {
-  afterEach(() => {
-    vi.resetModules();
-    delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
-  });
-
-  test("returns DefaultLogger outside of execution context", async () => {
-    const { getAsyncLocalStorage } = await import(
-      "../components/execution/als.ts"
-    );
-    const { getLogger } = await import("./log.ts");
-
-    await getAsyncLocalStorage();
-
-    const logger = getLogger();
-
-    expect(isDefaultLogger(logger)).toBe(true);
-  });
-
-  test("returns DefaultLogger before ALS is initialized", async () => {
-    const { getLogger } = await import("./log.ts");
-
-    const logger = getLogger();
-
-    expect(isDefaultLogger(logger)).toBe(true);
-  });
-
-  test("returns global logger when set and outside execution context", async () => {
-    const { getAsyncLocalStorage } = await import(
-      "../components/execution/als.ts"
-    );
-    const { getLogger, setGlobalLogger } = await import("./log.ts");
-
-    await getAsyncLocalStorage();
-
-    const customLogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    setGlobalLogger(customLogger);
-
-    const logger = getLogger();
-
-    expect(logger).toBe(customLogger);
-  });
-
-  test("prefers ctx.logger over global logger during execution", async () => {
-    const { Inngest } = await import("../index.ts");
-    const { InngestTestEngine } = await import("@inngest/test");
-    const { getLogger, setGlobalLogger } = await import("./log.ts");
-
-    const globalCustomLogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    setGlobalLogger(globalCustomLogger);
-
-    const inngest = new Inngest({ id: "test" });
-
-    let loggerFromHelper: unknown;
-
-    const fn = inngest.createFunction(
-      { id: "test", triggers: [{ event: "" }] },
-      () => {
-        loggerFromHelper = getLogger();
-        return "done";
-      },
-    );
-
-    const t = new InngestTestEngine({ function: fn as any });
-    await t.execute();
-
-    expect(loggerFromHelper).not.toBe(globalCustomLogger);
-    expect(isDefaultLogger(loggerFromHelper)).toBe(false);
-  });
-
-  test("returns ctx.logger during function execution", async () => {
-    const { Inngest } = await import("../index.ts");
-    const { InngestTestEngine } = await import("@inngest/test");
-    const { getLogger } = await import("./log.ts");
-
-    const inngest = new Inngest({ id: "test" });
-
-    let loggerFromHelper: unknown;
-    let loggerFromCtx: unknown;
-
-    const fn = inngest.createFunction(
-      { id: "test", triggers: [{ event: "" }] },
-      ({ logger }) => {
-        loggerFromCtx = logger;
-        loggerFromHelper = getLogger();
-        return "done";
-      },
-    );
-
-    const t = new InngestTestEngine({ function: fn as any });
-    const { result } = await t.execute();
-
-    expect(result).toBe("done");
-    expect(loggerFromHelper).toBe(loggerFromCtx);
   });
 });
 

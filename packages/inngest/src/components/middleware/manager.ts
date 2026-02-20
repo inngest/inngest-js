@@ -1,5 +1,5 @@
-import { getLogger } from "../../helpers/log.ts";
 import { timeStr } from "../../helpers/strings.ts";
+import type { Logger } from "../../middleware/logger.ts";
 import type { Context, StepOpCode } from "../../types.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
 import type { Middleware } from "./middleware.ts";
@@ -71,6 +71,7 @@ export class MiddlewareManager {
 
   private readonly functionInfo: Middleware.FunctionInfo;
   private readonly middleware: Middleware.BaseMiddleware[];
+  private readonly logger: Logger;
 
   /**
    * Infinite recursion guard for `wrapStep`. Prevents a middleware from
@@ -83,11 +84,13 @@ export class MiddlewareManager {
     getStepState: () => Record<string, MemoizedOp>,
     middleware: Middleware.BaseMiddleware[] = [],
     functionInfo: Middleware.FunctionInfo,
+    logger: Logger,
   ) {
     this.fnArg = fnArg;
     this.getStepState = getStepState;
     this.middleware = middleware;
     this.functionInfo = functionInfo;
+    this.logger = logger;
 
     this.hasTransformStepInput = middleware.some((mw) =>
       Boolean(mw?.transformStepInput),
@@ -105,7 +108,7 @@ export class MiddlewareManager {
    * collision resolution) so middleware sees final values.
    */
   async applyToStep(input: ApplyToStepInput): Promise<PreparedStep> {
-    const stepKind = stepKindFromOpCode(input.op, input.opts);
+    const stepKind = stepKindFromOpCode(input.op, input.opts, this.logger);
     const stepInput = stepInputFromOpts(stepKind, input.opts);
 
     const stepInfo = this.buildStepInfo({
@@ -335,7 +338,7 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onStepStart",
             mw: mw.constructor.name,
@@ -359,7 +362,7 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onStepComplete",
             mw: mw.constructor.name,
@@ -411,7 +414,7 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onStepError",
             mw: mw.constructor.name,
@@ -438,7 +441,7 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onMemoizationEnd",
             mw: mw.constructor.name,
@@ -457,7 +460,7 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onRunStart",
             mw: mw.constructor.name,
@@ -477,7 +480,7 @@ export class MiddlewareManager {
             output,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onRunComplete",
             mw: mw.constructor.name,
@@ -498,7 +501,7 @@ export class MiddlewareManager {
             isFinalAttempt,
           });
         } catch (error) {
-          getLogger().error("middleware error", {
+          this.logger.error("middleware error", {
             error,
             hook: "onRunError",
             mw: mw.constructor.name,
