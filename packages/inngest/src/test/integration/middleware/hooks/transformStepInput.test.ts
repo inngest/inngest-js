@@ -65,7 +65,7 @@ describe("args", () => {
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: false,
-            stepKind: "run",
+            stepType: "run",
           },
           stepOptions: { id: "my-step", name: "my-step" },
           input: [],
@@ -75,7 +75,7 @@ describe("args", () => {
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: true,
-            stepKind: "run",
+            stepType: "run",
           },
           stepOptions: { id: "my-step", name: "my-step" },
           input: [],
@@ -94,7 +94,7 @@ test("modify step.run input (1 middleware)", async () => {
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
-      if (arg.stepInfo.stepKind === "run") {
+      if (arg.stepInfo.stepType === "run") {
         return {
           ...arg,
           input: [42],
@@ -141,7 +141,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
-      if (arg.stepInfo.stepKind === "run") {
+      if (arg.stepInfo.stepType === "run") {
         return {
           ...arg,
           input: [(arg.input[0] as number) * 10],
@@ -155,7 +155,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
-      if (arg.stepInfo.stepKind === "run") {
+      if (arg.stepInfo.stepType === "run") {
         return {
           ...arg,
           input: [(arg.input[0] as number) + 5],
@@ -269,7 +269,7 @@ describe("change step ID", () => {
           input: undefined,
           memoized: false,
           options: { id: "step-1", name: "step-1" },
-          stepKind: "run",
+          stepType: "run",
         },
       },
       {
@@ -280,7 +280,7 @@ describe("change step ID", () => {
           input: undefined,
           memoized: false,
           options: { id: "new", name: "step-1" },
-          stepKind: "run",
+          stepType: "run",
         },
       },
     ]);
@@ -380,7 +380,7 @@ describe("change step ID", () => {
           input: undefined,
           memoized: false,
           options: { id: "step-1", name: "step-1" },
-          stepKind: "run",
+          stepType: "run",
         },
       },
       {
@@ -391,7 +391,7 @@ describe("change step ID", () => {
           input: undefined,
           memoized: false,
           options: { id: "step-2", name: "step-2" },
-          stepKind: "run",
+          stepType: "run",
         },
       },
       {
@@ -408,7 +408,7 @@ describe("change step ID", () => {
 
             name: "step-2",
           },
-          stepKind: "run",
+          stepType: "run",
         },
       },
     ]);
@@ -431,7 +431,7 @@ test("modify all step kinds", async () => {
       afterTime: null as Date | null,
       beforeTime: null as Date | null,
     },
-    unmemoizedCounts: {} as Record<Middleware.StepKind, number>,
+    unmemoizedCounts: {} as Record<Middleware.StepType, number>,
   });
 
   class MW extends Middleware.BaseMiddleware {
@@ -439,11 +439,11 @@ test("modify all step kinds", async () => {
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
       if (!arg.stepInfo.memoized) {
-        state.unmemoizedCounts[arg.stepInfo.stepKind] ??= 0;
-        state.unmemoizedCounts[arg.stepInfo.stepKind]++;
+        state.unmemoizedCounts[arg.stepInfo.stepType] ??= 0;
+        state.unmemoizedCounts[arg.stepInfo.stepType]++;
       }
 
-      if (arg.stepInfo.stepKind === "invoke") {
+      if (arg.stepInfo.stepType === "invoke") {
         return {
           ...arg,
           input: [
@@ -458,17 +458,17 @@ test("modify all step kinds", async () => {
             },
           ],
         };
-      } else if (arg.stepInfo.stepKind === "run") {
+      } else if (arg.stepInfo.stepType === "run") {
         return {
           ...arg,
           input: [2],
         };
-      } else if (arg.stepInfo.stepKind === "sleep") {
+      } else if (arg.stepInfo.stepType === "sleep") {
         return {
           ...arg,
           input: ["1s"],
         };
-      } else if (arg.stepInfo.stepKind === "waitForEvent") {
+      } else if (arg.stepInfo.stepType === "waitForEvent") {
         return {
           ...arg,
           input: [
@@ -565,7 +565,7 @@ test("modify all step kinds", async () => {
     invoke: 1,
     run: 1,
 
-    // `step.sleepUntil` has the same stepKind as `step.sleep`
+    // `step.sleepUntil` has the same stepType as `step.sleep`
     sleep: 2,
 
     waitForEvent: 1,

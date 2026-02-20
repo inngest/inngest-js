@@ -1,24 +1,24 @@
 import { describe, expect, test } from "vitest";
 import { ConsoleLogger } from "../../middleware/logger.ts";
 import { StepOpCode } from "../../types.ts";
-import { optsFromStepInput, stepKindFromOpCode } from "./utils.ts";
+import { optsFromStepInput, stepTypeFromOpCode } from "./utils.ts";
 
 const logger = new ConsoleLogger();
 
-describe("stepKindFromOpCode", () => {
+describe("stepTypeFromOpCode", () => {
   test("StepPlanned without type returns 'run'", () => {
-    expect(stepKindFromOpCode(StepOpCode.StepPlanned, undefined, logger)).toBe(
+    expect(stepTypeFromOpCode(StepOpCode.StepPlanned, undefined, logger)).toBe(
       "run",
     );
-    expect(stepKindFromOpCode(StepOpCode.StepPlanned, {}, logger)).toBe("run");
+    expect(stepTypeFromOpCode(StepOpCode.StepPlanned, {}, logger)).toBe("run");
     expect(
-      stepKindFromOpCode(StepOpCode.StepPlanned, { type: undefined }, logger),
+      stepTypeFromOpCode(StepOpCode.StepPlanned, { type: undefined }, logger),
     ).toBe("run");
   });
 
   test("StepPlanned with type 'step.sendEvent' returns 'sendEvent'", () => {
     expect(
-      stepKindFromOpCode(
+      stepTypeFromOpCode(
         StepOpCode.StepPlanned,
         { type: "step.sendEvent" },
         logger,
@@ -28,7 +28,7 @@ describe("stepKindFromOpCode", () => {
 
   test("StepPlanned with type 'step.realtime.publish' returns 'realtime.publish'", () => {
     expect(
-      stepKindFromOpCode(
+      stepTypeFromOpCode(
         StepOpCode.StepPlanned,
         {
           type: "step.realtime.publish",
@@ -40,7 +40,7 @@ describe("stepKindFromOpCode", () => {
 
   test("StepPlanned with unknown type returns 'unknown'", () => {
     expect(
-      stepKindFromOpCode(
+      stepTypeFromOpCode(
         StepOpCode.StepPlanned,
         { type: "step.whatever" },
         logger,
@@ -50,25 +50,25 @@ describe("stepKindFromOpCode", () => {
 
   test("InvokeFunction returns 'invoke'", () => {
     expect(
-      stepKindFromOpCode(StepOpCode.InvokeFunction, undefined, logger),
+      stepTypeFromOpCode(StepOpCode.InvokeFunction, undefined, logger),
     ).toBe("invoke");
   });
 
   test("Sleep returns 'sleep'", () => {
-    expect(stepKindFromOpCode(StepOpCode.Sleep, undefined, logger)).toBe(
+    expect(stepTypeFromOpCode(StepOpCode.Sleep, undefined, logger)).toBe(
       "sleep",
     );
   });
 
   test("WaitForEvent returns 'waitForEvent'", () => {
-    expect(stepKindFromOpCode(StepOpCode.WaitForEvent, undefined, logger)).toBe(
+    expect(stepTypeFromOpCode(StepOpCode.WaitForEvent, undefined, logger)).toBe(
       "waitForEvent",
     );
   });
 
   test("AiGateway with type 'step.ai.infer' returns 'ai.infer'", () => {
     expect(
-      stepKindFromOpCode(
+      stepTypeFromOpCode(
         StepOpCode.AiGateway,
         { type: "step.ai.infer" },
         logger,
@@ -78,7 +78,7 @@ describe("stepKindFromOpCode", () => {
 
   test("AiGateway with type 'step.ai.wrap' returns 'ai.wrap'", () => {
     expect(
-      stepKindFromOpCode(
+      stepTypeFromOpCode(
         StepOpCode.AiGateway,
         { type: "step.ai.wrap" },
         logger,
@@ -88,7 +88,7 @@ describe("stepKindFromOpCode", () => {
 
   test("AiGateway with unknown type returns 'unknown'", () => {
     expect(
-      stepKindFromOpCode(
+      stepTypeFromOpCode(
         StepOpCode.AiGateway,
         { type: "something.else" },
         logger,
@@ -97,16 +97,16 @@ describe("stepKindFromOpCode", () => {
   });
 
   test("unhandled opcode returns 'unknown'", () => {
-    expect(stepKindFromOpCode(StepOpCode.StepRun, undefined, logger)).toBe(
+    expect(stepTypeFromOpCode(StepOpCode.StepRun, undefined, logger)).toBe(
       "unknown",
     );
-    expect(stepKindFromOpCode(StepOpCode.Step, undefined, logger)).toBe(
+    expect(stepTypeFromOpCode(StepOpCode.Step, undefined, logger)).toBe(
       "unknown",
     );
   });
 
   test("Gateway returns 'fetch'", () => {
-    expect(stepKindFromOpCode(StepOpCode.Gateway, undefined, logger)).toBe(
+    expect(stepTypeFromOpCode(StepOpCode.Gateway, undefined, logger)).toBe(
       "fetch",
     );
   });

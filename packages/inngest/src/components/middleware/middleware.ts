@@ -59,7 +59,7 @@ export namespace Middleware {
   export type TransformStepInputArgs = {
     functionInfo: FunctionInfo;
     readonly stepInfo: Readonly<
-      Pick<StepInfo, "hashedId" | "memoized" | "stepKind">
+      Pick<StepInfo, "hashedId" | "memoized" | "stepType">
     >;
     stepOptions: StepOptions;
     input: unknown[];
@@ -232,10 +232,10 @@ export namespace Middleware {
   }>;
 
   /**
-   * The kind of step. This union may be extended in the future, and will not be
+   * The type of step. This union may be extended in the future, and will not be
    * considered a breaking change.
    */
-  export type StepKind = OpenStringUnion<
+  export type StepType = OpenStringUnion<
     | "ai.infer"
     | "ai.wrap"
     | "fetch"
@@ -275,7 +275,7 @@ export namespace Middleware {
      */
     options: StepOptions;
 
-    stepKind: StepKind;
+    stepType: StepType;
   };
 
   /**

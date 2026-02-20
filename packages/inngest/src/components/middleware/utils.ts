@@ -68,21 +68,21 @@ export function buildWrapRequestChain({
 }
 
 // Replace the "and can be any string" union member with "unknown". This
-// improves static type safety within `stepKindFromOpCode`, since it ensures we
-// aren't returning any unknown StepKind besides "unknown". We should never
+// improves static type safety within `stepTypeFromOpCode`, since it ensures we
+// aren't returning any unknown StepType besides "unknown". We should never
 // actually return "unknown" at runtime, but we need a default
-type StepKindFromOpCodeReturn =
-  | ExtractLiteralStrings<Middleware.StepKind>
+type StepTypeFromOpCodeReturn =
+  | ExtractLiteralStrings<Middleware.StepType>
   | "unknown";
 
 /**
- * Convert an opcode (from the op) to a step kind.
+ * Convert an opcode (from the op) to a step type.
  */
-export function stepKindFromOpCode(
+export function stepTypeFromOpCode(
   op: StepOpCode,
   opts: Record<string, unknown> | undefined,
   logger: Logger,
-): StepKindFromOpCodeReturn {
+): StepTypeFromOpCodeReturn {
   if (op === StepOpCode.AiGateway) {
     if (opts?.type === "step.ai.infer") {
       return "ai.infer";
@@ -111,7 +111,7 @@ export function stepKindFromOpCode(
   }
 
   logger.warn(
-    `Unknown step kind: op is "${op}" and opts.type is "${opts?.type}"`,
+    `Unknown step type: op is "${op}" and opts.type is "${opts?.type}"`,
   );
   return "unknown";
 }
@@ -123,10 +123,10 @@ export function stepKindFromOpCode(
  * wrap the entire opts as `[opts]`.
  */
 export function stepInputFromOpts(
-  stepKind: Middleware.StepKind,
+  stepType: Middleware.StepType,
   opts?: Record<string, unknown>,
 ): unknown[] | undefined {
-  if (stepKind === "invoke" || stepKind === "waitForEvent") {
+  if (stepType === "invoke" || stepType === "waitForEvent") {
     return [opts];
   }
   if (Array.isArray(opts?.input)) {
@@ -142,15 +142,15 @@ export function stepInputFromOpts(
  * Returns undefined when the step kind doesn't derive opts from input.
  */
 export function optsFromStepInput(
-  stepKind: Middleware.StepKind,
+  stepType: Middleware.StepType,
   input: unknown[] | undefined,
 ): Record<string, unknown> | undefined {
   if (input === undefined) {
     return undefined;
   }
 
-  // Step kinds where stepInputFromOpts wraps the entire opts as [opts]
-  if (stepKind === "invoke" || stepKind === "waitForEvent") {
+  // Step types where stepInputFromOpts wraps the entire opts as [opts]
+  if (stepType === "invoke" || stepType === "waitForEvent") {
     const opts = input[0];
     if (isRecord(opts)) {
       return opts;

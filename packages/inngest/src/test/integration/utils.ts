@@ -131,7 +131,7 @@ export abstract class BaseSerializerMiddleware<
   ): Middleware.TransformStepInputArgs {
     // For invoke steps, serialize input so it's available before the handler
     // chain runs (invoke steps are reported to the server before execution).
-    if (arg.stepInfo.stepKind === "invoke") {
+    if (arg.stepInfo.stepType === "invoke") {
       arg.input = arg.input.map((i) => this._serialize(i));
     }
     return arg;
