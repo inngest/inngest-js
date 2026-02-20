@@ -751,6 +751,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               // We know that because we're in this mode, we're always free to
               // checkpoint and continue if we ran a step and it was successful.
               if (stepResult.error) {
+                // Flush buffered steps before falling back to async,
+                // so previously-successful steps aren't lost.
+                if (this.state.checkpointingStepBuffer.length) {
+                  await attemptCheckpointAndResume(undefined, false, true);
+                }
+
                 // If we failed, go back to the regular async flow.
                 return stepRanHandler(stepResult);
               }
@@ -758,6 +764,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               // If we're here, we successfully ran a step, so we may now need
               // to checkpoint it depending on the step buffer configured.
               return await attemptCheckpointAndResume(stepResult);
+            }
+
+            // Flush any buffered checkpoint steps before returning
+            // new steps to the executor. Without this, steps executed
+            // in-process during AsyncCheckpointing but not yet
+            // checkpointed would be lost. When the executor later calls
+            // back with requestedRunStep, those steps would be missing
+            // from stepState, causing "step not found" errors.
+            if (this.state.checkpointingStepBuffer.length) {
+              await attemptCheckpointAndResume(undefined, false, true);
             }
 
             return maybeReturnNewSteps(steps);
