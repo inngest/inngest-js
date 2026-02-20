@@ -196,8 +196,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   get fetch(): FetchT {
     if (!this._cachedFetch) {
       this._cachedFetch = this._userProvidedFetch
-        ? getFetch(this._userProvidedFetch, this._logger)
-        : getFetch(globalThis.fetch, this._logger);
+        ? getFetch(this._logger, this._userProvidedFetch)
+        : getFetch(this._logger, globalThis.fetch);
     }
     return this._cachedFetch;
   }

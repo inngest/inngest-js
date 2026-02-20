@@ -2580,7 +2580,7 @@ class RequestSignature {
     body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
-    logger?: Logger;
+    logger: Logger;
   }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
       throw new Error("Signature has expired");
@@ -2603,7 +2603,7 @@ class RequestSignature {
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
-    logger?: Logger;
+    logger: Logger;
   }): Promise<string> {
     try {
       await this.#verifySignature({

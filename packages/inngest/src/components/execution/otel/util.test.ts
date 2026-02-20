@@ -1,7 +1,10 @@
 import { trace } from "@opentelemetry/api";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import { ConsoleLogger } from "../../../index.ts";
 import { InngestSpanProcessor } from "./processor.ts";
 import { extendProvider } from "./util.ts";
+
+const logger = new ConsoleLogger("silent");
 
 // Simulate a provider with `addSpanProcessor` (like NodeTracerProvider or
 // OTel SDK v1 BasicTracerProvider — v2 removed this method from the class).
@@ -22,7 +25,7 @@ describe("extendProvider", () => {
     const { provider } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto");
+    const result = extendProvider("auto", logger);
 
     expect(result.success).toBe(true);
     expect((result as { processor: unknown }).processor).toBeInstanceOf(
@@ -34,7 +37,7 @@ describe("extendProvider", () => {
     const { provider } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("extendProvider");
+    const result = extendProvider("extendProvider", logger);
 
     expect(result.success).toBe(true);
   });
@@ -42,7 +45,7 @@ describe("extendProvider", () => {
   test("should return success: false when no provider is registered", () => {
     trace.disable();
 
-    const result = extendProvider("auto");
+    const result = extendProvider("auto", logger);
 
     expect(result.success).toBe(false);
   });
@@ -57,7 +60,7 @@ describe("extendProvider", () => {
       debug: vi.fn(),
     };
 
-    const result = extendProvider("extendProvider", mockLogger);
+    const result = extendProvider("extendProvider", logger);
 
     expect(result.success).toBe(false);
     expect(mockLogger.warn).toHaveBeenCalled();
@@ -67,7 +70,7 @@ describe("extendProvider", () => {
     const { provider, addSpanProcessor } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto");
+    const result = extendProvider("auto", logger);
 
     expect(result.success).toBe(true);
     expect(addSpanProcessor).toHaveBeenCalledTimes(1);

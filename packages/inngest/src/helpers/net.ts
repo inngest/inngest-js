@@ -107,7 +107,7 @@ export async function signDataWithKey(
   data: unknown,
   signingKey: string,
   ts: string,
-  logger?: Logger,
+  logger: Logger,
 ): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
 
@@ -126,7 +126,7 @@ export async function signDataWithKey(
     try {
       return await signWithNative(subtle, data, signingKey, ts);
     } catch (error) {
-      logger?.debug("Native crypto failed, falling back to hash.js:", error);
+      logger.debug("Native crypto failed, falling back to hash.js:", error);
     }
   }
   return signWithHashJs(data, signingKey, ts);

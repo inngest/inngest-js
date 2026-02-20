@@ -330,8 +330,8 @@ const CUSTOM_FETCH_MARKER = Symbol("Custom fetch implementation");
  * this and the environment.
  */
 export const getFetch = (
+  logger: Logger,
   givenFetch?: typeof fetch,
-  logger?: Logger,
 ): typeof fetch => {
   /**
    * If we've explicitly been given a fetch function, use that.
@@ -360,10 +360,10 @@ export const getFetch = (
           !(err instanceof Error) ||
           !err.message?.startsWith("fetch failed")
         ) {
-          logger?.warn(
+          logger.warn(
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
           );
-          logger?.error(err);
+          logger.error(err);
         }
 
         throw err;

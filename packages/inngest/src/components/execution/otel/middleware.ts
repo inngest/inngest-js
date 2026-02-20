@@ -59,11 +59,6 @@ export interface ExtendedTracesMiddlewareOptions {
    * Defaults to `DiagLogLevel.ERROR`.
    */
   logLevel?: DiagLogLevel;
-
-  /**
-   * An optional logger to use for warnings and diagnostics.
-   */
-  logger?: Logger;
 }
 
 /**
@@ -77,15 +72,14 @@ export const extendedTracesMiddleware = ({
   behaviour = "auto",
   instrumentations,
   logLevel = DiagLogLevel.ERROR,
-  logger,
-}: ExtendedTracesMiddlewareOptions = {}) => {
+}: ExtendedTracesMiddlewareOptions) => {
   debug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
 
   switch (behaviour) {
     case "auto": {
-      const extended = extendProvider(behaviour, logger);
+      const extended = extendProvider(behaviour);
       if (extended.success) {
         debug("extended existing provider");
         processor = extended.processor;
@@ -99,7 +93,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      logger?.warn("no provider found to extend and unable to create one");
+      console.warn("no provider found to extend and unable to create one");
 
       break;
     }
@@ -111,21 +105,21 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      logger?.warn(
+      console.warn(
         "unable to create provider, Extended Traces middleware will not work",
       );
 
       break;
     }
     case "extendProvider": {
-      const extended = extendProvider(behaviour, logger);
+      const extended = extendProvider(behaviour);
       if (extended.success) {
         debug("extended existing provider");
         processor = extended.processor;
         break;
       }
 
-      logger?.warn(
+      console.warn(
         'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
 
@@ -136,7 +130,7 @@ export const extendedTracesMiddleware = ({
     }
     default: {
       // unknown
-      logger?.warn(
+      console.warn(
         `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
       );
     }
@@ -145,7 +139,7 @@ export const extendedTracesMiddleware = ({
   class ExtendedTracesMiddleware extends Middleware.BaseMiddleware {
     /**
      * Called by the Inngest constructor to associate the processor with the
-     * client. Replaces the old `init({ client })` hook.
+     * client.
      */
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
       // Set the logger for our otel processors and exporters.
