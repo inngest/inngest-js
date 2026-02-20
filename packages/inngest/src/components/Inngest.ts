@@ -45,8 +45,6 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
-  type LogLevel,
-  logLevels,
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,

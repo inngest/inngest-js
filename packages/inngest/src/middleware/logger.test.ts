@@ -36,7 +36,7 @@ describe("ProxyLogger", () => {
       immediate.mockReset();
     });
 
-    test("should not try to wait for flushing if _logger is DefaultLogger", async () => {
+    test("should not try to wait for flushing if _logger is ConsoleLogger", async () => {
       populateBuf();
       await logger.flush();
       expect(immediate).toHaveBeenCalledTimes(0);
@@ -62,7 +62,7 @@ describe("ProxyLogger", () => {
       expect(immediate).toHaveBeenCalledTimes(0);
     });
 
-    test("should attempt to yield event loop with non DefaultLogger", async () => {
+    test("should attempt to yield event loop with non ConsoleLogger", async () => {
       _internal = new (class DummyLogger implements Logger {
         info(..._args: unknown[]) {}
         warn(..._args: unknown[]) {}
@@ -166,7 +166,7 @@ describe("ProxyLogger", () => {
   });
 });
 
-describe("DefaultLogger log-level filtering", () => {
+describe("ConsoleLogger log-level filtering", () => {
   test("should only output messages at or above the configured level", () => {
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});

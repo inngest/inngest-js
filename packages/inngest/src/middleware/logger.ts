@@ -161,7 +161,7 @@ export class ProxyLogger implements Logger {
   }
 
   async flush() {
-    // If DefaultLogger, nothing to wait for
+    // If ConsoleLogger, nothing to wait for
     if (this.logger.constructor.name == ConsoleLogger.name) {
       return;
     }

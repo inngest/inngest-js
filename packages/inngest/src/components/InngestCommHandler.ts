@@ -1,7 +1,5 @@
-import debug from "debug";
 import { z } from "zod/v3";
 import {
-  debugPrefix,
   defaultMaxRetries,
   ExecutionVersion,
   envKeys,
@@ -36,6 +34,7 @@ import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
 import { isRecord, type MaybePromise } from "../helpers/types.ts";
+import type { Logger } from "../middleware/logger.ts";
 import {
   type APIStepPayload,
   AsyncResponseType,
@@ -2524,6 +2523,7 @@ export class InngestCommHandler<
           allowExpiredSignatures: this.allowExpiredSignatures,
           signingKey: this.client.signingKey,
           signingKeyFallback: this.client.signingKeyFallback,
+          logger: this.client.logger,
         }),
       };
     } catch (err) {
@@ -2575,16 +2575,18 @@ class RequestSignature {
     body,
     signingKey,
     allowExpiredSignatures,
+    logger,
   }: {
     body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
+    logger?: Logger;
   }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
       throw new Error("Signature has expired");
     }
 
-    const mac = await signDataWithKey(body, signingKey, this.timestamp);
+    const mac = await signDataWithKey(body, signingKey, this.timestamp, logger);
     if (mac !== this.signature) {
       throw new Error("Invalid signature");
     }
@@ -2595,14 +2597,21 @@ class RequestSignature {
     signingKey,
     signingKeyFallback,
     allowExpiredSignatures,
+    logger,
   }: {
     body: unknown;
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
+    logger?: Logger;
   }): Promise<string> {
     try {
-      await this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+      await this.#verifySignature({
+        body,
+        signingKey,
+        allowExpiredSignatures,
+        logger,
+      });
 
       return signingKey;
     } catch (err) {
@@ -2614,6 +2623,7 @@ class RequestSignature {
         body,
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
+        logger,
       });
 
       return signingKeyFallback;
