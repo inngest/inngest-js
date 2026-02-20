@@ -6,6 +6,7 @@ import { createClient } from "../../test/helpers.ts";
 import { StepMode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import type { ExecutionResults } from "./InngestExecution.ts";
+import { PREFERRED_CHECKPOINTING_EXECUTION_VERSION } from "./InngestExecution.ts";
 
 describe("V2 checkpoint retry behavior", () => {
   const mockEvent = { name: "test/event", data: { foo: "bar" } };
@@ -204,6 +205,83 @@ describe("V2 checkpoint retry behavior", () => {
       // The SDK just returns the result for the server to handle
       expect(mockCheckpointStepsAsync).not.toHaveBeenCalled();
       expect(result.type).toBe("steps-found");
+    });
+
+    test("flushes buffered steps before returning parallel steps to executor", async () => {
+      const client = createClient({ id: "test" });
+
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
+        checkpointStepsAsync: mockCheckpointStepsAsync,
+      } as Partial<InngestApi> as InngestApi;
+
+      // Function with 2 sequential steps then 2 parallel steps.
+      // With bufferedSteps: 5, the sequential steps stay buffered
+      // and must be flushed when parallelism is discovered.
+      const fn = new InngestFunction(
+        client,
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
+        async ({ step }) => {
+          await step.run("sequential-1", () => "result-1");
+          await step.run("sequential-2", () => "result-2");
+
+          // These create parallel steps that can't be immediately executed
+          await Promise.all([
+            step.run("parallel-a", () => "a"),
+            step.run("parallel-b", () => "b"),
+          ]);
+        },
+      );
+
+      const execution = fn["createExecution"]({
+        version: PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
+        partialOptions: {
+          client,
+          data: fromPartial({ event: mockEvent }),
+          runId: "test-run-id",
+          stepState: {},
+          stepCompletionOrder: [],
+          reqArgs: [],
+          headers: {},
+          stepMode: StepMode.AsyncCheckpointing,
+          checkpointingConfig: {
+            bufferedSteps: 5,
+            maxRuntime: 0,
+            maxInterval: 0,
+          },
+          queueItemId: "queue-item-123",
+          internalFnId: "internal-fn-456",
+        },
+      });
+
+      const executionPromise = execution.start();
+      await advanceThroughRetries();
+      const result = await executionPromise;
+
+      // The result should report the parallel steps back to the executor
+      expect(result.type).toBe("steps-found");
+      const stepsFound = result as ExecutionResults["steps-found"] & {
+        type: string;
+      };
+      const reportedNames = stepsFound.steps.map((s) => s.name);
+      expect(reportedNames).toContain("parallel-a");
+      expect(reportedNames).toContain("parallel-b");
+
+      // The buffered sequential steps must have been flushed via
+      // checkpoint before returning. Without the flush, these steps
+      // would be lost and subsequent requestedRunStep invocations
+      // would fail with "step not found".
+      expect(mockCheckpointStepsAsync).toHaveBeenCalled();
+
+      const checkpointedSteps = mockCheckpointStepsAsync.mock.calls.flatMap(
+        (call) => call[0].steps,
+      );
+      const checkpointedNames = checkpointedSteps.map(
+        (s: { name?: string }) => s.name,
+      );
+      expect(checkpointedNames).toContain("sequential-1");
+      expect(checkpointedNames).toContain("sequential-2");
     });
   });
 });
