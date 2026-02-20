@@ -959,7 +959,7 @@ export function builtInMiddleware(baseLogger: Logger) {
               eventName: arg.ctx.event.name,
             });
           } catch (err) {
-            logger.error('failed to create "childLogger" with error: ', err);
+            logger.error({ err }, 'failed to create "childLogger" with error');
           }
         }
 
@@ -978,14 +978,14 @@ export function builtInMiddleware(baseLogger: Logger) {
       }
 
       override onStepError(arg: Middleware.OnStepErrorArgs) {
-        this.#proxyLogger.error(arg.error);
+        this.#proxyLogger.error({ err: arg.error }, "Inngest step error");
       }
 
       override wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
         return next().catch((err: unknown) => {
-          this.#proxyLogger.error(err);
+          this.#proxyLogger.error({ err }, "Inngest function error");
           throw err;
         });
       }

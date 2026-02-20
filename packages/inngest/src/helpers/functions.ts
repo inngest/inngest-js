@@ -248,7 +248,7 @@ export const fetchAllFnData = async ({
 
     return ok(result);
   } catch (error) {
-    logger.error(error);
+    logger.error({ err: error }, "Failed to fetch all function data");
 
     return err(parseFailureErr(error));
   }

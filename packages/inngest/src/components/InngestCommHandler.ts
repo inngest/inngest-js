@@ -1822,7 +1822,7 @@ export class InngestCommHandler<
         try {
           return await handler(stepOutput);
         } catch (err) {
-          this.client.logger.error("Error handling execution result", err);
+          this.client.logger.error({ err }, "Error handling execution result");
           throw err;
         }
       }
@@ -2379,7 +2379,7 @@ export class InngestCommHandler<
         },
       });
     } catch (err: unknown) {
-      this.client.logger.error(err);
+      this.client.logger.error({ err }, "Failed to register");
 
       return {
         status: 500,
