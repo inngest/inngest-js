@@ -337,10 +337,10 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
             stepInfo,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onStepStart",
               mw: mw.constructor.name,
             },
@@ -364,10 +364,10 @@ export class MiddlewareManager {
             output,
             stepInfo,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onStepComplete",
               mw: mw.constructor.name,
             },
@@ -419,10 +419,10 @@ export class MiddlewareManager {
             isFinalAttempt,
             stepInfo,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onStepError",
               mw: mw.constructor.name,
             },
@@ -449,10 +449,10 @@ export class MiddlewareManager {
             ctx: this.fnArg,
             functionInfo: this.functionInfo,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onMemoizationEnd",
               mw: mw.constructor.name,
             },
@@ -471,10 +471,10 @@ export class MiddlewareManager {
             ctx: this.fnArg,
             functionInfo: this.functionInfo,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onRunStart",
               mw: mw.constructor.name,
             },
@@ -494,10 +494,10 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
             output,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onRunComplete",
               mw: mw.constructor.name,
             },
@@ -518,10 +518,10 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
             isFinalAttempt,
           });
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
             {
-              error,
+              err,
               hook: "onRunError",
               mw: mw.constructor.name,
             },

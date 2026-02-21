@@ -41,13 +41,14 @@ export class ServerTiming {
     return (): void => {
       const target = this.timings[name];
       if (!target) {
-        return this.logger.warn(`Timing "${name}" does not exist`);
+        return this.logger.warn({ timing: name }, "Timing does not exist");
       }
 
       const timer = target.timers[index];
       if (!timer) {
         return this.logger.warn(
-          `Timer ${index} for timing "${name}" does not exist`,
+          { timing: name, index },
+          "Timer does not exist",
         );
       }
 

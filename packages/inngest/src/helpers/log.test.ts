@@ -209,7 +209,10 @@ describe("builtInMiddleware", () => {
     const t = new InngestTestEngine({ function: fn as any });
     await t.execute();
 
-    expect(customLogger.error).toHaveBeenCalledWith(err);
+    expect(customLogger.error).toHaveBeenCalledWith(
+      { err },
+      "Inngest function error",
+    );
   });
 
   test("creates child logger when .child() is available", async () => {

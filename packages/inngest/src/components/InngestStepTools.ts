@@ -785,8 +785,8 @@ export const createStepTools = <
          * error here to standardise this response.
          */
         client.logger.warn(
-          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
-          err,
+          { err },
+          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
         );
 
         throw new Error(

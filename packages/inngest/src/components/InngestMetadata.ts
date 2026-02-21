@@ -295,7 +295,7 @@ async function performOp(
   const isInsideStep = !!ctx?.execution?.executingStep;
   if (isInsideRun && !isInsideStep) {
     client.logger.warn(
-      "inngest: metadata.update() called outside of a step. This metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
+      "metadata.update() called outside of a step; this metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
     );
   }
 

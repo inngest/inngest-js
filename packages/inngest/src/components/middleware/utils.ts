@@ -110,9 +110,7 @@ export function stepTypeFromOpCode(
     return "waitForEvent";
   }
 
-  logger.warn(
-    `Unknown step type: op is "${op}" and opts.type is "${opts?.type}"`,
-  );
+  logger.warn({ op, type: opts?.type }, "Unknown step type");
   return "unknown";
 }
 

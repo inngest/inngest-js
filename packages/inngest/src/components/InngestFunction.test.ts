@@ -324,10 +324,17 @@ describe("runFn", () => {
               describe("warning logs", () => {
                 t.expectedWarnings?.forEach((warning, i) => {
                   test(`warning log #${i + 1} includes "${warning}"`, () => {
-                    expect(mockLogger.warn).toHaveBeenNthCalledWith(
-                      i + 1,
-                      expect.stringContaining(warning),
-                    );
+                    const call = mockLogger.warn.mock.calls[i];
+                    const found = call?.some((arg: unknown) => {
+                      if (typeof arg === "string") {
+                        return arg.includes(warning);
+                      }
+                      if (arg && typeof arg === "object") {
+                        return JSON.stringify(arg).includes(warning);
+                      }
+                      return false;
+                    });
+                    expect(found).toBe(true);
                   });
                 });
               });
@@ -343,12 +350,17 @@ describe("runFn", () => {
                   test(`error log #${i + 1} includes "${error}"`, () => {
                     // biome-ignore lint/suspicious/noExplicitAny: intentional
                     const call = (mockLogger.error as any).mock.calls[i];
-                    const stringifiedArgs =
-                      call?.map((arg: unknown) => {
-                        return arg instanceof Error ? serializeError(arg) : arg;
-                      }) ?? "";
+                    const serialized = JSON.stringify(
+                      call,
+                      (_key: string, value: unknown) => {
+                        if (value instanceof Error) {
+                          return serializeError(value);
+                        }
+                        return value;
+                      },
+                    );
 
-                    expect(JSON.stringify(stringifiedArgs)).toContain(error);
+                    expect(serialized).toContain(error);
                   });
                 });
               });
