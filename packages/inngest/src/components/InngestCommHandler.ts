@@ -1394,7 +1394,7 @@ export class InngestCommHandler<
           return runAsPromise(fn)
             .catch(rethrowError(errMessage))
             .catch((err) => {
-              this.client.logger.error(errMessage, err);
+              this.client.logger.error({ err }, errMessage);
               throw err;
             });
         },
@@ -2397,7 +2397,7 @@ export class InngestCommHandler<
     try {
       data = JSON.parse(raw);
     } catch (err) {
-      this.client.logger.warn("Couldn't unpack register response: ", err);
+      this.client.logger.warn({ err }, "Couldn't unpack register response");
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2419,7 +2419,7 @@ export class InngestCommHandler<
     try {
       ({ status, error, skipped, modified } = registerResSchema.parse(data));
     } catch (err) {
-      this.client.logger.warn("Invalid register response schema: ", err);
+      this.client.logger.warn({ err }, "Invalid register response schema");
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2441,10 +2441,8 @@ export class InngestCommHandler<
     // to register if the functions are the same.
     if (!skipped) {
       this.client.logger.debug(
-        "registered inngest functions:",
-        res.status,
-        res.statusText,
-        data,
+        { status: res.status, statusText: res.statusText, data },
+        "Registered inngest functions",
       );
     }
 
