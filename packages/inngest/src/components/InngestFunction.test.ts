@@ -324,10 +324,17 @@ describe("runFn", () => {
               describe("warning logs", () => {
                 t.expectedWarnings?.forEach((warning, i) => {
                   test(`warning log #${i + 1} includes "${warning}"`, () => {
-                    expect(mockLogger.warn).toHaveBeenNthCalledWith(
-                      i + 1,
-                      expect.stringContaining(warning),
-                    );
+                    const call = mockLogger.warn.mock.calls[i];
+                    const found = call?.some((arg: unknown) => {
+                      if (typeof arg === "string") {
+                        return arg.includes(warning);
+                      }
+                      if (arg && typeof arg === "object") {
+                        return JSON.stringify(arg).includes(warning);
+                      }
+                      return false;
+                    });
+                    expect(found).toBe(true);
                   });
                 });
               });

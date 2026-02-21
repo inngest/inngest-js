@@ -77,8 +77,7 @@ export class ConsoleLogger implements Logger {
 
   /**
    * Detect Pino-style `(object, string, ...rest)` calls and reformat for
-   * console readability: message first, error (if any) as a separate arg,
-   * remaining metadata dropped.
+   * console readability: message first, then structured fields.
    */
   private logFormatted(fn: (...args: LogArg[]) => void, args: LogArg[]) {
     if (args.length > 1 && isRecord(args[0]) && typeof args[1] === "string") {
@@ -90,19 +89,20 @@ export class ConsoleLogger implements Logger {
       );
       const [, message, ...rest] = args;
 
+      fn(message);
+
       if (fields.err) {
-        fn(message);
         fn(fields.err);
-        if (Object.keys(nonErrFields).length > 0) {
-          fn(nonErrFields);
-        }
-        if (rest.length > 0) {
-          fn(...rest);
-        }
-        return;
       }
 
-      fn(message, ...rest);
+      if (Object.keys(nonErrFields).length > 0) {
+        fn(nonErrFields);
+      }
+
+      if (rest.length > 0) {
+        fn(...rest);
+      }
+
       return;
     }
 

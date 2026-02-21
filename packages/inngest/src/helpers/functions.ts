@@ -88,7 +88,8 @@ export const createVersionSchema = (logger: Logger) =>
     .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
       if (typeof v === "undefined") {
         logger.debug(
-          `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
+          { defaultVersion: PREFERRED_ASYNC_EXECUTION_VERSION },
+          "No request version specified by executor; using default",
         );
 
         return {

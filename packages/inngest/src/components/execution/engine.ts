@@ -16,7 +16,6 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { formatLogMessage } from "../../helpers/log.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -1346,14 +1345,14 @@ class InngestExecutionEngine
           this.options.client["warnMetadata"](
             { run_id: this.fnArg.runId },
             ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-            formatLogMessage({
-              message:
-                "We detected that you have multiple steps with the same ID.",
-              explanation: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${userlandCollisionId}". Your function is still running, though it may exhibit unexpected behaviour. Using the same IDs across parallel chains of work can cause unexpected behaviour.`,
+            {
+              message: `Duplicate step ID "${userlandCollisionId}" detected across parallel chains`,
+              explanation:
+                "Using the same ID for steps in different parallel chains can cause unexpected behaviour. Your function is still running.",
               action:
-                "We recommend using a unique ID for each step, especially those happening in parallel.",
+                "Use a unique ID for each step, especially those in parallel.",
               code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-            }),
+            },
           );
         }
       }
@@ -1446,14 +1445,14 @@ class InngestExecutionEngine
         this.options.client["warnMetadata"](
           { run_id: this.fnArg.runId },
           ErrCode.NESTING_STEPS,
-          formatLogMessage({
-            message: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``,
+          {
+            message: `Nested step tooling detected in "${opId.displayName ?? opId.id}"`,
             explanation:
-              "Nesting `step.*` tooling is not supported. It's possible to see this warning if steps are separated by regular asynchronous calls, which is fine.",
+              "Nesting step.* calls is not supported. This warning may also appear if steps are separated by regular async calls, which is fine.",
             action:
-              "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
+              "Avoid using step.* inside other step.* calls. Use a separate async function or promise chaining to compose steps.",
             code: ErrCode.NESTING_STEPS,
-          }),
+          },
         );
       }
 

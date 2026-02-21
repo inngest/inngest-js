@@ -193,7 +193,8 @@ describe("ServeHandler", () => {
       });
 
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('INNGEST_STREAMING="allow" is deprecated'),
+        expect.objectContaining({ value: "allow" }),
+        expect.stringContaining("is deprecated"),
       );
     });
 
@@ -214,7 +215,8 @@ describe("ServeHandler", () => {
       });
 
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('INNGEST_STREAMING="force" is deprecated'),
+        expect.objectContaining({ value: "force" }),
+        expect.stringContaining("is deprecated"),
       );
     });
 
@@ -235,6 +237,7 @@ describe("ServeHandler", () => {
       });
 
       expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
         expect.stringContaining("is deprecated"),
       );
     });
@@ -254,6 +257,7 @@ describe("ServeHandler", () => {
       await runHandler(handler);
 
       expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
         expect.stringContaining("is deprecated"),
       );
     });
@@ -280,7 +284,7 @@ describe("ServeHandler", () => {
 
       const deprecationCalls = warnSpy.mock.calls.filter(
         (args) =>
-          typeof args[0] === "string" && args[0].includes("is deprecated"),
+          typeof args[1] === "string" && args[1].includes("is deprecated"),
       );
       expect(deprecationCalls).toHaveLength(1);
     });

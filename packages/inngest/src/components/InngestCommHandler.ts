@@ -27,7 +27,7 @@ import {
   parseFnData,
   undefinedToNull,
 } from "../helpers/functions.ts";
-import { formatLogMessage, warnOnce } from "../helpers/log.ts";
+import { warnOnce } from "../helpers/log.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
@@ -493,7 +493,8 @@ export class InngestCommHandler<
       .default(defaultStreamingOption)
       .catch((ctx) => {
         this.client.logger.warn(
-          `Unknown streaming option passed: ${String(ctx.input)}; defaulting to ${String(defaultStreamingOption)}`,
+          { input: ctx.input, default: defaultStreamingOption },
+          "Unknown streaming option; using default",
         );
 
         return defaultStreamingOption;
@@ -537,10 +538,7 @@ export class InngestCommHandler<
       warnOnce(
         this.client.logger,
         "serve-host-deprecated",
-        formatLogMessage({
-          message: `${logPrefix} INNGEST_SERVE_HOST is deprecated.`,
-          action: "Use INNGEST_SERVE_ORIGIN instead.",
-        }),
+        "INNGEST_SERVE_HOST is deprecated; use INNGEST_SERVE_ORIGIN instead",
       );
       return envHost;
     }
@@ -614,10 +612,8 @@ export class InngestCommHandler<
       warnOnce(
         this.client.logger,
         "streaming-allow-force-deprecated",
-        formatLogMessage({
-          message: `${logPrefix} INNGEST_STREAMING="${envStreaming}" is deprecated and will be treated as true.`,
-          action: "Set INNGEST_STREAMING=true instead.",
-        }),
+        { value: envStreaming },
+        `INNGEST_STREAMING="${envStreaming}" is deprecated; set INNGEST_STREAMING=true instead`,
       );
     }
 
@@ -1554,7 +1550,8 @@ export class InngestCommHandler<
               die = parsed;
             } else {
               this.client.logger.warn(
-                `Received invalid value for ${headerKeys.InngestForceStepPlan} header: ${dieHeader}. Expected a boolean value. Defaulting to "false".`,
+                { header: headerKeys.InngestForceStepPlan, value: dieHeader },
+                "Invalid boolean header value; defaulting to false",
               );
             }
           }
@@ -2148,7 +2145,8 @@ export class InngestCommHandler<
         const errors = check.error.errors.map((err) => err.message).join("; ");
 
         this.client.logger.warn(
-          `Config invalid for function "${config.id}" : ${errors}`,
+          { functionId: config.id, errors },
+          "Invalid function config",
         );
       }
     }

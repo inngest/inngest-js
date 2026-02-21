@@ -20,7 +20,7 @@ import {
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { formatLogMessage } from "../helpers/log.ts";
+import { formatLogMessage, type StructuredLogMessage } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
@@ -486,11 +486,31 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private async warnMetadata(
     target: MetadataTarget,
     kind: ErrCode,
-    text: string,
+    log: StructuredLogMessage,
   ) {
-    this.logger.warn(text);
+    const fields: Record<string, unknown> = {};
+    if (log.code) {
+      fields.code = log.code;
+    }
+    if (log.explanation) {
+      fields.explanation = log.explanation;
+    }
+    if (log.action) {
+      fields.action = log.action;
+    }
+    if (log.docs) {
+      fields.docs = log.docs;
+    }
 
-    if (!this.experimentalMetadataEnabled) return;
+    if (Object.keys(fields).length > 0) {
+      this.logger.warn(fields, log.message);
+    } else {
+      this.logger.warn(log.message);
+    }
+
+    if (!this.experimentalMetadataEnabled) {
+      return;
+    }
 
     await this.updateMetadata({
       target: target,
@@ -499,7 +519,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
           kind: "inngest.warnings",
           op: "merge",
           values: {
-            [`sdk.${kind}`]: text,
+            [`sdk.${kind}`]: formatLogMessage(log),
           },
         },
       ],
@@ -748,12 +768,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         [headerKeys.EventIdSeed]: `${nowMillis},${entropyBase64}`,
       };
     } catch (err) {
-      let message = "Event-sending retries disabled";
-      if (err instanceof Error) {
-        message += `: ${err.message}`;
-      }
-
-      this.logger.debug(message);
+      this.logger.debug({ err }, "Event-sending retries disabled");
 
       // Disable retries.
       maxAttempts = 1;
@@ -807,11 +822,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      */
     if (!payloads.length) {
       this.logger.warn(
-        formatLogMessage({
-          message: "`inngest.send()` called with no events",
-          explanation:
-            "This is not an error, but you may not have intended to do this. The returned promise will resolve, but no events have been sent to Inngest.",
-        }),
+        "inngest.send() called with no events; the returned promise will resolve, but no events have been sent",
       );
 
       return { ids: [] } as SendEventOutput<TClientOpts>;

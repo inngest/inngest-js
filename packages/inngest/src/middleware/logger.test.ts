@@ -230,10 +230,13 @@ describe("ConsoleLogger Pino-style formatting", () => {
     expect(errorSpy).toHaveBeenNthCalledWith(3, "detail");
   });
 
-  test("object-first without error and extra args preserves rest", () => {
+  test("object-first without error and extra args preserves fields and rest", () => {
     const logger = new ConsoleLogger();
     logger.info({ requestId: "abc" }, "hello %s", "world");
-    expect(infoSpy).toHaveBeenCalledWith("hello %s", "world");
+    expect(infoSpy).toHaveBeenCalledTimes(3);
+    expect(infoSpy).toHaveBeenNthCalledWith(1, "hello %s");
+    expect(infoSpy).toHaveBeenNthCalledWith(2, { requestId: "abc" });
+    expect(infoSpy).toHaveBeenNthCalledWith(3, "world");
   });
 });
 
