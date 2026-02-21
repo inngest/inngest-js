@@ -343,12 +343,17 @@ describe("runFn", () => {
                   test(`error log #${i + 1} includes "${error}"`, () => {
                     // biome-ignore lint/suspicious/noExplicitAny: intentional
                     const call = (mockLogger.error as any).mock.calls[i];
-                    const stringifiedArgs =
-                      call?.map((arg: unknown) => {
-                        return arg instanceof Error ? serializeError(arg) : arg;
-                      }) ?? "";
+                    const serialized = JSON.stringify(
+                      call,
+                      (_key: string, value: unknown) => {
+                        if (value instanceof Error) {
+                          return serializeError(value);
+                        }
+                        return value;
+                      },
+                    );
 
-                    expect(JSON.stringify(stringifiedArgs)).toContain(error);
+                    expect(serialized).toContain(error);
                   });
                 });
               });
