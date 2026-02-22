@@ -46,6 +46,40 @@ import {
 } from "./InngestMetadata.ts";
 import type { Realtime } from "./realtime/types.ts";
 
+//
+// This gnarly type allows us to infer the types of the arguments for a function
+// with up to 4 overloads.
+//
+// This make step.ai.wrap work with, among other things,  the vercel ai sdk generateObject function.
+//
+type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
+  k: infer I
+) => void
+  ? I
+  : never;
+
+type GetOverloadArgs<T> = T extends {
+  (...args: infer A1): any;
+  (...args: infer A2): any;
+  (...args: infer A3): any;
+  (...args: infer A4): any;
+}
+  ? A1 | A2 | A3 | A4
+  : T extends {
+        (...args: infer A1): any;
+        (...args: infer A2): any;
+        (...args: infer A3): any;
+      }
+    ? A1 | A2 | A3
+    : T extends {
+          (...args: infer A1): any;
+          (...args: infer A2): any;
+        }
+      ? A1 | A2
+      : T extends (...args: infer A) => any
+        ? A
+        : never;
+
 export interface FoundStep extends HashedOp {
   hashedId: string;
   fn?: (...args: unknown[]) => unknown;
@@ -201,23 +235,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
-
-        /**
-         * The function to run when this step is executed. Can be synchronous or
-         * asynchronous.
-         *
-         * The return value of this function will be the return value of this
-         * call to `run`, meaning you can return and reason about return data
-         * for next steps.
-         */
         fn: TFn,
-
-        /**
-         * Optional input to pass to the function. If this is specified, Inngest
-         * will keep track of the input for this step and be able to display it
-         * in the UI.
-         */
-        ...input: Parameters<TFn>
+        ...input: GetOverloadArgs<TFn>
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
