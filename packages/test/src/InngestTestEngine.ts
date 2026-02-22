@@ -15,6 +15,7 @@ import {
   type DeepPartial,
   mockCtx,
 } from "./util.js";
+import { FoundStep } from "inngest/components/InngestStepTools";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -103,7 +104,7 @@ export namespace InngestTestEngine {
   export interface MockedStep {
     id: string;
     idIsHashed?: boolean;
-    handler: () => any;
+    handler: (...args: any[]) => any;
   }
 
   export type DeepMock<T> = T extends (...args: any[]) => any
@@ -432,6 +433,28 @@ export class InngestTestEngine {
   }
 
   /**
+   * Extract the inputArgs for a given step from the execution state
+   * Steps may have input arguments (e.g., step.run("id", handler, input))
+   * that are computed at runtime, so we need to retrieve them from the execution
+   */
+  protected stepInputArgs(
+    execution: InngestExecution.IInngestExecution,
+    stepId: string,
+  ): unknown[] {
+    // TODO: can we assume V1 or V2 execution here?
+    const executionSteps: Map<string, FoundStep> = (execution as any)?.state?.steps;
+    if (executionSteps) {
+      const runtimeStep = Array.from(executionSteps.values()).find(
+        (s) => s.hashedId === stepId,
+      );
+      if (Array.isArray(runtimeStep?.opts?.input)) {
+        return runtimeStep.opts.input;
+      }
+    }
+    return [];
+  }
+
+  /**
    * Execute the function with the given inline options.
    */
   protected async individualExecution(
@@ -460,6 +483,13 @@ export class InngestTestEngine {
     });
 
     const stepState: Record<string, InngestExecution.MemoizedOp> = {};
+
+    // Variable for accessing execution internals for retrieving step inputs
+    // This will be set after the execution is created and before the mock handlers run
+    //
+    // We can't just initialize execution here because it requires mockStepState and executeMockHandler,
+    // and we want to read state off executionRef in executeMockHandler
+    let executionRef: InngestExecution.IInngestExecution;
 
     steps.forEach((step) => {
       const { promise: data, resolve: resolveData } = createDeferredPromise();
@@ -520,9 +550,11 @@ export class InngestTestEngine {
       // Execute the handler only once
       cacheEntry.promise = new Promise<void>(async (resolve) => {
         try {
+          const inputArgs = this.stepInputArgs(executionRef, stepId);
+
           const data = await (
             mockStep as InngestTestEngine.MockedStep
-          ).handler();
+          ).handler(...inputArgs);
           cacheEntry.data = data;
 
           // Notify all registered lazy handlers (from all executions)
@@ -630,6 +662,9 @@ export class InngestTestEngine {
         transformCtx: this.options.transformCtx ?? mockCtx,
       },
     });
+
+    // Set execution reference so mock handlers can access step inputs
+    executionRef = execution;
 
     const { ctx, ops, ...result } = await execution.start();
 
