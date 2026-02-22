@@ -22,6 +22,14 @@ export interface SentryMiddlewareOptions {
    * @default false
    */
   disableAutomaticFlush?: boolean;
+
+  /**
+   * If `true`, the Sentry middleware will include the event.data.* keys as tags
+   * in Sentry.
+   *
+   * @default false
+   */
+  includeDataAsTags?: boolean;
 }
 
 /**
@@ -81,6 +89,17 @@ export const sentryMiddleware = (
               "inngest.event.name": ctx.event.name,
               "inngest.run.id": ctx.runId,
             };
+
+            if (opts?.includeDataAsTags && ctx.event?.data) {
+              Object.entries(ctx.event.data).forEach(([key, value]) => {
+                if (value !== null && value !== undefined) {
+                  sharedTags[`inngest.data.${key}`] =
+                    typeof value === "object"
+                      ? JSON.stringify(value)
+                      : String(value);
+                }
+              });
+            }
 
             scope.setTags(sharedTags);
 
