@@ -265,6 +265,7 @@ export enum StepOpCode {
 
   RunComplete = "RunComplete",
   DiscoveryRequest = "DiscoveryRequest",
+  DeferGroup = "DeferGroup",
 }
 
 /**

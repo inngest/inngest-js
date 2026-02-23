@@ -165,6 +165,10 @@ export const parseFnData = (data: unknown, headerVersion?: unknown) => {
                 })
                 .optional()
                 .nullable(),
+              defer_group_id: z.string().optional(),
+              defer_result: z.unknown().optional(),
+              defer_error: z.unknown().optional(),
+              defer_run_ended: z.boolean().optional(),
             })
             .optional()
             .nullable(),

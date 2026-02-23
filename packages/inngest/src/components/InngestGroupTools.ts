@@ -4,6 +4,10 @@ import {
   getAsyncLocalStorage,
   isALSFallback,
 } from "./execution/als.ts";
+import type {
+  DeferCallback,
+  DeferHandle,
+} from "./execution/InngestExecution.ts";
 
 /**
  * Options for the `group.parallel()` helper.
@@ -87,6 +91,40 @@ const parallel = async <T>(
 };
 
 /**
+ * Register a deferred group callback that will be executed after the function
+ * completes. Returns a handle that can be used to cancel the defer before the
+ * function finishes.
+ *
+ * @example
+ * ```ts
+ * const handle = group.defer("cleanup", async ({ result, error }) => {
+ *   await step.run("cleanup-step", () => doCleanup());
+ * });
+ *
+ * // Optionally cancel it before the function ends
+ * handle.cancel();
+ * ```
+ */
+const defer = (name: string, callback: DeferCallback): DeferHandle => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution) {
+    throw new Error(
+      "`group.defer()` must be called within an Inngest function execution",
+    );
+  }
+
+  const instance = currentCtx.execution.instance;
+  instance.registerDefer(name, callback);
+
+  return {
+    cancel: () => {
+      instance.cancelDefer(name);
+    },
+  };
+};
+
+/**
  * Tools for grouping and coordinating steps.
  *
  * @public
@@ -121,6 +159,22 @@ export interface GroupTools {
     optionsOrCallback: ParallelOptions | (() => Promise<T>),
     maybeCallback?: () => Promise<T>,
   ) => Promise<T>;
+
+  /**
+   * Register a deferred callback that runs after the function completes.
+   * Returns a handle with a `cancel()` method to prevent execution.
+   *
+   * @example
+   * ```ts
+   * const handle = group.defer("cleanup", async ({ result, error }) => {
+   *   await step.run("cleanup-step", () => doCleanup());
+   * });
+   *
+   * // Optionally cancel before the function ends
+   * handle.cancel();
+   * ```
+   */
+  defer: (name: string, callback: DeferCallback) => DeferHandle;
 }
 
 /**
@@ -129,5 +183,5 @@ export interface GroupTools {
  * @public
  */
 export const createGroupTools = (): GroupTools => {
-  return { parallel };
+  return { parallel, defer };
 };

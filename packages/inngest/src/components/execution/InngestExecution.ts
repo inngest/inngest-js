@@ -28,9 +28,16 @@ export { ExecutionVersion };
  * The possible results of an execution.
  */
 export interface ExecutionResults {
-  "function-resolved": { data: unknown };
+  "function-resolved": {
+    data: unknown;
+    deferredGroups?: { id: string; name: string }[];
+  };
   "step-ran": { step: OutgoingOp; retriable?: boolean | string };
-  "function-rejected": { error: unknown; retriable: boolean | string };
+  "function-rejected": {
+    error: unknown;
+    retriable: boolean | string;
+    deferredGroups?: { id: string; name: string }[];
+  };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
 
@@ -153,6 +160,31 @@ export interface InngestExecutionOptions {
    * This is required for checkpointing executions.
    */
   createResponse?: (data: unknown) => MaybePromise<ActionResponse>;
+
+  /**
+   * If this execution is a deferred run, this is the ID of the defer group
+   * callback to execute after the main function completes.
+   */
+  deferGroupId?: string;
+
+  /**
+   * The result of the original function execution, passed to the defer
+   * callback when running a deferred execution.
+   */
+  deferResult?: unknown;
+
+  /**
+   * The error from the original function execution, passed to the defer
+   * callback when running a deferred execution.
+   */
+  deferError?: unknown;
+
+  /**
+   * Whether the parent function ran to completion (resolved or rejected).
+   * When false, the parent failed before finishing and the SDK should reject
+   * unmemoized steps during deferred replay instead of hanging.
+   */
+  deferRunEnded?: boolean;
 }
 
 export type InngestExecutionFactory = (
@@ -178,4 +210,40 @@ export interface IInngestExecution {
     op: MetadataOpcode,
     values: Record<string, unknown>,
   ): boolean;
+
+  /**
+   * Register a deferred group callback to be executed after the function
+   * completes.
+   */
+  registerDefer(name: string, callback: DeferCallback): void;
+
+  /**
+   * Cancel a previously registered deferred group, preventing it from being
+   * included in the response.
+   */
+  cancelDefer(name: string): void;
+}
+
+/**
+ * Arguments passed to a defer group callback when it is executed.
+ */
+export interface DeferCallbackArgs {
+  /** The resolved value of the original function, if it succeeded. */
+  result?: unknown;
+  /** The error from the original function, if it failed. */
+  error?: unknown;
+}
+
+/**
+ * A callback registered via `group.defer()` that will be executed after the
+ * function completes.
+ */
+export type DeferCallback = (args: DeferCallbackArgs) => Promise<void> | void;
+
+/**
+ * A handle returned by `group.defer()` that allows cancellation.
+ */
+export interface DeferHandle {
+  /** Cancel this deferred group so it is not executed. */
+  cancel: () => void;
 }

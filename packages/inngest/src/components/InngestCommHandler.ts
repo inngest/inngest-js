@@ -1723,6 +1723,36 @@ export class InngestCommHandler<
 
         const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
           "function-rejected": (result) => {
+            // If there are deferred groups, include them in the response
+            // alongside the error so the executor can schedule them.
+            if (result.deferredGroups?.length) {
+              const ops: OutgoingOp[] = [
+                {
+                  id: _internals.hashId("complete"),
+                  op: StepOpCode.RunComplete,
+                  error: undefinedToNull(result.error),
+                },
+                ...result.deferredGroups.map((d) => ({
+                  op: StepOpCode.DeferGroup,
+                  id: d.id,
+                  name: d.name,
+                })),
+              ];
+
+              return {
+                status: 206,
+                headers: {
+                  "Content-Type": "application/json",
+                  [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                  ...(typeof result.retriable === "string"
+                    ? { [headerKeys.RetryAfter]: result.retriable }
+                    : {}),
+                },
+                body: stringify(ops),
+                version,
+              };
+            }
+
             return {
               status: result.retriable ? 500 : 400,
               headers: {
@@ -1737,6 +1767,33 @@ export class InngestCommHandler<
             };
           },
           "function-resolved": (result) => {
+            // If there are deferred groups, return an opcode array with
+            // RunComplete + DeferGroup entries so the executor can schedule
+            // the deferred callbacks.
+            if (result.deferredGroups?.length) {
+              const ops: OutgoingOp[] = [
+                {
+                  id: _internals.hashId("complete"),
+                  op: StepOpCode.RunComplete,
+                  data: undefinedToNull(result.data),
+                },
+                ...result.deferredGroups.map((d) => ({
+                  op: StepOpCode.DeferGroup,
+                  id: d.id,
+                  name: d.name,
+                })),
+              ];
+
+              return {
+                status: 206,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(ops),
+                version,
+              };
+            }
+
             if (forceExecution) {
               const runCompleteOp: OutgoingOp = {
                 id: _internals.hashId("complete"),
@@ -2101,6 +2158,12 @@ export class InngestCommHandler<
         Boolean(ctx?.disable_immediate_execution),
       );
 
+      // Parse defer group context from the incoming request
+      const deferGroupId = ctx?.defer_group_id as string | undefined;
+      const deferResult = ctx?.defer_result;
+      const deferError = ctx?.defer_error;
+      const deferRunEnded = ctx?.defer_run_ended as boolean | undefined;
+
       const executionOptions: CreateExecutionOptions = {
         partialOptions: {
           client: this.client,
@@ -2129,6 +2192,9 @@ export class InngestCommHandler<
           createResponse,
           requestInfo,
           middlewareInstances: mwInstances,
+          ...(deferGroupId
+            ? { deferGroupId, deferResult, deferError, deferRunEnded }
+            : {}),
         },
       };
 

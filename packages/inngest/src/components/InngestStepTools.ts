@@ -27,7 +27,11 @@ import {
   type TriggerEventFromFunction,
 } from "../types.ts";
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
-import type { InngestExecution } from "./execution/InngestExecution.ts";
+import type {
+  DeferCallback,
+  DeferHandle,
+  InngestExecution,
+} from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
@@ -879,6 +883,38 @@ export const createStepTools = <
      * this context, and a custom fallback can be set using the `config` method.
      */
     fetch: stepFetch,
+
+    /**
+     * Register a deferred callback that runs after the function completes.
+     * This is a shorthand for `group.defer()` that wraps the callback in a
+     * `step.run()` call.
+     *
+     * @example
+     * ```ts
+     * const handle = step.defer("cleanup", async () => {
+     *   return doCleanup();
+     * });
+     *
+     * // Optionally cancel before the function ends
+     * handle.cancel();
+     * ```
+     */
+    defer: (name: string, fn: () => unknown): DeferHandle => {
+      const currentCtx = getAsyncCtxSync();
+
+      if (!currentCtx?.execution) {
+        throw new Error(
+          "`step.defer()` must be called within an Inngest function execution",
+        );
+      }
+
+      return currentCtx.execution.ctx.group.defer(
+        name,
+        async () => {
+          await tools.run(name, fn);
+        },
+      );
+    },
   };
 
   // NOTE: This should be moved into the above object definition under the key
@@ -988,6 +1024,15 @@ export const step: GenericStepTools = {
   realtime: {
     publish: (...args) =>
       getDeferredStepTooling().then((tools) => tools.realtime.publish(...args)),
+  },
+  defer: (...args) => {
+    const ctx = getAsyncCtxSync();
+    if (!ctx?.execution) {
+      throw new Error(
+        "`step.defer()` must be called within an Inngest function execution",
+      );
+    }
+    return ctx.execution.ctx.step.defer(...args);
   },
 };
 

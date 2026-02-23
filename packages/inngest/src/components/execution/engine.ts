@@ -66,6 +66,7 @@ import { StepError } from "../StepError.ts";
 import { validateEvents } from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
+  type DeferCallback,
   type ExecutionResult,
   type IInngestExecution,
   InngestExecution,
@@ -242,6 +243,31 @@ class InngestExecutionEngine
     return true;
   }
 
+  public registerDefer(name: string, callback: DeferCallback): void {
+    this.state.deferredGroups.set(name, { callback, cancelled: false });
+
+    // Report the DeferGroup op eagerly so the executor saves it to state.
+    // This ensures defers are known even if the function crashes before
+    // completing. Repeated reports are idempotent.
+    if (!this.options.deferGroupId) {
+      const id = _internals.hashId(name);
+      if (!this.state.reportedDeferIds.has(id)) {
+        this.state.pendingDeferOps.push({
+          op: StepOpCode.DeferGroup,
+          id,
+          name,
+        });
+      }
+    }
+  }
+
+  public cancelDefer(name: string): void {
+    const defer = this.state.deferredGroups.get(name);
+    if (defer) {
+      defer.cancelled = true;
+    }
+  }
+
   /**
    * Starts execution of the user's function and the core loop.
    */
@@ -276,6 +302,25 @@ class InngestExecutionEngine
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
+    // Include any pending DeferGroup ops alongside the steps being
+    // checkpointed. This ensures defers are reported eagerly.
+    // Only drain pending defer ops if the steps being checkpointed
+    // include actual step ops (not RunComplete/DeferGroup). When this
+    // is called from the function-resolved handler, the steps already
+    // contain RunComplete + DeferGroup ops from collectDeferredGroups().
+    const hasRunComplete = steps.some(
+      (s) => s.op === StepOpCode.RunComplete,
+    );
+    if (!hasRunComplete) {
+      const deferOps = this.state.pendingDeferOps.splice(0);
+      for (const op of deferOps) {
+        this.state.reportedDeferIds.add(op.id);
+      }
+      if (deferOps.length) {
+        steps = steps.concat(deferOps);
+      }
+    }
+
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
@@ -512,12 +557,20 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        const deferredGroups = this.collectDeferredGroups();
+        const deferOps: OutgoingOp[] = (deferredGroups ?? []).map((d) => ({
+          op: StepOpCode.DeferGroup,
+          id: d.id,
+          name: d.name,
+        }));
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
             data: await this.options.createResponse!(checkpoint.data),
           },
+          ...deferOps,
         ]);
 
         // Apply middleware transformation before returning
@@ -674,11 +727,22 @@ class InngestExecutionEngine
             i,
           );
           if (output?.type === "function-resolved") {
-            const steps = this.state.checkpointingStepBuffer.concat({
-              op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"), // ID is not important here
-              data: output.data,
-            });
+            const deferOps: OutgoingOp[] = (output.deferredGroups ?? []).map(
+              (d) => ({
+                op: StepOpCode.DeferGroup,
+                id: d.id,
+                name: d.name,
+              }),
+            );
+
+            const steps = this.state.checkpointingStepBuffer.concat(
+              {
+                op: StepOpCode.RunComplete,
+                id: _internals.hashId("complete"), // ID is not important here
+                data: output.data,
+              },
+              ...deferOps,
+            );
 
             if (isNonEmpty(steps)) {
               return {
@@ -858,6 +922,29 @@ class InngestExecutionEngine
       return;
     }
 
+    // During deferred run replay, suppress all new steps. They belong to
+    // the original run and should already be memoized from parent state.
+    if (this.state.inDeferReplay) {
+      // If the parent run didn't complete (deferRunEnded = false), some steps
+      // may not have memoized data. When steps-found fires with unmemoized
+      // steps, it means we've memoized everything we can and the function is
+      // now stalled. Reject the unmemoized step promises so the function
+      // throws, allowing the defer wrapper to catch and run the callback.
+      if (!this.state.deferRunEnded) {
+        for (const step of foundSteps) {
+          if (!step.hasStepState && step.memoizationDeferred) {
+            step.memoizationDeferred.reject(
+              new Error(
+                `Step "${step.displayName}" has no memoized data. ` +
+                  `The parent run did not complete this step.`,
+              ),
+            );
+          }
+        }
+      }
+      return;
+    }
+
     const newSteps = foundSteps.reduce((acc, step) => {
       if (!step.hasStepState) {
         acc.push(step);
@@ -866,22 +953,35 @@ class InngestExecutionEngine
       return acc;
     }, [] as FoundStep[]);
 
+    // Only drain pending DeferGroup ops when there are actual new steps to
+    // report alongside them. If there are only defer ops and no new steps,
+    // leave them in the queue so the function completion path
+    // (collectDeferredGroups + RunComplete) sends them together with the
+    // function result. Otherwise the executor receives only DeferGroup ops
+    // with no RunComplete and the run gets stuck.
     if (!newSteps.length) {
       return;
     }
 
+    const deferOps = this.state.pendingDeferOps.splice(0);
+    for (const op of deferOps) {
+      this.state.reportedDeferIds.add(op.id);
+    }
+
     await this.middlewareManager.onMemoizationEnd();
 
-    const stepList = newSteps.map<OutgoingOp>((step) => {
-      return {
-        displayName: step.displayName,
-        op: step.op,
-        id: step.hashedId,
-        name: step.name,
-        opts: step.opts,
-        userland: step.userland,
-      };
-    });
+    const stepList: OutgoingOp[] = newSteps
+      .map<OutgoingOp>((step) => {
+        return {
+          displayName: step.displayName,
+          op: step.op,
+          id: step.hashedId,
+          name: step.name,
+          opts: step.opts,
+          userland: step.userland,
+        };
+      })
+      .concat(deferOps);
 
     if (!isNonEmpty(stepList)) {
       throw new UnreachableError("stepList is empty");
@@ -1105,6 +1205,28 @@ class InngestExecutionEngine
   }
 
   /**
+   * Collect non-cancelled deferred groups for inclusion in the response.
+   * Only collects defers for normal runs (not deferred runs themselves).
+   */
+  private collectDeferredGroups():
+    | { id: string; name: string }[]
+    | undefined {
+    if (this.options.deferGroupId) {
+      // Don't report deferred groups when we're already executing a defer
+      return undefined;
+    }
+
+    const defers: { id: string; name: string }[] = [];
+    for (const [name, entry] of this.state.deferredGroups) {
+      if (!entry.cancelled) {
+        defers.push({ id: _internals.hashId(name), name });
+      }
+    }
+
+    return defers.length > 0 ? defers : undefined;
+  }
+
+  /**
    * Using middleware, transform output before returning.
    */
   private transformOutput(dataOrError: {
@@ -1112,6 +1234,7 @@ class InngestExecutionEngine
     error?: unknown;
   }): ExecutionResult {
     const { data, error } = dataOrError;
+    const deferredGroups = this.collectDeferredGroups();
 
     if (typeof error !== "undefined") {
       /**
@@ -1142,6 +1265,7 @@ class InngestExecutionEngine
         ops: this.ops,
         error: serializedError,
         retriable,
+        ...(deferredGroups ? { deferredGroups } : {}),
       };
     }
 
@@ -1150,6 +1274,7 @@ class InngestExecutionEngine
       ctx: this.fnArg,
       ops: this.ops,
       data: undefinedToNull(data),
+      ...(deferredGroups ? { deferredGroups } : {}),
     };
   }
 
@@ -1198,6 +1323,11 @@ class InngestExecutionEngine
       },
       checkpointingStepBuffer: [],
       metadata: new Map(),
+      deferredGroups: new Map(),
+      pendingDeferOps: [],
+      reportedDeferIds: new Set(),
+      inDeferReplay: false,
+      deferRunEnded: this.options.deferRunEnded ?? true,
     };
 
     return state;
@@ -1807,11 +1937,13 @@ class InngestExecutionEngine
   }
 
   private getUserFnToRun(): Handler.Any {
-    if (!this.options.isFailureHandler) {
-      return this.options.fn["fn"];
-    }
+    let baseFn: Handler.Any;
 
-    if (!this.options.fn["onFailureFn"]) {
+    if (!this.options.isFailureHandler) {
+      baseFn = this.options.fn["fn"];
+    } else if (this.options.fn["onFailureFn"]) {
+      baseFn = this.options.fn["onFailureFn"];
+    } else {
       /**
        * Somehow, we've ended up detecting that this is a failure handler but
        * doesn't have an `onFailure` function. This should never happen.
@@ -1819,7 +1951,39 @@ class InngestExecutionEngine
       throw new Error("Cannot find function `onFailure` handler");
     }
 
-    return this.options.fn["onFailureFn"];
+    // If this is a deferred run, wrap the base function to execute the
+    // target defer callback after the main function completes.
+    if (this.options.deferGroupId) {
+      const deferGroupId = this.options.deferGroupId;
+      const deferResult = this.options.deferResult;
+      const deferError = this.options.deferError;
+
+      return async (ctx: Context.Any) => {
+        // Run the original function to completion. All steps should be
+        // memoized from the parent run's state. Flag that we're in replay
+        // mode so the engine suppresses any new step ops (which belong to
+        // the original run, not this deferred run).
+        this.state.inDeferReplay = true;
+        try {
+          await baseFn(ctx);
+        } catch {
+          // Function may have errored originally - that's expected for
+          // deferred runs where the original function rejected.
+        }
+        this.state.inDeferReplay = false;
+
+        // Now find and execute the target defer callback
+        const deferEntry = this.state.deferredGroups.get(deferGroupId);
+        if (deferEntry) {
+          return await deferEntry.callback({
+            result: deferResult,
+            error: deferError,
+          });
+        }
+      };
+    }
+
+    return baseFn;
   }
 
   private initializeTimer(state: ExecutionState): void {
@@ -2049,6 +2213,42 @@ export interface ExecutionState {
    * Metadata collected during execution to be sent with outgoing ops.
    */
   metadata?: Map<string, Array<MetadataUpdate>>;
+
+  /**
+   * A map of deferred group names to their callbacks and cancellation state.
+   * Populated by `group.defer()` calls during function execution.
+   */
+  deferredGroups: Map<
+    string,
+    { callback: DeferCallback; cancelled: boolean }
+  >;
+
+  /**
+   * DeferGroup ops waiting to be included in the next outgoing response.
+   * Drained when ops are sent via checkpoint() or filterNewSteps().
+   */
+  pendingDeferOps: OutgoingOp[];
+
+  /**
+   * IDs of DeferGroup ops that have already been sent to the executor.
+   * Used to avoid re-adding the same defer to pendingDeferOps.
+   */
+  reportedDeferIds: Set<string>;
+
+  /**
+   * When true, we are replaying the original function during a deferred run.
+   * New steps found during replay should be suppressed (not reported to the
+   * executor) because they belong to the original run, not the deferred run.
+   */
+  inDeferReplay: boolean;
+
+  /**
+   * Whether the parent function ran to completion (resolved or rejected).
+   * Set by the executor via `ctx.defer_run_ended`. When false, the parent
+   * failed before finishing and unmemoized steps should be rejected during
+   * deferred replay instead of hanging.
+   */
+  deferRunEnded: boolean;
 }
 
 const hashId = (id: string): string => {
