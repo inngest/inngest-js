@@ -3,6 +3,7 @@ import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
 import { InngestCommHandler } from "../index.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
+import { internalLoggerSymbol } from "./Inngest.ts";
 
 /**
  * Helper to run a POST request through a Next.js serve handler and capture
@@ -181,7 +182,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["internalLogger"], "warn");
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -203,7 +204,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["internalLogger"], "warn");
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -225,7 +226,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["internalLogger"], "warn");
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -247,7 +248,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["internalLogger"], "warn");
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",
@@ -267,7 +268,7 @@ describe("ServeHandler", () => {
       const { createClient } = await import("../test/helpers.ts");
 
       const inngest = createClient({ id: "test", isDev: true });
-      const warnSpy = vi.spyOn(inngest["internalLogger"], "warn");
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
       const fn = inngest.createFunction(
         { id: "test", triggers: [{ event: "demo/event.sent" }] },
         () => "test",

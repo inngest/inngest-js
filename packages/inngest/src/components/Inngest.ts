@@ -83,6 +83,13 @@ type FetchT = typeof fetch;
  *
  * @public
  */
+
+/**
+ * Symbol for accessing the SDK's internal logger. Not part of the public API.
+ * @internal
+ */
+export const internalLoggerSymbol = Symbol.for("inngest.internalLogger");
+
 export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
@@ -114,10 +121,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private readonly _logger: Logger;
 
   /**
-   * Logger for SDK internal messages, filtered by the `logLevel` client
-   * option. Falls back to the user's `logger` if `internalLogger` is not set.
+   * Logger for SDK internal messages. Falls back to the user's `logger` if
+   * `internalLogger` is not provided in client options.
+   *
+   * @internal
    */
-  private readonly _internalLogger: Logger;
+  readonly [internalLoggerSymbol]: Logger;
 
   private localFns: InngestFunction.Any[] = [];
 
@@ -202,8 +211,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   get fetch(): FetchT {
     if (!this._cachedFetch) {
       this._cachedFetch = this._userProvidedFetch
-        ? getFetch(this._internalLogger, this._userProvidedFetch)
-        : getFetch(this._internalLogger, globalThis.fetch);
+        ? getFetch(this[internalLoggerSymbol], this._userProvidedFetch)
+        : getFetch(this[internalLoggerSymbol], globalThis.fetch);
     }
     return this._cachedFetch;
   }
@@ -231,13 +240,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   get logger(): Logger {
     return this._logger;
-  }
-
-  /**
-   * Logger for SDK internal messages. Respects the `logLevel` client option.
-   */
-  get internalLogger(): Logger {
-    return this._internalLogger;
   }
 
   get env(): string | null {
@@ -299,7 +301,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     });
 
     this._logger = logger ?? new ConsoleLogger({ level: "debug" });
-    this._internalLogger = this.options.internalLogger ?? this._logger;
+    this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
 
     this.middleware = [
       ...builtInMiddleware(this._logger),
@@ -517,9 +519,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     if (Object.keys(fields).length > 0) {
-      this._internalLogger.warn(fields, log.message);
+      this[internalLoggerSymbol].warn(fields, log.message);
     } else {
-      this._internalLogger.warn(log.message);
+      this[internalLoggerSymbol].warn(log.message);
     }
 
     if (!this.experimentalMetadataEnabled) {
@@ -782,7 +784,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         [headerKeys.EventIdSeed]: `${nowMillis},${entropyBase64}`,
       };
     } catch (err) {
-      this._internalLogger.debug({ err }, "Event-sending retries disabled");
+      this[internalLoggerSymbol].debug(
+        { err },
+        "Event-sending retries disabled",
+      );
 
       // Disable retries.
       maxAttempts = 1;
@@ -835,7 +840,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      this._internalLogger.warn(
+      this[internalLoggerSymbol].warn(
         "inngest.send() called with no events; the returned promise will resolve, but no events have been sent",
       );
 

@@ -9,6 +9,7 @@ import {
   type InngestExecution,
   type InngestExecutionOptions,
 } from "../components/execution/InngestExecution.ts";
+import { internalLoggerSymbol } from "../components/Inngest.ts";
 import {
   type HandlerResponse,
   InngestCommHandler,
@@ -102,7 +103,7 @@ export const getStepTools = (
         stepCompletionOrder: [],
         isFailureHandler: false,
         requestedRunStep: undefined,
-        timer: new ServerTiming(client.internalLogger),
+        timer: new ServerTiming(client[internalLoggerSymbol]),
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
@@ -151,7 +152,7 @@ export const runFnWithStack = async (
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
       isFailureHandler: Boolean(opts?.onFailure),
       requestedRunStep: opts?.runStep,
-      timer: new ServerTiming(fn["client"].internalLogger),
+      timer: new ServerTiming(fn["client"][internalLoggerSymbol]),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},

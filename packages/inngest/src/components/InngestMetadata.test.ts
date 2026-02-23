@@ -4,7 +4,7 @@ import type { unknown } from "zod";
 import * as experimental from "../experimental";
 import type { KnownKeys } from "../helpers/types.ts";
 import * as als from "./execution/als.ts";
-import { Inngest } from "./Inngest.ts";
+import { Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import {
   buildTarget,
   type MetadataBuilder,
@@ -27,7 +27,7 @@ const mockClient = () =>
   ({
     updateMetadata: vi.fn().mockResolvedValue(undefined),
     logger: mockLogger(),
-    internalLogger: mockLogger(),
+    [internalLoggerSymbol]: mockLogger(),
   }) as unknown as Inngest;
 
 afterEach(() => {
