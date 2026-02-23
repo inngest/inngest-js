@@ -18,6 +18,7 @@ describe("args", () => {
       });
 
       class TestMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override onStepStart(args: Middleware.OnStepStartArgs) {
           state.hookArgs.push(args);
         }
@@ -77,6 +78,7 @@ test("1 step", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepStart() {
       state.logs.push("mw");
     }
@@ -129,6 +131,7 @@ test("multiple steps", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepStart(args: Middleware.OnStepStartArgs) {
       state.onStepStartCalls.push(args);
     }
@@ -190,6 +193,7 @@ test("unsupported step kinds", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepStart() {
       state.count++;
     }
@@ -234,6 +238,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepStart() {
       state.hook.count++;
       throw new Error("oh no");
@@ -265,7 +270,7 @@ test("throws", async () => {
   expect(consoleSpy).toHaveBeenCalledWith(expect.any(Error));
   expect(consoleSpy).toHaveBeenCalledWith({
     hook: "onStepStart",
-    mw: "TestMiddleware",
+    mw: "test",
   });
 
   consoleSpy.mockRestore();

@@ -342,7 +342,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onStepStart",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );
@@ -369,7 +369,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onStepComplete",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );
@@ -424,7 +424,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onStepError",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );
@@ -454,7 +454,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onMemoizationEnd",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );
@@ -476,7 +476,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onRunStart",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );
@@ -499,7 +499,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onRunComplete",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );
@@ -523,7 +523,7 @@ export class MiddlewareManager {
             {
               err,
               hook: "onRunError",
-              mw: mw.constructor.name,
+              mw: mw.id,
             },
             "middleware error",
           );

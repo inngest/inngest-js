@@ -21,6 +21,7 @@ matrixCheckpointing("change output", async (checkpointing) => {
   });
 
   class MW1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next }: Middleware.WrapStepArgs) {
       const output = await next();
       return `mw1: ${output}`;
@@ -28,6 +29,7 @@ matrixCheckpointing("change output", async (checkpointing) => {
   }
 
   class MW2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next }: Middleware.WrapStepArgs) {
       const output = await next();
       return `mw2: ${output}`;
@@ -93,6 +95,7 @@ matrixCheckpointing("change error", async (checkpointing) => {
   });
 
   class MW1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next }: Middleware.WrapStepArgs) {
       try {
         return await next();
@@ -104,6 +107,7 @@ matrixCheckpointing("change error", async (checkpointing) => {
   }
 
   class MW2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next }: Middleware.WrapStepArgs) {
       try {
         return await next();
@@ -175,6 +179,7 @@ matrixCheckpointing(
     });
 
     class MW extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
         state.beforeNext.push({
           id: stepInfo.options.id,
@@ -253,6 +258,7 @@ matrixCheckpointing("bookend step.sleep", async (checkpointing) => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepStart(arg: Middleware.OnStepStartArgs) {
       state.onStepStartCalls.push(arg);
     }
@@ -325,6 +331,7 @@ matrixCheckpointing("bookend with steps", async (checkpointing) => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ ctx, next, stepInfo }: Middleware.WrapStepArgs) {
       state.beforeStep.output = await ctx.step.run("before", async () => {
         state.beforeStep.insideCount++;
@@ -392,6 +399,7 @@ matrixCheckpointing(
       Out: ReplaceMW1Fields<this["In"]>;
     }
     class MW1 extends Middleware.BaseMiddleware {
+      readonly id = "test";
       declare stepOutputTransform: MW1StaticTransform;
 
       override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
@@ -417,6 +425,7 @@ matrixCheckpointing(
     }
 
     class MW2 extends Middleware.BaseMiddleware {
+      readonly id = "test";
       declare stepOutputTransform: MW2StaticTransform;
 
       override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
@@ -497,6 +506,7 @@ matrixCheckpointing("infinite recursion protection", async (checkpointing) => {
   });
 
   class MW1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
       state.mw1.stepIds.add(stepInfo.options.id);
       return next();
@@ -504,6 +514,7 @@ matrixCheckpointing("infinite recursion protection", async (checkpointing) => {
   }
 
   class MW2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ ctx, next, stepInfo }: Middleware.WrapStepArgs) {
       state.mw2.stepIds.add(stepInfo.options.id);
       await ctx.step.run("new", () => {
@@ -514,6 +525,7 @@ matrixCheckpointing("infinite recursion protection", async (checkpointing) => {
   }
 
   class MW3 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
       state.mw3.stepIds.add(stepInfo.options.id);
       return next();
@@ -558,6 +570,7 @@ matrixCheckpointing("throws in hook", async (checkpointing) => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override wrapStep = async () => {
       state.hook.count++;
       throw new Error("oh no");
@@ -602,6 +615,7 @@ matrixCheckpointing("throws in hook step", async (checkpointing) => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ ctx, next, stepInfo }: Middleware.WrapStepArgs) {
       state.hook.count++;
 
@@ -655,6 +669,7 @@ matrixCheckpointing("throws in normal step", async (checkpointing) => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next }: Middleware.WrapStepArgs) {
       state.hook.count++;
       return next();
@@ -695,6 +710,7 @@ test("checkpointing reentry", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStep({ next, stepInfo }: Middleware.WrapStepArgs) {
       state.calls.push({
         id: stepInfo.options.id,

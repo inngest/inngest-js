@@ -19,6 +19,7 @@ matrixCheckpointing("change output (2 middleware)", async (checkpointing) => {
   });
 
   class MW1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
       const output = await next();
       return `mw1 transformed: ${output}`;
@@ -26,6 +27,7 @@ matrixCheckpointing("change output (2 middleware)", async (checkpointing) => {
   }
 
   class MW2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
       const output = await next();
       return `mw2 transformed: ${output}`;
@@ -69,6 +71,7 @@ matrixCheckpointing("called once per attempt", async (checkpointing) => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
       state.hook.callCount++;
       try {
@@ -115,6 +118,7 @@ matrixCheckpointing(
     });
 
     class MW extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapStepHandler({
         next,
         stepInfo,
@@ -174,6 +178,7 @@ matrixCheckpointing("swallow error", async (checkpointing) => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
       state.hook.count++;
       try {
@@ -231,6 +236,7 @@ matrixCheckpointing("throw error", async (checkpointing) => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapStepHandler({ next }: Middleware.WrapStepHandlerArgs) {
       state.hook.count++;
       state.step.output = await next();

@@ -11,6 +11,7 @@ test("no steps", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onMemoizationEnd() {
       state.logs.push("mw");
     }
@@ -45,6 +46,7 @@ test("1 step", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onMemoizationEnd() {
       state.logs.push("mw");
     }
@@ -93,6 +95,7 @@ test("2 steps", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onMemoizationEnd() {
       state.logs.push("mw");
     }
@@ -154,6 +157,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onMemoizationEnd() {
       state.hook.count++;
       throw new Error("oh no");
@@ -184,7 +188,7 @@ test("throws", async () => {
   expect(consoleSpy).toHaveBeenCalledWith(expect.any(Error));
   expect(consoleSpy).toHaveBeenCalledWith({
     hook: "onMemoizationEnd",
-    mw: "TestMiddleware",
+    mw: "test",
   });
 
   consoleSpy.mockRestore();

@@ -14,6 +14,7 @@ test("request headers available in function ctx via middleware", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     private headers: Record<string, string> = {};
 
     override async wrapRequest({

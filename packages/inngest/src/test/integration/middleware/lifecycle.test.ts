@@ -16,6 +16,7 @@ test("state does not bleed between requests", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     counter = 0;
 
     override onStepStart() {
@@ -63,6 +64,7 @@ test("each request gets a fresh instance", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepStart() {
       state.instances.push(this);
     }
@@ -106,6 +108,7 @@ test("middleware state is consistent within a single request", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     data = "";
 
     override transformFunctionInput(

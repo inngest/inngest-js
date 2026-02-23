@@ -12,6 +12,8 @@ export const dependencyInjectionMiddleware = <TCtx extends Record<string, any>>(
   ctx: TCtx,
 ) => {
   class DependencyInjectionMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:dependency-injection";
+
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ): Middleware.TransformFunctionInputArgs & { ctx: TCtx } {
