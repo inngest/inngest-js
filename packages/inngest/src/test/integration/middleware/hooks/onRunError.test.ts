@@ -246,7 +246,7 @@ test("throws", async () => {
   expect(consoleSpy).toHaveBeenCalledWith(expect.any(Error));
   expect(consoleSpy).toHaveBeenCalledWith({
     hook: "onRunError",
-    mw: "TestMiddleware",
+    mw: "test",
   });
 
   consoleSpy.mockRestore();
