@@ -19,8 +19,6 @@ export default defineConfig({
     typecheck: {
       enabled: true,
       include: ["src/test/integration/**/*.test.ts"],
-      // Exclude tests that import from sibling packages (outside rootDir)
-      exclude: ["src/test/integration/middleware/useCases/encryption.test.ts"],
       ignoreSourceErrors: true,
     },
   },

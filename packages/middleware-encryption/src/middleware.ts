@@ -189,6 +189,8 @@ export const encryptionMiddleware = (
   };
 
   class EncryptionMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:encryption";
+
     // Decrypt event data before it reaches the function handler.
     // IMPORTANT: Do not decrypt step data here. That won't work with
     // checkpointing because we don't "enter" the function once per step.
