@@ -2447,10 +2447,7 @@ export class InngestCommHandler<
     // during registration with the body of the current functions and refuse
     // to register if the functions are the same.
     if (!skipped) {
-      this.client[internalLoggerSymbol].debug(
-        { status: res.status, statusText: res.statusText, data },
-        "Registered inngest functions",
-      );
+      this.client[internalLoggerSymbol].debug("Registered inngest functions");
     }
 
     return { status, message: error, modified };

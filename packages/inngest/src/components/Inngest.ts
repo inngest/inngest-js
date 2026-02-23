@@ -6,7 +6,6 @@ import {
   dummyEventKey,
   envKeys,
   headerKeys,
-  logPrefix,
 } from "../helpers/consts.ts";
 import { createEntropy } from "../helpers/crypto.ts";
 import {
@@ -300,7 +299,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       fetch: () => this.fetch,
     });
 
-    this._logger = logger ?? new ConsoleLogger({ level: "debug" });
+    this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
 
     this.middleware = [
