@@ -8,7 +8,6 @@ import {
 import { z } from "zod/v3";
 import { NonRetriableError } from "../components/NonRetriableError.ts";
 import type { ClientOptions, OutgoingOp } from "../types.ts";
-import { formatLogMessage } from "./log.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -354,20 +353,4 @@ export const rethrowError = (prefix: string): ((err: any) => never) => {
       throw err;
     }
   };
-};
-
-/**
- * Legacy v0 execution error for functions that don't support mixing steps and
- * regular async actions.
- */
-export const functionStoppedRunningErr = (code: ErrCode) => {
-  return formatLogMessage({
-    message: "Your function was stopped from running",
-    explanation:
-      "We detected a mix of asynchronous logic, some using step tooling and some not. This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
-    action:
-      "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
-    docs: "https://www.inngest.com/docs/functions/multi-step#gotchas",
-    code,
-  });
 };

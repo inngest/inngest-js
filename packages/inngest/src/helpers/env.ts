@@ -360,10 +360,10 @@ export const getFetch = (
           !(err instanceof Error) ||
           !err.message?.startsWith("fetch failed")
         ) {
-          logger.warn(
+          logger.error(
+            { err },
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
           );
-          logger.error(err);
         }
 
         throw err;

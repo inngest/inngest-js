@@ -123,8 +123,8 @@ export async function signDataWithKey(
   if (subtle) {
     try {
       return await signWithNative(subtle, data, signingKey, ts);
-    } catch (error) {
-      logger.debug("Native crypto failed, falling back to hash.js:", error);
+    } catch (err) {
+      logger.debug({ err }, "Native crypto failed, falling back to hash.js");
     }
   }
   return signWithHashJs(data, signingKey, ts);

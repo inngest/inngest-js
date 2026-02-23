@@ -1,4 +1,5 @@
 import { resolveNextTick } from "../helpers/promises.ts";
+import { isRecord } from "../helpers/types.ts";
 import type { LogLevel } from "../types.ts";
 
 /**
@@ -52,26 +53,60 @@ export class ConsoleLogger implements Logger {
 
   info(...args: LogArg[]) {
     if (this.shouldLog("info")) {
-      console.info(...args);
+      this.logFormatted(console.info, args);
     }
   }
 
   warn(...args: LogArg[]) {
     if (this.shouldLog("warn")) {
-      console.warn(...args);
+      this.logFormatted(console.warn, args);
     }
   }
 
   error(...args: LogArg[]) {
     if (this.shouldLog("error")) {
-      console.error(...args);
+      this.logFormatted(console.error, args);
     }
   }
 
   debug(...args: LogArg[]) {
     if (this.shouldLog("debug")) {
-      console.debug(...args);
+      this.logFormatted(console.debug, args);
     }
+  }
+
+  /**
+   * Detect Pino-style `(object, string, ...rest)` calls and reformat for
+   * console readability: message first, then structured fields.
+   */
+  private logFormatted(fn: (...args: LogArg[]) => void, args: LogArg[]) {
+    if (args.length > 1 && isRecord(args[0]) && typeof args[1] === "string") {
+      const fields = args[0];
+      const nonErrFields = Object.fromEntries(
+        Object.entries(fields).filter(([key]) => {
+          return key !== "err";
+        }),
+      );
+      const [, message, ...rest] = args;
+
+      fn(message);
+
+      if (fields.err) {
+        fn(fields.err);
+      }
+
+      if (Object.keys(nonErrFields).length > 0) {
+        fn(nonErrFields);
+      }
+
+      if (rest.length > 0) {
+        fn(...rest);
+      }
+
+      return;
+    }
+
+    fn(...args);
   }
 
   private shouldLog(level: CallableLogLevel): boolean {
