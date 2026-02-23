@@ -1,5 +1,5 @@
 import sodium from "libsodium-wrappers";
-import { type EncryptionService } from "../middleware";
+import type { EncryptionService } from "../middleware";
 
 /**
  * The default encryption service used by the encryption middleware.
@@ -65,7 +65,7 @@ export class LibSodiumEncryptionService implements EncryptionService {
       try {
         const combined = sodium.from_base64(
           value,
-          sodium.base64_variants.ORIGINAL
+          sodium.base64_variants.ORIGINAL,
         );
         const nonce = combined.slice(0, sodium.crypto_secretbox_NONCEBYTES);
         const ciphertext = combined.slice(sodium.crypto_secretbox_NONCEBYTES);
@@ -73,7 +73,7 @@ export class LibSodiumEncryptionService implements EncryptionService {
         const decrypted = sodium.crypto_secretbox_open_easy(
           ciphertext,
           nonce,
-          key
+          key,
         );
 
         const decoder = new TextDecoder("utf8");
