@@ -47,8 +47,8 @@ type CallableLogLevel = keyof typeof LOG_LEVEL_RANK;
 export class ConsoleLogger implements Logger {
   private readonly level: LogLevel;
 
-  constructor(level: LogLevel = "info") {
-    this.level = level;
+  constructor(opts: { level?: LogLevel } = {}) {
+    this.level = opts.level ?? "info";
   }
 
   info(...args: LogArg[]) {
@@ -215,3 +215,4 @@ export class ProxyLogger implements Logger {
     await resolveNextTick();
   }
 }
+

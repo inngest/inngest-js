@@ -784,7 +784,7 @@ export const createStepTools = <
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
-        client.logger.warn(
+        client.internalLogger.warn(
           { err },
           "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
         );

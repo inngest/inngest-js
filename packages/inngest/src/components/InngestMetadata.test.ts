@@ -16,15 +16,18 @@ import type {
   GenericStepTools,
 } from "./InngestStepTools.ts";
 
+const mockLogger = () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+});
+
 const mockClient = () =>
   ({
     updateMetadata: vi.fn().mockResolvedValue(undefined),
-    logger: {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    },
+    logger: mockLogger(),
+    internalLogger: mockLogger(),
   }) as unknown as Inngest;
 
 afterEach(() => {

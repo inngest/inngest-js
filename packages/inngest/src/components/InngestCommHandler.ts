@@ -447,7 +447,7 @@ export class InngestCommHandler<
       []) as InngestFunction.Any[];
 
     if (this.rawFns.length !== (options.functions ?? []).length) {
-      this.client.logger.warn(
+      this.client.internalLogger.warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );
     }
@@ -492,7 +492,7 @@ export class InngestCommHandler<
       .boolean()
       .default(defaultStreamingOption)
       .catch((ctx) => {
-        this.client.logger.warn(
+        this.client.internalLogger.warn(
           { input: ctx.input, default: defaultStreamingOption },
           "Unknown streaming option; using default",
         );
@@ -536,7 +536,7 @@ export class InngestCommHandler<
     const envHost = this.env[envKeys.InngestServeHost];
     if (envHost) {
       warnOnce(
-        this.client.logger,
+        this.client.internalLogger,
         "serve-host-deprecated",
         "INNGEST_SERVE_HOST is deprecated; use INNGEST_SERVE_ORIGIN instead",
       );
@@ -610,7 +610,7 @@ export class InngestCommHandler<
     const envStreaming = this.env[envKeys.InngestStreaming];
     if (envStreaming === "allow" || envStreaming === "force") {
       warnOnce(
-        this.client.logger,
+        this.client.internalLogger,
         "streaming-allow-force-deprecated",
         { value: envStreaming },
         `INNGEST_STREAMING="${envStreaming}" is deprecated; set INNGEST_STREAMING=true instead`,
@@ -660,7 +660,7 @@ export class InngestCommHandler<
     actions: HandlerResponseWithErrors;
     getHeaders: () => Promise<Record<string, string>>;
   }> {
-    const timer = new ServerTiming(this.client.logger);
+    const timer = new ServerTiming(this.client.internalLogger);
     const actions = await this.getActions(timer, ...args);
 
     const [env, expectedServerKind] = await Promise.all([
@@ -1390,7 +1390,7 @@ export class InngestCommHandler<
           return runAsPromise(fn)
             .catch(rethrowError(errMessage))
             .catch((err) => {
-              this.client.logger.error({ err }, errMessage);
+              this.client.internalLogger.error({ err }, errMessage);
               throw err;
             });
         },
@@ -1496,7 +1496,7 @@ export class InngestCommHandler<
 
       if (method === "POST" || forceExecution) {
         if (!forceExecution && isMissingBody) {
-          this.client.logger.error(
+          this.client.internalLogger.error(
             "Missing body when executing, possibly due to missing request body middleware",
           );
 
@@ -1549,7 +1549,7 @@ export class InngestCommHandler<
             if (typeof parsed === "boolean") {
               die = parsed;
             } else {
-              this.client.logger.warn(
+              this.client.internalLogger.warn(
                 { header: headerKeys.InngestForceStepPlan, value: dieHeader },
                 "Invalid boolean header value; defaulting to false",
               );
@@ -1665,7 +1665,7 @@ export class InngestCommHandler<
           //
           // Note that the header will be a `string` at this point.
           if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
-            const res = createVersionSchema(this.client.logger).parse(
+            const res = createVersionSchema(this.client.internalLogger).parse(
               Number(rawVersionHeader),
             );
 
@@ -1819,7 +1819,10 @@ export class InngestCommHandler<
         try {
           return await handler(stepOutput);
         } catch (err) {
-          this.client.logger.error({ err }, "Error handling execution result");
+          this.client.internalLogger.error(
+            { err },
+            "Error handling execution result",
+          );
           throw err;
         }
       }
@@ -1876,7 +1879,7 @@ export class InngestCommHandler<
 
         if (inBandSyncRequested) {
           if (isMissingBody) {
-            this.client.logger.error(
+            this.client.internalLogger.error(
               "Missing body when syncing, possibly due to missing request body middleware",
             );
 
@@ -2031,7 +2034,7 @@ export class InngestCommHandler<
     const immediateFnData = parseFnData(
       data,
       headerReqVersion,
-      this.client.logger,
+      this.client.internalLogger,
     );
     const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
@@ -2049,7 +2052,7 @@ export class InngestCommHandler<
       const anyFnData = await fetchAllFnData({
         data: immediateFnData,
         api: this.client["inngestApi"],
-        logger: this.client.logger,
+        logger: this.client.internalLogger,
       });
 
       if (!anyFnData.ok) {
@@ -2144,7 +2147,7 @@ export class InngestCommHandler<
       if (!check.success) {
         const errors = check.error.errors.map((err) => err.message).join("; ");
 
-        this.client.logger.warn(
+        this.client.internalLogger.warn(
           { functionId: config.id, errors },
           "Invalid function config",
         );
@@ -2377,7 +2380,7 @@ export class InngestCommHandler<
         },
       });
     } catch (err: unknown) {
-      this.client.logger.error({ err }, "Failed to register");
+      this.client.internalLogger.error({ err }, "Failed to register");
 
       return {
         status: 500,
@@ -2395,7 +2398,10 @@ export class InngestCommHandler<
     try {
       data = JSON.parse(raw);
     } catch (err) {
-      this.client.logger.warn({ err }, "Couldn't unpack register response");
+      this.client.internalLogger.warn(
+        { err },
+        "Couldn't unpack register response",
+      );
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2417,7 +2423,10 @@ export class InngestCommHandler<
     try {
       ({ status, error, skipped, modified } = registerResSchema.parse(data));
     } catch (err) {
-      this.client.logger.warn({ err }, "Invalid register response schema");
+      this.client.internalLogger.warn(
+        { err },
+        "Invalid register response schema",
+      );
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2438,7 +2447,7 @@ export class InngestCommHandler<
     // during registration with the body of the current functions and refuse
     // to register if the functions are the same.
     if (!skipped) {
-      this.client.logger.debug(
+      this.client.internalLogger.debug(
         { status: res.status, statusText: res.statusText, data },
         "Registered inngest functions",
       );
@@ -2519,7 +2528,7 @@ export class InngestCommHandler<
           allowExpiredSignatures: this.allowExpiredSignatures,
           signingKey: this.client.signingKey,
           signingKeyFallback: this.client.signingKeyFallback,
-          logger: this.client.logger,
+          logger: this.client.internalLogger,
         }),
       };
     } catch (err) {
@@ -2536,7 +2545,7 @@ export class InngestCommHandler<
       body,
       key,
       now.toString(),
-      this.client.logger,
+      this.client.internalLogger,
     );
 
     return `t=${now}&s=${mac}`;

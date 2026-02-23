@@ -102,7 +102,7 @@ export const getStepTools = (
         stepCompletionOrder: [],
         isFailureHandler: false,
         requestedRunStep: undefined,
-        timer: new ServerTiming(client.logger),
+        timer: new ServerTiming(client.internalLogger),
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
@@ -151,7 +151,7 @@ export const runFnWithStack = async (
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
       isFailureHandler: Boolean(opts?.onFailure),
       requestedRunStep: opts?.runStep,
-      timer: new ServerTiming(fn["client"].logger),
+      timer: new ServerTiming(fn["client"].internalLogger),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
@@ -1249,7 +1249,7 @@ export const testFramework = (
             const ts = Date.now().toString();
 
             const signature = validSignature
-              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts, new ConsoleLogger("silent"))}`
+              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts, new ConsoleLogger({ level: "silent" }))}`
               : validSignature === false
                 ? "INVALID"
                 : undefined;

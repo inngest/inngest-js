@@ -403,7 +403,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           const parsed = parseFnData(
             JSON.parse(asString),
             undefined,
-            this.inngest.logger,
+            this.inngest.internalLogger,
           );
 
           const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
@@ -533,7 +533,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (err instanceof ConnectionLimitError) {
-          this.inngest.logger.error(
+          this.inngest.internalLogger.error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
           // Continue reconnecting, do not throw.
