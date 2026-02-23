@@ -195,30 +195,35 @@ export const encryptionMiddleware = (
     override async transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ): Promise<Middleware.TransformFunctionInputArgs> {
-      const decryptedEvent = arg.ctx.event?.data
-        ? {
+      let decryptedEvent = arg.ctx.event;
+      if (arg.ctx.event?.data) {
+        decryptedEvent = {
           ...arg.ctx.event,
           data: await decryptEventData(arg.ctx.event.data),
-        }
-        : arg.ctx.event;
+        };
+      }
 
-      const decryptedEvents = arg.ctx.events
-        ? await Promise.all(
-          arg.ctx.events.map(async (event) => ({
-            ...event,
-            data: event.data
-              ? await decryptEventData(event.data)
-              : event.data,
-          })),
-        )
-        : arg.ctx.events;
+      let decryptedEvents = arg.ctx.events;
+      if (arg.ctx.events) {
+        // @ts-expect-error - Promise.all returns T[] but events is a non-empty tuple
+        decryptedEvents = await Promise.all(
+          arg.ctx.events.map(async (event) => {
+            if (!event.data) {
+              return event;
+            }
+            return {
+              ...event,
+              data: await decryptEventData(event.data),
+            };
+          }),
+        );
+      }
 
       return {
         ...arg,
         ctx: {
           ...arg.ctx,
           event: decryptedEvent,
-          // @ts-expect-error - OK to override events
           events: decryptedEvents,
         },
       };
@@ -319,14 +324,12 @@ export const encryptionMiddleware = (
 
       const encryptedEvents = await Promise.all(
         arg.events.map(async (event) => {
-          let data = undefined;
-          if (event.data) {
-            data = await encryptEventData(event.data);
+          if (!event.data) {
+            return event;
           }
-
           return {
             ...event,
-            data,
+            data: await encryptEventData(event.data),
           };
         }),
       );
