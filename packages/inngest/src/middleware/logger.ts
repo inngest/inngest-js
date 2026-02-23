@@ -215,4 +215,3 @@ export class ProxyLogger implements Logger {
     await resolveNextTick();
   }
 }
-
