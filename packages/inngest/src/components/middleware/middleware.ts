@@ -287,8 +287,15 @@ export namespace Middleware {
   // primarily because of `wrapStep`. Each defined `wrapStep` method adds 1 more
   // promise to the chain for each step. This chain runs every time the step
   // completes/errors (even when memoized).
-  export class BaseMiddleware {
+  export abstract class BaseMiddleware {
     readonly client: Inngest.Any;
+
+    /**
+     * Used to identify the middleware instance in logs. Uniqueness is not
+     * required, though using multiple middleware with the same ID in the same
+     * app may cause confusion when debugging.
+     */
+    abstract readonly id: string;
 
     /**
      * Declare this to statically specify how function return types are

@@ -18,6 +18,7 @@ describe("args", () => {
       });
 
       class TestMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override wrapRequest = async ({
           next,
           functionInfo,
@@ -81,6 +82,7 @@ test("throwing rejects the request", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapRequest({
       runId,
     }: Middleware.WrapRequestArgs): Promise<Middleware.Response> {
@@ -115,6 +117,7 @@ test("next() resolves with response", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       const res = await next();
       state.response = res;
@@ -155,6 +158,7 @@ test("multiple middleware in onion order", async () => {
   });
 
   class Mw1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       state.logs.push("mw1: before");
       const result = await next();
@@ -164,6 +168,7 @@ test("multiple middleware in onion order", async () => {
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       state.logs.push("mw2: before");
       const result = await next();
@@ -211,6 +216,7 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapRequest({ next, runId }: Middleware.WrapRequestArgs) {
         state.runId = runId;
         state.hook.count++;
@@ -249,6 +255,7 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override wrapRequest({ next }: Middleware.WrapRequestArgs) {
         state.hook.count++;
         return next();

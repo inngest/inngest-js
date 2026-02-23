@@ -34,6 +34,8 @@ type CatchAll =
   | Inngest.UnionKeys<any>;
 
 class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
+  readonly id = "test";
+
   onRunStart(arg: Inngest.Middleware.OnRunStartArgs) {
     console.log("onRunStart", arg);
   }

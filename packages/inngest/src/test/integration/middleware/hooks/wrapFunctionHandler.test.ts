@@ -22,6 +22,7 @@ test("multiple middleware in correct order", async () => {
   const state = createState({ logs: [] as string[] });
 
   class Mw1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapFunctionHandler({
       next,
     }: Middleware.WrapFunctionHandlerArgs) {
@@ -33,6 +34,7 @@ test("multiple middleware in correct order", async () => {
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapFunctionHandler({
       next,
     }: Middleware.WrapFunctionHandlerArgs) {
@@ -90,6 +92,7 @@ test("bookend with steps", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
       async ({ ctx, next }) => {
         state.beforeStep.output = await ctx.step.run("before", async () => {
@@ -149,6 +152,7 @@ describe("modify output", () => {
     const state = createState({ transformedResults: [] as unknown[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -184,6 +188,7 @@ describe("modify output", () => {
     const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -194,6 +199,7 @@ describe("modify output", () => {
     }
 
     class Mw2 extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -247,6 +253,7 @@ describe("modify error", () => {
     const state = createState({ capturedErrors: [] as Error[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -286,6 +293,7 @@ describe("modify error", () => {
     const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -300,6 +308,7 @@ describe("modify error", () => {
     }
 
     class Mw2 extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -340,6 +349,7 @@ describe("modify error", () => {
     const state = createState({ outputCalls: 0, errorCalls: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -379,6 +389,7 @@ describe("modify error", () => {
     const state = createState({ outputCalls: 0, errorCalls: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -419,6 +430,7 @@ describe("modify error", () => {
     const state = createState({ fnCallCount: 0 });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override async wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
@@ -464,6 +476,7 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
         async ({ ctx }) => {
           state.runId = ctx.runId;
@@ -503,6 +516,7 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override wrapFunctionHandler: Middleware.BaseMiddleware["wrapFunctionHandler"] =
         async ({ ctx, next }) => {
           state.runId = ctx.runId;
@@ -546,6 +560,7 @@ describe("throws", () => {
     });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override wrapFunctionHandler = async ({
         next,
       }: Middleware.WrapFunctionHandlerArgs) => {

@@ -24,6 +24,7 @@ describe("all hooks fire in correct order with 2 middleware", () => {
 
       function createMW(name: string) {
         return class extends Middleware.BaseMiddleware {
+          readonly id = "test";
           static override onRegister() {
             state.logs.push(`onRegister (${name})`);
           }
@@ -278,6 +279,7 @@ test("all hooks fire in correct order with checkpointing", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       state.logs.push(`onRegister`);
     }

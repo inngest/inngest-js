@@ -11,6 +11,7 @@ test("function-level middleware only on that function", async () => {
   let count = 0;
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunStart() {
       count++;
     }

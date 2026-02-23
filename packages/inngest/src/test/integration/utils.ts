@@ -43,6 +43,7 @@ export function assertStepError(
 export abstract class BaseSerializerMiddleware<
   TSerialized,
 > extends Middleware.BaseMiddleware {
+  abstract override readonly id: string;
   protected abstract deserialize(value: TSerialized): unknown;
   protected abstract isSerialized(value: unknown): value is TSerialized;
   protected abstract needsSerialize(value: unknown): boolean;

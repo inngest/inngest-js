@@ -26,6 +26,7 @@ describe("args", () => {
       });
 
       class TestMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override onRunError(args: Middleware.OnRunErrorArgs) {
           state.hookArgs.push(args);
         }
@@ -83,6 +84,7 @@ test("multiple attempts", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunError(args: Middleware.OnRunErrorArgs) {
       state.calls.push(args);
     }
@@ -136,6 +138,7 @@ test("does NOT fire when function succeeds", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunError() {
       state.count++;
     }
@@ -171,6 +174,7 @@ test("fires when function throws after steps complete", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunError(args: Middleware.OnRunErrorArgs) {
       state.calls.push(args);
     }
@@ -210,6 +214,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunError() {
       state.hook.count++;
       throw new Error("oh no");
@@ -241,7 +246,7 @@ test("throws", async () => {
   expect(consoleSpy).toHaveBeenCalledWith(expect.any(Error));
   expect(consoleSpy).toHaveBeenCalledWith({
     hook: "onRunError",
-    mw: "TestMiddleware",
+    mw: "test",
   });
 
   consoleSpy.mockRestore();

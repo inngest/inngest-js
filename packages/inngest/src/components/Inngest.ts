@@ -953,6 +953,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 export function builtInMiddleware(baseLogger: Logger) {
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "inngest:logger";
       #proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(

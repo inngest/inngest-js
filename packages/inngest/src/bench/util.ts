@@ -98,6 +98,7 @@ export function createBench(options: CreateBenchOptions) {
 
 export function createMiddleware() {
   return class MW extends Middleware.BaseMiddleware {
+    readonly id = "bench";
     override onMemoizationEnd() {}
     override onStepStart() {}
     override onStepComplete() {}

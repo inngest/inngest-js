@@ -19,6 +19,7 @@ describe("args", () => {
       });
 
       class TestMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override transformStepInput(
           arg: Middleware.TransformStepInputArgs,
         ): Middleware.TransformStepInputArgs {
@@ -91,6 +92,7 @@ test("modify step.run input (1 middleware)", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
@@ -138,6 +140,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
   });
 
   class MW1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
@@ -152,6 +155,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
   }
 
   class MW2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
@@ -210,6 +214,7 @@ describe("change step ID", () => {
 
     let changeStepID = false;
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override onStepStart(arg: Middleware.OnStepStartArgs) {
         state.onStepStartCalls.push(arg);
       }
@@ -309,6 +314,7 @@ describe("change step ID", () => {
 
     let changeStepID = false;
     class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       override onStepStart(arg: Middleware.OnStepStartArgs) {
         state.onStepStartCalls.push(arg);
       }
@@ -435,6 +441,7 @@ test("modify all step kinds", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
@@ -578,6 +585,7 @@ test("called for memoized and fresh", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformStepInput(
       arg: Middleware.TransformStepInputArgs,
     ): Middleware.TransformStepInputArgs {
