@@ -19,6 +19,7 @@ test("same as ctx in function handler", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ) {
@@ -59,6 +60,7 @@ test("modify event data", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ) {
@@ -113,6 +115,7 @@ test("modify memoized step data", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ) {
@@ -173,6 +176,7 @@ test("dependency injection", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ) {
@@ -217,6 +221,7 @@ test("add step method", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformFunctionInput(
       arg: Middleware.TransformFunctionInputArgs,
     ) {

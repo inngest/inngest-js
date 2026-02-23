@@ -352,6 +352,8 @@ export const metadataSymbol = Symbol.for("inngest.step.metadata");
  */
 export const metadataMiddleware = () => {
   class MetadataMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:metadata";
+
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
       client["experimentalMetadataEnabled"] = true;
     }

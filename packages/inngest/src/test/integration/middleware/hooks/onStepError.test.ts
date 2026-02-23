@@ -25,6 +25,7 @@ describe("args", () => {
       });
 
       class TestMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override onStepError(args: Middleware.OnStepErrorArgs) {
           state.hookArgs.push(args);
         }
@@ -91,6 +92,7 @@ test("multiple steps with errors", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepError(args: Middleware.OnStepErrorArgs) {
       state.calls.push(args);
     }
@@ -175,6 +177,7 @@ test("multiple attempts", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepError(args: Middleware.OnStepErrorArgs) {
       state.calls.push(args);
     }
@@ -247,6 +250,7 @@ test("no errors", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepError() {
       state.count++;
     }
@@ -282,6 +286,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onStepError() {
       state.hook.count++;
       throw new Error("oh no");

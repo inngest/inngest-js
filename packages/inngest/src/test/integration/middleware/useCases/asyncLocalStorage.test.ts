@@ -20,6 +20,7 @@ test("async local storage context via wrapFunctionHandler", async () => {
   const asyncLocalStorage = new AsyncLocalStorage<RunContext>();
 
   class AsyncLocalStorageMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapFunctionHandler({
       next,
     }: Middleware.WrapFunctionHandlerArgs) {

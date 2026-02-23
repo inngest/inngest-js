@@ -137,6 +137,8 @@ export const extendedTracesMiddleware = ({
   }
 
   class ExtendedTracesMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:extended-traces";
+
     /**
      * Called by the Inngest constructor to associate the processor with the
      * client.

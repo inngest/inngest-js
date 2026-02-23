@@ -8,6 +8,7 @@ test("stepOutputTransform does not affect step.invoke return type", () => {
   }
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     declare stepOutputTransform: PreserveDate;
   }
 

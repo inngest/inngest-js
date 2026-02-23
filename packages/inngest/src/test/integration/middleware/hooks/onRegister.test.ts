@@ -11,6 +11,7 @@ test("called once for client middleware", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       state.count++;
     }
@@ -45,6 +46,7 @@ test("called once for function middleware", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       state.count++;
     }
@@ -83,6 +85,7 @@ test("receives the client instance", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister(arg: Middleware.OnRegisterArgs) {
       state.receivedClient = arg.client;
     }
@@ -112,6 +115,7 @@ test("receives the client instance", async () => {
 
 test("throwing in client middleware propagates to caller", () => {
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       throw new Error("register failed");
     }
@@ -129,6 +133,7 @@ test("throwing in client middleware propagates to caller", () => {
 
 test("throwing in function middleware propagates to caller", () => {
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       throw new Error("register failed");
     }
@@ -158,12 +163,14 @@ test("called for both client and function middleware", async () => {
   });
 
   class ClientMW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       state.logs.push("client");
     }
   }
 
   class FunctionMW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     static override onRegister() {
       state.logs.push("function");
     }

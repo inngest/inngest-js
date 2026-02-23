@@ -588,6 +588,7 @@ type Serialized = {
 };
 
 class DateSerializerMiddleware extends BaseSerializerMiddleware<Serialized> {
+  readonly id = "test:date-serializer";
   declare functionOutputTransform: PreserveDate;
   declare stepOutputTransform: PreserveDate;
 

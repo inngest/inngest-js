@@ -18,6 +18,7 @@ describe("args", () => {
       });
 
       class TestMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override onRunComplete(args: Middleware.OnRunCompleteArgs) {
           state.hookArgs.push(args);
         }
@@ -71,6 +72,7 @@ test("with steps", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunComplete(args: Middleware.OnRunCompleteArgs) {
       state.calls.push(args);
     }
@@ -117,6 +119,7 @@ test("does NOT fire when function errors", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunComplete() {
       state.endCalls++;
     }
@@ -157,6 +160,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunComplete() {
       state.hook.count++;
       throw new Error("oh no");

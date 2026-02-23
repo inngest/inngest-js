@@ -11,6 +11,7 @@ test("fires once per run (not on memoized requests)", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunStart() {
       state.count++;
     }
@@ -45,6 +46,7 @@ test("fires even when function errors", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunStart() {
       state.count++;
     }
@@ -79,6 +81,7 @@ test("fires with no steps", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunStart() {
       state.count++;
     }
@@ -116,6 +119,7 @@ test("throws", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onRunStart() {
       state.hook.count++;
       throw new Error("oh no");

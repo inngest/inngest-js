@@ -30,6 +30,7 @@ test("info hooks for parallel steps", async () => {
   });
 
   class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override onMemoizationEnd() {
       state.logs.push("onMemoizationEnd");
     }

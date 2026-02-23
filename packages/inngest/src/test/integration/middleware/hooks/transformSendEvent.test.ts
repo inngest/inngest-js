@@ -18,6 +18,7 @@ matrixLevel("transform event data before sending", async (level) => {
   const eventName = randomSuffix("evt");
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       if (arg.events[0]?.name === eventName) {
         // Ignore the test-triggering event
@@ -86,6 +87,7 @@ matrixLevel("multiple middleware transform in order", async (level) => {
   const eventName = randomSuffix("evt");
 
   class Mw1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       if (arg.events[0]?.name === eventName) {
         // Ignore the test-triggering event
@@ -106,6 +108,7 @@ matrixLevel("multiple middleware transform in order", async (level) => {
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       if (arg.events[0]?.name === eventName) {
         // Ignore the test-triggering event
@@ -177,6 +180,7 @@ test("client.send", async () => {
   });
 
   class MwClient extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       state.mwClient.count++;
       return {
@@ -193,6 +197,7 @@ test("client.send", async () => {
   }
 
   class MwFn extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       // Will not call because function-level middleware only fires for
       // `step.sendEvent`
@@ -241,6 +246,7 @@ test("function-level stays isolated", async () => {
   });
 
   class Mw extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
       state.fnIds.push(arg.functionInfo?.id);
       return arg;

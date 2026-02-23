@@ -529,6 +529,7 @@ describe("send", () => {
         eventKey: testEventKey,
         middleware: [
           class extends Middleware.BaseMiddleware {
+            readonly id = "test";
             override transformSendEvent(
               arg: Middleware.TransformSendEventArgs,
             ) {
@@ -576,6 +577,7 @@ describe("send", () => {
         eventKey: testEventKey,
         middleware: [
           class extends Middleware.BaseMiddleware {
+            readonly id = "test";
             override async wrapSendEvent({
               next,
             }: Middleware.WrapSendEventArgs) {
@@ -885,6 +887,7 @@ describe("helper types", () => {
     id: "test",
     middleware: [
       class extends Middleware.BaseMiddleware {
+        readonly id = "test";
         override transformFunctionInput(
           arg: Middleware.TransformFunctionInputArgs,
         ) {
@@ -1006,6 +1009,7 @@ describe("helper types", () => {
       }
 
       class DateMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
         declare functionOutputTransform: PreserveDate;
       }
 

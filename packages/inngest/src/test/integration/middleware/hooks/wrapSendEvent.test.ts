@@ -19,6 +19,7 @@ matrixLevel("client.send and step.sendEvent", async (level) => {
   });
 
   class Mw extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({
       events,
       next,
@@ -75,6 +76,7 @@ test("multiple middleware in onion order", async () => {
   });
 
   class Mw1 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
       state.logs.push("mw1: before");
       const result = await next();
@@ -84,6 +86,7 @@ test("multiple middleware in onion order", async () => {
   }
 
   class Mw2 extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
       state.logs.push("mw2: before");
       const result = await next();
@@ -123,6 +126,7 @@ test("can modify output", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
       const result = await next();
       return {
@@ -160,6 +164,7 @@ test("receives events in args", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({
       events,
       next,
@@ -198,6 +203,7 @@ test("fires for step.sendEvent", async () => {
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({
       events,
       next,
@@ -246,6 +252,7 @@ test("fires for step.sendEvent", async () => {
 
 test("throwing rejects the send", async () => {
   class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
       throw new Error("send rejected");
       return next();
@@ -278,6 +285,7 @@ test("throwing rejects the send", async () => {
 //   });
 
 //   class MwClient extends Middleware.BaseMiddleware {
+//     readonly id = "test";
 //     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
 //       state.mwClient.count++;
 //       return next();
@@ -285,6 +293,7 @@ test("throwing rejects the send", async () => {
 //   }
 
 //   class MwFn extends Middleware.BaseMiddleware {
+//     readonly id = "test";
 //     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
 //       // Will not call because function-level middleware only fires for
 //       // `step.sendEvent`
@@ -328,6 +337,7 @@ test("function-level stays isolated", async () => {
   });
 
   class Mw extends Middleware.BaseMiddleware {
+    readonly id = "test";
     override async wrapSendEvent({
       functionInfo,
       next,

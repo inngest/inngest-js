@@ -73,6 +73,7 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
    */
   middleware: [
     class MockMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
       #delay() {
         return new Promise<void>((resolve) =>
           setTimeout(() => setTimeout(resolve)),

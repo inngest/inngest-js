@@ -40,6 +40,7 @@ test("base64 encoding/decoding middleware", async () => {
   });
 
   class EncodingMiddleware extends BaseSerializerMiddleware<Serialized> {
+    readonly id = "test:encoding";
     protected override readonly recursive = false;
 
     protected isSerialized(value: unknown): value is Serialized {
