@@ -1,9 +1,30 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import debug from "debug";
 import { allProcessEnv, parseAsBoolean } from "../../../helpers/env.ts";
 import { createDeferredPromise } from "../../../helpers/promises.ts";
-import { topic } from "../topic.ts";
 import { Realtime } from "../types.ts";
 import { StreamFanout } from "./StreamFanout.ts";
+
+//
+// Extract a StandardSchema from either a new TopicConfig ({ schema }) or
+// an old Topic.Definition (has .getSchema()). Returns undefined when the
+// topic is type-only or has no schema.
+//
+const extractSchema = (topicEntry: unknown): StandardSchemaV1 | undefined => {
+  if (!topicEntry || typeof topicEntry !== "object") return undefined;
+
+  // New declarative TopicConfig: { schema: StandardSchemaV1 }
+  if ("schema" in topicEntry && topicEntry.schema) {
+    return topicEntry.schema as StandardSchemaV1;
+  }
+
+  // Old Topic.Definition: has .getSchema() method
+  if ("getSchema" in topicEntry && typeof topicEntry.getSchema === "function") {
+    return topicEntry.getSchema() as StandardSchemaV1 | undefined;
+  }
+
+  return undefined;
+};
 
 export interface TokenSubscriptionOptions {
   token: Realtime.Subscribe.Token;
@@ -24,7 +45,7 @@ export class TokenSubscription {
   #encoder = new TextEncoder();
   #fanout = new StreamFanout<Realtime.Message>();
   #running = false;
-  #topics: Map<string, Realtime.Topic.Definition>;
+  #topics: Map<string, unknown>;
   #ws: WebSocket | null = null;
   #signingKey: string | undefined;
   #signingKeyFallback: string | undefined;
@@ -50,21 +71,26 @@ export class TokenSubscription {
     if (typeof options.token.channel === "string") {
       this.#channelId = options.token.channel;
 
-      this.#topics = this.token.topics.reduce<
-        Map<string, Realtime.Topic.Definition>
-      >((acc, name) => {
-        acc.set(name, topic(name));
-        return acc;
-      }, new Map<string, Realtime.Topic.Definition>());
+      //
+      // String channel — no topic definitions available, store empty entries.
+      // Schema validation will be skipped for these topics.
+      //
+      this.#topics = new Map(
+        this.token.topics.map((name) => [name, undefined]),
+      );
     } else {
       this.#channelId = options.token.channel.name;
 
-      this.#topics = this.token.topics.reduce<
-        Map<string, Realtime.Topic.Definition>
-      >((acc, name) => {
-        acc.set(name, options.token.channel.topics[name] ?? topic(name));
-        return acc;
-      }, new Map<string, Realtime.Topic.Definition>());
+      //
+      // Channel object — store the topic config (new TopicConfig or old
+      // Topic.Definition) for optional schema validation on received messages.
+      //
+      this.#topics = new Map(
+        this.token.topics.map((name) => [
+          name,
+          options.token.channel.topics?.[name],
+        ]),
+      );
     }
   }
 
@@ -181,7 +207,7 @@ export class TokenSubscription {
               return;
             }
 
-            const schema = dataTopic.getSchema();
+            const schema = extractSchema(dataTopic);
             if (schema) {
               const validateRes = await schema["~standard"].validate(msg.data);
               if (validateRes.issues) {
