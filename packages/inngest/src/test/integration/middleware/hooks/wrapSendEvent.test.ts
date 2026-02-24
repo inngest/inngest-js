@@ -276,58 +276,6 @@ test("throwing rejects the send", async () => {
   );
 });
 
-// test("client.send", async () => {
-//   // Client-level middleware applies to `client.send`
-
-//   const state = createState({
-//     mwClient: { count: 0 },
-//     mwFn: { count: 0 },
-//   });
-
-//   class MwClient extends Middleware.BaseMiddleware {
-//     readonly id = "test";
-//     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
-//       state.mwClient.count++;
-//       return next();
-//     }
-//   }
-
-//   class MwFn extends Middleware.BaseMiddleware {
-//     readonly id = "test";
-//     override async wrapSendEvent({ next }: Middleware.WrapSendEventArgs) {
-//       // Will not call because function-level middleware only fires for
-//       // `step.sendEvent`
-//       state.mwFn.count++;
-//       return next();
-//     }
-//   }
-
-//   const eventName = randomSuffix("evt");
-//   const client = new Inngest({
-//     id: randomSuffix(testFileName),
-//     isDev: true,
-//     middleware: [MwClient],
-//   });
-//   const fn = client.createFunction(
-//     {
-//       id: "fn",
-//       middleware: [MwFn],
-//       retries: 0,
-//       triggers: { event: eventName },
-//     },
-//     async ({ runId }) => {
-//       state.runId = runId;
-//     },
-//   );
-//   await createTestApp({ client, functions: [fn] });
-
-//   await client.send({ name: eventName });
-//   await state.waitForRunComplete();
-
-//   expect(state.mwClient.count).toBe(1);
-//   expect(state.mwFn.count).toBe(0);
-// });
-
 test("function-level stays isolated", async () => {
   // One function's middleware does not affect another function
 
@@ -338,11 +286,8 @@ test("function-level stays isolated", async () => {
 
   class Mw extends Middleware.BaseMiddleware {
     readonly id = "test";
-    override async wrapSendEvent({
-      functionInfo,
-      next,
-    }: Middleware.WrapSendEventArgs) {
-      state.fnIds.push(functionInfo?.id);
+    override async wrapSendEvent({ fn, next }: Middleware.WrapSendEventArgs) {
+      state.fnIds.push(fn?.id());
       return next();
     }
   }

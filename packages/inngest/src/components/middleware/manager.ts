@@ -2,6 +2,7 @@ import { timeStr } from "../../helpers/strings.ts";
 import type { Logger } from "../../middleware/logger.ts";
 import type { Context, StepOpCode } from "../../types.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import type { Middleware } from "./middleware.ts";
 import {
   isTimeStrInput,
@@ -69,7 +70,7 @@ export class MiddlewareManager {
    */
   private memoizationEnded = false;
 
-  private readonly functionInfo: Middleware.FunctionInfo;
+  private readonly fn: InngestFunction.Any;
   private readonly middleware: Middleware.BaseMiddleware[];
   private readonly internalLogger: Logger;
 
@@ -83,13 +84,13 @@ export class MiddlewareManager {
     fnArg: Context.Any,
     getStepState: () => Record<string, MemoizedOp>,
     middleware: Middleware.BaseMiddleware[] = [],
-    functionInfo: Middleware.FunctionInfo,
+    fn: InngestFunction.Any,
     logger: Logger,
   ) {
     this.fnArg = fnArg;
     this.getStepState = getStepState;
     this.middleware = middleware;
-    this.functionInfo = functionInfo;
+    this.fn = fn;
     this.internalLogger = logger;
 
     this.hasTransformStepInput = middleware.some((mw) =>
@@ -222,7 +223,7 @@ export class MiddlewareManager {
   async transformFunctionInput(): Promise<Middleware.TransformFunctionInputArgs> {
     let result: Middleware.TransformFunctionInputArgs = {
       ctx: this.fnArg,
-      functionInfo: this.functionInfo,
+      fn: this.fn,
       steps: this.buildSteps(),
     };
 
@@ -248,7 +249,7 @@ export class MiddlewareManager {
         chain = () =>
           mw.wrapFunctionHandler!({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             next,
           });
       }
@@ -264,7 +265,7 @@ export class MiddlewareManager {
     stepInfo: Middleware.StepInfo,
   ): Promise<Middleware.TransformStepInputArgs> {
     let result: Middleware.TransformStepInputArgs = {
-      functionInfo: this.functionInfo,
+      fn: this.fn,
       stepInfo: {
         hashedId: stepInfo.hashedId,
         memoized: stepInfo.memoized,
@@ -320,7 +321,7 @@ export class MiddlewareManager {
 
           return mw.wrapStep!({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             next: guardedNext,
             stepInfo,
           }).finally(() => {
@@ -338,7 +339,7 @@ export class MiddlewareManager {
         try {
           await mw.onStepStart({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             stepInfo,
           });
         } catch (err) {
@@ -364,7 +365,7 @@ export class MiddlewareManager {
         try {
           await mw.onStepComplete({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             output,
             stepInfo,
           });
@@ -399,7 +400,7 @@ export class MiddlewareManager {
         chain = () =>
           mw.wrapStepHandler!({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             next,
             stepInfo,
           });
@@ -419,7 +420,7 @@ export class MiddlewareManager {
           await mw.onStepError({
             ctx: this.fnArg,
             error,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             isFinalAttempt,
             stepInfo,
           });
@@ -451,7 +452,7 @@ export class MiddlewareManager {
         try {
           await mw.onMemoizationEnd({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
           });
         } catch (err) {
           this.internalLogger.error(
@@ -473,7 +474,7 @@ export class MiddlewareManager {
         try {
           await mw.onRunStart({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
           });
         } catch (err) {
           this.internalLogger.error(
@@ -495,7 +496,7 @@ export class MiddlewareManager {
         try {
           await mw.onRunComplete({
             ctx: this.fnArg,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             output,
           });
         } catch (err) {
@@ -519,7 +520,7 @@ export class MiddlewareManager {
           await mw.onRunError({
             ctx: this.fnArg,
             error,
-            functionInfo: this.functionInfo,
+            fn: this.fn,
             isFinalAttempt,
           });
         } catch (err) {

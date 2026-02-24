@@ -107,7 +107,7 @@ test("base64 encoding/decoding middleware", async () => {
       runId: expect.any(String),
       step: expect.any(Object),
     },
-    functionInfo: { id: "fn" },
+    fn,
     steps: {},
   };
   expect(state.transformFunctionInputCalls).toEqual([

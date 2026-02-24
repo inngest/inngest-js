@@ -62,7 +62,7 @@ describe("args", () => {
       // Called twice: once fresh (request 1), once memoized (request 2)
       expect(state.hookArgs).toEqual([
         {
-          functionInfo: { id: "fn" },
+          fn,
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: false,
@@ -72,7 +72,7 @@ describe("args", () => {
           input: [],
         },
         {
-          functionInfo: { id: "fn" },
+          fn,
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: true,
@@ -268,7 +268,7 @@ describe("change step ID", () => {
     expect(state.onStepStartCalls).toEqual([
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
           input: undefined,
@@ -279,7 +279,7 @@ describe("change step ID", () => {
       },
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "c2a6b03f190dfb2b4aa91f8af8d477a9bc3401dc",
           input: undefined,
@@ -380,7 +380,7 @@ describe("change step ID", () => {
     expect(state.onStepStartCalls).toEqual([
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
           input: undefined,
@@ -391,7 +391,7 @@ describe("change step ID", () => {
       },
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
           input: undefined,
@@ -402,7 +402,7 @@ describe("change step ID", () => {
       },
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "853cb1e68d4c9c2ad16aabbef8c346b559cbb55c",
           input: undefined,

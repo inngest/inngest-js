@@ -1,9 +1,58 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { createTestApp } from "../../../devServerTestHarness.ts";
 import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
+
+describe("args", () => {
+  test("client middleware receives { client, fn: null }", () => {
+    let receivedArgs: Middleware.OnRegisterArgs | undefined;
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
+      static override onRegister(arg: Middleware.OnRegisterArgs) {
+        receivedArgs = arg;
+      }
+    }
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TestMiddleware],
+    });
+
+    expect(receivedArgs).toEqual({ client, fn: null });
+  });
+
+  test("function middleware receives { client, fn }", () => {
+    let receivedArgs: Middleware.OnRegisterArgs | undefined;
+
+    class TestMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "test";
+      static override onRegister(arg: Middleware.OnRegisterArgs) {
+        receivedArgs = arg;
+      }
+    }
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+    });
+
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        middleware: [TestMiddleware],
+        triggers: [{ event: "test" }],
+      },
+      async () => {},
+    );
+
+    expect(receivedArgs).toEqual({ client, fn });
+  });
+});
 
 test("called once for client middleware", async () => {
   const state = createState({
