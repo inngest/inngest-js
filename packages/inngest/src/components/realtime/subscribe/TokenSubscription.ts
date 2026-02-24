@@ -199,14 +199,14 @@ export class TokenSubscription {
               return;
             }
 
-            const dataTopic = this.#topics.get(msg.topic);
-            if (!dataTopic) {
+            if (!this.#topics.has(msg.topic)) {
               this.#debug(
                 `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`,
               );
               return;
             }
 
+            const dataTopic = this.#topics.get(msg.topic);
             const schema = extractSchema(dataTopic);
             if (schema) {
               const validateRes = await schema["~standard"].validate(msg.data);

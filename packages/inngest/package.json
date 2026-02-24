@@ -233,6 +233,14 @@
       },
       "import": "./realtime.js",
       "require": "./realtime.cjs"
+    },
+    "./react": {
+      "types": {
+        "import": "./react.d.ts",
+        "require": "./react.d.cts"
+      },
+      "import": "./react.js",
+      "require": "./react.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
@@ -319,6 +327,7 @@
     "@types/koa": "~3.0.0",
     "@types/minimist": "~1.2.5",
     "@types/node": "~24.3.0",
+    "@types/react": "^19.0.0",
     "@types/sha.js": "~2.4.4",
     "@vercel/node": "^2.15.9",
     "@vitest/coverage-v8": "3.0.8",
@@ -361,6 +370,7 @@
     "hono": ">=4.2.7",
     "koa": ">=2.14.2",
     "next": ">=12.0.0",
+    "react": ">=18.0.0",
     "typescript": ">=5.8.0",
     "zod": "^3.25.0 || ^4.0.0"
   },
@@ -390,6 +400,9 @@
       "optional": true
     },
     "next": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     },
     "typescript": {
