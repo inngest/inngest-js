@@ -3,6 +3,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
+import type { Realtime } from "../realtime/types.ts";
 import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
@@ -315,6 +316,13 @@ export type BaseContextWithTriggers<
    * The maximum number of attempts allowed for this function.
    */
   maxAttempts?: number;
+
+  /**
+   * Publish a realtime message to a channel topic. This is non-durable and
+   * will re-execute on retry. For durable publishing, use
+   * `step.realtime.publish()`.
+   */
+  publish: Realtime.TypedPublishFn;
 };
 
 /**

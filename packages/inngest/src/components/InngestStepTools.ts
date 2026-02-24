@@ -493,13 +493,17 @@ export const createStepTools = <
      */
     realtime: {
       /**
-       * Publish a realtime message to a particular topic and channel as a step.
+       * Publish a realtime message as a durable step. Memoized and will not
+       * re-fire on retry, unlike context-level `publish()`.
+       *
+       * Uses topic accessors: `step.realtime.publish("id", chat.status, data)`
        */
       publish: createTool<
-        <TMessage extends Realtime.Message.Input>(
+        <TData>(
           idOrOptions: StepOptionsOrId,
-          opts: TMessage,
-        ) => Promise<Awaited<TMessage>["data"]>
+          topicRef: Realtime.TopicRef<TData>,
+          data: TData,
+        ) => Promise<TData>
       >(
         ({ id, name }) => {
           return {
@@ -514,14 +518,14 @@ export const createStepTools = <
           };
         },
         {
-          fn: (ctx, _idOrOptions, opts) => {
+          fn: (ctx, _idOrOptions, topicRef, data) => {
             return client["inngestApi"].publish(
               {
-                topics: [opts.topic],
-                channel: opts.channel,
+                topics: [topicRef.topic],
+                channel: topicRef.channel,
                 runId: ctx.runId,
               },
-              opts.data,
+              data,
             );
           },
         },

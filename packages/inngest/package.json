@@ -225,6 +225,14 @@
       },
       "import": "./internals.js",
       "require": "./internals.cjs"
+    },
+    "./realtime": {
+      "types": {
+        "import": "./realtime.d.ts",
+        "require": "./realtime.d.cts"
+      },
+      "import": "./realtime.js",
+      "require": "./realtime.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",

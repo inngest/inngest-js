@@ -19,6 +19,7 @@ export default defineConfig({
     "src/index.ts",
     "src/internals.ts",
     "src/koa.ts",
+    "src/realtime.ts",
     "src/lambda.ts",
     "src/next.ts",
     "src/nitro.ts",

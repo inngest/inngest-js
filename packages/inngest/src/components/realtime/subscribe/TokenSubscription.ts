@@ -1,0 +1,435 @@
+import debug from "debug";
+import { allProcessEnv, parseAsBoolean } from "../../../helpers/env.ts";
+import { createDeferredPromise } from "../../../helpers/promises.ts";
+import { topic } from "../topic.ts";
+import { Realtime } from "../types.ts";
+import { StreamFanout } from "./StreamFanout.ts";
+
+export interface TokenSubscriptionOptions {
+  token: Realtime.Subscribe.Token;
+  apiBaseUrl?: string;
+  signingKey?: string;
+  signingKeyFallback?: string;
+
+  //
+  // When provided, used for lazy token retrieval instead of env-based lookup
+  //
+  getSubscriptionToken?: (channel: string, topics: string[]) => Promise<string>;
+}
+
+export class TokenSubscription {
+  #apiBaseUrl?: string;
+  #channelId: string;
+  #debug = debug("inngest:realtime");
+  #encoder = new TextEncoder();
+  #fanout = new StreamFanout<Realtime.Message>();
+  #running = false;
+  #topics: Map<string, Realtime.Topic.Definition>;
+  #ws: WebSocket | null = null;
+  #signingKey: string | undefined;
+  #signingKeyFallback: string | undefined;
+  #getSubscriptionToken?: (
+    channel: string,
+    topics: string[],
+  ) => Promise<string>;
+
+  #chunkStreams = new Map<
+    string,
+    { stream: ReadableStream; controller: ReadableStreamDefaultController }
+  >();
+
+  public token: Realtime.Subscribe.Token;
+
+  constructor(options: TokenSubscriptionOptions) {
+    this.token = options.token;
+    this.#apiBaseUrl = options.apiBaseUrl;
+    this.#signingKey = options.signingKey;
+    this.#signingKeyFallback = options.signingKeyFallback;
+    this.#getSubscriptionToken = options.getSubscriptionToken;
+
+    if (typeof options.token.channel === "string") {
+      this.#channelId = options.token.channel;
+
+      this.#topics = this.token.topics.reduce<
+        Map<string, Realtime.Topic.Definition>
+      >((acc, name) => {
+        acc.set(name, topic(name));
+        return acc;
+      }, new Map<string, Realtime.Topic.Definition>());
+    } else {
+      this.#channelId = options.token.channel.name;
+
+      this.#topics = this.token.topics.reduce<
+        Map<string, Realtime.Topic.Definition>
+      >((acc, name) => {
+        acc.set(name, options.token.channel.topics[name] ?? topic(name));
+        return acc;
+      }, new Map<string, Realtime.Topic.Definition>());
+    }
+  }
+
+  private getWsUrl(token: string): URL {
+    const path = "/v1/realtime/connect";
+    const env = allProcessEnv();
+    const devEnvVar = env.INNGEST_DEV;
+
+    let url: URL;
+
+    if (this.#apiBaseUrl) {
+      url = new URL(path, this.#apiBaseUrl);
+    } else if (devEnvVar) {
+      try {
+        const devUrl = new URL(devEnvVar);
+        url = new URL(path, devUrl);
+      } catch {
+        if (parseAsBoolean(devEnvVar)) {
+          url = new URL(path, "http://localhost:8288/");
+        } else {
+          url = new URL(path, "https://api.inngest.com/");
+        }
+      }
+    } else {
+      url = new URL(
+        path,
+        env.NODE_ENV === "production"
+          ? "https://api.inngest.com/"
+          : "http://localhost:8288/",
+      );
+    }
+
+    url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
+    url.searchParams.set("token", token);
+
+    return url;
+  }
+
+  public async connect() {
+    this.#debug(
+      `Establishing connection to channel "${
+        this.#channelId
+      }" with topics ${JSON.stringify([...this.#topics.keys()])}...`,
+    );
+
+    if (typeof WebSocket === "undefined") {
+      throw new Error("WebSockets not supported in current environment");
+    }
+
+    let key = this.token.key;
+    if (!key) {
+      this.#debug(
+        "No subscription token key passed; attempting to retrieve one automatically...",
+      );
+
+      key = await this.lazilyGetSubscriptionToken();
+
+      if (!key) {
+        throw new Error(
+          "No subscription token key passed and failed to retrieve one automatically",
+        );
+      }
+    }
+
+    const ret = createDeferredPromise<void>();
+
+    try {
+      this.#ws = new WebSocket(this.getWsUrl(key));
+
+      this.#ws.onopen = () => {
+        this.#debug("WebSocket connection established");
+        ret.resolve();
+      };
+
+      this.#ws.onmessage = async (event) => {
+        const parseRes = await Realtime.messageSchema.safeParseAsync(
+          JSON.parse(event.data as string),
+        );
+
+        if (!parseRes.success) {
+          this.#debug("Received invalid message:", parseRes.error);
+          return;
+        }
+
+        const msg = parseRes.data;
+
+        if (!this.#running) {
+          this.#debug(
+            `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`,
+          );
+        }
+
+        switch (msg.kind) {
+          case "data": {
+            if (!msg.channel) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no channel`,
+              );
+              return;
+            }
+
+            if (!msg.topic) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no topic`,
+              );
+              return;
+            }
+
+            const dataTopic = this.#topics.get(msg.topic);
+            if (!dataTopic) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`,
+              );
+              return;
+            }
+
+            const schema = dataTopic.getSchema();
+            if (schema) {
+              const validateRes = await schema["~standard"].validate(msg.data);
+              if (validateRes.issues) {
+                console.error(
+                  `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
+                  validateRes.issues,
+                );
+                return;
+              }
+
+              msg.data = validateRes.value;
+            }
+
+            this.#debug(
+              `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
+              msg.data,
+            );
+            return this.#fanout.write({
+              channel: msg.channel,
+              topic: msg.topic,
+              data: msg.data,
+              fnId: msg.fn_id,
+              createdAt: msg.created_at || new Date(),
+              runId: msg.run_id,
+              kind: "data",
+              envId: msg.env_id,
+            });
+          }
+
+          case "datastream-start": {
+            if (!msg.channel || !msg.topic) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no channel or topic`,
+              );
+              return;
+            }
+
+            const streamId: unknown = msg.data;
+            if (typeof streamId !== "string" || !streamId) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no stream ID`,
+              );
+              return;
+            }
+
+            if (this.#chunkStreams.has(streamId)) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" to create stream ID "${streamId}" that already exists`,
+              );
+              return;
+            }
+
+            const stream = new ReadableStream({
+              start: (controller) => {
+                this.#chunkStreams.set(streamId, { stream, controller });
+              },
+              cancel: () => {
+                this.#chunkStreams.delete(streamId);
+              },
+            });
+
+            this.#debug(
+              `Created stream ID "${streamId}" on channel "${msg.channel}"`,
+            );
+            return this.#fanout.write({
+              channel: msg.channel,
+              topic: msg.topic,
+              kind: "datastream-start",
+              data: streamId,
+              streamId,
+              fnId: msg.fn_id,
+              runId: msg.run_id,
+              stream,
+            });
+          }
+
+          case "datastream-end": {
+            if (!msg.channel || !msg.topic) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no channel or topic`,
+              );
+              return;
+            }
+
+            const endStreamId: unknown = msg.data;
+            if (typeof endStreamId !== "string" || !endStreamId) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no stream ID`,
+              );
+              return;
+            }
+
+            const endStream = this.#chunkStreams.get(endStreamId);
+            if (!endStream) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" to close stream ID "${endStreamId}" that doesn't exist`,
+              );
+              return;
+            }
+
+            endStream.controller.close();
+            this.#chunkStreams.delete(endStreamId);
+
+            this.#debug(
+              `Closed stream ID "${endStreamId}" on channel "${msg.channel}"`,
+            );
+            return this.#fanout.write({
+              channel: msg.channel,
+              topic: msg.topic,
+              kind: "datastream-end",
+              data: endStreamId,
+              streamId: endStreamId,
+              fnId: msg.fn_id,
+              runId: msg.run_id,
+              stream: endStream.stream,
+            });
+          }
+
+          case "chunk": {
+            if (!msg.channel || !msg.topic) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no channel or topic`,
+              );
+              return;
+            }
+
+            if (!msg.stream_id) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" with no stream ID`,
+              );
+              return;
+            }
+
+            const chunkStream = this.#chunkStreams.get(msg.stream_id);
+            if (!chunkStream) {
+              this.#debug(
+                `Received message on channel "${msg.channel}" for unknown stream ID "${msg.stream_id}"`,
+              );
+              return;
+            }
+
+            this.#debug(
+              `Received chunk on channel "${msg.channel}" for stream ID "${msg.stream_id}":`,
+              msg.data,
+            );
+
+            chunkStream.controller.enqueue(msg.data);
+
+            return this.#fanout.write({
+              channel: msg.channel,
+              topic: msg.topic,
+              kind: "chunk",
+              data: msg.data,
+              streamId: msg.stream_id,
+              fnId: msg.fn_id,
+              runId: msg.run_id,
+              stream: chunkStream.stream,
+            });
+          }
+
+          default: {
+            this.#debug(
+              `Received message on channel "${msg.channel}" with unhandled kind "${msg.kind}"`,
+            );
+            return;
+          }
+        }
+      };
+
+      this.#ws.onerror = (event) => {
+        console.error("WebSocket error observed:", event);
+        ret.reject(event);
+      };
+
+      this.#ws.onclose = (event) => {
+        this.#debug("WebSocket closed:", event.reason);
+        this.close();
+      };
+
+      this.#running = true;
+    } catch (err) {
+      ret.reject(err);
+    }
+
+    return ret.promise;
+  }
+
+  private async lazilyGetSubscriptionToken(): Promise<string> {
+    const channelId = this.#channelId;
+
+    if (!channelId) {
+      throw new Error("Channel ID is required to create a subscription token");
+    }
+
+    if (this.#getSubscriptionToken) {
+      return this.#getSubscriptionToken(
+        channelId,
+        this.token.topics as string[],
+      );
+    }
+
+    //
+    // Fallback: try fetching directly using env-based signing keys.
+    // This path is used when no Inngest client is available.
+    //
+    throw new Error(
+      "No getSubscriptionToken handler provided. Pass an Inngest client or provide a token key.",
+    );
+  }
+
+  public close(reason = "Userland closed connection") {
+    if (!this.#running) {
+      return;
+    }
+
+    this.#debug("close() called; closing connection...");
+    this.#running = false;
+    this.#ws?.close(1000, reason);
+
+    this.#debug(`Closing ${this.#fanout.size()} streams...`);
+    this.#fanout.close();
+  }
+
+  public getJsonStream() {
+    return this.#fanout.createStream();
+  }
+
+  public getEncodedStream() {
+    return this.#fanout.createStream((chunk) => {
+      return this.#encoder.encode(`${JSON.stringify(chunk)}\n`);
+    });
+  }
+
+  public useCallback(
+    callback: Realtime.Subscribe.Callback,
+    stream: ReadableStream<Realtime.Message> = this.getJsonStream(),
+  ) {
+    void (async () => {
+      const reader = stream.getReader();
+      try {
+        while (this.#running) {
+          const { done, value } = await reader.read();
+          if (done || !this.#running) break;
+          callback(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    })();
+  }
+}

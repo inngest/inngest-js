@@ -416,6 +416,78 @@ export namespace Realtime {
       id: TTopicId,
     ) => Topic.Definition<TTopicId>;
   }
+
+  //
+  // New declarative channel/topic API types
+  //
+
+  //
+  // A TopicConfig is one entry in a channel's `topics` record.
+  // Either a runtime schema or a type-only marker from realtime.type<T>().
+  //
+  export type TopicConfig<TData = unknown> =
+    | { schema: StandardSchemaV1 }
+    | { __type?: TData };
+
+  export type TopicsConfig = Record<string, TopicConfig>;
+
+  export type InferTopicData<T extends TopicConfig> = T extends {
+    schema: infer S extends StandardSchemaV1;
+  }
+    ? StandardSchemaV1.InferInput<S>
+    : T extends { __type?: infer D }
+      ? unknown extends D
+        ? unknown
+        : D
+      : unknown;
+
+  //
+  // A TopicRef is a lightweight value carrying the resolved channel name,
+  // topic name, topic config, and payload type. Created by dot-accessing
+  // a topic on a channel instance (e.g. `chat.status`).
+  //
+  export interface TopicRef<TData = unknown> {
+    channel: string;
+    topic: string;
+    config: TopicConfig<TData>;
+  }
+
+  //
+  // Maps a TopicsConfig into dot-access topic accessors that return TopicRefs.
+  //
+  export type TopicAccessors<
+    _TName extends string,
+    TTopics extends TopicsConfig,
+  > = {
+    [K in string & keyof TTopics]: TopicRef<InferTopicData<TTopics[K]>>;
+  };
+
+  export type ChannelInstance<
+    TName extends string = string,
+    TTopics extends TopicsConfig = TopicsConfig,
+  > = {
+    name: TName;
+    topics: TTopics;
+  } & TopicAccessors<TName, TTopics>;
+
+  export type ChannelDef<
+    // biome-ignore lint/suspicious/noExplicitAny: broad fn definition
+    TNameFn extends (...args: any[]) => string = (...args: any[]) => string,
+    TTopics extends TopicsConfig = TopicsConfig,
+  > = ((
+    ...args: Parameters<TNameFn>
+  ) => ChannelInstance<ReturnType<TNameFn>, TTopics>) & {
+    topics: TTopics;
+    $params: Parameters<TNameFn>[0];
+  };
+
+  //
+  // publish(topicRef, data) — two-arg form using topic accessors
+  //
+  export type TypedPublishFn = <TData>(
+    topicRef: TopicRef<TData>,
+    data: TData,
+  ) => Promise<void>;
 }
 
 /**
