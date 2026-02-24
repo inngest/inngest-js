@@ -566,8 +566,14 @@ export namespace Middleware {
 
 type DeepReadonly<T> = T extends (infer U)[]
   ? readonly DeepReadonly<U>[]
-  : T extends Date | Function
+  : // Do not make functions readonly, since that leads to weird stuff like not
+    // being able to call `.catch()` on the returned promise.
+    T extends Function
     ? T
-    : T extends object
-      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
-      : T;
+    : // Do not recurse into these types. If that happens, then the resulting
+      // type will not be compatible with the original type
+      T extends Date | RegExp | Error | Map<unknown, unknown> | Set<unknown>
+      ? Readonly<T>
+      : T extends object
+        ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+        : T;
