@@ -288,7 +288,7 @@ export const encryptionMiddleware = (
         return output;
       }
 
-      if (output != null) {
+      if (output !== undefined && output !== null) {
         return encryptValue(output);
       }
 
@@ -303,7 +303,9 @@ export const encryptionMiddleware = (
         return output;
       }
 
-      if (output != null) {
+      // No need to encrypt `undefined` or `null` values, since they inherently
+      // do not contain any sensitive data
+      if (output !== undefined && output !== null) {
         return encryptValue(output);
       }
 
