@@ -121,7 +121,7 @@ export const sentryMiddleware = (
     override onRunError({ error }: Middleware.OnRunErrorArgs) {
       this.execSpan?.end();
       this.runSpan?.setStatus({ code: 2 });
-      Sentry.getCurrentScope()?.captureException(error);
+      Sentry.captureException(error);
     }
 
     override onRunComplete() {
@@ -129,11 +129,13 @@ export const sentryMiddleware = (
       this.runSpan?.setStatus({ code: 1 });
     }
 
-    override onStepError({ stepInfo }: Middleware.OnStepErrorArgs) {
-      Sentry.getCurrentScope()?.setTags({
+    override onStepError({ error, stepInfo }: Middleware.OnStepErrorArgs) {
+      this.runSpan?.setStatus({ code: 2 });
+      Sentry.getCurrentScope().setTags({
         "inngest.step.name": stepInfo.options?.name ?? "",
         "inngest.step.type": String(stepInfo.stepType),
       });
+      Sentry.captureException(error);
     }
   }
 
