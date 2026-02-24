@@ -17,7 +17,7 @@ npm install @inngest/middleware-sentry
 ```
 
 > [!NOTE]
-> Requires `inngest@>=3.0.0 and `@sentry/*@>=8.0.0`
+> Requires `inngest@>=4.0.0` and `@sentry/*@>=8.0.0`
 
 ## Usage
 
