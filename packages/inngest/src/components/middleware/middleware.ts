@@ -566,8 +566,16 @@ export namespace Middleware {
 
 type DeepReadonly<T> = T extends (infer U)[]
   ? readonly DeepReadonly<U>[]
-  : T extends Function
-    ? T
+  : // Do not recurse into these types. If that happens, then the resulting
+    // type will not be compatible with the original type
+    T extends
+        | Date
+        | RegExp
+        | Error
+        | Map<unknown, unknown>
+        | Set<unknown>
+        | Function
+    ? Readonly<T>
     : T extends object
       ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
       : T;
