@@ -8,7 +8,7 @@ import {
 } from "./net.ts";
 
 const fetchMock = createFetchMock(vi);
-const logger = new ConsoleLogger("silent");
+const logger = new ConsoleLogger({ level: "silent" });
 
 describe("fetchWithAuthFallback", () => {
   beforeEach(() => {

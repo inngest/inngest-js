@@ -28,11 +28,12 @@ import {
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
-import type {
-  ClientOptionsFromInngest,
-  GetFunctionOutputRaw,
-  GetStepTools,
-  Inngest,
+import {
+  type ClientOptionsFromInngest,
+  type GetFunctionOutputRaw,
+  type GetStepTools,
+  type Inngest,
+  internalLoggerSymbol,
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -784,7 +785,7 @@ export const createStepTools = <
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
-        client.logger.warn(
+        client[internalLoggerSymbol].warn(
           { err },
           "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
         );

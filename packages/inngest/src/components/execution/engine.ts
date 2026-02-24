@@ -42,6 +42,7 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import { version } from "../../version.ts";
+import { internalLoggerSymbol } from "../Inngest.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
@@ -167,7 +168,7 @@ class InngestExecutionEngine
       () => this.state.stepState,
       mwInstances,
       functionInfo,
-      this.options.client.logger,
+      this.options.client[internalLoggerSymbol],
     );
 
     this.checkpointHandlers = this.createCheckpointHandlers();
