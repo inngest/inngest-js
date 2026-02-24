@@ -1,12 +1,3 @@
-import { vi } from "vitest";
-
-// Mock the broken transitive dependency before any other imports.
-// InngestCommHandler -> ../experimental -> otel/middleware -> otel/util
-// -> @traceloop/instrumentation-anthropic (not installed)
-vi.mock("@traceloop/instrumentation-anthropic", () => ({
-  AnthropicInstrumentation: class {},
-}));
-
 import fetch from "cross-fetch";
 import { z } from "zod/v3";
 import { EventSchemas } from "../components/EventSchemas.ts";
