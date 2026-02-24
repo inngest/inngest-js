@@ -34,6 +34,7 @@ export const sentryMiddleware = (
   class SentryMiddleware extends Middleware.BaseMiddleware {
     readonly id = "inngest:sentry";
 
+    private scope?: Sentry.Scope;
     private runSpan?: Span;
     private memoSpan?: Span;
     private execSpan?: Span;
@@ -58,19 +59,22 @@ export const sentryMiddleware = (
     override async wrapFunctionHandler({
       next,
       ctx,
-      functionInfo,
+      fn,
     }: Middleware.WrapFunctionHandlerArgs) {
       return Sentry.withIsolationScope(async (scope) => {
+        this.scope = scope;
+
         const tags = {
           "inngest.client.id": this.client.id,
-          "inngest.function.id": functionInfo.id,
+          "inngest.function.id": fn.id(this.client.id),
+          "inngest.function.name": fn.name,
           "inngest.event.id": ctx.event.id,
           "inngest.event.name": ctx.event.name,
           "inngest.run.id": ctx.runId,
         };
 
         scope.setTags(tags);
-        scope.setTransactionName(`inngest:${functionInfo.id}`);
+        scope.setTransactionName(`inngest:${fn.name}`);
 
         return Sentry.startSpanManual(
           {
@@ -119,19 +123,24 @@ export const sentryMiddleware = (
     }
 
     override onRunError({ error }: Middleware.OnRunErrorArgs) {
-      this.execSpan?.end();
       this.runSpan?.setStatus({ code: 2 });
       Sentry.captureException(error);
     }
 
     override onRunComplete() {
-      this.execSpan?.end();
       this.runSpan?.setStatus({ code: 1 });
+    }
+
+    override onStepComplete({ stepInfo }: Middleware.OnStepCompleteArgs) {
+      this.scope?.setTags({
+        "inngest.step.name": stepInfo.options?.name ?? "",
+        "inngest.step.type": String(stepInfo.stepType),
+      });
     }
 
     override onStepError({ error, stepInfo }: Middleware.OnStepErrorArgs) {
       this.runSpan?.setStatus({ code: 2 });
-      Sentry.getCurrentScope().setTags({
+      this.scope?.setTags({
         "inngest.step.name": stepInfo.options?.name ?? "",
         "inngest.step.type": String(stepInfo.stepType),
       });
