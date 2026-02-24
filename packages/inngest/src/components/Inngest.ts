@@ -145,6 +145,25 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   protected experimentalMetadataEnabled = false;
 
   /**
+   * A dummy Inngest function used in Durable Endpoints. This is necessary
+   * because the vast majority of middleware hooks require the Inngest function.
+   * But for Durable Endpoints, there is no Inngest function. So we need some
+   * placeholder.
+   */
+  private dummyDurableEndpointFunction: InngestFunction.Any | null = null;
+  private getDummyDurableEndpointFunction(): InngestFunction.Any {
+    if (this.dummyDurableEndpointFunction) {
+      return this.dummyDurableEndpointFunction;
+    }
+    this.dummyDurableEndpointFunction = new InngestFunction(
+      this,
+      { id: "__proxy__", triggers: [] },
+      async () => {},
+    );
+    return this.dummyDurableEndpointFunction;
+  }
+
+  /**
    * Try to parse the `INNGEST_DEV` environment variable as a URL.
    * Returns the URL if valid, otherwise `undefined`.
    */
@@ -695,15 +714,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       step,
     } as unknown as BaseContext<Inngest.Any>;
 
-    const dummyFn = new InngestFunction(
-      this,
-      { id: "__proxy__", triggers: [] },
-      async () => {},
-    );
-
     let transformArgs: Middleware.TransformFunctionInputArgs = {
       ctx: dummyCtx,
-      fn: dummyFn,
+      fn: this.getDummyDurableEndpointFunction(),
       steps: {
         __result__: { type: "data" as const, data: result.data },
       },
