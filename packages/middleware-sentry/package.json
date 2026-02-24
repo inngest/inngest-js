@@ -33,12 +33,12 @@
   "devDependencies": {
     "@sentry/core": "^8.8.0",
     "@sentry/types": "^8.8.0",
-    "inngest": ">=4.0.0-alpha.5 <5.0.0",
+    "inngest": ">=4.0.0-alpha.6 <5.0.0",
     "typescript": "~5.8.2"
   },
   "peerDependencies": {
     "@sentry/core": ">=8.0.0",
     "@sentry/types": ">=8.0.0",
-    "inngest": ">=4.0.0-alpha.5 <5.0.0"
+    "inngest": ">=4.0.0-alpha.6 <5.0.0"
   }
 }

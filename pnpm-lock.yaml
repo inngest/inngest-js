@@ -365,8 +365,8 @@ importers:
         specifier: ^8.8.0
         version: 8.14.0
       inngest:
-        specifier: '>=4.0.0-alpha.5 <5.0.0'
-        version: 4.0.0-alpha.5(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.1.11)
+        specifier: '>=4.0.0-alpha.6 <5.0.0'
+        version: 4.0.0-alpha.6(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.1.11)
       typescript:
         specifier: ~5.8.2
         version: 5.8.2
@@ -5088,8 +5088,8 @@ packages:
       typescript:
         optional: true
 
-  inngest@4.0.0-alpha.5:
-    resolution: {integrity: sha512-LV+P2Czg99J9gQHr60bN22qGy2DgbMDzjonY+UdcSAYVvnoK6kp4J35Lj3Pg6EKSAQsWEPWG5dUcesBeVdxktg==}
+  inngest@4.0.0-alpha.6:
+    resolution: {integrity: sha512-YzYaApHjWtfeqPkEHlJlinbsBmCZLvaYPZuFytB5vPi7EXDF1QfNPoS0fVJtMYDN6ud4eVvTDH7w0AFX+jSv3A==}
     engines: {node: '>=20'}
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
@@ -13256,7 +13256,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@4.0.0-alpha.5(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.1.11):
+  inngest@4.0.0-alpha.6(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.1.11):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
