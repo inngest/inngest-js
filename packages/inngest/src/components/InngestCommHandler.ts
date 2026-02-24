@@ -1212,9 +1212,7 @@ export class InngestCommHandler<
         }),
       );
 
-      const functionInfo: Middleware.FunctionInfo = {
-        id: matchedFn?.fn?.opts?.id ?? fnId ?? "",
-      };
+      const fn = matchedFn?.fn ?? null;
 
       const requestInfo: Middleware.Request = {
         headers: Object.freeze({ ...(await getHeaders()) }),
@@ -1243,7 +1241,7 @@ export class InngestCommHandler<
       };
 
       const wrappedHandler = buildWrapRequestChain({
-        functionInfo,
+        fn,
         handler: innerHandler,
         middleware: mwInstances,
         requestInfo,

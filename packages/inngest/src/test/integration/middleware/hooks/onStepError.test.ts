@@ -78,7 +78,7 @@ describe("args", () => {
           },
           ctx: anyContext,
           error: expect.any(MyError),
-          functionInfo: { id: "fn" },
+          fn,
           isFinalAttempt: true,
         },
       ]);
@@ -136,7 +136,7 @@ test("multiple steps with errors", async () => {
     {
       error: expect.any(Error),
       ctx: anyContext,
-      functionInfo: { id: "fn" },
+      fn,
       stepInfo: {
         hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
         input: undefined,
@@ -149,7 +149,7 @@ test("multiple steps with errors", async () => {
     {
       error: expect.any(Error),
       ctx: anyContext,
-      functionInfo: { id: "fn" },
+      fn,
       stepInfo: {
         hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
         input: undefined,
@@ -223,7 +223,7 @@ test("multiple attempts", async () => {
     },
     ctx: anyContext,
     error: expect.any(MyError),
-    functionInfo: { id: "fn" },
+    fn,
     isFinalAttempt: false,
   });
   expect(state.calls[1]).toEqual({
@@ -236,7 +236,7 @@ test("multiple attempts", async () => {
     },
     ctx: anyContext,
     error: expect.any(MyError),
-    functionInfo: { id: "fn" },
+    fn,
     isFinalAttempt: true,
   });
   const { error } = state.calls[0]!;

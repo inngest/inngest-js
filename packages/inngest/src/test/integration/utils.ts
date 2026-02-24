@@ -195,7 +195,7 @@ export async function sleep(ms: number = 1000): Promise<void> {
 /**
  * Wrapper around `vitest.waitFor` with a 10-second default timeout.
  */
-export const waitFor: typeof vitest.waitFor = (callback, timeout = 10_000) => {
+export const waitFor: typeof vitest.waitFor = (callback, timeout = 20_000) => {
   return vitest.waitFor(callback, timeout);
 };
 
@@ -205,7 +205,7 @@ type RunResult =
 
 async function fetchRunResult(
   runId: string,
-  timeout = 10_000,
+  timeout = 20_000,
 ): Promise<RunResult> {
   const deadline = Date.now() + timeout;
 

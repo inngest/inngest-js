@@ -248,7 +248,7 @@ test("function-level stays isolated", async () => {
   class Mw extends Middleware.BaseMiddleware {
     readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
-      state.fnIds.push(arg.functionInfo?.id);
+      state.fnIds.push(arg.fn?.id());
       return arg;
     }
   }

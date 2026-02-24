@@ -21,11 +21,11 @@ describe("args", () => {
         readonly id = "test";
         override wrapRequest = async ({
           next,
-          functionInfo,
+          fn,
           requestInfo,
           runId,
         }: Middleware.WrapRequestArgs) => {
-          state.hookArgs.push({ functionInfo, requestInfo, runId });
+          state.hookArgs.push({ fn, requestInfo, runId });
           return next();
         };
       }
@@ -62,7 +62,7 @@ describe("args", () => {
 
       expect(state.hookArgs).toEqual([
         {
-          functionInfo: { id: "fn" },
+          fn,
           requestInfo: {
             body: expect.any(Function),
             headers: expect.any(Object),

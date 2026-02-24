@@ -1,6 +1,7 @@
 import { isRecord } from "../../helpers/types";
 import type { Logger } from "../../middleware/logger";
 import { type SendEventBaseOutput, StepOpCode } from "../../types";
+import type { InngestFunction } from "../InngestFunction";
 import type { Middleware } from "./middleware";
 import type { ExtractLiteralStrings } from "./types";
 
@@ -24,14 +25,14 @@ export function buildWrapSendEventChain(
   middleware: Middleware.BaseMiddleware[],
   handler: () => Promise<SendEventBaseOutput>,
   payloads: Middleware.WrapSendEventArgs["events"],
-  functionInfo: Middleware.FunctionInfo | null,
+  fn: InngestFunction.Any | null,
 ): () => Promise<SendEventBaseOutput> {
   let chain: () => Promise<SendEventBaseOutput> = handler;
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (mw?.wrapSendEvent) {
       const next = chain;
-      chain = () => mw.wrapSendEvent!({ next, events: payloads, functionInfo });
+      chain = () => mw.wrapSendEvent!({ next, events: payloads, fn });
     }
   }
   return chain;
@@ -44,13 +45,13 @@ export function buildWrapSendEventChain(
  * and returns a zero-arg function that kicks off the chain.
  */
 export function buildWrapRequestChain({
-  functionInfo,
+  fn,
   handler,
   middleware,
   requestInfo,
   runId,
 }: {
-  functionInfo: Middleware.FunctionInfo;
+  fn: InngestFunction.Any | null;
   handler: () => Promise<Middleware.Response>;
   middleware: Middleware.BaseMiddleware[];
   requestInfo: Middleware.Request;
@@ -61,7 +62,7 @@ export function buildWrapRequestChain({
     const mw = middleware[i];
     if (mw?.wrapRequest) {
       const next = chain;
-      chain = () => mw.wrapRequest!({ next, requestInfo, runId, functionInfo });
+      chain = () => mw.wrapRequest!({ next, requestInfo, runId, fn });
     }
   }
   return chain;
