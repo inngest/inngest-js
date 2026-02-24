@@ -18,14 +18,10 @@ import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
 
 /**
- * EXE-1249: When signingKey is provided via serve() options but NOT via
+ * When signingKey is provided via serve() options but NOT via
  * process.env.INNGEST_SIGNING_KEY, the InngestApi instance never receives
  * the key. This causes outgoing API calls (getRunBatch, getRunSteps) to send
  * an empty "Authorization: Bearer " header, resulting in 401 errors.
- *
- * Affected users see "failed to retrieve list of events" /
- * "Unauthorized function execution can't continue" on long-running functions
- * once the executor switches to use_api=true.
  */
 describe("signing key propagation from serve() to InngestApi", () => {
   const signingKey =
@@ -52,7 +48,7 @@ describe("signing key propagation from serve() to InngestApi", () => {
   const createTestHandler = (
     client: ReturnType<typeof createClient>,
     functions: InngestFunction.Any[],
-    opts: { signingKey?: string } = {}
+    opts: { signingKey?: string } = {},
   ) => {
     const commHandler = new InngestCommHandler({
       client,
@@ -101,7 +97,7 @@ describe("signing key propagation from serve() to InngestApi", () => {
     const fn = client.createFunction(
       { id: "test-fn", name: "Test" },
       { event: "test/event" },
-      () => "ok"
+      () => "ok",
     );
 
     // Create a handler with signingKey in serve() options

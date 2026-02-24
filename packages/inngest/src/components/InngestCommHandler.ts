@@ -2632,7 +2632,7 @@ export class InngestCommHandler<
       this.env[envKeys.InngestSigningKeyFallback]
     ) {
       this.signingKeyFallback = String(
-        this.env[envKeys.InngestSigningKeyFallback]
+        this.env[envKeys.InngestSigningKeyFallback],
       );
     }
 
