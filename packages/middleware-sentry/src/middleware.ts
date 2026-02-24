@@ -1,10 +1,6 @@
 import * as Sentry from "@sentry/core";
-import { type Span } from "@sentry/types";
-import {
-  InngestMiddleware,
-  type MiddlewareRegisterFn,
-  type MiddlewareRegisterReturn,
-} from "inngest";
+import type { Span } from "@sentry/types";
+import { Middleware } from "inngest";
 
 /**
  * Options used to configure the Sentry middleware.
@@ -28,169 +24,118 @@ export interface SentryMiddlewareOptions {
  * Captures errors and performance data from Inngest functions and sends them to
  * Sentry.
  *
- * Use the `sentryMiddleware()` helper to create a new Sentry middleware.
- *
- * This type is used an explicit return type for the `sentryMiddleware` function
- * to allow better JSR publishing.
- */
-export type SentryMiddleware = InngestMiddleware<{
-  name: string;
-  init: (...args: Parameters<MiddlewareRegisterFn>) => {
-    onFunctionRun: (
-      ...args: Parameters<
-        NonNullable<MiddlewareRegisterReturn["onFunctionRun"]>
-      >
-    ) => {
-      transformInput: () => {
-        ctx: {
-          /**
-           * The Sentry client fetched by `import * as Sentry from "@sentry/node"`.
-           */
-          sentry: typeof Sentry;
-        };
-      };
-    };
-  };
-}>;
-
-/**
- * Captures errors and performance data from Inngest functions and sends them to
- * Sentry.
- *
  * This imports Sentry directly and relies on it already being initialized using
  * `Sentry.init()`. For more information on how to configure Sentry, see the
  * [Sentry documentation](https://docs.sentry.io/platforms/node/).
  */
 export const sentryMiddleware = (
-  /**
-   * Options used to configure the Sentry middleware.
-   */
   opts?: SentryMiddlewareOptions,
-): SentryMiddleware => {
-  const mw = new InngestMiddleware({
-    name: "@inngest/middleware-sentry",
-    init({ client }) {
-      return {
-        onFunctionRun({ ctx, fn, steps }) {
-          return Sentry.withIsolationScope((scope) => {
-            const sharedTags: Record<string, string | undefined> = {
-              "inngest.client.id": client.id,
-              "inngest.function.id": fn.id(client.id),
-              "inngest.function.name": fn.name,
-              "inngest.event.id": ctx.event.id,
-              "inngest.event.name": ctx.event.name,
-              "inngest.run.id": ctx.runId,
-            };
+): Middleware.Class => {
+  class SentryMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:sentry";
 
-            scope.setTags(sharedTags);
+    private runSpan?: Span;
+    private memoSpan?: Span;
+    private execSpan?: Span;
 
-            let memoSpan: Span;
-            let execSpan: Span;
+    // Cleanup only — wrapRequest.next() always resolves, so this
+    // is the reliable place to end the parent span and flush.
+    override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
+      try {
+        return await next();
+      } finally {
+        this.execSpan?.end();
+        this.runSpan?.end();
 
-            return Sentry.startSpanManual(
-              {
-                name: "Inngest Function Run",
-                op: "run",
-                attributes: {
-                  ...sharedTags,
-                  "inngest.event": JSON.stringify(ctx.event),
-                },
-                scope,
-              },
-              (reqSpan) => {
-                return {
-                  transformInput() {
-                    return {
-                      ctx: {
-                        sentry: Sentry,
-                      },
-                    };
-                  },
-                  beforeMemoization() {
-                    Sentry.withActiveSpan(reqSpan, (scope) => {
-                      Sentry.startSpanManual(
-                        {
-                          name: "Memoization",
-                          op: "memoization",
-                          attributes: {
-                            ...sharedTags,
-                            "inngest.memoization.count": steps.length,
-                          },
-                          scope,
-                        },
-                        (_memoSpan) => {
-                          memoSpan = _memoSpan;
-                        },
-                      );
-                    });
-                  },
-                  afterMemoization() {
-                    memoSpan?.end();
-                  },
-                  beforeExecution() {
-                    Sentry.withActiveSpan(reqSpan, (scope) => {
-                      Sentry.startSpanManual(
-                        {
-                          name: "Execution",
-                          op: "execution",
-                          attributes: {
-                            ...sharedTags,
-                          },
-                          scope,
-                        },
-                        (_execSpan) => {
-                          execSpan = _execSpan;
-                        },
-                      );
-                    });
-                  },
-                  afterExecution() {
-                    execSpan?.end();
-                  },
-                  transformOutput({ result, step }) {
-                    // Set step metadata
-                    if (step) {
-                      Sentry.withActiveSpan(reqSpan, (scope) => {
-                        sharedTags["inngest.step.name"] =
-                          step.displayName ?? "";
-                        sharedTags["inngest.step.op"] = step.op;
+        if (!opts?.disableAutomaticFlush) {
+          await Sentry.flush();
+        }
+      }
+    }
 
-                        scope.setTags(sharedTags);
-                      });
-                    }
+    // Set up isolation scope, tags, and spans — wrapFunctionHandler
+    // has access to ctx so we can read event + runId data here.
+    override async wrapFunctionHandler({
+      next,
+      ctx,
+      functionInfo,
+    }: Middleware.WrapFunctionHandlerArgs) {
+      return Sentry.withIsolationScope(async (scope) => {
+        const tags = {
+          "inngest.client.id": this.client.id,
+          "inngest.function.id": functionInfo.id,
+          "inngest.event.id": ctx.event.id,
+          "inngest.event.name": ctx.event.name,
+          "inngest.run.id": ctx.runId,
+        };
 
-                    // Capture step output and log errors
-                    if (result.error) {
-                      reqSpan.setStatus({
-                        code: 2,
-                      });
+        scope.setTags(tags);
+        scope.setTransactionName(`inngest:${functionInfo.id}`);
 
-                      Sentry.withActiveSpan(reqSpan, (scope) => {
-                        scope.setTags(sharedTags);
-                        scope.setTransactionName(`inngest:${fn.name}`);
-                        scope.captureException(result.error);
-                      });
-                    } else {
-                      reqSpan.setStatus({
-                        code: 1,
-                      });
-                    }
-                  },
-                  async beforeResponse() {
-                    reqSpan.end();
+        return Sentry.startSpanManual(
+          {
+            name: "Inngest Function Run",
+            op: "run",
+            attributes: {
+              ...tags,
+              "inngest.event": JSON.stringify(ctx.event),
+            },
+            scope,
+          },
+          async (span) => {
+            this.runSpan = span;
 
-                    if (!opts?.disableAutomaticFlush) {
-                      await Sentry.flush();
-                    }
-                  },
-                };
+            // Start memoization span immediately
+            Sentry.startSpanManual(
+              { name: "Memoization", op: "memoization" },
+              (mSpan) => {
+                this.memoSpan = mSpan;
               },
             );
-          });
-        },
-      };
-    },
-  });
 
-  return mw as SentryMiddleware;
+            return await next();
+          },
+        );
+      });
+    }
+
+    // Inject ctx.sentry and set memoization count on the run span.
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ) {
+      this.runSpan?.setAttributes({
+        "inngest.memoization.count": Object.keys(arg.steps).length,
+      });
+
+      return { ...arg, ctx: { ...arg.ctx, sentry: Sentry } };
+    }
+
+    override onMemoizationEnd() {
+      this.memoSpan?.end();
+
+      Sentry.startSpanManual({ name: "Execution", op: "execution" }, (span) => {
+        this.execSpan = span;
+      });
+    }
+
+    override onRunError({ error }: Middleware.OnRunErrorArgs) {
+      this.execSpan?.end();
+      this.runSpan?.setStatus({ code: 2 });
+      Sentry.getCurrentScope()?.captureException(error);
+    }
+
+    override onRunComplete() {
+      this.execSpan?.end();
+      this.runSpan?.setStatus({ code: 1 });
+    }
+
+    override onStepError({ stepInfo }: Middleware.OnStepErrorArgs) {
+      Sentry.getCurrentScope()?.setTags({
+        "inngest.step.name": stepInfo.options?.name ?? "",
+        "inngest.step.type": String(stepInfo.stepType),
+      });
+    }
+  }
+
+  return SentryMiddleware;
 };
