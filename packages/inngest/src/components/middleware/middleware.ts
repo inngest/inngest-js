@@ -566,7 +566,7 @@ export namespace Middleware {
 
 type DeepReadonly<T> = T extends (infer U)[]
   ? readonly DeepReadonly<U>[]
-  : T extends Date | Function
+  : T extends Function
     ? T
     : T extends object
       ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
