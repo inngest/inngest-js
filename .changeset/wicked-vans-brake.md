@@ -2,4 +2,4 @@
 "@inngest/middleware-encryption": major
 ---
 
-Support TypeScript SDK v4
+Drop support for TypeScript SDK <4
