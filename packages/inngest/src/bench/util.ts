@@ -59,7 +59,7 @@ export function createBench(options: CreateBenchOptions) {
       checkpointing: options.checkpointing,
       id: randomSuffix("app"),
       isDev: true,
-      logger: new ConsoleLogger("silent"),
+      logger: new ConsoleLogger({ level: "silent" }),
     });
     const eventName = randomSuffix("evt");
     const fn = options.setup(client, eventName, () => {

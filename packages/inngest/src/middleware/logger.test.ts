@@ -291,7 +291,7 @@ describe("ConsoleLogger log-level filtering", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const logger = new ConsoleLogger("warn");
+    const logger = new ConsoleLogger({ level: "warn" });
 
     logger.debug("d");
     logger.info("i");
@@ -315,7 +315,7 @@ describe("ConsoleLogger log-level filtering", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const logger = new ConsoleLogger("silent");
+    const logger = new ConsoleLogger({ level: "silent" });
 
     logger.debug("d");
     logger.info("i");

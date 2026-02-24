@@ -71,7 +71,7 @@ export class MiddlewareManager {
 
   private readonly functionInfo: Middleware.FunctionInfo;
   private readonly middleware: Middleware.BaseMiddleware[];
-  private readonly logger: Logger;
+  private readonly internalLogger: Logger;
 
   /**
    * Infinite recursion guard for `wrapStep`. Prevents a middleware from
@@ -90,7 +90,7 @@ export class MiddlewareManager {
     this.getStepState = getStepState;
     this.middleware = middleware;
     this.functionInfo = functionInfo;
-    this.logger = logger;
+    this.internalLogger = logger;
 
     this.hasTransformStepInput = middleware.some((mw) =>
       Boolean(mw?.transformStepInput),
@@ -108,7 +108,11 @@ export class MiddlewareManager {
    * collision resolution) so middleware sees final values.
    */
   async applyToStep(input: ApplyToStepInput): Promise<PreparedStep> {
-    const stepType = stepTypeFromOpCode(input.op, input.opts, this.logger);
+    const stepType = stepTypeFromOpCode(
+      input.op,
+      input.opts,
+      this.internalLogger,
+    );
     const stepInput = stepInputFromOpts(stepType, input.opts);
 
     const stepInfo = this.buildStepInfo({
@@ -338,7 +342,7 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onStepStart",
@@ -365,7 +369,7 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onStepComplete",
@@ -420,7 +424,7 @@ export class MiddlewareManager {
             stepInfo,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onStepError",
@@ -450,7 +454,7 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onMemoizationEnd",
@@ -472,7 +476,7 @@ export class MiddlewareManager {
             functionInfo: this.functionInfo,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onRunStart",
@@ -495,7 +499,7 @@ export class MiddlewareManager {
             output,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onRunComplete",
@@ -519,7 +523,7 @@ export class MiddlewareManager {
             isFinalAttempt,
           });
         } catch (err) {
-          this.logger.error(
+          this.internalLogger.error(
             {
               err,
               hook: "onRunError",

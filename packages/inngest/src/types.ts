@@ -952,6 +952,18 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
+
+  /**
+   * A separate logger for SDK internal messages (registration, middleware
+   * errors, request parsing, etc.). If not provided, falls back to `logger`.
+   *
+   * Use this to route SDK internals to a different destination or to tag them
+   * for filtering, e.g. `pino.child({ component: "inngest" })`.
+   *
+   * User function logs via `ctx.logger` are not affected.
+   */
+  internalLogger?: Logger;
+
   /**
    * Middleware classes that provide simpler hooks for common operations.
    * Each class is instantiated fresh per-request so that middleware can safely

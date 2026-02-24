@@ -27,7 +27,7 @@ import {
 import type { Capabilities, FunctionConfig } from "../../types.ts";
 import { version } from "../../version.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
-import type { Inngest } from "../Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { MessageBuffer } from "./buffer.ts";
@@ -403,7 +403,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           const parsed = parseFnData(
             JSON.parse(asString),
             undefined,
-            this.inngest.logger,
+            this.inngest[internalLoggerSymbol],
           );
 
           const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
@@ -533,7 +533,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (err instanceof ConnectionLimitError) {
-          this.inngest.logger.error(
+          this.inngest[internalLoggerSymbol].error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
           // Continue reconnecting, do not throw.
