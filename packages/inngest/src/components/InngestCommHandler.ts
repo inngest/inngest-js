@@ -1,6 +1,5 @@
 import debug from "debug";
 import { z } from "zod/v3";
-import { getAsyncCtx } from "../experimental";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
@@ -66,6 +65,7 @@ import {
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
+import { getAsyncCtx } from "./execution/als.ts";
 import {
   type ExecutionResult,
   type ExecutionResultHandler,
@@ -2613,21 +2613,30 @@ export class InngestCommHandler<
    * are otherwise difficult to access during initialization.
    */
   private upsertKeysFromEnv() {
-    if (this.env[envKeys.InngestSigningKey]) {
-      if (!this.signingKey) {
-        this.signingKey = String(this.env[envKeys.InngestSigningKey]);
-      }
+    // Upsert handler key from env if the handler doesn't already have one
+    // (e.g. from serve() options).
+    if (!this.signingKey && this.env[envKeys.InngestSigningKey]) {
+      this.signingKey = String(this.env[envKeys.InngestSigningKey]);
+    }
 
+    // Always propagate the handler's key to InngestApi for outgoing requests
+    // (getRunBatch, getRunSteps, etc.). This is critical when the key is
+    // provided via serve() options rather than an environment variable.
+    if (this.signingKey) {
       this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
-    if (this.env[envKeys.InngestSigningKeyFallback]) {
-      if (!this.signingKeyFallback) {
-        this.signingKeyFallback = String(
-          this.env[envKeys.InngestSigningKeyFallback],
-        );
-      }
+    // Same pattern for the fallback key.
+    if (
+      !this.signingKeyFallback &&
+      this.env[envKeys.InngestSigningKeyFallback]
+    ) {
+      this.signingKeyFallback = String(
+        this.env[envKeys.InngestSigningKeyFallback],
+      );
+    }
 
+    if (this.signingKeyFallback) {
       this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
     }
 
