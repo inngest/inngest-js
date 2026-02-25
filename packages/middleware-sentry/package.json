@@ -8,7 +8,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "build": "tsc",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js"
@@ -34,7 +34,8 @@
     "@sentry/core": "^8.8.0",
     "@sentry/types": "^8.8.0",
     "inngest": ">=4.0.0-alpha.6 <5.0.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "@sentry/core": ">=8.0.0",

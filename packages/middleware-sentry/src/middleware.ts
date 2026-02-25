@@ -7,9 +7,9 @@ import { Middleware } from "inngest";
  */
 export interface SentryMiddlewareOptions {
   /**
-   * If `true`, the Sentry middleware will not automatically flush events after
-   * each function run. This can be useful if you want to control when events
-   * are sent to Sentry, or leave it to Sentry's default behavior.
+   * If `true`, will not automatically flush events after each function run.
+   * This can be useful if you want to control when events are sent to Sentry,
+   * or leave it to Sentry's default behavior.
    *
    * By default, automatic flushing is enabled to ensure that events are sent in
    * serverless environments where the runtime may be terminated if the function
@@ -18,6 +18,31 @@ export interface SentryMiddlewareOptions {
    * @default false
    */
   disableAutomaticFlush?: boolean;
+
+  /**
+   * If `true`, exceptions are only captured on the final attempt of a step or
+   * function run (when retries are exhausted or the error is non-retriable).
+   * Intermediate retry attempts will still set span error status and add
+   * breadcrumbs, but won't create Sentry events.
+   *
+   * This reduces noise for transient errors that resolve on retry.
+   *
+   * @default true
+   */
+  onlyCaptureFinalAttempt?: boolean;
+
+  /**
+   * If `true`, step-level errors are captured as separate Sentry events in
+   * addition to function-level errors. This gives granular visibility into
+   * which step failed, but can produce duplicate events when a step error
+   * propagates to the function level.
+   *
+   * When `false`, step errors are still recorded as error spans and breadcrumbs
+   * (visible in traces), but only function-level errors produce Sentry events.
+   *
+   * @default false
+   */
+  captureStepErrors?: boolean;
 }
 
 /**
@@ -34,7 +59,20 @@ export interface SentryMiddlewareOptions {
 export class SentryMiddleware extends Middleware.BaseMiddleware {
   readonly id = "inngest:sentry";
 
+  /**
+   * See {@link SentryMiddlewareOptions} for more information.
+   */
   protected disableAutomaticFlush = false;
+
+  /**
+   * See {@link SentryMiddlewareOptions} for more information.
+   */
+  protected onlyCaptureFinalAttempt = true;
+
+  /**
+   * See {@link SentryMiddlewareOptions} for more information.
+   */
+  protected captureStepErrors = false;
 
   // Isolation scope from wrapFunctionHandler. Used for scope.captureException
   // instead of Sentry.captureException to avoid relying on async context
@@ -42,12 +80,10 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   #scope?: Sentry.Scope;
 
   // Shared tags set once in wrapFunctionHandler, reused as attributes on
-  // child spans (memoization, execution) for self-contained span metadata.
+  // child spans for self-contained span metadata.
   #tags: Record<string, string | undefined> = {};
 
   #runSpan?: Span;
-  #memoSpan?: Span;
-  #execSpan?: Span;
 
   // Using a map is overkill right now since we never execute more than one step
   // at a time. But just in case that changes, we'll use a map. Until that
@@ -74,8 +110,6 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
       for (const span of this.#stepSpans.values()) {
         span.end();
       }
-      this.#memoSpan?.end();
-      this.#execSpan?.end();
       this.#runSpan?.end();
 
       if (!this.disableAutomaticFlush) {
@@ -97,10 +131,10 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
 
       this.#tags = {
         "inngest.client.id": this.client.id,
-        "inngest.function.id": fn.id(this.client.id),
-        "inngest.function.name": fn.name,
         "inngest.event.id": ctx.event.id,
         "inngest.event.name": ctx.event.name,
+        "inngest.function.id": fn.id(this.client.id),
+        "inngest.function.name": fn.name,
         "inngest.run.id": ctx.runId,
       };
 
@@ -119,27 +153,13 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
         },
         async (span) => {
           this.#runSpan = span;
-
-          // Memoization phase starts immediately; ended in onMemoizationEnd.
-          Sentry.startSpanManual(
-            {
-              name: "Memoization",
-              op: "memoization",
-              attributes: { ...this.#tags },
-            },
-            (mSpan) => {
-              this.#memoSpan = mSpan;
-            },
-          );
-
           return await next();
         },
       );
     });
   }
 
-  // Injects ctx.sentry for user code and records the number of memoized
-  // steps on the memoization span.
+  // Injects ctx.sentry so user code can access the Sentry client directly.
   //
   // The explicit return type enables TypeScript to infer ctx.sentry in
   // function handlers when this middleware is registered on the client.
@@ -148,38 +168,19 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   ): Middleware.TransformFunctionInputArgs & {
     ctx: { sentry: typeof Sentry };
   } {
-    this.#memoSpan?.setAttributes({
-      "inngest.memoization.count": Object.keys(arg.steps).length,
-    });
-
     return { ...arg, ctx: { ...arg.ctx, sentry: Sentry } };
   }
 
-  // Marks the boundary between memoization and fresh execution.
-  override onMemoizationEnd() {
-    this.#memoSpan?.end();
-
-    Sentry.startSpanManual(
-      {
-        name: "Execution",
-        op: "execution",
-        attributes: { ...this.#tags },
-      },
-      (span) => {
-        this.#execSpan = span;
-      },
-    );
-  }
-
   // Captures function-level errors using the stored isolation scope.
-  override onRunError({ error }: Middleware.OnRunErrorArgs) {
+  override onRunError({ error, isFinalAttempt }: Middleware.OnRunErrorArgs) {
     this.#hasError = true;
     this.#runSpan?.setStatus({ code: 2 });
 
-    if (this.#scope) {
-      this.#scope.captureException(error);
-    } else {
-      Sentry.captureException(error);
+    if (!this.onlyCaptureFinalAttempt || isFinalAttempt) {
+      this.#captureException(error, {
+        // Used to distinguish run-level errors from step-level errors.
+        "inngest.error.source": "run",
+      });
     }
   }
 
@@ -200,11 +201,11 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   // these fire per step.
   override onStepStart({ stepInfo }: Middleware.OnStepStartArgs) {
     const span = Sentry.startInactiveSpan({
-      name: stepInfo.options?.name ?? "step",
+      name: stepDisplayName(stepInfo.options),
       op: "step",
       attributes: {
         ...this.#tags,
-        "inngest.step.id": stepInfo.hashedId,
+        "inngest.step.name": stepDisplayName(stepInfo.options),
         "inngest.step.type": String(stepInfo.stepType),
       },
     });
@@ -221,13 +222,17 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
 
     this.#scope?.addBreadcrumb({
       category: "inngest.step",
-      message: stepInfo.options?.name ?? "",
+      message: stepDisplayName(stepInfo.options),
       data: { type: String(stepInfo.stepType) },
       level: "info",
     });
   }
 
-  override onStepError({ error, stepInfo }: Middleware.OnStepErrorArgs) {
+  override onStepError({
+    error,
+    isFinalAttempt,
+    stepInfo,
+  }: Middleware.OnStepErrorArgs) {
     this.#hasError = true;
     this.#runSpan?.setStatus({ code: 2 });
 
@@ -240,12 +245,28 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
 
     this.#scope?.addBreadcrumb({
       category: "inngest.step",
-      message: stepInfo.options?.name ?? "",
+      message: stepDisplayName(stepInfo.options),
       data: { type: String(stepInfo.stepType) },
       level: "error",
     });
 
+    if (
+      this.captureStepErrors &&
+      (!this.onlyCaptureFinalAttempt || isFinalAttempt)
+    ) {
+      this.#captureException(error, {
+        "inngest.error.source": "step",
+        "inngest.step.name": stepDisplayName(stepInfo.options),
+      });
+    }
+  }
+
+  // Sets source tags on the isolation scope and captures. Sentry snapshots
+  // scope state at capture time, so each event gets the correct tags even
+  // when multiple captures happen on the same scope.
+  #captureException(error: unknown, tags: Record<string, string>) {
     if (this.#scope) {
+      this.#scope.setTags(tags);
       this.#scope.captureException(error);
     } else {
       Sentry.captureException(error);
@@ -259,13 +280,24 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
  * For default behavior, you can pass {@link SentryMiddleware} directly instead.
  */
 export const sentryMiddleware = (opts?: SentryMiddlewareOptions) => {
-  if (!opts) {
+  const {
+    captureStepErrors = false,
+    disableAutomaticFlush = false,
+    onlyCaptureFinalAttempt = true,
+  } = opts ?? {};
+
+  // Return the base class directly when all options match defaults.
+  if (!captureStepErrors && !disableAutomaticFlush && onlyCaptureFinalAttempt) {
     return SentryMiddleware;
   }
 
-  const { disableAutomaticFlush = false } = opts;
-
   return class extends SentryMiddleware {
+    protected override captureStepErrors = captureStepErrors;
     protected override disableAutomaticFlush = disableAutomaticFlush;
+    protected override onlyCaptureFinalAttempt = onlyCaptureFinalAttempt;
   };
 };
+
+function stepDisplayName(stepOptions: { name?: string; id: string }): string {
+  return stepOptions.name ?? stepOptions.id;
+}
