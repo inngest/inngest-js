@@ -127,17 +127,21 @@ const ch = realtime.channel({
 
 ### Type-only topics
 
-When you only need TypeScript types without runtime validation (zero bundle cost), use `realtime.type<T>()`:
+When you only need TypeScript types without runtime validation (zero bundle cost), use `staticSchema<T>()`:
 
 ```ts
+import { realtime, staticSchema } from "inngest";
+
 const ch = realtime.channel({
   name: "pipeline",
   topics: {
-    usage: realtime.type<{
-      inputTokens: number;
-      outputTokens: number;
-      model: string;
-    }>(),
+    usage: {
+      schema: staticSchema<{
+        inputTokens: number;
+        outputTokens: number;
+        model: string;
+      }>(),
+    },
   },
 });
 ```
@@ -147,12 +151,14 @@ const ch = realtime.channel({
 Schema and type-only topics can coexist on the same channel:
 
 ```ts
+import { realtime, staticSchema } from "inngest";
+
 const contentPipeline = realtime.channel({
   name: ({ runId }: { runId: string }) => `pipeline:${runId}`,
   topics: {
     status: { schema: z.object({ message: z.string() }) },
     tokens: { schema: z.object({ token: z.string() }) },
-    usage: realtime.type<{ inputTokens: number; outputTokens: number }>(),
+    usage: { schema: staticSchema<{ inputTokens: number; outputTokens: number }>() },
   },
 });
 ```
@@ -253,22 +259,11 @@ export async function POST(req: Request) {
 }
 ```
 
-## Migration from `@inngest/realtime`
-
-| `@inngest/realtime` | Core SDK (`inngest`) |
-|---|---|
-| `channel("name").addTopic(topic("t").type<T>())` | `realtime.channel({ name: "name", topics: { t: realtime.type<T>() } })` |
-| `channel("name").addTopic(topic("t").schema(z))` | `realtime.channel({ name: "name", topics: { t: { schema: z } } })` |
-| `realtimeMiddleware()` | Built-in — no middleware needed |
-| `import { ... } from "@inngest/realtime"` | `import { realtime } from "inngest"` |
-| `publish(channel().topicName(data))` | `publish(channel.topicName, data)` |
-| N/A | `step.realtime.publish(id, channel.topicName, data)` (durable) |
-
 ## Import paths
 
 ```ts
 // From the main package
-import { realtime } from "inngest";
+import { realtime, staticSchema } from "inngest";
 
 // Or from the dedicated subpath
 import { realtime, channel } from "inngest/realtime";

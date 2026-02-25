@@ -1,4 +1,4 @@
-import { realtime } from "inngest";
+import { realtime, staticSchema } from "inngest";
 
 //
 // Shared channel definition — imported by both the function (to publish)
@@ -7,6 +7,6 @@ import { realtime } from "inngest";
 export const helloChannel = realtime.channel({
   name: "hello-world",
   topics: {
-    logs: realtime.type<string>(),
+    logs: { schema: staticSchema<string>() },
   },
 });

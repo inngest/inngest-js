@@ -1,6 +1,6 @@
 import { z } from "zod/v3";
+import { staticSchema } from "../triggers/triggers.ts";
 import { channel } from "./channel.ts";
-import { realtime } from "./index.ts";
 import type { Realtime } from "./types.ts";
 
 describe("channel", () => {
@@ -138,12 +138,12 @@ describe("channel", () => {
     });
   });
 
-  describe("type-only topics via realtime.type<T>()", () => {
-    test("creates a channel with type-only topics", () => {
+  describe("type-only topics via staticSchema<T>()", () => {
+    test("creates a channel with staticSchema topics", () => {
       const ch = channel({
         name: "test",
         topics: {
-          result: realtime.type<{ success: boolean }>(),
+          result: { schema: staticSchema<{ success: boolean }>() },
         },
       });
 
@@ -154,25 +154,25 @@ describe("channel", () => {
       });
     });
 
-    test("type-only topic config has no schema property", () => {
+    test("staticSchema topic config has a schema property", () => {
       const ch = channel({
         name: "test",
         topics: {
-          result: realtime.type<{ success: boolean }>(),
+          result: { schema: staticSchema<{ success: boolean }>() },
         },
       });
 
-      expect("schema" in ch.result.config).toBe(false);
+      expect("schema" in ch.result.config).toBe(true);
     });
   });
 
   describe("mixed topics", () => {
-    test("supports both schema and type-only topics on the same channel", () => {
+    test("supports both zod and staticSchema topics on the same channel", () => {
       const ch = channel({
         name: "pipeline",
         topics: {
           status: { schema: z.object({ message: z.string() }) },
-          usage: realtime.type<{ tokens: number }>(),
+          usage: { schema: staticSchema<{ tokens: number }>() },
         },
       });
 
@@ -185,7 +185,7 @@ describe("channel", () => {
         topic: "usage",
       });
       expect("schema" in ch.status.config).toBe(true);
-      expect("schema" in ch.usage.config).toBe(false);
+      expect("schema" in ch.usage.config).toBe(true);
     });
   });
 });
@@ -215,11 +215,11 @@ describe("channel types", () => {
       expectTypeOf(ch.$infer.status).toEqualTypeOf<{ message: string }>();
     });
 
-    test("type-only topic $infer works", () => {
+    test("staticSchema topic $infer works", () => {
       const ch = channel({
         name: "test",
         topics: {
-          result: realtime.type<{ success: boolean; output: unknown }>(),
+          result: { schema: staticSchema<{ success: boolean; output: unknown }>() },
         },
       });
 

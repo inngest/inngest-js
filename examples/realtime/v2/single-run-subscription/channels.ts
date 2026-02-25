@@ -1,4 +1,4 @@
-import { realtime } from "inngest";
+import { realtime, staticSchema } from "inngest";
 import { z } from "zod";
 
 //
@@ -13,6 +13,6 @@ export const uploads = realtime.channel({
         uploadId: z.string().optional(),
       }),
     },
-    result: realtime.type<{ success: boolean; uploadId: string }>(),
+    result: { schema: staticSchema<{ success: boolean; uploadId: string }>() },
   },
 });

@@ -423,11 +423,10 @@ export namespace Realtime {
 
   //
   // A TopicConfig is one entry in a channel's `topics` record.
-  // Either a runtime schema or a type-only marker from realtime.type<T>().
+  // Always uses `{ schema }` — for type-only topics, use staticSchema<T>()
+  // which returns a passthrough Standard Schema with zero validation cost.
   //
-  export type TopicConfig<TData = unknown> =
-    | { schema: StandardSchemaV1 }
-    | { __type?: TData };
+  export type TopicConfig = { schema: StandardSchemaV1 };
 
   export type TopicsConfig = Record<string, TopicConfig>;
 
@@ -435,11 +434,7 @@ export namespace Realtime {
     schema: infer S extends StandardSchemaV1;
   }
     ? StandardSchemaV1.InferInput<S>
-    : T extends { __type?: infer D }
-      ? unknown extends D
-        ? unknown
-        : D
-      : unknown;
+    : unknown;
 
   //
   // A TopicRef is a lightweight value carrying the resolved channel name,
@@ -449,7 +444,7 @@ export namespace Realtime {
   export interface TopicRef<TData = unknown> {
     channel: string;
     topic: string;
-    config: TopicConfig<TData>;
+    config: TopicConfig;
   }
 
   //
