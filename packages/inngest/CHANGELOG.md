@@ -1,5 +1,11 @@
 # inngest
 
+## 3.52.4
+
+### Patch Changes
+
+- [#1338](https://github.com/inngest/inngest-js/pull/1338) [`4f45adb7`](https://github.com/inngest/inngest-js/commit/4f45adb71fc7dfbc1ed7f941ddc4dd5e42f3523b) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Fix signing key propagation from serve() options to InngestApi for outgoing API calls
+
 ## 3.52.3
 
 ### Patch Changes
