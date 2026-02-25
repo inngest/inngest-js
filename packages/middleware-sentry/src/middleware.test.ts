@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockScope = {
   setTags: vi.fn(),
   setTransactionName: vi.fn(),
-  captureException: vi.fn(),
   addBreadcrumb: vi.fn(),
 };
 
@@ -12,6 +11,19 @@ const mockSpan = {
   setStatus: vi.fn(),
   setAttributes: vi.fn(),
   end: vi.fn(),
+  spanContext: vi.fn(() => ({
+    traceId: "00000000000000000000000000000000",
+    spanId: "0000000000000000",
+  })),
+};
+
+// Remote parent span returned by getActiveSpan inside continueTrace.
+const mockRemoteParentSpan = {
+  spanContext: vi.fn(() => ({
+    traceId: "00000000000000000000000000000000",
+    spanId: "1000000000000000",
+    isRemote: true,
+  })),
 };
 
 vi.mock("@sentry/core", () => ({
@@ -22,6 +34,10 @@ vi.mock("@sentry/core", () => ({
     (_opts: unknown, cb: (span: typeof mockSpan) => unknown) => cb(mockSpan),
   ),
   startInactiveSpan: vi.fn(() => ({ ...mockSpan })),
+  startNewTrace: vi.fn((cb: () => unknown) => cb()),
+  continueTrace: vi.fn((_opts: unknown, cb: () => unknown) => cb()),
+  withActiveSpan: vi.fn((_span: unknown, cb: () => unknown) => cb()),
+  getActiveSpan: vi.fn(() => mockRemoteParentSpan),
   captureException: vi.fn(),
   flush: vi.fn(() => Promise.resolve()),
 }));
@@ -66,6 +82,8 @@ async function runMiddleware(
   run: (mw: SentryMiddleware) => void | Promise<void>,
 ) {
   await mw.wrapRequest({
+    fn: mockFn,
+    runId: "run-1",
     next: async () => {
       await mw.wrapFunctionHandler({
         next: async () => {
@@ -85,23 +103,84 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("happy path", () => {
-  it("ends run span with OK and flushes", async () => {
+describe("non-execution request", () => {
+  it("skips Sentry setup when fn is null", async () => {
     const mw = new SentryMiddleware({ client: mockClient });
 
-    await runMiddleware(mw, () => {
-      mw.onRunComplete();
-    });
+    await mw.wrapRequest({
+      fn: null,
+      runId: "",
+      next: async () => ({ status: 200, body: "", headers: {} }),
+    } as Parameters<typeof SentryMiddleware.prototype.wrapRequest>[0]);
+
+    expect(Sentry.startNewTrace).not.toHaveBeenCalled();
+    expect(Sentry.startSpanManual).not.toHaveBeenCalled();
+    expect(Sentry.flush).not.toHaveBeenCalled();
+  });
+});
+
+describe("happy path", () => {
+  it("ends request span with OK and flushes", async () => {
+    const mw = new SentryMiddleware({ client: mockClient });
+
+    await runMiddleware(mw, () => {});
 
     expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
     expect(mockSpan.end).toHaveBeenCalled();
     expect(Sentry.flush).toHaveBeenCalled();
-    expect(mockScope.captureException).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("creates request span with function name and op 'request'", async () => {
+    const mw = new SentryMiddleware({ client: mockClient });
+
+    await runMiddleware(mw, () => {});
+
+    expect(Sentry.startSpanManual).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "My Function", op: "request" }),
+      expect.any(Function),
+    );
+  });
+});
+
+describe("abandoned execution", () => {
+  it("cleans up spans and flushes when wrapFunctionHandler never resolves", async () => {
+    const mw = new SentryMiddleware({ client: mockClient });
+
+    await mw.wrapRequest({
+      fn: mockFn,
+      runId: "run-1",
+      next: async () => {
+        // Simulate fresh step discovery: wrapFunctionHandler's next() never
+        // resolves, but wrapRequest's next() still returns a response.
+        mw.wrapFunctionHandler({
+          next: () => new Promise(() => {}),
+          ctx: mockCtx,
+          fn: mockFn,
+        } as Parameters<
+          typeof SentryMiddleware.prototype.wrapFunctionHandler
+        >[0]);
+
+        mw.onStepStart({
+          stepInfo: makeStepInfo(),
+        } as Parameters<typeof mw.onStepStart>[0]);
+
+        return { status: 200, body: "", headers: {} };
+      },
+    } as Parameters<typeof SentryMiddleware.prototype.wrapRequest>[0]);
+
+    // Orphaned step span ended in finally.
+    const stepSpan = Sentry.startInactiveSpan({} as never);
+    expect(stepSpan.end).toHaveBeenCalled();
+
+    expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
+    expect(mockSpan.end).toHaveBeenCalled();
+    expect(Sentry.flush).toHaveBeenCalled();
   });
 });
 
 describe("function error", () => {
-  it("captures exception and sets error status", async () => {
+  it("captures exception and sets error status on request span", async () => {
     const mw = new SentryMiddleware({ client: mockClient });
     const error = new Error("boom");
 
@@ -112,10 +191,9 @@ describe("function error", () => {
       } as Parameters<typeof mw.onRunError>[0]);
     });
 
-    expect(mockScope.captureException).toHaveBeenCalledWith(error);
-    expect(mockScope.setTags).toHaveBeenCalledWith(
-      expect.objectContaining({ "inngest.error.source": "run" }),
-    );
+    expect(Sentry.captureException).toHaveBeenCalledWith(error, {
+      tags: expect.objectContaining({ "inngest.error.source": "run" }),
+    });
     expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 2 });
   });
 });
@@ -133,8 +211,6 @@ describe("step lifecycle", () => {
       mw.onStepComplete({
         stepInfo: makeStepInfo(),
       } as Parameters<typeof mw.onStepComplete>[0]);
-
-      mw.onRunComplete();
     });
 
     expect(stepSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
@@ -168,6 +244,20 @@ describe("step lifecycle", () => {
 
     expect(Sentry.startInactiveSpan).toHaveBeenCalledWith(
       expect.objectContaining({ name: "My Step" }),
+    );
+  });
+
+  it("parents step spans under the request span", async () => {
+    const mw = new SentryMiddleware({ client: mockClient });
+
+    await runMiddleware(mw, () => {
+      mw.onStepStart({
+        stepInfo: makeStepInfo(),
+      } as Parameters<typeof mw.onStepStart>[0]);
+    });
+
+    expect(Sentry.startInactiveSpan).toHaveBeenCalledWith(
+      expect.objectContaining({ parentSpan: mockSpan }),
     );
   });
 
@@ -217,7 +307,7 @@ describe("captureStepErrors", () => {
     expect(stepSpan.setStatus).toHaveBeenCalledWith({ code: 2 });
 
     // But no Sentry event.
-    expect(mockScope.captureException).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("captures step errors when enabled", async () => {
@@ -237,12 +327,45 @@ describe("captureStepErrors", () => {
       } as Parameters<typeof mw.onStepError>[0]);
     });
 
-    expect(mockScope.captureException).toHaveBeenCalledWith(error);
-    expect(mockScope.setTags).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(Sentry.captureException).toHaveBeenCalledWith(error, {
+      tags: expect.objectContaining({
         "inngest.error.source": "step",
         "inngest.step.name": "fetch-user",
       }),
+    });
+  });
+
+  it("parents step error to the step span, not the request span", async () => {
+    const customStepSpan = {
+      ...mockSpan,
+      spanContext: vi.fn(() => ({
+        traceId: "00000000000000000000000000000000",
+        spanId: "aabbccddee112233",
+      })),
+    };
+    vi.mocked(Sentry.startInactiveSpan).mockReturnValueOnce(
+      customStepSpan as unknown as ReturnType<typeof Sentry.startInactiveSpan>,
+    );
+
+    const Cls = sentryMiddleware({ captureStepErrors: true });
+    const mw = new Cls({ client: mockClient });
+
+    await runMiddleware(mw, () => {
+      mw.onStepStart({
+        stepInfo: makeStepInfo(),
+      } as Parameters<typeof mw.onStepStart>[0]);
+
+      mw.onStepError({
+        error: new Error("step fail"),
+        isFinalAttempt: true,
+        stepInfo: makeStepInfo(),
+      } as Parameters<typeof mw.onStepError>[0]);
+    });
+
+    // withActiveSpan should receive the step span, not the request span.
+    expect(Sentry.withActiveSpan).toHaveBeenCalledWith(
+      customStepSpan,
+      expect.any(Function),
     );
   });
 });
@@ -258,8 +381,7 @@ describe("onlyCaptureFinalAttempt", () => {
       } as Parameters<typeof mw.onRunError>[0]);
     });
 
-    expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 2 });
-    expect(mockScope.captureException).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("captures on non-final attempt when disabled", async () => {
@@ -274,7 +396,9 @@ describe("onlyCaptureFinalAttempt", () => {
       } as Parameters<typeof mw.onRunError>[0]);
     });
 
-    expect(mockScope.captureException).toHaveBeenCalledWith(error);
+    expect(Sentry.captureException).toHaveBeenCalledWith(error, {
+      tags: expect.objectContaining({ "inngest.error.source": "run" }),
+    });
   });
 });
 
@@ -283,9 +407,7 @@ describe("disableAutomaticFlush", () => {
     const Cls = sentryMiddleware({ disableAutomaticFlush: true });
     const mw = new Cls({ client: mockClient });
 
-    await runMiddleware(mw, () => {
-      mw.onRunComplete();
-    });
+    await runMiddleware(mw, () => {});
 
     expect(Sentry.flush).not.toHaveBeenCalled();
   });

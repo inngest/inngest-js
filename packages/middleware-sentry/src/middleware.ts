@@ -74,16 +74,21 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
    */
   protected captureStepErrors = false;
 
-  // Isolation scope from wrapFunctionHandler. Used for scope.captureException
-  // instead of Sentry.captureException to avoid relying on async context
-  // propagation between engine internals and Sentry's scope resolution.
+  // Isolation scope created in wrapRequest. Used for setting tags and
+  // breadcrumbs scoped to this function run.
   #scope?: Sentry.Scope;
 
-  // Shared tags set once in wrapFunctionHandler, reused as attributes on
-  // child spans for self-contained span metadata.
+  // Tags set in wrapRequest (function-level) and enriched in
+  // wrapFunctionHandler (event-level). Reused as span attributes.
   #tags: Record<string, string | undefined> = {};
 
-  #runSpan?: Span;
+  // Deterministic trace ID derived from the run ID, used to group all
+  // requests in a function run under one Sentry trace.
+  #traceId?: string;
+
+  // Per-request span representing one HTTP request in the durable execution.
+  // Step spans are children of this span.
+  #requestSpan?: Span;
 
   // Using a map is overkill right now since we never execute more than one step
   // at a time. But just in case that changes, we'll use a map. Until that
@@ -96,67 +101,102 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   // intermediate requests where a step completed successfully.
   #hasError = false;
 
+  // Sets up Sentry isolation scope, shared tags, a deterministic trace
+  // derived from the run ID, and a per-request span. All requests in the
+  // same Inngest function run share one Sentry trace; each request appears
+  // as a child span with step spans nested beneath it.
+  //
   // wrapRequest always resolves (even when wrapFunctionHandler's next()
-  // doesn't, e.g. fresh step discovered), making this the only reliable
-  // place to end spans and flush.
-  override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
-    try {
-      return await next();
-    } finally {
-      if (!this.#hasError) {
-        this.#runSpan?.setStatus({ code: 1 });
-      }
-
-      for (const span of this.#stepSpans.values()) {
-        span.end();
-      }
-      this.#runSpan?.end();
-
-      if (!this.disableAutomaticFlush) {
-        await Sentry.flush();
-      }
-    }
-  }
-
-  // Sets up Sentry isolation scope, shared tags, and the root "run" span.
-  // Everything inside runs in a dedicated isolation scope so tags and
-  // breadcrumbs don't bleed between concurrent function runs.
-  override async wrapFunctionHandler({
+  // doesn't, e.g. fresh step discovered), so the finally cleanup (ending
+  // spans, flushing) reliably runs inside the Sentry async context.
+  override wrapRequest({
     next,
-    ctx,
     fn,
-  }: Middleware.WrapFunctionHandlerArgs) {
-    return Sentry.withIsolationScope(async (scope) => {
-      this.#scope = scope;
+    runId,
+  }: Middleware.WrapRequestArgs): Promise<Middleware.Response> {
+    // Non-execution requests (GET introspection, PUT registration) have no
+    // function context — skip Sentry setup entirely.
+    if (!fn) {
+      return next();
+    }
 
-      this.#tags = {
-        "inngest.client.id": this.client.id,
-        "inngest.event.id": ctx.event.id,
-        "inngest.event.name": ctx.event.name,
-        "inngest.function.id": fn.id(this.client.id),
-        "inngest.function.name": fn.name,
-        "inngest.run.id": ctx.runId,
-      };
+    this.#traceId = ulidToTraceId(runId);
+    const sentryTrace = `${this.#traceId}-1000000000000000-1`;
 
-      scope.setTags(this.#tags);
-      scope.setTransactionName(`inngest:${fn.name}`);
+    // startNewTrace breaks out of the auto-instrumented HTTP span so our
+    // trace ID (derived from the run ID) takes effect. continueTrace then
+    // sets the propagation context with our deterministic trace ID.
+    return Sentry.startNewTrace(() => {
+      return Sentry.continueTrace(
+        { sentryTrace, baggage: undefined },
+        async () => {
+          return Sentry.withIsolationScope(async (scope) => {
+            this.#scope = scope;
 
-      return Sentry.startSpanManual(
-        {
-          name: "Inngest Function Run",
-          op: "run",
-          attributes: {
-            ...this.#tags,
-            "inngest.event": JSON.stringify(ctx.event),
-          },
-          scope,
-        },
-        async (span) => {
-          this.#runSpan = span;
-          return await next();
+            this.#tags = {
+              "inngest.client.id": this.client.id,
+              "inngest.function.id": fn.id(this.client.id),
+              "inngest.function.name": fn.name,
+              "inngest.run.id": runId,
+            };
+
+            scope.setTags(this.#tags);
+            scope.setTransactionName(`inngest:${fn.name}`);
+
+            return Sentry.startSpanManual(
+              {
+                name: fn.name,
+                op: "request",
+                attributes: this.#tags,
+              },
+              async (span) => {
+                this.#requestSpan = span;
+                try {
+                  return await next();
+                } finally {
+                  if (!this.#hasError) {
+                    this.#requestSpan?.setStatus({ code: 1 });
+                  }
+
+                  // End any step spans that weren't closed by
+                  // onStepComplete/onStepError (e.g. request interrupted
+                  // mid-step).
+                  for (const stepSpan of this.#stepSpans.values()) {
+                    stepSpan.end();
+                  }
+                  this.#requestSpan?.end();
+
+                  if (!this.disableAutomaticFlush) {
+                    await Sentry.flush();
+                  }
+                }
+              },
+            );
+          });
         },
       );
     });
+  }
+
+  // Enriches the already-created Sentry span/scope with event-specific
+  // data available only in wrapFunctionHandler's ctx.
+  override async wrapFunctionHandler({
+    next,
+    ctx,
+  }: Middleware.WrapFunctionHandlerArgs): Promise<unknown> {
+    const eventTags = {
+      "inngest.event.id": ctx.event.id,
+      "inngest.event.name": ctx.event.name,
+    };
+
+    Object.assign(this.#tags, eventTags);
+    this.#scope?.setTags(eventTags);
+    this.#requestSpan?.setAttributes({
+      ...eventTags,
+      "inngest.event": JSON.stringify(ctx.event),
+    });
+
+    return await next();
   }
 
   // Injects ctx.sentry so user code can access the Sentry client directly.
@@ -174,22 +214,13 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
   // Captures function-level errors using the stored isolation scope.
   override onRunError({ error, isFinalAttempt }: Middleware.OnRunErrorArgs) {
     this.#hasError = true;
-    this.#runSpan?.setStatus({ code: 2 });
+    this.#requestSpan?.setStatus({ code: 2 });
 
     if (!this.onlyCaptureFinalAttempt || isFinalAttempt) {
       this.#captureException(error, {
         // Used to distinguish run-level errors from step-level errors.
         "inngest.error.source": "run",
       });
-    }
-  }
-
-  // Only set OK if no step error was captured. A caught step error
-  // (try-catch in user code) sets #hasError but the function still
-  // completes — we preserve the error status so the trace reflects it.
-  override onRunComplete() {
-    if (!this.#hasError) {
-      this.#runSpan?.setStatus({ code: 1 });
     }
   }
 
@@ -203,6 +234,7 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
     const span = Sentry.startInactiveSpan({
       name: stepDisplayName(stepInfo.options),
       op: "step",
+      parentSpan: this.#requestSpan,
       attributes: {
         ...this.#tags,
         "inngest.step.name": stepDisplayName(stepInfo.options),
@@ -234,7 +266,7 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
     stepInfo,
   }: Middleware.OnStepErrorArgs) {
     this.#hasError = true;
-    this.#runSpan?.setStatus({ code: 2 });
+    this.#requestSpan?.setStatus({ code: 2 });
 
     const span = this.#stepSpans.get(stepInfo.hashedId);
     if (span) {
@@ -254,22 +286,36 @@ export class SentryMiddleware extends Middleware.BaseMiddleware {
       this.captureStepErrors &&
       (!this.onlyCaptureFinalAttempt || isFinalAttempt)
     ) {
-      this.#captureException(error, {
-        "inngest.error.source": "step",
-        "inngest.step.name": stepDisplayName(stepInfo.options),
-      });
+      // Pass the step span so the error appears under it in the trace view.
+      // spanContext() is valid even after end().
+      this.#captureException(
+        error,
+        {
+          "inngest.error.source": "step",
+          "inngest.step.name": stepDisplayName(stepInfo.options),
+        },
+        span,
+      );
     }
   }
 
-  // Sets source tags on the isolation scope and captures. Sentry snapshots
-  // scope state at capture time, so each event gets the correct tags even
-  // when multiple captures happen on the same scope.
-  #captureException(error: unknown, tags: Record<string, string>) {
+  // Captures an exception under the given span (or the request span by
+  // default). withActiveSpan sets the span as active so the error event's
+  // trace.span_id matches, linking the error to that span in the trace view.
+  #captureException(error: unknown, tags: Record<string, string>, span?: Span) {
     if (this.#scope) {
       this.#scope.setTags(tags);
-      this.#scope.captureException(error);
+    }
+
+    const allTags = { ...this.#tags, ...tags };
+    const targetSpan = span ?? this.#requestSpan;
+
+    if (targetSpan) {
+      Sentry.withActiveSpan(targetSpan, () => {
+        Sentry.captureException(error, { tags: allTags });
+      });
     } else {
-      Sentry.captureException(error);
+      Sentry.captureException(error, { tags: allTags });
     }
   }
 }
@@ -300,4 +346,39 @@ export const sentryMiddleware = (opts?: SentryMiddlewareOptions) => {
 
 function stepDisplayName(stepOptions: { name?: string; id: string }): string {
   return stepOptions.name ?? stepOptions.id;
+}
+
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/**
+ * Converts a ULID (128-bit, Crockford base32) to a 32-char hex string suitable
+ * for use as a Sentry trace ID. This is a lossless 1:1 mapping.
+ */
+function ulidToTraceId(ulid: string): string {
+  const upper = ulid.toUpperCase();
+  const bytes = new Uint8Array(16);
+
+  // 26 Crockford base32 chars = 130 bits, but only 128 are meaningful.
+  // First char contributes 3 bits (discard the top 2 of the 5-bit value).
+  let bitBuf = CROCKFORD.indexOf(upper[0]) & 0x07;
+  let bitCount = 3;
+  let byteIdx = 0;
+
+  for (let i = 1; i < upper.length; i++) {
+    bitBuf = (bitBuf << 5) | CROCKFORD.indexOf(upper[i]);
+    bitCount += 5;
+
+    while (bitCount >= 8 && byteIdx < 16) {
+      bitCount -= 8;
+      bytes[byteIdx++] = (bitBuf >>> bitCount) & 0xff;
+      bitBuf &= (1 << bitCount) - 1;
+    }
+  }
+
+  let hex = "";
+  for (let i = 0; i < 16; i++) {
+    const h = bytes[i].toString(16);
+    hex += h.length < 2 ? "0" + h : h;
+  }
+  return hex;
 }

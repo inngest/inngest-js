@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es2016",
+    "target": "es2022",
     "module": "commonjs",
     "rootDir": "./src",
     "declaration": true,
@@ -10,5 +10,6 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["./src/**/*"]
+  "include": ["./src/**/*"],
+  "exclude": ["./src/**/*.test.*"]
 }
