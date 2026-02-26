@@ -516,11 +516,21 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: checkpoint.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(checkpoint.data),
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 
@@ -578,7 +588,6 @@ class InngestExecutionEngine
         // Resume the step with original data for user code
         const stepToResume = this.resumeStepWithResult(result);
 
-        // Transform data for checkpoint (middleware)
         return void (await this.checkpoint([stepToResume]));
       },
 
@@ -971,7 +980,6 @@ class InngestExecutionEngine
       .finally(() => {
         this.debug(`finished executing step "${id}"`);
 
-        delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -1860,6 +1868,8 @@ class InngestExecutionEngine
           id: this.options.requestedRunStep as string,
           op: StepOpCode.StepNotFound,
         },
+        foundSteps,
+        totalFoundSteps,
       });
     });
   }
@@ -1872,6 +1882,7 @@ class InngestExecutionEngine
       .filter((step) => !step.hasStepState)
       .map<BasicFoundStep>((step) => ({
         id: step.hashedId,
+        name: step.name,
         displayName: step.displayName,
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -1955,7 +1966,11 @@ export interface Checkpoints {
   "steps-found": { steps: [FoundStep, ...FoundStep[]] };
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
   "checkpointing-runtime-reached": {};
   "checkpointing-buffer-interval-reached": {};
 }
