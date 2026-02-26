@@ -72,14 +72,18 @@ async function fetchRunResult(
         run: { output: string | null; status: string } | null;
       };
     };
-    if (data.data.run?.output) {
-      const parsed = JSON.parse(data.data.run.output);
 
-      if (data.data.run.status === "COMPLETED") {
-        return { data: parsed };
-      }
-      if (data.data.run.status === "FAILED") {
-        return { error: parsed };
+    if (data.data.run) {
+      const { output } = data.data.run;
+      if (output) {
+        const parsed = JSON.parse(output);
+
+        if (data.data.run.status === "COMPLETED") {
+          return { data: maybeParseRunCompleteOp(parsed) };
+        }
+        if (data.data.run.status === "FAILED") {
+          return { error: parsed };
+        }
       }
     }
 
@@ -87,6 +91,40 @@ async function fetchRunResult(
   }
 
   throw new Error(`Timed out waiting for run ${runId} to end`);
+}
+
+/**
+ * Hack to handle GQL returning an op array when checkpointing is enabled. It's handling data like this:
+ * ```json
+ * [
+ *   {
+ *    "data": "fn return value",
+ *    "id": "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+ *    "op": "RunComplete",
+ *   }
+ * ]
+ * ```
+ * 
+ * TODO: Fix the GQL query and delete this function.
+ */
+function maybeParseRunCompleteOp(output: unknown): unknown {
+  if (!Array.isArray(output)) {
+    return output;
+  }
+
+  const [op] = output;
+  if (!isRecord(op)) {
+    return output;
+  }
+  if (op.op !== "RunComplete") {
+    return output;
+  }
+  return op.data;
+}
+
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export class BaseState {

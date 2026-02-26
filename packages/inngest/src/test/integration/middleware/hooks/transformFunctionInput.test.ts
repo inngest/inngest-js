@@ -155,6 +155,10 @@ test("modify memoized step data", async () => {
       const output = await step.run("my-step", () => {
         return "original";
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.stepOutputs.push(output);
     },
   );

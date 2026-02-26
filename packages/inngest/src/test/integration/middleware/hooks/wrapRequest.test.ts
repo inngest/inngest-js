@@ -144,12 +144,20 @@ test("next() resolves with response", async () => {
   await state.waitForRunComplete();
 
   expect(state.response).toEqual({
-    status: 200,
+    status: 206,
     headers: expect.any(Object),
     body: expect.any(String),
   });
   expect(state.response!.headers["Content-Type"]).toBe("application/json");
-  expect(state.response!.body).toBe(JSON.stringify("output"));
+  expect(state.response!.body).toBe(
+    JSON.stringify([
+      {
+        op: "RunComplete",
+        id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+        data: "output",
+      },
+    ]),
+  );
 });
 
 test("multiple middleware in onion order", async () => {
