@@ -1856,3 +1856,83 @@ export const err = <E>(error?: E): Result<never, E> => {
 export const inBandSyncRequestBodySchema = z.strictObject({
   url: z.string(),
 });
+
+/**
+ * Configuration for an experiment's selection strategy.
+ */
+export type ExperimentStrategyConfig = {
+  strategy: string;
+  weights?: Record<string, number>;
+};
+
+/**
+ * A selection function for choosing an experiment variant. Callable returning
+ * the selected variant name, with an attached `__experimentConfig` property
+ * describing the strategy.
+ */
+export type ExperimentSelectFn = {
+  (): Promise<string> | string;
+  __experimentConfig: ExperimentStrategyConfig;
+};
+
+/**
+ * Options for `group.experiment()`.
+ */
+export type ExperimentOptions<TVariants> = {
+  variants: TVariants;
+  select: ExperimentSelectFn;
+};
+
+/**
+ * Options for `group.experiment()` when variant metadata should be included
+ * in the return value.
+ */
+export type ExperimentOptionsWithVariant<TVariants> =
+  ExperimentOptions<TVariants> & { withVariant: true };
+
+/**
+ * Resolves the return type of experiment variant callbacks.
+ *
+ * When `TConstraint` is `never`, infers a union of all variant callback return
+ * types from `TVariants`. Otherwise returns `TConstraint` directly.
+ */
+export type VariantResult<TConstraint, TVariants> =
+  IsNever<TConstraint> extends true
+    ? TVariants extends Record<string, (...args: unknown[]) => infer R>
+      ? Awaited<R>
+      : never
+    : TConstraint;
+
+/**
+ * Overloaded function type for `group.experiment()`.
+ *
+ * - With `withVariant: true`: returns `Promise<{ result: T, variant: string }>`
+ * - Without `withVariant`: returns `Promise<T>`
+ */
+export type GroupExperiment = {
+  <TVariants extends Record<string, (...args: unknown[]) => unknown>>(
+    id: StepOptionsOrId,
+    options: ExperimentOptionsWithVariant<TVariants>,
+  ): Promise<{
+    result: VariantResult<never, TVariants>;
+    variant: string;
+  }>;
+
+  <TVariants extends Record<string, (...args: unknown[]) => unknown>>(
+    id: StepOptionsOrId,
+    options: ExperimentOptions<TVariants>,
+  ): Promise<VariantResult<never, TVariants>>;
+};
+
+/**
+ * Metadata values recorded for an experiment execution.
+ * Type definition only — wiring into the operation pipeline is handled by
+ * downstream ticket EXE-1334.
+ */
+export type ExperimentMetadataValues = {
+  experiment_name: string;
+  variant_selected: string;
+  selection_strategy: string;
+  available_variants: string[];
+  variant_weights?: Record<string, number>;
+};
