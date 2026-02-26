@@ -1,13 +1,13 @@
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { z } from "zod";
 import { Inngest, invoke, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import {
-  anyContext,
-  createState,
-  randomSuffix,
-  testNameFromFileUrl,
-} from "../../utils.ts";
+import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

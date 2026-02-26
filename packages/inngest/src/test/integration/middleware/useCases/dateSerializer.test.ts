@@ -1,17 +1,15 @@
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+  waitFor,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { z } from "zod/v3";
 import { eventType, Inngest, invoke, Middleware } from "../../../../index.ts";
 import type { Jsonify } from "../../../../types.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import {
-  BaseSerializerMiddleware,
-  createState,
-  fetchEvent,
-  isRecord,
-  randomSuffix,
-  testNameFromFileUrl,
-  waitFor,
-} from "../../utils.ts";
+import { BaseSerializerMiddleware, fetchEvent, isRecord } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

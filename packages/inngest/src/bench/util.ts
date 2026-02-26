@@ -1,15 +1,12 @@
+import {
+  createTestApp,
+  randomSuffix,
+  sleep,
+  type TestApp,
+} from "@inngest/test-harness";
 import { bench, describe } from "vitest";
 import { Inngest, type InngestFunction, Middleware } from "../index.ts";
 import { ConsoleLogger } from "../middleware/logger.ts";
-import { createTestApp, type TestApp } from "../test/devServerTestHarness.ts";
-
-export function randomSuffix(value: string): string {
-  return `${value}-${Math.random().toString(36).substring(2, 15)}`;
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** Common step return value used across benchmarks. */
 export function stepPayload() {
