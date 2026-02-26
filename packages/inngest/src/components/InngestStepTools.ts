@@ -890,6 +890,10 @@ export const createStepTools = <
     memoizationId: string,
   ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
 
+  // Attach the experiment run tool for group.experiment()
+  (tools as unknown as Record<symbol, unknown>)[experimentRunSymbol] =
+    createStepRun("group.experiment");
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -933,6 +937,8 @@ export const createStepTools = <
 export type GenericStepTools = GetStepTools<Inngest.Any>;
 
 export const gatewaySymbol = Symbol.for("inngest.step.gateway");
+
+export const experimentRunSymbol = Symbol.for("inngest.group.experiment.run");
 
 export type InternalStepTools = GetStepTools<Inngest.Any> & {
   [gatewaySymbol]: (

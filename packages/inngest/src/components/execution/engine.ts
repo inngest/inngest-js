@@ -52,6 +52,7 @@ import type {
 } from "../InngestMetadata.ts";
 import {
   createStepTools,
+  experimentRunSymbol,
   type FoundStep,
   getStepOptions,
   STEP_INDEXING_SUFFIX,
@@ -1212,10 +1213,14 @@ class InngestExecutionEngine
   private createFnArg(): Context.Any {
     const step = this.createStepTools();
 
+    const experimentRun = (step as unknown as Record<symbol, unknown>)[
+      experimentRunSymbol
+    ] as ((...args: unknown[]) => Promise<unknown>) | undefined;
+
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-      group: createGroupTools(),
+      group: createGroupTools(experimentRun),
     } as Context.Any;
 
     /**

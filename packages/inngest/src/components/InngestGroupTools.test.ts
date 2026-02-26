@@ -1,4 +1,4 @@
-import { describe, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type {
   ExperimentMetadataValues,
   ExperimentOptions,
@@ -8,6 +8,31 @@ import type {
   GroupExperiment,
   VariantResult,
 } from "../types.ts";
+import { createGroupTools } from "./InngestGroupTools.ts";
+import { experimentRunSymbol } from "./InngestStepTools.ts";
+
+describe("Step Tool Wiring", () => {
+  describe("experimentRunSymbol", () => {
+    test("is a Symbol", () => {
+      expect(typeof experimentRunSymbol).toBe("symbol");
+    });
+  });
+
+  describe("createGroupTools()", () => {
+    test("works without run tool (backward compat)", () => {
+      const tools = createGroupTools();
+      expect(tools).toHaveProperty("parallel");
+      expect(typeof tools.parallel).toBe("function");
+    });
+
+    test("accepts run tool parameter and still returns parallel", () => {
+      const mockRunTool = vi.fn().mockResolvedValue("mock-result");
+      const tools = createGroupTools(mockRunTool);
+      expect(tools).toHaveProperty("parallel");
+      expect(typeof tools.parallel).toBe("function");
+    });
+  });
+});
 
 describe("Experiment Types", () => {
   describe("VariantResult", () => {

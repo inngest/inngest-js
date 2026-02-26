@@ -128,6 +128,8 @@ export interface GroupTools {
  *
  * @public
  */
-export const createGroupTools = (): GroupTools => {
+export const createGroupTools = (
+  experimentRun?: (...args: unknown[]) => Promise<unknown>,
+): GroupTools => {
   return { parallel };
 };
