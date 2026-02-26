@@ -1,0 +1,11 @@
+{
+  "name": "@inngest/test-harness",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal integration test harness for Inngest packages",
+  "main": "src/index.ts",
+  "devDependencies": {
+    "inngest": "workspace:*",
+    "typescript": "~5.8.2"
+  }
+}

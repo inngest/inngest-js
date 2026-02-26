@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.config.integration.ts",
     "build": "tsc",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js"
@@ -31,6 +32,7 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@inngest/test-harness": "workspace:*",
     "@sentry/core": "^8.8.0",
     "@sentry/types": "^8.8.0",
     "inngest": ">=4.0.0-alpha.6 <5.0.0",
