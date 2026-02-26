@@ -565,20 +565,40 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     /**
      * Subscribe to realtime messages on a channel, returning a readable stream.
      */
-    subscribe: <
-      const InputChannel extends Realtime.Channel | string,
-      const InputTopics extends (keyof Realtime.Channel.InferTopics<
-        Realtime.Channel.AsChannel<InputChannel>
-      > &
-        string)[],
-      const TToken extends Realtime.Subscribe.Token<
-        Realtime.Channel.AsChannel<InputChannel>,
-        InputTopics
-      >,
-    >(opts: {
-      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
-      topics: InputTopics;
-    }) => Promise<Realtime.Subscribe.StreamSubscription<TToken>>;
+    subscribe: {
+      <
+        const InputChannel extends Realtime.Channel | string,
+        const InputTopics extends (keyof Realtime.Channel.InferTopics<
+          Realtime.Channel.AsChannel<InputChannel>
+        > &
+          string)[],
+        const TToken extends Realtime.Subscribe.Token<
+          Realtime.Channel.AsChannel<InputChannel>,
+          InputTopics
+        >,
+      >(opts: {
+        channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+        topics: InputTopics;
+        validate?: boolean;
+        onMessage: Realtime.Subscribe.Callback<TToken>;
+        onError?: (err: unknown) => void;
+      }): Promise<Realtime.Subscribe.CallbackSubscription>;
+      <
+        const InputChannel extends Realtime.Channel | string,
+        const InputTopics extends (keyof Realtime.Channel.InferTopics<
+          Realtime.Channel.AsChannel<InputChannel>
+        > &
+          string)[],
+        const TToken extends Realtime.Subscribe.Token<
+          Realtime.Channel.AsChannel<InputChannel>,
+          InputTopics
+        >,
+      >(opts: {
+        channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+        topics: InputTopics;
+        validate?: boolean;
+      }): Promise<Realtime.Subscribe.StreamSubscription<TToken>>;
+    };
 
     /**
      * Generate a subscription token for subscribing to realtime messages.

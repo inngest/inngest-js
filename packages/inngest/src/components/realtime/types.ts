@@ -66,11 +66,28 @@ export namespace Realtime {
        * messages that were sent before this function was called.
        */
       getEncodedStream(): ReadableStream<Uint8Array>;
+
+      /**
+       * Close the underlying subscription connection.
+       */
+      close(reason?: string): void;
+
+      /**
+       * Alias for `close()` to match callback-style subscription semantics.
+       */
+      unsubscribe(reason?: string): void;
     };
 
     export type Callback<
       TSubscribeToken extends Subscribe.Token = Subscribe.Token,
-    > = (message: Token.InferMessage<TSubscribeToken>) => void;
+    > = (
+      message: Token.InferMessage<TSubscribeToken>,
+    ) => MaybePromise<void>;
+
+    export type CallbackSubscription = {
+      close(reason?: string): void;
+      unsubscribe(reason?: string): void;
+    };
 
     export interface Token<
       TChannel extends Channel | Channel.Definition = Channel,
@@ -187,7 +204,17 @@ export namespace Realtime {
           streamId: string;
           stream: ReadableStream<Realtime.Topic.InferSubscribe<TTopics[K]>>;
         };
-  }[keyof TTopics];
+  }[keyof TTopics]
+    | {
+        channel?: TChannelId;
+        topic?: string;
+        data: unknown;
+        runId?: string;
+        fnId?: string;
+        createdAt: Date;
+        envId?: string;
+        kind: "run";
+      };
 
   export namespace Message {
     // Publish (input) msg

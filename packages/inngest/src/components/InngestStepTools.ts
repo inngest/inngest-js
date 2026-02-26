@@ -518,8 +518,18 @@ export const createStepTools = <
           };
         },
         {
-          fn: (ctx, _idOrOptions, topicRef, data) => {
-            return client["inngestApi"].publish(
+          fn: async (ctx, _idOrOptions, topicRef, data) => {
+            const topicConfig = topicRef.config;
+            if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
+              const result = await topicConfig.schema["~standard"].validate(data);
+              if (result.issues) {
+                throw new Error(
+                  `Schema validation failed for topic "${topicRef.topic}"`,
+                );
+              }
+            }
+
+            const res = await client["inngestApi"].publish(
               {
                 topics: [topicRef.topic],
                 channel: topicRef.channel,
@@ -527,6 +537,14 @@ export const createStepTools = <
               },
               data,
             );
+
+            if (!res.ok) {
+              throw new Error(
+                `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
+              );
+            }
+
+            return data;
           },
         },
       ),

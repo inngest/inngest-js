@@ -24,7 +24,7 @@ type InferChannelReturn<
 
 const createTopicAccessors = (
   channelName: string,
-  topics: Realtime.TopicsConfig,
+  topics: Realtime.TopicsConfig
 ): Record<string, Realtime.TopicRef> => {
   const accessors: Record<string, Realtime.TopicRef> = {};
   for (const [topicName, config] of Object.entries(topics)) {
@@ -41,14 +41,13 @@ export const channel = <
   const TName extends string | ((...args: never[]) => string),
   const TTopics extends Realtime.TopicsConfig,
 >(
-  options: ChannelOptions<TName, TTopics>,
+  options: ChannelOptions<TName, TTopics>
 ): InferChannelReturn<TName, TTopics> => {
   const { name, topics } = options;
 
   if (typeof name === "function") {
     //
     // Parameterized channel: calling the definition with params returns a ChannelInstance
-    //
     const def = (...args: unknown[]) => {
       const resolvedName = (name as (...args: unknown[]) => string)(...args);
       return {
@@ -70,7 +69,6 @@ export const channel = <
 
   //
   // Static channel: the definition itself acts as a ChannelInstance
-  //
   const instance = {
     name,
     topics,

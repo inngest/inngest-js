@@ -10,7 +10,11 @@ export const fetchRealtimeSubscriptionToken = async () => {
     topics: ["logs"],
   });
 
-  return token;
+  if (!token.key) {
+    throw new Error("No realtime subscription token key returned");
+  }
+
+  return token.key;
 };
 
 export const pause = async () => {

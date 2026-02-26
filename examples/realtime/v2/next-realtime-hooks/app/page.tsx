@@ -2,15 +2,29 @@
 
 import { useState } from "react";
 import { useRealtime } from "inngest/react";
+import { helloChannel } from "@/inngest/channels";
 import { fetchRealtimeSubscriptionToken, pause, resume } from "./actions";
+
+const realtimeTopics = ["logs"] as const;
 
 export default function Home() {
   const [bufferInterval, setBufferInterval] = useState<number>(0);
   const [enabled, setEnabled] = useState<boolean>(true);
   const [tab, setTab] = useState<"fresh" | "latest">("fresh");
 
-  const { data, error, freshData, state, latestData } = useRealtime({
-    refreshToken: fetchRealtimeSubscriptionToken,
+  const {
+    data,
+    error,
+    freshData,
+    latestData,
+    status,
+    runStatus,
+    latest,
+    reset,
+  } = useRealtime({
+    channel: helloChannel,
+    topics: realtimeTopics,
+    token: fetchRealtimeSubscriptionToken,
     bufferInterval,
     enabled,
   });
@@ -19,11 +33,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#1a1a1a] text-[#e0e0e0] font-sans max-w-screen">
-      <header className="sticky top-0 z-10 flex items-center justify-between p-6 sm:p-10 border-b border-neutral-700 bg-[#1a1a1a]">
+      <header className="sticky top-0 z-10 grid grid-cols-[auto_auto_minmax(320px,1fr)] items-center gap-4 p-6 sm:p-10 border-b border-neutral-700 bg-[#1a1a1a]">
         <div className="flex items-center gap-4 text-lg font-bold">
           INNGEST REALTIME v2
         </div>
-        <div>
+        <div className="shrink-0 whitespace-nowrap">
           <button
             className="bg-green-500 text-white px-4 py-2 rounded-md mr-5 cursor-pointer"
             onClick={() => resume()}
@@ -37,9 +51,15 @@ export default function Home() {
             Stop
           </button>
         </div>
-        <div className="text-xs text-[#999] font-mono">
-          Subscription State:{" "}
-          <span className="font-semibold text-white">{state}</span>
+        <div className="text-xs text-[#999] font-mono justify-self-end w-full max-w-[420px] text-right whitespace-nowrap overflow-hidden text-ellipsis">
+          Connection:{" "}
+          <span className="font-semibold text-white inline-block w-[80px] text-left">
+            {status}
+          </span>
+          {" | "}Run:{" "}
+          <span className="font-semibold text-white inline-block w-[90px] text-left">
+            {runStatus}
+          </span>
         </div>
       </header>
 
@@ -88,6 +108,18 @@ export default function Home() {
                 {error?.message || "None"}
               </pre>
             </div>
+            <div>
+              <div className="font-semibold mb-1 text-white">Latest (typed map)</div>
+              <pre className="text-xs bg-neutral-800 p-2 rounded text-blue-300 whitespace-pre-wrap break-words max-h-40 overflow-auto">
+                {JSON.stringify(latest, null, 2)}
+              </pre>
+            </div>
+            <button
+              onClick={() => reset()}
+              className="w-full py-2 rounded-md border border-neutral-600 hover:border-neutral-400"
+            >
+              Reset History
+            </button>
           </div>
         </aside>
 

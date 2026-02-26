@@ -3,11 +3,11 @@
 Status: Not started
 Author: Jacob
 Created At: February 12, 2026 9:35 AM
-Last Edited: February 25, 2026
+Last Edited: February 25, 2026 4:25 PM
 
 ## Context / goals
 
-This spec defines the Realtime SDK experience inside the core inngest JS/TS SDK (v4) that makes it easy to:
+This spec defines a new Realtime SDK experience inside the core inngest JS/TS SDK v4 (removing `@inngest/realtime`) that makes it easy to:
 
 - Trigger an Inngest function run and subscribe to typed updates from that run.
 - Build realtime UIs (React-first) without thinking about connections, chunking, parsing, or lifecycle.
@@ -24,7 +24,7 @@ This spec defines the Realtime SDK experience inside the core inngest JS/TS SDK 
 
 ## Non-goals
 
-- "Durable streams" as a platform feature.
+- “Durable streams” as a platform feature.
 - Automatic AI semantics like `step.ai.infer()` or step-status streaming as a default product surface.
 - Designing new backend realtime infrastructure. We aim to reuse existing realtime tech.
 
@@ -46,7 +46,7 @@ Users want to:
 
 ### Why now
 
-If the realtime experience requires ~100 lines of custom boilerplate, we are not competitive for AI workflows. We need a paved path from "first Inngest function" to "realtime UI."
+If the realtime experience requires ~100 lines of custom boilerplate, we are not competitive for AI workflows. We need a paved path from “first Inngest function” to “realtime UI.”
 
 ---
 
@@ -58,7 +58,7 @@ Channels are the core namespace for realtime data. Channels are user-defined str
 
 ### Declaring channels
 
-Topics are typed using [Standard Schema](https://standardschema.dev/) (the same spec used elsewhere in the SDK for event schemas, invoke triggers, etc.). Any Standard Schema compatible library works: Zod, Valibot, ArkType, and others. For type-only topics that don't need runtime validation, use `staticSchema<T>()` from `"inngest"`, which returns a passthrough Standard Schema with zero validation cost.
+Topics are typed using [Standard Schema](https://standardschema.dev/) (the same spec used elsewhere in the SDK for event schemas, invoke triggers, etc.). Any Standard Schema compatible library works: Zod, Valibot, ArkType, and others. For type-only topics that don't need runtime validation, use `staticSchema<T>()` from `"inngest"`, which returns a passthrough Standard Schema with zero validation cost.
 
 ```tsx
 import { realtime, staticSchema } from "inngest";
@@ -166,10 +166,10 @@ export const contentPipeline = realtime.channel({
 
 **Key design decisions:**
 
-- **Channels are just strings.** The `name` can be a static string or a function that returns a string. This means channels can represent anything.
-- **Topics are declared per-channel.** Each topic has a `schema` that is any [Standard Schema](https://standardschema.dev/) compatible value. For runtime validation, use Zod, Valibot, ArkType, etc. For type-only topics with no runtime cost, use `staticSchema<T>()`. This replaces the verbose `.addTopic(topic("name").type<T>())` builder from `@inngest/realtime`.
-- **`staticSchema<T>()`** is the same helper already used elsewhere in the SDK (event schemas, invoke triggers). It returns a Standard Schema compliant passthrough, meaning topics always have one config shape (`{ schema }`) regardless of whether they validate at runtime.
-- **One declaration, used everywhere.** The same channel object is imported in functions (to publish) and in UI components (to subscribe). Types flow E2E. *Note*: not entirely sure about this, maybe too much conceptual overhead.
+- **Channels are just strings.** The `name` can be a static string or a function that returns a string. This means channels can represent anything.
+- **Topics are declared per-channel.** Each topic has a `schema` that is any [Standard Schema](https://standardschema.dev/) compatible value. For runtime validation, use Zod, Valibot, ArkType, etc. For type-only topics with no runtime cost, use `staticSchema<T>()`. This replaces the verbose `.addTopic(topic("name").type<T>())` builder from `@inngest/realtime`.
+- **`staticSchema<T>()`** is the same helper already used elsewhere in the SDK (event schemas, invoke triggers). It returns a Standard Schema compliant passthrough, meaning topics always have one config shape (`{ schema }`) regardless of whether they validate at runtime.
+- **One declaration, used everywhere.** The same channel object is imported in functions (to publish) and in UI components (to subscribe). Types flow E2E. *Note*: not entirely sure about this, maybe too much conceptual overhead.
 
 ### Instantiating channels
 
@@ -187,9 +187,9 @@ const alerts = systemAlerts;
 Channel instances are lightweight, serializable value objects. Each topic defined on the channel is also exposed as a **topic accessor** on the instance: a lightweight reference that carries the resolved channel name, topic name, and payload type. These accessors are used when publishing.
 
 ```tsx
-// myChat.status -> TopicRef for "agent-chat:thread_abc123" / "status"
-// myChat.tokens -> TopicRef for "agent-chat:thread_abc123" / "tokens"
-// systemAlerts.alert -> TopicRef for "system:alerts" / "alert"
+// myChat.status → TopicRef for "agent-chat:thread_abc123" / "status"
+// myChat.tokens → TopicRef for "agent-chat:thread_abc123" / "tokens"
+// systemAlerts.alert → TopicRef for "system:alerts" / "alert"
 ```
 
 ### Inferred types
@@ -212,8 +212,8 @@ Topics belong to a channel. Each topic defines the shape of one category of mess
 
 | Option | Runtime validation | Bundle cost | Use when |
 | --- | --- | --- | --- |
-| `schema: z.object({...})` (or any Standard Schema) | Yes (opt-in per subscriber) | Includes schema library | You want E2E validation or use schemas elsewhere |
-| `schema: staticSchema<T>()` | No | Zero runtime cost | Client-only consumption, bundle size matters |
+| `schema: z.object({...})` | Yes (default, per subscriber, can opt out) | Includes Zod reference | You want E2E validation or use schemas elsewhere |
+| `realtime.type<T>()` | No | Zero runtime cost | Client-only consumption, bundle size matters |
 
 ### 3) Message envelope
 
@@ -228,22 +228,22 @@ export type RealtimeMessage<T> = {
 
 ### 4) Run lifecycle
 
-The platform emits well-known lifecycle messages so subscribers can distinguish "the run finished" from "the connection dropped." These are delivered on a reserved topic within whatever channel the function publishes to.
+The platform emits well-known lifecycle messages so subscribers can distinguish “the run finished” from “the connection dropped.” These are delivered on a reserved topic within whatever channel the function publishes to.
 
 **Behavior:**
 
 - When a run finishes (success, failure, or cancellation), the platform publishes a final lifecycle message with the terminal status to the channel(s) that function published to.
 - The React hook exposes this as a dedicated `runStatus` field (see hooks section) so users never need to subscribe to this topic manually.
-- If the connection drops before a lifecycle message is received, the hook's `status` will be `"error"` (connection-level) while `runStatus` remains `"running"` making the distinction unambiguous.
+- If the connection drops before a lifecycle message is received, the hook’s `status` will be `"error"` (connection-level) while `runStatus` remains `"running"` making the distinction unambiguous.
 
 ---
 
 ## Channel portability across server/client boundaries
 
-Channel definitions are intended to be **isomorphic,** importable in both server functions and client components. To make this practical across framework boundaries (e.g. Next.js `"use server"` / `"use client"`):
+Channel definitions are intended to be **isomorphic,** importable in both server functions and client components. To make this practical across framework boundaries (e.g. Next.js `"use server"` / `"use client"`):
 
 - **`staticSchema<T>()` topics** produce zero-dependency objects safe for any environment. This is the recommended default for client-heavy use cases where bundle size matters.
-- **Standard Schema based topics** (e.g. Zod, Valibot) carry the validator at runtime. This is designed for server-side validation or shared modules where the schema library is already in the bundle.
+- **Standard Schema based topics** (e.g. Zod, Valibot) carry the validator at runtime. This is designed for server-side validation or shared modules where the schema library is already in the bundle.
 - **For client-side tree-shaking**, the recommended pattern is to co-locate channels in a shared `channels.ts` file that avoids importing heavy server dependencies. When a schema is present but only the type is needed client-side, users can import the inferred type only:
 
 ```tsx
@@ -266,13 +266,13 @@ import type { typeof agentChat.topics.status.$infer } from "@/channels";
 ```
 
 - The SDK must ensure that `realtime.channel()` itself does **not** pull in Node-only APIs, so the object is safe to import in browser/edge runtimes.
-- Subscriber-side validation (actually invoking the schema's `.validate()`) is **opt-in** and off by default in React hooks to keep the client bundle lean. It can be enabled per-subscription:
+- Subscriber-side validation (actually invoking the schema’s `.validate()`) is on by default and **opt-out**:
 
 ```tsx
 useRealtime({
   channel: agentChat({ threadId }),
   topics: ["status"],
-  validate: true, // opt-in: invokes schema validate on each message
+  validate: false, // opt-out here, on by default
 });
 ```
 
@@ -280,7 +280,7 @@ useRealtime({
 
 ## Publishing API
 
-Publishing uses **topic accessors,** dot-access properties on a channel instance that resolve to a typed topic reference. This gives full autocomplete on topic names and constrains the data argument to match the selected topic's schema.
+Publishing uses **topic accessors,** dot-access properties on a channel instance that resolve to a typed topic reference. This gives full autocomplete on topic names and constrains the data argument to match the selected topic’s schema.
 
 ```tsx
 // Signature
@@ -319,7 +319,7 @@ export const aiChat = inngest.createFunction(
 );
 ```
 
-**Typing:** `publish(chat.tokens, data)` is fully typed.  The topic name is autocompleted via dot-access from the channel instance, and the `data` argument is typed to match that topic's schema. Accessing an unknown topic is a compile error, and passing the wrong data shape is a compile error.
+**Typing:** `publish(chat.tokens, data)` is fully typed. The topic name is autocompleted via dot-access from the channel instance, and the `data` argument is typed to match that topic’s schema. Accessing an unknown topic is a compile error, and passing the wrong data shape is a compile error.
 
 ### Durable publish via `step.realtime.publish`
 
@@ -341,7 +341,7 @@ export const aiChat = inngest.createFunction(
       await publish(chat.tokens, { token });
     }
 
-    // Durable: memoized, won't re-fire on retry
+    // Durable: memoized, won’t re-fire on retry
     await step.realtime.publish("publish-result", chat.status, {
       message: "Done",
     });
@@ -361,7 +361,7 @@ step.realtime.publish(
 
 **When to use which:**
 
-| | `publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
+|  | `publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
 | --- | --- | --- |
 | Durable / memoized | No | Yes |
 | Re-fires on retry | Yes | No (skipped via memoization) |
@@ -434,7 +434,7 @@ export async function POST(req: Request) {
 
 ## React hooks (primary UI DX)
 
-Hooks ship from the core SDK distribution (e.g. `inngest/react`).
+Hooks ship from the core SDK distribution (e.g. `inngest/react`).
 
 ### `useRealtime`
 
@@ -512,7 +512,7 @@ The hook auto-closes the connection shortly after receiving a terminal `runStatu
 ## Performance / correctness
 
 - Validation is optional and configurable per subscription (fast-path when using `staticSchema`).
-- Hook buffers are bounded by default; "infinite history" is opt-in.
+- Hook buffers are bounded by default; “infinite history” is opt-in.
 - Existing realtime constraints (message size, TTL, plan limits) remain and must be documented prominently.
 
 ---
@@ -562,4 +562,234 @@ For dashboards or batch UIs that need to observe multiple concurrent channels (e
 
 ### Future: AI ecosystem adapters
 
-The subscribe API returns async iterables, which can be adapted to framework-specific streaming protocols (Vercel AI SDK, TanStack, LangChain) via thin adapter packages. These adapters would be shape-conversion only (realtime messages to framework streaming protocols) and shipped as separate entry points (e.g. `inngest/ai/vercel`, `inngest/ai/tanstack`).
+The subscribe API returns async iterables, which can be adapted to framework-specific streaming protocols (Vercel AI SDK, TanStack, LangChain) via thin adapter packages. These adapters would be shape-conversion only (realtime messages to framework streaming protocols) and shipped as separate entry points (e.g. `inngest/ai/vercel`, `inngest/ai/tanstack`).
+
+### IGNORE: some old spec sections preserved below for comments/ideas
+
+## Trigger + subscribe (invoke-and-subscribe)
+
+This is the **primary happy path** for AI and long-running workflows: fire a function and immediately get a typed stream back, with no manual plumbing.
+
+### Server-side: `inngest.realtime.invoke()`
+
+```tsx
+// `channelId` the resolved channel name string
+// `token` a scoped subscription token for the requested channel+topics
+// `stream` an async iterable already subscribed
+const { channelId, token, stream } = await inngest.realtime.invoke({
+  function: "app/ai-chat",
+  data: { threadId: "thread_abc", prompt: "..." },
+  channel: agentChat({ threadId: "thread_abc" }),
+  topics: ["status", "tokens"],
+});
+```
+
+**Behavior:**
+
+1. Sends the function invocation (via Durable Endpoints or event send, abstracted away).
+2. Mints a subscription token scoped to the specified channel + topics.
+3. Opens a subscription and returns the stream, channel ID, and token.
+
+### Returning the stream from a route handler
+
+```tsx
+// app/api/chat/route.ts (Next.js example)
+import { toResponse } from "inngest/ai/vercel";
+
+export async function POST(req: Request) {
+  const { threadId, prompt } = await req.json();
+
+  const { stream } = await inngest.realtime.invoke({
+    function: "app/ai-chat",
+    data: { threadId, prompt },
+    channel: agentChat({ threadId }),
+    topics: ["tokens"],
+  });
+
+  // Option A: proxy the stream as SSE (AI SDK compatible)
+  return toResponse(stream, {
+    map: (msg) => msg.data,
+  });
+}
+```
+
+```tsx
+// Or Option B: return the token and let the client subscribe directly
+export async function POST(req: Request) {
+  const { threadId, prompt } = await req.json();
+
+  const { channelId, token } = await inngest.realtime.invoke({
+    function: "app/ai-chat",
+    data: { threadId, prompt },
+    channel: agentChat({ threadId }),
+    topics: ["status", "tokens"],
+  });
+
+  return Response.json({ channelId, token });
+}
+```
+
+### Client-side: React `useInvoke` hook
+
+For the most streamlined client experience, a dedicated hook wraps the invoke-and-subscribe flow:
+
+```tsx
+import { useInvoke } from "inngest/react";
+import { agentChat } from "@/channels";
+
+function ChatUI({ threadId }: { threadId: string }) {
+  const { invoke, status, runStatus, latest, error } = useInvoke({
+    endpoint: "/api/chat",
+    channel: agentChat({ threadId }),
+    topics: ["status", "tokens"],
+  });
+
+  return (
+    <div>
+      <button onClick={() => invoke({ threadId, prompt: "Hello" })}>
+        Start
+      </button>
+
+      {latest.tokens && <span>{latest.tokens.data.token}</span>}
+      {latest.status && <p>{latest.status.data.message}</p>}
+      {runStatus === "completed" && <p>Done!</p>}
+      {runStatus === "failed" && <p>Error: {error?.message}</p>}
+    </div>
+  );
+}
+```
+
+**`useInvoke` behavior:**
+
+1. On `invoke(data)`, POSTs to the endpoint with the provided data.
+2. Expects the endpoint to return `{ channelId, token }` (Option B pattern above).
+3. Automatically opens a realtime subscription using the returned token.
+4. Exposes the same `status`, `runStatus`, `latest`, `history`, and `error` fields as `useRealtime`.
+5. Handles cleanup (unsubscribe) on unmount or re-invoke.
+
+---
+
+---
+
+## AI ecosystem support (thin bridges)
+
+### Principles
+
+- Adapters are shape conversion only: realtime messages → framework streaming protocols.
+- Core SDK remains framework-agnostic.
+- Primary exports are consistent across adapter packages, while framework-idiomatic aliases exist for discoverability.
+
+### Adapter naming + exports (consistency first)
+
+Each adapter package (`inngest/ai/vercel`, `inngest/ai/tanstack`, `inngest/ai/langchain`) exposes a predictable, scannable surface:
+
+- `toResponse(...)` for route handlers / SSE Response
+- `toStream(...)` for returning a ReadableStream (where applicable)
+- `toEvents(...)` for event-first frameworks (where applicable)
+- `AdapterOptions` consistent options type name per package
+
+Framework terminology is provided as aliases, not the primary API, to keep the surface consistent.
+
+### inngest/ai/vercel
+
+```tsx
+import { toResponse, toStream, type AdapterOptions } from "inngest/ai/vercel";
+
+// Framework-idiomatic alias:
+import { toDataStreamResponse } from "inngest/ai/vercel";
+```
+
+Example:
+
+```tsx
+import { toResponse as toVercelResponse } from "inngest/ai/vercel";
+import { agentChat } from "@/channels";
+
+export async function GET() {
+  const stream = inngest.realtime.subscribe({
+    channel: agentChat({ threadId }),
+    topics: ["tokens"],
+  });
+
+  return toVercelResponse(stream, {
+    map: (msg) => msg.data,
+  });
+}
+```
+
+**Behavior:**
+
+- Emits Vercel AI SDK “data stream” SSE frames.
+- Sets any required protocol headers.
+- Terminates with `[DONE]`.
+
+### inngest/ai/tanstack
+
+```tsx
+import { toResponse, toStream, type AdapterOptions } from "inngest/ai/tanstack";
+
+// Framework-idiomatic alias:
+import { toSSE } from "inngest/ai/tanstack";
+```
+
+Example:
+
+```tsx
+import { toResponse as toTanStackResponse } from "inngest/ai/tanstack";
+import { agentChat } from "@/channels";
+
+export function GET() {
+  const stream = inngest.realtime.subscribe({
+    channel: agentChat({ threadId }),
+    topics: ["status"],
+  });
+
+  return toTanStackResponse(stream, {
+    mapToChunk: (msg) => ({
+      type: "data",
+      data: msg.data,
+      topic: msg.topic,
+      sentAt: msg.sentAt,
+    }),
+  });
+}
+```
+
+### inngest/ai/langchain
+
+```tsx
+import { toEvents, toStream, type AdapterOptions } from "inngest/ai/langchain";
+
+// Framework-idiomatic alias:
+import { toStreamEvents } from "inngest/ai/langchain";
+```
+
+Example:
+
+```tsx
+import { toEvents as toLangChainEvents } from "inngest/ai/langchain";
+import { agentChat } from "@/channels";
+
+const stream = inngest.realtime.subscribe({
+  channel: agentChat({ threadId }),
+  topics: ["tokens"],
+});
+
+for await (const event of toLangChainEvents(stream, {
+  tokenSelector: (msg) => msg.data.token,
+})) {
+  // Consume a minimal streamEvents()-style event stream
+}
+```
+
+### Optional: single discovery entrypoint
+
+```tsx
+import { ai } from "inngest/ai";
+
+ai.vercel.toResponse(...)
+ai.tanstack.toResponse(...)
+ai.langchain.toEvents(...)
+```
+
+---

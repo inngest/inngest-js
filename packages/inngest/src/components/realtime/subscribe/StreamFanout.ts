@@ -37,7 +37,9 @@ export class StreamFanout<TInput = unknown> {
   close() {
     for (const writer of this.#writers) {
       try {
-        writer.close();
+        void writer.close().catch(() => {
+          // Ignore errors, as the writer may already be closed.
+        });
       } catch {
         // Ignore errors, as we are closing the stream and the writer may
         // already be closed, especially if the stream is closed before the
