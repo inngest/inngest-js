@@ -13,5 +13,11 @@ export default defineConfig({
     hookTimeout: 30000,
     silent: "passed-only",
     hideSkippedTests: true,
+    typecheck: {
+      enabled: true,
+      include: ["src/test/integration/**/*.test.ts"],
+      ignoreSourceErrors: true,
+      tsconfig: "./tsconfig.integration.json",
+    },
   },
 });
