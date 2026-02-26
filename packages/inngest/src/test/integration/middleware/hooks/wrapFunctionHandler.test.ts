@@ -1,12 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware, NonRetriableError } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   createState,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware, NonRetriableError } from "../../../../index.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

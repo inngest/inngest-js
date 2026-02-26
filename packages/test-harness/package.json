@@ -5,7 +5,6 @@
   "description": "Internal integration test harness for Inngest packages",
   "main": "src/index.ts",
   "devDependencies": {
-    "inngest": "workspace:*",
     "typescript": "~5.8.2",
     "vitest": "^3.0.8"
   }

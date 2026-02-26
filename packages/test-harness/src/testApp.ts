@@ -1,7 +1,7 @@
 import type http from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Inngest, InngestFunction } from "inngest";
-import { createServer as createNodeServer } from "inngest/node";
+import type { Inngest, InngestFunction } from "../../inngest/src/index.ts";
+import { createServer as createNodeServer } from "../../inngest/src/node.ts";
 
 /**
  * Create a test server using the Node.js serve handler.

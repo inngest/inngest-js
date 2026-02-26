@@ -1,14 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware, StepError } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  assertStepError,
   createState,
-  isRecord,
-  matrixCheckpointing,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware, StepError } from "../../../../index.ts";
+import { assertStepError, isRecord, matrixCheckpointing } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

@@ -1,20 +1,7 @@
-import path from "path";
+import { DEV_SERVER_URL, sleep, waitFor } from "@inngest/test-harness";
 import { z } from "zod/v3";
 import { Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";
-import { DEV_SERVER_URL } from "../devServerTestHarness.ts";
-
-export function randomSuffix(value: string): string {
-  return `${value}-${Math.random().toString(36).substring(2, 15)}`;
-}
-
-export function testNameFromFileUrl(fileUrl: string): string {
-  const basename = path.basename(fileUrl).split(".")[0];
-  if (!basename) {
-    throw new Error("unreachable");
-  }
-  return basename;
-}
 
 export function assertStepError(
   actual: unknown,
@@ -188,17 +175,6 @@ export const anyContext = {
   step: expect.any(Object),
 };
 
-export async function sleep(ms: number = 1000): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Wrapper around `vitest.waitFor` with a 10-second default timeout.
- */
-export const waitFor: typeof vitest.waitFor = (callback, timeout = 20_000) => {
-  return vitest.waitFor(callback, timeout);
-};
-
 type RunResult =
   | { data: unknown; error?: undefined }
   | { data?: undefined; error: unknown };
@@ -254,44 +230,6 @@ async function fetchRunResult(
   }
 
   throw new Error(`Timed out waiting for run ${runId} to end`);
-}
-
-export class BaseState {
-  runId: string | null = null;
-
-  async waitForRunId(): Promise<string> {
-    return waitFor(async () => {
-      expect(this.runId).not.toBeNull();
-      return this.runId!;
-    });
-  }
-
-  async waitForRunComplete(): Promise<unknown> {
-    const runId = await this.waitForRunId();
-    const result = await fetchRunResult(runId);
-    if (result.error) {
-      throw new Error(
-        `Expected run ${runId} to complete, but it errored: ${JSON.stringify(result.error)}`,
-      );
-    }
-    return result.data;
-  }
-
-  async waitForRunFailed(): Promise<void> {
-    const runId = await this.waitForRunId();
-    const result = await fetchRunResult(runId);
-    if (!result.error) {
-      throw new Error(
-        `Expected run ${runId} to fail, but it completed with: ${JSON.stringify(result.data)}`,
-      );
-    }
-  }
-}
-
-export function createState<T extends Record<string, unknown>>(
-  initial?: T,
-): BaseState & T {
-  return Object.assign(new BaseState(), initial);
 }
 
 const fetchEventSchema = z.object({

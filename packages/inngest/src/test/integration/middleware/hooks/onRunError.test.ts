@@ -1,13 +1,13 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  anyContext,
   createState,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

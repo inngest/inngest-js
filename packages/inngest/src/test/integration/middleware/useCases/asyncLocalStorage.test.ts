@@ -1,8 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

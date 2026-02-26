@@ -1,13 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  BaseSerializerMiddleware,
   createState,
-  isRecord,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { BaseSerializerMiddleware, isRecord } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

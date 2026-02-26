@@ -1,7 +1,11 @@
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test, vi } from "vitest";
 import { Inngest } from "../../index.ts";
-import { createTestApp } from "../devServerTestHarness.ts";
-import { createState, randomSuffix, testNameFromFileUrl } from "./utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 

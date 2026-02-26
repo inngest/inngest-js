@@ -714,12 +714,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       step,
     } as unknown as BaseContext<Inngest.Any>;
 
-    const dummyFn = new InngestFunction(
-      this,
-      { id: "__proxy__", triggers: [] },
-      async () => {},
-    );
-
     let transformArgs: Middleware.TransformFunctionInputArgs = {
       ctx: dummyCtx,
       fn: this.getDummyDurableEndpointFunction(),
