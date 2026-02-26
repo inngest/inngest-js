@@ -1,8 +1,4 @@
-// Use direct relative path — global setup context may not resolve vitest aliases.
-import {
-  startDevServer,
-  stopDevServer,
-} from "../test-harness/src/devServer.ts";
+import { startDevServer, stopDevServer } from "./src/test-harness/devServer.ts";
 
 const devServerEnabled = process.env.DEV_SERVER_ENABLED !== "0";
 
