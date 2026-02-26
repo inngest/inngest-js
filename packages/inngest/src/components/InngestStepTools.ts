@@ -493,13 +493,17 @@ export const createStepTools = <
      */
     realtime: {
       /**
-       * Publish a realtime message to a particular topic and channel as a step.
+       * Publish a realtime message as a durable step. Memoized and will not
+       * re-fire on retry, unlike context-level `publish()`.
+       *
+       * Uses topic accessors: `step.realtime.publish("id", chat.status, data)`
        */
       publish: createTool<
-        <TMessage extends Realtime.Message.Input>(
+        <TData>(
           idOrOptions: StepOptionsOrId,
-          opts: TMessage,
-        ) => Promise<Awaited<TMessage>["data"]>
+          topicRef: Realtime.TopicRef<TData>,
+          data: TData,
+        ) => Promise<TData>
       >(
         ({ id, name }) => {
           return {
@@ -514,15 +518,33 @@ export const createStepTools = <
           };
         },
         {
-          fn: (ctx, _idOrOptions, opts) => {
-            return client["inngestApi"].publish(
+          fn: async (ctx, _idOrOptions, topicRef, data) => {
+            const topicConfig = topicRef.config;
+            if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
+              const result = await topicConfig.schema["~standard"].validate(data);
+              if (result.issues) {
+                throw new Error(
+                  `Schema validation failed for topic "${topicRef.topic}"`,
+                );
+              }
+            }
+
+            const res = await client["inngestApi"].publish(
               {
-                topics: [opts.topic],
-                channel: opts.channel,
+                topics: [topicRef.topic],
+                channel: topicRef.channel,
                 runId: ctx.runId,
               },
-              opts.data,
+              data,
             );
+
+            if (!res.ok) {
+              throw new Error(
+                `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
+              );
+            }
+
+            return data;
           },
         },
       ),

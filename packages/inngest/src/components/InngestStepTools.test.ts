@@ -12,7 +12,8 @@ import {
 import { type InvocationResult, StepOpCode } from "../types.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
-import type { createStepTools } from "./InngestStepTools.ts";
+import { createStepTools } from "./InngestStepTools.ts";
+import { realtime } from "./realtime/index.ts";
 
 describe("waitForEvent", () => {
   let step: StepTools;
@@ -137,6 +138,102 @@ describe("waitForEvent", () => {
       step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       userland: { id: "id" },
+    });
+  });
+});
+
+describe("realtime step tools", () => {
+  describe("step.realtime.publish", () => {
+    const createExecutableStepTools = () => {
+      const client = createClient({ id: testClientId, isDev: true });
+
+      const step = createStepTools(
+        client,
+        {} as never,
+        async ({ args, opts }) => {
+          if (!opts?.fn) {
+            throw new Error("Expected tool fn");
+          }
+
+          return opts.fn(
+            { runId: "run_123" } as never,
+            ...(args as unknown[]),
+          );
+        },
+      );
+
+      return { client, step };
+    };
+
+    test("returns the published data on success", async () => {
+      const { client, step } = createExecutableStepTools();
+      const publishSpy = vi
+        .spyOn(client["inngestApi"], "publish")
+        .mockResolvedValue({ ok: true, value: undefined });
+
+      const ch = realtime.channel({
+        name: "test",
+        topics: {
+          status: { schema: z.object({ message: z.string() }) },
+        },
+      });
+
+      const payload = { message: "hello" };
+      const result = await step.realtime.publish(
+        "publish-status",
+        ch.status,
+        payload,
+      );
+
+      expect(result).toEqual(payload);
+      expect(publishSpy).toHaveBeenCalledWith(
+        {
+          topics: ["status"],
+          channel: "test",
+          runId: "run_123",
+        },
+        payload,
+      );
+    });
+
+    test("throws if schema validation fails", async () => {
+      const { client, step } = createExecutableStepTools();
+      const publishSpy = vi.spyOn(client["inngestApi"], "publish");
+
+      const ch = realtime.channel({
+        name: "test",
+        topics: {
+          status: { schema: z.object({ message: z.string() }) },
+        },
+      });
+
+      await expect(
+        // @ts-expect-error intentional invalid payload for runtime validation
+        step.realtime.publish("publish-status", ch.status, { message: 123 }),
+      ).rejects.toThrow("Schema validation failed");
+
+      expect(publishSpy).not.toHaveBeenCalled();
+    });
+
+    test("throws if the publish API returns an error result", async () => {
+      const { client, step } = createExecutableStepTools();
+      vi.spyOn(client["inngestApi"], "publish").mockResolvedValue({
+        ok: false,
+        error: { error: "Nope", status: 500 },
+      });
+
+      const ch = realtime.channel({
+        name: "test",
+        topics: {
+          status: { schema: z.object({ message: z.string() }) },
+        },
+      });
+
+      await expect(
+        step.realtime.publish("publish-status", ch.status, {
+          message: "hello",
+        }),
+      ).rejects.toThrow("Failed to publish to realtime: Nope");
     });
   });
 });

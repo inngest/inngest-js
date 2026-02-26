@@ -1,0 +1,34 @@
+#
+# Standard Next.js ignores
+#
+
+# Dependencies
+/node_modules
+
+# Next.js build output
+/.next
+/.next/cache
+/out
+
+# Build artifacts
+/build
+/dist
+
+# Environment variables (local-only)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Vercel
+.vercel

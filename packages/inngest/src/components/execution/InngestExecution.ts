@@ -104,7 +104,7 @@ export interface InngestExecutionOptions {
   internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
-  data: Omit<Context.Any, "step" | "group">;
+  data: Omit<Context.Any, "step" | "group" | "publish">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;

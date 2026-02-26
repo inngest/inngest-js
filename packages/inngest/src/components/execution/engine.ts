@@ -62,6 +62,7 @@ import type { Middleware } from "../middleware/middleware.ts";
 import { UnreachableError } from "../middleware/utils.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
+import type { Realtime } from "../realtime/types.ts";
 import { StepError } from "../StepError.ts";
 import { validateEvents } from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
@@ -1212,10 +1213,38 @@ class InngestExecutionEngine
   private createFnArg(): Context.Any {
     const step = this.createStepTools();
 
+    const publish: Realtime.TypedPublishFn = async (topicRef, data) => {
+      const topicConfig = topicRef.config;
+      if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
+        const result = await topicConfig.schema["~standard"].validate(data);
+        if (result.issues) {
+          throw new Error(
+            `Schema validation failed for topic "${topicRef.topic}"`,
+          );
+        }
+      }
+
+      const res = await this.options.client["inngestApi"].publish(
+        {
+          channel: topicRef.channel,
+          topics: [topicRef.topic],
+          runId: this.options.runId,
+        },
+        data,
+      );
+
+      if (!res.ok) {
+        throw new Error(
+          `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
+        );
+      }
+    };
+
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
       group: createGroupTools(),
+      publish,
     } as Context.Any;
 
     /**

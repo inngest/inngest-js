@@ -1,0 +1,20 @@
+{
+  "name": "realtime-v2-example",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -c blue,green \"npm:dev:*\"",
+    "dev:server": "npx inngest-cli@latest dev --sdk-url http://localhost:3000/api/inngest --retry-interval 1",
+    "dev:app": "wait-port 8288 && tsx index.ts"
+  },
+  "dependencies": {
+    "inngest": "^3.52.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
+    "wait-port": "^1.1.0"
+  }
+}
