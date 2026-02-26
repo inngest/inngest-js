@@ -516,15 +516,7 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
-        // Transform data for checkpoint (middleware)
-        // Only call the transformOutput hook directly, not the full transformOutput method
-        // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: checkpoint.data },
-          step: undefined,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? checkpoint.data;
+        const transformedData = checkpoint.data;
 
         await this.checkpoint([
           {
@@ -1862,6 +1854,7 @@ class InngestExecutionEngine
 
     void this.timeout.then(async () => {
       await this.middlewareManager.onMemoizationEnd();
+      const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
       state.setCheckpoint({
         type: "step-not-found",
         step: {
