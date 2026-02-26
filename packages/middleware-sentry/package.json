@@ -8,9 +8,9 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.config.integration.ts",
     "build": "tsc",
-    "lint": "eslint",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js"
   },
@@ -32,19 +32,16 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@eslint/js": "^9.7.0",
+    "@inngest/test-harness": "workspace:*",
     "@sentry/core": "^8.8.0",
     "@sentry/types": "^8.8.0",
-    "eslint": "^9.18.0",
-    "eslint-plugin-prettier": "^5.2.2",
-    "globals": "^15.14.0",
-    "inngest": "^3.42.3",
-    "typescript": "~5.4.0",
-    "typescript-eslint": "^7.16.1"
+    "inngest": ">=4.0.0-alpha.6 <5.0.0",
+    "typescript": "~5.8.2",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "@sentry/core": ">=8.0.0",
     "@sentry/types": ">=8.0.0",
-    "inngest": ">=3.42.3"
+    "inngest": ">=4.0.0-alpha.6 <5.0.0"
   }
 }
