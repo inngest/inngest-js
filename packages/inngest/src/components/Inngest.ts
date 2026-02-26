@@ -691,6 +691,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * Runs `transformFunctionInput` on each middleware instance to decrypt
    * step data (used by encryption middleware).
    *
+   * Uses type assertions because we're creating a minimal "fake" execution
+   * context just to run the decryption middleware hooks - not a full execution.
+   *
    * @internal
    */
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via bracket notation by InngestProxyHandler
