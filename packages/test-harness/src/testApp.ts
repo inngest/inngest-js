@@ -98,6 +98,16 @@ export async function createTestApp(options: {
   // Register with the Dev Server
   await registerApp(inngestUrl);
 
+  // Auto-close server when the current test finishes
+  const { onTestFinished } = await import("vitest");
+  onTestFinished(() => {
+    return new Promise<void>((resolve) => {
+      finalServer.close(() => {
+        resolve();
+      });
+    });
+  });
+
   return {
     server: finalServer,
     port,

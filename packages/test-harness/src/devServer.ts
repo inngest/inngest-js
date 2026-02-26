@@ -139,10 +139,6 @@ export async function stopDevServer(): Promise<void> {
       return;
     }
 
-    proc.on("exit", () => {
-      resolve();
-    });
-
     // Give it some time to exit gracefully
     const forceKillTimeout = setTimeout(() => {
       proc.kill("SIGKILL");
@@ -150,6 +146,7 @@ export async function stopDevServer(): Promise<void> {
 
     proc.on("exit", () => {
       clearTimeout(forceKillTimeout);
+      resolve();
     });
 
     proc.kill("SIGTERM");

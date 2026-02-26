@@ -143,10 +143,6 @@ export async function stopDevServer(): Promise<void> {
       return;
     }
 
-    proc.on("exit", () => {
-      resolve();
-    });
-
     // Give it some time to exit gracefully
     const forceKillTimeout = setTimeout(() => {
       proc.kill("SIGKILL");
@@ -154,6 +150,7 @@ export async function stopDevServer(): Promise<void> {
 
     proc.on("exit", () => {
       clearTimeout(forceKillTimeout);
+      resolve();
     });
 
     proc.kill("SIGTERM");
@@ -272,6 +269,16 @@ export async function createTestApp(options: {
 
   // Register with the Dev Server
   await registerApp(inngestUrl);
+
+  // Auto-close server when the current test finishes
+  const { onTestFinished } = await import("vitest");
+  onTestFinished(() => {
+    return new Promise<void>((resolve) => {
+      finalServer.close(() => {
+        resolve();
+      });
+    });
+  });
 
   return {
     server: finalServer,
