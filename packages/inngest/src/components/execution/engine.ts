@@ -66,6 +66,7 @@ import { StepError } from "../StepError.ts";
 import { validateEvents } from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
+  type BasicFoundStep,
   type ExecutionResult,
   type IInngestExecution,
   InngestExecution,
@@ -86,6 +87,7 @@ const { sha1 } = hashjs;
  * 500 error, for AsyncCheckpointing the caller handles fallback.
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
   return new InngestExecutionEngine(options);
@@ -646,11 +648,14 @@ class InngestExecutionEngine
        * timed out or have otherwise decided that it doesn't exist.
        */
       "step-not-found": ({ step }) => {
+        const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
         return {
           type: "step-not-found",
           ctx: this.fnArg,
           ops: this.ops,
           step,
+          foundSteps,
+          totalFoundSteps,
         };
       },
 
@@ -740,6 +745,12 @@ class InngestExecutionEngine
               // We know that because we're in this mode, we're always free to
               // checkpoint and continue if we ran a step and it was successful.
               if (stepResult.error) {
+                // Flush buffered steps before falling back to async,
+                // so previously-successful steps aren't lost.
+                if (this.state.checkpointingStepBuffer.length) {
+                  await attemptCheckpointAndResume(undefined, false, true);
+                }
+
                 // If we failed, go back to the regular async flow.
                 return stepRanHandler(stepResult);
               }
@@ -747,6 +758,16 @@ class InngestExecutionEngine
               // If we're here, we successfully ran a step, so we may now need
               // to checkpoint it depending on the step buffer configured.
               return await attemptCheckpointAndResume(stepResult);
+            }
+
+            // Flush any buffered checkpoint steps before returning
+            // new steps to the executor. Without this, steps executed
+            // in-process during AsyncCheckpointing but not yet
+            // checkpointed would be lost. When the executor later calls
+            // back with requestedRunStep, those steps would be missing
+            // from stepState, causing "step not found" errors.
+            if (this.state.checkpointingStepBuffer.length) {
+              await attemptCheckpointAndResume(undefined, false, true);
             }
 
             return maybeReturnNewSteps();
@@ -1841,6 +1862,24 @@ class InngestExecutionEngine
         },
       });
     });
+  }
+
+  private getStepNotFoundDetails(): {
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  } {
+    const foundSteps = [...this.state.steps.values()]
+      .filter((step) => !step.hasStepState)
+      .map<BasicFoundStep>((step) => ({
+        id: step.hashedId,
+        displayName: step.displayName,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    return {
+      foundSteps: foundSteps.slice(0, STEP_NOT_FOUND_MAX_FOUND_STEPS),
+      totalFoundSteps: foundSteps.length,
+    };
   }
 
   private initializeCheckpointRuntimeTimer(state: ExecutionState): void {
