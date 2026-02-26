@@ -7,7 +7,7 @@ import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("available in other middleware", async () => {
-  class Database { }
+  class Database {}
   const db = new Database();
 
   const state = createState({
@@ -19,7 +19,7 @@ test("available in other middleware", async () => {
     },
     fn: {
       db: null as Database | null,
-    }
+    },
   });
 
   class BeforeMiddleware extends Middleware.BaseMiddleware {
@@ -48,7 +48,11 @@ test("available in other middleware", async () => {
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
-    middleware: [BeforeMiddleware, dependencyInjectionMiddleware({ db }), AfterMiddleware],
+    middleware: [
+      BeforeMiddleware,
+      dependencyInjectionMiddleware({ db }),
+      AfterMiddleware,
+    ],
   });
 
   const fn = client.createFunction(
