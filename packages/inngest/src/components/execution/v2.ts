@@ -258,6 +258,192 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     throw new Error("Core loop finished without returning a value");
   }
 
+  /**
+   * Maximum time allowed for draining the capture branch of a tee'd stream.
+   * If exceeded, the background checkpoint is abandoned (the client already
+   * has their stream).
+   */
+  private static STREAM_DRAIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+  /**
+   * Handles the case where a function resolves with a streaming Response.
+   *
+   * Tees the stream into two branches:
+   *   - Client branch: prepended with an SSE metadata frame, returned immediately
+   *   - Capture branch: drained in the background, then checkpointed
+   *
+   * This allows the caller to start receiving streamed data right away while
+   * ensuring the checkpoint is eventually persisted.
+   */
+  private async handleStreamingFunctionResolved(
+    checkpoint: Simplify<
+      { type: "function-resolved" } & Checkpoints["function-resolved"]
+    >,
+  ): Promise<ExecutionResult> {
+    const response = checkpoint.data as Response;
+    // The caller verifies that response.body is a ReadableStream before
+    // invoking this method, so the non-null assertion is safe.
+    const [clientBranch, captureBranch] = response.body!.tee();
+
+    // Build the SSE metadata frame that precedes the streamed content,
+    // giving consumers the run context for this stream.
+    const metadataFrame = `event: inngest\ndata: ${JSON.stringify({
+      run_id: this.fnArg.runId,
+      attempt: this.fnArg.attempt,
+    })}\n\n`;
+
+    const metadataBytes = new TextEncoder().encode(metadataFrame);
+
+    // Concatenate the metadata frame with the client stream branch
+    const clientStream = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(metadataBytes);
+
+        const reader = clientBranch.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        } finally {
+          reader.releaseLock();
+        }
+      },
+    });
+
+    // Wrap the concatenated stream in a new Response, preserving original headers/status
+    const clientResponse = new Response(clientStream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+
+    // Run transformOutput to ensure middleware hooks (including `finished`) fire.
+    // The original Response body has been tee'd above, so its body is consumed.
+    // This is intentional — the purpose here is to trigger the `finished`
+    // middleware hook, and middleware should use the `isStreaming` concept (or
+    // simply not attempt to read the body) to handle this case.
+    const result = await this.transformOutput({ data: checkpoint.data });
+
+    // Replace the data in the result with our client-facing streaming Response
+    const streamingResult: ExecutionResult = {
+      ...result,
+      data: clientResponse,
+    } as ExecutionResult;
+
+    // Background: drain capture branch, run middleware transform, and checkpoint.
+    // This is non-blocking — the client Response is returned immediately above.
+    void this.drainAndCheckpointStream(captureBranch, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+
+    return streamingResult;
+  }
+
+  /**
+   * Drains a ReadableStream to completion, then transforms and checkpoints
+   * the buffered content. Errors are logged but not thrown, since the client
+   * has already received their stream.
+   */
+  private async drainAndCheckpointStream(
+    stream: ReadableStream,
+    responseMeta: { status: number; statusText: string; headers: Headers },
+  ): Promise<void> {
+    const timeout = createTimeoutPromise(
+      V2InngestExecution.STREAM_DRAIN_TIMEOUT_MS,
+    );
+
+    try {
+      const drainPromise = this.drainStream(stream);
+
+      // Race the drain against a timeout to avoid hanging indefinitely
+      const result = await Promise.race([
+        drainPromise.then((chunks) => ({ kind: "drained" as const, chunks })),
+        timeout.start().then(() => ({ kind: "timeout" as const })),
+      ]);
+
+      if (result.kind === "timeout") {
+        throw new Error("Stream drain timed out");
+      }
+
+      const chunks = result.chunks;
+
+      // Reconstruct the full body from collected chunks
+      const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+      const merged = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+
+      const bufferedData = new TextDecoder().decode(merged);
+
+      // Run the buffered content through middleware transformOutput
+      let transformedData: unknown = await this.applyTransformOutputHook(bufferedData);
+
+      // Match the non-streaming sync path: run createResponse (experimentalTransformSyncResponse)
+      // to transform data into the HTTP response format before checkpointing.
+      // createResponse expects a Response object (not a raw string), so we
+      // reconstruct one from the buffered body + original response metadata.
+      if (this.options.createResponse) {
+        const bufferedResponse = new Response(bufferedData, {
+          status: responseMeta.status,
+          statusText: responseMeta.statusText,
+          headers: responseMeta.headers,
+        });
+        transformedData = await this.options.createResponse(bufferedResponse);
+      }
+
+      // Checkpoint the fully-drained, transformed data with retry
+      await retryWithBackoff(
+        () =>
+          this.checkpoint([
+            {
+              op: StepOpCode.RunComplete,
+              id: _internals.hashId("complete"),
+              data: transformedData,
+            },
+          ]),
+        CHECKPOINT_RETRY_OPTIONS,
+      );
+    } catch (err) {
+      // Log but don't throw — the client already has their stream
+      this.debug(
+        "error during background stream drain/checkpoint, client stream unaffected:",
+        err,
+      );
+    } finally {
+      timeout.clear();
+    }
+  }
+
+  /**
+   * Reads a ReadableStream to completion, collecting all chunks.
+   */
+  private async drainStream(stream: ReadableStream): Promise<Uint8Array[]> {
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return chunks;
+  }
+
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
@@ -440,12 +626,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
         // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: stepResult.data },
-          step: stepResult,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? stepResult.data;
+        const transformedData = await this.applyTransformOutputHook(
+          stepResult.data,
+          stepResult,
+        );
 
         // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
@@ -505,15 +689,21 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Check if the resolved value is a streaming Response
+        if (
+          checkpoint.data instanceof Response &&
+          checkpoint.data.body instanceof ReadableStream
+        ) {
+          return this.handleStreamingFunctionResolved(checkpoint);
+        }
+
+        // Non-streaming path (unchanged)
         // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
         // which has side effects like calling the finished hook
-        const transformedOutput = await this.state.hooks?.transformOutput?.({
-          result: { data: checkpoint.data },
-          step: this.state.executingStep,
-        });
-        const transformedData =
-          transformedOutput?.result?.data ?? checkpoint.data;
+        const transformedData = await this.applyTransformOutputHook(
+          checkpoint.data,
+        );
 
         await this.checkpoint([
           {
@@ -1160,6 +1350,23 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         inputMutations.steps.map((step) => [step.id, step]),
       );
     }
+  }
+
+  /**
+   * Applies the transformOutput middleware hook to the given data and returns
+   * the (possibly transformed) result. This is the lightweight variant that
+   * only invokes the hook — it does NOT call the `finished` hook or perform
+   * any of the side-effects that {@link transformOutput} does.
+   */
+  private async applyTransformOutputHook(
+    data: unknown,
+    step?: OutgoingOp,
+  ): Promise<unknown> {
+    const result = await this.state.hooks?.transformOutput?.({
+      result: { data },
+      step: step ?? this.state.executingStep,
+    });
+    return result?.result?.data ?? data;
   }
 
   /**
