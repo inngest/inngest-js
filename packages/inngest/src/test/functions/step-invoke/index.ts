@@ -2,7 +2,7 @@ import { inngest } from "../client";
 
 const cronInvokeFn = inngest.createFunction(
   { id: "step-invoke-cron" },
-  { cron: "59 23 31 12 *" },
+  { event: "demo/step.invoke.cron" },
   async ({ step }) => {
     await step.sleep("wait-a-moment", "1s");
 
