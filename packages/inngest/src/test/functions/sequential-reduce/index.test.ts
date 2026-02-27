@@ -1,3 +1,4 @@
+import { createState } from "@inngest/test-harness";
 import {
   checkIntrospection,
   eventRunWithName,
@@ -12,20 +13,20 @@ checkIntrospection({
 
 describe("run", () => {
   let eventId: string;
-  let runId: string;
+  const state = createState({});
 
   beforeAll(async () => {
     eventId = await sendEvent("demo/sequential.reduce");
   });
 
   test("runs in response to 'demo/sequential.reduce'", async () => {
-    runId = await eventRunWithName(eventId, "sequential-reduce");
-    expect(runId).toEqual(expect.any(String));
+    state.runId = await eventRunWithName(eventId, "sequential-reduce");
+    expect(state.runId).toEqual(expect.any(String));
   }, 60000);
 
   ["blue", "red", "green"].forEach((team) => {
     test(`ran "Get ${team} team score" step`, async () => {
-      const item = await runHasTimeline(runId, {
+      const item = await runHasTimeline(state.runId!, {
         stepType: "RUN",
         status: "COMPLETED",
         name: `Get ${team} team score`,
@@ -38,12 +39,7 @@ describe("run", () => {
   });
 
   test("Returned total score", async () => {
-    const item = await runHasTimeline(runId, {
-      stepType: "FINALIZATION",
-    });
-    expect(item).toBeDefined();
-
-    const output = await item?.getOutput();
-    expect(output).toEqual({ data: 150 });
+    const output = await state.waitForRunComplete();
+    expect(output).toEqual(150);
   }, 60000);
 });

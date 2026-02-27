@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware, NonRetriableError } from "../../../../index.ts";
+import { matrixCheckpointing } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -148,7 +149,7 @@ test("bookend with steps", async () => {
 });
 
 describe("modify output", () => {
-  test("1 middleware", async () => {
+  matrixCheckpointing("1 middleware", async (checkpointing) => {
     const state = createState({ transformedResults: [] as unknown[] });
 
     class TestMiddleware extends Middleware.BaseMiddleware {
@@ -164,6 +165,7 @@ describe("modify output", () => {
 
     const eventName = randomSuffix("evt");
     const client = new Inngest({
+      checkpointing,
       id: randomSuffix(testFileName),
       isDev: true,
       middleware: [TestMiddleware],
@@ -184,7 +186,7 @@ describe("modify output", () => {
     expect(output).toEqual({ wrapped: "original result" });
   });
 
-  test("2 middleware", async () => {
+  matrixCheckpointing("2 middleware", async (checkpointing) => {
     const state = createState({ logs: [] as string[] });
 
     class Mw1 extends Middleware.BaseMiddleware {
@@ -211,6 +213,7 @@ describe("modify output", () => {
 
     const eventName = randomSuffix("evt");
     const client = new Inngest({
+      checkpointing,
       id: randomSuffix(testFileName),
       isDev: true,
       middleware: [Mw1, Mw2],

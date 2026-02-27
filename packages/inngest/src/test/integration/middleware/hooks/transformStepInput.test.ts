@@ -52,6 +52,9 @@ describe("args", () => {
         async ({ step, runId }) => {
           state.runId = runId;
           await step.run("my-step", () => "result");
+
+          // Force reentry with checkpointing
+          await step.sleep("sleep", "1s");
         },
       );
       await createTestApp({ client, functions: [fn] });
@@ -74,11 +77,31 @@ describe("args", () => {
         {
           fn,
           stepInfo: {
+            hashedId: "c3ca5f787365eae0dea86250e27d476406956478",
+            memoized: false,
+            stepType: "sleep",
+          },
+          stepOptions: { id: "sleep", name: "sleep" },
+          input: [],
+        },
+        {
+          fn,
+          stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: true,
             stepType: "run",
           },
           stepOptions: { id: "my-step", name: "my-step" },
+          input: [],
+        },
+        {
+          fn,
+          stepInfo: {
+            hashedId: "c3ca5f787365eae0dea86250e27d476406956478",
+            memoized: true,
+            stepType: "sleep",
+          },
+          stepOptions: { id: "sleep", name: "sleep" },
           input: [],
         },
       ]);
@@ -222,7 +245,7 @@ describe("change step ID", () => {
       override transformStepInput(
         arg: Middleware.TransformStepInputArgs,
       ): Middleware.TransformStepInputArgs {
-        if (changeStepID) {
+        if (changeStepID && arg.stepOptions.id === "step-1") {
           return {
             ...arg,
             stepOptions: {
@@ -253,6 +276,10 @@ describe("change step ID", () => {
           state.step1.insideCount++;
           return state.step1.insideCount;
         });
+
+        // Force reentry with checkpointing
+        await step.sleep("sleep", "1s");
+
         state.runId = runId;
       },
     );
@@ -360,6 +387,10 @@ describe("change step ID", () => {
           state.step2.insideCount++;
           return state.step2.insideCount;
         });
+
+        // Force reentry with checkpointing
+        await step.sleep("sleep", "1s");
+
         state.runId = runId;
       },
     );
@@ -609,6 +640,9 @@ test("called for memoized and fresh", async () => {
       state.runId = runId;
       await step.run("step-1", async () => "result-1");
       await step.run("step-2", async () => "result-2");
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
     },
   );
   await createTestApp({ client, functions: [fn] });
@@ -617,10 +651,14 @@ test("called for memoized and fresh", async () => {
   await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
+    // 1st request
     { id: "step-1", memoized: false },
-    { id: "step-1", memoized: true },
     { id: "step-2", memoized: false },
+    { id: "sleep", memoized: false },
+
+    // 2nd request
     { id: "step-1", memoized: true },
     { id: "step-2", memoized: true },
+    { id: "sleep", memoized: true },
   ]);
 });

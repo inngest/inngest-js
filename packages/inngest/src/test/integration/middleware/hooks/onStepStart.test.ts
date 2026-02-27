@@ -104,6 +104,10 @@ test("1 step", async () => {
         state.logs.push("step: inside");
         return "result";
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.logs.push("fn: bottom");
     },
   );

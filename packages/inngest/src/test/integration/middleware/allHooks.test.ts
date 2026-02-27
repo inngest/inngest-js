@@ -170,6 +170,10 @@ describe("all hooks fire in correct order with 2 middleware", () => {
             state.logs.push("step: inside");
             return "result";
           });
+
+          // Force reentry with checkpointing
+          await step.sleep("sleep", "1s");
+
           state.logs.push("fn: bottom");
         },
       );
@@ -222,9 +226,9 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "wrapFunctionHandler: before (mw1)",
         "wrapFunctionHandler: before (mw2)",
         "fn: top",
-        "transformStepInput(fresh) (mw1)", // Forward order, before wrapStep
+        "transformStepInput(fresh) (mw1)",
         "transformStepInput(fresh) (mw2)",
-        "wrapStep(fresh): before (mw1)",
+        "wrapStep(fresh): before (mw1)", // `step.run`
         "wrapStep(fresh): before (mw2)",
         "onStepStart (mw1)",
         "onStepStart (mw2)",
@@ -237,6 +241,10 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         // the step is memoized, which doesn't happen in this request.
         "onStepComplete (mw1)",
         "onStepComplete (mw2)",
+        "wrapStep(fresh): after (mw2)", // `step.sleep`
+        "wrapStep(fresh): after (mw1)",
+        "transformStepInput(fresh) (mw1)",
+        "transformStepInput(fresh) (mw2)",
         // NOTE: wrapFunctionHandler "after" does NOT fire here. Step discovery
         // interrupts the function via control flow, so next() in
         // wrapFunctionHandler never resolves. Use try/finally for cleanup.
@@ -249,20 +257,25 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "wrapRequest: before (mw2)",
         "transformFunctionInput (mw1)",
         "transformFunctionInput (mw2)",
-        // onRunStart does NOT fire here (memoized steps present)
         "wrapFunctionHandler: before (mw1)",
         "wrapFunctionHandler: before (mw2)",
         "fn: top",
-        "transformStepInput(memo) (mw1)", // Forward order, before wrapStep
+        "transformStepInput(memo) (mw1)", // `step.run`
         "transformStepInput(memo) (mw2)",
-        "onMemoizationEnd (mw1)", // Fires after all memoized steps seen
+        "wrapStep(memo): before (mw1)",
+        "wrapStep(memo): before (mw2)",
+        "wrapStep(memo): after (mw2)",
+        "wrapStep(memo): after (mw1)",
+        "transformStepInput(memo) (mw1)", // `step.sleep`
+        "transformStepInput(memo) (mw2)",
+        "onMemoizationEnd (mw1)",
         "onMemoizationEnd (mw2)",
         "wrapStep(memo): before (mw1)",
         "wrapStep(memo): before (mw2)",
         "wrapStep(memo): after (mw2)",
         "wrapStep(memo): after (mw1)",
         "fn: bottom",
-        "wrapFunctionHandler: after (mw2)", // Only unwinds when function completes
+        "wrapFunctionHandler: after (mw2)",
         "wrapFunctionHandler: after (mw1)",
         "onRunComplete (mw1)",
         "onRunComplete (mw2)",

@@ -1,4 +1,5 @@
 import path from "path";
+import { z } from "zod";
 import { DEV_SERVER_URL } from "./devServer.ts";
 
 export function randomSuffix(value: string): string {
@@ -44,10 +45,100 @@ type RunResult =
   | { data: unknown; error?: undefined }
   | { data?: undefined; error: unknown };
 
-async function fetchRunResult(
+const runTraceSchema = z.object({
+  data: z.object({
+    run: z.nullable(
+      z.object({
+        trace: z.nullable(z.object({ outputID: z.nullable(z.string()) })),
+      }),
+    ),
+  }),
+});
+
+const traceOutputSchema = z.object({
+  data: z.object({
+    runTraceSpanOutputByID: z.object({
+      data: z.nullable(z.string()),
+      error: z.nullable(z.object({ message: z.string(), name: z.string() })),
+    }),
+  }),
+});
+
+const runStatusSchema = z.object({
+  data: z.object({
+    run: z.nullable(z.object({ status: z.string() })),
+  }),
+});
+
+async function fetchRunOutput(runId: string): Promise<RunResult> {
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `query ($runId: String!) {
+        run(runID: $runId) {
+          trace {
+            outputID
+          }
+        }
+      }`,
+      variables: { runId },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
+  const run = runTraceSchema.parse(await res.json());
+  const outputId = run.data.run?.trace?.outputID;
+  if (!outputId) {
+    throw new Error(`No trace output found for run ${runId}`);
+  }
+
+  return fetchTraceOutput(outputId);
+}
+
+async function fetchTraceOutput(outputId: string): Promise<RunResult> {
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `query ($outputId: String!) {
+        runTraceSpanOutputByID(outputID: $outputId) {
+          data
+          error {
+            message
+            name
+          }
+        }
+      }`,
+      variables: { outputId },
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
+  const body = traceOutputSchema.parse(await res.json());
+  const spanOutput = body.data.runTraceSpanOutputByID;
+
+  if (spanOutput.error) {
+    return { error: spanOutput.error };
+  }
+
+  let data: unknown = null;
+  if (spanOutput.data) {
+    data = JSON.parse(spanOutput.data);
+  }
+
+  return { data };
+}
+
+async function waitForRunEnd(
   runId: string,
   timeout = 20_000,
-): Promise<RunResult> {
+): Promise<string> {
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
@@ -57,7 +148,6 @@ async function fetchRunResult(
       body: JSON.stringify({
         query: `query ($runId: String!) {
           run(runID: $runId) {
-            output
             status
           }
         }`,
@@ -67,20 +157,11 @@ async function fetchRunResult(
     if (!res.ok) {
       throw new Error(await res.text());
     }
-    const data = (await res.json()) as {
-      data: {
-        run: { output: string | null; status: string } | null;
-      };
-    };
-    if (data.data.run?.output) {
-      const parsed = JSON.parse(data.data.run.output);
 
-      if (data.data.run.status === "COMPLETED") {
-        return { data: parsed };
-      }
-      if (data.data.run.status === "FAILED") {
-        return { error: parsed };
-      }
+    const data = runStatusSchema.parse(await res.json());
+    const status = data.data.run?.status;
+    if (status === "COMPLETED" || status === "FAILED") {
+      return status;
     }
 
     await sleep(400);
@@ -103,7 +184,14 @@ export class BaseState {
 
   async waitForRunComplete(): Promise<unknown> {
     const runId = await this.waitForRunId();
-    const result = await fetchRunResult(runId);
+    const status = await waitForRunEnd(runId);
+    if (status !== "COMPLETED") {
+      throw new Error(
+        `Expected run ${runId} to complete, but it has status: ${status}`,
+      );
+    }
+
+    const result = await fetchRunOutput(runId);
     if (result.error) {
       throw new Error(
         `Expected run ${runId} to complete, but it errored: ${JSON.stringify(result.error)}`,
@@ -112,14 +200,22 @@ export class BaseState {
     return result.data;
   }
 
-  async waitForRunFailed(): Promise<void> {
+  async waitForRunFailed(): Promise<unknown> {
     const runId = await this.waitForRunId();
-    const result = await fetchRunResult(runId);
+    const status = await waitForRunEnd(runId);
+    if (status !== "FAILED") {
+      throw new Error(
+        `Expected run ${runId} to fail, but it has status: ${status}`,
+      );
+    }
+
+    const result = await fetchRunOutput(runId);
     if (!result.error) {
       throw new Error(
         `Expected run ${runId} to fail, but it completed with: ${JSON.stringify(result.data)}`,
       );
     }
+    return result.error;
   }
 }
 
