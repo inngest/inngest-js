@@ -293,17 +293,15 @@ export class InngestFunction<
 
     // TODO We should check the commhandler's client instead of this one?
     const userCfg =
-      this.opts.checkpointing ??
-      this.client["options"].checkpointing ??
-      this.opts.experimentalCheckpointing ??
-      this.client["options"].experimentalCheckpointing;
+      this.opts.checkpointing ?? this.client["options"].checkpointing;
 
-    // Return default options if `true` is specified by the user
-    if (!userCfg) {
+    // Explicit opt-out
+    if (userCfg === false) {
       return;
     }
 
-    if (userCfg === true) {
+    // Default to checkpointing enabled
+    if (!userCfg || userCfg === true) {
       return defaultCheckpointingOptions;
     }
 
@@ -704,23 +702,9 @@ export namespace InngestFunction {
      * We recommend starting with the default `true` configuration and only tweak
      * the parameters directly if necessary.
      *
-     * @deprecated Use `checkpointing` instead.
-     */
-    experimentalCheckpointing?: CheckpointingOptions;
-
-    /**
-     * Whether or not to use checkpointing for this function's executions.
+     * Set to `false` to disable checkpointing for this function.
      *
-     * If `true`, enables checkpointing with default settings, which is a safe,
-     * blocking version of checkpointing, where we check in with Inngest after
-     * every step is run.
-     *
-     * If an object, you can tweak the settings to batch, set a maximum runtime
-     * before going async, and more. Note that if your server dies before the
-     * checkpoint completes, step data will be lost and steps will be rerun.
-     *
-     * We recommend starting with the default `true` configuration and only tweak
-     * the parameters directly if necessary.
+     * @default true
      */
     checkpointing?: CheckpointingOptions;
   }

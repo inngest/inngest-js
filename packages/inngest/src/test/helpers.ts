@@ -33,7 +33,12 @@ import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { isRecord } from "../helpers/types.ts";
 import { ConsoleLogger, Inngest, type InngestFunction } from "../index.ts";
-import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
+import {
+  defaultCheckpointingOptions,
+  type EventPayload,
+  type FunctionConfig,
+  StepMode,
+} from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -107,7 +112,8 @@ export const getStepTools = (
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
-        stepMode: StepMode.Async,
+        stepMode: StepMode.AsyncCheckpointing,
+        checkpointingConfig: defaultCheckpointingOptions,
         ...executionOptions,
       },
     }) as IInngestExecution & InngestExecution;
@@ -122,10 +128,6 @@ export const getStepTools = (
 
 export type StepTools = ReturnType<typeof getStepTools>;
 
-/**
- * Given an Inngest function and the appropriate execution state, return the
- * resulting data from this execution.
- */
 /**
  * Given an Inngest function and the appropriate execution state, return the
  * resulting data from this execution.
@@ -156,6 +158,9 @@ export const runFnWithStack = async (
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
+      // Use Async mode here so tests can assert on raw execution results
+      // (function-resolved, step-ran, etc.) without the checkpointing layer
+      // wrapping them into steps-found with RunComplete ops.
       stepMode: StepMode.Async,
       internalFnId: "fake-fn-id",
       queueItemId: "fake-queue-item-id",
@@ -1584,10 +1589,7 @@ export const testFramework = (
                 "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
             },
           );
-          expect(ret).toMatchObject({
-            status: 200,
-            body: JSON.stringify("fn"),
-          });
+          expect(ret.status).toBe(206);
         });
 
         describe("key rotation", () => {
@@ -1637,10 +1639,7 @@ export const testFramework = (
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
               },
             );
-            expect(ret).toMatchObject({
-              status: 200,
-              body: JSON.stringify("fn"),
-            });
+            expect(ret.status).toBe(206);
           });
 
           test("should fail if validation fails with both keys", async () => {
