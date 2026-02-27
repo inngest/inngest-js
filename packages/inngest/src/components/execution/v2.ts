@@ -71,6 +71,12 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+import {
+  buildSSEMetadataFrame,
+  drainStreamWithTimeout,
+  mergeChunks,
+  prependToStream,
+} from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -285,35 +291,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     // invoking this method, so the non-null assertion is safe.
     const [clientBranch, captureBranch] = response.body!.tee();
 
-    // Build the SSE metadata frame that precedes the streamed content,
-    // giving consumers the run context for this stream.
-    const metadataFrame = `event: inngest\ndata: ${JSON.stringify({
-      run_id: this.fnArg.runId,
-      attempt: this.fnArg.attempt,
-    })}\n\n`;
-
-    const metadataBytes = new TextEncoder().encode(metadataFrame);
-
-    // Concatenate the metadata frame with the client stream branch
-    const clientStream = new ReadableStream({
-      async start(controller) {
-        controller.enqueue(metadataBytes);
-
-        const reader = clientBranch.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            controller.enqueue(value);
-          }
-          controller.close();
-        } catch (err) {
-          controller.error(err);
-        } finally {
-          reader.releaseLock();
-        }
-      },
-    });
+    const metadataFrame = buildSSEMetadataFrame(
+      this.fnArg.runId,
+      this.fnArg.attempt,
+    );
+    const clientStream = prependToStream(
+      new TextEncoder().encode(metadataFrame),
+      clientBranch,
+    );
 
     // Wrap the concatenated stream in a new Response, preserving original headers/status
     const clientResponse = new Response(clientStream, {
@@ -322,6 +307,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       headers: response.headers,
     });
 
+    // TODO: mess with middleware obviously
     // Run transformOutput to ensure middleware hooks (including `finished`) fire.
     // The original Response body has been tee'd above, so its body is consumed.
     // This is intentional — the purpose here is to trigger the `finished`
@@ -350,43 +336,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * Drains a ReadableStream to completion, then transforms and checkpoints
    * the buffered content. Errors are logged but not thrown, since the client
    * has already received their stream.
+   *
+   * TODO: this seems scary right?
    */
   private async drainAndCheckpointStream(
     stream: ReadableStream,
     responseMeta: { status: number; statusText: string; headers: Headers },
   ): Promise<void> {
-    const timeout = createTimeoutPromise(
-      V2InngestExecution.STREAM_DRAIN_TIMEOUT_MS,
-    );
-
     try {
-      const drainPromise = this.drainStream(stream);
+      const chunks = await drainStreamWithTimeout(
+        stream,
+        V2InngestExecution.STREAM_DRAIN_TIMEOUT_MS,
+      );
 
-      // Race the drain against a timeout to avoid hanging indefinitely
-      const result = await Promise.race([
-        drainPromise.then((chunks) => ({ kind: "drained" as const, chunks })),
-        timeout.start().then(() => ({ kind: "timeout" as const })),
-      ]);
-
-      if (result.kind === "timeout") {
-        throw new Error("Stream drain timed out");
-      }
-
-      const chunks = result.chunks;
-
-      // Reconstruct the full body from collected chunks
-      const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
-      const merged = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-
-      const bufferedData = new TextDecoder().decode(merged);
+      const bufferedData = new TextDecoder().decode(mergeChunks(chunks));
 
       // Run the buffered content through middleware transformOutput
-      let transformedData: unknown = await this.applyTransformOutputHook(bufferedData);
+      let transformedData: unknown =
+        await this.applyTransformOutputHook(bufferedData);
 
       // Match the non-streaming sync path: run createResponse (experimentalTransformSyncResponse)
       // to transform data into the HTTP response format before checkpointing.
@@ -401,47 +368,22 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         transformedData = await this.options.createResponse(bufferedResponse);
       }
 
-      // Checkpoint the fully-drained, transformed data with retry
-      await retryWithBackoff(
-        () =>
-          this.checkpoint([
-            {
-              op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"),
-              data: transformedData,
-            },
-          ]),
-        CHECKPOINT_RETRY_OPTIONS,
-      );
+      // Checkpoint the fully-drained, transformed data.
+      // Note: checkpoint() already uses retryWithBackoff internally.
+      await this.checkpoint([
+        {
+          op: StepOpCode.RunComplete,
+          id: _internals.hashId("complete"),
+          data: transformedData,
+        },
+      ]);
     } catch (err) {
       // Log but don't throw — the client already has their stream
       this.debug(
         "error during background stream drain/checkpoint, client stream unaffected:",
         err,
       );
-    } finally {
-      timeout.clear();
     }
-  }
-
-  /**
-   * Reads a ReadableStream to completion, collecting all chunks.
-   */
-  private async drainStream(stream: ReadableStream): Promise<Uint8Array[]> {
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    return chunks;
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
