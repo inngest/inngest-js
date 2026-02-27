@@ -135,7 +135,7 @@ test("base64 encoding/decoding middleware", async () => {
             value: "WyJhIiwiYiIsImMiXQ==",
           },
           type: "data",
-        }
+        },
       },
     },
   ]);

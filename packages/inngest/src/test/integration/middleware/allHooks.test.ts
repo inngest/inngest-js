@@ -260,7 +260,7 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         "wrapFunctionHandler: before (mw1)",
         "wrapFunctionHandler: before (mw2)",
         "fn: top",
-        "transformStepInput(memo) (mw1)",  // `step.run`
+        "transformStepInput(memo) (mw1)", // `step.run`
         "transformStepInput(memo) (mw2)",
         "wrapStep(memo): before (mw1)",
         "wrapStep(memo): before (mw2)",
