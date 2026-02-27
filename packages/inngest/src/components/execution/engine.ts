@@ -516,11 +516,13 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        const transformedData = checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(checkpoint.data),
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 
@@ -578,7 +580,6 @@ class InngestExecutionEngine
         // Resume the step with original data for user code
         const stepToResume = this.resumeStepWithResult(result);
 
-        // Transform data for checkpoint (middleware)
         return void (await this.checkpoint([stepToResume]));
       },
 
@@ -971,7 +972,6 @@ class InngestExecutionEngine
       .finally(() => {
         this.debug(`finished executing step "${id}"`);
 
-        delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -1854,12 +1854,15 @@ class InngestExecutionEngine
 
     void this.timeout.then(async () => {
       await this.middlewareManager.onMemoizationEnd();
+      const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
       state.setCheckpoint({
         type: "step-not-found",
         step: {
           id: this.options.requestedRunStep as string,
           op: StepOpCode.StepNotFound,
         },
+        foundSteps,
+        totalFoundSteps,
       });
     });
   }
@@ -1872,6 +1875,7 @@ class InngestExecutionEngine
       .filter((step) => !step.hasStepState)
       .map<BasicFoundStep>((step) => ({
         id: step.hashedId,
+        name: step.name,
         displayName: step.displayName,
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
@@ -1955,7 +1959,11 @@ export interface Checkpoints {
   "steps-found": { steps: [FoundStep, ...FoundStep[]] };
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
   "checkpointing-runtime-reached": {};
   "checkpointing-buffer-interval-reached": {};
 }

@@ -34,6 +34,19 @@ export interface ConnectHandlerOptions extends RegisterOptions {
   handleShutdownSignals?: string[];
 
   rewriteGatewayEndpoint?: (endpoint: string) => string;
+
+  /**
+   * Enable running the WebSocket connection, heartbeater, and lease extender
+   * in a separate worker thread. This prevents thread-blocking user code from
+   * interfering with connection health.
+   *
+   * Only works in Node.js environments that support worker_threads.
+   *
+   * Can also be enabled via the INNGEST_CONNECT_ISOLATE_EXECUTION environment variable.
+   *
+   * @default false
+   */
+  isolateExecution?: boolean;
 }
 
 export interface WorkerConnection {
