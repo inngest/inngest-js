@@ -890,6 +890,11 @@ export const createStepTools = <
     memoizationId: string,
   ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
 
+  // Attach a step.run variant with opts.type = "group.experiment" for use by
+  // group.experiment(). The symbol keeps it off the public `step` surface.
+  (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
+    createStepRun("group.experiment");
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -947,6 +952,15 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
 
 export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
   [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
+};
+
+export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
+
+export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
+  [experimentStepRunSymbol]: (
+    idOrOptions: StepOptionsOrId,
+    fn: () => unknown,
+  ) => Promise<unknown>;
 };
 
 /**
