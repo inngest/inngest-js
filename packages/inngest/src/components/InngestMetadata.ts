@@ -13,7 +13,10 @@ export type MetadataScope = "run" | "step" | "step_attempt" | "extended_trace";
 /**
  * Metadata of the same kind attached to the same item at the same scope are combined.
  */
-export type MetadataKind = "inngest.warning" | `userland.${string}`;
+export type MetadataKind =
+  | "inngest.experiment"
+  | "inngest.warning"
+  | `userland.${string}`;
 
 /**
  * The operation use to combine multiple metadata updates of the same kind.
