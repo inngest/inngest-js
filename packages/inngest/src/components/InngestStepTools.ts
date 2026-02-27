@@ -261,12 +261,19 @@ export const createStepTools = <
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
       const op = matchOp(stepOptions, ...rest);
 
+      const alsCtx = getAsyncCtxSync()?.execution;
+
       // Explicit option takes precedence, then check ALS context
-      const parallelMode =
-        stepOptions.parallelMode ?? getAsyncCtxSync()?.execution?.parallelMode;
+      const parallelMode = stepOptions.parallelMode ?? alsCtx?.parallelMode;
 
       if (parallelMode) {
         op.opts = { ...op.opts, parallelMode };
+      }
+
+      // Propagate experiment context to variant sub-steps
+      const experimentContext = alsCtx?.experimentContext;
+      if (experimentContext) {
+        op.opts = { ...op.opts, ...experimentContext };
       }
 
       return op;
