@@ -62,7 +62,7 @@ export interface Connection {
 export interface ConnectionCoreConfig extends BaseConnectionConfig {
   instanceId?: string;
   maxWorkerConcurrency?: number;
-  rewriteGatewayEndpoint?: (endpoint: string) => string;
+  gatewayUrl?: string;
   appIds: string[];
 }
 
@@ -304,16 +304,12 @@ export class ConnectionCore {
       );
     }, 10_000);
 
-    let finalEndpoint = startResp.gatewayEndpoint;
-    if (this.config.rewriteGatewayEndpoint) {
-      const rewritten = this.config.rewriteGatewayEndpoint(
-        startResp.gatewayEndpoint,
-      );
-      this.callbacks.log("Rewriting gateway endpoint", {
+    const finalEndpoint = this.config.gatewayUrl || startResp.gatewayEndpoint;
+    if (finalEndpoint !== startResp.gatewayEndpoint) {
+      this.callbacks.log("Overriding gateway endpoint", {
         original: startResp.gatewayEndpoint,
-        rewritten,
+        override: finalEndpoint,
       });
-      finalEndpoint = rewritten;
     }
 
     this.callbacks.log("Connecting to gateway", {

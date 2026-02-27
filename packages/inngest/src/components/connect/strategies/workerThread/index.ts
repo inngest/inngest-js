@@ -284,18 +284,12 @@ export class WorkerThreadStrategy extends BaseStrategy {
   }
 
   private async buildSerializableConfig(): Promise<SerializableConfig> {
-    if (this.config.options.rewriteGatewayEndpoint) {
-      // TODO: Figure out how to support this. Currently, we don't support it
-      throw new Error(
-        "rewriteGatewayEndpoint is not supported in worker threads",
-      );
-    }
-
     return {
       apiBaseUrl: this.config.apiBaseUrl,
       appIds: Object.keys(this.config.requestHandlers),
       connectionData: this.config.connectionData,
       envName: this.config.envName,
+      gatewayUrl: this.config.options.gatewayUrl,
       handleShutdownSignals: this.config.options.handleShutdownSignals,
       hashedFallbackKey: this.config.hashedFallbackKey,
       hashedSigningKey: this.config.hashedSigningKey,

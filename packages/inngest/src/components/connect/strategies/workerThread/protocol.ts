@@ -4,10 +4,6 @@ import type { BaseConnectionConfig } from "../core/types.ts";
 /**
  * Serializable configuration for the worker thread. This contains all the data
  * needed to establish and maintain a connection.
- *
- * Extends BaseConnectionConfig with worker-specific options. Note that
- * `rewriteGatewayEndpoint` is not supported in worker threads since functions
- * cannot be serialized.
  */
 export interface SerializableConfig extends BaseConnectionConfig {
   /**
@@ -19,6 +15,11 @@ export interface SerializableConfig extends BaseConnectionConfig {
    * Max worker concurrency.
    */
   maxWorkerConcurrency?: number;
+
+  /**
+   * Override the gateway WebSocket endpoint.
+   */
+  gatewayUrl?: string;
 
   /**
    * Signals to handle for graceful shutdown.
