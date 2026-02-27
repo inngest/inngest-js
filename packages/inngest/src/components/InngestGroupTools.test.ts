@@ -128,3 +128,158 @@ describe("Experiment Types", () => {
     });
   });
 });
+
+describe("experiment()", () => {
+  const mockSelect = Object.assign(() => "control", {
+    __experimentConfig: { strategy: "random" },
+  }) as ExperimentSelectFn;
+
+  test("basic variant selection and execution", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    const result = await tools.experiment("my-exp", {
+      variants: {
+        control: () => "A",
+        treatment: () => "B",
+      },
+      select: mockSelect,
+    });
+
+    expect(result).toBe("A");
+  });
+
+  test("withVariant: true returns { result, variant }", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    const result = await tools.experiment("my-exp", {
+      variants: {
+        control: () => "A",
+        treatment: () => "B",
+      },
+      select: mockSelect,
+      withVariant: true,
+    });
+
+    expect(result).toEqual({ result: "A", variant: "control" });
+  });
+
+  test("without withVariant returns result directly", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("treatment");
+    const tools = createGroupTools(mockRunTool);
+
+    const result = await tools.experiment("my-exp", {
+      variants: {
+        control: () => "A",
+        treatment: () => "B",
+      },
+      select: mockSelect,
+    });
+
+    expect(result).toBe("B");
+  });
+
+  test("string ID parsing", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    await tools.experiment("my-experiment", {
+      variants: { control: () => "A" },
+      select: mockSelect,
+    });
+
+    expect(mockRunTool).toHaveBeenCalledWith(
+      { id: "my-experiment" },
+      expect.any(Function),
+    );
+  });
+
+  test("StepOptions object parsing", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    await tools.experiment(
+      { id: "my-exp", name: "My Experiment" },
+      {
+        variants: { control: () => "A" },
+        select: mockSelect,
+      },
+    );
+
+    expect(mockRunTool).toHaveBeenCalledWith(
+      { id: "my-exp", name: "My Experiment" },
+      expect.any(Function),
+    );
+  });
+
+  test("invalid variant name from select throws error", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("nonexistent");
+    const tools = createGroupTools(mockRunTool);
+
+    await expect(
+      tools.experiment("my-exp", {
+        variants: {
+          control: () => "A",
+          treatment: () => "B",
+        },
+        select: mockSelect,
+      }),
+    ).rejects.toThrow(/nonexistent/);
+
+    await expect(
+      tools.experiment("my-exp", {
+        variants: {
+          control: () => "A",
+          treatment: () => "B",
+        },
+        select: mockSelect,
+      }),
+    ).rejects.toThrow(/control, treatment/);
+  });
+
+  test("empty variants record throws error", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("any");
+    const tools = createGroupTools(mockRunTool);
+
+    await expect(
+      tools.experiment("my-exp", {
+        variants: {},
+        select: mockSelect,
+      }),
+    ).rejects.toThrow(/at least one variant/);
+  });
+
+  test("async variant callback", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    const result = await tools.experiment("my-exp", {
+      variants: {
+        control: async () => {
+          return "async-result";
+        },
+      },
+      select: mockSelect,
+    });
+
+    expect(result).toBe("async-result");
+  });
+
+  test("selection function passed through run tool", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    await tools.experiment("my-exp", {
+      variants: { control: () => "A" },
+      select: mockSelect,
+    });
+
+    // The second arg to the run tool should be a function that calls select()
+    const selectionFn = mockRunTool.mock.calls[0]![1] as () => unknown;
+    expect(typeof selectionFn).toBe("function");
+
+    const selectionResult = selectionFn();
+    expect(selectionResult).toBe("control");
+  });
+});

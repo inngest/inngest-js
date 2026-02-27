@@ -1,9 +1,15 @@
+import type {
+  ExperimentOptions,
+  GroupExperiment,
+  StepOptionsOrId,
+} from "../types.ts";
 import {
   type AsyncContext,
   getAsyncCtxSync,
   getAsyncLocalStorage,
   isALSFallback,
 } from "./execution/als.ts";
+import { getStepOptions } from "./InngestStepTools.ts";
 
 /**
  * Options for the `group.parallel()` helper.
@@ -121,7 +127,51 @@ export interface GroupTools {
     optionsOrCallback: ParallelOptions | (() => Promise<T>),
     maybeCallback?: () => Promise<T>,
   ) => Promise<T>;
+
+  experiment: GroupExperiment;
 }
+
+/**
+ * Create the `experiment` function that uses the injected run tool for
+ * memoized variant selection.
+ */
+const experiment = (
+  experimentRun: (...args: unknown[]) => Promise<unknown>,
+) => {
+  return async (
+    idOrOptions: StepOptionsOrId,
+    options: ExperimentOptions<
+      Record<string, (...args: unknown[]) => unknown>
+    > & {
+      withVariant?: boolean;
+    },
+  ) => {
+    const stepOptions = getStepOptions(idOrOptions);
+
+    const variantNames = Object.keys(options.variants);
+    if (variantNames.length === 0) {
+      throw new Error("`group.experiment()` requires at least one variant");
+    }
+
+    const selectedVariant = (await experimentRun(stepOptions, () =>
+      options.select(),
+    )) as string;
+
+    if (!options.variants[selectedVariant]) {
+      throw new Error(
+        `group.experiment() selected variant "${selectedVariant}" ` +
+          `which is not in the variants record. Available: ${variantNames.join(", ")}`,
+      );
+    }
+
+    const result = await options.variants[selectedVariant]!();
+
+    if (options.withVariant) {
+      return { result, variant: selectedVariant };
+    }
+    return result;
+  };
+};
 
 /**
  * Create the `group` tools object provided on the function execution context.
@@ -131,5 +181,8 @@ export interface GroupTools {
 export const createGroupTools = (
   experimentRun?: (...args: unknown[]) => Promise<unknown>,
 ): GroupTools => {
-  return { parallel };
+  return {
+    parallel,
+    ...(experimentRun ? { experiment: experiment(experimentRun) } : {}),
+  } as GroupTools;
 };
