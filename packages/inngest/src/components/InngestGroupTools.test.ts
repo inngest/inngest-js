@@ -283,3 +283,156 @@ describe("experiment()", () => {
     expect(selectionResult).toBe("control");
   });
 });
+
+describe("Integration: end-to-end experiment flow", () => {
+  /**
+   * Creates a run tool that simulates step.run memoization:
+   * - First call for a step ID: executes the function and caches the result
+   * - Subsequent calls for the same step ID: returns cached result without
+   *   calling the function again
+   */
+  const createMemoizingRunTool = () => {
+    const cache = new Map<string, unknown>();
+    return vi.fn(async (...args: unknown[]) => {
+      const stepOptions = args[0] as { id: string };
+      const fn = args[1] as () => unknown;
+      const key = stepOptions.id;
+      if (cache.has(key)) {
+        return cache.get(key);
+      }
+      const result = await fn();
+      cache.set(key, result);
+      return result;
+    });
+  };
+
+  test("memoization: select function not re-invoked on repeated execution", async () => {
+    const memoizingRun = createMemoizingRunTool();
+    const tools = createGroupTools(memoizingRun);
+
+    const selectSpy = vi.fn().mockReturnValue("control");
+    const select = Object.assign(selectSpy, {
+      __experimentConfig: { strategy: "random" },
+    }) as ExperimentSelectFn;
+
+    const variants = {
+      control: () => "A",
+      treatment: () => "B",
+    };
+
+    // First call — should invoke select
+    const result1 = await tools.experiment("my-exp", { variants, select });
+    expect(result1).toBe("A");
+    expect(selectSpy).toHaveBeenCalledTimes(1);
+
+    // Second call — memoized, select NOT called again
+    const result2 = await tools.experiment("my-exp", { variants, select });
+    expect(result2).toBe("A");
+    expect(selectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("only the selected variant callback executes", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("treatment");
+    const tools = createGroupTools(mockRunTool);
+
+    const mockSelect = Object.assign(() => "treatment", {
+      __experimentConfig: {
+        strategy: "weighted",
+        weights: { control: 0.5, treatment: 0.5 },
+      },
+    }) as ExperimentSelectFn;
+
+    const controlCallback = vi.fn().mockReturnValue(42);
+    const treatmentCallback = vi.fn().mockReturnValue("hello");
+
+    const result = await tools.experiment("flow-exp", {
+      variants: {
+        control: controlCallback,
+        treatment: treatmentCallback,
+      },
+      select: mockSelect,
+    });
+
+    // Only the selected variant's callback was invoked
+    expect(controlCallback).not.toHaveBeenCalled();
+    expect(treatmentCallback).toHaveBeenCalledTimes(1);
+
+    // Result is the selected variant's return value
+    expect(result).toBe("hello");
+  });
+
+  test("withVariant wraps the selected variant result", async () => {
+    const mockRunTool = vi.fn().mockResolvedValue("control");
+    const tools = createGroupTools(mockRunTool);
+
+    const mockSelect = Object.assign(() => "control", {
+      __experimentConfig: { strategy: "random" },
+    }) as ExperimentSelectFn;
+
+    const result = await tools.experiment("wrapped-exp", {
+      variants: {
+        control: () => 42,
+        treatment: () => "hello",
+      },
+      select: mockSelect,
+      withVariant: true,
+    });
+
+    expect(result).toEqual({ result: 42, variant: "control" });
+  });
+});
+
+describe("Integration: type compilation", () => {
+  test("all experiment types compose correctly in a realistic scenario", () => {
+    // Strategy config
+    const config: ExperimentStrategyConfig = {
+      strategy: "weighted",
+      weights: { control: 0.7, treatment: 0.3 },
+    };
+
+    // Select function with embedded config
+    const select = Object.assign(() => "control" as string, {
+      __experimentConfig: config,
+    }) as ExperimentSelectFn;
+
+    // Typed variants with heterogeneous returns
+    const variants = {
+      control: () => 42 as number,
+      treatment: () => "hello" as string,
+    };
+
+    // ExperimentOptions composes correctly
+    const opts: ExperimentOptions<typeof variants> = { variants, select };
+    expectTypeOf(opts.variants).toEqualTypeOf<typeof variants>();
+    expectTypeOf(opts.select).toEqualTypeOf<ExperimentSelectFn>();
+
+    // VariantResult infers union
+    type Result = VariantResult<never, typeof variants>;
+    expectTypeOf<Result>().toEqualTypeOf<number | string>();
+
+    // GroupExperiment: default returns T
+    const expFn = (() => {}) as unknown as GroupExperiment;
+    const defaultResult = expFn("test", opts);
+    expectTypeOf(defaultResult).toEqualTypeOf<Promise<number | string>>();
+
+    // GroupExperiment: withVariant returns { result, variant }
+    const withVariantOpts: ExperimentOptionsWithVariant<typeof variants> = {
+      ...opts,
+      withVariant: true,
+    };
+    const wrappedResult = expFn("test", withVariantOpts);
+    expectTypeOf(wrappedResult).toEqualTypeOf<
+      Promise<{ result: number | string; variant: string }>
+    >();
+
+    // ExperimentMetadataValues is structurally valid
+    const metadata: ExperimentMetadataValues = {
+      experiment_name: "test",
+      variant_selected: "control",
+      selection_strategy: config.strategy,
+      available_variants: Object.keys(variants),
+      variant_weights: config.weights,
+    };
+    expectTypeOf(metadata).toMatchTypeOf<ExperimentMetadataValues>();
+  });
+});
