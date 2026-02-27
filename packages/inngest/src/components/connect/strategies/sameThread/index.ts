@@ -33,7 +33,7 @@ export class SameThreadStrategy extends BaseStrategy {
         instanceId: config.options.instanceId,
         maxWorkerConcurrency: config.options.maxWorkerConcurrency,
         mode: config.mode,
-        rewriteGatewayEndpoint: config.options.rewriteGatewayEndpoint,
+        gatewayUrl: config.options.gatewayUrl,
       },
       {
         log: (message, data) => this.debugLog(message, data),

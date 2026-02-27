@@ -39,6 +39,7 @@ export enum envKeys {
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
+  InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not

@@ -121,6 +121,21 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
     }
 
+    // Check for worker thread env var (opt-out: false/0 disables isolation)
+    if (options.isolateExecution === undefined) {
+      const envValue = env[envKeys.InngestConnectIsolateExecution];
+      if (envValue === "0" || envValue === "false") {
+        options.isolateExecution = false;
+      }
+    }
+
+    if (options.gatewayUrl === undefined) {
+      const envValue = env[envKeys.InngestConnectGatewayUrl];
+      if (envValue) {
+        options.gatewayUrl = envValue;
+      }
+    }
+
     return options;
   }
 

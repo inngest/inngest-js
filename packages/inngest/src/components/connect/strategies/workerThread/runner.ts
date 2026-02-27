@@ -131,11 +131,7 @@ class WorkerRunner {
     this.core = new ConnectionCore(
       {
         ...this.config,
-
-        // TODO: Figure out how to support this. Currently, we don't support it
-        // because functions can't be passed to worker threads (since they
-        // aren't serializable)
-        rewriteGatewayEndpoint: undefined,
+        gatewayUrl: this.config.gatewayUrl,
       },
       {
         log: (message, data) => this.log(message, data),
