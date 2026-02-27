@@ -53,6 +53,13 @@ export interface AsyncContext {
       experimentName: string;
       variant: string;
     };
+
+    /**
+     * A mutable tracker used to detect whether any step tool was invoked
+     * during a variant callback. Set by `group.experiment()`, flipped by
+     * `createTool` in `InngestStepTools.ts`.
+     */
+    experimentStepTracker?: { found: boolean };
   };
 }
 

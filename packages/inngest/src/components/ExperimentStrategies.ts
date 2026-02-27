@@ -161,7 +161,11 @@ export const experiment = {
 
         return selectByWeight(hashToFloat(str), weights);
       },
-      { strategy: "bucket", weights: options?.weights },
+      {
+        strategy: "bucket",
+        weights: options?.weights,
+        ...(value == null && { nullishBucket: true }),
+      },
     );
   },
 

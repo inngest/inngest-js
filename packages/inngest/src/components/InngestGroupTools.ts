@@ -7,6 +7,7 @@ import {
   isALSFallback,
 } from "./execution/als.ts";
 import { getStepOptions } from "./InngestStepTools.ts";
+import { NonRetriableError } from "./NonRetriableError.ts";
 
 /**
  * Options for the `group.parallel()` helper.
@@ -95,6 +96,7 @@ const parallel = async <T>(
 export interface ExperimentStrategyConfig {
   strategy: string;
   weights?: Record<string, number>;
+  nullishBucket?: boolean;
 }
 
 /**
@@ -300,7 +302,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
         const result = await select(variantNames);
 
         if (!variantNames.includes(result)) {
-          throw new Error(
+          throw new NonRetriableError(
             `group.experiment("${stepOpts.id}"): select() returned "${result}" ` +
               `which is not a known variant. Available variants: ${variantNames.join(", ")}`,
           );
@@ -326,6 +328,20 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
               }),
             },
           );
+
+          if (select.__experimentConfig.nullishBucket) {
+            execInstance.addMetadata(
+              experimentStepHashedId,
+              "inngest.warning",
+              "step",
+              "merge",
+              {
+                message:
+                  "experiment.bucket() received a null/undefined value; " +
+                  'hashing empty string "" for variant selection',
+              },
+            );
+          }
         }
 
         return result;
@@ -344,8 +360,10 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     }
 
     // Propagate experiment context via ALS so variant sub-steps include
-    // experiment fields in their OutgoingOp.opts.
+    // experiment fields in their OutgoingOp.opts. Also track whether any
+    // step tool is invoked to detect zero-step variants.
     const currentCtx = getAsyncCtxSync();
+    const stepTracker = { found: false };
     let result: unknown;
 
     if (currentCtx?.execution && experimentStepHashedId && !isALSFallback()) {
@@ -359,11 +377,23 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
             experimentName: stepOpts.id,
             variant: selectedVariant,
           },
+          experimentStepTracker: stepTracker,
         },
       };
       result = await als.run(nestedCtx, () => variantFn());
     } else {
       result = await variantFn();
+    }
+
+    // If the variant returned without invoking any step tools, it will
+    // silently re-execute on every replay. Throw a non-retriable error
+    // to prevent this.
+    if (!stepTracker.found && !isALSFallback()) {
+      throw new NonRetriableError(
+        `group.experiment("${stepOpts.id}"): variant "${selectedVariant}" ` +
+          "did not invoke any step tools. Wrap your variant logic in " +
+          "step.run() to ensure it is memoized and not re-executed on replay.",
+      );
     }
 
     if (withVariant) {

@@ -276,6 +276,12 @@ export const createStepTools = <
         op.opts = { ...op.opts, ...experimentContext };
       }
 
+      // Track that a step tool was invoked inside a variant callback
+      const tracker = alsCtx?.experimentStepTracker;
+      if (tracker) {
+        tracker.found = true;
+      }
+
       return op;
     };
 
