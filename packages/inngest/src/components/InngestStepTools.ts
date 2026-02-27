@@ -37,6 +37,7 @@ import {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   type MetadataStepTool,
@@ -1038,6 +1039,35 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
   // If we're here, we're in the context of a function execution already and
   // we can return the existing step tooling.
   return ctx.execution.ctx.step;
+};
+
+const getDeferredGroupTooling = async (): Promise<GroupTools> => {
+  const ctx = await getAsyncCtx();
+  if (!ctx) {
+    throw new Error(
+      "`group` tools can only be used within Inngest function executions; no context was found",
+    );
+  }
+
+  if (!ctx.execution) {
+    throw new Error(
+      "`group` tools can only be used within Inngest function executions; no execution context was found",
+    );
+  }
+
+  return ctx.execution.ctx.group;
+};
+
+/**
+ * A deferred proxy for `group` tools that delegates through ALS context.
+ *
+ * @public
+ */
+export const group: GroupTools = {
+  parallel: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
+  experiment: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
 };
 
 /**
