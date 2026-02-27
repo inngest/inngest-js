@@ -42,6 +42,17 @@ export interface AsyncContext {
      * created within this context. Set by `group.parallel()`.
      */
     parallelMode?: "race";
+
+    /**
+     * If present, indicates the variant callback is executing within an
+     * experiment. Set by `group.experiment()`. Any `step.*()` call within
+     * this context will include these fields in `OutgoingOp.opts`.
+     */
+    experimentContext?: {
+      experimentStepID: string;
+      experimentName: string;
+      variant: string;
+    };
   };
 }
 

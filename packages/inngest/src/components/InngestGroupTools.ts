@@ -288,9 +288,15 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
 
     // Use the experiment step run to memoize the variant selection.
     // This creates a StepPlanned opcode with opts.type = "group.experiment".
+    let experimentStepHashedId: string | undefined;
+
     const selectedVariant: string = await deps.experimentStepRun(
       idOrOptions,
       async () => {
+        // Capture the hashed step ID so we can propagate it to variant sub-steps.
+        experimentStepHashedId =
+          getAsyncCtxSync()?.execution?.executingStep?.id;
+
         const result = await select(variantNames);
 
         if (!variantNames.includes(result)) {
@@ -303,11 +309,10 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
         // Attach experiment metadata to this step's OutgoingOp.
         const ctx = getAsyncCtxSync();
         const execInstance = ctx?.execution?.instance;
-        const executingStepId = ctx?.execution?.executingStep?.id;
 
-        if (execInstance && executingStepId) {
+        if (execInstance && experimentStepHashedId) {
           execInstance.addMetadata(
-            executingStepId,
+            experimentStepHashedId,
             "inngest.experiment",
             "step",
             "merge",
@@ -338,7 +343,28 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
-    const result = await variantFn();
+    // Propagate experiment context via ALS so variant sub-steps include
+    // experiment fields in their OutgoingOp.opts.
+    const currentCtx = getAsyncCtxSync();
+    let result: unknown;
+
+    if (currentCtx?.execution && experimentStepHashedId && !isALSFallback()) {
+      const als = await getAsyncLocalStorage();
+      const nestedCtx: AsyncContext = {
+        ...currentCtx,
+        execution: {
+          ...currentCtx.execution,
+          experimentContext: {
+            experimentStepID: experimentStepHashedId,
+            experimentName: stepOpts.id,
+            variant: selectedVariant,
+          },
+        },
+      };
+      result = await als.run(nestedCtx, () => variantFn());
+    } else {
+      result = await variantFn();
+    }
 
     if (withVariant) {
       return { result, variant: selectedVariant };
