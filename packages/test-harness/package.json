@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "devDependencies": {
     "typescript": "~5.8.2",
-    "vitest": "^3.0.8"
+    "vitest": "^3.0.8",
+    "zod": "^4.3.6"
   }
 }

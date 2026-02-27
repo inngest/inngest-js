@@ -175,63 +175,6 @@ export const anyContext = {
   step: expect.any(Object),
 };
 
-type RunResult =
-  | { data: unknown; error?: undefined }
-  | { data?: undefined; error: unknown };
-
-async function fetchRunResult(
-  runId: string,
-  timeout = 20_000,
-): Promise<RunResult> {
-  const deadline = Date.now() + timeout;
-
-  while (Date.now() < deadline) {
-    const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `query ($runId: String!) {
-          run(runID: $runId) {
-            output
-            status
-          }
-        }`,
-        variables: { runId },
-      }),
-    });
-    if (!res.ok) {
-      throw new Error(await res.text());
-    }
-    const data = await res.json();
-    const json = z
-      .object({
-        data: z.object({
-          run: z.nullable(
-            z.object({
-              output: z.nullable(z.string()),
-              status: z.string(),
-            }),
-          ),
-        }),
-      })
-      .parse(data);
-    if (json.data.run?.output) {
-      const parsed = JSON.parse(json.data.run.output);
-
-      if (json.data.run.status === "COMPLETED") {
-        return { data: parsed };
-      }
-      if (json.data.run.status === "FAILED") {
-        return { error: parsed };
-      }
-    }
-
-    await sleep(400);
-  }
-
-  throw new Error(`Timed out waiting for run ${runId} to end`);
-}
-
 const fetchEventSchema = z.object({
   data: z.object({
     eventV2: z.object({
