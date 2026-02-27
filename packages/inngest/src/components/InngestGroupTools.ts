@@ -101,7 +101,7 @@ export interface ExperimentStrategyConfig {
  * A callable selection function that also carries strategy metadata.
  */
 export interface ExperimentSelectFn {
-  (): Promise<string> | string;
+  (variantNames?: string[]): Promise<string> | string;
   __experimentConfig: ExperimentStrategyConfig;
 }
 
@@ -291,7 +291,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     const selectedVariant: string = await deps.experimentStepRun(
       idOrOptions,
       async () => {
-        const result = await select();
+        const result = await select(variantNames);
 
         if (!variantNames.includes(result)) {
           throw new Error(

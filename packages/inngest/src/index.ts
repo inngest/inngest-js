@@ -38,6 +38,7 @@
  */
 
 export * from "@inngest/ai";
+export { experiment } from "./components/ExperimentStrategies.ts";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
