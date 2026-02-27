@@ -35,11 +35,26 @@ export namespace Grok {
    */
   export type Model =
     | (string & {})
-    | "grok-2-1212"
     | "grok-2"
+    | "grok-2-1212"
     | "grok-2-latest"
     | "grok-3"
-    | "grok-3-latest";
+    | "grok-3-fast"
+    | "grok-3-fast-latest"
+    | "grok-3-latest"
+    | "grok-3-mini"
+    | "grok-3-mini-fast"
+    | "grok-3-mini-fast-latest"
+    | "grok-3-mini-latest"
+    | "grok-4"
+    | "grok-4-0709"
+    | "grok-4-1"
+    | "grok-4-1-fast-non-reasoning"
+    | "grok-4-1-fast-reasoning"
+    | "grok-4-fast-non-reasoning"
+    | "grok-4-fast-reasoning"
+    | "grok-4-latest"
+    | "grok-code-fast-1";
 
   /**
    * Options for creating a Gemini model.
