@@ -300,6 +300,29 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
           );
         }
 
+        // Attach experiment metadata to this step's OutgoingOp.
+        const ctx = getAsyncCtxSync();
+        const execInstance = ctx?.execution?.instance;
+        const executingStepId = ctx?.execution?.executingStep?.id;
+
+        if (execInstance && executingStepId) {
+          execInstance.addMetadata(
+            executingStepId,
+            "inngest.experiment",
+            "step",
+            "merge",
+            {
+              experiment_name: stepOpts.id,
+              variant_selected: result,
+              selection_strategy: select.__experimentConfig.strategy,
+              available_variants: variantNames,
+              ...(select.__experimentConfig.weights && {
+                variant_weights: select.__experimentConfig.weights,
+              }),
+            },
+          );
+        }
+
         return result;
       },
     );
