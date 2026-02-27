@@ -150,7 +150,7 @@ export class BaseState {
     return result.data;
   }
 
-  async waitForRunFailed(): Promise<void> {
+  async waitForRunFailed(): Promise<unknown> {
     const runId = await this.waitForRunId();
     const result = await fetchRunResult(runId);
     if (!result.error) {
@@ -158,6 +158,7 @@ export class BaseState {
         `Expected run ${runId} to fail, but it completed with: ${JSON.stringify(result.data)}`,
       );
     }
+    return result.error;
   }
 }
 
