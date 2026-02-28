@@ -31,7 +31,11 @@ export interface ExecutionResults {
   "step-ran": { step: OutgoingOp; retriable?: boolean | string };
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
 
   /**
    * Indicates that we need to relinquish control back to Inngest in order to
@@ -52,6 +56,11 @@ export type ExecutionResult = {
     } & ExecutionResults[K]
   >;
 }[keyof ExecutionResults];
+
+export interface BasicFoundStep {
+  id: string;
+  displayName?: string;
+}
 
 export type ExecutionResultHandler<T = ActionResponse> = (
   result: ExecutionResult,

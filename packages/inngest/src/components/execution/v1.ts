@@ -63,6 +63,7 @@ import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
+  type BasicFoundStep,
   type ExecutionResult,
   type IInngestExecution,
   InngestExecution,
@@ -83,6 +84,7 @@ const { sha1 } = hashjs;
  * 500 error, for AsyncCheckpointing the caller handles fallback.
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -650,12 +652,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * While trying to find a step that Inngest has told us to run, we've
        * timed out or have otherwise decided that it doesn't exist.
        */
-      "step-not-found": ({ step }) => {
+      "step-not-found": ({ step, foundSteps, totalFoundSteps }) => {
         return {
           type: "step-not-found",
           ctx: this.fnArg,
           ops: this.ops,
           step,
+          foundSteps,
+          totalFoundSteps,
         };
       },
 
@@ -1007,7 +1011,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
-        delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -1142,11 +1145,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError } as Partial<OutgoingOp>;
 
-    const isStepExecution = Boolean(this.state.executingStep);
+    const step = this.state.executingStep;
+    delete this.state.executingStep;
+
+    const isStepExecution = Boolean(step);
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
-      step: this.state.executingStep,
+      step,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
@@ -1673,6 +1679,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
     void this.timeout.then(async () => {
+      const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
+
       await this.state.hooks?.afterMemoization?.();
       await this.state.hooks?.beforeExecution?.();
       await this.state.hooks?.afterExecution?.();
@@ -1683,8 +1691,29 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           id: this.options.requestedRunStep as string,
           op: StepOpCode.StepNotFound,
         },
+        foundSteps,
+        totalFoundSteps,
       });
     });
+  }
+
+  private getStepNotFoundDetails(): {
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  } {
+    const foundSteps = [...this.state.steps.values()]
+      .filter((step) => !step.hasStepState)
+      .map<BasicFoundStep>((step) => ({
+        id: step.hashedId,
+        name: step.name,
+        displayName: step.displayName,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    return {
+      foundSteps: foundSteps.slice(0, STEP_NOT_FOUND_MAX_FOUND_STEPS),
+      totalFoundSteps: foundSteps.length,
+    };
   }
 
   private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
@@ -1802,7 +1831,11 @@ export interface Checkpoints {
   "steps-found": { steps: [FoundStep, ...FoundStep[]] };
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
   "checkpointing-runtime-reached": {};
   "checkpointing-buffer-interval-reached": {};
 }
