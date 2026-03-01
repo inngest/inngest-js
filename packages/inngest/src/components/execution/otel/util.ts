@@ -66,14 +66,7 @@ export const extendProvider = (
       ? globalProvider.getDelegate()
       : globalProvider;
 
-  if (
-    !existingProvider ||
-    !("addSpanProcessor" in existingProvider) ||
-    typeof existingProvider.addSpanProcessor !== "function"
-  ) {
-    // TODO Could we also add a function the user can provide that takes the
-    // processor and adds it? That way they could support many different
-    // providers.
+  if (!existingProvider) {
     if (behaviour !== "auto") {
       console.warn(
         "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
@@ -84,7 +77,56 @@ export const extendProvider = (
   }
 
   const processor = new InngestSpanProcessor();
-  existingProvider.addSpanProcessor(processor);
 
-  return { success: true, processor };
+  // OTel SDK v1 exposes addSpanProcessor() on BasicTracerProvider.
+  if (
+    "addSpanProcessor" in existingProvider &&
+    typeof existingProvider.addSpanProcessor === "function"
+  ) {
+    existingProvider.addSpanProcessor(processor);
+    return { success: true, processor };
+  }
+
+  // OTel SDK v2 removed addSpanProcessor() — span processors are constructor-only.
+  // No public API exists to add processors post-construction (OTel issue #5299),
+  // so push into the internal _spanProcessors array.
+  // These fields are TypeScript `private` (not #private), so accessible at runtime.
+  const spanProcessors = getInternalSpanProcessors(existingProvider);
+  if (spanProcessors) {
+    spanProcessors.push(processor);
+    return { success: true, processor };
+  }
+
+  if (behaviour !== "auto") {
+    console.warn(
+      "Unable to add InngestSpanProcessor to existing OTel provider. " +
+        "The provider does not support addSpanProcessor() (OTel SDK v1) " +
+        "or expose _activeSpanProcessor._spanProcessors (OTel SDK v2).",
+    );
+  }
+
+  return { success: false };
 };
+
+/**
+ * Extract the internal span processors array from a BasicTracerProvider.
+ * Returns the mutable array if accessible, undefined otherwise.
+ *
+ * BasicTracerProvider._activeSpanProcessor is a MultiSpanProcessor,
+ * which holds a _spanProcessors: SpanProcessor[] array.
+ * Both are TypeScript `private` (not ES #private), so accessible at runtime.
+ *
+ * Wrapped in try/catch because this accesses internal OTel fields that may
+ * change — must never crash the host app.
+ */
+function getInternalSpanProcessors(provider: unknown): unknown[] | undefined {
+  try {
+    const active = (provider as Record<string, unknown>)?._activeSpanProcessor;
+    if (typeof active !== "object" || active === null) return undefined;
+
+    const arr = (active as Record<string, unknown>)._spanProcessors;
+    return Array.isArray(arr) ? arr : undefined;
+  } catch {
+    return undefined;
+  }
+}
