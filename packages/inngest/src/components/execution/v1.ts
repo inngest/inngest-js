@@ -1254,7 +1254,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   get ops(): Record<string, MemoizedOp> {
-    return Object.fromEntries(this.state.steps);
+    return Object.fromEntries(
+      Array.from(this.state.steps.values()).map((step) => [step.id, step]),
+    );
   }
 
   private createFnArg(): Context.Any {
