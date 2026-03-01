@@ -1,0 +1,122 @@
+name: Inndiff
+
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: inndiff-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_AUTH_TOKEN: nothing
+
+jobs:
+  inndiff:
+    name: Inndiff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Inngest
+        uses: actions/checkout@v3
+        with:
+          repository: "inngest/inngest"
+          ref: main
+          path: inngest
+          submodules: recursive
+
+      - name: Checkout Inndiff
+        uses: actions/checkout@v3
+        with:
+          repository: "inngest/inndiff"
+          ref: main
+          path: inndiff
+
+      - name: Checkout SDK (current)
+        uses: actions/checkout@v3
+
+      - name: Build SDK (current)
+        uses: ./.github/actions/setup-and-build
+
+      - name: Checkout SDK@main
+        uses: actions/checkout@v3
+        with:
+          #ref: main # TODO: refer to main once the text example is in main
+          path: sdk-main
+
+      - name: Build SDK@main
+        uses: ./sdk-main/.github/actions/setup-and-build
+        with:
+          working-directory: ./sdk-main
+
+      # TODO:use prebuilt versions of inngest & inndiff
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'inngest/go.mod'
+
+      - name: Inndiff
+        run: |
+          cat <<'EOF' > inndiff.yaml
+          upstream_api_url: http://localhost:8288
+          api_url: http://localhost:3939
+          appname: indiff
+          common:
+            ignore_paths:
+              - request/header/Accept
+              - request/header/Accept-Encoding
+              - request/header/Accept-Language
+              - request/header/Authorization
+              - request/header/Connection
+              - request/header/Content-Length
+              - request/header/Content-Type
+              - request/header/Content-Type
+              - request/header/Sec-Fetch-Mode
+              - request/header/Server-Timing
+              - request/header/User-Agent
+              - request/header/X-Inngest-Framework
+              - request/header/X-Inngest-Sdk
+              - response/header/Connection
+              - response/header/Content-Length
+              - response/header/Content-Type
+              - response/header/Etag
+              - response/header/Keep-Alive
+              - response/header/Server-Timing
+              - response/header/Traceparent
+              - response/header/Tracestate
+              - response/header/User-Agent
+              - response/header/X-Inngest-Framework
+              - response/header/X-Inngest-Sdk
+              - response/header/X-Powered-By
+              - response/body/*/timing/*
+          apps:
+            - name: Main
+              url: http://localhost:3001/api/inngest
+              path: ${{ github.workspace }}/sdk-main/examples/framework-express
+              command: pnpm run dev
+              env:
+                PORT: "3001"
+            - name: PR
+              url: http://localhost:3002/api/inngest
+              path: ${{ github.workspace }}/examples/framework-express
+              command: pnpm run dev
+              env:
+                PORT: "3002"
+          tests:
+            - name: HelloWorld
+              event:
+                name: demo/event.sent
+          EOF
+
+          (cd packages/inngest && pnpm run local:pack)
+          (cd examples/framework-express && pnpm i ../../packages/inngest/inngest.tgz)
+
+          (cd sdk-main/packages/inngest && pnpm run local:pack)
+          (cd sdk-main/examples/framework-express && pnpm i ../../packages/inngest/inngest.tgz)
+          (cd inngest && go build -o inngest ./cmd)
+          (cd inndiff && go build -o inndiff ./cmd/inndiff)
+
+          (cd inngest && ./inngest dev -u http://localhost:3939/api/inngest --no-discovery --retry-interval 1 --no-poll -l debug &)
+          sleep 5
+          (cd inndiff && ./inndiff ../inndiff.yaml)
+

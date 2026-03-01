@@ -36,7 +36,7 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   // processed using webpack's DefinePlugin, which is dumb and does a straight
   // text replacement instead of actually understanding the AST, despite webpack
   // being fully capable of understanding the AST.
-  const prefixes = ["REACT_APP_", "NEXT_PUBLIC_"];
+  const prefixes = ["REACT_APP_", "NEXT_PUBLIC_", ""];
   const keys = [envKeys.InngestBaseUrl, envKeys.InngestDevMode];
 
   const values = keys.flatMap((key) => {
