@@ -273,6 +273,7 @@ jobs:
           - example: framework-nextjs-starter
           - example: framework-hono
           - example: bun-sync
+          - example: framework-nitro-sync
     steps:
       # Checkout the repo
       - name: Checkout SDK
