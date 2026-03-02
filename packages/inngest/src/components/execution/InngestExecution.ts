@@ -146,6 +146,13 @@ export interface InngestExecutionOptions {
   disableImmediateExecution?: boolean;
 
   /**
+   * Whether the incoming request includes `Accept: text/event-stream`,
+   * indicating the client wants an SSE response even if no `stream.push()`
+   * calls are made.
+   */
+  acceptsSSE?: boolean;
+
+  /**
    * Provide the ability to transform the context passed to the function before
    * the execution starts.
    */

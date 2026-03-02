@@ -20,6 +20,7 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
+  type DeferredPromiseReturn,
   type GoInterval,
   goIntervalTiming,
   resolveAfterPending,
@@ -57,6 +58,7 @@ import {
   STEP_INDEXING_SUFFIX,
   type StepHandler,
 } from "../InngestStepTools.ts";
+import { InngestStream } from "../InngestStreamTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
@@ -71,12 +73,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import {
-  buildSSEMetadataFrame,
-  drainStreamWithTimeout,
-  mergeChunks,
-  prependToStream,
-} from "./streaming.ts";
+import { buildSSEMetadataFrame, prependToStream } from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -104,6 +101,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private streamTools: InngestStream;
+
+  /**
+   * Resolved when `stream-activated` fires in sync mode, allowing `_start()`
+   * to return the SSE Response to the HTTP layer while the core loop continues
+   * executing steps in the background.
+   */
+  private earlyStreamResponse:
+    | DeferredPromiseReturn<ExecutionResult>
+    | undefined;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -151,9 +158,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     this.userFnToRun = this.getUserFnToRun();
+    this.streamTools = new InngestStream();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
     this.checkpointHandlers = this.createCheckpointHandlers();
+    this.streamTools.onActivated = () => {
+      this.state.setCheckpoint({ type: "stream-activated" });
+    };
     this.initializeTimer(this.state);
     this.initializeCheckpointRuntimeTimer(this.state);
 
@@ -183,6 +194,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             execution: {
               ctx: this.fnArg,
               instance: this,
+              stream: this.streamTools,
             },
           },
           async () => {
@@ -233,6 +245,43 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * Starts execution of the user's function and the core loop.
    */
   private async _start(): Promise<ExecutionResult> {
+    // In sync mode, set up a deferred promise that handleStreamActivated can
+    // resolve to return the SSE Response early while the loop keeps running.
+    if (this.options.stepMode === StepMode.Sync) {
+      this.earlyStreamResponse = createDeferredPromise<ExecutionResult>();
+    }
+
+    const coreLoop = this.runCoreLoop();
+
+    if (this.earlyStreamResponse) {
+      // Race: return whichever resolves first — the early stream response
+      // (from stream.push()) or the normal loop completion.
+      // The core loop continues running in the background either way.
+      //
+      // Suppress unhandled rejections from coreLoop — if the early stream
+      // response wins the race and the loop later rejects, we don't want to
+      // crash the process. The stream will be closed by startExecution's
+      // .catch() handler.
+      coreLoop.catch((err) => {
+        this.debug("core loop rejected after early stream response:", err);
+      });
+
+      const result = await Promise.race([
+        this.earlyStreamResponse.promise,
+        coreLoop,
+      ]);
+
+      return result;
+    }
+
+    return coreLoop;
+  }
+
+  /**
+   * The core checkpoint loop: processes checkpoints until a handler returns a
+   * result.
+   */
+  private async runCoreLoop(): Promise<ExecutionResult> {
     try {
       const allCheckpointHandler = this.getCheckpointHandler("");
       this.state.hooks = await this.initializeMiddleware();
@@ -265,122 +314,129 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   /**
-   * Maximum time allowed for draining the capture branch of a tee'd stream.
-   * If exceeded, the background checkpoint is abandoned (the client already
-   * has their stream).
-   */
-  private static STREAM_DRAIN_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-  /**
-   * Handles the case where a function resolves with a streaming Response.
+   * Handles `function-resolved` when the response should be delivered as SSE.
    *
-   * Tees the stream into two branches:
-   *   - Client branch: prepended with an SSE metadata frame, returned immediately
-   *   - Capture branch: drained in the background, then checkpointed
-   *
-   * This allows the caller to start receiving streamed data right away while
-   * ensuring the checkpoint is eventually persisted.
+   * Triggered when `stream.push()`/`pipe()` was called, the client sent
+   * `Accept: text/event-stream`, or the function returned a streaming
+   * Response. The checkpointable data is the function's return value — the
+   * SSE frames are just a delivery mechanism.
    */
-  private async handleStreamingFunctionResolved(
+  private async handleActivatedStreamResolved(
     checkpoint: Simplify<
       { type: "function-resolved" } & Checkpoints["function-resolved"]
     >,
   ): Promise<ExecutionResult> {
-    const response = checkpoint.data as Response;
-    // The caller verifies that response.body is a ReadableStream before
-    // invoking this method, so the non-null assertion is safe.
-    const [clientBranch, captureBranch] = response.body!.tee();
+    // If the function returned a Response, extract its body text so the
+    // result frame contains the actual content rather than `{}` (which is
+    // what JSON.stringify produces for a Response object).
+    let resultData: unknown = checkpoint.data;
+    if (checkpoint.data instanceof Response) {
+      resultData = await checkpoint.data.text();
+    }
 
+    // Close the stream with a terminal result frame
+    this.streamTools.close(resultData);
+
+    // Prepend the metadata frame to the stream
     const metadataFrame = buildSSEMetadataFrame(
       this.fnArg.runId,
       this.fnArg.attempt,
     );
     const clientStream = prependToStream(
       new TextEncoder().encode(metadataFrame),
-      clientBranch,
+      this.streamTools.readable,
     );
 
-    // Wrap the concatenated stream in a new Response, preserving original headers/status
     const clientResponse = new Response(clientStream, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
     });
 
-    // TODO: mess with middleware obviously
-    // Run transformOutput to ensure middleware hooks (including `finished`) fire.
-    // The original Response body has been tee'd above, so its body is consumed.
-    // This is intentional — the purpose here is to trigger the `finished`
-    // middleware hook, and middleware should use the `isStreaming` concept (or
-    // simply not attempt to read the body) to handle this case.
-    const result = await this.transformOutput({ data: checkpoint.data });
+    // Run transformOutput to fire middleware hooks (including `finished`).
+    const result = await this.transformOutput({ data: resultData });
 
-    // Replace the data in the result with our client-facing streaming Response
     const streamingResult: ExecutionResult = {
       ...result,
       data: clientResponse,
     } as ExecutionResult;
 
-    // Background: drain capture branch, run middleware transform, and checkpoint.
-    // This is non-blocking — the client Response is returned immediately above.
-    void this.drainAndCheckpointStream(captureBranch, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+    // Background: checkpoint the return value (not the stream bytes).
+    // This is non-blocking — the client Response is returned immediately.
+    void this.checkpointReturnValue(resultData);
 
     return streamingResult;
   }
 
   /**
-   * Drains a ReadableStream to completion, then transforms and checkpoints
-   * the buffered content. Errors are logged but not thrown, since the client
-   * has already received their stream.
-   *
-   * TODO: this seems scary right?
+   * Called when `stream.push()`/`pipe()` is first invoked during sync
+   * execution. Resolves {@link earlyStreamResponse} so that `_start()` can
+   * return the SSE Response to the HTTP layer immediately, while the core
+   * checkpoint loop keeps running steps in the background.
    */
-  private async drainAndCheckpointStream(
-    stream: ReadableStream,
-    responseMeta: { status: number; statusText: string; headers: Headers },
-  ): Promise<void> {
+  private handleStreamActivated(): undefined {
+    if (!this.earlyStreamResponse) {
+      return undefined;
+    }
+
+    const metadataFrame = buildSSEMetadataFrame(
+      this.fnArg.runId,
+      this.fnArg.attempt,
+    );
+
+    const clientStream = prependToStream(
+      new TextEncoder().encode(metadataFrame),
+      this.streamTools.readable,
+    );
+
+    const clientResponse = new Response(clientStream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
+    });
+
+    this.earlyStreamResponse.resolve({
+      type: "function-resolved",
+      ctx: this.fnArg,
+      ops: this.ops,
+      data: clientResponse,
+    });
+
+    // Return undefined so the core loop continues processing checkpoints.
+    return undefined;
+  }
+
+  /**
+   * Checkpoints the return value of a function that was delivered via SSE.
+   * Runs in the background so it doesn't block the client stream.
+   */
+  private async checkpointReturnValue(data: unknown): Promise<void> {
     try {
-      const chunks = await drainStreamWithTimeout(
-        stream,
-        V2InngestExecution.STREAM_DRAIN_TIMEOUT_MS,
-      );
+      const transformedData = await this.applyTransformOutputHook(data);
 
-      const bufferedData = new TextDecoder().decode(mergeChunks(chunks));
-
-      // Run the buffered content through middleware transformOutput
-      let transformedData: unknown =
-        await this.applyTransformOutputHook(bufferedData);
-
-      // Match the non-streaming sync path: run createResponse (experimentalTransformSyncResponse)
-      // to transform data into the HTTP response format before checkpointing.
-      // createResponse expects a Response object (not a raw string), so we
-      // reconstruct one from the buffered body + original response metadata.
       if (this.options.createResponse) {
-        const bufferedResponse = new Response(bufferedData, {
-          status: responseMeta.status,
-          statusText: responseMeta.statusText,
-          headers: responseMeta.headers,
+        // createResponse expects a Response object (the framework adapter
+        // casts data to Response and reads .headers / .clone().text()).
+        const wrappedResponse = new Response(JSON.stringify(transformedData), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
         });
-        transformedData = await this.options.createResponse(bufferedResponse);
-      }
 
-      // Checkpoint the fully-drained, transformed data.
-      // Note: checkpoint() already uses retryWithBackoff internally.
-      await this.checkpoint([
-        {
-          op: StepOpCode.RunComplete,
-          id: _internals.hashId("complete"),
-          data: transformedData,
-        },
-      ]);
+        await this.checkpoint([
+          {
+            op: StepOpCode.RunComplete,
+            id: _internals.hashId("complete"),
+            data: await this.options.createResponse(wrappedResponse),
+          },
+        ]);
+      }
     } catch (err) {
-      // Log but don't throw — the client already has their stream
       this.debug(
-        "error during background stream drain/checkpoint, client stream unaffected:",
+        "error during background checkpoint of SSE result, client stream unaffected:",
         err,
       );
     }
@@ -630,16 +686,36 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        */
       "": commonCheckpointHandler,
 
-      "function-resolved": async (checkpoint, i) => {
-        // Check if the resolved value is a streaming Response
-        if (
-          checkpoint.data instanceof Response &&
-          checkpoint.data.body instanceof ReadableStream
-        ) {
-          return this.handleStreamingFunctionResolved(checkpoint);
+      "function-resolved": async (checkpoint) => {
+        // If stream.push()/pipe() was already called, the SSE Response was
+        // returned to the client via handleStreamActivated. We just need to
+        // close the stream with a result frame, checkpoint the return value
+        // in the background, and return a result to terminate the core loop.
+        if (this.streamTools.activated) {
+          let resultData: unknown = checkpoint.data;
+          if (checkpoint.data instanceof Response) {
+            resultData = await checkpoint.data.text();
+          }
+          this.streamTools.close(resultData);
+          void this.checkpointReturnValue(resultData);
+
+          // Return a result to end the core loop. The actual HTTP response
+          // was already sent via earlyStreamResponse.
+          return this.transformOutput({ data: resultData });
         }
 
-        // Non-streaming path (unchanged)
+        // If the client accepts SSE or the function returned a streaming
+        // Response (but stream.push() was NOT called), build the SSE
+        // Response now.
+        if (
+          this.options.acceptsSSE ||
+          (checkpoint.data instanceof Response &&
+            checkpoint.data.body instanceof ReadableStream)
+        ) {
+          return this.handleActivatedStreamResolved(checkpoint);
+        }
+
+        // Non-streaming path
         // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
         // which has side effects like calling the finished hook
@@ -660,6 +736,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "function-rejected": async (checkpoint) => {
+        // If stream was already activated, close with an error frame and
+        // terminate the loop. The HTTP response was already sent.
+        if (this.streamTools.activated) {
+          this.streamTools.close({ error: String(checkpoint.error) });
+          return this.transformOutput({ error: checkpoint.error });
+        }
+
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
@@ -742,6 +825,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       "checkpointing-buffer-interval-reached": () => {
         return attemptCheckpointAndResume(undefined, false, true);
       },
+
+      "stream-activated": () => {
+        return this.handleStreamActivated();
+      },
     };
 
     const asyncHandlers: CheckpointHandlers[StepMode.Async] = {
@@ -809,6 +896,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         throw new Error(
           "Checkpointing maximum buffer interval reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
         );
+      },
+
+      "stream-activated": () => {
+        // Stream activation is only handled in sync mode; in async mode
+        // the function result is sent back to the executor, not the client.
+        return undefined;
       },
     };
 
@@ -941,6 +1034,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
         "checkpointing-buffer-interval-reached": () => {
           return attemptCheckpointAndResume(undefined, false, true);
+        },
+
+        "stream-activated": () => {
+          return undefined;
         },
       };
 
@@ -1264,7 +1361,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         await this.state.hooks?.beforeExecution?.();
         await this.state.hooks?.afterExecution?.();
       })
-      .then((data) => {
+      .then(async (data) => {
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch((error) => {
@@ -1949,6 +2046,7 @@ export interface Checkpoints {
   };
   "checkpointing-runtime-reached": {};
   "checkpointing-buffer-interval-reached": {};
+  "stream-activated": {};
 }
 
 type Checkpoint = {

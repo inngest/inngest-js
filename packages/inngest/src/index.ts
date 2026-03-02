@@ -71,6 +71,8 @@ export type {
 } from "./components/InngestMiddleware";
 export { InngestMiddleware } from "./components/InngestMiddleware.ts";
 export { step } from "./components/InngestStepTools.ts";
+export type { StreamTools } from "./components/InngestStreamTools.ts";
+export { stream } from "./components/InngestStreamTools.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { StepError } from "./components/StepError.ts";

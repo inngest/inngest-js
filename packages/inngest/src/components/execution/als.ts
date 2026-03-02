@@ -1,5 +1,6 @@
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { InngestStream } from "../InngestStreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 
 /**
@@ -36,6 +37,12 @@ export interface AsyncContext {
      * execution or within the main function body.
      */
     executingStep?: StepOptions;
+
+    /**
+     * The stream tools instance for this execution, used to push SSE frames to
+     * clients during durable endpoint execution.
+     */
+    stream?: InngestStream;
   };
 }
 

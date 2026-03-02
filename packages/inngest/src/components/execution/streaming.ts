@@ -1,16 +1,42 @@
 import { createTimeoutPromise } from "../../helpers/promises.ts";
 
 /**
+ * Builds a single SSE frame with the given event name and JSON-serialized data.
+ *
+ * `undefined` is normalized to `null` so that the `data:` field is always valid
+ * JSON (since `JSON.stringify(undefined)` returns the JS primitive `undefined`,
+ * not the string `"null"`).
+ */
+function buildSSEFrame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`;
+}
+
+/**
  * Builds an SSE metadata frame string for a streaming response.
  *
  * The frame follows the Server-Sent Events format and provides run context
  * (run ID and attempt number) to consumers of the stream.
  */
 export function buildSSEMetadataFrame(runId: string, attempt: number): string {
-  return `event: inngest\ndata: ${JSON.stringify({
-    run_id: runId,
-    attempt,
-  })}\n\n`;
+  return buildSSEFrame("inngest", { run_id: runId, attempt });
+}
+
+/**
+ * Builds an SSE stream frame string for user-pushed data.
+ *
+ * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
+ * clients as part of a streaming response.
+ */
+export function buildSSEStreamFrame(data: unknown): string {
+  return buildSSEFrame("stream", data);
+}
+
+/**
+ * Builds an SSE result frame string for the terminal value of a streaming
+ * response. This is the last frame sent before the stream closes.
+ */
+export function buildSSEResultFrame(data: unknown): string {
+  return buildSSEFrame("result", data);
 }
 
 /**

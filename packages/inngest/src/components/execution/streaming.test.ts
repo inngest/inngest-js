@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   buildSSEMetadataFrame,
+  buildSSEResultFrame,
+  buildSSEStreamFrame,
   drainStream,
   drainStreamWithTimeout,
   mergeChunks,
@@ -29,6 +31,41 @@ describe("buildSSEMetadataFrame", () => {
     const frame = buildSSEMetadataFrame("run-1", 5);
     const data = JSON.parse(frame.split("data: ")[1]!.trimEnd());
     expect(data.attempt).toBe(5);
+  });
+});
+
+describe("buildSSEStreamFrame", () => {
+  test("produces correct SSE format with event name 'stream'", () => {
+    const frame = buildSSEStreamFrame({ type: "status", message: "hello" });
+    expect(frame).toBe(
+      'event: stream\ndata: {"type":"status","message":"hello"}\n\n',
+    );
+  });
+
+  test("JSON-encodes primitive values", () => {
+    expect(buildSSEStreamFrame("hello")).toBe(
+      'event: stream\ndata: "hello"\n\n',
+    );
+    expect(buildSSEStreamFrame(42)).toBe("event: stream\ndata: 42\n\n");
+    expect(buildSSEStreamFrame(null)).toBe("event: stream\ndata: null\n\n");
+  });
+
+  test("normalizes undefined to null", () => {
+    expect(buildSSEStreamFrame(undefined)).toBe(
+      "event: stream\ndata: null\n\n",
+    );
+  });
+});
+
+describe("buildSSEResultFrame", () => {
+  test("produces correct SSE format with event name 'result'", () => {
+    const frame = buildSSEResultFrame({ result: "done" });
+    expect(frame).toBe('event: result\ndata: {"result":"done"}\n\n');
+  });
+
+  test("normalizes undefined to null", () => {
+    const frame = buildSSEResultFrame(undefined);
+    expect(frame).toBe("event: result\ndata: null\n\n");
   });
 });
 

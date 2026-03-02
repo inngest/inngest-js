@@ -1037,6 +1037,12 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
+    const acceptHeader = await actions.headers(
+      "checking accept header",
+      "Accept",
+    );
+    const acceptsSSE = acceptHeader?.includes("text/event-stream") ?? false;
+
     const exeVersion = PREFERRED_CHECKPOINTING_EXECUTION_VERSION;
 
     const exe = fn["createExecution"]({
@@ -1057,6 +1063,7 @@ export class InngestCommHandler<
         stepState: {},
         disableImmediateExecution: false,
         isFailureHandler: false,
+        acceptsSSE,
         timer,
         createResponse: (data: unknown) =>
           actions.experimentalTransformSyncResponse!(
