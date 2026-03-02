@@ -7,7 +7,7 @@ Last Edited: February 25, 2026 4:25 PM
 
 ## Context / goals
 
-This spec defines a new Realtime SDK experience inside the core inngest JS/TS SDK v4 (removing `@inngest/realtime`) that makes it easy to:
+This spec defines a new Realtime SDK experience inside the core inngest JS/TS SDK v4, making it easy to:
 
 - Trigger an Inngest function run and subscribe to typed updates from that run.
 - Build realtime UIs (React-first) without thinking about connections, chunking, parsing, or lifecycle.
@@ -34,7 +34,7 @@ This spec defines a new Realtime SDK experience inside the core inngest JS/TS SD
 
 ### Problem statement
 
-Building realtime UIs alongside Inngest currently requires manual work (streams, chunking, connections, state). The `@inngest/realtime` technical preview works, but it is separate from the main SDK, has verbose builder syntax, and lacks schema validation, run lifecycle awareness, and ecosystem integration.
+Building realtime UIs alongside Inngest currently requires manual work (streams, chunking, connections, state). The earlier technical preview worked, but it was separate from the main SDK, had verbose builder syntax, and lacked schema validation, run lifecycle awareness, and ecosystem integration.
 
 ### What users need to do
 
@@ -167,7 +167,7 @@ export const contentPipeline = realtime.channel({
 **Key design decisions:**
 
 - **Channels are just strings.** The `name` can be a static string or a function that returns a string. This means channels can represent anything.
-- **Topics are declared per-channel.** Each topic has a `schema` that is any [Standard Schema](https://standardschema.dev/) compatible value. For runtime validation, use Zod, Valibot, ArkType, etc. For type-only topics with no runtime cost, use `staticSchema<T>()`. This replaces the verbose `.addTopic(topic("name").type<T>())` builder from `@inngest/realtime`.
+- **Topics are declared per-channel.** Each topic has a `schema` that is any [Standard Schema](https://standardschema.dev/) compatible value. For runtime validation, use Zod, Valibot, ArkType, etc. For type-only topics with no runtime cost, use `staticSchema<T>()`. This replaces the older verbose `.addTopic(topic("name").type<T>())` builder pattern.
 - **`staticSchema<T>()`** is the same helper already used elsewhere in the SDK (event schemas, invoke triggers). It returns a Standard Schema compliant passthrough, meaning topics always have one config shape (`{ schema }`) regardless of whether they validate at runtime.
 - **One declaration, used everywhere.** The same channel object is imported in functions (to publish) and in UI components (to subscribe). Types flow E2E. *Note*: not entirely sure about this, maybe too much conceptual overhead.
 
