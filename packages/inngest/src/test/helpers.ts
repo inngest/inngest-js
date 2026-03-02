@@ -1585,8 +1585,14 @@ export const testFramework = (
             },
           );
           expect(ret).toMatchObject({
-            status: 200,
-            body: JSON.stringify("fn"),
+            status: 206,
+            body: JSON.stringify([
+              {
+                op: "RunComplete",
+                id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+                data: "fn",
+              },
+            ]),
           });
         });
 
@@ -1638,8 +1644,14 @@ export const testFramework = (
               },
             );
             expect(ret).toMatchObject({
-              status: 200,
-              body: JSON.stringify("fn"),
+              status: 206,
+              body: JSON.stringify([
+                {
+                  op: "RunComplete",
+                  id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+                  data: "fn",
+                },
+              ]),
             });
           });
 

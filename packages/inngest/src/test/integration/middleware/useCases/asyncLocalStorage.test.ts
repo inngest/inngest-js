@@ -1,8 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -43,9 +47,6 @@ test("async local storage context via wrapFunctionHandler", async () => {
         throw new Error("missing context");
       }
       state.contextsInFunction.push(context);
-
-      await step.run("step-1", () => {});
-      await step.run("step-2", () => {});
     },
   );
   await createTestApp({ client, functions: [fn] });
@@ -54,9 +55,5 @@ test("async local storage context via wrapFunctionHandler", async () => {
   await state.waitForRunComplete();
 
   // Verify context was available at function level
-  expect(state.contextsInFunction).toEqual([
-    { msg: "hi" },
-    { msg: "hi" },
-    { msg: "hi" },
-  ]);
+  expect(state.contextsInFunction).toEqual([{ msg: "hi" }]);
 });

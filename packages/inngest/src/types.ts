@@ -1028,6 +1028,8 @@ export interface ClientOptions {
    * Whether or not to use checkpointing by default for executions of functions
    * created using this client.
    *
+   * If `false`, disables checkpointing.
+   *
    * If `true`, enables checkpointing with default settings, which is a safe,
    * blocking version of checkpointing, where we check in with Inngest after
    * every step is run.
@@ -1038,6 +1040,8 @@ export interface ClientOptions {
    *
    * We recommend starting with the default `true` configuration and only tweak
    * the parameters directly if necessary.
+   *
+   * @default true
    */
   checkpointing?: CheckpointingOptions;
 

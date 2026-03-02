@@ -1,12 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../index.ts";
-import { createTestApp } from "../../devServerTestHarness.ts";
 import {
   createState,
+  createTestApp,
   randomSuffix,
   sleep,
   testNameFromFileUrl,
-} from "../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../index.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -121,29 +121,25 @@ test("info hooks for parallel steps", async () => {
     "step-1: inside",
     "onStepComplete",
 
-    // 2nd request
-    "fn: top",
-    "onMemoizationEnd",
-
-    // 3rd request: target parallel step
+    // 2nd request: target parallel step
     "fn: top",
     "onMemoizationEnd",
     "onStepStart",
     "step-2-a: inside",
     "onStepComplete",
 
-    // 5th request: post-parallel discovery
+    // 3rd request: target parallel step
     "fn: top",
     "onMemoizationEnd",
 
-    // 6th request: target step-3
+    // 4th request: target step-3
     "fn: top",
     "onMemoizationEnd",
     "onStepStart",
     "step-3: inside",
     "onStepComplete",
 
-    // 7th request
+    // 5th request
     "fn: top",
     "onMemoizationEnd",
     "fn: bottom",

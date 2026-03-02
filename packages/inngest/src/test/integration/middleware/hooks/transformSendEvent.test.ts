@@ -1,13 +1,13 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   createState,
-  fetchEvent,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { fetchEvent } from "../../utils.ts";
 import { matrixLevel } from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -248,7 +248,7 @@ test("function-level stays isolated", async () => {
   class Mw extends Middleware.BaseMiddleware {
     readonly id = "test";
     override transformSendEvent(arg: Middleware.TransformSendEventArgs) {
-      state.fnIds.push(arg.functionInfo?.id);
+      state.fnIds.push(arg.fn?.id());
       return arg;
     }
   }

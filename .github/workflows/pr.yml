@@ -168,6 +168,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  "middleware-sentry_itest":
+    name: "middleware-sentry: Integration tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-sentry
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:integration
+
   "middleware-encryption_test":
     name: "middleware-encryption: Test"
     runs-on: ubuntu-latest
