@@ -286,6 +286,12 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
+    if (isALSFallback()) {
+      throw new Error(
+        "`group.experiment()` requires AsyncLocalStorage support, which is not available in this runtime.",
+      );
+    }
+
     const stepOpts = getStepOptions(idOrOptions);
 
     // Use the experiment step run to memoize the variant selection.
