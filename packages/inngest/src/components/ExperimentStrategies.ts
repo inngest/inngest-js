@@ -49,6 +49,11 @@ const equalWeights = (variantNames: string[]): Record<string, number> => {
  */
 const validateWeights = (weights: Record<string, number>): void => {
   for (const [name, w] of Object.entries(weights)) {
+    if (!Number.isFinite(w)) {
+      throw new Error(
+        `experiment.weighted(): weight for "${name}" is not a finite number (${w}); weights must be finite numbers >= 0`,
+      );
+    }
     if (w < 0) {
       throw new Error(
         `experiment.weighted(): weight for "${name}" is negative (${w}); weights must be >= 0`,

@@ -240,6 +240,18 @@ describe("experiment strategies", () => {
         'weight for "a" is negative (-10)',
       );
     });
+
+    test("throws on NaN weight", () => {
+      expect(() => experiment.weighted({ a: NaN, b: 50 })).toThrow(
+        'weight for "a" is not a finite number',
+      );
+    });
+
+    test("throws on Infinity weight", () => {
+      expect(() => experiment.weighted({ a: Infinity, b: 50 })).toThrow(
+        'weight for "a" is not a finite number',
+      );
+    });
   });
 
   describe("bucket", () => {

@@ -368,6 +368,14 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     // Propagate experiment context via ALS so variant sub-steps include
     // experiment fields in their OutgoingOp.opts. Also track whether any
     // step tool is invoked to detect zero-step variants.
+    //
+    // TODO: On replay, experimentStepHashedId is undefined because it's
+    // captured inside the selection step callback, which doesn't run when
+    // memoized. This means sub-steps discovered during replay won't carry
+    // experimentContext in their OutgoingOp.opts. Fixing this requires an
+    // engine-level change to expose the hashed step ID outside the callback
+    // (e.g. via ALS before the callback runs, or returned alongside the
+    // memoized result). Tracked in EXE-1330.
     const currentCtx = getAsyncCtxSync();
     const stepTracker = { found: false };
     let result: unknown;
