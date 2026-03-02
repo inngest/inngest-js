@@ -645,6 +645,56 @@ describe("group.experiment() ALS propagation", () => {
     });
   });
 
+  test("step tools inside variant receive experiment fields for opts", async () => {
+    const { group, run, HASHED_STEP_ID } = createHarness();
+    let capturedExperimentContext: Record<string, unknown> | undefined;
+
+    await run(() =>
+      group.experiment("my-exp", {
+        variants: {
+          alpha: () => {
+            // Simulate what wrappedMatchOp does: read experimentContext from ALS
+            const ctx = als.getStore()?.execution?.experimentContext;
+            if (ctx) {
+              capturedExperimentContext = { ...ctx };
+            }
+            fakeStepCall();
+            return "val";
+          },
+        },
+        select: experiment.fixed("alpha"),
+      }),
+    );
+
+    // Verify the fields that wrappedMatchOp would spread into OutgoingOp.opts
+    expect(capturedExperimentContext).toEqual({
+      experimentStepID: HASHED_STEP_ID,
+      experimentName: "my-exp",
+      variant: "alpha",
+    });
+  });
+
+  test("step tool invocation flips experimentStepTracker via ALS", async () => {
+    const { group, run } = createHarness();
+    let trackerAfterStep: boolean | undefined;
+
+    await run(() =>
+      group.experiment("exp", {
+        variants: {
+          v: () => {
+            fakeStepCall();
+            trackerAfterStep =
+              als.getStore()?.execution?.experimentStepTracker?.found;
+            return "val";
+          },
+        },
+        select: experiment.fixed("v"),
+      }),
+    );
+
+    expect(trackerAfterStep).toBe(true);
+  });
+
   test("variant callback has experimentStepTracker in ALS", async () => {
     const { group, run } = createHarness();
     let capturedTracker: { found: boolean } | undefined;
