@@ -406,6 +406,44 @@ describe("group.experiment() core flow", () => {
     expect(experimentStepRun).toHaveBeenCalledTimes(1);
   });
 
+  test("works on replay when experiment step is memoized", async () => {
+    const exec = mockExecution();
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-id-123" } as never,
+      },
+    };
+
+    // Simulate memoized step: returns variant name without calling callback
+    const memoizedStepRun = vi.fn(
+      async (_idOrOptions: unknown, _callback: unknown) => "control",
+    );
+
+    const deps: GroupToolsDeps = { experimentStepRun: memoizedStepRun };
+    const group = createGroupTools(deps);
+
+    const result = await als.run(ctx, () =>
+      group.experiment("exp", {
+        variants: {
+          control: () => {
+            fakeStepCall();
+            return "old-result";
+          },
+          new_flow: () => {
+            fakeStepCall();
+            return "new-result";
+          },
+        },
+        select: experiment.fixed("control"),
+      }),
+    );
+
+    expect(result).toBe("old-result");
+    expect(memoizedStepRun).toHaveBeenCalledTimes(1);
+  });
+
   test("throws if experimentStepRun dep is missing", async () => {
     const group = createGroupTools();
 

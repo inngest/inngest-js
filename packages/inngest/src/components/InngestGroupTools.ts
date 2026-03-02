@@ -366,17 +366,19 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     const stepTracker = { found: false };
     let result: unknown;
 
-    if (currentCtx?.execution && experimentStepHashedId && !isALSFallback()) {
+    if (currentCtx?.execution && !isALSFallback()) {
       const als = await getAsyncLocalStorage();
       const nestedCtx: AsyncContext = {
         ...currentCtx,
         execution: {
           ...currentCtx.execution,
-          experimentContext: {
-            experimentStepID: experimentStepHashedId,
-            experimentName: stepOpts.id,
-            variant: selectedVariant,
-          },
+          ...(experimentStepHashedId && {
+            experimentContext: {
+              experimentStepID: experimentStepHashedId,
+              experimentName: stepOpts.id,
+              variant: selectedVariant,
+            },
+          }),
           experimentStepTracker: stepTracker,
         },
       };
