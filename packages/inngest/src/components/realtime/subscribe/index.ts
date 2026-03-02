@@ -34,9 +34,7 @@ export function subscribe<
     InputTopics
   >,
   const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
->(
-  token: SubscribeBaseArgs<InputChannel, InputTopics>,
-): Promise<TOutput>;
+>(token: SubscribeBaseArgs<InputChannel, InputTopics>): Promise<TOutput>;
 export function subscribe<
   const InputChannel extends Realtime.Channel | string,
   const InputTopics extends (keyof Realtime.Channel.InferTopics<

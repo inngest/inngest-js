@@ -13,11 +13,11 @@ export class TopicDefinitionImpl<
 > implements Realtime.Topic.Definition<TTopicId, TPublish, TSubscribe>
 {
   public name: TTopicId;
-  #schema?: StandardSchemaV1;
+  private schemaValue?: StandardSchemaV1;
 
   constructor(name: TTopicId, schema?: StandardSchemaV1) {
     this.name = name;
-    this.#schema = schema;
+    this.schemaValue = schema;
   }
 
   public type<
@@ -38,6 +38,6 @@ export class TopicDefinitionImpl<
   }
 
   public getSchema(): StandardSchemaV1 | undefined {
-    return this.#schema;
+    return this.schemaValue;
   }
 }

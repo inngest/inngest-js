@@ -51,7 +51,7 @@ export class TokenSubscription {
   #validate: boolean;
   #getSubscriptionToken?: (
     channel: string,
-    topics: string[]
+    topics: string[],
   ) => Promise<string>;
 
   #chunkStreams = new Map<
@@ -76,7 +76,7 @@ export class TokenSubscription {
       // String channel — no topic definitions available, store empty entries.
       // Schema validation will be skipped for these topics.
       this.#topics = new Map(
-        this.token.topics.map((name) => [name, undefined])
+        this.token.topics.map((name) => [name, undefined]),
       );
     } else {
       this.#channelId = options.token.channel.name;
@@ -88,7 +88,7 @@ export class TokenSubscription {
         this.token.topics.map((name) => [
           name,
           options.token.channel.topics?.[name],
-        ])
+        ]),
       );
     }
   }
@@ -118,7 +118,7 @@ export class TokenSubscription {
         path,
         env.NODE_ENV === "production"
           ? "https://api.inngest.com/"
-          : "http://localhost:8288/"
+          : "http://localhost:8288/",
       );
     }
 
@@ -132,7 +132,7 @@ export class TokenSubscription {
     this.#debug(
       `Establishing connection to channel "${
         this.#channelId
-      }" with topics ${JSON.stringify([...this.#topics.keys()])}...`
+      }" with topics ${JSON.stringify([...this.#topics.keys()])}...`,
     );
 
     if (typeof WebSocket === "undefined") {
@@ -142,14 +142,14 @@ export class TokenSubscription {
     let key = this.token.key;
     if (!key) {
       this.#debug(
-        "No subscription token key passed; attempting to retrieve one automatically..."
+        "No subscription token key passed; attempting to retrieve one automatically...",
       );
 
       key = await this.lazilyGetSubscriptionToken();
 
       if (!key) {
         throw new Error(
-          "No subscription token key passed and failed to retrieve one automatically"
+          "No subscription token key passed and failed to retrieve one automatically",
         );
       }
     }
@@ -204,7 +204,7 @@ export class TokenSubscription {
 
         if (!this.#running) {
           this.#debug(
-            `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`
+            `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`,
           );
         }
 
@@ -212,21 +212,21 @@ export class TokenSubscription {
           case "data": {
             if (!msg.channel) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel`
+                `Received message on channel "${msg.channel}" with no channel`,
               );
               return;
             }
 
             if (!msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no topic`
+                `Received message on channel "${msg.channel}" with no topic`,
               );
               return;
             }
 
             if (!this.#topics.has(msg.topic)) {
               this.#debug(
-                `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
+                `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`,
               );
               return;
             }
@@ -238,7 +238,7 @@ export class TokenSubscription {
               if (validateRes.issues) {
                 console.error(
                   `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
-                  validateRes.issues
+                  validateRes.issues,
                 );
                 return;
               }
@@ -248,7 +248,7 @@ export class TokenSubscription {
 
             this.#debug(
               `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
-              msg.data
+              msg.data,
             );
             return this.#fanout.write({
               channel: msg.channel,
@@ -279,7 +279,7 @@ export class TokenSubscription {
           case "datastream-start": {
             if (!msg.channel || !msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel or topic`
+                `Received message on channel "${msg.channel}" with no channel or topic`,
               );
               return;
             }
@@ -287,14 +287,14 @@ export class TokenSubscription {
             const streamId: unknown = msg.data;
             if (typeof streamId !== "string" || !streamId) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no stream ID`
+                `Received message on channel "${msg.channel}" with no stream ID`,
               );
               return;
             }
 
             if (this.#chunkStreams.has(streamId)) {
               this.#debug(
-                `Received message on channel "${msg.channel}" to create stream ID "${streamId}" that already exists`
+                `Received message on channel "${msg.channel}" to create stream ID "${streamId}" that already exists`,
               );
               return;
             }
@@ -309,7 +309,7 @@ export class TokenSubscription {
             });
 
             this.#debug(
-              `Created stream ID "${streamId}" on channel "${msg.channel}"`
+              `Created stream ID "${streamId}" on channel "${msg.channel}"`,
             );
             return this.#fanout.write({
               channel: msg.channel,
@@ -326,7 +326,7 @@ export class TokenSubscription {
           case "datastream-end": {
             if (!msg.channel || !msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel or topic`
+                `Received message on channel "${msg.channel}" with no channel or topic`,
               );
               return;
             }
@@ -334,7 +334,7 @@ export class TokenSubscription {
             const endStreamId: unknown = msg.data;
             if (typeof endStreamId !== "string" || !endStreamId) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no stream ID`
+                `Received message on channel "${msg.channel}" with no stream ID`,
               );
               return;
             }
@@ -342,7 +342,7 @@ export class TokenSubscription {
             const endStream = this.#chunkStreams.get(endStreamId);
             if (!endStream) {
               this.#debug(
-                `Received message on channel "${msg.channel}" to close stream ID "${endStreamId}" that doesn't exist`
+                `Received message on channel "${msg.channel}" to close stream ID "${endStreamId}" that doesn't exist`,
               );
               return;
             }
@@ -351,7 +351,7 @@ export class TokenSubscription {
             this.#chunkStreams.delete(endStreamId);
 
             this.#debug(
-              `Closed stream ID "${endStreamId}" on channel "${msg.channel}"`
+              `Closed stream ID "${endStreamId}" on channel "${msg.channel}"`,
             );
             return this.#fanout.write({
               channel: msg.channel,
@@ -368,14 +368,14 @@ export class TokenSubscription {
           case "chunk": {
             if (!msg.channel || !msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel or topic`
+                `Received message on channel "${msg.channel}" with no channel or topic`,
               );
               return;
             }
 
             if (!msg.stream_id) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no stream ID`
+                `Received message on channel "${msg.channel}" with no stream ID`,
               );
               return;
             }
@@ -383,14 +383,14 @@ export class TokenSubscription {
             const chunkStream = this.#chunkStreams.get(msg.stream_id);
             if (!chunkStream) {
               this.#debug(
-                `Received message on channel "${msg.channel}" for unknown stream ID "${msg.stream_id}"`
+                `Received message on channel "${msg.channel}" for unknown stream ID "${msg.stream_id}"`,
               );
               return;
             }
 
             this.#debug(
               `Received chunk on channel "${msg.channel}" for stream ID "${msg.stream_id}":`,
-              msg.data
+              msg.data,
             );
 
             chunkStream.controller.enqueue(msg.data);
@@ -409,7 +409,7 @@ export class TokenSubscription {
 
           default: {
             this.#debug(
-              `Received message on channel "${msg.channel}" with unhandled kind "${msg.kind}"`
+              `Received message on channel "${msg.channel}" with unhandled kind "${msg.kind}"`,
             );
             return;
           }
@@ -428,8 +428,8 @@ export class TokenSubscription {
             new Error(
               `WebSocket closed before opening${
                 event.reason ? `: ${event.reason}` : ""
-              }`
-            )
+              }`,
+            ),
           );
         }
         this.close();
@@ -453,7 +453,7 @@ export class TokenSubscription {
     if (this.#getSubscriptionToken) {
       return this.#getSubscriptionToken(
         channelId,
-        this.token.topics as string[]
+        this.token.topics as string[],
       );
     }
 
@@ -461,7 +461,7 @@ export class TokenSubscription {
     // Fallback: try fetching directly using env-based signing keys.
     // This path is used when no Inngest client is available.
     throw new Error(
-      "No getSubscriptionToken handler provided. Pass an Inngest client or provide a token key."
+      "No getSubscriptionToken handler provided. Pass an Inngest client or provide a token key.",
     );
   }
 
@@ -501,7 +501,7 @@ export class TokenSubscription {
   public useCallback(
     callback: Realtime.Subscribe.Callback,
     stream: ReadableStream<Realtime.Message> = this.getJsonStream(),
-    onError?: (err: unknown) => void
+    onError?: (err: unknown) => void,
   ) {
     void (async () => {
       const reader = stream.getReader();

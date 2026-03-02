@@ -118,7 +118,7 @@ const terminalRunStatuses = new Set<UseRealtimeRunStatus>([
 const clampHistory = (
   prev: Realtime.Message[],
   next: Realtime.Message[],
-  limit: number | null
+  limit: number | null,
 ) => {
   const merged = [...prev, ...next];
   if (limit === null) {
@@ -134,7 +134,7 @@ const clampHistory = (
 
 const toRealtimeState = (
   status: UseRealtimeConnectionStatus,
-  isRefreshingToken: boolean
+  isRefreshingToken: boolean,
 ): RealtimeState => {
   if (isRefreshingToken) {
     return RealtimeState.RefreshingToken;
@@ -164,7 +164,7 @@ const toError = (err: unknown) => {
 };
 
 const normalizeRunStatus = (
-  value: unknown
+  value: unknown,
 ): UseRealtimeRunStatus | undefined => {
   if (typeof value !== "string") {
     return;
@@ -191,7 +191,7 @@ const normalizeRunStatus = (
 };
 
 const inferRunLifecycleUpdate = (
-  message: Realtime.Message
+  message: Realtime.Message,
 ): RunLifecycleUpdate => {
   if (message.kind !== "run") {
     return {};
@@ -265,7 +265,7 @@ export const useRealtime = <
   TTopics
 > => {
   const channelKey =
-    typeof channel === "string" ? channel : channel?.name ?? undefined;
+    typeof channel === "string" ? channel : (channel?.name ?? undefined);
   const topicsKey = topics ? JSON.stringify([...topics]) : "";
   const [history, setHistory] = useState<Realtime.Message[]>([]);
   const [freshData, setFreshData] = useState<Realtime.Message[]>([]);
@@ -280,7 +280,7 @@ export const useRealtime = <
   const [isVisible, setIsVisible] = useState(() => isDocumentVisible());
 
   const subscriptionRef = useRef<Realtime.Subscribe.StreamSubscription | null>(
-    null
+    null,
   );
   const readerRef =
     useRef<ReadableStreamDefaultReader<Realtime.Message> | null>(null);
@@ -337,7 +337,7 @@ export const useRealtime = <
         messageBufferRef.current = [];
         setFreshData(buffered);
         setHistory((prev) =>
-          clampHistory(prev, buffered, historyLimitRef.current)
+          clampHistory(prev, buffered, historyLimitRef.current),
         );
       }, bufferInterval);
     }
@@ -396,7 +396,7 @@ export const useRealtime = <
           if (typeof next === "string") {
             if (!channel || !topics) {
               throw new Error(
-                "useRealtime token() returned a string but channel/topics were not provided"
+                "useRealtime token() returned a string but channel/topics were not provided",
               );
             }
 
@@ -451,7 +451,7 @@ export const useRealtime = <
       if (bufferIntervalRef.current === 0) {
         setFreshData([message]);
         setHistory((prev) =>
-          clampHistory(prev, [message], historyLimitRef.current)
+          clampHistory(prev, [message], historyLimitRef.current),
         );
         return;
       }
@@ -560,7 +560,7 @@ export const useRealtime = <
         const delay = getReconnectDelay(
           reconnectAttempt++,
           reconnectMinMs,
-          reconnectMaxMs
+          reconnectMaxMs,
         );
         await sleep(delay);
       }

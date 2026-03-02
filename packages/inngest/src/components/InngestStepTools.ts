@@ -521,7 +521,8 @@ export const createStepTools = <
           fn: async (ctx, _idOrOptions, topicRef, data) => {
             const topicConfig = topicRef.config;
             if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
-              const result = await topicConfig.schema["~standard"].validate(data);
+              const result =
+                await topicConfig.schema["~standard"].validate(data);
               if (result.issues) {
                 throw new Error(
                   `Schema validation failed for topic "${topicRef.topic}"`,

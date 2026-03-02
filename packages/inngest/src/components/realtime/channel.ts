@@ -24,7 +24,7 @@ type InferChannelReturn<
 
 const createTopicAccessors = (
   channelName: string,
-  topics: Realtime.TopicsConfig
+  topics: Realtime.TopicsConfig,
 ): Record<string, Realtime.TopicRef> => {
   const accessors: Record<string, Realtime.TopicRef> = {};
   for (const [topicName, config] of Object.entries(topics)) {
@@ -41,7 +41,7 @@ export const channel = <
   const TName extends string | ((...args: never[]) => string),
   const TTopics extends Realtime.TopicsConfig,
 >(
-  options: ChannelOptions<TName, TTopics>
+  options: ChannelOptions<TName, TTopics>,
 ): InferChannelReturn<TName, TTopics> => {
   const { name, topics } = options;
 

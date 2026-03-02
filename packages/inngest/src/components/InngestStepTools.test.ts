@@ -155,10 +155,7 @@ describe("realtime step tools", () => {
             throw new Error("Expected tool fn");
           }
 
-          return opts.fn(
-            { runId: "run_123" } as never,
-            ...(args as unknown[]),
-          );
+          return opts.fn({ runId: "run_123" } as never, ...(args as unknown[]));
         },
       );
 

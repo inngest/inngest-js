@@ -80,9 +80,7 @@ export namespace Realtime {
 
     export type Callback<
       TSubscribeToken extends Subscribe.Token = Subscribe.Token,
-    > = (
-      message: Token.InferMessage<TSubscribeToken>,
-    ) => MaybePromise<void>;
+    > = (message: Token.InferMessage<TSubscribeToken>) => MaybePromise<void>;
 
     export type CallbackSubscription = {
       close(reason?: string): void;
@@ -182,29 +180,30 @@ export namespace Realtime {
       string,
       Realtime.Topic.Definition
     >,
-  > = {
-    [K in keyof TTopics]:
-      | {
-          topic: K;
-          channel: TChannelId;
-          data: Realtime.Topic.InferSubscribe<TTopics[K]>;
-          runId?: string;
-          fnId?: string;
-          createdAt: Date;
-          envId?: string;
-          kind: "data";
-        }
-      | {
-          topic: K;
-          channel: TChannelId;
-          data: Realtime.Topic.InferSubscribe<TTopics[K]>;
-          runId?: string;
-          fnId?: string;
-          kind: "datastream-start" | "datastream-end" | "chunk";
-          streamId: string;
-          stream: ReadableStream<Realtime.Topic.InferSubscribe<TTopics[K]>>;
-        };
-  }[keyof TTopics]
+  > =
+    | {
+        [K in keyof TTopics]:
+          | {
+              topic: K;
+              channel: TChannelId;
+              data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+              runId?: string;
+              fnId?: string;
+              createdAt: Date;
+              envId?: string;
+              kind: "data";
+            }
+          | {
+              topic: K;
+              channel: TChannelId;
+              data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+              runId?: string;
+              fnId?: string;
+              kind: "datastream-start" | "datastream-end" | "chunk";
+              streamId: string;
+              stream: ReadableStream<Realtime.Topic.InferSubscribe<TTopics[K]>>;
+            };
+      }[keyof TTopics]
     | {
         channel?: TChannelId;
         topic?: string;
@@ -468,7 +467,7 @@ export namespace Realtime {
   // topic name, topic config, and payload type. Created by dot-accessing
   // a topic on a channel instance (e.g. `chat.status`).
   //
-  export interface TopicRef<TData = unknown> {
+  export interface TopicRef<_TData = unknown> {
     channel: string;
     topic: string;
     config: TopicConfig;

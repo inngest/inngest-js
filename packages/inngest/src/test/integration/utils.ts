@@ -171,6 +171,7 @@ export const anyContext = {
   group: expect.any(Object),
   logger: expect.any(Object),
   maxAttempts: expect.any(Number),
+  publish: expect.any(Function),
   runId: expect.any(String),
   step: expect.any(Object),
 };

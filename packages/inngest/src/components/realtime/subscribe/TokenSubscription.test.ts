@@ -1,5 +1,5 @@
-import { z } from "zod/v3";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod/v3";
 import { TokenSubscription } from "./TokenSubscription.ts";
 
 type WsBehavior = "open" | "close-before-open";

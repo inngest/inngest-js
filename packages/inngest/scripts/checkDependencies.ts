@@ -295,6 +295,7 @@ checkDependencies("tsconfig.build.json", [
   "src/remix.ts",
   "src/sveltekit.ts",
   "src/nitro.ts",
+  "src/react.ts",
   "tsdown.config.ts",
   "vitest.config.ts",
 ]);

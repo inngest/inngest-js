@@ -220,7 +220,9 @@ describe("channel types", () => {
       const ch = channel({
         name: "test",
         topics: {
-          result: { schema: staticSchema<{ success: boolean; output: unknown }>() },
+          result: {
+            schema: staticSchema<{ success: boolean; output: unknown }>(),
+          },
         },
       });
 
@@ -328,7 +330,9 @@ describe("InferTopicData", () => {
 
   test("extracts union types from staticSchema", () => {
     type Config = {
-      schema: StandardSchemaV1<{ kind: "a"; value: string } | { kind: "b"; value: number }>;
+      schema: StandardSchemaV1<
+        { kind: "a"; value: string } | { kind: "b"; value: number }
+      >;
     };
     type Inferred = Realtime.InferTopicData<Config>;
 
@@ -383,9 +387,13 @@ describe("multi-topic type inference", () => {
   const multiCh = channel({
     name: "pipeline",
     topics: {
-      status: { schema: z.object({ message: z.string(), step: z.string().optional() }) },
+      status: {
+        schema: z.object({ message: z.string(), step: z.string().optional() }),
+      },
       tokens: { schema: z.object({ token: z.string() }) },
-      usage: { schema: staticSchema<{ inputTokens: number; outputTokens: number }>() },
+      usage: {
+        schema: staticSchema<{ inputTokens: number; outputTokens: number }>(),
+      },
     },
   });
 
@@ -531,7 +539,9 @@ describe("TopicRef type narrowing", () => {
     });
 
     type RefType = typeof ch.data;
-    expectTypeOf<RefType>().toEqualTypeOf<Realtime.TopicRef<{ value: number }>>();
+    expectTypeOf<RefType>().toEqualTypeOf<
+      Realtime.TopicRef<{ value: number }>
+    >();
   });
 
   test("TopicRef for staticSchema carries the correct type", () => {
@@ -675,6 +685,8 @@ describe("ChannelDef structure", () => {
     const instance = chat({ id: "abc" });
 
     expectTypeOf(instance.name).toBeString();
-    expectTypeOf(instance.msg).toEqualTypeOf<Realtime.TopicRef<{ text: string }>>();
+    expectTypeOf(instance.msg).toEqualTypeOf<
+      Realtime.TopicRef<{ text: string }>
+    >();
   });
 });
