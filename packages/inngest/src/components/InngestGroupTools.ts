@@ -326,7 +326,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
               ...(select.__experimentConfig.weights && {
                 variant_weights: select.__experimentConfig.weights,
               }),
-            },
+            } satisfies ExperimentMetadataValues,
           );
 
           if (select.__experimentConfig.nullishBucket) {

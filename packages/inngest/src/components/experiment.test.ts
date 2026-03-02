@@ -234,6 +234,12 @@ describe("experiment strategies", () => {
         "all weights are zero",
       );
     });
+
+    test("throws on negative weights", () => {
+      expect(() => experiment.weighted({ a: -10, b: 50 })).toThrow(
+        'weight for "a" is negative (-10)',
+      );
+    });
   });
 
   describe("bucket", () => {

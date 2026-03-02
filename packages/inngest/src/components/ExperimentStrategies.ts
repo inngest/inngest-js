@@ -48,6 +48,14 @@ const equalWeights = (variantNames: string[]): Record<string, number> => {
  * Throw if all weights are zero.
  */
 const validateWeights = (weights: Record<string, number>): void => {
+  for (const [name, w] of Object.entries(weights)) {
+    if (w < 0) {
+      throw new Error(
+        `experiment.weighted(): weight for "${name}" is negative (${w}); weights must be >= 0`,
+      );
+    }
+  }
+
   const total = Object.values(weights).reduce((sum, w) => sum + w, 0);
   if (total <= 0) {
     throw new Error(
