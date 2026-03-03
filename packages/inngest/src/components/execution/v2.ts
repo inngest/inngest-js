@@ -835,7 +835,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             steps: [
               {
                 op: StepOpCode.DiscoveryRequest,
-                id: _internals.hashId("discovery-request"), // ID doesn't matter
+                id: _internals.hashId(`discovery-request-${Date.now()}`),
               },
             ],
           };
