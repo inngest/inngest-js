@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -50,7 +51,7 @@ describe("args", () => {
           await step.run("my-step", () => "step result");
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -105,7 +106,7 @@ test("multiple steps", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -173,7 +174,7 @@ test("step error does not call onStepComplete", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -212,7 +213,7 @@ test("memoized step does not call onStepComplete", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -250,7 +251,7 @@ test("throws", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

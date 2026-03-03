@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { fetchEvent } from "../../utils.ts";
 import { matrixLevel } from "../utils.ts";
 
@@ -68,7 +69,7 @@ matrixLevel("transform event data before sending", async (level) => {
       state.eventId = ids[0]!;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -156,7 +157,7 @@ matrixLevel("multiple middleware transform in order", async (level) => {
       state.eventId = ids[0]!;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();
@@ -224,7 +225,7 @@ test("client.send", async () => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();
@@ -287,7 +288,11 @@ test("function-level stays isolated", async () => {
       state.eventIds.add(ids[0]!);
     },
   );
-  await createTestApp({ client, functions: [fnWithMw, fnWithoutMw] });
+  await createTestApp({
+    client,
+    functions: [fnWithMw, fnWithoutMw],
+    serve: createServer,
+  });
 
   await client.send({ name: eventName });
   await waitFor(() => {

@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -49,7 +50,7 @@ test("async local storage context via wrapFunctionHandler", async () => {
       state.contextsInFunction.push(context);
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

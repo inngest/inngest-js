@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -55,7 +56,7 @@ describe("args", () => {
           state.runId = runId;
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -103,7 +104,7 @@ test("throwing rejects the request", async () => {
       state.fnCalled = true;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();
@@ -138,7 +139,7 @@ test("next() resolves with response", async () => {
       return "output";
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -197,7 +198,7 @@ test("multiple middleware in onion order", async () => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -245,7 +246,7 @@ describe("throws", () => {
         state.fn.count++;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -284,7 +285,7 @@ describe("throws", () => {
         throw new Error("oh no");
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();

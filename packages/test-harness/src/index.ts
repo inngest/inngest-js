@@ -12,7 +12,7 @@ export {
   registerApp,
   waitForFunctions,
 } from "./testApp.ts";
-export type { TestApp } from "./testApp.ts";
+export type { ServeFactory, TestApp } from "./testApp.ts";
 
 export {
   randomSuffix,

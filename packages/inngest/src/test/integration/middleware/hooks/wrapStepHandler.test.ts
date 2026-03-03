@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect } from "vitest";
 import { Inngest, Middleware, NonRetriableError } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { matrixCheckpointing } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -51,7 +52,7 @@ matrixCheckpointing("change output (2 middleware)", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -99,7 +100,7 @@ matrixCheckpointing("called once per attempt", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();
@@ -149,7 +150,7 @@ matrixCheckpointing(
         await step.run("step-after-sleep-2", async () => {});
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -206,7 +207,7 @@ matrixCheckpointing("swallow error", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -266,7 +267,7 @@ matrixCheckpointing("throw error", async (checkpointing) => {
       }
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();

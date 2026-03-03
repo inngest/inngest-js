@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -50,7 +51,7 @@ describe("args", () => {
           return "fn result";
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -98,7 +99,7 @@ test("with steps", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -143,7 +144,7 @@ test("does NOT fire when function errors", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();
@@ -181,7 +182,7 @@ test("throws", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware, NonRetriableError } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { matrixCheckpointing } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -59,7 +60,7 @@ test("multiple middleware in correct order", async () => {
       state.logs.push("fn: top");
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -129,7 +130,7 @@ test("bookend with steps", async () => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -177,7 +178,7 @@ describe("modify output", () => {
         return "original result";
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     const output = await state.waitForRunComplete();
@@ -225,7 +226,7 @@ describe("modify output", () => {
         return "result";
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     const output = await state.waitForRunComplete();
@@ -282,7 +283,7 @@ describe("modify error", () => {
         throw new OriginalError("original");
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -338,7 +339,7 @@ describe("modify error", () => {
         throw new Error("error");
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -379,7 +380,7 @@ describe("modify error", () => {
         state.runId = runId;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -420,7 +421,7 @@ describe("modify error", () => {
         throw new Error("function error");
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -459,7 +460,7 @@ describe("modify error", () => {
         throw new Error("original error");
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -500,7 +501,7 @@ describe("throws", () => {
         state.fn.count++;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -544,7 +545,7 @@ describe("throws", () => {
         state.fn.count++;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();
@@ -586,7 +587,7 @@ describe("throws", () => {
         throw new Error("oh no");
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunFailed();

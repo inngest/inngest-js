@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { type Context, Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -46,7 +47,7 @@ test("same as ctx in function handler", async () => {
       return "done";
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();
@@ -98,7 +99,7 @@ test("modify event data", async () => {
       return "done";
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();
@@ -163,7 +164,7 @@ test("modify memoized step data", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -213,7 +214,7 @@ test("dependency injection", async () => {
       state.db = db;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();
@@ -259,7 +260,7 @@ test("add step method", async () => {
       state.stepOutputs.push(await step.myStep("my-step"));
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { original: "data" } });
   await state.waitForRunComplete();

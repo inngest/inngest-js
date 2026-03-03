@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test, vi } from "vitest";
 import { Inngest } from "../../index.ts";
+import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -53,7 +54,7 @@ for (const checkpointing of [true, false]) {
           return "done";
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -86,7 +87,7 @@ for (const checkpointing of [true, false]) {
           return "done";
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -130,7 +131,7 @@ for (const checkpointing of [true, false]) {
           throw new Error("boom");
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunFailed();

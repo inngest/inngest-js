@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../index.ts";
+import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -48,7 +49,11 @@ test("function-level middleware only on that function", async () => {
       fnWithoutMwState.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fnWithMw, fnWithoutMw] });
+  await createTestApp({
+    client,
+    functions: [fnWithMw, fnWithoutMw],
+    serve: createServer,
+  });
 
   await client.send({ name: fnWithoutMwEventName });
   await client.send({ name: fnWithMwEventName });

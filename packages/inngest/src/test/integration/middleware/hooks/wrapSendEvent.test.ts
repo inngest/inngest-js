@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { matrixLevel } from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -56,7 +57,7 @@ matrixLevel("client.send and step.sendEvent", async (level) => {
       await step.sendEvent("send", { name: stepSendEventName });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: triggerEventName });
   await state.waitForRunComplete();
@@ -107,7 +108,7 @@ test("multiple middleware in onion order", async () => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -147,7 +148,7 @@ test("can modify output", async () => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   state.output = await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -186,7 +187,7 @@ test("receives events in args", async () => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: { hello: "world" } });
   await state.waitForRunComplete();
@@ -231,7 +232,7 @@ test("fires for step.sendEvent", async () => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   // wrapSendEvent fires for client.send (triggering the function)
   await client.send({ name: triggerEventName });
@@ -269,7 +270,7 @@ test("throwing rejects the send", async () => {
     { id: "fn", retries: 0, triggers: [{ event: eventName }] },
     async () => {},
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await expect(client.send({ name: eventName })).rejects.toThrow(
     "send rejected",
@@ -326,7 +327,11 @@ test("function-level stays isolated", async () => {
       state.eventIds.add(ids[0]!);
     },
   );
-  await createTestApp({ client, functions: [fnWithMw, fnWithoutMw] });
+  await createTestApp({
+    client,
+    functions: [fnWithMw, fnWithoutMw],
+    serve: createServer,
+  });
 
   await client.send({ name: eventName });
   await waitFor(() => {

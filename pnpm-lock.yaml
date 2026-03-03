@@ -361,6 +361,9 @@ importers:
 
   packages/middleware-sentry:
     devDependencies:
+      '@inngest/test-harness':
+        specifier: workspace:*
+        version: link:../test-harness
       '@sentry/core':
         specifier: ^8.8.0
         version: 8.14.0
@@ -511,18 +514,12 @@ importers:
 
   packages/test-harness:
     devDependencies:
-      inngest:
-        specifier: workspace:*
-        version: link:../inngest
       typescript:
         specifier: ~5.8.2
         version: 5.8.2
       vitest:
         specifier: ^3.0.8
         version: 3.2.4(@edge-runtime/vm@3.0.3)(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
 
 packages:
 
@@ -10613,7 +10610,7 @@ snapshots:
       svelte: 4.2.5
       svelte-hmr: 0.15.3(svelte@4.2.5)
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
-      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))
+      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -10627,7 +10624,7 @@ snapshots:
       svelte: 4.2.5
       svelte-hmr: 0.15.3(svelte@4.2.5)
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
-      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))
+      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1))
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -16272,7 +16269,7 @@ snapshots:
       vite: 7.0.2(@types/node@22.13.10)(jiti@2.5.1)
     optional: true
 
-  vitefu@0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)):
+  vitefu@0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)):
     optionalDependencies:
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
 
