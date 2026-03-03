@@ -67,6 +67,27 @@ function unwrapRunOutput(parsed: unknown): unknown {
   return parsed;
 }
 
+/**
+ * Unwrap the raw error output from a failed run.
+ *
+ * v4 wraps errors in a StepError/StepFailed op array, e.g.
+ * `[{ op: "StepError", error: { message, name }, id: "..." }]`.
+ * This extracts the inner `error` field.
+ */
+function unwrapRunError(parsed: unknown): unknown {
+  if (Array.isArray(parsed) && parsed.length === 1) {
+    const item = parsed[0];
+    if (
+      item &&
+      typeof item === "object" &&
+      "error" in item
+    ) {
+      return item.error;
+    }
+  }
+  return parsed;
+}
+
 async function fetchRunResult(
   runId: string,
   timeout = 20_000,
@@ -105,7 +126,7 @@ async function fetchRunResult(
         return { data: unwrapped };
       }
       if (data.data.run.status === "FAILED") {
-        return { error: parsed };
+        return { error: unwrapRunError(parsed) };
       }
     }
 
@@ -138,7 +159,7 @@ export class BaseState {
     return result.data;
   }
 
-  async waitForRunFailed(): Promise<void> {
+  async waitForRunFailed(): Promise<unknown> {
     const runId = await this.waitForRunId();
     const result = await fetchRunResult(runId);
     if (!result.error) {
@@ -146,6 +167,7 @@ export class BaseState {
         `Expected run ${runId} to fail, but it completed with: ${JSON.stringify(result.data)}`,
       );
     }
+    return result.error;
   }
 }
 

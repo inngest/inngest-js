@@ -1,7 +1,4 @@
-import {
-  startDevServer,
-  stopDevServer,
-} from "@inngest/test-harness";
+import { startDevServer, stopDevServer } from "@inngest/test-harness";
 
 const devServerEnabled = process.env.DEV_SERVER_ENABLED !== "0";
 
