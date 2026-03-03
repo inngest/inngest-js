@@ -1,13 +1,13 @@
-import { Inngest } from "inngest";
-import { describe, expect, test } from "vitest";
-import { SentryMiddleware, sentryMiddleware } from "../../middleware.ts";
 import {
   createState,
   createTestApp,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../../test-harness/index.ts";
+} from "@inngest/test-harness";
+import { Inngest } from "inngest";
+import { describe, expect, test } from "vitest";
+import { SentryMiddleware, sentryMiddleware } from "../../middleware.ts";
 import {
   capturedErrors,
   capturedStepErrors,

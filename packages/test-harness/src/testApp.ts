@@ -150,9 +150,7 @@ export async function waitForFunctions(
 
   while (Date.now() - start < timeout) {
     try {
-      const res = await fetch(
-        `http://localhost:8288/dev`,
-      );
+      const res = await fetch(`http://localhost:8288/dev`);
       if (res.ok) {
         const data = (await res.json()) as { functions?: unknown[] };
         if (data.functions && data.functions.length >= count) {
