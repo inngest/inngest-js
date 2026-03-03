@@ -1,5 +1,11 @@
 # inngest
 
+## 3.52.5
+
+### Patch Changes
+
+- [#1340](https://github.com/inngest/inngest-js/pull/1340) [`335703d7`](https://github.com/inngest/inngest-js/commit/335703d7372d092a865def4b2cfb4730e50d5fa9) Thanks [@Linell](https://github.com/Linell)! - fix: fallback to async flow on checkpoint error
+
 ## 3.52.4
 
 ### Patch Changes

@@ -615,11 +615,19 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       stepResult?: OutgoingOp,
       resume = true,
       force = false,
-    ) => {
+    ): Promise<ExecutionResult | undefined> => {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
+
+        // Clear `executingStep` immediately after resuming, before any await.
+        // `resumeStepWithResult` resolves the step's promise, queuing a
+        // microtask for the function to continue. Any subsequent await (e.g.
+        // the `transformOutput` hook) yields and lets that microtask run, so
+        // `executingStep` must already be cleared to avoid a false positive
+        // NESTING_STEPS warning in the next step's handler.
+        delete this.state.executingStep;
 
         // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
@@ -656,16 +664,27 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
-          // If checkpointing fails for any reason, fall back to the async
-          // flow
+          // If checkpointing fails for any reason, fall back to returning
+          // ALL buffered steps to the executor via the normal async flow.
+          // The executor persists completed steps and rediscovers any
+          // parallel/errored steps on the next invocation.
           this.debug(
             "error checkpointing after step run, so falling back to async",
             err,
           );
 
-          if (stepResult) {
-            return stepRanHandler(stepResult);
+          const buffered = this.state.checkpointingStepBuffer;
+
+          if (buffered.length) {
+            return {
+              type: "steps-found" as const,
+              ctx: this.fnArg,
+              ops: this.ops,
+              steps: buffered as [OutgoingOp, ...OutgoingOp[]],
+            };
           }
+
+          return;
         } finally {
           // Clear the checkpointing buffer
           this.state.checkpointingStepBuffer = [];
@@ -933,7 +952,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         "function-rejected": async (checkpoint) => {
           // If we have buffered steps, attempt checkpointing them first
           if (this.state.checkpointingStepBuffer.length) {
-            await attemptCheckpointAndResume(undefined, false);
+            const fallback = await attemptCheckpointAndResume(
+              undefined,
+              false,
+              true,
+            );
+            if (fallback) return fallback;
           }
 
           return await this.transformOutput({ error: checkpoint.error });
@@ -979,7 +1003,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                 // Flush buffered steps before falling back to async,
                 // so previously-successful steps aren't lost.
                 if (this.state.checkpointingStepBuffer.length) {
-                  await attemptCheckpointAndResume(undefined, false, true);
+                  const fallback = await attemptCheckpointAndResume(
+                    undefined,
+                    false,
+                    true,
+                  );
+                  if (fallback) return fallback;
                 }
 
                 // If we failed, go back to the regular async flow.
@@ -998,7 +1027,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             // back with requestedRunStep, those steps would be missing
             // from stepState, causing "step not found" errors.
             if (this.state.checkpointingStepBuffer.length) {
-              await attemptCheckpointAndResume(undefined, false, true);
+              const fallback = await attemptCheckpointAndResume(
+                undefined,
+                false,
+                true,
+              );
+              if (fallback) return fallback;
             }
 
             return maybeReturnNewSteps(steps);
