@@ -439,6 +439,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
+        // Clear `executingStep` immediately after resuming, before any await.
+        // `resumeStepWithResult` resolves the step's promise, queuing a
+        // microtask for the function to continue. Any subsequent await (e.g.
+        // the `transformOutput` hook) yields and lets that microtask run, so
+        // `executingStep` must already be cleared to avoid a false positive
+        // NESTING_STEPS warning in the next step's handler.
+        delete this.state.executingStep;
+
         // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
         // which has side effects like calling the finished hook
@@ -578,6 +586,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
         // Resume the step with original data for user code
         const stepToResume = this.resumeStepWithResult(result);
+
+        // Clear executingStep now that the step result has been processed.
+        // Without this, the next step discovery would see stale state and
+        // emit a false positive NESTING_STEPS warning.
+        delete this.state.executingStep;
 
         // Transform data for checkpoint (middleware)
         // Only call the transformOutput hook directly, not the full transformOutput method
