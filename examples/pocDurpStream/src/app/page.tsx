@@ -45,6 +45,7 @@ export default function Home() {
           if (!part.trim()) {
             continue;
           }
+          console.log(part);
 
           let event = "message";
           let data = "";
@@ -84,6 +85,13 @@ export default function Home() {
     } finally {
       setRunning(false);
     }
+  }
+
+  let status = "";
+  if (runId && running) {
+    status = "Running";
+  } else if (runId && !running) {
+    status = "Done";
   }
 
   let title = "";
@@ -133,9 +141,12 @@ export default function Home() {
             color: "#888",
             padding: "8px 20px",
             borderBottom: "1px solid #2a2a4a",
+            display: "flex",
+            justifyContent: "space-between",
           }}
         >
-          {title}
+          <span>{title}</span>
+          <span>{status}</span>
         </div>
 
         <pre
