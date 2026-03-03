@@ -1,13 +1,13 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  anyContext,
   createState,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -69,7 +69,7 @@ describe("args", () => {
         {
           ctx: anyContext,
           error: expect.any(MyError),
-          functionInfo: { id: "fn" },
+          fn,
           isFinalAttempt: true,
         },
       ]);
@@ -121,13 +121,13 @@ test("multiple attempts", async () => {
   expect(state.calls[0]).toEqual({
     ctx: anyContext,
     error: expect.any(MyError),
-    functionInfo: { id: "fn" },
+    fn,
     isFinalAttempt: false,
   });
   expect(state.calls[1]).toEqual({
     ctx: anyContext,
     error: expect.any(MyError),
-    functionInfo: { id: "fn" },
+    fn,
     isFinalAttempt: true,
   });
 });

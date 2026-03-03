@@ -1,13 +1,13 @@
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { z } from "zod";
 import { Inngest, invoke, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import {
-  anyContext,
-  createState,
-  randomSuffix,
-  testNameFromFileUrl,
-} from "../../utils.ts";
+import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -52,6 +52,9 @@ describe("args", () => {
         async ({ step, runId }) => {
           state.runId = runId;
           await step.run("my-step", () => "result");
+
+          // Force reentry with checkpointing
+          await step.sleep("sleep", "1s");
         },
       );
       await createTestApp({ client, functions: [fn] });
@@ -62,7 +65,7 @@ describe("args", () => {
       // Called twice: once fresh (request 1), once memoized (request 2)
       expect(state.hookArgs).toEqual([
         {
-          functionInfo: { id: "fn" },
+          fn,
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: false,
@@ -72,13 +75,33 @@ describe("args", () => {
           input: [],
         },
         {
-          functionInfo: { id: "fn" },
+          fn,
+          stepInfo: {
+            hashedId: "c3ca5f787365eae0dea86250e27d476406956478",
+            memoized: false,
+            stepType: "sleep",
+          },
+          stepOptions: { id: "sleep", name: "sleep" },
+          input: [],
+        },
+        {
+          fn,
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             memoized: true,
             stepType: "run",
           },
           stepOptions: { id: "my-step", name: "my-step" },
+          input: [],
+        },
+        {
+          fn,
+          stepInfo: {
+            hashedId: "c3ca5f787365eae0dea86250e27d476406956478",
+            memoized: true,
+            stepType: "sleep",
+          },
+          stepOptions: { id: "sleep", name: "sleep" },
           input: [],
         },
       ]);
@@ -222,7 +245,7 @@ describe("change step ID", () => {
       override transformStepInput(
         arg: Middleware.TransformStepInputArgs,
       ): Middleware.TransformStepInputArgs {
-        if (changeStepID) {
+        if (changeStepID && arg.stepOptions.id === "step-1") {
           return {
             ...arg,
             stepOptions: {
@@ -253,6 +276,10 @@ describe("change step ID", () => {
           state.step1.insideCount++;
           return state.step1.insideCount;
         });
+
+        // Force reentry with checkpointing
+        await step.sleep("sleep", "1s");
+
         state.runId = runId;
       },
     );
@@ -268,7 +295,7 @@ describe("change step ID", () => {
     expect(state.onStepStartCalls).toEqual([
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
           input: undefined,
@@ -279,7 +306,7 @@ describe("change step ID", () => {
       },
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "c2a6b03f190dfb2b4aa91f8af8d477a9bc3401dc",
           input: undefined,
@@ -360,6 +387,10 @@ describe("change step ID", () => {
           state.step2.insideCount++;
           return state.step2.insideCount;
         });
+
+        // Force reentry with checkpointing
+        await step.sleep("sleep", "1s");
+
         state.runId = runId;
       },
     );
@@ -380,7 +411,7 @@ describe("change step ID", () => {
     expect(state.onStepStartCalls).toEqual([
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
           input: undefined,
@@ -391,7 +422,7 @@ describe("change step ID", () => {
       },
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
           input: undefined,
@@ -402,7 +433,7 @@ describe("change step ID", () => {
       },
       {
         ctx: anyContext,
-        functionInfo: { id: "fn" },
+        fn,
         stepInfo: {
           hashedId: "853cb1e68d4c9c2ad16aabbef8c346b559cbb55c",
           input: undefined,
@@ -609,6 +640,9 @@ test("called for memoized and fresh", async () => {
       state.runId = runId;
       await step.run("step-1", async () => "result-1");
       await step.run("step-2", async () => "result-2");
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
     },
   );
   await createTestApp({ client, functions: [fn] });
@@ -617,10 +651,14 @@ test("called for memoized and fresh", async () => {
   await state.waitForRunComplete();
 
   expect(state.calls).toEqual([
+    // 1st request
     { id: "step-1", memoized: false },
-    { id: "step-1", memoized: true },
     { id: "step-2", memoized: false },
+    { id: "sleep", memoized: false },
+
+    // 2nd request
     { id: "step-1", memoized: true },
     { id: "step-2", memoized: true },
+    { id: "sleep", memoized: true },
   ]);
 });

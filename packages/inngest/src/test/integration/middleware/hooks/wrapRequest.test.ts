@@ -1,12 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
   createState,
+  createTestApp,
   randomSuffix,
   sleep,
   testNameFromFileUrl,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -21,11 +21,11 @@ describe("args", () => {
         readonly id = "test";
         override wrapRequest = async ({
           next,
-          functionInfo,
+          fn,
           requestInfo,
           runId,
         }: Middleware.WrapRequestArgs) => {
-          state.hookArgs.push({ functionInfo, requestInfo, runId });
+          state.hookArgs.push({ fn, requestInfo, runId });
           return next();
         };
       }
@@ -62,7 +62,7 @@ describe("args", () => {
 
       expect(state.hookArgs).toEqual([
         {
-          functionInfo: { id: "fn" },
+          fn,
           requestInfo: {
             body: expect.any(Function),
             headers: expect.any(Object),
@@ -144,12 +144,20 @@ test("next() resolves with response", async () => {
   await state.waitForRunComplete();
 
   expect(state.response).toEqual({
-    status: 200,
+    status: 206,
     headers: expect.any(Object),
     body: expect.any(String),
   });
   expect(state.response!.headers["Content-Type"]).toBe("application/json");
-  expect(state.response!.body).toBe(JSON.stringify("output"));
+  expect(state.response!.body).toBe(
+    JSON.stringify([
+      {
+        op: "RunComplete",
+        id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+        data: "output",
+      },
+    ]),
+  );
 });
 
 test("multiple middleware in onion order", async () => {

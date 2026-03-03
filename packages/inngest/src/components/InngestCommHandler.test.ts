@@ -321,7 +321,7 @@ describe("response version header", () => {
       },
     });
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );
@@ -346,7 +346,7 @@ describe("response version header", () => {
       },
     });
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );
@@ -355,7 +355,7 @@ describe("response version header", () => {
   test("responds with V2 when no version in request", async () => {
     const result = await runHandler(handler);
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );
@@ -377,7 +377,7 @@ describe("response version header", () => {
 
     const result = await runHandler(optedOutHandler);
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V1.toString(),
     );
@@ -399,7 +399,7 @@ describe("response version header", () => {
 
     const result = await runHandler(handler);
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V1.toString(),
     );
@@ -425,7 +425,7 @@ describe("response version header", () => {
 
     const result = await runHandler(handler);
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );

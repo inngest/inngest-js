@@ -10,7 +10,12 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    exclude: ["**/node_modules/**", "**/dist/**", "**/test/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/test/**",
+      "**/src/test/integration/**",
+    ],
     logHeapUsage: true,
     fileParallelism: true,
     silent: "passed-only",
@@ -19,6 +24,11 @@ export default defineConfig({
       tsconfig: "./tsconfig.types.json",
       enabled: true,
       include: ["**\/*.{test,spec}.?(c|m)[jt]s?(x)"],
+      exclude: [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/src/test/integration/**",
+      ],
     },
   },
 });

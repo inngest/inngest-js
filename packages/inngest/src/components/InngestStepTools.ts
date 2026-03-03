@@ -447,7 +447,7 @@ export const createStepTools = <
             payload,
             headers: execution["options"]["headers"],
             fnMiddleware: fn.opts.middleware ?? [],
-            fnInfo: { id: fn.opts.id },
+            fn,
           });
         },
       },

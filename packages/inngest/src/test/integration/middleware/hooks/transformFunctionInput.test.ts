@@ -1,7 +1,11 @@
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { type Context, Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -151,6 +155,10 @@ test("modify memoized step data", async () => {
       const output = await step.run("my-step", () => {
         return "original";
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.stepOutputs.push(output);
     },
   );

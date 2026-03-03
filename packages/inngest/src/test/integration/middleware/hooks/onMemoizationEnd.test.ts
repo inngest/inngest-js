@@ -1,7 +1,11 @@
+import {
+  createState,
+  createTestApp,
+  randomSuffix,
+  testNameFromFileUrl,
+} from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
-import { createState, randomSuffix, testNameFromFileUrl } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -67,6 +71,10 @@ test("1 step", async () => {
       await step.run("my-step", () => {
         state.logs.push("step: inside");
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.logs.push("fn: bottom");
     },
   );
@@ -82,7 +90,7 @@ test("1 step", async () => {
     "fn: top",
     "step: inside",
 
-    // 3rd request
+    // 2nd request
     "fn: top",
     "mw",
     "fn: bottom",
@@ -120,6 +128,10 @@ test("2 steps", async () => {
       await step.run("step-2", () => {
         state.logs.push("step-2: inside");
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.logs.push("fn: bottom");
     },
   );
@@ -134,10 +146,6 @@ test("2 steps", async () => {
     "mw",
     "fn: top",
     "step-1: inside",
-
-    // 2nd request
-    "fn: top",
-    "mw",
     "fn: between steps",
     "step-2: inside",
 

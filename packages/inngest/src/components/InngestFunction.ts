@@ -296,10 +296,11 @@ export class InngestFunction<
       this.opts.checkpointing ??
       this.client["options"].checkpointing ??
       this.opts.experimentalCheckpointing ??
-      this.client["options"].experimentalCheckpointing;
+      this.client["options"].experimentalCheckpointing ??
+      true;
 
-    // Return default options if `true` is specified by the user
     if (!userCfg) {
+      // Opted out
       return;
     }
 
@@ -711,6 +712,8 @@ export namespace InngestFunction {
     /**
      * Whether or not to use checkpointing for this function's executions.
      *
+     * If `false`, disables checkpointing.
+     *
      * If `true`, enables checkpointing with default settings, which is a safe,
      * blocking version of checkpointing, where we check in with Inngest after
      * every step is run.
@@ -721,6 +724,8 @@ export namespace InngestFunction {
      *
      * We recommend starting with the default `true` configuration and only tweak
      * the parameters directly if necessary.
+     *
+     * @default true
      */
     checkpointing?: CheckpointingOptions;
   }

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { envKeys } from "../../helpers/consts.ts";
 import { WorkerConnectRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { Inngest } from "../Inngest.ts";
+import { createStrategy } from "./strategies/index.ts";
+import { SameThreadStrategy } from "./strategies/sameThread/index.ts";
 import type { ConnectHandlerOptions } from "./types.ts";
 
 // Mock WebSocket globally
@@ -42,6 +44,16 @@ class MockWebSocket {
   }
 }
 
+const createTestOptions = (
+  opts: Partial<ConnectHandlerOptions> = {},
+): ConnectHandlerOptions => {
+  const inngest = new Inngest({ id: "test-app", isDev: true });
+  return {
+    apps: [{ client: inngest, functions: [] }],
+    ...opts,
+  };
+};
+
 describe("connect maxWorkerConcurrency", () => {
   const originalEnv = process.env;
   const originalWebSocket = global.WebSocket;
@@ -67,16 +79,6 @@ describe("connect maxWorkerConcurrency", () => {
     global.WebSocket = originalWebSocket;
     global.fetch = originalFetch;
   });
-
-  const createTestOptions = (
-    opts: Partial<ConnectHandlerOptions> = {},
-  ): ConnectHandlerOptions => {
-    const inngest = new Inngest({ id: "test-app", isDev: true });
-    return {
-      apps: [{ client: inngest, functions: [] }],
-      ...opts,
-    };
-  };
 
   describe("environment variable parsing", () => {
     test("should parse positive integer from INNGEST_CONNECT_MAX_WORKER_CONCURRENCY", () => {
@@ -204,5 +206,59 @@ describe("connect maxWorkerConcurrency", () => {
         "75",
       );
     });
+  });
+});
+
+describe("ConnectHandlerOptions gatewayUrl", () => {
+  test("should accept gatewayUrl in options", () => {
+    const options: ConnectHandlerOptions = createTestOptions({
+      gatewayUrl: "ws://localhost:8100",
+    });
+
+    expect(options.gatewayUrl).toBe("ws://localhost:8100");
+  });
+
+  test("should allow undefined gatewayUrl", () => {
+    const options: ConnectHandlerOptions = createTestOptions();
+
+    expect(options.gatewayUrl).toBeUndefined();
+  });
+});
+
+describe("createStrategy", () => {
+  const stubConfig = {
+    hashedSigningKey: undefined,
+    hashedFallbackKey: undefined,
+    envName: undefined,
+    apiBaseUrl: undefined,
+    mode: { isDev: true, isInferred: false },
+    connectionData: {
+      marshaledCapabilities: "",
+      manualReadinessAck: false,
+      apps: [],
+    },
+    requestHandlers: {},
+    options: createTestOptions(),
+  };
+
+  test("defaults to WorkerThreadStrategy when isolateExecution is not set", async () => {
+    const strategy = await createStrategy(stubConfig, createTestOptions());
+    expect(strategy).not.toBeInstanceOf(SameThreadStrategy);
+  });
+
+  test("defaults to WorkerThreadStrategy when isolateExecution is true", async () => {
+    const strategy = await createStrategy(
+      stubConfig,
+      createTestOptions({ isolateExecution: true }),
+    );
+    expect(strategy).not.toBeInstanceOf(SameThreadStrategy);
+  });
+
+  test("uses SameThreadStrategy when isolateExecution is false", async () => {
+    const strategy = await createStrategy(
+      stubConfig,
+      createTestOptions({ isolateExecution: false }),
+    );
+    expect(strategy).toBeInstanceOf(SameThreadStrategy);
   });
 });

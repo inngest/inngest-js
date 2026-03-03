@@ -54,9 +54,6 @@ connect({
     },
   ],
   instanceId: "my-worker",
-  rewriteGatewayEndpoint: (endpoint) => {
-    return endpoint.replace("connect-gateway:8080", "localhost:8100");
-  },
 }).then(async (conn) => {
   console.log("Connected!");
 

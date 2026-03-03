@@ -1,13 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  BaseSerializerMiddleware,
   createState,
-  isRecord,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { BaseSerializerMiddleware, isRecord } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -87,6 +86,10 @@ test("base64 encoding/decoding middleware", async () => {
       const step2Output = await step.run("step-2", () => {
         return ["a", "b", "c"];
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.step2Outputs.push(step2Output);
     },
   );
@@ -107,7 +110,7 @@ test("base64 encoding/decoding middleware", async () => {
       runId: expect.any(String),
       step: expect.any(Object),
     },
-    functionInfo: { id: "fn" },
+    fn,
     steps: {},
   };
   expect(state.transformFunctionInputCalls).toEqual([
@@ -115,18 +118,10 @@ test("base64 encoding/decoding middleware", async () => {
     {
       ...expectedFnInputArg,
       steps: {
-        cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa: {
-          data: {
-            [serializedMarker]: true,
-            value: "eyJtZXNzYWdlIjoiaGVsbG8iLCJjb3VudCI6NDJ9",
-          },
+        c3ca5f787365eae0dea86250e27d476406956478: {
+          data: null,
           type: "data",
         },
-      },
-    },
-    {
-      ...expectedFnInputArg,
-      steps: {
         cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa: {
           data: {
             [serializedMarker]: true,

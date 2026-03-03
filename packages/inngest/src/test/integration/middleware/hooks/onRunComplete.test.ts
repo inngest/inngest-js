@@ -1,12 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  anyContext,
   createState,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -58,7 +58,7 @@ describe("args", () => {
       expect(state.hookArgs).toEqual([
         {
           ctx: anyContext,
-          functionInfo: { id: "fn" },
+          fn,
           output: "fn result",
         },
       ]);
@@ -107,7 +107,7 @@ test("with steps", async () => {
   expect(state.calls).toHaveLength(1);
   expect(state.calls[0]).toEqual({
     ctx: anyContext,
-    functionInfo: { id: "fn" },
+    fn,
     output: "fn result",
   });
 });

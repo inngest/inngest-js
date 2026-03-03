@@ -1,12 +1,12 @@
-import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
-import { createTestApp } from "../../../devServerTestHarness.ts";
 import {
-  anyContext,
   createState,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
-} from "../../utils.ts";
+} from "@inngest/test-harness";
+import { expect, test } from "vitest";
+import { Inngest, Middleware } from "../../../../index.ts";
+import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -58,7 +58,7 @@ describe("args", () => {
       expect(state.hookArgs).toEqual([
         {
           ctx: anyContext,
-          functionInfo: { id: "fn" },
+          fn,
           stepInfo: {
             hashedId: "8376129f22207d6e1acaa1c92de099dcb1ba24db",
             input: undefined,
@@ -104,6 +104,10 @@ test("1 step", async () => {
         state.logs.push("step: inside");
         return "result";
       });
+
+      // Force reentry with checkpointing
+      await step.sleep("sleep", "1s");
+
       state.logs.push("fn: bottom");
     },
   );
@@ -164,7 +168,7 @@ test("multiple steps", async () => {
   expect(state.onStepStartCalls).toEqual([
     {
       ctx: anyContext,
-      functionInfo: { id: "fn" },
+      fn,
       stepInfo: {
         hashedId: "cd59ee9a8137151d1499d3d2eb40ba51aa91e0aa",
         input: undefined,
@@ -175,7 +179,7 @@ test("multiple steps", async () => {
     },
     {
       ctx: anyContext,
-      functionInfo: { id: "fn" },
+      fn,
       stepInfo: {
         hashedId: "e64b25e67dec6c8d30e63029286ad7b6d263931d",
         input: undefined,
