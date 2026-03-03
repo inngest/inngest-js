@@ -127,6 +127,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     typeof createTimeoutPromise
   >;
 
+  /**
+   * Parsed maxRuntime in milliseconds, stored so we can reinitialize the
+   * timer after it fires.
+   */
+  private checkpointingMaxRuntimeMs?: number;
+
   constructor(rawOptions: InngestExecutionOptions) {
     const options: InngestExecutionOptions = {
       ...rawOptions,
@@ -828,17 +834,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return;
         },
         "checkpointing-runtime-reached": async () => {
-          return {
-            type: "steps-found",
-            ctx: this.fnArg,
-            ops: this.ops,
-            steps: [
-              {
-                op: StepOpCode.DiscoveryRequest,
-                id: _internals.hashId("discovery-request"), // ID doesn't matter
-              },
-            ],
-          };
+          // Flush any buffered steps so they aren't lost
+          if (this.state.checkpointingStepBuffer.length) {
+            const result = await attemptCheckpointAndResume(
+              undefined,
+              false,
+              true,
+            );
+            if (result) {
+              return result;
+            }
+          }
+
+          // Reinitialize the timer for the next window and continue
+          // processing. If the function already completed, the
+          // "function-resolved" checkpoint is already queued and will
+          // be handled in the next loop iteration.
+          this.reinitializeCheckpointRuntimeTimer(true);
+          return;
         },
 
         "checkpointing-buffer-interval-reached": () => {
@@ -1731,17 +1744,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
       // 0 or negative max runtime? Skip.
       if (Number.isFinite(maxRuntimeMs) && maxRuntimeMs > 0) {
-        this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
-
-        void this.checkpointingMaxRuntimeTimer.then(async () => {
-          await this.state.hooks?.afterMemoization?.();
-          await this.state.hooks?.beforeExecution?.();
-          await this.state.hooks?.afterExecution?.();
-
-          state.setCheckpoint({
-            type: "checkpointing-runtime-reached",
-          });
-        });
+        this.checkpointingMaxRuntimeMs = maxRuntimeMs;
+        this.reinitializeCheckpointRuntimeTimer();
       }
     }
 
@@ -1777,6 +1781,37 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           this.checkpointingMaxBufferIntervalTimer?.reset();
         });
       }
+    }
+  }
+
+  /**
+   * Create (or replace) the maxRuntime timer. When {@link start} is true the
+   * timer begins immediately — used when reinitializing after a firing.
+   * During initial setup the timer is created but started later in
+   * {@link startExecution}.
+   */
+  private reinitializeCheckpointRuntimeTimer(start = false): void {
+    if (!this.checkpointingMaxRuntimeMs) {
+      return;
+    }
+
+    this.checkpointingMaxRuntimeTimer?.clear();
+    this.checkpointingMaxRuntimeTimer = createTimeoutPromise(
+      this.checkpointingMaxRuntimeMs,
+    );
+
+    void this.checkpointingMaxRuntimeTimer.then(async () => {
+      await this.state.hooks?.afterMemoization?.();
+      await this.state.hooks?.beforeExecution?.();
+      await this.state.hooks?.afterExecution?.();
+
+      this.state.setCheckpoint({
+        type: "checkpointing-runtime-reached",
+      });
+    });
+
+    if (start) {
+      this.checkpointingMaxRuntimeTimer.start();
     }
   }
 
