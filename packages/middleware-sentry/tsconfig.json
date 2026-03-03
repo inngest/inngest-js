@@ -11,5 +11,5 @@
     "skipLibCheck": true
   },
   "include": ["./src/**/*"],
-  "exclude": ["./src/**/*.test.*", "./src/test-harness/**/*"]
+  "exclude": ["./src/**/*.test.*"]
 }

@@ -32,10 +32,11 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@inngest/test-harness": "workspace:*",
     "@types/node": "^22.0.0",
     "@sentry/core": "^8.8.0",
     "@sentry/types": "^8.8.0",
-    "inngest": ">=4.0.0-alpha.6 <5.0.0",
+    "inngest": ">=4.0.0-beta.2 <5.0.0",
     "typescript": "~5.8.2",
     "vitest": "^4.0.18"
   },

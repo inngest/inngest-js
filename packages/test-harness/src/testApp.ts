@@ -1,7 +1,19 @@
 import type http from "node:http";
 import type { AddressInfo } from "node:net";
-import type { Inngest, InngestFunction } from "../../inngest/src/index.ts";
-import { createServer as createNodeServer } from "../../inngest/src/node.ts";
+
+/**
+ * A function that creates an HTTP server for serving Inngest functions.
+ *
+ * Uses `any` so callers can pass their own concrete `createServer` without
+ * type mismatches between different inngest package versions.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ServeFactory = (options: {
+  client: any;
+  functions: any[];
+  servePath: string;
+  serveOrigin?: string;
+}) => http.Server;
 
 /**
  * Create a test server using the Node.js serve handler.
@@ -10,14 +22,15 @@ import { createServer as createNodeServer } from "../../inngest/src/node.ts";
  * listens on a random available port (use server.address() to get the port).
  */
 export function createTestServer(options: {
-  client: Inngest.Any;
-  functions: InngestFunction.Any[];
+  client: any;
+  functions: any[];
   servePath?: string;
+  serve: ServeFactory;
 }): http.Server {
   const servePath = options.servePath ?? "/api/inngest";
 
   // Create server without specifying serveOrigin - we'll set it after getting the port
-  return createNodeServer({
+  return options.serve({
     client: options.client,
     functions: options.functions,
     servePath,
@@ -48,9 +61,10 @@ export interface TestApp {
  * 4. Returns the app info for sending events
  */
 export async function createTestApp(options: {
-  client: Inngest.Any;
-  functions: InngestFunction.Any[];
+  client: any;
+  functions: any[];
   servePath?: string;
+  serve: ServeFactory;
 }): Promise<TestApp> {
   const servePath = options.servePath ?? "/api/inngest";
 
@@ -58,7 +72,7 @@ export async function createTestApp(options: {
   const server = await new Promise<http.Server>((resolve, reject) => {
     // We need to create the server with the correct origin after we know the port
     // For now, create a temporary server just to get a port
-    const tempServer = createNodeServer({
+    const tempServer = options.serve({
       client: options.client,
       functions: options.functions,
       servePath,
@@ -81,7 +95,7 @@ export async function createTestApp(options: {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 
   const finalServer = await new Promise<http.Server>((resolve, reject) => {
-    const srv = createNodeServer({
+    const srv = options.serve({
       client: options.client,
       functions: options.functions,
       servePath,
@@ -150,9 +164,7 @@ export async function waitForFunctions(
 
   while (Date.now() - start < timeout) {
     try {
-      const res = await fetch(
-        `http://localhost:8288/dev`,
-      );
+      const res = await fetch(`http://localhost:8288/dev`);
       if (res.ok) {
         const data = (await res.json()) as { functions?: unknown[] };
         if (data.functions && data.functions.length >= count) {

@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware, StepError } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { assertStepError, isRecord, matrixCheckpointing } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -51,7 +52,7 @@ matrixCheckpointing("change output", async (checkpointing) => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -137,7 +138,7 @@ matrixCheckpointing("change error", async (checkpointing) => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -207,7 +208,7 @@ matrixCheckpointing(
         state.runId = runId;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -294,7 +295,7 @@ matrixCheckpointing("bookend step.sleep", async (checkpointing) => {
       await step.sleep("zzz", "1s");
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -364,7 +365,7 @@ matrixCheckpointing("bookend with steps", async (checkpointing) => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -477,7 +478,7 @@ matrixCheckpointing(
         state.runId = runId;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -546,7 +547,7 @@ matrixCheckpointing("infinite recursion protection", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -592,7 +593,7 @@ matrixCheckpointing("throws in hook", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();
@@ -642,7 +643,7 @@ matrixCheckpointing("throws in hook step", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();
@@ -692,7 +693,7 @@ matrixCheckpointing("throws in normal step", async (checkpointing) => {
       });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunFailed();
@@ -740,7 +741,7 @@ test("checkpointing reentry", async () => {
       state.runId = runId;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

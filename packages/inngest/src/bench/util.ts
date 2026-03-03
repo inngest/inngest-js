@@ -7,6 +7,7 @@ import {
 import { bench, describe } from "vitest";
 import { Inngest, type InngestFunction, Middleware } from "../index.ts";
 import { ConsoleLogger } from "../middleware/logger.ts";
+import { createServer } from "../node.ts";
 
 /** Common step return value used across benchmarks. */
 export function stepPayload() {
@@ -69,7 +70,11 @@ export function createBench(options: CreateBenchOptions) {
       options.name,
       async () => {
         if (!app) {
-          app = await createTestApp({ client, functions: [fn] });
+          app = await createTestApp({
+            client,
+            functions: [fn],
+            serve: createServer,
+          });
         }
 
         completed = 0;

@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../index.ts";
+import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -40,7 +41,7 @@ test("state does not bleed between requests", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   // First invocation
   await client.send({ name: eventName });
@@ -85,7 +86,7 @@ test("each request gets a fresh instance", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   // First invocation
   await client.send({ name: eventName });
@@ -140,7 +141,7 @@ test("middleware state is consistent within a single request", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
