@@ -31,7 +31,9 @@ export default function Home() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) { break; }
+        if (done) {
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
 
@@ -40,7 +42,9 @@ export default function Home() {
         buffer = parts.pop() ?? "";
 
         for (const part of parts) {
-          if (!part.trim()) { continue; }
+          if (!part.trim()) {
+            continue;
+          }
 
           let event = "message";
           let data = "";
@@ -63,7 +67,8 @@ export default function Home() {
           if (event === "inngest") {
             setRunId((parsed as { run_id: string }).run_id);
           } else if (event === "stream" || event === "result") {
-            const display = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+            const display =
+              typeof parsed === "string" ? parsed : JSON.stringify(parsed);
             setLines((prev) => [...prev, display]);
           }
         }
@@ -79,6 +84,11 @@ export default function Home() {
     } finally {
       setRunning(false);
     }
+  }
+
+  let title = "";
+  if (runId) {
+    title = `Run: ${runId}`;
   }
 
   return (
@@ -125,7 +135,7 @@ export default function Home() {
             borderBottom: "1px solid #2a2a4a",
           }}
         >
-          {runId ?? "\u00A0"}
+          {title}
         </div>
 
         <pre
@@ -145,7 +155,9 @@ export default function Home() {
             wordBreak: "break-word",
           }}
         >
-          {lines.map((line, i) => <div key={i}>{line}</div>)}
+          {lines.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
         </pre>
       </div>
     </main>
