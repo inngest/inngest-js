@@ -2,6 +2,13 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
 export namespace Realtime {
+  export type SubscribableChannel =
+    | Realtime.Channel
+    | Realtime.Channel.Definition
+    | Realtime.ChannelInstance
+    | Realtime.ChannelDef
+    | string;
+
   export type PublishFn = <
     TMessage extends MaybePromise<Realtime.Message.Input>,
   >(
@@ -9,7 +16,7 @@ export namespace Realtime {
   ) => Promise<Awaited<TMessage>["data"]>;
 
   export type GetSubscriptionTokenFn = <
-    const InputChannel extends Realtime.Channel | string,
+    const InputChannel extends Realtime.SubscribableChannel,
     const InputTopics extends (keyof Realtime.Channel.InferTopics<
       Realtime.Channel.AsChannel<InputChannel>
     > &
@@ -24,24 +31,47 @@ export namespace Realtime {
   }) => Promise<TToken>;
 
   export type Token<
-    TChannel extends Channel | Channel.Definition,
-    TTopics extends (keyof Channel.InferTopics<
-      Channel.Definition.AsChannel<TChannel>
-    > &
-      string)[] = (keyof Channel.InferTopics<
-      Channel.Definition.AsChannel<TChannel>
-    > &
+    TChannel extends SubscribableChannel,
+    TTopics extends (keyof Channel.InferTopics<Channel.AsChannel<TChannel>> &
+      string)[] = (keyof Channel.InferTopics<Channel.AsChannel<TChannel>> &
       string)[],
-  > = TChannel extends Channel.Definition
-    ? Subscribe.Token<Channel.Definition.AsChannel<TChannel>, TTopics>
-    : TChannel extends Channel
-      ? Subscribe.Token<TChannel, TTopics>
-      : never;
+  > = Subscribe.Token<Channel.AsChannel<TChannel>, TTopics>;
 
   export namespace Subscribe {
-    export type InferChannelInput<T> = T extends Realtime.Channel.Definition
-      ? Realtime.Channel.Definition.InferId<T>
-      : T;
+    export type InferChannelInput<T> = T extends Realtime.ChannelDef<
+      infer TNameFn,
+      // biome-ignore lint/suspicious/noExplicitAny: broad fn type
+      any
+    >
+      ? ReturnType<TNameFn>
+      : T extends Realtime.Channel.Definition
+        ? Realtime.Channel.Definition.InferId<T>
+        : T extends string
+          ? T
+          : T;
+
+    type TopicNamesForChannel<T extends Realtime.SubscribableChannel> =
+      keyof Realtime.Channel.InferTopics<Realtime.Channel.AsChannel<T>> &
+        string;
+
+    export interface Token<
+      TChannel extends
+        Realtime.SubscribableChannel = Realtime.SubscribableChannel,
+      TTopics extends
+        TopicNamesForChannel<TChannel>[] = TopicNamesForChannel<TChannel>[],
+    > {
+      // key used to auth - could be undefined as then we can do a cold subscribe
+      key?: string | undefined;
+      channel: Realtime.Subscribe.InferChannelInput<TChannel>;
+      topics: TTopics;
+    }
+
+    export type InferTopicSubscribeData<TTopic> =
+      TTopic extends Realtime.Topic.Definition
+        ? Realtime.Topic.InferSubscribe<TTopic>
+        : TTopic extends Realtime.TopicConfig
+          ? Realtime.InferTopicData<TTopic>
+          : unknown;
 
     export type StreamSubscription<
       TSubscribeToken extends Token = Token,
@@ -87,17 +117,6 @@ export namespace Realtime {
       unsubscribe(reason?: string): void;
     };
 
-    export interface Token<
-      TChannel extends Channel | Channel.Definition = Channel,
-      TTopics extends
-        (keyof Channel.InferTopics<TChannel>)[] = (keyof Channel.InferTopics<TChannel>)[],
-    > {
-      // key used to auth - could be undefined as then we can do a cold subscribe
-      key?: string | undefined;
-      channel: Realtime.Channel.Definition.AsChannel<TChannel>;
-      topics: TTopics;
-    }
-
     export namespace Token {
       export type InferChannel<TToken extends Token> = TToken extends Token<
         infer IChannel,
@@ -105,14 +124,13 @@ export namespace Realtime {
         any
       >
         ? IChannel
-        : Channel;
+        : Realtime.SubscribableChannel;
 
       export type InferTopicData<
         TToken extends Token,
-        TChannelTopics extends Record<
-          string,
-          Topic.Definition
-        > = Channel.InferTopics<Token.InferChannel<TToken>>,
+        TChannelTopics extends Record<string, unknown> = Channel.InferTopics<
+          Token.InferChannel<TToken>
+        >,
         // biome-ignore lint/suspicious/noExplicitAny: untargeted infer
       > = TToken extends Token<any, infer ITopics>
         ? { [K in ITopics[number]]: TChannelTopics[K] }
@@ -176,17 +194,17 @@ export namespace Realtime {
   // Subscribe (output) msg
   export type Message<
     TChannelId extends string = string,
-    TTopics extends Record<string, Realtime.Topic.Definition> = Record<
+    TTopics extends Record<
       string,
-      Realtime.Topic.Definition
-    >,
+      Realtime.Topic.Definition | Realtime.TopicConfig
+    > = Record<string, Realtime.Topic.Definition>,
   > =
     | {
         [K in keyof TTopics]:
           | {
               topic: K;
               channel: TChannelId;
-              data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+              data: Subscribe.InferTopicSubscribeData<TTopics[K]>;
               runId?: string;
               fnId?: string;
               createdAt: Date;
@@ -196,12 +214,14 @@ export namespace Realtime {
           | {
               topic: K;
               channel: TChannelId;
-              data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+              data: Subscribe.InferTopicSubscribeData<TTopics[K]>;
               runId?: string;
               fnId?: string;
               kind: "datastream-start" | "datastream-end" | "chunk";
               streamId: string;
-              stream: ReadableStream<Realtime.Topic.InferSubscribe<TTopics[K]>>;
+              stream: ReadableStream<
+                Subscribe.InferTopicSubscribeData<TTopics[K]>
+              >;
             };
       }[keyof TTopics]
     | {
@@ -230,15 +250,15 @@ export namespace Realtime {
 
     export type Raw<
       TChannelId extends string = string,
-      TTopics extends Record<string, Realtime.Topic.Definition> = Record<
+      TTopics extends Record<
         string,
-        Realtime.Topic.Definition
-      >,
+        Realtime.Topic.Definition | Realtime.TopicConfig
+      > = Record<string, Realtime.Topic.Definition>,
     > = {
       [K in keyof TTopics]: {
         topic?: K;
         stream_id?: string;
-        data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+        data: Subscribe.InferTopicSubscribeData<TTopics[K]>;
         channel?: TChannelId;
         run_id?: string;
         fn_id?: string;
@@ -284,29 +304,63 @@ export namespace Realtime {
       topics: string[];
     };
 
-    export type InferId<TChannel extends Channel> = TChannel extends Channel<
+    export type InferId<
+      TChannel extends
+        | Channel
+        | Realtime.ChannelInstance
+        | Realtime.ChannelDef
+        | string,
+    > = TChannel extends Channel<
       infer IId,
       // biome-ignore lint/suspicious/noExplicitAny: untargeted infer
       any
     >
       ? IId
-      : string;
+      : TChannel extends Realtime.ChannelInstance<
+            infer IId,
+            Realtime.TopicsConfig
+          >
+        ? IId
+        : TChannel extends Realtime.ChannelDef<
+              infer TNameFn,
+              Realtime.TopicsConfig
+            >
+          ? ReturnType<TNameFn>
+          : TChannel extends string
+            ? TChannel
+            : string;
 
-    export type AsChannel<T extends Channel | string> = T extends Channel
-      ? T
-      : T extends string
-        ? Realtime.Channel<T>
-        : never;
+    export type AsChannel<T extends Realtime.SubscribableChannel> =
+      T extends Realtime.Channel.Definition
+        ? Realtime.Channel.Definition.AsChannel<T>
+        : T extends Realtime.ChannelDef
+          ? ReturnType<T>
+          : T extends Realtime.ChannelInstance
+            ? T
+            : T extends Channel
+              ? T
+              : T extends string
+                ? Realtime.Channel<T>
+                : never;
 
     export type InferTopics<
-      TChannel extends Channel | Channel.Definition,
-      // biome-ignore lint/suspicious/noExplicitAny: untargeted infer
-    > = TChannel extends Channel.Definition<any, infer ITopics>
+      TChannel extends
+        | Channel
+        | Channel.Definition
+        | Realtime.ChannelInstance
+        | Realtime.ChannelDef
+        | string,
+    > = TChannel extends Channel.Definition<infer _Builder, infer ITopics>
       ? ITopics
-      : // biome-ignore lint/suspicious/noExplicitAny: untargeted infer
-        TChannel extends Channel<any, infer ITopics>
+      : TChannel extends Realtime.ChannelDef<infer _NameFn, infer ITopics>
         ? ITopics
-        : Record<string, Realtime.Topic.Definition>;
+        : TChannel extends Realtime.ChannelInstance<infer _Name, infer ITopics>
+          ? ITopics
+          : TChannel extends string
+            ? Record<string, Realtime.Topic.Definition>
+            : TChannel extends Channel<infer _Id, infer ITopics>
+              ? ITopics
+              : Record<string, Realtime.Topic.Definition>;
 
     export interface Definition<
       // biome-ignore lint/suspicious/noExplicitAny: broad fn definition

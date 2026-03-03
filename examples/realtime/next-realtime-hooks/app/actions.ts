@@ -6,7 +6,7 @@ import { getSubscriptionToken } from "inngest/react";
 
 export const fetchRealtimeSubscriptionToken = async () => {
   const token = await getSubscriptionToken(getInngestApp(), {
-    channel: helloChannel,
+    channel: helloChannel.name,
     topics: ["logs"],
   });
 

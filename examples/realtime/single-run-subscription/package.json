@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "concurrently -c blue,green \"npm:dev:*\"",
     "dev:server": "npx inngest-cli@latest dev --sdk-url http://localhost:3000/api/inngest --retry-interval 1",
-    "dev:app": "wait-port 8288 && tsx index.ts"
+    "dev:app": "wait-port 8288 && tsx index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "inngest": "^3.52.0",

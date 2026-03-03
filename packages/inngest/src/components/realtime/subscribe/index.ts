@@ -3,7 +3,7 @@ import type { Realtime } from "../types.ts";
 import { TokenSubscription } from "./TokenSubscription.ts";
 
 type SubscribeBaseArgs<
-  InputChannel extends Realtime.Channel | string,
+  InputChannel extends Realtime.SubscribableChannel,
   InputTopics extends (keyof Realtime.Channel.InferTopics<
     Realtime.Channel.AsChannel<InputChannel>
   > &
@@ -24,7 +24,7 @@ type SubscribeCallbackArgs<
 };
 
 export function subscribe<
-  const InputChannel extends Realtime.Channel | string,
+  const InputChannel extends Realtime.SubscribableChannel,
   const InputTopics extends (keyof Realtime.Channel.InferTopics<
     Realtime.Channel.AsChannel<InputChannel>
   > &
@@ -36,7 +36,7 @@ export function subscribe<
   const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
 >(token: SubscribeBaseArgs<InputChannel, InputTopics>): Promise<TOutput>;
 export function subscribe<
-  const InputChannel extends Realtime.Channel | string,
+  const InputChannel extends Realtime.SubscribableChannel,
   const InputTopics extends (keyof Realtime.Channel.InferTopics<
     Realtime.Channel.AsChannel<InputChannel>
   > &
@@ -50,7 +50,7 @@ export function subscribe<
     SubscribeCallbackArgs<TToken>,
 ): Promise<Realtime.Subscribe.CallbackSubscription>;
 export function subscribe<
-  const InputChannel extends Realtime.Channel | string,
+  const InputChannel extends Realtime.SubscribableChannel,
   const InputTopics extends (keyof Realtime.Channel.InferTopics<
     Realtime.Channel.AsChannel<InputChannel>
   > &
@@ -65,7 +65,7 @@ export function subscribe<
   callback?: Realtime.Subscribe.Callback<TToken>,
 ): Promise<TOutput>;
 export async function subscribe<
-  const InputChannel extends Realtime.Channel | string,
+  const InputChannel extends Realtime.SubscribableChannel,
   const InputTopics extends (keyof Realtime.Channel.InferTopics<
     Realtime.Channel.AsChannel<InputChannel>
   > &
@@ -122,7 +122,7 @@ export async function subscribe<
 }
 
 export const getSubscriptionToken = async <
-  const InputChannel extends Realtime.Channel | string,
+  const InputChannel extends Realtime.SubscribableChannel,
   const InputTopics extends (keyof Realtime.Channel.InferTopics<
     Realtime.Channel.AsChannel<InputChannel>
   > &

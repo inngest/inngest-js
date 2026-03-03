@@ -7,7 +7,7 @@ const app = new Inngest({
   id: "realtime-v2-across-channels",
 });
 
-const likePost = (app as any).createFunction(
+const likePost = app.createFunction(
   {
     id: "post/like",
     retries: 0,
@@ -19,7 +19,7 @@ const likePost = (app as any).createFunction(
     },
     step,
     publish,
-  }: any) => {
+  }) => {
     if (!postId) {
       await publish(globalChannel.logs, "Missing postId when trying to like post");
       throw new Error("Missing postId");
@@ -54,33 +54,29 @@ const serveApp = () => {
 
 const logsSubscription = async () => {
   await app.realtime.subscribe({
-    // biome-ignore lint/suspicious/noExplicitAny: v2 channel typing is in flux on this branch
-    channel: globalChannel as any,
+    channel: globalChannel.name,
     topics: ["logs"],
-    // biome-ignore lint/suspicious/noExplicitAny: v2 subscribe typing is in flux on this branch
-    onMessage: (message: any) => {
+    onMessage: (message) => {
       console.log(
         `Received ${message.channel} ${message.topic} message:`,
         message.data,
       );
     },
-  } as any);
+  });
   console.log("Subscribed to logs channel");
 };
 
 const postSubscription = async () => {
   await app.realtime.subscribe({
-    // biome-ignore lint/suspicious/noExplicitAny: v2 channel typing is in flux on this branch
-    channel: postChannel({ postId: "123" }) as any,
+    channel: postChannel({ postId: "123" }).name,
     topics: ["updated", "deleted"],
-    // biome-ignore lint/suspicious/noExplicitAny: v2 subscribe typing is in flux on this branch
-    onMessage: (message: any) => {
+    onMessage: (message) => {
       console.log(
         `Received ${message.channel} ${message.topic} message:`,
         message.data,
       );
     },
-  } as any);
+  });
   console.log("Subscribed to post channel");
 };
 

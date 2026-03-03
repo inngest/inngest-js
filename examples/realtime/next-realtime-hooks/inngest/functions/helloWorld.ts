@@ -8,7 +8,7 @@ export const helloWorld = inngest.createFunction(
   async ({ event, step, publish, runId }) => {
     const ch = helloChannel;
 
-    await publish(ch.logs, `Hello from ${runId}`);
+    await publish(ch.logs, { message: `Hello from ${runId}` });
 
     //
     // Wait 2 seconds for a cancel signal before re-triggering

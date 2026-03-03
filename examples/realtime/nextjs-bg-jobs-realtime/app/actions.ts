@@ -6,8 +6,7 @@ import { getSubscriptionToken } from "inngest/react";
 
 export const fetchSubscriptionToken = async (campaignId: string) => {
   const token = await getSubscriptionToken(inngest, {
-    // biome-ignore lint/suspicious/noExplicitAny: v2 channel typing is in flux on this branch
-    channel: campaignSendChannel({ campaignId }) as any,
+    channel: campaignSendChannel({ campaignId }).name,
     topics: ["progress"],
   });
 

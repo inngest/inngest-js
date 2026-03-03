@@ -31,19 +31,19 @@ export type UseRealtimeRunStatus =
 
 type TokenFactory = () => Promise<string | Realtime.Subscribe.Token>;
 
-type TopicNamesForChannel<TChannel extends Realtime.Channel | string> =
+type TopicNamesForChannel<TChannel extends Realtime.SubscribableChannel> =
   keyof Realtime.Channel.InferTopics<Realtime.Channel.AsChannel<TChannel>> &
     string;
 
 type LatestMap<
-  TChannel extends Realtime.Channel | string,
+  TChannel extends Realtime.SubscribableChannel,
   TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined,
 > = TTopics extends readonly (infer K)[]
   ? Partial<Record<Extract<K, string>, Realtime.Message>>
   : Record<string, Realtime.Message | undefined>;
 
 export interface UseRealtimeResult<
-  TChannel extends Realtime.Channel | string = Realtime.Channel | string,
+  TChannel extends Realtime.SubscribableChannel = Realtime.SubscribableChannel,
   TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined =
     | readonly TopicNamesForChannel<TChannel>[]
     | undefined,
@@ -63,7 +63,7 @@ export interface UseRealtimeResult<
 }
 
 export interface UseRealtimeOptions<
-  TChannel extends Realtime.Channel | string = Realtime.Channel | string,
+  TChannel extends Realtime.SubscribableChannel = Realtime.SubscribableChannel,
   TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined =
     | readonly TopicNamesForChannel<TChannel>[]
     | undefined,
@@ -241,7 +241,7 @@ const sleep = (ms: number) =>
   });
 
 export const useRealtime = <
-  TChannel extends Realtime.Channel | string = Realtime.Channel | string,
+  TChannel extends Realtime.SubscribableChannel = Realtime.SubscribableChannel,
   TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined =
     | readonly TopicNamesForChannel<TChannel>[]
     | undefined,
@@ -401,7 +401,7 @@ export const useRealtime = <
             }
 
             return {
-              channel: channel as Realtime.Channel | string,
+              channel: channel as Realtime.SubscribableChannel,
               topics: topics as string[],
               key: next,
             } as Realtime.Subscribe.Token;

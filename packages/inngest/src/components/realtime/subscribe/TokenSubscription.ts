@@ -69,8 +69,10 @@ export class TokenSubscription {
     this.#validate = options.validate ?? true;
     this.#getSubscriptionToken = options.getSubscriptionToken;
 
-    if (typeof options.token.channel === "string") {
-      this.#channelId = options.token.channel;
+    const channel = this.token.channel;
+
+    if (typeof channel === "string") {
+      this.#channelId = channel;
 
       //
       // String channel — no topic definitions available, store empty entries.
@@ -79,16 +81,13 @@ export class TokenSubscription {
         this.token.topics.map((name) => [name, undefined]),
       );
     } else {
-      this.#channelId = options.token.channel.name;
+      this.#channelId = channel.name;
 
       //
       // Channel object — store the topic config (new TopicConfig or old
       // Topic.Definition) for optional schema validation on received messages.
       this.#topics = new Map(
-        this.token.topics.map((name) => [
-          name,
-          options.token.channel.topics?.[name],
-        ]),
+        this.token.topics.map((name) => [name, channel.topics?.[name]]),
       );
     }
   }

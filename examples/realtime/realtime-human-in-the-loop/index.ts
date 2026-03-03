@@ -64,11 +64,10 @@ const serverSubscription = async () => {
   await inngest.send({ name: "agentic-workflow/start" });
   console.log("Sent agentic workflow start event");
 
-  const stream = (await inngest.realtime.subscribe({
-    // biome-ignore lint/suspicious/noExplicitAny: v2 channel typing is in flux on this branch
-    channel: agenticWorkflowChannel as any,
+  const stream = await inngest.realtime.subscribe({
+    channel: agenticWorkflowChannel.name,
     topics: ["messages"],
-  } as any)) as any;
+  });
 
   console.log("Subscribed to agentic workflow channel");
 

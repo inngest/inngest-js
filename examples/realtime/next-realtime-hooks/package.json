@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --turbopack -p 3001",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "inngest": "^3.52.0",

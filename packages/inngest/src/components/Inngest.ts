@@ -586,7 +586,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      */
     subscribe: {
       <
-        const InputChannel extends Realtime.Channel | string,
+        const InputChannel extends Realtime.SubscribableChannel,
         const InputTopics extends (keyof Realtime.Channel.InferTopics<
           Realtime.Channel.AsChannel<InputChannel>
         > &
@@ -603,7 +603,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         onError?: (err: unknown) => void;
       }): Promise<Realtime.Subscribe.CallbackSubscription>;
       <
-        const InputChannel extends Realtime.Channel | string,
+        const InputChannel extends Realtime.SubscribableChannel,
         const InputTopics extends (keyof Realtime.Channel.InferTopics<
           Realtime.Channel.AsChannel<InputChannel>
         > &
@@ -623,7 +623,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      * Generate a subscription token for subscribing to realtime messages.
      */
     token: <
-      const InputChannel extends Realtime.Channel | string,
+      const InputChannel extends Realtime.SubscribableChannel,
       const InputTopics extends (keyof Realtime.Channel.InferTopics<
         Realtime.Channel.AsChannel<InputChannel>
       > &

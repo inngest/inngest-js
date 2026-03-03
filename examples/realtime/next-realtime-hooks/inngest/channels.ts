@@ -7,6 +7,6 @@ import { realtime, staticSchema } from "inngest";
 export const helloChannel = realtime.channel({
   name: "hello-world",
   topics: {
-    logs: { schema: staticSchema<string>() },
+    logs: { schema: staticSchema<{ message: string }>() },
   },
 });

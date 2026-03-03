@@ -22,7 +22,7 @@ export default function Home() {
     latest,
     reset,
   } = useRealtime({
-    channel: helloChannel,
+    channel: helloChannel.name,
     topics: realtimeTopics,
     token: fetchRealtimeSubscriptionToken,
     bufferInterval,
