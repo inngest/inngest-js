@@ -1,5 +1,13 @@
 # inngest
 
+## 3.52.6
+
+### Patch Changes
+
+- [#1350](https://github.com/inngest/inngest-js/pull/1350) [`470fdb98`](https://github.com/inngest/inngest-js/commit/470fdb9845514b6597e0bd7c6db469d3808f6dcf) Thanks [@amh4r](https://github.com/amh4r)! - Fix false NESTING_STEPS error
+
+- [#1356](https://github.com/inngest/inngest-js/pull/1356) [`2e961c21`](https://github.com/inngest/inngest-js/commit/2e961c2169a451d60c3a14e8b9cc19e19ad0dec6) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing function run hang
+
 ## 3.52.5
 
 ### Patch Changes
