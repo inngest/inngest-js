@@ -5151,43 +5151,6 @@ packages:
       typescript:
         optional: true
 
-  inngest@4.0.0-beta.2:
-    resolution: {integrity: sha512-6Py8aHP437mtE7r18FLDoGVrl00/+Qpip61P6BW91pNI4m6S6fe+XWc8ujsoXJ2dgKqgUOJsC0N4ehlyMuoYOA==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@sveltejs/kit': '>=1.27.3'
-      '@vercel/node': '>=2.15.9'
-      aws-lambda: '>=1.0.7'
-      express: '>=4.19.2'
-      fastify: '>=4.21.0'
-      h3: '>=1.8.1'
-      hono: '>=4.2.7'
-      koa: '>=2.14.2'
-      next: '>=12.0.0'
-      typescript: '>=5.8.0'
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      '@sveltejs/kit':
-        optional: true
-      '@vercel/node':
-        optional: true
-      aws-lambda:
-        optional: true
-      express:
-        optional: true
-      fastify:
-        optional: true
-      h3:
-        optional: true
-      hono:
-        optional: true
-      koa:
-        optional: true
-      next:
-        optional: true
-      typescript:
-        optional: true
-
   inquirer@9.2.10:
     resolution: {integrity: sha512-tVVNFIXU8qNHoULiazz612GFl+yqNfjMTbLuViNJE/d860Qxrd3NMrse8dm40VUQLOQeULvaQF8lpAhvysjeyA==}
     engines: {node: '>=14.18.0'}
@@ -10566,7 +10529,7 @@ snapshots:
       svelte: 4.2.5
       svelte-hmr: 0.15.3(svelte@4.2.5)
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
-      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1))
+      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))
     transitivePeerDependencies:
       - supports-color
 
@@ -10580,7 +10543,7 @@ snapshots:
       svelte: 4.2.5
       svelte-hmr: 0.15.3(svelte@4.2.5)
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
-      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1))
+      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -11292,7 +11255,7 @@ snapshots:
     optionalDependencies:
       vite: 7.0.2(@types/node@22.13.10)(jiti@2.5.1)
 
-  '@vitest/mocker@3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1))':
+  '@vitest/mocker@3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))':
     dependencies:
       '@vitest/spy': 3.2.4
       estree-walker: 3.0.3
@@ -15986,7 +15949,7 @@ snapshots:
       vite: 7.0.2(@types/node@22.13.10)(jiti@2.5.1)
     optional: true
 
-  vitefu@0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)):
+  vitefu@0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)):
     optionalDependencies:
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
 
@@ -16077,7 +16040,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.2
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1))
+      '@vitest/mocker': 3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
