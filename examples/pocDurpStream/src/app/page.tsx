@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 
 export default function Home() {
+  const [endpoint, setEndpoint] = useState("/api/stream");
   const [lines, setLines] = useState<string[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -14,7 +15,7 @@ export default function Home() {
     setRunning(true);
 
     try {
-      const res = await fetch("/api/stream", {
+      const res = await fetch(endpoint, {
         headers: { Accept: "text/event-stream" },
       });
 
@@ -84,18 +85,29 @@ export default function Home() {
     <main style={{ padding: 32, fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ marginBottom: 16 }}>Durable Endpoint Stream</h1>
 
-      <button
-        onClick={handleSubmit}
-        disabled={running}
-        style={{
-          padding: "8px 20px",
-          fontSize: 14,
-          cursor: running ? "not-allowed" : "pointer",
-          marginBottom: 16,
-        }}
-      >
-        {running ? "Streaming..." : "Run"}
-      </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <select
+          value={endpoint}
+          onChange={(e) => setEndpoint(e.target.value)}
+          disabled={running}
+          style={{ padding: "8px 12px", fontSize: 14 }}
+        >
+          <option value="/api/stream">No steps</option>
+          <option value="/api/stream-steps">With steps</option>
+        </select>
+
+        <button
+          onClick={handleSubmit}
+          disabled={running}
+          style={{
+            padding: "8px 20px",
+            fontSize: 14,
+            cursor: running ? "not-allowed" : "pointer",
+          }}
+        >
+          {running ? "Streaming..." : "Run"}
+        </button>
+      </div>
 
       <div
         style={{

@@ -163,7 +163,11 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     this.fnArg = this.createFnArg();
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.streamTools.onActivated = () => {
-      this.state.setCheckpoint({ type: "stream-activated" });
+      // Call handleStreamActivated directly instead of going through the
+      // checkpoint queue. The core loop may be blocked inside executeStep,
+      // so a queued checkpoint wouldn't be processed until the step finishes,
+      // causing the SSE response (and all buffered stream data) to be delayed.
+      this.handleStreamActivated();
     };
     this.initializeTimer(this.state);
     this.initializeCheckpointRuntimeTimer(this.state);
