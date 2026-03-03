@@ -4,7 +4,7 @@ import {
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "@inngest/test-harness";
+} from "../../test-harness/index.ts";
 import { Inngest } from "inngest";
 import { describe, expect, test } from "vitest";
 import { SentryMiddleware, sentryMiddleware } from "../../middleware.ts";

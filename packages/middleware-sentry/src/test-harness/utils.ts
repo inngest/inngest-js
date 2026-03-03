@@ -44,6 +44,29 @@ type RunResult =
   | { data: unknown; error?: undefined }
   | { data?: undefined; error: unknown };
 
+/**
+ * Unwrap the raw run output from the dev server.
+ *
+ * v4 wraps the function return value in a RunComplete op array, e.g.
+ * `[{ op: "RunComplete", data: 3, id: "..." }]`. This extracts the
+ * inner `data` field so callers get the plain return value.
+ */
+function unwrapRunOutput(parsed: unknown): unknown {
+  if (Array.isArray(parsed) && parsed.length === 1) {
+    const item = parsed[0];
+    if (
+      item &&
+      typeof item === "object" &&
+      "op" in item &&
+      item.op === "RunComplete" &&
+      "data" in item
+    ) {
+      return item.data;
+    }
+  }
+  return parsed;
+}
+
 async function fetchRunResult(
   runId: string,
   timeout = 20_000,
@@ -76,7 +99,10 @@ async function fetchRunResult(
       const parsed = JSON.parse(data.data.run.output);
 
       if (data.data.run.status === "COMPLETED") {
-        return { data: parsed };
+        // The output may be wrapped in a RunComplete op array;
+        // unwrap to return just the function's return value.
+        const unwrapped = unwrapRunOutput(parsed);
+        return { data: unwrapped };
       }
       if (data.data.run.status === "FAILED") {
         return { error: parsed };

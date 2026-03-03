@@ -361,9 +361,6 @@ importers:
 
   packages/middleware-sentry:
     devDependencies:
-      '@inngest/test-harness':
-        specifier: workspace:*
-        version: link:../test-harness
       '@sentry/core':
         specifier: ^8.8.0
         version: 8.14.0
