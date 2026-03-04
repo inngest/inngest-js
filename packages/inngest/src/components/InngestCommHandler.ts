@@ -69,6 +69,15 @@ import {
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 
+// A response object for when an internal server error occurs. When that
+// happens, we don't to leak any internal details to the client.
+const internalServerErrorResponse = {
+  body: stringify({ code: "internal_server_error" }),
+  headers: { "Content-Type": "application/json" },
+  status: 500,
+  version: undefined,
+} as const;
+
 /**
  * A set of options that can be passed to a serve handler, intended to be used
  * by internal and custom serve handlers to provide a consistent interface.
@@ -505,7 +514,7 @@ export class InngestCommHandler<
 
     // Early validation for environments where process.env is available (Node.js).
     // Edge environments will skip this and validate at request time instead.
-    this.validateModeConfiguration(true);
+    this.client.setEnvVars(this.env);
   }
 
   /**
@@ -714,8 +723,6 @@ export class InngestCommHandler<
       }),
       ...(await headersToForwardP),
     });
-
-    this.validateModeConfiguration();
 
     return {
       timer,
@@ -1483,6 +1490,10 @@ export class InngestCommHandler<
     fns?: InngestFunction.Any[];
     mwInstances?: Middleware.BaseMiddleware[];
   }): Promise<ActionResponse> {
+    if (!this.checkModeConfiguration()) {
+      return internalServerErrorResponse;
+    }
+
     // This is when the request body is completely missing. This commonly
     // happens when the HTTP framework doesn't have body parsing middleware,
     // or for PUT requests that don't require a body.
@@ -2478,31 +2489,21 @@ export class InngestCommHandler<
   }
 
   /**
-   * Validate that the current mode has the configuration it requires.
+   * Check that the current mode has the configuration it requires.
+   * Returns `true` if valid, `false` if not.
    */
-  private validateModeConfiguration(skipIfNoEnv: boolean = false) {
-    // During early validation (construction time), sync client env with
-    // the handler's env to pick up any process.env changes since client
-    // construction. At request time, this is done in createRequestHandler.
-    if (skipIfNoEnv) {
-      this.client.setEnvVars(this.env);
-
-      // Skip validation if env is empty - this indicates an edge environment
-      // where env vars come via request context rather than process.env.
-      if (Object.keys(this.env).length === 0) {
-        return;
-      }
-    }
+  private checkModeConfiguration(): boolean {
+    this.client.setEnvVars(this.env);
 
     if (this.client.mode === "cloud" && !this.client.signingKey) {
-      throw new Error(
-        `Inngest error: A signing key is required to run in Cloud mode, but no signing key was found.\n\n` +
-          `To fix this, choose one of the following:\n` +
-          `  - For local development, set INNGEST_DEV=1 to use the Dev Server (e.g. INNGEST_DEV=1 npm run dev)\n` +
-          `  - For production, set the ${envKeys.InngestSigningKey} environment variable\n\n` +
-          `Find your keys at https://app.inngest.com`,
+      this.client[internalLoggerSymbol].error(
+        `In cloud mode but no signing key found. For local dev, set the INNGEST_DEV=1 env var. For production, set the ${envKeys.InngestSigningKey} env var`,
       );
+
+      return false;
     }
+
+    return true;
   }
 
   /**
