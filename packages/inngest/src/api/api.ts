@@ -591,4 +591,61 @@ export class InngestApi {
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  /**
+   * Stream response body to the checkpoint stream ingest endpoint.
+   *
+   * The body must begin with a newline-terminated JSON header frame
+   * (`{"status_code":200,"headers":{...}}\n`) followed by raw response bytes
+   * (SSE frames in our case). The Dev Server buffers the stream and replays it
+   * to clients that connect via GET with a JWT token.
+   */
+  async checkpointStream(args: {
+    runId: string;
+    body: ReadableStream;
+  }): Promise<void> {
+    const url = await this.getTargetUrl(
+      `/v1/checkpoint/${args.runId}/stream`,
+    );
+
+    const res = await fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: args.body,
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        // Required for streaming request bodies
+        // @ts-expect-error duplex not in RequestInit types yet
+        duplex: "half",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to stream checkpoint: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
+      );
+    }
+  }
+
+  /**
+   * Get the full URL for the checkpoint stream output endpoint. Used to
+   * build the redirect URL that clients connect to for async streaming.
+   */
+  async getCheckpointStreamUrl(
+    runId: string,
+    token: string,
+  ): Promise<string> {
+    const url = await this.getTargetUrl(
+      `/v1/checkpoint/${runId}/stream`,
+    );
+    url.searchParams.set("token", token);
+    return url.toString();
+  }
 }

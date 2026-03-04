@@ -2,8 +2,89 @@
 
 import { useState, useRef } from "react";
 
+interface SSECallbacks {
+  onRunId: (runId: string) => void;
+  onData: (display: string) => void;
+  onScroll: () => void;
+}
+
+/**
+ * Read an SSE stream from a Response, parsing events and calling callbacks.
+ * Returns a redirect URL if a redirect event is received, or null if the
+ * stream ends normally.
+ */
+async function readSSEStream(
+  res: Response,
+  callbacks: SSECallbacks,
+): Promise<string | null> {
+  if (!res.body) {
+    return null;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    const parts = buffer.split("\n\n");
+    // Keep the last part as the buffer — it may be incomplete
+    buffer = parts.pop() ?? "";
+
+    for (const part of parts) {
+      if (!part.trim()) {
+        continue;
+      }
+      console.log(part);
+
+      let event = "message";
+      let data = "";
+
+      for (const line of part.split("\n")) {
+        if (line.startsWith("event: ")) {
+          event = line.slice(7);
+        } else if (line.startsWith("data: ")) {
+          data = line.slice(6);
+        }
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        parsed = data;
+      }
+
+      if (event === "inngest") {
+        callbacks.onRunId((parsed as { run_id: string }).run_id);
+      } else if (event === "stream" || event === "result") {
+        const display =
+          typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+        callbacks.onData(display);
+      } else if (event === "redirect") {
+        const redirectData = parsed as { url?: string };
+        if (redirectData.url) {
+          return redirectData.url;
+        }
+        // No URL in redirect — can't continue
+        return null;
+      }
+    }
+
+    callbacks.onScroll();
+  }
+
+  return null;
+}
+
 export default function Home() {
-  const [endpoint, setEndpoint] = useState("/api/stream");
+  const [endpoint, setEndpoint] = useState("/api/llm-approval");
   const [lines, setLines] = useState<string[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -14,7 +95,18 @@ export default function Home() {
     setRunId(null);
     setRunning(true);
 
+    const callbacks: SSECallbacks = {
+      onRunId: (id) => setRunId(id),
+      onData: (display) => setLines((prev) => [...prev, display]),
+      onScroll: () => {
+        if (termRef.current) {
+          termRef.current.scrollTop = termRef.current.scrollHeight;
+        }
+      },
+    };
+
     try {
+      // Initial request to the app endpoint
       const res = await fetch(endpoint, {
         headers: { Accept: "text/event-stream" },
       });
@@ -25,65 +117,42 @@ export default function Home() {
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      const redirectUrl = await readSSEStream(res, callbacks);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
+      // If we got a redirect, connect to the checkpoint stream endpoint
+      // on the Dev Server to continue receiving SSE data.
+      if (redirectUrl) {
+        setLines((prev) => [...prev, "[redirecting to async stream...]"]);
+
+        const asyncRes = await fetch(redirectUrl);
+        if (!asyncRes.body) {
+          setLines((prev) => [...prev, "[error] No body from async stream"]);
+          return;
         }
 
-        buffer += decoder.decode(value, { stream: true });
-
-        const parts = buffer.split("\n\n");
-        // Keep the last part as the buffer — it may be incomplete
-        buffer = parts.pop() ?? "";
-
-        for (const part of parts) {
-          if (!part.trim()) {
-            continue;
-          }
-          console.log(part);
-
-          let event = "message";
-          let data = "";
-
-          for (const line of part.split("\n")) {
-            if (line.startsWith("event: ")) {
-              event = line.slice(7);
-            } else if (line.startsWith("data: ")) {
-              data = line.slice(6);
-            }
-          }
-
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(data);
-          } catch {
-            parsed = data;
-          }
-
-          if (event === "inngest") {
-            setRunId((parsed as { run_id: string }).run_id);
-          } else if (event === "stream" || event === "result") {
-            const display =
-              typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-            setLines((prev) => [...prev, display]);
-          }
-        }
-
-        // Auto-scroll
-        if (termRef.current) {
-          termRef.current.scrollTop = termRef.current.scrollHeight;
-        }
+        await readSSEStream(asyncRes, callbacks);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLines((prev) => [...prev, `[error] ${msg}`]);
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function handleApprove() {
+    if (!runId) {
+      return;
+    }
+    const res = await fetch("/api/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId }),
+    });
+    if (res.ok) {
+      setLines((prev) => [...prev, "[approved]"]);
+    } else {
+      setLines((prev) => [...prev, `[approve failed: ${res.status}]`]);
     }
   }
 
@@ -110,6 +179,7 @@ export default function Home() {
           disabled={running}
           style={{ padding: "8px 12px", fontSize: 14 }}
         >
+          <option value="/api/llm-approval">LLM approval</option>
           <option value="/api/stream">No steps</option>
           <option value="/api/stream-steps">With steps</option>
         </select>
@@ -125,6 +195,24 @@ export default function Home() {
         >
           {running ? "Streaming..." : "Run"}
         </button>
+
+        {endpoint === "/api/llm-approval" && runId && running && (
+          <button
+            onClick={handleApprove}
+            style={{
+              padding: "8px 20px",
+              fontSize: 14,
+              cursor: "pointer",
+              background: "#16f090",
+              color: "#1a1a2e",
+              border: "none",
+              borderRadius: 4,
+              fontWeight: 600,
+            }}
+          >
+            Approve
+          </button>
+        )}
       </div>
 
       <div

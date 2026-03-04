@@ -53,6 +53,14 @@ export interface AsyncContext {
 const alsSymbol = Symbol.for("inngest:als");
 
 /**
+ * Symbol for the synchronous ALS cache. Once the async import resolves, we
+ * store the instance here so that callers can access the store without going
+ * through a promise chain (critical for fire-and-forget paths like
+ * `stream.push()`).
+ */
+const alsSyncSymbol = Symbol.for("inngest:als:sync");
+
+/**
  * A type that represents a partial, runtime-agnostic interface of
  * `AsyncLocalStorage`.
  */
@@ -69,6 +77,17 @@ export const getAsyncCtx = async (): Promise<AsyncContext | undefined> => {
 };
 
 /**
+ * Synchronously retrieve the async context. Returns `undefined` if the ALS
+ * hasn't been initialized yet (first import not resolved).
+ */
+export const getAsyncCtxSync = (): AsyncContext | undefined => {
+  const als = (globalThis as Record<string | symbol | number, unknown>)[
+    alsSyncSymbol
+  ] as AsyncLocalStorageIsh | undefined;
+  return als?.getStore();
+};
+
+/**
  * Get a singleton instance of `AsyncLocalStorage` used to store and retrieve
  * async context for the current execution.
  */
@@ -78,16 +97,24 @@ export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
       try {
         const { AsyncLocalStorage } = await import("node:async_hooks");
 
-        resolve(new AsyncLocalStorage<AsyncContext>());
+        const als = new AsyncLocalStorage<AsyncContext>();
+        (globalThis as Record<string | symbol | number, unknown>)[
+          alsSyncSymbol
+        ] = als;
+        resolve(als);
       } catch (_err) {
         console.warn(
           "node:async_hooks is not supported in this runtime. Experimental async context is disabled.",
         );
 
-        resolve({
+        const fallback: AsyncLocalStorageIsh = {
           getStore: () => undefined,
           run: (_, fn) => fn(),
-        });
+        };
+        (globalThis as Record<string | symbol | number, unknown>)[
+          alsSyncSymbol
+        ] = fallback;
+        resolve(fallback);
       }
     });
 

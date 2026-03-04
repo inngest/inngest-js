@@ -12,7 +12,7 @@ export function fakeTokenStream(tokens: string[]): ReadableStream<Uint8Array> {
     async start(controller) {
       for (const token of tokens) {
         controller.enqueue(encoder.encode(token));
-        await sleep(500);
+        await sleep(100);
       }
       controller.close();
     },
@@ -29,7 +29,9 @@ export async function collectString(readable: ReadableStream): Promise<string> {
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) { break; }
+    if (done) {
+      break;
+    }
     parts.push(decoder.decode(value, { stream: true }));
   }
 

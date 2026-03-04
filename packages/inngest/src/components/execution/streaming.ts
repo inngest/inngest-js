@@ -40,6 +40,21 @@ export function buildSSEResultFrame(data: unknown): string {
 }
 
 /**
+ * Builds an SSE redirect frame telling the client that execution has switched
+ * to async mode and it should reconnect elsewhere to get remaining output.
+ *
+ * When `url` is provided the client can connect directly to that URL to
+ * continue receiving the stream.
+ */
+export function buildSSERedirectFrame(data: {
+  run_id: string;
+  token: string;
+  url?: string;
+}): string {
+  return buildSSEFrame("redirect", data);
+}
+
+/**
  * Returns a new `ReadableStream` that emits `prefix` first, then pipes
  * through all chunks from the original `stream`.
  */

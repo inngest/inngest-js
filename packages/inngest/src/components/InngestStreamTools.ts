@@ -1,5 +1,6 @@
-import { getAsyncCtx } from "./execution/als.ts";
+import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
+  buildSSERedirectFrame,
   buildSSEResultFrame,
   buildSSEStreamFrame,
 } from "./execution/streaming.ts";
@@ -143,6 +144,21 @@ export class InngestStream {
   }
 
   /**
+   * Write a redirect frame and close the writer. Tells the client that
+   * execution has switched to async mode. Internal use only.
+   */
+  redirect(data: { run_id: string; token: string; url?: string }): void {
+    const frame = buildSSERedirectFrame(data);
+
+    this.writeChain = this.writeChain
+      .then(() => this.writer.write(this.encoder.encode(frame)))
+      .then(() => this.writer.close())
+      .catch(() => {
+        // Writer already errored/closed — nothing to do.
+      });
+  }
+
+  /**
    * Write a terminal result frame and close the writer. Internal use only.
    */
   close(resultData?: unknown): void {
@@ -162,6 +178,17 @@ export class InngestStream {
   }
 }
 
+/**
+ * Try to get the stream tools synchronously first (fast path), falling back
+ * to the async ALS lookup. The sync path is available after the first ALS
+ * initialization and is critical for fire-and-forget `push()` calls that
+ * must activate the stream before the next microtask tick.
+ */
+const getStreamToolsSync = (): InngestStream | undefined => {
+  const ctx = getAsyncCtxSync();
+  return ctx?.execution?.stream;
+};
+
 const getDeferredStreamTooling = async (): Promise<
   InngestStream | undefined
 > => {
@@ -178,13 +205,31 @@ const getDeferredStreamTooling = async (): Promise<
  * and `pipe()` resolves immediately.
  */
 export const stream: StreamTools = {
-  push: (data) =>
+  push: (data) => {
+    // Fast synchronous path: resolve the ALS store without going through
+    // a promise chain. This ensures the stream is activated immediately,
+    // before the next step's microtask can fire.
+    const syncStream = getStreamToolsSync();
+    if (syncStream) {
+      syncStream.push(data);
+      return;
+    }
+
+    // Fallback: ALS not yet initialized (first import still resolving).
     void getDeferredStreamTooling()
-      .then((s) => s?.push(data))
+      .then((s) => {
+        s?.push(data);
+      })
       .catch(() => {
         // Suppress: outside an execution context or ALS lookup failed.
-      }),
+      });
+  },
   pipe: async (readable) => {
+    const syncStream = getStreamToolsSync();
+    if (syncStream) {
+      return syncStream.pipe(readable);
+    }
+
     const s = await getDeferredStreamTooling();
     return s ? s.pipe(readable) : "";
   },

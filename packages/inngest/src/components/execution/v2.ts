@@ -381,37 +381,94 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * checkpoint loop keeps running steps in the background.
    */
   private handleStreamActivated(): undefined {
-    if (!this.earlyStreamResponse) {
+    // Sync mode: resolve the early stream response so the HTTP layer sends
+    // the SSE Response to the client immediately.
+    if (this.earlyStreamResponse) {
+      const metadataFrame = buildSSEMetadataFrame(
+        this.fnArg.runId,
+        this.fnArg.attempt,
+      );
+
+      const clientStream = prependToStream(
+        new TextEncoder().encode(metadataFrame),
+        this.streamTools.readable,
+      );
+
+      const clientResponse = new Response(clientStream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      this.earlyStreamResponse.resolve({
+        type: "function-resolved",
+        ctx: this.fnArg,
+        ops: this.ops,
+        data: clientResponse,
+      });
+
       return undefined;
     }
+
+    // Async mode: stream.push() just buffers data into the InngestStream.
+    // The actual POST to the checkpoint stream endpoint happens when the
+    // function completes (in the function-resolved handler). This avoids
+    // issues with multiple async requests (one per step) before completion.
+
+    // Return undefined so the core loop continues processing checkpoints.
+    return undefined;
+  }
+
+  /**
+   * POST buffered stream data to the checkpoint stream ingest endpoint.
+   *
+   * Called in async mode after the function completes and the stream is
+   * closed. The POST body is the complete buffered stream:
+   *   1. A JSON header frame line (status + response headers)
+   *   2. SSE metadata frame
+   *   3. All buffered SSE stream frames
+   *   4. The terminal result frame
+   *
+   * Since the stream is already closed, the POST reads all buffered data
+   * and completes quickly.
+   */
+  private postCheckpointStream(): void {
+    const encoder = new TextEncoder();
+
+    // Header frame: first line of the POST body, tells the Dev Server what
+    // HTTP status and headers to use when replaying to clients.
+    const headerFrame =
+      JSON.stringify({
+        status_code: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      }) + "\n";
 
     const metadataFrame = buildSSEMetadataFrame(
       this.fnArg.runId,
       this.fnArg.attempt,
     );
 
-    const clientStream = prependToStream(
-      new TextEncoder().encode(metadataFrame),
+    const prefix = headerFrame + metadataFrame;
+
+    const bodyStream = prependToStream(
+      encoder.encode(prefix),
       this.streamTools.readable,
     );
 
-    const clientResponse = new Response(clientStream, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      },
-    });
-
-    this.earlyStreamResponse.resolve({
-      type: "function-resolved",
-      ctx: this.fnArg,
-      ops: this.ops,
-      data: clientResponse,
-    });
-
-    // Return undefined so the core loop continues processing checkpoints.
-    return undefined;
+    // Fire and forget — the stream is already closed so this completes fast.
+    void this.options.client["inngestApi"]
+      .checkpointStream({
+        runId: this.fnArg.runId,
+        body: bodyStream,
+      })
+      .catch((err: unknown) => {
+        this.debug("checkpoint stream POST error:", err);
+      });
   }
 
   /**
@@ -518,12 +575,34 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       throw new Error("Failed to checkpoint and switch to async mode");
     }
 
+    const token = this.state.checkpointedRun.token;
+
+    // If the SSE stream is already active, inform the client that execution
+    // is switching to async mode so it can reconnect elsewhere.
+    if (this.streamTools.activated) {
+      let url: string | undefined;
+      try {
+        url = await this.options.client["inngestApi"].getCheckpointStreamUrl(
+          this.fnArg.runId,
+          token,
+        );
+      } catch {
+        // Best-effort; client can still construct URL from run_id + token
+      }
+
+      this.streamTools.redirect({
+        run_id: this.fnArg.runId,
+        token,
+        url,
+      });
+    }
+
     return {
       type: "change-mode",
       ctx: this.fnArg,
       ops: this.ops,
       to: StepMode.Async,
-      token: this.state.checkpointedRun?.token!,
+      token,
     };
   }
 
@@ -865,10 +944,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        * The user's function has completed and returned a value.
        */
       "function-resolved": async ({ data }) => {
-        // We need to do this even here for async, as we could be returning
-        // data from an API endpoint, even if we were triggered async.
+        // Always POST a checkpoint stream in async mode so the client
+        // waiting at the GET endpoint gets at least the result frame.
+        // If stream.push() was called, the buffered frames are included.
+        let resultData: unknown = data;
+        if (data instanceof Response) {
+          resultData = await data.text();
+        }
+        this.streamTools.close(resultData);
+        this.postCheckpointStream();
+
+        // createResponse (experimentalTransformSyncResponse) expects a
+        // Response object — wrap raw data like the sync path does.
         if (this.options.createResponse) {
-          data = await this.options.createResponse(data);
+          const wrappedResponse = new Response(JSON.stringify(data), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+          data = await this.options.createResponse(wrappedResponse);
         }
 
         return await this.transformOutput({ data });
@@ -878,6 +971,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        * The user's function has thrown an error.
        */
       "function-rejected": async (checkpoint) => {
+        this.streamTools.close({ error: String(checkpoint.error) });
+        this.postCheckpointStream();
+
         return await this.transformOutput({ error: checkpoint.error });
       },
 
@@ -922,8 +1018,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "stream-activated": () => {
-        // Stream activation is only handled in sync mode; in async mode
-        // the function result is sent back to the executor, not the client.
+        // handleStreamActivated() is called directly from onActivated
+        // callback, which starts the checkpoint stream POST in async mode.
+        // Nothing else needed here.
         return undefined;
       },
     };
