@@ -6,7 +6,7 @@ import { getSubscriptionToken } from "inngest/react";
 
 export const fetchSubscriptionToken = async (campaignId: string) => {
   const token = await getSubscriptionToken(inngest, {
-    channel: campaignSendChannel({ campaignId }).name,
+    channel: campaignSendChannel({ campaignId }),
     topics: ["progress"],
   });
 

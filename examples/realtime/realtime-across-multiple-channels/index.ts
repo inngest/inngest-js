@@ -54,7 +54,7 @@ const serveApp = () => {
 
 const logsSubscription = async () => {
   await app.realtime.subscribe({
-    channel: globalChannel.name,
+    channel: globalChannel,
     topics: ["logs"],
     onMessage: (message) => {
       console.log(
@@ -68,7 +68,7 @@ const logsSubscription = async () => {
 
 const postSubscription = async () => {
   await app.realtime.subscribe({
-    channel: postChannel({ postId: "123" }).name,
+    channel: postChannel({ postId: "123" }),
     topics: ["updated", "deleted"],
     onMessage: (message) => {
       console.log(

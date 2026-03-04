@@ -586,34 +586,30 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      */
     subscribe: {
       <
-        const InputChannel extends Realtime.SubscribableChannel,
-        const InputTopics extends (keyof Realtime.Channel.InferTopics<
-          Realtime.Channel.AsChannel<InputChannel>
-        > &
-          string)[],
+        const InputChannel extends Realtime.ChannelInput,
+        const InputTopics extends
+          (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
         const TToken extends Realtime.Subscribe.Token<
-          Realtime.Channel.AsChannel<InputChannel>,
+          InputChannel,
           InputTopics
         >,
       >(opts: {
-        channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+        channel: InputChannel;
         topics: InputTopics;
         validate?: boolean;
         onMessage: Realtime.Subscribe.Callback<TToken>;
         onError?: (err: unknown) => void;
       }): Promise<Realtime.Subscribe.CallbackSubscription>;
       <
-        const InputChannel extends Realtime.SubscribableChannel,
-        const InputTopics extends (keyof Realtime.Channel.InferTopics<
-          Realtime.Channel.AsChannel<InputChannel>
-        > &
-          string)[],
+        const InputChannel extends Realtime.ChannelInput,
+        const InputTopics extends
+          (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
         const TToken extends Realtime.Subscribe.Token<
-          Realtime.Channel.AsChannel<InputChannel>,
+          InputChannel,
           InputTopics
         >,
       >(opts: {
-        channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+        channel: InputChannel;
         topics: InputTopics;
         validate?: boolean;
       }): Promise<Realtime.Subscribe.StreamSubscription<TToken>>;
@@ -623,17 +619,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      * Generate a subscription token for subscribing to realtime messages.
      */
     token: <
-      const InputChannel extends Realtime.SubscribableChannel,
-      const InputTopics extends (keyof Realtime.Channel.InferTopics<
-        Realtime.Channel.AsChannel<InputChannel>
-      > &
-        string)[],
-      const TToken extends Realtime.Subscribe.Token<
-        Realtime.Channel.AsChannel<InputChannel>,
-        InputTopics
-      >,
+      const InputChannel extends Realtime.ChannelInput,
+      const InputTopics extends
+        (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
+      const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
     >(opts: {
-      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+      channel: InputChannel;
       topics: InputTopics;
     }) => Promise<TToken>;
   } = {
@@ -678,7 +669,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       const key = await this.inngestApi.getSubscriptionToken(channelId, topics);
 
       return {
-        channel: channelId,
+        channel,
         topics,
         key,
         // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics

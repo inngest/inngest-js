@@ -9,6 +9,8 @@ export namespace Realtime {
     | Realtime.ChannelDef
     | string;
 
+  export type ChannelInput = string | Realtime.ChannelInstance;
+
   export type PublishFn = <
     TMessage extends MaybePromise<Realtime.Message.Input>,
   >(
@@ -16,26 +18,19 @@ export namespace Realtime {
   ) => Promise<Awaited<TMessage>["data"]>;
 
   export type GetSubscriptionTokenFn = <
-    const InputChannel extends Realtime.SubscribableChannel,
-    const InputTopics extends (keyof Realtime.Channel.InferTopics<
-      Realtime.Channel.AsChannel<InputChannel>
-    > &
-      string)[],
-    const TToken extends Realtime.Subscribe.Token<
-      Realtime.Channel.AsChannel<InputChannel>,
-      InputTopics
-    >,
+    const InputChannel extends Realtime.ChannelInput,
+    const InputTopics extends
+      (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
+    const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
   >(args: {
-    channel: Subscribe.InferChannelInput<InputChannel>;
+    channel: InputChannel;
     topics: InputTopics;
   }) => Promise<TToken>;
 
   export type Token<
-    TChannel extends SubscribableChannel,
-    TTopics extends (keyof Channel.InferTopics<Channel.AsChannel<TChannel>> &
-      string)[] = (keyof Channel.InferTopics<Channel.AsChannel<TChannel>> &
-      string)[],
-  > = Subscribe.Token<Channel.AsChannel<TChannel>, TTopics>;
+    TChannel extends ChannelInput = ChannelInput,
+    TTopics extends string[] = string[],
+  > = Subscribe.Token<TChannel, TTopics>;
 
   export namespace Subscribe {
     export type InferChannelInput<T> = T extends Realtime.ChannelDef<
@@ -50,19 +45,13 @@ export namespace Realtime {
           ? T
           : T;
 
-    type TopicNamesForChannel<T extends Realtime.SubscribableChannel> =
-      keyof Realtime.Channel.InferTopics<Realtime.Channel.AsChannel<T>> &
-        string;
-
     export interface Token<
-      TChannel extends
-        Realtime.SubscribableChannel = Realtime.SubscribableChannel,
-      TTopics extends
-        TopicNamesForChannel<TChannel>[] = TopicNamesForChannel<TChannel>[],
+      TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
+      TTopics extends string[] = string[],
     > {
       // key used to auth - could be undefined as then we can do a cold subscribe
       key?: string | undefined;
-      channel: Realtime.Subscribe.InferChannelInput<TChannel>;
+      channel: TChannel;
       topics: TTopics;
     }
 
@@ -124,7 +113,7 @@ export namespace Realtime {
         any
       >
         ? IChannel
-        : Realtime.SubscribableChannel;
+        : Realtime.ChannelInput;
 
       export type InferTopicData<
         TToken extends Token,
@@ -194,10 +183,10 @@ export namespace Realtime {
   // Subscribe (output) msg
   export type Message<
     TChannelId extends string = string,
-    TTopics extends Record<
+    TTopics extends Record<string, unknown> = Record<
       string,
-      Realtime.Topic.Definition | Realtime.TopicConfig
-    > = Record<string, Realtime.Topic.Definition>,
+      Realtime.Topic.Definition
+    >,
   > =
     | {
         [K in keyof TTopics]:
@@ -250,10 +239,10 @@ export namespace Realtime {
 
     export type Raw<
       TChannelId extends string = string,
-      TTopics extends Record<
+      TTopics extends Record<string, unknown> = Record<
         string,
-        Realtime.Topic.Definition | Realtime.TopicConfig
-      > = Record<string, Realtime.Topic.Definition>,
+        Realtime.Topic.Definition
+      >,
     > = {
       [K in keyof TTopics]: {
         topic?: K;
@@ -539,7 +528,7 @@ export namespace Realtime {
 
   export type ChannelInstance<
     TName extends string = string,
-    TTopics extends TopicsConfig = TopicsConfig,
+    TTopics extends TopicsConfig = {},
   > = {
     name: TName;
     topics: TTopics;

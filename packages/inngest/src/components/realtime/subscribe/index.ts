@@ -3,15 +3,12 @@ import type { Realtime } from "../types.ts";
 import { TokenSubscription } from "./TokenSubscription.ts";
 
 type SubscribeBaseArgs<
-  InputChannel extends Realtime.SubscribableChannel,
-  InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
+  InputChannel extends Realtime.ChannelInput,
+  InputTopics extends string[],
 > = {
   app?: Inngest.Like;
   key?: string;
-  channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+  channel: InputChannel;
   topics: InputTopics;
   validate?: boolean;
 };
@@ -24,56 +21,32 @@ type SubscribeCallbackArgs<
 };
 
 export function subscribe<
-  const InputChannel extends Realtime.SubscribableChannel,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
+  const InputChannel extends Realtime.ChannelInput,
+  const InputTopics extends string[],
+  const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
   const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
 >(token: SubscribeBaseArgs<InputChannel, InputTopics>): Promise<TOutput>;
 export function subscribe<
-  const InputChannel extends Realtime.SubscribableChannel,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
+  const InputChannel extends Realtime.ChannelInput,
+  const InputTopics extends string[],
+  const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
 >(
   token: SubscribeBaseArgs<InputChannel, InputTopics> &
     SubscribeCallbackArgs<TToken>,
 ): Promise<Realtime.Subscribe.CallbackSubscription>;
 export function subscribe<
-  const InputChannel extends Realtime.SubscribableChannel,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
+  const InputChannel extends Realtime.ChannelInput,
+  const InputTopics extends string[],
+  const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
   const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
 >(
   token: SubscribeBaseArgs<InputChannel, InputTopics>,
   callback?: Realtime.Subscribe.Callback<TToken>,
 ): Promise<TOutput>;
 export async function subscribe<
-  const InputChannel extends Realtime.SubscribableChannel,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
+  const InputChannel extends Realtime.ChannelInput,
+  const InputTopics extends string[],
+  const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
   const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
 >(
   token: SubscribeBaseArgs<InputChannel, InputTopics> &
@@ -122,19 +95,14 @@ export async function subscribe<
 }
 
 export const getSubscriptionToken = async <
-  const InputChannel extends Realtime.SubscribableChannel,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
+  const InputChannel extends Realtime.ChannelInput,
+  const InputTopics extends (keyof Realtime.Channel.InferTopics<InputChannel> &
     string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
+  const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
 >(
   app: Inngest.Like,
   args: {
-    channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+    channel: InputChannel;
     topics: InputTopics;
   },
 ): Promise<TToken> => {
@@ -151,7 +119,7 @@ export const getSubscriptionToken = async <
   );
 
   return {
-    channel: channelId,
+    channel: args.channel,
     topics: args.topics,
     key,
   } as TToken;

@@ -31,22 +31,14 @@ export type UseRealtimeRunStatus =
 
 type TokenFactory = () => Promise<string | Realtime.Subscribe.Token>;
 
-type TopicNamesForChannel<TChannel extends Realtime.SubscribableChannel> =
-  keyof Realtime.Channel.InferTopics<Realtime.Channel.AsChannel<TChannel>> &
-    string;
-
-type LatestMap<
-  TChannel extends Realtime.SubscribableChannel,
-  TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined,
-> = TTopics extends readonly (infer K)[]
-  ? Partial<Record<Extract<K, string>, Realtime.Message>>
-  : Record<string, Realtime.Message | undefined>;
+type LatestMap<TTopics extends readonly string[] | undefined> =
+  TTopics extends readonly (infer K)[]
+    ? Partial<Record<Extract<K, string>, Realtime.Message>>
+    : Record<string, Realtime.Message | undefined>;
 
 export interface UseRealtimeResult<
-  TChannel extends Realtime.SubscribableChannel = Realtime.SubscribableChannel,
-  TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined =
-    | readonly TopicNamesForChannel<TChannel>[]
-    | undefined,
+  _TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
+  TTopics extends readonly string[] | undefined = readonly string[] | undefined,
 > {
   data: Realtime.Message[];
   latestData: Realtime.Message | null;
@@ -56,22 +48,20 @@ export interface UseRealtimeResult<
 
   status: UseRealtimeConnectionStatus;
   runStatus: UseRealtimeRunStatus;
-  latest: LatestMap<TChannel, TTopics>;
+  latest: LatestMap<TTopics>;
   history: Realtime.Message[];
   result: unknown;
   reset: () => void;
 }
 
 export interface UseRealtimeOptions<
-  TChannel extends Realtime.SubscribableChannel = Realtime.SubscribableChannel,
-  TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined =
-    | readonly TopicNamesForChannel<TChannel>[]
-    | undefined,
+  TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
+  TTopics extends readonly string[] | undefined = readonly string[] | undefined,
 > {
   //
   // Spec-style inputs. If `token` is a function and returns a string, both
   // `channel` and `topics` are required so the hook can construct a token object.
-  channel?: Realtime.Subscribe.InferChannelInput<TChannel>;
+  channel?: TChannel;
   topics?: TTopics;
 
   //
@@ -241,10 +231,8 @@ const sleep = (ms: number) =>
   });
 
 export const useRealtime = <
-  TChannel extends Realtime.SubscribableChannel = Realtime.SubscribableChannel,
-  TTopics extends readonly TopicNamesForChannel<TChannel>[] | undefined =
-    | readonly TopicNamesForChannel<TChannel>[]
-    | undefined,
+  TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
+  TTopics extends readonly string[] | undefined = readonly string[] | undefined,
 >({
   channel,
   topics,
@@ -401,7 +389,7 @@ export const useRealtime = <
             }
 
             return {
-              channel: channel as Realtime.SubscribableChannel,
+              channel: channel as Realtime.ChannelInput,
               topics: topics as string[],
               key: next,
             } as Realtime.Subscribe.Token;
@@ -605,7 +593,7 @@ export const useRealtime = <
 
     status,
     runStatus,
-    latest: latest as LatestMap<TChannel, TTopics>,
+    latest: latest as LatestMap<TTopics>,
     history,
     result,
     reset,

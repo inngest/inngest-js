@@ -76,7 +76,7 @@ const runSubscription = async () => {
   // Subscribe to the channel using the Inngest client
   //
   const stream = await inngest.realtime.subscribe({
-    channel: ch.name,
+    channel: ch,
     topics: ["status", "result"],
   });
 

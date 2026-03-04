@@ -594,11 +594,9 @@ describe("TopicRef type narrowing", () => {
 
 describe("getSubscriptionToken types", () => {
   test("string-only token preserves channel and topic literal types", () => {
-    type Token = Realtime.Subscribe.Token<
-      Realtime.Channel<"my-channel">,
-      ["status", "result"]
-    >;
+    type Token = Realtime.Subscribe.Token<"my-channel", ["status", "result"]>;
 
+    expectTypeOf<Token["channel"]>().toEqualTypeOf<"my-channel">();
     expectTypeOf<Token["topics"]>().toEqualTypeOf<["status", "result"]>();
   });
 

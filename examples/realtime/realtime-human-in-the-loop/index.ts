@@ -65,7 +65,7 @@ const serverSubscription = async () => {
   console.log("Sent agentic workflow start event");
 
   const stream = await inngest.realtime.subscribe({
-    channel: agenticWorkflowChannel.name,
+    channel: agenticWorkflowChannel,
     topics: ["messages"],
   });
 

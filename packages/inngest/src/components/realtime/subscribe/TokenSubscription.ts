@@ -87,7 +87,12 @@ export class TokenSubscription {
       // Channel object — store the topic config (new TopicConfig or old
       // Topic.Definition) for optional schema validation on received messages.
       this.#topics = new Map(
-        this.token.topics.map((name) => [name, channel.topics?.[name]]),
+        this.token.topics.map((name) => [
+          name,
+          (
+            channel.topics as Record<string, Realtime.TopicConfig | undefined>
+          )?.[name],
+        ]),
       );
     }
   }
