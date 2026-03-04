@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inngest Realtime v2 Demo",
+  title: "Inngest Realtime Demo",
   description: "Inngest Realtime using useRealtime hook",
 };
 

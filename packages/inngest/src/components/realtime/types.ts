@@ -56,11 +56,10 @@ export namespace Realtime {
     }
 
     export type InferTopicSubscribeData<TTopic> =
-      TTopic extends Realtime.Topic.Definition
-        ? Realtime.Topic.InferSubscribe<TTopic>
-        : TTopic extends Realtime.TopicConfig
-          ? Realtime.InferTopicData<TTopic>
-          : unknown;
+      TTopic extends Realtime.TopicConfig
+        ? Realtime.InferTopicData<TTopic>
+        : // biome-ignore lint/suspicious/noExplicitAny: fallback for untyped topics
+          any;
 
     export type StreamSubscription<
       TSubscribeToken extends Token = Token,
@@ -447,20 +446,6 @@ export namespace Realtime {
       _TSubscribe = TPublish,
     > {
       name: TTopicId;
-
-      // Deliberately doesn't include `USubscribe` typing, as there's no schema
-      // to perform transformations.
-      type<const UPublish>(): Definition<TTopicId, UPublish>;
-
-      schema<const TSchema extends StandardSchemaV1>(
-        schema: TSchema,
-      ): Definition<
-        TTopicId,
-        StandardSchemaV1.InferInput<TSchema>,
-        StandardSchemaV1.InferOutput<TSchema>
-      >;
-
-      getSchema(): StandardSchemaV1 | undefined;
     }
 
     export type InferId<TTopic extends Topic.Definition> =
@@ -480,10 +465,6 @@ export namespace Realtime {
         ? ISubscribe
         : // biome-ignore lint/suspicious/noExplicitAny: open to allow easy overwrites elsewhere
           any;
-
-    export type Builder = <const TTopicId extends string>(
-      id: TTopicId,
-    ) => Topic.Definition<TTopicId>;
   }
 
   //
