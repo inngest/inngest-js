@@ -79,7 +79,9 @@ const serverSubscription = async () => {
     }
 
     console.log(`Received ${value.channel} ${value.topic} message:`, value.data);
-    if (!value.data.confirmationUUid) {
+
+    const msg = value.data as { message: string; confirmationUUid: string };
+    if (!msg.confirmationUUid) {
       continue;
     }
 
@@ -88,7 +90,7 @@ const serverSubscription = async () => {
     await inngest.send({
       name: "agentic-workflow/confirmation",
       data: {
-        confirmationUUid: value.data.confirmationUUid,
+        confirmationUUid: msg.confirmationUUid,
         confirmation: answer.toLowerCase() === "yes",
       },
     });
