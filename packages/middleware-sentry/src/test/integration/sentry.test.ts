@@ -1,13 +1,14 @@
-import { Inngest } from "inngest";
-import { describe, expect, test } from "vitest";
-import { SentryMiddleware, sentryMiddleware } from "../../middleware.ts";
 import {
   createState,
   createTestApp,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
-} from "../../test-harness/index.ts";
+} from "@inngest/test-harness";
+import { Inngest } from "inngest";
+import { createServer } from "inngest/node";
+import { describe, expect, test } from "vitest";
+import { SentryMiddleware, sentryMiddleware } from "../../middleware.ts";
 import {
   capturedErrors,
   capturedStepErrors,
@@ -41,7 +42,7 @@ test("function with steps succeeds", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   const fnOutput = await state.waitForRunComplete();
   expect(fnOutput).toBe(3);
@@ -76,7 +77,7 @@ test("ctx.sentry is injected via transformFunctionInput", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   await state.waitForRunComplete();
 
@@ -104,7 +105,7 @@ test("error events captured on function error", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   await state.waitForRunFailed();
 
@@ -142,7 +143,7 @@ describe("captureStepErrors", () => {
       },
     );
 
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
     await client.send({ name: eventName });
     await state.waitForRunComplete();
 
@@ -180,7 +181,7 @@ describe("captureStepErrors", () => {
       },
     );
 
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
     await client.send({ name: eventName });
     await state.waitForRunComplete();
 
@@ -214,7 +215,7 @@ describe("onlyCaptureFinalAttempt", () => {
       },
     );
 
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
     await client.send({ name: eventName });
 
     await waitFor(() => {
@@ -258,7 +259,7 @@ describe("onlyCaptureFinalAttempt", () => {
       },
     );
 
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
     await client.send({ name: eventName });
 
     await waitFor(() => {
@@ -297,7 +298,7 @@ describe("disableAutomaticFlush", () => {
       },
     );
 
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
     await client.send({ name: eventName });
     await state.waitForRunFailed();
 
@@ -334,7 +335,7 @@ describe("disableAutomaticFlush", () => {
       },
     );
 
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
     await client.send({ name: eventName });
     await state.waitForRunComplete();
 
@@ -363,7 +364,7 @@ test("step spans created with correct names", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   await state.waitForRunComplete();
 
@@ -394,7 +395,7 @@ test("display name preferred over step ID", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   await state.waitForRunComplete();
   await waitFor(() => {
@@ -431,7 +432,7 @@ test("request span uses function name", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   await state.waitForRunComplete();
 

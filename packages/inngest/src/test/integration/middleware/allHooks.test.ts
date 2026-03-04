@@ -7,6 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { describe, expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../index.ts";
+import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -178,7 +179,7 @@ describe("all hooks fire in correct order with 2 middleware", () => {
         },
       );
 
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -412,7 +413,7 @@ test("all hooks fire in correct order with checkpointing", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

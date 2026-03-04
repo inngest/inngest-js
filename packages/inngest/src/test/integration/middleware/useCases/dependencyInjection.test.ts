@@ -7,6 +7,7 @@ import {
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
 import { dependencyInjectionMiddleware } from "../../../../middleware/dependencyInjection.ts";
+import { createServer } from "../../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -68,7 +69,7 @@ test("available in other middleware", async () => {
       state.fn.db = db;
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

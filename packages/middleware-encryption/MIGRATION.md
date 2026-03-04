@@ -2,6 +2,10 @@
 
 This covers how to migrate between the major versions of this middleware
 
+## v1 -> v2
+
+Encryption/decryption behavior is fully backwards compatible with v1. It's safe to do a rolling deploy, where v1 and v2 coexist.
+
 ## v0 -> v1
 
 We've changed some tooling and standards in v1 to align with other languages,

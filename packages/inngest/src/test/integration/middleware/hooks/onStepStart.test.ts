@@ -6,6 +6,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -50,7 +51,7 @@ describe("args", () => {
           await step.run("my-step", () => "result");
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -112,7 +113,7 @@ test("1 step", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -159,7 +160,7 @@ test("multiple steps", async () => {
       await step.sendEvent("step-2", { name: randomSuffix("other-evt") });
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -227,7 +228,11 @@ test("unsupported step kinds", async () => {
     () => {},
   );
 
-  await createTestApp({ client, functions: [fn, childFn] });
+  await createTestApp({
+    client,
+    functions: [fn, childFn],
+    serve: createServer,
+  });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -264,7 +269,7 @@ test("throws", async () => {
     },
   );
 
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

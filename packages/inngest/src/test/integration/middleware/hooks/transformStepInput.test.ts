@@ -7,6 +7,7 @@ import {
 import { expect, test } from "vitest";
 import { z } from "zod";
 import { Inngest, invoke, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import { anyContext } from "../../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -57,7 +58,7 @@ describe("args", () => {
           await step.sleep("sleep", "1s");
         },
       );
-      await createTestApp({ client, functions: [fn] });
+      await createTestApp({ client, functions: [fn], serve: createServer });
 
       await client.send({ name: eventName });
       await state.waitForRunComplete();
@@ -149,7 +150,7 @@ test("modify step.run input (1 middleware)", async () => {
       );
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -212,7 +213,7 @@ test("modify step.run input (2 middleware, forward order)", async () => {
       );
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -283,7 +284,7 @@ describe("change step ID", () => {
         state.runId = runId;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -394,7 +395,7 @@ describe("change step ID", () => {
         state.runId = runId;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -569,7 +570,11 @@ test("modify all step kinds", async () => {
       state.invoke.input = event.data.value;
     },
   );
-  await createTestApp({ client, functions: [fn, childFn] });
+  await createTestApp({
+    client,
+    functions: [fn, childFn],
+    serve: createServer,
+  });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();
@@ -645,7 +650,7 @@ test("called for memoized and fresh", async () => {
       await step.sleep("sleep", "1s");
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName });
   await state.waitForRunComplete();

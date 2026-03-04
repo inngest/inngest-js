@@ -8,6 +8,7 @@ import {
 import { expect, test } from "vitest";
 import { z } from "zod/v3";
 import { eventType, Inngest, invoke, Middleware } from "../../../../index.ts";
+import { createServer } from "../../../../node.ts";
 import type { Jsonify } from "../../../../types.ts";
 import { BaseSerializerMiddleware, fetchEvent, isRecord } from "../../utils.ts";
 
@@ -40,7 +41,7 @@ describe("client level", () => {
         state.stepOutputs.push(output);
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -82,7 +83,7 @@ describe("client level", () => {
         });
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send(
       et.create({
@@ -149,7 +150,11 @@ describe("client level", () => {
         return event.data;
       },
     );
-    await createTestApp({ client, functions: [parentFn, childFn] });
+    await createTestApp({
+      client,
+      functions: [parentFn, childFn],
+      serve: createServer,
+    });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -207,7 +212,7 @@ describe("function level", () => {
         state.stepOutputs.push(output);
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -273,7 +278,11 @@ describe("function level", () => {
         });
       },
     );
-    await createTestApp({ client, functions: [fnParent, fnChild] });
+    await createTestApp({
+      client,
+      functions: [fnParent, fnChild],
+      serve: createServer,
+    });
 
     await client.send({ name: parentTrigger });
     await state.waitForRunComplete();
@@ -343,7 +352,11 @@ describe("function level", () => {
         return event.data;
       },
     );
-    await createTestApp({ client, functions: [parentFn, childFn] });
+    await createTestApp({
+      client,
+      functions: [parentFn, childFn],
+      serve: createServer,
+    });
 
     await client.send({ name: eventName });
     await state.waitForRunComplete();
@@ -415,7 +428,7 @@ test("with checkpointing", async () => {
       await step.sleep("zzz", "1s");
     },
   );
-  await createTestApp({ client, functions: [fn] });
+  await createTestApp({ client, functions: [fn], serve: createServer });
   await client.send({ name: eventName });
   await state.waitForRunComplete();
 
@@ -474,7 +487,7 @@ describe("outgoing event data is serialized", () => {
         state.event = event;
       },
     );
-    await createTestApp({ client, functions: [fn] });
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
     const { ids } = await client.send({
       data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
@@ -541,7 +554,11 @@ describe("outgoing event data is serialized", () => {
         state.childEvent = event;
       },
     );
-    await createTestApp({ client, functions: [fn, childFn] });
+    await createTestApp({
+      client,
+      functions: [fn, childFn],
+      serve: createServer,
+    });
 
     await client.send({ name: parentEventName });
     await state.waitForRunComplete();
