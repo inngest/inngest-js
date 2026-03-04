@@ -88,6 +88,7 @@ export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [debug, setDebug] = useState(false);
   const termRef = useRef<HTMLPreElement>(null);
 
   async function handleSubmit() {
@@ -122,7 +123,9 @@ export default function Home() {
       // If we got a redirect, connect to the checkpoint stream endpoint
       // on the Dev Server to continue receiving SSE data.
       if (redirectUrl) {
-        setLines((prev) => [...prev, "[redirecting to async stream...]"]);
+        if (debug) {
+          setLines((prev) => [...prev, "[redirecting to async stream...]"]);
+        }
 
         const asyncRes = await fetch(redirectUrl);
         if (!asyncRes.body) {
@@ -149,9 +152,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ runId }),
     });
-    if (res.ok) {
-      setLines((prev) => [...prev, "[approved]"]);
-    } else {
+    if (!res.ok) {
       setLines((prev) => [...prev, `[approve failed: ${res.status}]`]);
     }
   }
@@ -182,6 +183,15 @@ export default function Home() {
           <option value="/api/llm-approval">LLM approval</option>
           <option value="/api/stream">No steps</option>
           <option value="/api/stream-steps">With steps</option>
+        </select>
+
+        <select
+          value={debug ? "on" : "off"}
+          onChange={(e) => setDebug(e.target.value === "on")}
+          style={{ padding: "8px 12px", fontSize: 14 }}
+        >
+          <option value="off">Debug: off</option>
+          <option value="on">Debug: on</option>
         </select>
 
         <button
@@ -254,9 +264,7 @@ export default function Home() {
             wordBreak: "break-word",
           }}
         >
-          {lines.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
+          {lines.join("")}
         </pre>
       </div>
     </main>

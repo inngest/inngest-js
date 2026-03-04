@@ -6,7 +6,6 @@ import { sleep, fakeTokenStream, collectString } from "../helpers";
 const delay = 100;
 
 export const GET = inngest.endpoint(async () => {
-  console.log("enter");
   const ctx = await getAsyncCtx();
   const runId = ctx?.execution?.ctx?.runId;
   if (!runId) {
@@ -15,18 +14,19 @@ export const GET = inngest.endpoint(async () => {
   }
 
   await step.run("first-llm", async () => {
-    stream.push("First LLM call...");
+    stream.push("First LLM call:\n");
     await sleep(delay);
     const [forStream] = fakeTokenStream([
-      "Streaming back mock output",
-      "Little more",
-      "And done!",
+      "Hello ",
+      "from ",
+      "another ",
+      "stream!\n",
     ]).tee();
     await stream.pipe(forStream);
   });
 
   await step.run("approval-message", () => {
-    stream.push("Do you want to continue?");
+    stream.push("Do you want to continue?\n");
   });
 
   const approval = await step.waitForEvent("wait-for-approval", {
@@ -35,19 +35,21 @@ export const GET = inngest.endpoint(async () => {
     timeout: "5s",
   });
   if (!approval) {
-    return "Approval expired";
+    return "Approval expired\n";
   }
 
   await step.run("second-llm", async () => {
-    stream.push("Second LLM call...");
+    stream.push("Second LLM call:\n");
     await sleep(delay);
     const [forStream] = fakeTokenStream([
-      "Streaming back mock output",
-      "Little more",
-      "And done!",
+      "Hello ",
+      "from ",
+      "yet ",
+      "another ",
+      "stream!\n",
     ]).tee();
     await stream.pipe(forStream);
   });
 
-  return "Done";
+  return "Done\n";
 });
