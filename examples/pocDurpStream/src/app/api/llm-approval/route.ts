@@ -38,16 +38,16 @@ export const GET = inngest.endpoint(async () => {
     return "Approval expired";
   }
 
-  // await step.run("second-llm", async () => {
-  stream.push("Second LLM call...");
-  await sleep(delay);
-  const [forStream] = fakeTokenStream([
-    "Streaming back mock output",
-    "Little more",
-    "And done!",
-  ]).tee();
-  await stream.pipe(forStream);
-  // });
+  await step.run("second-llm", async () => {
+    stream.push("Second LLM call...");
+    await sleep(delay);
+    const [forStream] = fakeTokenStream([
+      "Streaming back mock output",
+      "Little more",
+      "And done!",
+    ]).tee();
+    await stream.pipe(forStream);
+  });
 
   return "Done";
 });

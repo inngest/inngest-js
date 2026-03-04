@@ -1583,7 +1583,11 @@ export class InngestCommHandler<
             event: {},
             events: [],
             steps: {},
-            version: PREFERRED_ASYNC_EXECUTION_VERSION,
+            // Use V2 so the execution engine has streaming support
+            // (InngestStream in ALS + postCheckpointStream on completion).
+            // V1 has no streaming machinery, so stream.push/pipe would be
+            // silent no-ops on reentry.
+            version: PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
             sdkDecided: true,
             ctx: {
               attempt: 0,
@@ -1602,7 +1606,7 @@ export class InngestCommHandler<
             },
           } as Extract<
             FnData,
-            { version: typeof PREFERRED_ASYNC_EXECUTION_VERSION }
+            { version: typeof PREFERRED_CHECKPOINTING_EXECUTION_VERSION }
           >;
         } else {
           const rawProbe = await actions.queryStringWithDefaults(
@@ -2259,6 +2263,7 @@ export class InngestCommHandler<
               reqArgs,
               headers,
               createResponse,
+              runToCompletion: forceExecution,
             },
           };
         },

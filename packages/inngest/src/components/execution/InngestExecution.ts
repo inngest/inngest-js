@@ -153,6 +153,15 @@ export interface InngestExecutionOptions {
   acceptsSSE?: boolean;
 
   /**
+   * When true, the async execution will run all steps to completion in a
+   * single request instead of returning after each step. This is needed for
+   * forced executions (reentry from sync mode) so that stream data produced
+   * across multiple steps is captured in a single InngestStream and can be
+   * POSTed to the checkpoint stream endpoint in one go.
+   */
+  runToCompletion?: boolean;
+
+  /**
    * Provide the ability to transform the context passed to the function before
    * the execution starts.
    */

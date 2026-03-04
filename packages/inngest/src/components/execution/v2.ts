@@ -984,6 +984,29 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       "steps-found": async ({ steps }) => {
         const stepResult = await this.tryExecuteStep(steps);
         if (stepResult) {
+          // When running to completion (forced execution reentry), resume
+          // the step so the function continues past it instead of returning
+          // step-ran. This keeps stream data in a single InngestStream so
+          // it can all be POSTed when the function completes.
+          if (this.options.runToCompletion) {
+            if (stepResult.error) {
+              // Let errors propagate naturally; function-rejected will fire.
+              return stepRanHandler(stepResult);
+            }
+
+            // Reset `handled` — reportNextTick already called handle()
+            // on this step (which is a no-op for unfulfilled steps but
+            // sets handled=true), so resumeStepWithResult's handle()
+            // call would be skipped without this reset.
+            const userlandStep = this.state.steps.get(stepResult.id);
+            if (userlandStep) {
+              userlandStep.handled = false;
+            }
+            this.resumeStepWithResult(stepResult);
+            delete this.state.executingStep;
+            return;
+          }
+
           return stepRanHandler(stepResult);
         }
 
