@@ -547,10 +547,10 @@ export const testFramework = (
         }
       };
 
-      test("throws error at construction when cloud mode lacks signing key", async () => {
-        // Only applies when process.env is available at construction (Node.js).
-        // Edge environments (Deno, Cloudflare) defer validation to request time.
-        if (typeof process?.env !== "object") return;
+      test("does not throw at construction when cloud mode lacks signing key", async () => {
+        if (typeof process?.env !== "object") {
+          return;
+        }
 
         await withoutEnvVars(
           [envKeys.InngestSigningKey, envKeys.InngestDevMode],
@@ -560,20 +560,23 @@ export const testFramework = (
                 client: createClient({ id: "test" }),
                 functions: [],
               });
-            }).toThrow(/signing key is required/i);
+            }).not.toThrow();
           },
         );
       });
 
-      test("defers validation and fails at request time without signing key", async () => {
+      test("returns 500 at request time without signing key", async () => {
         await withoutEnvVars(
           [envKeys.InngestSigningKey, envKeys.InngestDevMode],
           async () => {
-            // In Node.js: use createEdgeHandler to simulate edge (empty env at construction)
-            // In Deno/Cloudflare mock: env is already unavailable at construction
             const serveHandler =
               typeof process?.env === "object"
-                ? createEdgeHandler()
+                ? getServeHandler([
+                    {
+                      client: createClient({ id: "test", fetch }),
+                      functions: [],
+                    },
+                  ])
                 : getServeHandler([
                     {
                       client: createClient({ id: "test", fetch }),
@@ -581,10 +584,11 @@ export const testFramework = (
                     },
                   ]);
 
-            // Request without signing key should fail
-            await expect(
-              run(serveHandler, [{ method: "GET" }], {}),
-            ).rejects.toThrow(/signing key is required/i);
+            const res = await run(serveHandler, [{ method: "GET" }], {});
+            expect(res.status).toBe(500);
+            expect(JSON.parse(res.body)).toEqual({
+              code: "internal_server_error",
+            });
           },
         );
       });
