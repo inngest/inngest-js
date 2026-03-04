@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Aaron's Inngest Playground",
+  title: "Durp streaming POC",
 };
 
 export default function RootLayout({

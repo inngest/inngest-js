@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 interface SSECallbacks {
   onRunId: (runId: string) => void;
@@ -84,21 +84,35 @@ async function readSSEStream(
 }
 
 export default function Home() {
-  const [endpoint, setEndpoint] = useState("/api/llm-approval");
+  const endpoint = "/api/demo";
   const [lines, setLines] = useState<string[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [debug, setDebug] = useState(false);
+
+  const [waitingForInput, setWaitingForInput] = useState(false);
   const termRef = useRef<HTMLPreElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (waitingForInput) {
+      inputRef.current?.focus();
+    }
+  }, [waitingForInput]);
 
   async function handleSubmit() {
     setLines([]);
     setRunId(null);
     setRunning(true);
+    setWaitingForInput(false);
 
     const callbacks: SSECallbacks = {
       onRunId: (id) => setRunId(id),
-      onData: (display) => setLines((prev) => [...prev, display]),
+      onData: (display) => {
+        setLines((prev) => [...prev, display]);
+        if (display.includes("Do you want to continue?")) {
+          setWaitingForInput(true);
+        }
+      },
       onScroll: () => {
         if (termRef.current) {
           termRef.current.scrollTop = termRef.current.scrollHeight;
@@ -123,10 +137,6 @@ export default function Home() {
       // If we got a redirect, connect to the checkpoint stream endpoint
       // on the Dev Server to continue receiving SSE data.
       if (redirectUrl) {
-        if (debug) {
-          setLines((prev) => [...prev, "[redirecting to async stream...]"]);
-        }
-
         const asyncRes = await fetch(redirectUrl);
         if (!asyncRes.body) {
           setLines((prev) => [...prev, "[error] No body from async stream"]);
@@ -143,17 +153,20 @@ export default function Home() {
     }
   }
 
-  async function handleApprove() {
-    if (!runId) {
-      return;
-    }
-    const res = await fetch("/api/approve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runId }),
-    });
-    if (!res.ok) {
-      setLines((prev) => [...prev, `[approve failed: ${res.status}]`]);
+  async function handleInput(value: string) {
+    setWaitingForInput(false);
+    const input = value.trim().toLowerCase();
+    setLines((prev) => [...prev, `> ${value}\n`]);
+
+    if ((input === "y" || input === "n") && runId) {
+      const res = await fetch("/api/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved: input === "y", runId }),
+      });
+      if (!res.ok) {
+        setLines((prev) => [...prev, `[approve failed: ${res.status}]\n`]);
+      }
     }
   }
 
@@ -164,36 +177,16 @@ export default function Home() {
     status = "Done";
   }
 
-  let title = "";
+  let title = "\u00A0";
   if (runId) {
     title = `Run: ${runId}`;
   }
 
   return (
     <main style={{ padding: 32, fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ marginBottom: 16 }}>Durable Endpoint Stream</h1>
+      <h1 style={{ marginBottom: 16 }}>Durp streaming POC</h1>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <select
-          value={endpoint}
-          onChange={(e) => setEndpoint(e.target.value)}
-          disabled={running}
-          style={{ padding: "8px 12px", fontSize: 14 }}
-        >
-          <option value="/api/llm-approval">LLM approval</option>
-          <option value="/api/stream">No steps</option>
-          <option value="/api/stream-steps">With steps</option>
-        </select>
-
-        <select
-          value={debug ? "on" : "off"}
-          onChange={(e) => setDebug(e.target.value === "on")}
-          style={{ padding: "8px 12px", fontSize: 14 }}
-        >
-          <option value="off">Debug: off</option>
-          <option value="on">Debug: on</option>
-        </select>
-
         <button
           onClick={handleSubmit}
           disabled={running}
@@ -206,23 +199,6 @@ export default function Home() {
           {running ? "Streaming..." : "Run"}
         </button>
 
-        {endpoint === "/api/llm-approval" && runId && running && (
-          <button
-            onClick={handleApprove}
-            style={{
-              padding: "8px 20px",
-              fontSize: 14,
-              cursor: "pointer",
-              background: "#16f090",
-              color: "#1a1a2e",
-              border: "none",
-              borderRadius: 4,
-              fontWeight: 600,
-            }}
-          >
-            Approve
-          </button>
-        )}
       </div>
 
       <div
@@ -265,6 +241,31 @@ export default function Home() {
           }}
         >
           {lines.join("")}
+          {waitingForInput && (
+            <span>
+              {"$ "}
+              <input
+                ref={inputRef}
+                type="text"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleInput(e.currentTarget.value);
+                    e.currentTarget.value = "";
+                  }
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  color: "inherit",
+                  font: "inherit",
+                  width: "80%",
+                  padding: 0,
+                  margin: 0,
+                }}
+              />
+            </span>
+          )}
         </pre>
       </div>
     </main>

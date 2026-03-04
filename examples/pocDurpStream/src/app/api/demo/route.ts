@@ -37,8 +37,13 @@ export const GET = inngest.endpoint(async () => {
   if (!approval) {
     return "Approval expired\n";
   }
+  if (!approval.data.approved) {
+    return "Denied!\n";
+  }
 
   await step.run("second-llm", async () => {
+    stream.push("Approved!\n");
+    await sleep(delay);
     stream.push("Second LLM call:\n");
     await sleep(delay);
     const [forStream] = fakeTokenStream([

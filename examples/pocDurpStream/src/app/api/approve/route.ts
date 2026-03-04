@@ -1,18 +1,23 @@
 import { inngest } from "@/inngest";
 import { NextRequest, NextResponse } from "next/server";
+import z from "zod";
+
+const approveSchema = z.object({
+  approved: z.boolean(),
+  runId: z.string(),
+});
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const runId = body.runId;
-
-  if (!runId || typeof runId !== "string") {
-    return NextResponse.json({ error: "runId is required" }, { status: 400 });
+  const parsed = approveSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
 
   await inngest.send({
     name: "approved",
-    data: { runId },
+    data: parsed.data,
   });
 
   return NextResponse.json({ ok: true });
 }
+
