@@ -109,7 +109,7 @@ export default function Home() {
       onRunId: (id) => setRunId(id),
       onData: (display) => {
         setLines((prev) => [...prev, display]);
-        if (display.includes("Do you want to continue?")) {
+        if (display.includes("What language should I translate to?")) {
           setWaitingForInput(true);
         }
       },
@@ -160,17 +160,17 @@ export default function Home() {
 
   async function handleInput(value: string) {
     setWaitingForInput(false);
-    const input = value.trim().toLowerCase();
-    setLines((prev) => [...prev, `> ${value}\n`]);
+    const language = value.trim();
+    setLines((prev) => [...prev, `> ${language}\n`]);
 
-    if ((input === "y" || input === "n") && runId) {
+    if (language && runId) {
       const res = await fetch("/api/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved: input === "y", runId }),
+        body: JSON.stringify({ language, runId }),
       });
       if (!res.ok) {
-        setLines((prev) => [...prev, `[approve failed: ${res.status}]\n`]);
+        setLines((prev) => [...prev, `[request failed: ${res.status}]\n`]);
       }
     }
   }
