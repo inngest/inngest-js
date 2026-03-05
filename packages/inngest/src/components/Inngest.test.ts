@@ -1124,7 +1124,7 @@ describe("endpointProxy", () => {
   };
 
   test("throws error when no endpoint adapter is configured", () => {
-    const inngest = createClient({ id: "test" });
+    const inngest = createClient({ id: "test", isDev: true });
 
     expect(() => inngest.endpointProxy()).toThrow(
       "No endpoint adapter configured for this Inngest client.",
@@ -1135,6 +1135,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({
       id: "test",
       endpointAdapter: createMockAdapter(),
+      isDev: true,
     });
 
     expect(() => inngest.endpointProxy()).toThrow(
@@ -1148,6 +1149,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({
       id: "test",
       endpointAdapter: createMockAdapter(() => mockProxyHandler),
+      isDev: true,
     });
 
     expect(inngest.endpointProxy()).toBe(mockProxyHandler);
@@ -1159,6 +1161,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({
       id: "test",
       endpointAdapter: createMockAdapter(createProxyHandler),
+      isDev: true,
     });
 
     inngest.endpointProxy();
