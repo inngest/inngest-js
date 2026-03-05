@@ -1111,7 +1111,7 @@ describe("endpointProxy", () => {
   });
 });
 
-describe("endpointProxyx", () => {
+describe("endpointProxy", () => {
   // Helper to create mock adapters with consistent shape
   // biome-ignore lint/suspicious/noExplicitAny: test helper
   const createMockAdapter = (createProxyHandler?: () => any) => {
