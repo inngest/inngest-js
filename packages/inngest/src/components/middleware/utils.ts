@@ -105,6 +105,9 @@ export function stepTypeFromOpCode(
     if (opts?.type === "step.realtime.publish") {
       return "realtime.publish";
     }
+    if (opts?.type === "group.experiment") {
+      return "group.experiment";
+    }
   } else if (op === StepOpCode.Sleep) {
     return "sleep";
   } else if (op === StepOpCode.WaitForEvent) {

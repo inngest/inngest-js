@@ -974,6 +974,8 @@ class InngestExecutionEngine
       .finally(() => {
         this.debug(`finished executing step "${id}"`);
 
+        this.state.executingStep = undefined;
+
         if (store?.execution) {
           delete store.execution.executingStep;
         }
