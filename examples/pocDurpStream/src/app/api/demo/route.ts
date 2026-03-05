@@ -42,8 +42,9 @@ export const GET = inngest.endpoint(async () => {
   }
 
   await step.run("second-llm", async () => {
+    // await sleep(10000)
     stream.push("Approved!\n");
-    await sleep(delay);
+    await sleep(5000);
     stream.push("Second LLM call:\n");
     await sleep(delay);
     const [forStream] = fakeTokenStream([

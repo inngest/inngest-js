@@ -15,7 +15,7 @@ interface SSECallbacks {
  */
 async function readSSEStream(
   res: Response,
-  callbacks: SSECallbacks,
+  callbacks: SSECallbacks
 ): Promise<string | null> {
   if (!res.body) {
     return null;
@@ -133,11 +133,16 @@ export default function Home() {
       }
 
       const redirectUrl = await readSSEStream(res, callbacks);
+      console.log(new Date().toISOString(), "fetch: redirectUrl", redirectUrl);
 
       // If we got a redirect, connect to the checkpoint stream endpoint
       // on the Dev Server to continue receiving SSE data.
       if (redirectUrl) {
-        const asyncRes = await fetch(redirectUrl);
+        // await new Promise((resolve) => setTimeout(resolve, 10000));
+        console.log(new Date().toISOString(), "fetch: before", redirectUrl);
+        // @ts-expect-error duplex not in RequestInit types yet
+        const asyncRes = await fetch(redirectUrl, { duplex: "half" });
+        console.log(new Date().toISOString(), "fetch: after");
         if (!asyncRes.body) {
           setLines((prev) => [...prev, "[error] No body from async stream"]);
           return;
@@ -198,7 +203,6 @@ export default function Home() {
         >
           {running ? "Streaming..." : "Run"}
         </button>
-
       </div>
 
       <div

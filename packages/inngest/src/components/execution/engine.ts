@@ -529,21 +529,23 @@ class InngestExecutionEngine
       return undefined;
     }
 
-    // Async mode: stream.push() just buffers data into the InngestStream.
-    // The actual POST to the checkpoint stream endpoint happens when the
-    // function completes (in the function-resolved handler).
+    // Async mode: start the streaming POST immediately so that chunks
+    // flow to the Dev Server in real-time rather than being buffered
+    // until the function completes.
+    this.postCheckpointStream();
     return undefined;
   }
 
   /**
-   * POST buffered stream data to the checkpoint stream ingest endpoint.
+   * POST stream data to the checkpoint stream ingest endpoint.
    *
-   * Called in async mode after the function completes and the stream is
-   * closed. The POST body is the complete buffered stream:
+   * May be called eagerly (from handleStreamActivated) so that chunks
+   * flow to the Dev Server in real-time, or after the function completes
+   * if stream.push() was never called. The POST body is:
    *   1. A JSON header frame line (status + response headers)
    *   2. SSE metadata frame
-   *   3. All buffered SSE stream frames
-   *   4. The terminal result frame
+   *   3. SSE stream frames (streamed in real-time if called eagerly)
+   *   4. The terminal result frame (written by streamTools.close())
    */
   private postCheckpointStream(): void {
     try {
@@ -572,7 +574,7 @@ class InngestExecutionEngine
         this.streamTools.readable,
       );
 
-      // Fire and forget — the stream is already closed so this completes fast.
+      // Fire and forget — completes when the stream closes.
       void this.options.client["inngestApi"]
         .checkpointStream({
           runId: this.fnArg.runId,
@@ -898,15 +900,21 @@ class InngestExecutionEngine
        * The user's function has completed and returned a value.
        */
       "function-resolved": async ({ data }) => {
-        // Always POST a checkpoint stream in async mode so the client
-        // waiting at the GET endpoint gets at least the result frame.
-        // If stream.push() was called, the buffered frames are included.
         let resultData: unknown = data;
         if (data instanceof Response) {
           resultData = await data.text();
         }
+
+        // Close the stream with a result frame. If stream.push() was
+        // called, the streaming POST was already started in
+        // handleStreamActivated and this close will end it naturally.
         this.streamTools.close(resultData);
-        this.postCheckpointStream();
+
+        // If stream was never activated, start the POST now so the
+        // client waiting at the GET endpoint gets the result frame.
+        if (!this.streamTools.activated) {
+          this.postCheckpointStream();
+        }
 
         // Check for unreported new steps (e.g. from `Promise.race` where
         // the winning branch completed before losing branches reported)
@@ -933,7 +941,12 @@ class InngestExecutionEngine
        */
       "function-rejected": async (checkpoint) => {
         this.streamTools.close({ error: String(checkpoint.error) });
-        this.postCheckpointStream();
+
+        // Only start a new POST if the streaming POST wasn't already
+        // started by handleStreamActivated.
+        if (!this.streamTools.activated) {
+          this.postCheckpointStream();
+        }
 
         return this.transformOutput({ error: checkpoint.error });
       },
