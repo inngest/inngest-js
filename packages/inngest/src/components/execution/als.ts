@@ -60,6 +60,13 @@ export interface AsyncContext {
      * `createTool` in `InngestStepTools.ts`.
      */
     experimentStepTracker?: { found: boolean };
+
+    /**
+     * If true, we are inside the `select()` callback of
+     * `group.experiment()`. Any `step.*()` call here would create a
+     * nested step, which is not allowed.
+     */
+    insideExperimentSelect?: boolean;
   };
 }
 

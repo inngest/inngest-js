@@ -37,6 +37,7 @@ import {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import { NonRetriableError } from "./NonRetriableError.ts";
 import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
@@ -262,6 +263,14 @@ export const createStepTools = <
       const op = matchOp(stepOptions, ...rest);
 
       const alsCtx = getAsyncCtxSync()?.execution;
+
+      if (alsCtx?.insideExperimentSelect) {
+        throw new NonRetriableError(
+          "Step tools (step.run, step.sleep, etc.) cannot be called inside " +
+            "an experiment select() callback. Move step calls into variant " +
+            "callbacks instead.",
+        );
+      }
 
       // Explicit option takes precedence, then check ALS context
       const parallelMode = stepOptions.parallelMode ?? alsCtx?.parallelMode;

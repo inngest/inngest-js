@@ -305,7 +305,18 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
         experimentStepHashedId =
           getAsyncCtxSync()?.execution?.executingStep?.id;
 
-        const result = await select(variantNames);
+        const alsInstance = await getAsyncLocalStorage();
+        const currentCtx = getAsyncCtxSync()!;
+        const selectCtx: AsyncContext = {
+          ...currentCtx,
+          execution: {
+            ...currentCtx.execution!,
+            insideExperimentSelect: true,
+          },
+        };
+        const result = await alsInstance.run(selectCtx, () =>
+          select(variantNames),
+        );
 
         if (!variantNames.includes(result)) {
           throw new NonRetriableError(
