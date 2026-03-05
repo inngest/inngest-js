@@ -349,7 +349,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
           if (select.__experimentConfig.nullishBucket) {
             execInstance.addMetadata(
               experimentStepHashedId,
-              "inngest.warning",
+              "inngest.warnings",
               "step",
               "merge",
               {

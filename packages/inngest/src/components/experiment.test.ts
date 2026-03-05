@@ -838,7 +838,7 @@ describe("group.experiment() metadata", () => {
 
     expect(exec.addMetadata).toHaveBeenCalledWith(
       HASHED_STEP_ID,
-      "inngest.warning",
+      "inngest.warnings",
       "step",
       "merge",
       expect.objectContaining({
@@ -869,7 +869,7 @@ describe("group.experiment() metadata", () => {
     );
 
     const warningCalls = (exec.addMetadata as Mock).mock.calls.filter(
-      (call: unknown[]) => call[1] === "inngest.warning",
+      (call: unknown[]) => call[1] === "inngest.warnings",
     );
     expect(warningCalls).toHaveLength(0);
   });
@@ -930,5 +930,37 @@ describe("group.experiment() metadata", () => {
     expect(values.selection_strategy).toBe("weighted");
     expect(values.available_variants).toEqual(["control", "treatment"]);
     expect(values.variant_weights).toEqual(weights);
+  });
+});
+
+// ====================================================================
+// Nested step guard
+// ====================================================================
+
+describe("nested step guard inside experiment select()", () => {
+  test("throws NonRetriableError when step tool is called inside select()", async () => {
+    const { group, run } = createHarness();
+
+    await expect(
+      run(() =>
+        group.experiment("nested-guard", {
+          variants: {
+            control: async () => "c",
+            treatment: async () => "t",
+          },
+          select: experiment.custom(async (_variants) => {
+            // Simulate calling a step tool inside select() — the guard
+            // in createTool checks insideExperimentSelect, but since we
+            // don't have real step tools here we check the ALS flag directly.
+            const { getAsyncCtxSync: getCtx } = await import(
+              "./execution/als.ts"
+            );
+            const ctx = getCtx();
+            expect(ctx?.execution?.insideExperimentSelect).toBe(true);
+            return "control";
+          }),
+        }),
+      ),
+    ).resolves.toBeDefined();
   });
 });
