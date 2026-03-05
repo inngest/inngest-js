@@ -107,6 +107,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * If we're not supposed to run a particular step, this will be `undefined`.
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
+  private rootSpanId?: string;
 
   /**
    * If we're checkpointing and have been given a maximum runtime, this will be
@@ -181,6 +182,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
+              this.rootSpanId = span.spanContext().spanId;
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
                 span,
                 runId: this.options.runId,
@@ -1062,11 +1064,27 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     this.debug(`executing step "${id}"`);
 
+    if (this.rootSpanId && this.options.checkpointingConfig) {
+      clientProcessorMap
+        .get(this.options.client)
+        ?.declareStepExecution(
+          this.rootSpanId,
+          hashedId,
+          this.options.data?.attempt ?? 0,
+        );
+    }
+
     let interval: GoInterval | undefined;
 
     return goIntervalTiming(() => runAsPromise(fn))
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
+
+        if (this.rootSpanId && this.options.checkpointingConfig) {
+          clientProcessorMap
+            .get(this.options.client)
+            ?.clearStepExecution(this.rootSpanId);
+        }
 
         if (store?.execution) {
           delete store.execution.executingStep;
