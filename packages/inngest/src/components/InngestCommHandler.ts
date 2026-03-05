@@ -926,6 +926,12 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
+    const acceptHeader = await actions.headers(
+      "checking accept header",
+      "Accept",
+    );
+    const acceptsSSE = acceptHeader?.includes("text/event-stream") ?? false;
+
     const exeVersion = ExecutionVersion.V2;
 
     const exe = fn["createExecution"]({
@@ -945,6 +951,7 @@ export class InngestCommHandler<
         stepState: {},
         disableImmediateExecution: false,
         isFailureHandler: false,
+        acceptsSSE,
         timer,
         createResponse: (data: unknown) =>
           actions.experimentalTransformSyncResponse!(
@@ -991,8 +998,13 @@ export class InngestCommHandler<
         });
       },
       "function-resolved": ({ data }) => {
-        // We're done and we didn't call any step tools, so just return the
-        // response.
+        // If the execution returned a Response with a ReadableStream body
+        // (SSE streaming), pipe it through as a streaming response.
+        if (data instanceof Response && data.body instanceof ReadableStream) {
+          return data;
+        }
+
+        // Non-streaming: return the data directly.
         return data;
       },
       "change-mode": async ({ token }) => {
@@ -2157,6 +2169,7 @@ export class InngestCommHandler<
           reqArgs,
           headers,
           createResponse,
+          runToCompletion: forceExecution,
           requestInfo,
           middlewareInstances: mwInstances,
         },

@@ -568,6 +568,52 @@ export class InngestApi {
    * @param token - The token used to authenticate the request
    * @returns The raw Response from the API
    */
+  /**
+   * POST buffered stream data to the checkpoint stream ingest endpoint.
+   * The body is a ReadableStream containing the SSE frames.
+   */
+  async checkpointStream(args: {
+    runId: string;
+    body: ReadableStream;
+  }): Promise<void> {
+    const url = await this.getTargetUrl(`/v1/checkpoint/${args.runId}/stream`);
+
+    const res = await fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this._fetch(),
+      url,
+      options: {
+        method: "POST",
+        body: args.body,
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        // Required for streaming request bodies
+        // @ts-expect-error duplex not in RequestInit types yet
+        duplex: "half",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to stream checkpoint: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
+      );
+    }
+  }
+
+  /**
+   * Get the full URL for the checkpoint stream output endpoint. Used to
+   * build the redirect URL that clients connect to for async streaming.
+   */
+  async getCheckpointStreamUrl(runId: string, token: string): Promise<string> {
+    const url = await this.getTargetUrl(`/v1/checkpoint/${runId}/stream`);
+    url.searchParams.set("token", token);
+    return url.toString();
+  }
+
   async getRunOutput(runId: string, token: string): Promise<Response> {
     const url = await this.getTargetUrl(`/v1/http/runs/${runId}/output`);
     url.searchParams.set("token", token);

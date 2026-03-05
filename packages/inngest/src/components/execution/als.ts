@@ -1,5 +1,6 @@
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { InngestStream } from "../InngestStreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 
 /**
@@ -42,6 +43,12 @@ export interface AsyncContext {
      * created within this context. Set by `group.parallel()`.
      */
     parallelMode?: "race";
+
+    /**
+     * The stream tools instance for this execution context. Used by the
+     * `stream` singleton to push/pipe SSE data to the client.
+     */
+    stream?: InngestStream;
   };
 }
 
