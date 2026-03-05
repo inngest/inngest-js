@@ -3,7 +3,7 @@ import { getAsyncCtx } from "inngest/experimental";
 import { inngest } from "@/inngest";
 import { sleep, fakeTokenStream, collectString } from "../helpers";
 
-const delay = 100;
+const delay = 1000;
 
 export const GET = inngest.endpoint(async () => {
   const ctx = await getAsyncCtx();
