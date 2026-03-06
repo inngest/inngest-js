@@ -56,6 +56,4 @@ describe("run", () => {
       expect(output).toEqual({ data: fruit });
     }, 60000);
   });
-
-
 });

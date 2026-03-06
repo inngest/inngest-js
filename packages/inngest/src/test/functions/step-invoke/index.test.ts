@@ -48,6 +48,4 @@ describe("run", () => {
     // const output = await item?.getOutput();
     // expect(output).toEqual({ data: { cronInvokeDone: true } });
   }, 60000);
-
-
 });

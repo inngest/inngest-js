@@ -36,6 +36,4 @@ describe("run", () => {
       expect(output).toEqual({ data: expect.any(Number) });
     }, 60000);
   });
-
-
 });
