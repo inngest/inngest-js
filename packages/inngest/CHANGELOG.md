@@ -1,5 +1,25 @@
 # inngest
 
+## 3.52.6
+
+### Patch Changes
+
+- [#1350](https://github.com/inngest/inngest-js/pull/1350) [`470fdb98`](https://github.com/inngest/inngest-js/commit/470fdb9845514b6597e0bd7c6db469d3808f6dcf) Thanks [@amh4r](https://github.com/amh4r)! - Fix false NESTING_STEPS error
+
+- [#1356](https://github.com/inngest/inngest-js/pull/1356) [`2e961c21`](https://github.com/inngest/inngest-js/commit/2e961c2169a451d60c3a14e8b9cc19e19ad0dec6) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing function run hang
+
+## 3.52.5
+
+### Patch Changes
+
+- [#1340](https://github.com/inngest/inngest-js/pull/1340) [`335703d7`](https://github.com/inngest/inngest-js/commit/335703d7372d092a865def4b2cfb4730e50d5fa9) Thanks [@Linell](https://github.com/Linell)! - fix: fallback to async flow on checkpoint error
+
+## 3.52.4
+
+### Patch Changes
+
+- [#1338](https://github.com/inngest/inngest-js/pull/1338) [`4f45adb7`](https://github.com/inngest/inngest-js/commit/4f45adb71fc7dfbc1ed7f941ddc4dd5e42f3523b) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Fix signing key propagation from serve() options to InngestApi for outgoing API calls
+
 ## 3.52.3
 
 ### Patch Changes
