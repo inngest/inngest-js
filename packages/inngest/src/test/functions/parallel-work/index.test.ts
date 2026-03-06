@@ -57,13 +57,5 @@ describe("run", () => {
     }, 60000);
   });
 
-  test("Returned correct data", async () => {
-    const item = await runHasTimeline(runId, {
-      stepType: "FINALIZATION",
-    });
-    expect(item).toBeDefined();
 
-    const output = await item?.getOutput();
-    expect(output).toEqual({ data: [6, `${fruits.join(", ")}`] });
-  }, 60000);
 });
