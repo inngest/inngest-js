@@ -332,3 +332,29 @@ export async function pollForAsyncStream(
 
   return [];
 }
+
+/**
+ * Poll a redirect URL until it yields a live SSE connection, then return
+ * an incremental reader (like `startSSEReader`) so the caller can assert
+ * on data as it arrives.
+ */
+export async function pollForAsyncReader(
+  redirectUrl: string,
+  { maxAttempts = 30, intervalMs = 500, readerTimeoutMs = 15_000 } = {},
+) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await fetch(redirectUrl);
+      if (res.ok && res.body) {
+        return startSSEReader(res, readerTimeoutMs);
+      }
+    } catch {
+      // Dev server may not be ready yet
+    }
+    await sleep(intervalMs);
+  }
+
+  throw new Error(
+    `pollForAsyncReader: no live connection after ${maxAttempts} attempts`,
+  );
+}
