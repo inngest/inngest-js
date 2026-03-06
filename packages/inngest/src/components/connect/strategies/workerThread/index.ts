@@ -118,16 +118,31 @@ export class WorkerThreadStrategy extends BaseStrategy {
         return;
       }
 
+      const cleanup = () => {
+        this.worker?.off("message", handleMessage);
+        this.worker?.off("exit", handleExit);
+      };
+
       const handleMessage = (msg: WorkerToMainMessage) => {
         if (msg.type === "CONNECTION_READY") {
           this._connectionId = msg.connectionId;
+          cleanup();
           resolve();
         } else if (msg.type === "ERROR" && msg.fatal) {
+          cleanup();
           reject(new Error(msg.error));
         }
       };
 
+      const handleExit = (code: number) => {
+        cleanup();
+        reject(
+          new Error(`Worker thread exited with code ${code} during connect`),
+        );
+      };
+
       this.worker.on("message", handleMessage);
+      this.worker.on("exit", handleExit);
 
       // Send connect command
       this.sendToWorker({ type: "CONNECT", attempt });
