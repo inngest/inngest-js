@@ -14,7 +14,6 @@ export function GenerateForm({
     const trimmed = topic.trim();
     if (!trimmed) return;
     onSubmit(trimmed);
-    setTopic("");
   };
 
   return (
