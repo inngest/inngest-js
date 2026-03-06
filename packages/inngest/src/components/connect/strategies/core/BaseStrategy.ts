@@ -1,4 +1,4 @@
-import debug, { type Debugger } from "debug";
+import type { Logger } from "../../../../middleware/logger.ts";
 import { onShutdown } from "../../os.ts";
 import { ConnectionState } from "../../types.ts";
 import type { ConnectionStrategy } from "./types.ts";
@@ -15,10 +15,10 @@ export abstract class BaseStrategy implements ConnectionStrategy {
     | undefined;
   protected cleanupShutdownSignal: (() => void) | undefined;
 
-  protected readonly debugLog: Debugger;
+  protected readonly internalLogger: Logger;
 
-  constructor() {
-    this.debugLog = debug("inngest:connect");
+  constructor({ logger }: { logger: Logger }) {
+    this.internalLogger = logger;
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
     });
@@ -44,17 +44,21 @@ export abstract class BaseStrategy implements ConnectionStrategy {
       return;
     }
 
-    this.debugLog(
-      `Setting up shutdown signal handler for ${signals.join(", ")}`,
+    this.internalLogger.debug(
+      { signals },
+      "Setting up shutdown signal handler",
     );
 
     const cleanupShutdownHandlers = onShutdown(signals, () => {
-      this.debugLog("Received shutdown signal, closing connection");
+      this.internalLogger.debug(
+        { signals },
+        "Received shutdown signal, closing connection",
+      );
       void this.close();
     });
 
     this.cleanupShutdownSignal = () => {
-      this.debugLog("Cleaning up shutdown signal handler");
+      this.internalLogger.debug("Cleaning up shutdown signal handler");
       cleanupShutdownHandlers();
     };
   }
