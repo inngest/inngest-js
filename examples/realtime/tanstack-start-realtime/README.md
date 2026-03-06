@@ -13,6 +13,9 @@ npx inngest-cli@latest dev
 
 # Start the app
 npm run dev
+
+# visit localhost:8288 and make sure your localhost:3000
+# app is synced. if not sync it.
 ```
 
 Open [http://localhost:3000](http://localhost:3000), enter a topic, and watch the pipeline run.
