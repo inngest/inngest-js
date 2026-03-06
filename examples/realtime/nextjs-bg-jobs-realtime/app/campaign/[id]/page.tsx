@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRealtime } from "inngest/react";
+import { useInngestSubscription } from "@inngest/realtime/hooks";
 import useSWR from "swr";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,11 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 export default function CampaignViewPage() {
   const [enabled, setUpdatesEnabled] = useState<boolean>(true);
   const { id } = useParams();
-  const campaignId = typeof id === "string" ? id : "";
 
-  const { latestData: latestUpdate } = useRealtime({
-    token: () => fetchSubscriptionToken(campaignId),
+  const { latestData: latestUpdate } = useInngestSubscription({
+    refreshToken: () => fetchSubscriptionToken(id as string),
     bufferInterval: 500,
-    enabled: enabled && Boolean(campaignId),
+    enabled,
   });
 
   const { data: campaign, isLoading: loadingCampaign } = useSWR(

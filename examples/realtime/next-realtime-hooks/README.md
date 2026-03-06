@@ -1,70 +1,111 @@
-# Realtime V2 Next.js Hooks Example
+# Next.js + Inngest Realtime Example
 
-This example shows the first-class Realtime v2 flow in a Next.js app using `useRealtime` and `getSubscriptionToken` from `inngest/react`.
+This is a [Next.js](https://nextjs.org/) project showcasing how to use [`@inngest/realtime`](https://npm.im/@inngest/realtime) with Inngest for real-time data streaming.
 
-It demonstrates:
+## Features
 
-- Shared, typed channel/topic definitions between publisher and subscriber
-- Server-minted subscription tokens from a Next.js server action
-- A client `useRealtime` subscription with `enabled`, buffering, and reset controls
-- A long-running loop function that continuously publishes logs until cancelled
+- Live data streaming from Inngest to your frontend
+- React hooks for real-time data updates
+- Typescript integration with channel and topic typing
+- Example pattern for real-time event handling
 
-## Prerequisites
+## Getting Started
 
-- Node.js 20+
-- npm, pnpm, or yarn
-
-## Install
+### Clone the Repository
 
 ```bash
-cd examples/realtime/next-realtime-hooks
-npm install
+git clone https://github.com/inngest/inngest-js.git
+cd inngest-js/examples/realtime/next-realtime-hooks
 ```
 
-## Run locally
+### Install Dependencies
 
-1. Start the Next.js app:
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+```
+
+### Start the Development Server
 
 ```bash
 npm run dev
+# or
+yarn dev
+# or
+pnpm dev
 ```
 
-The app runs at [http://localhost:3001](http://localhost:3001).
-
-2. In a second terminal, start Inngest Dev Server and sync the Next handler:
+In a separate terminal, start the Inngest Dev Server:
 
 ```bash
-npx inngest-cli@latest dev -u http://localhost:3001/api/inngest
+npx inngest-cli@latest dev
 ```
 
-3. Open the app and click `Start` to trigger the function loop. Click `Stop` to send the cancel signal.
+Open [localhost:3000](http://localhost:3000) and click on the "Start" button to see the incoming realtime message appear.
 
-## What to look for in the UI
+## Project Structure
 
-- `Connection` and `Run` status from `useRealtime`
-- Live message stream in `Output Events`
-- `Fresh` vs `Latest` inspector panes
-- `Latest (typed map)` view for topic-keyed message access
-- `Buffer Interval (ms)` to batch incoming messages
-- `Enabled/Disabled` toggle to pause/resume client subscription
-- `Reset History` to clear retained messages
+- `/app` - Next.js app router pages and components
+- `/app/api/inngest` - Inngest API route handler
+- `/app/inngest` - Inngest function definitions
+- `/components` - React components including realtime examples
 
-## How it works
+## Key Concepts
 
-- `app/page.tsx`: Client UI using `useRealtime({ channel, topics, token, bufferInterval, enabled })`
-- `app/actions.ts`: Server actions for token minting and start/stop events
-- `app/api/inngest/route.ts`: Inngest Next.js handler
-- `inngest/channels.ts`: Declarative channel + typed topics
-- `inngest/functions/helloWorld.ts`: Function publishes `logs` messages and self-retriggers every 2s unless cancelled
+### Setting Up Inngest
 
-## Optional: test with local SDK changes
+The project uses the Inngest client defined in `/app/inngest/client.ts`:
 
-If you are developing `packages/inngest` and want this example to consume your local build:
+```typescript
+import { Inngest } from "inngest";
 
-```bash
-# from packages/inngest
-pnpm build && pnpm local:pack
-
-# from this example directory
-npm install --no-save ../../../packages/inngest/inngest.tgz
+export const inngest = new Inngest({
+  id: "realtime-next-app",
+  // Additional config options here
+});
 ```
+
+### Using Realtime Subscriptions
+
+The `@inngest/realtime` package provides hooks for subscribing to real-time data:
+
+```typescript
+import { useInngestSubscription } from "@inngest/realtime/hooks";
+import { inngest } from "./path-to-client";
+
+function MyComponent() {
+  const { data, latestData, state } = useInngestSubscription({
+    app: inngest,
+    token: {
+      channel: "my-channel",
+      topics: ["my-topic"],
+    },
+    enabled: true,
+  });
+
+  // Render with real-time data
+}
+```
+
+### Subscription Tokens
+
+To create subscription tokens for specific channels and topics:
+
+```typescript
+import { getSubscriptionToken } from "@inngest/realtime";
+
+const token = await getSubscriptionToken(inngest, {
+  channel: "my-channel",
+  topics: ["my-topic"],
+  // Optional filters, expiration, etc.
+});
+```
+
+## Learn More
+
+- [Inngest Documentation](https://www.inngest.com/docs) - Learn about Inngest features and API
+- [Inngest Realtime Documentation](https://www.inngest.com/docs/features/realtime) - Learn about the realtime features
+- [Next.js Documentation](https://nextjs.org/docs) - Learn about Next.js features and API
