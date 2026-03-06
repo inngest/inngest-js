@@ -9,10 +9,12 @@
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+import type { Logger } from "../../../../middleware/logger.ts";
 import {
   GatewayExecutorRequestData,
   SDKResponse,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
+import { internalLoggerSymbol } from "../../../Inngest.ts";
 import { ConnectionState } from "../../types.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
 import type { StrategyConfig } from "../core/types.ts";
@@ -21,6 +23,10 @@ import type {
   SerializableConfig,
   WorkerToMainMessage,
 } from "./protocol.ts";
+
+const maxConsecutiveCrashes = 10;
+const baseBackoffMs = 500;
+const maxBackoffMs = 30_000;
 
 /**
  * Worker thread connection strategy.
@@ -31,13 +37,21 @@ import type {
  */
 export class WorkerThreadStrategy extends BaseStrategy {
   private readonly config: StrategyConfig;
+  private readonly internalLogger: Logger;
   private worker: Worker | undefined;
-
+  private consecutiveCrashes = 0;
   private _connectionId: string | undefined;
 
   constructor(config: StrategyConfig) {
     super();
     this.config = config;
+
+    const primaryApp = this.config.options.apps[0];
+    if (!primaryApp) {
+      // Unreachable
+      throw new Error("No apps");
+    }
+    this.internalLogger = primaryApp.client[internalLoggerSymbol];
   }
 
   get connectionId(): string | undefined {
@@ -104,16 +118,31 @@ export class WorkerThreadStrategy extends BaseStrategy {
         return;
       }
 
+      const cleanup = () => {
+        this.worker?.off("message", handleMessage);
+        this.worker?.off("exit", handleExit);
+      };
+
       const handleMessage = (msg: WorkerToMainMessage) => {
         if (msg.type === "CONNECTION_READY") {
           this._connectionId = msg.connectionId;
+          cleanup();
           resolve();
         } else if (msg.type === "ERROR" && msg.fatal) {
+          cleanup();
           reject(new Error(msg.error));
         }
       };
 
+      const handleExit = (code: number) => {
+        cleanup();
+        reject(
+          new Error(`Worker thread exited with code ${code} during connect`),
+        );
+      };
+
       this.worker.on("message", handleMessage);
+      this.worker.on("exit", handleExit);
 
       // Send connect command
       this.sendToWorker({ type: "CONNECT", attempt });
@@ -149,11 +178,50 @@ export class WorkerThreadStrategy extends BaseStrategy {
     this.worker.on("exit", (code) => {
       this.debugLog("Worker exited", { code });
       if (
-        this._state !== ConnectionState.CLOSING &&
-        this._state !== ConnectionState.CLOSED
+        this._state === ConnectionState.CLOSING ||
+        this._state === ConnectionState.CLOSED
       ) {
-        this._state = ConnectionState.RECONNECTING;
-        // Attempt to recreate and reconnect
+        return;
+      }
+
+      // Assume the worker crashed due to an unhandled exception, because the
+      // connection state isn't CLOSING or CLOSED. We'll try to respawn the
+      // worker after a backoff.
+
+      this.consecutiveCrashes++;
+      this._state = ConnectionState.RECONNECTING;
+
+      if (this.consecutiveCrashes > maxConsecutiveCrashes) {
+        this.internalLogger.error(
+          {
+            consecutiveCrashes: this.consecutiveCrashes,
+          },
+          "Worker thread crashed consecutively, giving up",
+        );
+        return;
+      }
+
+      const backoff = Math.min(
+        baseBackoffMs * 2 ** (this.consecutiveCrashes - 1),
+        maxBackoffMs,
+      );
+
+      this.internalLogger.warn(
+        {
+          consecutiveCrashes: this.consecutiveCrashes,
+          backoffMs: backoff,
+        },
+        "Respawning worker after backoff",
+      );
+
+      setTimeout(() => {
+        if (
+          this._state === ConnectionState.CLOSING ||
+          this._state === ConnectionState.CLOSED
+        ) {
+          return;
+        }
+
         this.createWorker()
           .then(async () => {
             const config = await this.buildSerializableConfig();
@@ -161,9 +229,9 @@ export class WorkerThreadStrategy extends BaseStrategy {
             this.sendToWorker({ type: "CONNECT", attempt: 0 });
           })
           .catch((err) => {
-            this.debugLog("Failed to recreate worker", err);
+            this.internalLogger.error({ err }, "Failed to recreate worker");
           });
-      }
+      }, backoff);
     });
   }
 
@@ -176,6 +244,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
       case "CONNECTION_READY":
         this._connectionId = msg.connectionId;
+        this.consecutiveCrashes = 0;
         this.debugLog("Connection ready", { connectionId: msg.connectionId });
         break;
 
@@ -183,7 +252,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
         if (msg.fatal) {
           this.debugLog("Fatal error from worker", { error: msg.error });
         } else {
-          console.error(`[inngest] ${msg.error}`);
+          this.internalLogger.error(
+            { err: new Error(msg.error) },
+            "Worker error",
+          );
         }
         break;
 
@@ -216,13 +288,13 @@ export class WorkerThreadStrategy extends BaseStrategy {
         this.debugLog(message, data);
         break;
       case "info":
-        console.log(`[inngest] ${message}`, data);
+        this.internalLogger.info({ data }, message);
         break;
       case "warn":
-        console.warn(`[inngest] ${message}`, data);
+        this.internalLogger.warn({ data }, message);
         break;
       case "error":
-        console.error(`[inngest] ${message}`, data);
+        this.internalLogger.error({ data }, message);
         break;
     }
   }
