@@ -1,42 +1,66 @@
 import { context, trace } from "@opentelemetry/api";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
-import {
-  type Instrumentation,
-  registerInstrumentations,
-} from "@opentelemetry/instrumentation";
+import type { Instrumentation } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
-import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
+import Debug from "debug";
+import { debugPrefix } from "./consts.ts";
 import { InngestSpanProcessor } from "./processor.ts";
+
+const debug = Debug(`${debugPrefix}:createProvider`);
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];
 
-export const createProvider = (
+export const createProvider = async (
   _behaviour: Behaviour,
   instrumentations: Instrumentations | undefined = [],
-): { success: true; processor: InngestSpanProcessor } | { success: false } => {
-  // TODO Check if there's an existing provider
-  const processor = new InngestSpanProcessor();
+): Promise<
+  | { success: true; processor: InngestSpanProcessor }
+  | { success: false; error?: unknown }
+> => {
+  try {
+    // TODO Check if there's an existing provider
+    const processor = new InngestSpanProcessor();
 
-  const p = new BasicTracerProvider({
-    spanProcessors: [processor],
-  });
+    const p = new BasicTracerProvider({
+      spanProcessors: [processor],
+    });
 
-  const instrList: Instrumentations = [
-    ...instrumentations,
-    ...getNodeAutoInstrumentations(),
-    new AnthropicInstrumentation(),
-  ];
+    // Dynamic imports to avoid loading the full auto-instrumentation suite at
+    // module evaluation time. These are only needed when creating a new provider,
+    // not when extending an existing one. Static imports here caused version
+    // conflicts with host app OTel setups (e.g. Sentry) and silently broke
+    // inngest.send(). See #1324.
+    const { getNodeAutoInstrumentations } = await import(
+      "@opentelemetry/auto-instrumentations-node"
+    );
+    const { registerInstrumentations } = await import(
+      "@opentelemetry/instrumentation"
+    );
+    const { AnthropicInstrumentation } = await import(
+      "@traceloop/instrumentation-anthropic"
+    );
+    const { AsyncHooksContextManager } = await import(
+      "@opentelemetry/context-async-hooks"
+    );
 
-  registerInstrumentations({
-    instrumentations: instrList,
-  });
+    const instrList: Instrumentations = [
+      ...instrumentations,
+      ...getNodeAutoInstrumentations(),
+      new AnthropicInstrumentation(),
+    ];
 
-  trace.setGlobalTracerProvider(p);
-  context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+    registerInstrumentations({
+      instrumentations: instrList,
+    });
 
-  return { success: true, processor };
+    trace.setGlobalTracerProvider(p);
+    context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+
+    return { success: true, processor };
+  } catch (err) {
+    debug("failed to create provider:", err);
+    return { success: false, error: err };
+  }
 };
 
 /**
