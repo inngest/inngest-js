@@ -27,6 +27,10 @@ const als = new AsyncLocalStorage<AsyncContext>();
   isFallback: false,
 };
 
+afterAll(() => {
+  delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
+});
+
 // ── Strategy imports (after ALS is wired) ──────────────────────────
 import { experiment } from "./ExperimentStrategies.ts";
 import {
