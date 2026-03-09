@@ -7,12 +7,13 @@ type ChannelTopicNames<InputChannel extends Realtime.ChannelInput> = Extract<
   string
 >;
 
-type ChannelTopicsInput<InputChannel extends Realtime.ChannelInput> =
-  [ChannelTopicNames<InputChannel>] extends [never]
+type ChannelTopicsInput<InputChannel extends Realtime.ChannelInput> = [
+  ChannelTopicNames<InputChannel>,
+] extends [never]
+  ? string[]
+  : string extends ChannelTopicNames<InputChannel>
     ? string[]
-    : string extends ChannelTopicNames<InputChannel>
-      ? string[]
-      : ChannelTopicNames<InputChannel>[];
+    : ChannelTopicNames<InputChannel>[];
 
 type SubscribeBaseArgs<
   InputChannel extends Realtime.ChannelInput,
