@@ -37,7 +37,6 @@ import {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
-import { NonRetriableError } from "./NonRetriableError.ts";
 import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
@@ -46,6 +45,7 @@ import {
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import type { Middleware } from "./middleware/index.ts";
+import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
 import type { EventType } from "./triggers/triggers.ts";
 
