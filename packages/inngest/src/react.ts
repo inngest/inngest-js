@@ -114,13 +114,9 @@ export interface UseRealtimeOptions<
   topics?: TTopics;
 
   //
-  // Either a pre-minted subscription token (legacy) or a token factory
-  // (spec-style) that returns a token key or full token object.
+  // Either a pre-minted subscription token or a token factory that returns
+  // a token key or full token object.
   token?: Realtime.Subscribe.Token | TokenFactory;
-
-  //
-  // Legacy token refresher. Kept for compatibility with existing examples.
-  refreshToken?: () => Promise<Realtime.Subscribe.Token>;
 
   key?: string;
   enabled?: boolean;
@@ -264,7 +260,6 @@ export const useRealtime = <
   channel,
   topics,
   token: tokenInput,
-  refreshToken,
   key,
   enabled = true,
   bufferInterval = 0,
@@ -287,6 +282,7 @@ export const useRealtime = <
   const [messagesByTopic, setMessagesByTopic] = useState<
     Record<string, Realtime.Message | undefined>
   >({});
+  const [lastMessage, setLastMessage] = useState<Realtime.Message | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [connectionStatus, setConnectionStatus] =
     useState<UseRealtimeConnectionStatus>("idle");
@@ -318,6 +314,18 @@ export const useRealtime = <
   }, [historyLimit]);
 
   useEffect(() => {
+    messageBufferRef.current = [];
+    setAllMessages([]);
+    setMessageDelta([]);
+    setMessagesByTopic({});
+    setLastMessage(null);
+    setResult(undefined);
+    setError(null);
+    runStatusRef.current = "unknown";
+    setRunStatus("unknown");
+  }, [channelKey, topicsKey, key]);
+
+  useEffect(() => {
     if (!pauseOnHidden || !hasDocument()) {
       return;
     }
@@ -337,7 +345,22 @@ export const useRealtime = <
     setAllMessages([]);
     setMessageDelta([]);
     setMessagesByTopic({});
+    setLastMessage(null);
     setResult(undefined);
+  };
+
+  const flushBufferedMessages = () => {
+    if (messageBufferRef.current.length === 0) {
+      return;
+    }
+
+    const buffered = [...messageBufferRef.current];
+    messageBufferRef.current = [];
+    setMessageDelta(buffered);
+    setAllMessages((prev) =>
+      clampMessages(prev, buffered, messageLimitRef.current),
+    );
+    setLastMessage(buffered[buffered.length - 1] ?? null);
   };
 
   useEffect(() => {
@@ -345,16 +368,7 @@ export const useRealtime = <
 
     if (bufferInterval > 0) {
       interval = setInterval(() => {
-        if (messageBufferRef.current.length === 0) {
-          return;
-        }
-
-        const buffered = [...messageBufferRef.current];
-        messageBufferRef.current = [];
-        setMessageDelta(buffered);
-        setAllMessages((prev) =>
-          clampMessages(prev, buffered, messageLimitRef.current),
-        );
+        flushBufferedMessages();
       }, bufferInterval);
     }
 
@@ -389,6 +403,8 @@ export const useRealtime = <
     let cancelled = false;
 
     const cleanupConnection = async (reason = "useRealtime cleanup") => {
+      flushBufferedMessages();
+
       const reader = readerRef.current;
       const sub = subscriptionRef.current;
 
@@ -438,11 +454,7 @@ export const useRealtime = <
         return next;
       }
 
-      if (refreshToken) {
-        return await refreshToken();
-      }
-
-      throw new Error("No token provided and no token/refreshToken handler.");
+      throw new Error("No token provided and no token() handler.");
     };
 
     const applyMessage = (message: Realtime.Message) => {
@@ -476,6 +488,7 @@ export const useRealtime = <
         setAllMessages((prev) =>
           clampMessages(prev, [message], messageLimitRef.current),
         );
+        setLastMessage(message);
         return;
       }
 
@@ -611,13 +624,10 @@ export const useRealtime = <
     reconnect,
     reconnectMaxMs,
     reconnectMinMs,
-    refreshToken,
     tokenInput,
     topicsKey,
     validate,
   ]);
-
-  const lastMessage = allMessages[allMessages.length - 1] ?? null;
   const isPaused = connectionStatus === "paused";
 
   return {
