@@ -938,20 +938,24 @@ describe("group.experiment() metadata", () => {
 // ====================================================================
 
 describe("nested step guard inside experiment select()", () => {
-  test("throws NonRetriableError when step tool is called inside select()", async () => {
+  test("sets insideExperimentSelect flag during custom select callback", async () => {
     const { group, run } = createHarness();
 
     await expect(
       run(() =>
         group.experiment("nested-guard", {
           variants: {
-            control: async () => "c",
-            treatment: async () => "t",
+            control: () => {
+              fakeStepCall();
+              return "c";
+            },
+            treatment: () => {
+              fakeStepCall();
+              return "t";
+            },
           },
-          select: experiment.custom(async (_variants) => {
-            // Simulate calling a step tool inside select() — the guard
-            // in createTool checks insideExperimentSelect, but since we
-            // don't have real step tools here we check the ALS flag directly.
+          select: experiment.custom(async () => {
+            // Verify the ALS flag is set during the select callback
             const { getAsyncCtxSync: getCtx } = await import(
               "./execution/als.ts"
             );
