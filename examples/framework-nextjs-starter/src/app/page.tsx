@@ -400,7 +400,7 @@ function Step2({ onNext }: { onNext: () => void }) {
               <li className="flex items-center gap-2 mt-2">
                 <BookMarked className="w-4 h-4 mr-1" />
                 <a href="https://www.inngest.com/docs/guides/multi-step-functions?ref=nextjs-starter-template">
-                  Streaming Updates with <code>inngest.realtime</code>
+                  Streaming Updates with <code>@inngest/realtime</code>
                 </a>
               </li>
             </ul>
