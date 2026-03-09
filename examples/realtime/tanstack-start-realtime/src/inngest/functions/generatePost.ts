@@ -9,7 +9,7 @@ export const generatePost = inngest.createFunction(
     id: "generate-post",
     triggers: [{ event: "app/generate-post" }],
   },
-  async ({ event, step, publish }) => {
+  async ({ event, step }) => {
     const ch = contentPipeline({ runId: event.data.runId });
 
     //
@@ -17,16 +17,16 @@ export const generatePost = inngest.createFunction(
     // Try uncommenting any of these to see TypeScript errors:
 
     // ❌ Wrong topic data shape — "message" must be a string, not a number:
-    // await publish(ch.status, { message: 42 });
+    // await inngest.publish(ch.status, { message: 42 });
 
     // ❌ Missing required field — "artifact" requires kind, title, and body:
-    // await publish(ch.artifact, { kind: "research", title: "Notes" });
+    // await inngest.publish(ch.artifact, { kind: "research", title: "Notes" });
 
     // ❌ Invalid enum value — kind must be "research" | "outline" | "draft":
-    // await publish(ch.artifact, { kind: "summary", title: "X", body: "Y" });
+    // await inngest.publish(ch.artifact, { kind: "summary", title: "X", body: "Y" });
 
     // ❌ Wrong topic — "ch.status" expects { message, step? }, not { token }:
-    // await publish(ch.status, { token: "hello" });
+    // await inngest.publish(ch.status, { token: "hello" });
 
     const streamLLM = async (
       system: string,
@@ -46,7 +46,10 @@ export const generatePost = inngest.createFunction(
         const token = chunk.choices[0]?.delta?.content ?? "";
         if (token) {
           fullText += token;
-          await publish(ch.tokens, { token, step: stepName });
+          //
+          // Non-durable publish via the client — fine for high-frequency
+          // streaming where duplicates on retry are harmless.
+          await inngest.publish(ch.tokens, { token, step: stepName });
         }
       }
       return fullText;

@@ -21,17 +21,18 @@ const agentChat = realtime.channel({
 const aiChat = inngest.createFunction(
   { id: "ai-chat" },
   { event: "ai/chat.requested" },
-  async ({ event, step, publish }) => {
+  async ({ event, step }) => {
     const chat = agentChat({ threadId: event.data.threadId });
 
-    await publish(chat.status, { message: "Thinking..." });
+    // Non-durable publish via the client
+    await inngest.publish(chat.status, { message: "Thinking..." });
 
     const response = await step.run("generate", async () => {
       return llm.generate(event.data.prompt);
     });
 
     for (const token of response.tokens) {
-      await publish(chat.tokens, { token });
+      await inngest.publish(chat.tokens, { token });
     }
 
     // Durable publish — memoized, won't re-fire on retry
@@ -181,14 +182,14 @@ type ChatParams = typeof agentChat.$params;
 
 All publish functions take two arguments: a **topic accessor** (where) and **data** (what). The data argument is type-checked against the topic's schema or type definition.
 
-### `publish(ref, data)` — non-durable, in function context
+### `inngest.publish(ref, data)` — non-durable
 
-Available on the function context. Executes immediately, **not** memoized. Re-fires on retry. Best for high-frequency streaming where duplicates are harmless:
+Available on the Inngest client. Executes immediately, **not** memoized. Can be used anywhere: inside functions, from server routes, or any server-side code. When called inside an Inngest function, it automatically picks up the current run ID:
 
 ```ts
-async ({ publish }) => {
-  const chat = agentChat({ threadId });
-  await publish(chat.tokens, { token: "Hello" });
+async ({ event, step }) => {
+  const chat = agentChat({ threadId: event.data.threadId });
+  await inngest.publish(chat.tokens, { token: "Hello" });
 };
 ```
 
@@ -205,26 +206,15 @@ async ({ step }) => {
 };
 ```
 
-### `inngest.realtime.publish(ref, data)` — non-durable, outside functions
-
-Publish from anywhere (API routes, webhooks, background jobs) using the Inngest client directly:
-
-```ts
-await inngest.realtime.publish(
-  agentChat({ threadId: "thread_abc" }).status,
-  { message: "Externally triggered update" },
-);
-```
-
 ### When to use which
 
-| | `publish(ref, data)` | `step.realtime.publish(id, ref, data)` | `inngest.realtime.publish(ref, data)` |
-|---|---|---|---|
-| Durable / memoized | No | Yes | No |
-| Re-fires on retry | Yes | No | N/A |
-| Requires step ID | No | Yes | No |
-| Available in | Function context | Function context | Anywhere |
-| Best for | Token streaming, progress ticks | State transitions, final results | External publishing |
+| | `inngest.publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
+|---|---|---|
+| Durable / memoized | No | Yes |
+| Re-fires on retry | Yes | No (skipped via memoization) |
+| Requires step ID | No | Yes |
+| Usable outside functions | Yes | No |
+| Best for | Token streaming, progress ticks, server-side publishing | State transitions, final results, anything where duplicates matter |
 
 ## Subscribing
 

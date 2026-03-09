@@ -568,15 +568,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   public realtime: {
     /**
-     * Publish data to a realtime topic using a TopicRef accessor.
-     *
-     * Unlike step-level realtime methods (`step.realtime.*`), this will
-     * never be its own durable step. Use `step.realtime.publish()` for
-     * durable publishing, or use this anywhere outside of an Inngest function.
-     */
-    publish: Realtime.TypedPublishFn;
-
-    /**
      * Generate a subscription token for subscribing to realtime messages.
      */
     getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
@@ -628,36 +619,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       topics: InputTopics;
     }) => Promise<TToken>;
   } = {
-    publish: async (topicRef, data) => {
-      const topicConfig = topicRef.config;
-      if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
-        const result = await topicConfig.schema["~standard"].validate(data);
-        if (result.issues) {
-          throw new Error(
-            `Schema validation failed for topic "${topicRef.topic}"`,
-          );
-        }
-      }
-
-      const ctx = await getAsyncCtx();
-      const runId = ctx?.execution?.ctx.runId;
-
-      const res = await this.inngestApi.publish(
-        {
-          channel: topicRef.channel,
-          topics: [topicRef.topic],
-          runId,
-        },
-        data,
-      );
-
-      if (!res.ok) {
-        throw new Error(
-          `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
-        );
-      }
-    },
-
     getSubscriptionToken: async ({ channel, topics }) => {
       const channelId = typeof channel === "string" ? channel : channel.name;
       if (!channelId) {
@@ -804,6 +765,48 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     return { ...result, data: decryptedData };
   }
+
+  /**
+   * Publish data to a realtime channel topic.
+   *
+   * This is a non-durable publish — it executes immediately and is not
+   * memoized. If called inside an Inngest function, it will automatically
+   * include the current run ID. For durable publishing inside functions, use
+   * `step.realtime.publish()`.
+   *
+   * ```ts
+   * await inngest.publish(ch.status, { message: "Processing..." });
+   * ```
+   */
+  public publish: Realtime.TypedPublishFn = async (topicRef, data) => {
+    const topicConfig = topicRef.config;
+    if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
+      const result = await topicConfig.schema["~standard"].validate(data);
+      if (result.issues) {
+        throw new Error(
+          `Schema validation failed for topic "${topicRef.topic}"`,
+        );
+      }
+    }
+
+    const ctx = await getAsyncCtx();
+    const runId = ctx?.execution?.ctx.runId;
+
+    const res = await this.inngestApi.publish(
+      {
+        channel: topicRef.channel,
+        topics: [topicRef.topic],
+        runId,
+      },
+      data,
+    );
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
+      );
+    }
+  };
 
   /**
    * Send one or many events to Inngest. Takes an entire payload (including

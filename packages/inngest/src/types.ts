@@ -18,7 +18,6 @@ import type { InngestFunctionReference } from "./components/InngestFunctionRefer
 import type { createGroupTools } from "./components/InngestGroupTools.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
-import type { Realtime } from "./components/realtime/types.ts";
 import type {
   EventType,
   EventTypeWithAnySchema,
@@ -518,13 +517,6 @@ export type BaseContext<TClient extends Inngest.Any> = {
    * The maximum number of attempts allowed for this function.
    */
   maxAttempts?: number;
-
-  /**
-   * Publish a realtime message to a channel topic. This is non-durable and
-   * will re-execute on retry. For durable publishing, use
-   * `step.realtime.publish()`.
-   */
-  publish: Realtime.TypedPublishFn;
 };
 
 /**

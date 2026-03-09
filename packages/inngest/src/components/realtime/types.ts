@@ -255,7 +255,7 @@ export namespace Realtime {
         kind:
           | "step" // step data
           | "run" // run results
-          | "data" // misc stream data from `ctx.publish()`
+          | "data" // misc stream data from `inngest.publish()`
           | "datastream-start"
           | "datastream-end"
           | "ping" // keepalive server -> client

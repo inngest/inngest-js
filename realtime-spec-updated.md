@@ -289,56 +289,57 @@ publish(topicRef: TopicRef<TData>, data: TData): Promise<void>
 
 The topic accessor pattern means `publish` always takes exactly two arguments: *where* (channel + topic, as a single value) and *what* (the typed payload). This keeps the address and payload cleanly separated while giving you dot-access autocomplete on topic names instead of relying on string literals.
 
-### Inside an Inngest function (happy path)
+### Non-durable publish via `inngest.publish()`
 
-Publishing from a function requires specifying the channel instance and topic. The SDK provides the `publish` helper in the function context.
+`inngest.publish()` is a top-level method on the Inngest client. It executes immediately and is **not** memoized. It can be used anywhere: inside Inngest functions, from server routes, or from any server-side code that has access to the client.
+
+When called inside an Inngest function, it automatically picks up the current run ID from async context. If the function retries, every `inngest.publish()` call before the failing step will re-execute, producing duplicate messages. For high-frequency streaming (tokens, progress ticks) this is fine since subscribers just see the latest value.
 
 ```tsx
+import { inngest } from "@/inngest/client";
 import { agentChat } from "@/channels";
 
 export const aiChat = inngest.createFunction(
   { id: "ai-chat" },
   { event: "ai/chat.requested" },
-  async ({ event, step, publish }) => {
-    const threadId = event.data.threadId;
-    const chat = agentChat({ threadId });
-
-    await publish(chat.status, { message: "Thinking..." });
-
-    const response = await step.run("generate", async () => {
-      return llm.generate(event.data.prompt);
-    });
-
-    // Stream tokens
-    for (const token of response.tokens) {
-      await publish(chat.tokens, { token });
-    }
-
-    await publish(chat.status, { message: "Done" });
-  }
-);
-```
-
-**Typing:** `publish(chat.tokens, data)` is fully typed. The topic name is autocompleted via dot-access from the channel instance, and the `data` argument is typed to match that topic’s schema. Accessing an unknown topic is a compile error, and passing the wrong data shape is a compile error.
-
-### Durable publish via `step.realtime.publish`
-
-The context-level `publish` is fire-and-forget: it executes immediately and is **not** memoized. If the function retries, every `publish` call before the failing step will re-execute, producing duplicate messages. For high-frequency streaming (tokens, progress ticks) this is fine since subscribers just see the latest value. But for important state transitions (completion, error, artifact delivery) duplicates can cause incorrect UI state.
-
-`step.realtime.publish` is a durable step. It participates in step memoization, appears in the execution graph, and will not re-fire on retry.
-
-```tsx
-import { agentChat } from "@/channels";
-
-export const aiChat = inngest.createFunction(
-  { id: "ai-chat" },
-  { event: "ai/chat.requested" },
-  async ({ event, step, publish }) => {
+  async ({ event, step }) => {
     const chat = agentChat({ threadId: event.data.threadId });
 
     // Non-durable: fine for high-frequency streaming where duplicates are harmless
     for (const token of tokens) {
-      await publish(chat.tokens, { token });
+      await inngest.publish(chat.tokens, { token });
+    }
+
+    await inngest.publish(chat.status, { message: "Done" });
+  }
+);
+```
+
+**Signature:**
+
+```tsx
+inngest.publish(topicRef: TopicRef<TData>, data: TData): Promise<void>
+```
+
+**Typing:** `inngest.publish(chat.tokens, data)` is fully typed. The topic name is autocompleted via dot-access from the channel instance, and the `data` argument is typed to match that topic’s schema. Accessing an unknown topic is a compile error, and passing the wrong data shape is a compile error.
+
+### Durable publish via `step.realtime.publish`
+
+For important state transitions (completion, error, artifact delivery), duplicates can cause incorrect UI state. `step.realtime.publish` is a durable step. It participates in step memoization, appears in the execution graph, and will not re-fire on retry.
+
+```tsx
+import { inngest } from "@/inngest/client";
+import { agentChat } from "@/channels";
+
+export const aiChat = inngest.createFunction(
+  { id: "ai-chat" },
+  { event: "ai/chat.requested" },
+  async ({ event, step }) => {
+    const chat = agentChat({ threadId: event.data.threadId });
+
+    // Non-durable via client: fine for high-frequency streaming
+    for (const token of tokens) {
+      await inngest.publish(chat.tokens, { token });
     }
 
     // Durable: memoized, won’t re-fire on retry
@@ -361,20 +362,22 @@ step.realtime.publish(
 
 **When to use which:**
 
-|  | `publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
+|  | `inngest.publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
 | --- | --- | --- |
 | Durable / memoized | No | Yes |
 | Re-fires on retry | Yes | No (skipped via memoization) |
 | Visible in execution graph | No | Yes |
 | Requires step ID | No | Yes |
-| Best for | Token streaming, progress ticks, frequent ephemeral updates | State transitions, final results, artifacts, anything where duplicates matter |
+| Usable outside functions | Yes | No |
+| Best for | Token streaming, progress ticks, frequent ephemeral updates, server-side publishing | State transitions, final results, artifacts, anything where duplicates matter |
 
-### From server code (explicit, outside a function)
+### From server code (outside a function)
 
 ```tsx
+import { inngest } from "@/inngest/client";
 import { agentChat } from "@/channels";
 
-await inngest.realtime.publish(
+await inngest.publish(
   agentChat({ threadId: "thread_abc" }).status,
   { message: "Externally triggered update" }
 );
