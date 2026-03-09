@@ -128,13 +128,17 @@ export const experiment = {
   weighted(weights: Record<string, number>): ExperimentSelectFn {
     validateWeights(weights);
 
+    // Snapshot so that later mutations to the caller's object can't silently
+    // change runtime behaviour after validation has passed.
+    const frozen = { ...weights };
+
     return createSelectFn(
       () => {
         const runId =
           getAsyncCtxSync()?.execution?.ctx.runId ?? crypto.randomUUID();
-        return selectByWeight(hashToFloat(runId), weights);
+        return selectByWeight(hashToFloat(runId), frozen);
       },
-      { strategy: "weighted", weights },
+      { strategy: "weighted", weights: frozen },
     );
   },
 
