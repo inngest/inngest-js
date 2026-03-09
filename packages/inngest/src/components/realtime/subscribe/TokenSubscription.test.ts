@@ -122,6 +122,45 @@ describe("TokenSubscription", () => {
     expect(message.value?.runId).toBe("run_1");
   });
 
+  test("ignores run lifecycle messages for unexpected channels", async () => {
+    const sub = new TokenSubscription({
+      token: {
+        channel: "test",
+        topics: ["status"],
+        key: "token",
+      } as never,
+    });
+
+    const reader = sub.getJsonStream().getReader();
+    await sub.connect();
+
+    const ws = MockWebSocket.instances[0];
+    expect(ws).toBeDefined();
+    if (!ws) {
+      throw new Error("Expected websocket instance");
+    }
+
+    ws.emitJson({
+      kind: "run",
+      channel: "other-channel",
+      data: { status: "running" },
+      run_id: "run_ignored",
+    });
+    ws.emitJson({
+      kind: "run",
+      channel: "test",
+      data: { status: "completed" },
+      run_id: "run_expected",
+    });
+
+    const message = await reader.read();
+    expect(message.value).toMatchObject({
+      kind: "run",
+      channel: "test",
+      runId: "run_expected",
+    });
+  });
+
   test("skips schema validation when validate=false", async () => {
     const sub = new TokenSubscription({
       token: {
@@ -158,6 +197,45 @@ describe("TokenSubscription", () => {
       kind: "data",
       topic: "status",
       data: { message: 123 },
+    });
+  });
+
+  test("ignores data messages for unexpected channels", async () => {
+    const sub = new TokenSubscription({
+      token: {
+        channel: "expected",
+        topics: ["status"],
+        key: "token",
+      } as never,
+    });
+
+    const reader = sub.getJsonStream().getReader();
+    await sub.connect();
+
+    const ws = MockWebSocket.instances[0];
+    expect(ws).toBeDefined();
+    if (!ws) {
+      throw new Error("Expected websocket instance");
+    }
+
+    ws.emitJson({
+      kind: "data",
+      channel: "unexpected",
+      topic: "status",
+      data: { message: "wrong" },
+    });
+    ws.emitJson({
+      kind: "data",
+      channel: "expected",
+      topic: "status",
+      data: { message: "right" },
+    });
+
+    const message = await reader.read();
+    expect(message.value).toMatchObject({
+      kind: "data",
+      channel: "expected",
+      data: { message: "right" },
     });
   });
 

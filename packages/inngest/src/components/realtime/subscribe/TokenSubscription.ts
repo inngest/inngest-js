@@ -124,6 +124,17 @@ export class TokenSubscription {
     return url;
   }
 
+  private isExpectedChannel(channel: string): boolean {
+    if (channel === this.#channelId) {
+      return true;
+    }
+
+    this.#debug(
+      `Received message for unexpected channel "${channel}" (expected "${this.#channelId}")`,
+    );
+    return false;
+  }
+
   public async connect() {
     this.#debug(
       `Establishing connection to channel "${
@@ -213,6 +224,10 @@ export class TokenSubscription {
               return;
             }
 
+            if (!this.isExpectedChannel(msg.channel)) {
+              return;
+            }
+
             if (!msg.topic) {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no topic`,
@@ -259,6 +274,10 @@ export class TokenSubscription {
           }
 
           case "run": {
+            if (msg.channel && !this.isExpectedChannel(msg.channel)) {
+              return;
+            }
+
             this.#debug(`Received run lifecycle message on "${msg.channel}"`);
             return this.#fanout.write({
               channel: msg.channel,
@@ -277,6 +296,10 @@ export class TokenSubscription {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no channel or topic`,
               );
+              return;
+            }
+
+            if (!this.isExpectedChannel(msg.channel)) {
               return;
             }
 
@@ -327,6 +350,10 @@ export class TokenSubscription {
               return;
             }
 
+            if (!this.isExpectedChannel(msg.channel)) {
+              return;
+            }
+
             const endStreamId: unknown = msg.data;
             if (typeof endStreamId !== "string" || !endStreamId) {
               this.#debug(
@@ -366,6 +393,10 @@ export class TokenSubscription {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no channel or topic`,
               );
+              return;
+            }
+
+            if (!this.isExpectedChannel(msg.channel)) {
               return;
             }
 

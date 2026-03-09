@@ -41,7 +41,7 @@ const aiChat = inngest.createFunction(
 );
 
 // 3. Subscribe server-side
-for await (const msg of inngest.realtime.subscribe({
+for await (const msg of await inngest.realtime.subscribe({
   channel: agentChat({ threadId: "thread_abc" }),
   topics: ["status", "tokens"],
 })) {
@@ -221,7 +221,7 @@ async ({ step }) => {
 ### Server-side async iterator
 
 ```ts
-for await (const msg of inngest.realtime.subscribe({
+for await (const msg of await inngest.realtime.subscribe({
   channel: agentChat({ threadId }),
   topics: ["status", "tokens"],
 })) {
