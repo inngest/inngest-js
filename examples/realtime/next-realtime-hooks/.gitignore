@@ -1,34 +1,41 @@
-#
-# Standard Next.js ignores
-#
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Dependencies
+# dependencies
 /node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Next.js build output
-/.next
-/.next/cache
-/out
+# testing
+/coverage
 
-# Build artifacts
+# next.js
+/.next/
+/out/
+
+# production
 /build
-/dist
 
-# Environment variables (local-only)
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# misc
+.DS_Store
+*.pem
 
-# Logs
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-*.log
+.pnpm-debug.log*
 
-# TypeScript
-*.tsbuildinfo
+# env files (can opt-in for committing if needed)
+.env*
 
-# Vercel
+# vercel
 .vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
