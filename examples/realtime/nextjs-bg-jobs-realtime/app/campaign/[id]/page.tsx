@@ -13,11 +13,12 @@ export default function CampaignViewPage() {
   const { id } = useParams();
   const campaignId = typeof id === "string" ? id : "";
 
-  const { latestData: latestUpdate } = useRealtime({
+  const { messages } = useRealtime({
     token: () => fetchSubscriptionToken(campaignId),
     bufferInterval: 500,
     enabled: enabled && Boolean(campaignId),
   });
+  const latestUpdate = messages.last;
 
   const { data: campaign, isLoading: loadingCampaign } = useSWR(
     id ? `/api/campaigns/${id}` : null,

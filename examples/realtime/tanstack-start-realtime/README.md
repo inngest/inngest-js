@@ -61,9 +61,11 @@ Two TanStack Start server functions:
 
 The `useRealtime` hook connects to the parameterized channel and provides:
 
-- `status` / `runStatus` — Connection and execution lifecycle
-- `latest` — Most recent message per topic
-- `history` — Full message log (used to accumulate streaming tokens and list artifacts)
+- `connectionStatus` / `runStatus` — Connection and execution lifecycle
+- `isPaused` / `pauseReason` — Explicit pause state for hidden tabs or disabled subscriptions
+- `messages.byTopic` — Most recent message per topic
+- `messages.all` — Full message log (used to accumulate streaming tokens and list artifacts)
+- `messages.last` / `messages.delta` — Convenience views for single latest and incremental batches
 
 ### UI components
 

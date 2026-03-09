@@ -234,7 +234,7 @@ The platform emits well-known lifecycle messages so subscribers can distinguish 
 
 - When a run finishes (success, failure, or cancellation), the platform publishes a final lifecycle message with the terminal status to the channel(s) that function published to.
 - The React hook exposes this as a dedicated `runStatus` field (see hooks section) so users never need to subscribe to this topic manually.
-- If the connection drops before a lifecycle message is received, the hook’s `status` will be `"error"` (connection-level) while `runStatus` remains `"running"` making the distinction unambiguous.
+- If the connection drops before a lifecycle message is received, the hook’s `connectionStatus` will be `"error"` (connection-level) while `runStatus` remains `"running"` making the distinction unambiguous.
 
 ---
 
@@ -445,7 +445,7 @@ Hooks ship from the core SDK distribution (e.g. `inngest/react`).
 import { useRealtime } from "inngest/react";
 import { agentChat } from "@/channels";
 
-const { status, runStatus, latest, error } = useRealtime({
+const { connectionStatus, runStatus, messages, error } = useRealtime({
   channel: agentChat({ threadId }),
   topics: ["status", "tokens"],
   token: () =>
@@ -458,8 +458,8 @@ const { status, runStatus, latest, error } = useRealtime({
 });
 
 // Typed access per topic:
-latest.status?.data.message;
-latest.tokens?.data.token;
+messages.byTopic.status?.data.message;
+messages.byTopic.tokens?.data.token;
 ```
 
 **Return type:**
@@ -467,47 +467,67 @@ latest.tokens?.data.token;
 ```tsx
 type UseRealtimeResult<TChannel, TTopics> = {
   /** Connection status */
-  status: "idle" | "connecting" | "open" | "closed" | "error";
+  connectionStatus:
+    | "idle"
+    | "connecting"
+    | "open"
+    | "paused"
+    | "closed"
+    | "error";
 
   /** Run lifecycle status -- derived from platform lifecycle messages */
   runStatus: "unknown" | "running" | "completed" | "failed" | "cancelled";
 
-  /** Most recent message per topic -- fully typed map */
-  latest: { [K in TTopics]?: RealtimeMessage<InferTopicPayload<TChannel, K>> };
+  /** Pause flags */
+  isPaused: boolean;
+  pauseReason: "hidden" | "disabled" | null;
 
-  /** Connection or run-level error */
-  error?: Error;
+  /** Message views */
+  messages: {
+    /** Most recent message per topic -- fully typed map */
+    byTopic: { [K in TTopics]?: RealtimeMessage<InferTopicPayload<TChannel, K>> };
+
+    /** Opt-in bounded message buffer (all topics interleaved) */
+    all: RealtimeMessage<unknown>[];
+
+    /** Most recent message across all topics */
+    last: RealtimeMessage<unknown> | null;
+
+    /** New messages since the latest flush window */
+    delta: RealtimeMessage<unknown>[];
+  };
 
   /** Run result (function return value), available when runStatus is "completed" */
   result?: unknown;
 
-  /** Opt-in bounded message buffer (all topics interleaved) */
-  history: RealtimeMessage<unknown>[];
+  /** Connection or run-level error */
+  error?: Error;
 
-  /** Clear history buffer */
+  /** Clear buffered messages and result */
   reset: () => void;
 };
 ```
 
-**`status` vs `runStatus` semantics:**
+**`connectionStatus` vs `runStatus` semantics:**
 
-| Scenario | `status` | `runStatus` |
+| Scenario | `connectionStatus` | `runStatus` |
 | --- | --- | --- |
 | Hook mounted, not yet connected | `"idle"` | `"unknown"` |
 | WebSocket connecting | `"connecting"` | `"unknown"` |
 | Connected, run in progress | `"open"` | `"running"` |
+| Temporarily paused (tab hidden / disabled) | `"paused"` | last known |
 | Run completed, connection still open | `"open"` | `"completed"` |
 | Run failed | `"open"` | `"failed"` |
 | Connection dropped unexpectedly | `"error"` | `"running"` (last known) |
 | Connection closed after run completed | `"closed"` | `"completed"` |
 
-The hook auto-closes the connection shortly after receiving a terminal `runStatus` (`"completed"`, `"failed"`, `"cancelled"`), transitioning `status` to `"closed"`.
+The hook auto-closes the connection shortly after receiving a terminal `runStatus` (`"completed"`, `"failed"`, `"cancelled"`), transitioning `connectionStatus` to `"closed"`.
 
 ### Hook defaults
 
 - Reconnect with backoff.
 - Pause when tab is hidden.
-- Bounded history buffers by default (default: 100 messages; configurable via `historyLimit`).
+- Bounded message buffers by default (default: 100 messages; configurable via `historyLimit`).
 - Auto-close connection after terminal `runStatus`.
 
 ---
@@ -515,7 +535,7 @@ The hook auto-closes the connection shortly after receiving a terminal `runStatu
 ## Performance / correctness
 
 - Validation is optional and configurable per subscription (fast-path when using `staticSchema`).
-- Hook buffers are bounded by default; “infinite history” is opt-in.
+- Hook buffers are bounded by default; unbounded message buffers are opt-in.
 - Existing realtime constraints (message size, TTL, plan limits) remain and must be documented prominently.
 
 ---
@@ -557,7 +577,7 @@ const { channelId, token, stream } = await inngest.invoke({
 This would also include:
 
 - **Route handler helpers** for proxying the stream as SSE or returning the token to the client.
-- **`useInvoke` React hook** that wraps the invoke-and-subscribe flow: POSTs to an endpoint, receives a token, and automatically opens a realtime subscription with the same `status`, `runStatus`, `latest`, `history`, and `error` fields as `useRealtime`.
+- **`useInvoke` React hook** that wraps the invoke-and-subscribe flow: POSTs to an endpoint, receives a token, and automatically opens a realtime subscription with the same `connectionStatus`, `runStatus`, `messages`, and `error` fields as `useRealtime`.
 
 ### Future: Multi-channel subscriptions (`useRealtimeList`)
 
@@ -641,7 +661,7 @@ import { useInvoke } from "inngest/react";
 import { agentChat } from "@/channels";
 
 function ChatUI({ threadId }: { threadId: string }) {
-  const { invoke, status, runStatus, latest, error } = useInvoke({
+  const { invoke, connectionStatus, runStatus, messages, error } = useInvoke({
     endpoint: "/api/chat",
     channel: agentChat({ threadId }),
     topics: ["status", "tokens"],
@@ -653,8 +673,9 @@ function ChatUI({ threadId }: { threadId: string }) {
         Start
       </button>
 
-      {latest.tokens && <span>{latest.tokens.data.token}</span>}
-      {latest.status && <p>{latest.status.data.message}</p>}
+      {messages.byTopic.tokens && <span>{messages.byTopic.tokens.data.token}</span>}
+      {messages.byTopic.status && <p>{messages.byTopic.status.data.message}</p>}
+      {connectionStatus === "paused" && <p>Paused</p>}
       {runStatus === "completed" && <p>Done!</p>}
       {runStatus === "failed" && <p>Error: {error?.message}</p>}
     </div>
@@ -667,7 +688,7 @@ function ChatUI({ threadId }: { threadId: string }) {
 1. On `invoke(data)`, POSTs to the endpoint with the provided data.
 2. Expects the endpoint to return `{ channelId, token }` (Option B pattern above).
 3. Automatically opens a realtime subscription using the returned token.
-4. Exposes the same `status`, `runStatus`, `latest`, `history`, and `error` fields as `useRealtime`.
+4. Exposes the same `connectionStatus`, `runStatus`, `messages`, and `error` fields as `useRealtime`.
 5. Handles cleanup (unsubscribe) on unmount or re-invoke.
 
 ---

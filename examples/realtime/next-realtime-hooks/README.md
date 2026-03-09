@@ -41,13 +41,13 @@ npx inngest-cli@latest dev -u http://localhost:3001/api/inngest
 
 ## What to look for in the UI
 
-- `Connection` and `Run` status from `useRealtime`
+- `Connection`, `Run`, and pause state from `useRealtime`
 - Live message stream in `Output Events`
-- `Fresh` vs `Latest` inspector panes
-- `Latest (typed map)` view for topic-keyed message access
+- `Delta` vs `Last` inspector panes
+- `messages.byTopic` view for topic-keyed message access
 - `Buffer Interval (ms)` to batch incoming messages
 - `Enabled/Disabled` toggle to pause/resume client subscription
-- `Reset History` to clear retained messages
+- `Reset Messages` to clear retained message state
 
 ## How it works
 

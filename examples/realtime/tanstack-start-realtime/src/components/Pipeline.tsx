@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from "react";
-import type {
-  UseRealtimeConnectionStatus,
-  UseRealtimeRunStatus,
-} from "inngest/react";
-import type { Realtime } from "inngest/realtime";
+import type { UseRealtimeResult } from "inngest/react";
+import type { contentPipeline } from "../inngest/channels";
 import { StatusBadge } from "./StatusBadge";
 
+//
+// Derive props from the hook's return type, parameterized by our channel.
+// This gives us per-topic typed message access without manual annotations.
+type PipelineResult = UseRealtimeResult<
+  ReturnType<typeof contentPipeline>,
+  readonly ["status", "tokens", "artifact"]
+>;
+
 interface PipelineProps {
-  status: UseRealtimeConnectionStatus;
-  runStatus: UseRealtimeRunStatus;
-  latest: Record<string, Realtime.Message | undefined>;
-  history: Realtime.Message[];
+  connectionStatus: PipelineResult["connectionStatus"];
+  runStatus: PipelineResult["runStatus"];
+  messagesByTopic: PipelineResult["messages"]["byTopic"];
 }
 
 const stepOrder = ["research", "outline", "draft"] as const;
@@ -21,44 +25,50 @@ const stepLabels: Record<string, string> = {
   draft: "Final Draft",
 };
 
-export function Pipeline({ status, runStatus, latest }: PipelineProps) {
-  const currentStatus = latest.status?.data as
-    | { message: string; step?: string }
-    | undefined;
-
+export function Pipeline({
+  connectionStatus,
+  runStatus,
+  messagesByTopic,
+}: PipelineProps) {
+  //
+  // Per-topic typing: messagesByTopic.status?.data is automatically typed as
+  // { message: string; step?: string } — no `as` cast needed.
+  const currentStatus = messagesByTopic.status?.data;
   const activeStep = currentStatus?.step;
-
-  type Artifact = { kind: string; title: string; body: string };
 
   //
   // Accumulate artifacts in state so they persist after the step completes.
+  // messagesByTopic.artifact?.data is typed as { kind: "research" | "outline" | "draft"; title: string; body: string }
+  type Artifact = NonNullable<typeof messagesByTopic.artifact>["data"];
+
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
 
   useEffect(() => {
-    const data = latest.artifact?.data as Artifact | undefined;
+    const data = messagesByTopic.artifact?.data;
     if (data) {
       setArtifacts((prev) => {
         if (prev.some((a) => a.kind === data.kind)) return prev;
         return [...prev, data];
       });
     }
-  }, [latest.artifact]);
+  }, [messagesByTopic.artifact]);
 
   //
-  // Accumulate streaming tokens per step from latest messages.
+  // Accumulate streaming tokens per step from topic messages.
+  // messagesByTopic.tokens?.data is typed as { token: string; step: string }
   const [streamingText, setStreamingText] = useState<Record<string, string>>(
     {},
   );
 
   useEffect(() => {
-    const msg = latest.tokens;
+    const msg = messagesByTopic.tokens;
     if (!msg || msg.kind !== "data") return;
-    const { token, step } = msg.data as { token: string; step: string };
+    const { token, step } = msg.data;
     setStreamingText((prev) => ({
       ...prev,
       [step]: (prev[step] ?? "") + token,
     }));
-  }, [latest.tokens]);
+  }, [messagesByTopic.tokens]);
 
   //
   // Auto-scroll to the bottom of the active section on every new token.
@@ -73,9 +83,10 @@ export function Pipeline({ status, runStatus, latest }: PipelineProps) {
     // against the bottom, so there's breathing room below.
     const y = el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.8;
     window.scrollTo({ top: y, behavior: "smooth" });
-  }, [latest.tokens, activeStep]);
+  }, [messagesByTopic.tokens, activeStep]);
 
-  const isActive = status === "open" || status === "connecting";
+  const isActive =
+    connectionStatus === "open" || connectionStatus === "connecting";
   const isDone =
     runStatus === "completed" ||
     runStatus === "failed" ||
@@ -84,7 +95,10 @@ export function Pipeline({ status, runStatus, latest }: PipelineProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <StatusBadge status={status} runStatus={runStatus} />
+        <StatusBadge
+          connectionStatus={connectionStatus}
+          runStatus={runStatus}
+        />
         {currentStatus && isActive && (
           <span className="text-sm font-medium text-indigo-600 animate-pulse">
             {currentStatus.message}

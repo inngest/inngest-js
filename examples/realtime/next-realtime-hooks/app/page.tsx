@@ -10,16 +10,15 @@ const realtimeTopics = ["logs"] as const;
 export default function Home() {
   const [bufferInterval, setBufferInterval] = useState<number>(0);
   const [enabled, setEnabled] = useState<boolean>(true);
-  const [tab, setTab] = useState<"fresh" | "latest">("fresh");
+  const [tab, setTab] = useState<"delta" | "last">("delta");
 
   const {
-    data,
-    error,
-    freshData,
-    latestData,
-    status,
+    connectionStatus,
     runStatus,
-    latest,
+    isPaused,
+    pauseReason,
+    messages,
+    error,
     reset,
   } = useRealtime({
     channel: helloChannel,
@@ -29,7 +28,8 @@ export default function Home() {
     enabled,
   });
 
-  const sortedData = [...(data || [])].reverse();
+  const { byTopic, all, last, delta } = messages;
+  const sortedData = [...all].reverse();
 
   return (
     <div className="min-h-screen flex flex-col bg-[#1a1a1a] text-[#e0e0e0] font-sans max-w-screen">
@@ -54,11 +54,15 @@ export default function Home() {
         <div className="text-xs text-[#999] font-mono justify-self-end w-full max-w-[420px] text-right whitespace-nowrap overflow-hidden text-ellipsis">
           Connection:{" "}
           <span className="font-semibold text-white inline-block w-[80px] text-left">
-            {status}
+            {connectionStatus}
           </span>
           {" | "}Run:{" "}
           <span className="font-semibold text-white inline-block w-[90px] text-left">
             {runStatus}
+          </span>
+          {" | "}Paused:{" "}
+          <span className="font-semibold text-white inline-block w-[80px] text-left">
+            {isPaused ? pauseReason : "no"}
           </span>
         </div>
       </header>
@@ -109,16 +113,18 @@ export default function Home() {
               </pre>
             </div>
             <div>
-              <div className="font-semibold mb-1 text-white">Latest (typed map)</div>
+              <div className="font-semibold mb-1 text-white">
+                messages.byTopic (typed map)
+              </div>
               <pre className="text-xs bg-neutral-800 p-2 rounded text-blue-300 whitespace-pre-wrap break-words max-h-40 overflow-auto">
-                {JSON.stringify(latest, null, 2)}
+                {JSON.stringify(byTopic, null, 2)}
               </pre>
             </div>
             <button
               onClick={() => reset()}
               className="w-full py-2 rounded-md border border-neutral-600 hover:border-neutral-400"
             >
-              Reset History
+              Reset Messages
             </button>
           </div>
         </aside>
@@ -167,38 +173,38 @@ export default function Home() {
               <div className="flex gap-2 text-sm">
                 <button
                   className={`px-2 py-1 rounded ${
-                    tab === "fresh"
+                    tab === "delta"
                       ? "bg-neutral-700 text-white"
                       : "text-[#aaa] hover:text-white"
                   }`}
-                  onClick={() => setTab("fresh")}
+                  onClick={() => setTab("delta")}
                 >
-                  Fresh
+                  Delta
                 </button>
                 <button
                   className={`px-2 py-1 rounded ${
-                    tab === "latest"
+                    tab === "last"
                       ? "bg-neutral-700 text-white"
                       : "text-[#aaa] hover:text-white"
                   }`}
-                  onClick={() => setTab("latest")}
+                  onClick={() => setTab("last")}
                 >
-                  Latest
+                  Last
                 </button>
               </div>
             </div>
 
-            {tab === "fresh" ? (
-              freshData?.length ? (
+            {tab === "delta" ? (
+              delta.length ? (
                 <pre className="text-xs bg-neutral-800 p-2 rounded text-green-300 whitespace-pre-wrap break-words overflow-auto">
-                  {JSON.stringify(freshData, null, 2)}
+                  {JSON.stringify(delta, null, 2)}
                 </pre>
               ) : (
                 <div className="text-xs text-[#aaa]">None</div>
               )
-            ) : latestData ? (
+            ) : last ? (
               <pre className="text-xs bg-neutral-800 p-2 rounded text-blue-300 whitespace-pre-wrap break-words overflow-auto">
-                {JSON.stringify(latestData, null, 2)}
+                {JSON.stringify(last, null, 2)}
               </pre>
             ) : (
               <div className="text-xs text-[#aaa]">None</div>
