@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import type {
   UseRealtimeConnectionStatus,
   UseRealtimeRunStatus,
@@ -15,31 +15,71 @@ interface PipelineProps {
 
 const stepOrder = ["research", "outline", "draft"] as const;
 
-export function Pipeline({ status, runStatus, latest, history }: PipelineProps) {
+const stepLabels: Record<string, string> = {
+  research: "Research Notes",
+  outline: "Post Outline",
+  draft: "Final Draft",
+};
+
+export function Pipeline({ status, runStatus, latest }: PipelineProps) {
   const currentStatus = latest.status?.data as
     | { message: string; step?: string }
     | undefined;
 
-  const artifacts = useMemo(
-    () =>
-      history.filter(
-        (msg): msg is Realtime.Message & { data: { kind: string; title: string; body: string } } =>
-          msg.topic === "artifact" && msg.kind === "data"
-      ),
-    [history]
-  );
+  const activeStep = currentStatus?.step;
+
+  type Artifact = { kind: string; title: string; body: string };
 
   //
-  // Accumulate tokens from all token messages in history
-  const draftPreview = useMemo(() => {
-    return history
-      .filter((msg) => msg.topic === "tokens" && msg.kind === "data")
-      .map((msg) => (msg.data as { token: string }).token)
-      .join("");
-  }, [history]);
+  // Accumulate artifacts in state so they persist after the step completes.
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+
+  useEffect(() => {
+    const data = latest.artifact?.data as Artifact | undefined;
+    if (data) {
+      setArtifacts((prev) => {
+        if (prev.some((a) => a.kind === data.kind)) return prev;
+        return [...prev, data];
+      });
+    }
+  }, [latest.artifact]);
+
+  //
+  // Accumulate streaming tokens per step from latest messages.
+  const [streamingText, setStreamingText] = useState<Record<string, string>>(
+    {},
+  );
+
+  useEffect(() => {
+    const msg = latest.tokens;
+    if (!msg || msg.kind !== "data") return;
+    const { token, step } = msg.data as { token: string; step: string };
+    setStreamingText((prev) => ({
+      ...prev,
+      [step]: (prev[step] ?? "") + token,
+    }));
+  }, [latest.tokens]);
+
+  //
+  // Auto-scroll to the bottom of the active section on every new token.
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollAnchorRef.current;
+    if (!el) return;
+
+    //
+    // Position the streaming edge ~80% down the viewport instead of flush
+    // against the bottom, so there's breathing room below.
+    const y = el.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.8;
+    window.scrollTo({ top: y, behavior: "smooth" });
+  }, [latest.tokens, activeStep]);
 
   const isActive = status === "open" || status === "connecting";
-  const isDone = runStatus === "completed" || runStatus === "failed" || runStatus === "cancelled";
+  const isDone =
+    runStatus === "completed" ||
+    runStatus === "failed" ||
+    runStatus === "cancelled";
 
   return (
     <div className="space-y-6">
@@ -50,7 +90,7 @@ export function Pipeline({ status, runStatus, latest, history }: PipelineProps) 
             {currentStatus.message}
           </span>
         )}
-        {isDone && !currentStatus && (
+        {isDone && (
           <span className="text-sm text-gray-500">Pipeline complete</span>
         )}
       </div>
@@ -58,14 +98,13 @@ export function Pipeline({ status, runStatus, latest, history }: PipelineProps) 
       {/* Step progress indicators */}
       <div className="flex gap-2">
         {stepOrder.map((step) => {
-          const isCurrentStep = currentStatus?.step === step;
+          const isCurrentStep = activeStep === step;
+          const hasArtifact = artifacts.some((a) => a.kind === step);
           const isPast =
-            currentStatus?.step &&
-            stepOrder.indexOf(currentStatus.step as (typeof stepOrder)[number]) >
-              stepOrder.indexOf(step);
-          const hasArtifact = artifacts.some(
-            (a) => a.data.kind === step
-          );
+            activeStep &&
+            stepOrder.indexOf(
+              activeStep as (typeof stepOrder)[number],
+            ) > stepOrder.indexOf(step);
 
           let bg = "bg-gray-200 text-gray-500";
           if (hasArtifact || isPast) bg = "bg-green-100 text-green-700";
@@ -85,47 +124,62 @@ export function Pipeline({ status, runStatus, latest, history }: PipelineProps) 
         })}
       </div>
 
-      {/* Artifacts */}
-      {artifacts.length > 0 && (
-        <div className="space-y-4">
-          {artifacts.map((artifact, i) => (
-            <details
-              key={i}
-              open={artifact.data.kind === "draft"}
-              className="group rounded-lg border border-gray-200 bg-white"
+      {/* Per-step streaming sections */}
+      <div className="space-y-4">
+        {stepOrder.map((step) => {
+          const artifact = artifacts.find((a) => a.kind === step);
+          const streaming = streamingText[step];
+          if (!artifact && !streaming) return null;
+
+          const isCurrentStep = activeStep === step;
+          const isStreaming = isCurrentStep && !artifact;
+          const isCompleted = !!artifact && !isCurrentStep;
+          const text = artifact?.body ?? streaming ?? "";
+
+          return (
+            <div
+              key={step}
+              className={`rounded-lg border overflow-hidden transition-colors ${
+                isStreaming
+                  ? "border-indigo-200 bg-indigo-50/30"
+                  : "border-gray-200 bg-white"
+              }`}
             >
-              <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <div className="flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700">
                 <span className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                  {artifact.data.title}
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      isStreaming
+                        ? "bg-indigo-500 animate-pulse"
+                        : "bg-green-500"
+                    }`}
+                  />
+                  {stepLabels[step]}
                 </span>
                 <span className="text-xs text-gray-400 capitalize">
-                  {artifact.data.kind}
+                  {step}
                 </span>
-              </summary>
-              <div className="border-t border-gray-100 px-4 py-3">
-                <pre className="whitespace-pre-wrap text-sm text-gray-600 leading-relaxed">
-                  {artifact.data.body}
-                </pre>
               </div>
-            </details>
-          ))}
-        </div>
-      )}
-
-      {/* Live draft preview (token streaming) */}
-      {draftPreview && !artifacts.some((a) => a.data.kind === "draft") && (
-        <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium text-indigo-600">
-            <span className="inline-block h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
-            Writing draft...
-          </div>
-          <pre className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
-            {draftPreview}
-            <span className="animate-pulse">|</span>
-          </pre>
-        </div>
-      )}
+              <div
+                className={`border-t border-gray-100 px-4 py-3 relative ${
+                  isCompleted ? "max-h-24 overflow-hidden" : ""
+                }`}
+              >
+                <pre className="whitespace-pre-wrap text-sm text-gray-600 leading-relaxed">
+                  {text}
+                  {isStreaming && (
+                    <span className="animate-pulse">|</span>
+                  )}
+                </pre>
+                {isCompleted && (
+                  <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent" />
+                )}
+                {isStreaming && <div ref={scrollAnchorRef} />}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

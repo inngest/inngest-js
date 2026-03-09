@@ -11,7 +11,7 @@ export const contentPipeline = realtime.channel({
       }),
     },
     tokens: {
-      schema: z.object({ token: z.string() }),
+      schema: z.object({ token: z.string(), step: z.string() }),
     },
     artifact: {
       schema: z.object({

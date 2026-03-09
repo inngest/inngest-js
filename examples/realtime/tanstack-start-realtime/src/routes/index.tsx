@@ -17,12 +17,12 @@ function Home() {
 
   const channel = useMemo(
     () => (runId ? contentPipeline({ runId }) : undefined),
-    [runId]
+    [runId],
   );
 
   const tokenFactory = useCallback(
     () => getToken({ data: { runId: runId! } }),
-    [runId]
+    [runId],
   );
 
   const { status, runStatus, latest, history } = useRealtime({
@@ -30,11 +30,13 @@ function Home() {
     topics,
     token: runId ? tokenFactory : undefined,
     enabled: !!runId,
-    historyLimit: null,
   });
 
   const isRunning =
-    !!runId && runStatus !== "completed" && runStatus !== "failed" && runStatus !== "cancelled";
+    !!runId &&
+    runStatus !== "completed" &&
+    runStatus !== "failed" &&
+    runStatus !== "cancelled";
 
   const handleSubmit = async (topic: string) => {
     const { runId: newRunId } = await startPipeline({ data: { topic } });
@@ -63,6 +65,7 @@ function Home() {
         {runId && (
           <>
             <Pipeline
+              key={runId}
               status={status}
               runStatus={runStatus}
               latest={latest}
