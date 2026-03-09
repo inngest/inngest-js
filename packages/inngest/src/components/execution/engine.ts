@@ -52,6 +52,8 @@ import type {
 } from "../InngestMetadata.ts";
 import {
   createStepTools,
+  type ExperimentStepTools,
+  experimentStepRunSymbol,
   type FoundStep,
   getStepOptions,
   STEP_INDEXING_SUFFIX,
@@ -972,6 +974,8 @@ class InngestExecutionEngine
       .finally(() => {
         this.debug(`finished executing step "${id}"`);
 
+        this.state.executingStep = undefined;
+
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -1232,11 +1236,14 @@ class InngestExecutionEngine
 
   private createFnArg(): Context.Any {
     const step = this.createStepTools();
+    const experimentStepRun = (step as unknown as ExperimentStepTools)[
+      experimentStepRunSymbol
+    ];
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-      group: createGroupTools(),
+      group: createGroupTools({ experimentStepRun }),
     } as Context.Any;
 
     /**

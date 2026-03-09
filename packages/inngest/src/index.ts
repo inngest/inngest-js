@@ -38,6 +38,7 @@
  */
 
 export * from "@inngest/ai";
+export { experiment } from "./components/ExperimentStrategies.ts";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
@@ -51,7 +52,7 @@ export { InngestCommHandler } from "./components/InngestCommHandler.ts";
 export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
-export { step } from "./components/InngestStepTools.ts";
+export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";

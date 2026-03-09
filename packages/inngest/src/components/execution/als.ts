@@ -42,6 +42,31 @@ export interface AsyncContext {
      * created within this context. Set by `group.parallel()`.
      */
     parallelMode?: "race";
+
+    /**
+     * If present, indicates the variant callback is executing within an
+     * experiment. Set by `group.experiment()`. Any `step.*()` call within
+     * this context will include these fields in `OutgoingOp.opts`.
+     */
+    experimentContext?: {
+      experimentStepID: string;
+      experimentName: string;
+      variant: string;
+    };
+
+    /**
+     * A mutable tracker used to detect whether any step tool was invoked
+     * during a variant callback. Set by `group.experiment()`, flipped by
+     * `createTool` in `InngestStepTools.ts`.
+     */
+    experimentStepTracker?: { found: boolean };
+
+    /**
+     * If true, we are inside the `select()` callback of
+     * `group.experiment()`. Any `step.*()` call here would create a
+     * nested step, which is not allowed.
+     */
+    insideExperimentSelect?: boolean;
   };
 }
 
