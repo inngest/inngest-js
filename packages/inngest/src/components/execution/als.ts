@@ -140,6 +140,19 @@ export const getAsyncCtxSync = (): AsyncContext | undefined => {
 };
 
 /**
+ * Retrieve the run ID of the current Inngest execution.
+ *
+ * This is a convenience wrapper around the async context — it returns the
+ * `runId` directly so callers don't need to drill into the context shape.
+ *
+ * Returns `undefined` when called outside of an Inngest execution context.
+ */
+export const getRunId = async (): Promise<string | undefined> => {
+  const ctx = await getAsyncCtx();
+  return ctx?.execution?.ctx?.runId;
+};
+
+/**
  * Get a singleton instance of `AsyncLocalStorage` used to store and retrieve
  * async context for the current execution.
  */

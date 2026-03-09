@@ -1,17 +1,30 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { startStream, sendInput } from "./lib";
-import type { StreamCallbacks } from "./lib";
+import { RunStream } from "inngest/durable-endpoints";
+
+async function sendInput(runId: string, language: string): Promise<boolean> {
+  const res = await fetch("/api/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ language, runId }),
+  });
+  return res.ok;
+}
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [waitingForInput, setWaitingForInput] = useState(false);
+  const [retryInfo, setRetryInfo] = useState<{
+    stepId: string;
+    attempt: number;
+  } | null>(null);
 
   const termRef = useRef<HTMLPreElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (waitingForInput) {
@@ -19,29 +32,47 @@ export default function Home() {
     }
   }, [waitingForInput]);
 
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   async function handleSubmit() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLines([]);
     setRunId(null);
     setRunning(true);
     setWaitingForInput(false);
-
-    const callbacks: StreamCallbacks = {
-      onRunId: (id) => setRunId(id),
-      onData: (display) => {
-        setLines((prev) => [...prev, display]);
-        if (display.includes("What language should I translate to?")) {
-          setWaitingForInput(true);
-        }
-      },
-      onScroll: () => {
-        if (termRef.current) {
-          termRef.current.scrollTop = termRef.current.scrollHeight;
-        }
-      },
-    };
+    setRetryInfo(null);
 
     try {
-      await startStream("/api/demo", callbacks);
+      const run = new RunStream<string>("/api/demo", {
+        signal: controller.signal,
+      });
+      await run
+        .onConnected((runId) => setRunId(runId))
+        .onData((chunk) => {
+          setLines((prev) => [...prev, String(chunk)]);
+          if (
+            typeof chunk === "string" &&
+            chunk.includes("What language should I translate to?")
+          ) {
+            setWaitingForInput(true);
+          }
+          if (termRef.current) {
+            termRef.current.scrollTop = termRef.current.scrollHeight;
+          }
+        })
+        .onRollback((removed, _chunks, stepId, attempt) => {
+          setLines((prev) => prev.slice(0, -removed.length));
+          setRetryInfo({ stepId, attempt });
+        })
+        .onStepStarted(() => setRetryInfo(null))
+        .start();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLines((prev) => [...prev, `[error] ${msg}`]);
@@ -76,7 +107,14 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: 32, fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto" }}>
+    <main
+      style={{
+        padding: 32,
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: 720,
+        margin: "0 auto",
+      }}
+    >
       <h1 style={{ marginBottom: 16 }}>Durp streaming POC</h1>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -133,6 +171,11 @@ export default function Home() {
           }}
         >
           {lines.join("")}
+          {retryInfo !== null && (
+            <span style={{ color: "#f0a030" }}>
+              {`\n! Step "${retryInfo.stepId}" failed — retrying (attempt ${retryInfo.attempt})…\n`}
+            </span>
+          )}
           {waitingForInput && (
             <span>
               {"$ "}

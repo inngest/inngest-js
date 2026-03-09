@@ -981,6 +981,12 @@ class InngestExecutionEngine
             return;
           }
 
+          if (stepResult.error) {
+            // End the POST body cleanly without a terminal result
+            // frame so the Go buffer persists across retries.
+            this.streamTools.closeForRetry();
+          }
+
           return stepRanHandler(stepResult);
         }
 
@@ -1094,6 +1100,11 @@ class InngestExecutionEngine
                 if (this.state.checkpointingStepBuffer.length) {
                   await attemptCheckpointAndResume(undefined, false, true);
                 }
+
+                // End the POST body cleanly without a terminal result
+                // frame. The Go buffer persists and the client stream
+                // continues across retries.
+                this.streamTools.closeForRetry();
 
                 // If we failed, go back to the regular async flow.
                 return stepRanHandler(stepResult);
@@ -1286,6 +1297,12 @@ class InngestExecutionEngine
 
     this.debug(`executing step "${id}"`);
 
+    // Emit a step-running lifecycle frame so clients can track step boundaries.
+    this.streamTools.stepLifecycle({
+      id: displayName ?? id,
+      status: "running",
+    });
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
@@ -1328,6 +1345,12 @@ class InngestExecutionEngine
         // block until the step is actually memoized (i.e. handle() fires
         // with confirmed data from the server). handle() resolves it.
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
+
+        // Emit a step-completed lifecycle frame.
+        this.streamTools.stepLifecycle({
+          id: displayName ?? id,
+          status: "completed",
+        });
 
         return {
           ...outgoingOp,
@@ -1443,6 +1466,15 @@ class InngestExecutionEngine
       error instanceof Error ? error : new Error(String(error)),
       isFinal,
     );
+
+    // Emit a step-errored lifecycle frame so clients can roll back.
+    this.streamTools.stepLifecycle({
+      id: outgoingOp.displayName ?? id,
+      status: "errored",
+      error: error instanceof Error ? error.message : String(error),
+      will_retry: !isFinal,
+      attempt: this.fnArg.attempt,
+    });
 
     return {
       ...outgoingOp,
