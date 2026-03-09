@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { subscribe } from "@inngest/realtime";
 import { inngest } from "@/lib/inngest";
 
 export async function POST() {
@@ -16,7 +15,7 @@ export async function POST() {
   });
 
   // Subscribe to the Inngest function's channel.
-  const stream = await subscribe({
+  const stream = await inngest.realtime.subscribe({
     channel: `multi-step-streaming-function.${uuid}`,
     topics: ["updates"], // subscribe to one or more topics in the user channel
   });

@@ -1225,3 +1225,128 @@ describe("endpointProxy", () => {
     expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
   });
 });
+
+describe("inngest.publish", () => {
+  test("publishes to the realtime API", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    const publishSpy = vi
+      .spyOn(inngest["inngestApi"], "publish")
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    await inngest.publish(ch.status, { message: "hello" });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "test",
+        topics: ["status"],
+      }),
+      { message: "hello" },
+    );
+  });
+
+  test("validates data against the topic schema", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+
+    await expect(
+      // @ts-expect-error intentional invalid payload for runtime validation
+      inngest.publish(ch.status, { message: 123 }),
+    ).rejects.toThrow("Schema validation failed");
+  });
+
+  test("throws if the publish API returns an error", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
+      ok: false,
+      error: { error: "Nope", status: 500 },
+    });
+
+    await expect(
+      inngest.publish(ch.status, { message: "hello" }),
+    ).rejects.toThrow("Failed to publish to realtime: Nope");
+  });
+
+  test("staticSchema topics skip runtime validation (passthrough)", async () => {
+    const { realtime, staticSchema } = await import("../index.ts");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        tokens: { schema: staticSchema<{ token: string }>() },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    const publishSpy = vi
+      .spyOn(inngest["inngestApi"], "publish")
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    //
+    // staticSchema's validate is a passthrough — it never returns issues,
+    // so invalid data at runtime is not rejected.
+    // @ts-expect-error intentional invalid payload to demonstrate passthrough
+    await inngest.publish(ch.tokens, { token: 999 });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "test",
+        topics: ["tokens"],
+      }),
+      { token: 999 },
+    );
+  });
+
+  test("zod schema topics reject invalid data at runtime", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
+      ok: true,
+      value: undefined,
+    });
+
+    //
+    // Zod schema validates at runtime — invalid data throws.
+    // @ts-expect-error intentional invalid payload
+    await expect(inngest.publish(ch.status, { message: 999 })).rejects.toThrow(
+      "Schema validation failed",
+    );
+  });
+});

@@ -19,6 +19,7 @@ export type UseRealtimeConnectionStatus =
   | "idle"
   | "connecting"
   | "open"
+  | "paused"
   | "closed"
   | "error";
 
@@ -30,27 +31,75 @@ export type UseRealtimeRunStatus =
   | "cancelled";
 
 type TokenFactory = () => Promise<string | Realtime.Subscribe.Token>;
+type UseRealtimePauseReason = "hidden" | "disabled" | null;
 
-type LatestMap<TTopics extends readonly string[] | undefined> =
-  TTopics extends readonly (infer K)[]
-    ? Partial<Record<Extract<K, string>, Realtime.Message>>
-    : Record<string, Realtime.Message | undefined>;
+//
+// Extract the topic configs map from a channel input. Returns the full
+// TopicsConfig when the channel is a typed ChannelInstance, otherwise
+// falls back to a broad Record<string, TopicConfig> so data is untyped.
+type InferTopicConfigs<TChannel extends Realtime.ChannelInput> =
+  TChannel extends Realtime.ChannelInstance<string, infer TTopicConfigs>
+    ? TTopicConfigs
+    : Record<string, Realtime.TopicConfig>;
+
+//
+// Produce the per-topic typed message for a single topic key. When the
+// channel is a typed ChannelInstance and the key matches a known topic,
+// the `data` field is typed to that topic's schema. Otherwise falls
+// back to untyped Realtime.Message.
+type TopicLatestMessage<
+  TChannel extends Realtime.ChannelInput,
+  TKey extends string,
+  TConfigs = InferTopicConfigs<TChannel>,
+> = TKey extends keyof TConfigs
+  ? Extract<
+      Realtime.Message<string, Pick<TConfigs, TKey & keyof TConfigs>>,
+      { topic: TKey }
+    >
+  : Realtime.Message;
+
+//
+// Map of topic name → last message with per-topic typed data.
+// Falls back to bare Realtime.Message when the channel is a plain string.
+type MessagesByTopicMap<
+  TChannel extends Realtime.ChannelInput,
+  TTopics extends readonly string[] | undefined,
+> = TTopics extends readonly (infer K extends string)[]
+  ? { [P in K]?: TopicLatestMessage<TChannel, P> }
+  : Record<string, Realtime.Message | undefined>;
+
+//
+// Discriminated union of all messages across subscribed topics. Used for
+// message collections where the user narrows by
+// `msg.topic` to get per-topic typing.
+type SubscribedMessage<
+  TChannel extends Realtime.ChannelInput,
+  TTopics extends readonly string[] | undefined,
+> = TTopics extends readonly (infer K extends string)[]
+  ? Realtime.Message<
+      string,
+      Pick<InferTopicConfigs<TChannel>, K & keyof InferTopicConfigs<TChannel>>
+    >
+  : Realtime.Message;
 
 export interface UseRealtimeResult<
-  _TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
+  TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
   TTopics extends readonly string[] | undefined = readonly string[] | undefined,
 > {
-  data: Realtime.Message[];
-  latestData: Realtime.Message | null;
-  freshData: Realtime.Message[];
-  error: Error | null;
-  state: RealtimeState;
-
-  status: UseRealtimeConnectionStatus;
+  connectionStatus: UseRealtimeConnectionStatus;
   runStatus: UseRealtimeRunStatus;
-  latest: LatestMap<TTopics>;
-  history: Realtime.Message[];
+  isPaused: boolean;
+  pauseReason: UseRealtimePauseReason;
+
+  messages: {
+    byTopic: MessagesByTopicMap<TChannel, TTopics>;
+    all: SubscribedMessage<TChannel, TTopics>[];
+    last: SubscribedMessage<TChannel, TTopics> | null;
+    delta: SubscribedMessage<TChannel, TTopics>[];
+  };
+
   result: unknown;
+  error: Error | null;
   reset: () => void;
 }
 
@@ -83,7 +132,7 @@ export interface UseRealtimeOptions<
   validate?: boolean;
 
   //
-  // Bound the number of messages retained in `history`/`data`.
+  // Bound the number of messages retained in `messages.all`.
   // Set to `null` to disable the cap.
   historyLimit?: number | null;
 
@@ -105,7 +154,7 @@ const terminalRunStatuses = new Set<UseRealtimeRunStatus>([
   "cancelled",
 ]);
 
-const clampHistory = (
+const clampMessages = (
   prev: Realtime.Message[],
   next: Realtime.Message[],
   limit: number | null,
@@ -120,28 +169,6 @@ const clampHistory = (
   }
 
   return merged.length > limit ? merged.slice(-limit) : merged;
-};
-
-const toRealtimeState = (
-  status: UseRealtimeConnectionStatus,
-  isRefreshingToken: boolean,
-): RealtimeState => {
-  if (isRefreshingToken) {
-    return RealtimeState.RefreshingToken;
-  }
-
-  switch (status) {
-    case "connecting":
-      return RealtimeState.Connecting;
-    case "open":
-      return RealtimeState.Active;
-    case "error":
-      return RealtimeState.Error;
-    case "closed":
-    case "idle":
-    default:
-      return RealtimeState.Closed;
-  }
 };
 
 const getReconnectDelay = (attempt: number, minMs: number, maxMs: number) => {
@@ -255,16 +282,17 @@ export const useRealtime = <
   const channelKey =
     typeof channel === "string" ? channel : (channel?.name ?? undefined);
   const topicsKey = topics ? JSON.stringify([...topics]) : "";
-  const [history, setHistory] = useState<Realtime.Message[]>([]);
-  const [freshData, setFreshData] = useState<Realtime.Message[]>([]);
-  const [latest, setLatest] = useState<
+  const [allMessages, setAllMessages] = useState<Realtime.Message[]>([]);
+  const [messageDelta, setMessageDelta] = useState<Realtime.Message[]>([]);
+  const [messagesByTopic, setMessagesByTopic] = useState<
     Record<string, Realtime.Message | undefined>
   >({});
   const [error, setError] = useState<Error | null>(null);
-  const [status, setStatus] = useState<UseRealtimeConnectionStatus>("idle");
+  const [connectionStatus, setConnectionStatus] =
+    useState<UseRealtimeConnectionStatus>("idle");
+  const [pauseReason, setPauseReason] = useState<UseRealtimePauseReason>(null);
   const [runStatus, setRunStatus] = useState<UseRealtimeRunStatus>("unknown");
   const [result, setResult] = useState<unknown>(undefined);
-  const [isRefreshingToken, setIsRefreshingToken] = useState(false);
   const [isVisible, setIsVisible] = useState(() => isDocumentVisible());
 
   const subscriptionRef = useRef<Realtime.Subscribe.StreamSubscription | null>(
@@ -274,7 +302,7 @@ export const useRealtime = <
     useRef<ReadableStreamDefaultReader<Realtime.Message> | null>(null);
   const messageBufferRef = useRef<Realtime.Message[]>([]);
   const bufferIntervalRef = useRef(bufferInterval);
-  const historyLimitRef = useRef(historyLimit);
+  const messageLimitRef = useRef(historyLimit);
   const runStatusRef = useRef(runStatus);
 
   useEffect(() => {
@@ -286,7 +314,7 @@ export const useRealtime = <
   }, [bufferInterval]);
 
   useEffect(() => {
-    historyLimitRef.current = historyLimit;
+    messageLimitRef.current = historyLimit;
   }, [historyLimit]);
 
   useEffect(() => {
@@ -306,9 +334,9 @@ export const useRealtime = <
 
   const reset = () => {
     messageBufferRef.current = [];
-    setHistory([]);
-    setFreshData([]);
-    setLatest({});
+    setAllMessages([]);
+    setMessageDelta([]);
+    setMessagesByTopic({});
     setResult(undefined);
   };
 
@@ -323,9 +351,9 @@ export const useRealtime = <
 
         const buffered = [...messageBufferRef.current];
         messageBufferRef.current = [];
-        setFreshData(buffered);
-        setHistory((prev) =>
-          clampHistory(prev, buffered, historyLimitRef.current),
+        setMessageDelta(buffered);
+        setAllMessages((prev) =>
+          clampMessages(prev, buffered, messageLimitRef.current),
         );
       }, bufferInterval);
     }
@@ -340,9 +368,23 @@ export const useRealtime = <
   useEffect(() => {
     const shouldRun = enabled && (!pauseOnHidden || isVisible);
     if (!shouldRun) {
-      setStatus("idle");
+      const nextPauseReason = !enabled
+        ? "disabled"
+        : pauseOnHidden && !isVisible
+          ? "hidden"
+          : null;
+
+      if (nextPauseReason) {
+        setPauseReason(nextPauseReason);
+        setConnectionStatus("paused");
+      } else {
+        setPauseReason(null);
+        setConnectionStatus("idle");
+      }
       return;
     }
+
+    setPauseReason(null);
 
     let cancelled = false;
 
@@ -378,36 +420,26 @@ export const useRealtime = <
       }
 
       if (typeof tokenInput === "function") {
-        setIsRefreshingToken(true);
-        try {
-          const next = await tokenInput();
-          if (typeof next === "string") {
-            if (!channel || !topics) {
-              throw new Error(
-                "useRealtime token() returned a string but channel/topics were not provided",
-              );
-            }
-
-            return {
-              channel: channel as Realtime.ChannelInput,
-              topics: topics as string[],
-              key: next,
-            } as Realtime.Subscribe.Token;
+        const next = await tokenInput();
+        if (typeof next === "string") {
+          if (!channel || !topics) {
+            throw new Error(
+              "useRealtime token() returned a string but channel/topics were not provided",
+            );
           }
 
-          return next;
-        } finally {
-          setIsRefreshingToken(false);
+          return {
+            channel: channel as Realtime.ChannelInput,
+            topics: topics as string[],
+            key: next,
+          } as Realtime.Subscribe.Token;
         }
+
+        return next;
       }
 
       if (refreshToken) {
-        setIsRefreshingToken(true);
-        try {
-          return await refreshToken();
-        } finally {
-          setIsRefreshingToken(false);
-        }
+        return await refreshToken();
       }
 
       throw new Error("No token provided and no token/refreshToken handler.");
@@ -433,13 +465,16 @@ export const useRealtime = <
       }
 
       if (message.topic) {
-        setLatest((prev) => ({ ...prev, [message.topic as string]: message }));
+        setMessagesByTopic((prev) => ({
+          ...prev,
+          [message.topic as string]: message,
+        }));
       }
 
       if (bufferIntervalRef.current === 0) {
-        setFreshData([message]);
-        setHistory((prev) =>
-          clampHistory(prev, [message], historyLimitRef.current),
+        setMessageDelta([message]);
+        setAllMessages((prev) =>
+          clampMessages(prev, [message], messageLimitRef.current),
         );
         return;
       }
@@ -453,7 +488,7 @@ export const useRealtime = <
       while (!cancelled) {
         try {
           setError(null);
-          setStatus("connecting");
+          setConnectionStatus("connecting");
 
           const token = await resolveToken();
           if (cancelled) {
@@ -472,7 +507,7 @@ export const useRealtime = <
 
           reconnectAttempt = 0;
           subscriptionRef.current = stream;
-          setStatus("open");
+          setConnectionStatus("open");
 
           if (runStatusRef.current === "unknown") {
             runStatusRef.current = "running";
@@ -514,7 +549,7 @@ export const useRealtime = <
             break;
           }
 
-          setStatus("closed");
+          setConnectionStatus("closed");
 
           if (
             autoCloseOnTerminal &&
@@ -532,7 +567,7 @@ export const useRealtime = <
           }
 
           setError(toError(err));
-          setStatus("error");
+          setConnectionStatus("error");
 
           if (!reconnect) {
             break;
@@ -557,14 +592,14 @@ export const useRealtime = <
     void run().catch((err) => {
       if (!cancelled) {
         setError(toError(err));
-        setStatus("error");
+        setConnectionStatus("error");
       }
     });
 
     return () => {
       cancelled = true;
       void cleanupConnection("useRealtime unmount");
-      setStatus((prev) => (prev === "open" ? "closed" : prev));
+      setConnectionStatus((prev) => (prev === "open" ? "closed" : prev));
     };
   }, [
     autoCloseOnTerminal,
@@ -582,22 +617,26 @@ export const useRealtime = <
     validate,
   ]);
 
-  const state = toRealtimeState(status, isRefreshingToken);
+  const lastMessage = allMessages[allMessages.length - 1] ?? null;
+  const isPaused = connectionStatus === "paused";
 
   return {
-    data: history,
-    latestData: history[history.length - 1] ?? null,
-    freshData,
-    error,
-    state,
-
-    status,
+    connectionStatus,
     runStatus,
-    latest: latest as LatestMap<TTopics>,
-    history,
+    isPaused,
+    pauseReason,
+
+    messages: {
+      byTopic: messagesByTopic as MessagesByTopicMap<TChannel, TTopics>,
+      all: allMessages,
+      last: lastMessage,
+      delta: messageDelta,
+    },
+
     result,
+    error,
     reset,
-  };
+  } as UseRealtimeResult<TChannel, TTopics>;
 };
 
 export { getSubscriptionToken };
