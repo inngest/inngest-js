@@ -75,6 +75,7 @@ export const extendedTracesMiddleware = ({
   debug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
+  let processorReady: Promise<void> | undefined;
 
   switch (behaviour) {
     case "auto": {
@@ -85,27 +86,35 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      const created = createProvider(behaviour, instrumentations);
-      if (created.success) {
-        debug("created new provider");
-        processor = created.processor;
-        break;
-      }
-
-      console.warn("no provider found to extend and unable to create one");
+      processorReady = createProvider(behaviour, instrumentations).then(
+        (created) => {
+          if (created.success) {
+            debug("created new provider");
+            processor = created.processor;
+          } else {
+            console.warn(
+              "no provider found to extend and unable to create one",
+              created.error ?? "",
+            );
+          }
+        },
+      );
 
       break;
     }
     case "createProvider": {
-      const created = createProvider(behaviour, instrumentations);
-      if (created.success) {
-        debug("created new provider");
-        processor = created.processor;
-        break;
-      }
-
-      console.warn(
-        "unable to create provider, Extended Traces middleware will not work",
+      processorReady = createProvider(behaviour, instrumentations).then(
+        (created) => {
+          if (created.success) {
+            debug("created new provider");
+            processor = created.processor;
+          } else {
+            console.warn(
+              "unable to create provider, Extended Traces middleware will not work",
+              created.error ?? "",
+            );
+          }
+        },
       );
 
       break;
@@ -137,7 +146,7 @@ export const extendedTracesMiddleware = ({
 
   return new InngestMiddleware({
     name: "Inngest: Extended Traces",
-    init({ client }) {
+    async init({ client }) {
       // Set the logger for our otel processors and exporters.
       // If this is called multiple times (for example by the user in some other
       // custom code), then only the first call is set, so we don't have to
@@ -147,6 +156,8 @@ export const extendedTracesMiddleware = ({
         "set otel diagLogger:",
         diag.setLogger(new InngestTracesLogger(), logLevel),
       );
+
+      await processorReady;
 
       if (processor) {
         clientProcessorMap.set(client, processor);
