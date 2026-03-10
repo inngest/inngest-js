@@ -1,5 +1,5 @@
-import debug, { type Debugger } from "debug";
 import { headerKeys } from "../../helpers/consts.ts";
+import type { Logger } from "../../middleware/logger.ts";
 import { FlushResponse } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { expBackoff } from "./util.ts";
 
@@ -7,16 +7,21 @@ export class MessageBuffer {
   private buffered: Record<string, Uint8Array> = {};
   private pending: Record<string, Uint8Array> = {};
   private getApiBaseUrl: () => Promise<string>;
-  private debug: Debugger;
+  private logger: Logger;
   private envName: string | undefined;
 
   constructor({
     envName,
     getApiBaseUrl,
-  }: { envName: string | undefined; getApiBaseUrl: () => Promise<string> }) {
+    logger,
+  }: {
+    envName: string | undefined;
+    getApiBaseUrl: () => Promise<string>;
+    logger: Logger;
+  }) {
     this.envName = envName;
     this.getApiBaseUrl = getApiBaseUrl;
-    this.debug = debug("inngest:connect:message-buffer");
+    this.logger = logger;
   }
 
   public append(requestId: string, responseBytes: Uint8Array) {
@@ -32,7 +37,7 @@ export class MessageBuffer {
     this.pending[requestId] = responseBytes;
     setTimeout(() => {
       if (this.pending[requestId]) {
-        this.debug("Message not acknowledged in time", requestId);
+        this.logger.warn({ requestId }, "Message not acknowledged in time");
         this.append(requestId, this.pending[requestId]!);
       }
     }, deadline);
@@ -76,7 +81,10 @@ export class MessageBuffer {
     );
 
     if (!resp.ok) {
-      this.debug("Failed to flush messages", await resp.text());
+      this.logger.error(
+        { body: await resp.text(), status: resp.status },
+        "Failed to flush messages",
+      );
       throw new Error("Failed to flush messages");
     }
 
@@ -92,17 +100,20 @@ export class MessageBuffer {
       return;
     }
 
-    this.debug(`Flushing ${Object.keys(this.buffered).length} messages`);
+    this.logger.info(
+      { count: Object.keys(this.buffered).length },
+      "Flushing messages",
+    );
 
     const maxAttempts = 5;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      for (const [k, v] of Object.entries(this.buffered)) {
+      for (const [requestId, v] of Object.entries(this.buffered)) {
         try {
           await this.sendFlushRequest(hashedSigningKey, v);
-          delete this.buffered[k];
+          delete this.buffered[requestId];
         } catch (err) {
-          this.debug("Failed to flush message", k, err);
+          this.logger.warn({ err, requestId }, "Failed to flush message");
           break;
         }
       }
@@ -114,7 +125,10 @@ export class MessageBuffer {
       await new Promise((resolve) => setTimeout(resolve, expBackoff(attempt)));
     }
 
-    this.debug(`Failed to flush messages after max attempts`, { maxAttempts });
+    this.logger.error(
+      { maxAttempts },
+      "Failed to flush messages after max attempts",
+    );
   }
 }
 

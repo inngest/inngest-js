@@ -13,7 +13,7 @@ import {
   type Instrumentations,
 } from "./util.ts";
 
-const debug = Debug(`${debugPrefix}:middleware`);
+const devDebug = Debug(`${debugPrefix}:middleware`);
 
 class InngestTracesLogger implements DiagLogger {
   #logger = Debug(`${debugPrefix}:diag`);
@@ -73,7 +73,7 @@ export const extendedTracesMiddleware = ({
   instrumentations,
   logLevel = DiagLogLevel.ERROR,
 }: ExtendedTracesMiddlewareOptions = {}) => {
-  debug("behaviour:", behaviour);
+  devDebug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
 
@@ -81,14 +81,14 @@ export const extendedTracesMiddleware = ({
     case "auto": {
       const extended = extendProvider(behaviour);
       if (extended.success) {
-        debug("extended existing provider");
+        devDebug("extended existing provider");
         processor = extended.processor;
         break;
       }
 
       const created = createProvider(behaviour, instrumentations);
       if (created.success) {
-        debug("created new provider");
+        devDebug("created new provider");
         processor = created.processor;
         break;
       }
@@ -100,7 +100,7 @@ export const extendedTracesMiddleware = ({
     case "createProvider": {
       const created = createProvider(behaviour, instrumentations);
       if (created.success) {
-        debug("created new provider");
+        devDebug("created new provider");
         processor = created.processor;
         break;
       }
@@ -114,7 +114,7 @@ export const extendedTracesMiddleware = ({
     case "extendProvider": {
       const extended = extendProvider(behaviour);
       if (extended.success) {
-        debug("extended existing provider");
+        devDebug("extended existing provider");
         processor = extended.processor;
         break;
       }
@@ -146,7 +146,7 @@ export const extendedTracesMiddleware = ({
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
       // Set the logger for our otel processors and exporters.
       // If this is called multiple times, only the first call is set.
-      debug(
+      devDebug(
         "set otel diagLogger:",
         diag.setLogger(new InngestTracesLogger(), logLevel),
       );
