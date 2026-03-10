@@ -1,12 +1,15 @@
+import Debug from "debug";
 import { ZodError, z } from "zod/v3";
 import type { InngestApi } from "../api/api.ts";
 import { stepSchema } from "../api/schema.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
 import type { Logger } from "../middleware/logger.ts";
 import { err, ok, type Result } from "../types.ts";
-import type { ExecutionVersion } from "./consts.ts";
+import { debugPrefix, type ExecutionVersion } from "./consts.ts";
 import { formatLogMessage } from "./log.ts";
 import type { Await } from "./types.ts";
+
+const devDebug = Debug(`${debugPrefix}:functions`);
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -78,7 +81,7 @@ export const undefinedToNull = (v: unknown) => {
   return isUndefined ? null : v;
 };
 
-export const createVersionSchema = (logger: Logger) =>
+export const createVersionSchema = (internalLogger: Logger) =>
   z
     .literal(-1)
     .or(z.literal(0))
@@ -87,10 +90,7 @@ export const createVersionSchema = (logger: Logger) =>
     .optional()
     .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
       if (typeof v === "undefined") {
-        logger.debug(
-          { defaultVersion: PREFERRED_ASYNC_EXECUTION_VERSION },
-          "No request version specified by executor; using default",
-        );
+        devDebug("No request version specified by executor; using default");
 
         return {
           sdkDecided: true,
@@ -99,7 +99,7 @@ export const createVersionSchema = (logger: Logger) =>
       }
 
       if (v === 0) {
-        logger.error("V0 execution version is no longer supported"); // TODO: improve?
+        internalLogger.error("V0 execution version is no longer supported"); // TODO: improve?
         throw new Error("V0 execution version is no longer supported");
       }
 
@@ -119,9 +119,9 @@ export const createVersionSchema = (logger: Logger) =>
 export const parseFnData = (
   data: unknown,
   headerVersion: unknown | undefined,
-  logger: Logger,
+  internalLogger: Logger,
 ) => {
-  const versionSchema = createVersionSchema(logger);
+  const versionSchema = createVersionSchema(internalLogger);
   const fnDataVersionSchema = z.object({ version: versionSchema });
   let version: ExecutionVersion | undefined;
   let sdkDecided: boolean = true;

@@ -14,6 +14,7 @@ import {
 import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
+  checkModeConfiguration,
   type Env,
   getPlatformName,
   inngestHeaders,
@@ -2492,18 +2493,14 @@ export class InngestCommHandler<
    * Check that the current mode has the configuration it requires.
    * Returns `true` if valid, `false` if not.
    */
-  private checkModeConfiguration(): boolean {
+  checkModeConfiguration(): boolean {
     this.client.setEnvVars(this.env);
 
-    if (this.client.mode === "cloud" && !this.client.signingKey) {
-      this.client[internalLoggerSymbol].error(
-        `In cloud mode but no signing key found. For local dev, set the INNGEST_DEV=1 env var. For production, set the ${envKeys.InngestSigningKey} env var`,
-      );
-
-      return false;
-    }
-
-    return true;
+    return checkModeConfiguration({
+      mode: this.client.mode,
+      signingKey: this.client.signingKey,
+      internalLogger: this.client[internalLoggerSymbol],
+    });
   }
 
   /**

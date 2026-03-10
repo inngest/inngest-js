@@ -229,6 +229,12 @@ describe("createStrategy", () => {
   const stubConfig = {
     hashedSigningKey: undefined,
     hashedFallbackKey: undefined,
+    internalLogger: {
+      debug: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+    },
     envName: undefined,
     apiBaseUrl: undefined,
     mode: { isDev: true, isInferred: false },

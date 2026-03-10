@@ -37,21 +37,19 @@ const maxBackoffMs = 30_000;
  */
 export class WorkerThreadStrategy extends BaseStrategy {
   private readonly config: StrategyConfig;
-  private readonly internalLogger: Logger;
   private worker: Worker | undefined;
   private consecutiveCrashes = 0;
   private _connectionId: string | undefined;
 
   constructor(config: StrategyConfig) {
-    super();
-    this.config = config;
-
-    const primaryApp = this.config.options.apps[0];
+    const primaryApp = config.options.apps[0];
     if (!primaryApp) {
       // Unreachable
       throw new Error("No apps");
     }
-    this.internalLogger = primaryApp.client[internalLoggerSymbol];
+
+    super({ logger: primaryApp.client[internalLoggerSymbol] });
+    this.config = config;
   }
 
   get connectionId(): string | undefined {
@@ -61,7 +59,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
   async close(): Promise<void> {
     this.cleanupShutdown();
     this.setClosing();
-    this.debugLog("Closing worker thread connection");
+    this.internalLogger.debug("Closing worker thread connection");
 
     if (this.worker) {
       // Send close message to worker
@@ -75,7 +73,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
         }
 
         const timeout = setTimeout(() => {
-          this.debugLog("Worker close timeout, terminating");
+          this.internalLogger.debug("Worker close timeout, terminating");
 
           // Force terminate the worker to avoid hanging. Ideally this should
           // never happen, since the worker thread should've exited
@@ -93,12 +91,12 @@ export class WorkerThreadStrategy extends BaseStrategy {
     }
 
     this.setClosed();
-    this.debugLog("Worker thread connection closed");
+    this.internalLogger.debug("Worker thread connection closed");
   }
 
   async connect(attempt = 0): Promise<void> {
     this.throwIfClosingOrClosed();
-    this.debugLog("Starting worker thread connection", { attempt });
+    this.internalLogger.debug({ attempt }, "Starting worker thread connection");
 
     this.setupShutdownSignalIfConfigured(
       this.config.options.handleShutdownSignals,
@@ -156,7 +154,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
     const ext = extname(currentFilePath);
     const runnerPath = join(dirname(currentFilePath), `runner${ext}`);
 
-    this.debugLog("Creating worker thread", { runnerPath });
+    this.internalLogger.debug({ runnerPath }, "Creating worker thread");
 
     // Create the worker with TypeScript support via tsx or ts-node
     // In production builds, this will be JavaScript
@@ -171,12 +169,12 @@ export class WorkerThreadStrategy extends BaseStrategy {
     });
 
     this.worker.on("error", (err) => {
-      this.debugLog("Worker error", err.message);
+      this.internalLogger.debug({ err }, "Worker error");
       this._state = ConnectionState.RECONNECTING;
     });
 
     this.worker.on("exit", (code) => {
-      this.debugLog("Worker exited", { code });
+      this.internalLogger.debug({ code }, "Worker exited");
       if (
         this._state === ConnectionState.CLOSING ||
         this._state === ConnectionState.CLOSED
@@ -229,7 +227,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
             this.sendToWorker({ type: "CONNECT", attempt: 0 });
           })
           .catch((err) => {
-            this.internalLogger.error({ err }, "Failed to recreate worker");
+            this.internalLogger.debug({ err }, "Failed to recreate worker");
           });
       }, backoff);
     });
@@ -239,21 +237,27 @@ export class WorkerThreadStrategy extends BaseStrategy {
     switch (msg.type) {
       case "STATE_CHANGE":
         this._state = msg.state;
-        this.debugLog("State changed", { state: msg.state });
+        this.internalLogger.debug({ state: msg.state }, "State changed");
         break;
 
       case "CONNECTION_READY":
         this._connectionId = msg.connectionId;
         this.consecutiveCrashes = 0;
-        this.debugLog("Connection ready", { connectionId: msg.connectionId });
+        this.internalLogger.debug(
+          { connectionId: msg.connectionId },
+          "Connection ready",
+        );
         break;
 
       case "ERROR":
         if (msg.fatal) {
-          this.debugLog("Fatal error from worker", { error: msg.error });
+          this.internalLogger.error(
+            { errorMessage: msg.error },
+            "Fatal error from worker",
+          );
         } else {
           this.internalLogger.error(
-            { err: new Error(msg.error) },
+            { errorMessage: msg.error },
             "Worker error",
           );
         }
@@ -277,25 +281,12 @@ export class WorkerThreadStrategy extends BaseStrategy {
   private handleWorkerLog(
     level: "debug" | "info" | "warn" | "error",
     message: string,
-    data?: unknown,
+    data?: Record<string, unknown>,
   ): void {
-    // If data is nullish, set it to an empty string. This avoids seeing `null`
-    // and `undefined` in logs
-    data = data ?? "";
-
-    switch (level) {
-      case "debug":
-        this.debugLog(message, data);
-        break;
-      case "info":
-        this.internalLogger.info({ data }, message);
-        break;
-      case "warn":
-        this.internalLogger.warn({ data }, message);
-        break;
-      case "error":
-        this.internalLogger.error({ data }, message);
-        break;
+    if (data) {
+      this.internalLogger[level](data, message);
+    } else {
+      this.internalLogger[level](message);
     }
   }
 
@@ -313,9 +304,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
         this.config.requestHandlers[gatewayExecutorRequest.appName];
 
       if (!requestHandler) {
-        this.debugLog("No handler for app", {
-          appName: gatewayExecutorRequest.appName,
-        });
+        this.internalLogger.debug(
+          { appName: gatewayExecutorRequest.appName },
+          "No handler for app",
+        );
         this.sendToWorker({
           type: "EXECUTION_ERROR",
           requestId,
@@ -335,10 +327,13 @@ export class WorkerThreadStrategy extends BaseStrategy {
         response: responseBytes,
       });
     } catch (err) {
-      this.debugLog("Execution error", {
-        requestId,
-        error: err instanceof Error ? err.message : err,
-      });
+      let error: Error | undefined;
+      if (err instanceof Error) {
+        error = err;
+      } else {
+        error = new Error(String(err));
+      }
+      this.internalLogger.debug({ err: error, requestId }, "Execution error");
       this.sendToWorker({
         type: "EXECUTION_ERROR",
         requestId,
@@ -349,7 +344,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
   private sendToWorker(msg: MainToWorkerMessage): void {
     if (!this.worker) {
-      this.debugLog("Cannot send message, no worker");
+      this.internalLogger.error("Cannot send message, no worker");
       return;
     }
     this.worker.postMessage(msg);
