@@ -60,7 +60,7 @@ export const referenceFunction = <
   functionId,
   appId,
 }: TArgs extends InngestFunction.Any
-  ? // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  ? // biome-ignore lint/suspicious/noExplicitAny: intentional
     Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas">
   : TArgs): InngestFunctionReference.HelperReturn<TArgs> => {
   return new InngestFunctionReference({
@@ -91,7 +91,7 @@ export namespace InngestFunctionReference {
    */
   export type Any = InngestFunctionReference<
     MinimalEventPayload,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
   >;
 
@@ -165,16 +165,16 @@ export namespace InngestFunctionReference {
       >
     : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput>
       ? InngestFunctionReference<
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          // biome-ignore lint/suspicious/noExplicitAny: intentional
           IsAny<ResolveSchema<TFnInput, TFnInput, any>> extends true
             ? MinimalEventPayload
             : Simplify<
-                // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                // biome-ignore lint/suspicious/noExplicitAny: intentional
                 MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> &
                   Required<
                     Pick<
                       MinimalEventPayload<
-                        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                        // biome-ignore lint/suspicious/noExplicitAny: intentional
                         ResolveSchema<TFnInput, TFnInput, any>
                       >,
                       "data"

@@ -22,6 +22,8 @@ import {
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
+import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
@@ -43,8 +45,7 @@ const commHandler = (
     syncOptions,
     handler: (req: Request) => {
       return {
-        body: () => req.json(),
-        textBody: () => req.text(),
+        body: () => req.text(),
         headers: (key: string) => req.headers.get(key),
         method: () => req.method,
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
@@ -96,6 +97,35 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
 };
 
 /**
+ * Creates a durable endpoint proxy handler for edge environments.
+ *
+ * This handler extracts `runId` and `token` from query parameters,
+ * fetches the run output from Inngest, decrypts it via middleware
+ * (if configured), and returns it with CORS headers.
+ */
+const createDurableEndpointProxyHandler = (
+  options: InngestEndpointAdapter.ProxyHandlerOptions,
+): EdgeHandler => {
+  return async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+
+    const result = await handleDurableEndpointProxyRequest(
+      options.client as Inngest.Any,
+      {
+        runId: url.searchParams.get("runId"),
+        token: url.searchParams.get("token"),
+        method: req.method,
+      },
+    );
+
+    return new Response(result.body, {
+      status: result.status,
+      headers: result.headers,
+    });
+  };
+};
+
+/**
  * In an edge runtime, create a function that can wrap any endpoint to be able
  * to use steps seamlessly within that API.
  *
@@ -106,15 +136,16 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
  * @example
  * ```ts
  * import { Inngest, step } from "inngest";
- * import { createExperimentalEndpointWrapper } from "inngest/edge";
+ * import { endpointAdapter } from "inngest/edge";
  *
- * const wrap = createExperimentalEndpointWrapper({
- *   client: new Inngest({ id: "my-app" }),
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter,
  * });
  *
  * Bun.serve({
  *   routes: {
- *     "/": wrap(async (req) => {
+ *     "/": inngest.endpoint(async (req) => {
  *       const foo = await step.run("my-step", () => ({ foo: "bar" }));
  *
  *       return new Response(`Result: ${JSON.stringify(foo)}`);
@@ -122,9 +153,31 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
  *   },
  * });
  * ```
+ *
+ * You can also configure a custom redirect URL and create a proxy endpoint:
+ *
+ * @example
+ * ```ts
+ * import { Inngest } from "inngest";
+ * import { endpointAdapter } from "inngest/edge";
+ *
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   endpointAdapter: endpointAdapter.withOptions({
+ *     asyncRedirectUrl: "/api/inngest/poll",
+ *   }),
+ * });
+ *
+ * // Your durable endpoint
+ * export const GET = inngest.endpoint(async (req) => {
+ *   const result = await step.run("work", () => "done");
+ *   return new Response(result);
+ * });
+ *
+ * // Proxy endpoint at /api/inngest/poll - handles CORS and decryption
+ * export const GET = inngest.endpointProxy();
+ * ```
  */
-export const createExperimentalEndpointWrapper = (
-  options: SyncHandlerOptions,
-) => {
+export const endpointAdapter = InngestEndpointAdapter.create((options) => {
   return commHandler(options, options).createSyncHandler();
-};
+}, createDurableEndpointProxyHandler);

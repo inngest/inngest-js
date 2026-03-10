@@ -1,5 +1,14 @@
 # @inngest/realtime
 
+## 0.4.6
+
+### Patch Changes
+
+- [#1290](https://github.com/inngest/inngest-js/pull/1290) [`fd4c4c62`](https://github.com/inngest/inngest-js/commit/fd4c4c62c8e9b629fe91a6efcf1399b018be7f2e) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix issue where `useInngestSubscription` does not refresh the token when enabled prop is change from false to true.
+
+- Updated dependencies [[`daf858f0`](https://github.com/inngest/inngest-js/commit/daf858f0c51d92941958ad02b499d6a6a7643a76), [`32b59507`](https://github.com/inngest/inngest-js/commit/32b595073e73ac3e7c414366c2d6b29fddeccce6), [`9c8f5d94`](https://github.com/inngest/inngest-js/commit/9c8f5d94bdd634f25391fafb592ad7bb7e16c710), [`5717c64b`](https://github.com/inngest/inngest-js/commit/5717c64babe40857e961638ff742c7aa23495328), [`9a7b0528`](https://github.com/inngest/inngest-js/commit/9a7b052814b954cc5c2751646e8eecc1e4f36b64)]:
+  - inngest@3.52.0
+
 ## 0.4.5
 
 ### Patch Changes

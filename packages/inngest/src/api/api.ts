@@ -1,19 +1,15 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import type { ActionResponse } from "../components/InngestCommHandler.ts";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-  type ExecutionVersion,
-} from "../helpers/consts.ts";
-import { devServerAvailable } from "../helpers/devserver.ts";
+import type { ExecutionVersion } from "../helpers/consts.ts";
 import type { Mode } from "../helpers/env.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
+import { resolveApiBaseUrl } from "../helpers/url.ts";
 import {
   type APIStepPayload,
   err,
+  type MetadataTarget,
   type OutgoingOp,
   ok,
   type Result,
@@ -128,24 +124,13 @@ export class InngestApi {
   }
 
   private async getTargetUrl(path: string): Promise<URL> {
-    if (this.apiBaseUrl) {
-      return new URL(path, this.apiBaseUrl);
-    }
+    const baseUrl = await resolveApiBaseUrl({
+      apiBaseUrl: this.apiBaseUrl,
+      mode: this.mode,
+      fetch: this.fetch,
+    });
 
-    let url = new URL(path, defaultInngestApiBaseUrl);
-
-    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        this.fetch,
-      );
-
-      if (devAvailable) {
-        url = new URL(path, defaultDevServerHost);
-      }
-    }
-
-    return url;
+    return new URL(path, baseUrl);
   }
 
   private async req(
@@ -408,6 +393,63 @@ export class InngestApi {
       });
   }
 
+  async updateMetadata(
+    args: {
+      target: MetadataTarget;
+      metadata: Array<{
+        kind: string;
+        op: string;
+        values: Record<string, unknown>;
+      }>;
+    },
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<void, ErrorResponse>> {
+    const payload = { target: args.target, metadata: args.metadata };
+
+    const result = await this.req(`/v1/runs/${args.target.run_id}/metadata`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: options?.headers,
+    });
+
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error updating metadata"),
+        status: 500,
+      });
+    }
+
+    const res = result.value;
+    if (res.ok) {
+      return ok<void>(undefined);
+    }
+
+    const resClone = res.clone();
+
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${
+          res.statusText
+        } - ${await resClone.text()}`,
+        status: res.status,
+      });
+    }
+
+    try {
+      return err(errorSchema.parse(json));
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+        status: res.status,
+      });
+    }
+  }
+
   /**
    * Start a new run, optionally passing in a number of steps to initialize the
    * run with.
@@ -415,6 +457,8 @@ export class InngestApi {
   async checkpointNewRun(args: {
     runId: string;
     event: APIStepPayload;
+    executionVersion: ExecutionVersion;
+    retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({
@@ -422,6 +466,8 @@ export class InngestApi {
       event: args.event,
       steps: args.steps,
       ts: new Date().valueOf(),
+      request_version: args.executionVersion,
+      retries: args.retries,
     });
 
     const result = await this.req("/v1/checkpoint", {
@@ -444,7 +490,9 @@ export class InngestApi {
     }
 
     throw new Error(
-      `Failed to checkpoint new run: ${res.status} ${res.statusText} - ${await res.text()}`,
+      `Failed to checkpoint new run: ${res.status} ${
+        res.statusText
+      } - ${await res.text()}`,
     );
   }
 
@@ -479,7 +527,9 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint steps: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint steps: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
   }
@@ -515,8 +565,30 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint async: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint async: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
+  }
+
+  /**
+   * Fetch the output of a completed run using a token.
+   *
+   * This uses token-based auth (not signing key) and is intended for use by
+   * proxy endpoints that fetch results on behalf of users.
+   *
+   * @param runId - The ID of the run to fetch output for
+   * @param token - The token used to authenticate the request
+   * @returns The raw Response from the API
+   */
+  async getRunOutput(runId: string, token: string): Promise<Response> {
+    const url = await this.getTargetUrl(`/v1/http/runs/${runId}/output`);
+    url.searchParams.set("token", token);
+
+    return this.fetch(url.toString(), {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

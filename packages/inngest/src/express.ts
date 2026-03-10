@@ -61,7 +61,7 @@ export const frameworkName: SupportedFrameworkName = "express";
  * @public
  */
 // Has explicit return type to avoid JSR-defined "slow types"
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const serve = (options: ServeHandlerOptions): any => {
   const handler = new InngestCommHandler({
     frameworkName,

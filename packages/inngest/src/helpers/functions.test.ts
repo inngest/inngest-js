@@ -25,6 +25,7 @@ describe("#parseFnData", () => {
       name: "should parse successfully for valid data",
       data: {
         version: 1,
+        sdkDecided: true,
         event: generateEvent(),
         events: [...Array.from(Array(5).keys())].map(() => generateEvent()),
         steps: {},
@@ -69,7 +70,7 @@ describe("#parseFnData", () => {
     },
   ];
 
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   specs.forEach((test) => {
     it(test.name, () => {
       if (test.isOk) {

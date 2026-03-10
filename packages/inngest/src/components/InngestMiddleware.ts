@@ -87,14 +87,14 @@ export namespace InngestMiddleware {
 }
 
 type FnsWithSameInputAsOutput<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   TRecord extends Record<string, (arg: any) => any>,
 > = {
   [K in keyof TRecord as Await<TRecord[K]> extends Parameters<TRecord[K]>[0]
     ? K
-    : // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+    : // biome-ignore lint/suspicious/noConfusingVoidType: intentional
       Await<TRecord[K]> extends undefined | void
-      ? // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+      ? // biome-ignore lint/suspicious/noConfusingVoidType: intentional
         Parameters<TRecord[K]>[0] extends undefined | void
         ? K
         : never
@@ -102,7 +102,7 @@ type FnsWithSameInputAsOutput<
 };
 
 type PromisifiedFunctionRecord<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   TRecord extends Record<string, (arg: any) => any>,
 > = Pick<
   Partial<{
@@ -137,7 +137,7 @@ export type SendEventHookStack = PromisifiedFunctionRecord<
  * Lets the middleware initialize before starting.
  */
 export const getHookStack = async <
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   TMiddleware extends Record<string, (arg: any) => any>,
   TKey extends keyof TMiddleware,
   TResult extends Await<TMiddleware[TKey]>,
@@ -169,7 +169,7 @@ export const getHookStack = async <
     keyof {
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
-        : // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+        : // biome-ignore lint/suspicious/noConfusingVoidType: intentional
           Await<TResult[K]> extends undefined | void
           ? K
           : never]: undefined;
@@ -238,9 +238,15 @@ export const getHookStack = async <
     }
   }
 
-  // Cache each function in the stack to ensure each can only be called once
+  // Cache each function in the stack to ensure each can only be called once.
+  // Except for transformOutput, which needs to be called multiple times (e.g.,
+  // for each step during checkpointing).
   for (const k of Object.keys(ret)) {
     const key = k as keyof typeof ret;
+
+    if (key === "transformOutput") {
+      continue;
+    }
 
     ret[key] = cacheFn(
       ret[key] as (...args: unknown[]) => unknown,
@@ -512,7 +518,7 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<
       // transformStep?: (data: unknown) => unknown;
     }
   | undefined
-  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  // biome-ignore lint/suspicious/noConfusingVoidType: intentional
   | void
 >;
 
@@ -538,7 +544,7 @@ type MiddlewareSendEventInput = (
       payloads?: EventPayload[];
     }
   | undefined
-  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  // biome-ignore lint/suspicious/noConfusingVoidType: intentional
   | void
 >;
 
@@ -555,7 +561,7 @@ type MiddlewareSendEventOutputArgs = { result: Readonly<SendEventBaseOutput> };
  */
 type MiddlewareSendEventOutput = (
   ctx: MiddlewareSendEventOutputArgs,
-  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  // biome-ignore lint/suspicious/noConfusingVoidType: intentional
 ) => MaybePromise<{ result?: Record<string, unknown> } | undefined | void>;
 
 /**
@@ -569,7 +575,7 @@ type MiddlewareRunOutput = (ctx: {
       result?: Partial<Pick<OutgoingOp, "data" | "error">>;
     }
   | undefined
-  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  // biome-ignore lint/suspicious/noConfusingVoidType: intentional
   | void
 >;
 

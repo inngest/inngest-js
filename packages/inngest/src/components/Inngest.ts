@@ -18,7 +18,11 @@ import {
   type Mode,
   processEnv,
 } from "../helpers/env.ts";
-import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
+import {
+  type ErrCode,
+  fixEventKeyMissingSteps,
+  prettyError,
+} from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
@@ -42,14 +46,20 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
+  type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
   sendEventResponseSchema,
   type TriggersFromClient,
 } from "../types.ts";
 import type { EventSchemas } from "./EventSchemas.ts";
+import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import {
+  type MetadataBuilder,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
 import {
   type ExtendWithMiddleware,
   getHookStack,
@@ -58,6 +68,8 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
+import { step } from "./InngestStepTools";
+import type { Realtime } from "./realtime/types";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -142,7 +154,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly fetch: FetchT;
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
@@ -169,6 +180,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private _appVersion: string | undefined;
 
+  /**
+   * @internal
+   * Flag set by metadataMiddleware to enable step.metadata()
+   */
+  protected experimentalMetadataEnabled = false;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -183,6 +200,28 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   get appVersion(): string | undefined {
     return this._appVersion;
+  }
+
+  /**
+   * Access the metadata builder for updating run and step metadata.
+   *
+   * @example
+   * ```ts
+   * // Update metadata for the current run
+   * await inngest.metadata.update({ status: "processing" });
+   *
+   * // Update metadata for a different run
+   * await inngest.metadata.run(otherRunId).update({ key: "val" });
+   *
+   * ```
+   */
+  get metadata(): MetadataBuilder {
+    if (!this.experimentalMetadataEnabled) {
+      throw new Error(
+        'inngest.metadata is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
+    return new UnscopedMetadataBuilder(this);
   }
 
   /**
@@ -475,6 +514,262 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     throw new Error(
       `Failed to send signal: ${res.error?.error || "Unknown error"}`,
     );
+  }
+
+  private async updateMetadata({
+    target,
+    metadata,
+    headers,
+  }: {
+    target: MetadataTarget;
+    metadata: Array<{
+      kind: string;
+      op: string;
+      values: Record<string, unknown>;
+    }>;
+    headers?: Record<string, string>;
+  }): Promise<void> {
+    const res = await this.inngestApi.updateMetadata(
+      {
+        target,
+        metadata,
+      },
+      { headers },
+    );
+    if (res.ok) {
+      return res.value;
+    }
+
+    throw new Error(
+      `Failed to update metadata: ${res.error?.error || "Unknown error"}`,
+    );
+  }
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
+  private async warnMetadata(
+    target: MetadataTarget,
+    kind: ErrCode,
+    text: string,
+  ) {
+    this.logger.warn(text);
+
+    if (!this.experimentalMetadataEnabled) return;
+
+    await this.updateMetadata({
+      target: target,
+      metadata: [
+        {
+          kind: "inngest.warnings",
+          op: "merge",
+          values: {
+            [`sdk.${kind}`]: text,
+          },
+        },
+      ],
+    });
+  }
+
+  /**
+   * Realtime-related functionality for this Inngest client.
+   */
+  public realtime: {
+    /**
+     * Unlike step-level realtime methods (`step.realtime.*`), these tools will
+     * never be their own durable steps when run. Use these methods inside of a
+     * step to make them durable, or anywhere outside of an Inngest function
+     * too.
+     */
+    publish: Realtime.PublishFn;
+
+    /**
+     * Generate a subscription token for subscribing to realtime messages.
+     */
+    getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
+  } = {
+    publish: async (opts) => {
+      const [{ topic, channel, data }, ctx] = await Promise.all([
+        opts,
+        getAsyncCtx(),
+      ]);
+
+      const runId = ctx?.execution?.ctx.runId;
+
+      const res = await this.inngestApi.publish(
+        {
+          channel: channel,
+          topics: [topic],
+          runId,
+        },
+        data,
+      );
+
+      if (res.ok) {
+        return data;
+      }
+
+      throw new Error(
+        `Failed to publish event: ${res.error?.error || "Unknown error"}`,
+      );
+    },
+
+    getSubscriptionToken: async ({ channel, topics }) => {
+      const channelId = typeof channel === "string" ? channel : channel.name;
+      if (!channelId) {
+        throw new Error(
+          "Channel ID is required to create a subscription token",
+        );
+      }
+
+      const key = await this.inngestApi.getSubscriptionToken(channelId, topics);
+
+      return {
+        channel: channelId,
+        topics,
+        key,
+        // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
+      } as any;
+    },
+  };
+
+  public endpoint<THandler extends Inngest.EndpointHandler<this>>(
+    handler: THandler,
+  ): THandler {
+    if (!this.options.endpointAdapter) {
+      throw new Error(
+        "No endpoint adapter configured for this Inngest client.",
+      );
+    }
+
+    return this.options.endpointAdapter({ client: this })(handler);
+  }
+
+  /**
+   * Creates a proxy handler that polls Inngest for durable endpoint results.
+   *
+   * The proxy:
+   * - Extracts `runId` and `token` from query params
+   * - Fetches the result from Inngest API
+   * - Runs the response through middleware (e.g., decryption)
+   * - Adds CORS headers
+   *
+   * Use this in combination with the `asyncRedirectUrl` option on your
+   * endpoint adapter to redirect users to your own proxy endpoint instead
+   * of directly to Inngest.
+   *
+   * @example
+   * ```ts
+   * import { Inngest } from "inngest";
+   * import { endpointAdapter } from "inngest/edge";
+   *
+   * const inngest = new Inngest({
+   *   id: "my-app",
+   *   endpointAdapter: endpointAdapter.withOptions({
+   *     asyncRedirectUrl: "/api/inngest/poll",
+   *   }),
+   * });
+   *
+   * // Durable endpoint
+   * export const GET = inngest.endpoint(async (req) => {
+   *   const result = await step.run("work", () => "done");
+   *   return new Response(result);
+   * });
+   *
+   * // Proxy endpoint at /api/inngest/poll
+   * export const GET = inngest.endpointProxy();
+   * ```
+   */
+  public endpointProxy(): Inngest.ProxyHandler<this> {
+    if (!this.options.endpointAdapter) {
+      throw new Error(
+        "No endpoint adapter configured for this Inngest client.",
+      );
+    }
+
+    if (!this.options.endpointAdapter.createProxyHandler) {
+      throw new Error(
+        "The configured endpoint adapter does not support proxy handlers.",
+      );
+    }
+
+    return this.options.endpointAdapter.createProxyHandler({ client: this });
+  }
+
+  /**
+   * Decrypt a proxy response using the client's middleware stack.
+   *
+   * This is called internally by proxy handlers to decrypt E2E encrypted
+   * function results. It runs the `transformInput` hook which handles
+   * decryption in encryption middleware.
+   *
+   * Uses type assertions because we're creating a minimal "fake" execution
+   * context just to run the decryption middleware hooks - not a full execution.
+   *
+   * @internal
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via bracket notation by InngestProxyHandler
+  private async decryptProxyResult<T extends { data?: unknown }>(
+    result: T,
+  ): Promise<T> {
+    // If there's no data, nothing to decrypt
+    if (!result.data) {
+      return result;
+    }
+
+    // Create a minimal context for the middleware
+    // We pass result.data as a "step" since that's what encryption middleware
+    // expects to decrypt in transformInput
+    const dummyEvent = { name: "__proxy__", data: {} };
+
+    // The middleware system expects a full execution context. We create a
+    // context that satisfies the types while containing minimal real data.
+    // The encryption middleware only uses `steps[].data` for decryption.
+    const proxyFn = {
+      id: () => "__proxy__",
+      name: "__proxy__",
+    } as InngestFunction.Any;
+
+    const hooks = await getHookStack(
+      this.middleware,
+      "onFunctionRun",
+      {
+        ctx: { event: dummyEvent, runId: "__proxy__" },
+        fn: proxyFn,
+        steps: [{ id: "__result__", data: result.data }],
+        reqArgs: [] as readonly unknown[],
+      },
+      {
+        transformInput: (prev, output) => ({
+          ctx: { ...prev.ctx, ...output?.ctx },
+          fn: proxyFn,
+          steps: prev.steps.map((step, i) => ({
+            ...step,
+            ...output?.steps?.[i],
+          })),
+          reqArgs: prev.reqArgs,
+        }),
+        transformOutput: (prev, output) => ({
+          result: { ...prev.result, ...output?.result },
+        }),
+      },
+    );
+
+    const transformed = await hooks.transformInput?.({
+      ctx: {
+        event: dummyEvent,
+        events: [dummyEvent],
+        runId: "__proxy__",
+        attempt: 0,
+        step,
+      },
+      fn: proxyFn,
+      reqArgs: [],
+      steps: [{ id: "__result__", data: result.data }],
+    });
+
+    // Extract decrypted data from the steps
+    const decryptedData = transformed?.steps?.[0]?.data ?? result.data;
+
+    return { ...result, data: decryptedData };
   }
 
   /**
@@ -905,6 +1200,24 @@ export namespace Inngest {
     readonly [Symbol.toStringTag]: typeof Inngest.Tag;
   }
 
+  export type EndpointHandler<TClient extends Inngest.Any> = ReturnType<
+    NonNullable<ClientOptionsFromInngest<TClient>["endpointAdapter"]>
+  >;
+
+  /**
+   * The type of the proxy handler returned by `endpointProxy()`.
+   *
+   * This type is inferred from the `createProxyHandler` function of the
+   * endpoint adapter configured on the client.
+   */
+  export type ProxyHandler<TClient extends Inngest.Any> = ReturnType<
+    NonNullable<
+      NonNullable<
+        ClientOptionsFromInngest<TClient>["endpointAdapter"]
+      >["createProxyHandler"]
+    >
+  >;
+
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
     TTrigger extends SingleOrArray<
@@ -1063,7 +1376,7 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
@@ -1081,7 +1394,7 @@ export type GetFunctionOutputFromInngestFunction<
  */
 export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
   ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
     ? null

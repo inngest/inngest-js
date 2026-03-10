@@ -33,7 +33,7 @@ testFramework("SvelteKit", SvelteKitHandler, {
   },
   transformReq: (req, _res, _env) => {
     const headers = new Headers();
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
@@ -43,7 +43,10 @@ testFramework("SvelteKit", SvelteKitHandler, {
         method: req.method,
         url: req.url,
         headers,
-        json: () => Promise.resolve(req.body),
+        text: () =>
+          Promise.resolve(
+            req.body === undefined ? "" : JSON.stringify(req.body),
+          ),
       }),
     };
 

@@ -28,6 +28,10 @@ export default defineConfig({
     "src/remix.ts",
     "src/sveltekit.ts",
     "src/types.ts",
+
+    // Connect worker thread runner. Must be an entrypoint so that it compiles
+    "src/components/connect/strategies/workerThread/runner.ts",
+
     "!src/test/**/*",
     "!src/**/*.test.*",
   ],

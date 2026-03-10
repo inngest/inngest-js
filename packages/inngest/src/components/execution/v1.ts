@@ -3,6 +3,7 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 import {
+  defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
   internalEvents,
@@ -23,6 +24,7 @@ import {
   goIntervalTiming,
   resolveAfterPending,
   resolveNextTick,
+  retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
@@ -41,6 +43,12 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+  MetadataUpdate,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -55,6 +63,7 @@ import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
+  type BasicFoundStep,
   type ExecutionResult,
   type IInngestExecution,
   InngestExecution,
@@ -65,6 +74,17 @@ import {
 import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
+
+/**
+ * Retry configuration for checkpoint operations.
+ *
+ * Checkpoint calls use exponential backoff with jitter to handle transient
+ * network failures (e.g., dev server temporarily down, cloud hiccup). If
+ * retries exhaust, the error propagates up - for Sync mode this results in a
+ * 500 error, for AsyncCheckpointing the caller handles fallback.
+ */
+const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -88,6 +108,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * If we're not supposed to run a particular step, this will be `undefined`.
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
+  private rootSpanId?: string;
 
   /**
    * If we're checkpointing and have been given a maximum runtime, this will be
@@ -96,6 +117,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * environments.
    */
   private checkpointingMaxRuntimeTimer?: ReturnType<
+    typeof createTimeoutPromise
+  >;
+
+  /**
+   * If we're checkpointing and have been given a maximum buffer interval, this
+   * will be a `Promise` that resolves after that duration has elapsed, allowing
+   * us to periodically checkpoint even if the step buffer hasn't filled.
+   */
+  private checkpointingMaxBufferIntervalTimer?: ReturnType<
     typeof createTimeoutPromise
   >;
 
@@ -153,6 +183,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
+              this.rootSpanId = span.spanContext().spanId;
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
                 span,
                 runId: this.options.runId,
@@ -175,6 +206,24 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    const updates = this.state.metadata.get(stepId) ?? [];
+    updates.push({ kind, scope, op, values });
+    this.state.metadata.set(stepId, updates);
+
+    return true;
   }
 
   /**
@@ -216,11 +265,17 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
-        const res = await this.options.client["inngestApi"].checkpointNewRun({
-          runId: this.fnArg.runId,
-          event: this.fnArg.event as APIStepPayload,
-          steps,
-        });
+        const res = await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointNewRun({
+              runId: this.fnArg.runId,
+              event: this.fnArg.event as APIStepPayload,
+              steps,
+              executionVersion: this.version,
+              retries: this.fnArg.maxAttempts ?? defaultMaxRetries,
+            }),
+          CHECKPOINT_RETRY_OPTIONS,
+        );
 
         this.state.checkpointedRun = {
           appId: res.data.app_id,
@@ -228,12 +283,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           token: res.data.token,
         };
       } else {
-        await this.options.client["inngestApi"].checkpointSteps({
-          appId: this.state.checkpointedRun.appId,
-          fnId: this.state.checkpointedRun.fnId,
-          runId: this.fnArg.runId,
-          steps,
-        });
+        await retryWithBackoff(
+          () =>
+            this.options.client["inngestApi"].checkpointSteps({
+              appId: this.state.checkpointedRun!.appId,
+              fnId: this.state.checkpointedRun!.fnId,
+              runId: this.fnArg.runId,
+              steps,
+            }),
+          CHECKPOINT_RETRY_OPTIONS,
+        );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
       if (!this.options.queueItemId) {
@@ -248,12 +307,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      await this.options.client["inngestApi"].checkpointStepsAsync({
-        runId: this.fnArg.runId,
-        fnId: this.options.internalFnId,
-        queueItemId: this.options.queueItemId,
-        steps,
-      });
+      await retryWithBackoff(
+        () =>
+          this.options.client["inngestApi"].checkpointStepsAsync({
+            runId: this.fnArg.runId,
+            fnId: this.options.internalFnId!,
+            queueItemId: this.options.queueItemId!,
+            steps,
+          }),
+        CHECKPOINT_RETRY_OPTIONS,
+      );
     } else {
       throw new Error(
         "Checkpointing is only supported in Sync and AsyncCheckpointing step modes. This is a bug in the Inngest SDK.",
@@ -368,6 +431,84 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return;
     };
 
+    const attemptCheckpointAndResume = async (
+      stepResult?: OutgoingOp,
+      resume = true,
+      force = false,
+    ) => {
+      // If we're here, we successfully ran a step, so we may now need
+      // to checkpoint it depending on the step buffer configured.
+      if (stepResult) {
+        const stepToResume = this.resumeStepWithResult(stepResult, resume);
+
+        // Clear `executingStep` immediately after resuming, before any await.
+        // `resumeStepWithResult` resolves the step's promise, queuing a
+        // microtask for the function to continue. Any subsequent await (e.g.
+        // the `transformOutput` hook) yields and lets that microtask run, so
+        // `executingStep` must already be cleared to avoid a false positive
+        // NESTING_STEPS warning in the next step's handler.
+        delete this.state.executingStep;
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: stepResult.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? stepResult.data;
+
+        // Buffer a copy with transformed data for checkpointing
+        this.state.checkpointingStepBuffer.push({
+          ...stepToResume,
+          data: transformedData,
+        });
+      }
+
+      if (
+        force ||
+        !this.options.checkpointingConfig?.bufferedSteps ||
+        this.state.checkpointingStepBuffer.length >=
+          this.options.checkpointingConfig.bufferedSteps
+      ) {
+        this.debug("checkpointing and resuming execution after step run");
+
+        try {
+          this.debug(
+            `checkpointing all buffered steps:`,
+            this.state.checkpointingStepBuffer
+              .map((op) => op.displayName || op.id)
+              .join(", "),
+          );
+
+          return void (await this.checkpoint(
+            this.state.checkpointingStepBuffer,
+          ));
+        } catch (err) {
+          // If checkpointing fails for any reason, fall back to the async
+          // flow
+          this.debug(
+            "error checkpointing after step run, so falling back to async",
+            err,
+          );
+
+          if (stepResult) {
+            return stepRanHandler(stepResult);
+          }
+        } finally {
+          // Clear the checkpointing buffer
+          this.state.checkpointingStepBuffer = [];
+        }
+      } else {
+        this.debug(
+          `not checkpointing yet, continuing execution as we haven't reached buffered step limit of ${this.options.checkpointingConfig?.bufferedSteps}`,
+        );
+      }
+
+      return;
+    };
+
     const syncHandlers: CheckpointHandlers[StepMode.Sync] = {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
@@ -376,49 +517,48 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint, i) => {
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: checkpoint.data },
+          step: undefined,
+        });
+        const transformedData =
+          transformedOutput?.result?.data ?? checkpoint.data;
+
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
-            id: _internals.hashId("complete"), // TODO bad ID
-            data: await this.options.createResponse!(checkpoint.data),
+            id: _internals.hashId("complete"), // ID is not important here
+            data: await this.options.createResponse!(transformedData),
           },
         ]);
 
-        // Done - just return the value
-        return {
-          type: "function-resolved",
-          ctx: this.fnArg,
-          ops: this.ops,
-          data: checkpoint.data,
-        };
+        // Apply middleware transformation before returning
+        return await this.transformOutput({ data: checkpoint.data });
       },
 
-      "function-rejected": (checkpoint) => {
+      "function-rejected": async (checkpoint) => {
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
         if (this.inFinalAttempt()) {
-          return {
-            type: "function-rejected",
-            ctx: this.fnArg,
-            error: checkpoint.error,
-            ops: this.ops,
-            retriable: false,
-          };
+          // Apply middleware transformation before returning
+          return await this.transformOutput({ error: checkpoint.error });
         }
 
         // Otherwise, checkpoint the error and switch to async mode
         return this.checkpointAndSwitchToAsync([
           {
-            id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
-            displayName: "complete", // TODO bad display name
+            id: _internals.hashId("complete"), // ID is not important here
             op: StepOpCode.StepError,
             error: checkpoint.error,
           },
         ]);
       },
 
-      "step-not-found": ({ step }) => {
+      "step-not-found": () => {
         return {
           type: "function-rejected",
           ctx: this.fnArg,
@@ -446,9 +586,27 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           return this.checkpointAndSwitchToAsync([result]);
         }
 
-        return void (await this.checkpoint([
-          this.resumeStepWithResult(result),
-        ]));
+        // Resume the step with original data for user code
+        const stepToResume = this.resumeStepWithResult(result);
+
+        // Clear executingStep now that the step result has been processed.
+        // Without this, the next step discovery would see stale state and
+        // emit a false positive NESTING_STEPS warning.
+        delete this.state.executingStep;
+
+        // Transform data for checkpoint (middleware)
+        // Only call the transformOutput hook directly, not the full transformOutput method
+        // which has side effects like calling the finished hook
+        const transformedOutput = await this.state.hooks?.transformOutput?.({
+          result: { data: result.data },
+          step: undefined,
+        });
+        const transformedData = transformedOutput?.result?.data ?? result.data;
+
+        // Create a copy for checkpointing with transformed data
+        const stepForCheckpoint = { ...stepToResume, data: transformedData };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {
@@ -458,6 +616,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             id: _internals.hashId("discovery-request"), // ID doesn't matter
           },
         ]);
+      },
+
+      "checkpointing-buffer-interval-reached": () => {
+        return attemptCheckpointAndResume(undefined, false, true);
       },
     };
 
@@ -505,18 +667,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * While trying to find a step that Inngest has told us to run, we've
        * timed out or have otherwise decided that it doesn't exist.
        */
-      "step-not-found": ({ step }) => {
+      "step-not-found": ({ step, foundSteps, totalFoundSteps }) => {
         return {
           type: "step-not-found",
           ctx: this.fnArg,
           ops: this.ops,
           step,
+          foundSteps,
+          totalFoundSteps,
         };
       },
 
       "checkpointing-runtime-reached": () => {
         throw new Error(
           "Checkpointing maximum runtime reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
+        );
+      },
+
+      "checkpointing-buffer-interval-reached": () => {
+        throw new Error(
+          "Checkpointing maximum buffer interval reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
         );
       },
     };
@@ -530,42 +700,34 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             i,
           );
           if (output?.type === "function-resolved") {
+            const steps = this.state.checkpointingStepBuffer.concat({
+              op: StepOpCode.RunComplete,
+              id: _internals.hashId("complete"), // ID is not important here
+              data: output.data,
+            }) as [OutgoingOp, ...OutgoingOp[]];
+
             return {
               type: "steps-found",
               ctx: output.ctx,
               ops: output.ops,
-              steps: [
-                {
-                  op: StepOpCode.RunComplete,
-                  id: _internals.hashId("complete"), // TODO bad ID. bad bad bad
-                  data: output.data,
-                },
-              ],
+              steps,
             };
           }
 
           return;
         },
-        "function-rejected": asyncHandlers["function-rejected"],
+        "function-rejected": async (checkpoint) => {
+          // If we have buffered steps, attempt checkpointing them first
+          if (this.state.checkpointingStepBuffer.length) {
+            await attemptCheckpointAndResume(undefined, false);
+          }
+
+          return await this.transformOutput({ error: checkpoint.error });
+        },
         "step-not-found": asyncHandlers["step-not-found"],
         "steps-found": async ({ steps }) => {
-          // If we are targeting a step and we have it, run it immediately and
-          // return end
-          if (this.options.requestedRunStep) {
-            this.debug(
-              "async checkpointing looking for step to run, so attempting to find it",
-            );
-
-            const step = steps.find(
-              (s) => s.hashedId === this.options.requestedRunStep && s.fn,
-            );
-            if (step) {
-              const stepResult = await this.executeStep(step);
-              if (stepResult) {
-                return stepRanHandler(stepResult);
-              }
-            }
-          }
+          // Note that if we have a requested run step, we'll never be
+          // checkpointing, as that's an async parallel execution mode.
 
           // Break found steps in to { stepsToResume, newSteps }
           const { stepsToResume, newSteps } = steps.reduce(
@@ -604,22 +766,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 return stepRanHandler(stepResult);
               }
 
-              this.debug("checkpointing and resuming execution after step run");
-
-              try {
-                return void (await this.checkpoint([
-                  this.resumeStepWithResult(stepResult),
-                ]));
-              } catch (err) {
-                // If checkpointing fails for any reason, fall back to the async
-                // flow
-                this.debug(
-                  "error checkpointing after step run, so falling back to async",
-                  err,
-                );
-
-                return stepRanHandler(stepResult);
-              }
+              // If we're here, we successfully ran a step, so we may now need
+              // to checkpoint it depending on the step buffer configured.
+              return await attemptCheckpointAndResume(stepResult);
             }
 
             return maybeReturnNewSteps();
@@ -651,6 +800,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               },
             ],
           };
+        },
+
+        "checkpointing-buffer-interval-reached": () => {
+          return attemptCheckpointAndResume(undefined, false, true);
         },
       };
 
@@ -867,13 +1020,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     this.debug(`executing step "${id}"`);
 
+    if (this.rootSpanId && this.options.checkpointingConfig) {
+      clientProcessorMap
+        .get(this.options.client)
+        ?.declareStepExecution(
+          this.rootSpanId,
+          hashedId,
+          this.options.data?.attempt ?? 0,
+        );
+    }
+
     let interval: GoInterval | undefined;
 
     return goIntervalTiming(() => runAsPromise(fn))
       .finally(async () => {
         this.debug(`finished executing step "${id}"`);
 
-        delete this.state.executingStep;
+        if (this.rootSpanId && this.options.checkpointingConfig) {
+          clientProcessorMap
+            .get(this.options.client)
+            ?.clearStepExecution(this.rootSpanId);
+        }
+
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -882,16 +1050,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
+        const metadata = this.state.metadata?.get(id);
 
         return {
           ...outgoingOp,
           data: await resultPromise,
+          ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
         let errorIsRetriable = true;
 
-        if (error instanceof NonRetriableError) {
+        if (
+          error instanceof NonRetriableError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "NonRetriableError"
+        ) {
           errorIsRetriable = false;
         } else if (
           this.fnArg.maxAttempts &&
@@ -900,12 +1074,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           errorIsRetriable = false;
         }
 
+        const metadata = this.state.metadata?.get(id);
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,
             op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         } else {
           return {
@@ -913,6 +1090,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepFailed,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         }
       })
@@ -937,6 +1115,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     void this.timeout?.start();
     void this.checkpointingMaxRuntimeTimer?.start();
+    void this.checkpointingMaxBufferIntervalTimer?.start();
 
     await this.state.hooks?.beforeMemoization?.();
 
@@ -997,11 +1176,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError } as Partial<OutgoingOp>;
 
-    const isStepExecution = Boolean(this.state.executingStep);
+    const step = this.state.executingStep;
+    delete this.state.executingStep;
+
+    const isStepExecution = Boolean(step);
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
-      step: this.state.executingStep,
+      step,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
@@ -1019,11 +1201,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
+        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+        (error as any)?.name === "NonRetriableError" ||
         (error instanceof StepError &&
           error === this.state.recentlyRejectedStepError)
       );
-      if (retriable && error instanceof RetryAfterError) {
-        retriable = error.retryAfter;
+      if (
+        retriable &&
+        (error instanceof RetryAfterError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+          (error as any)?.name === "RetryAfterError")
+      ) {
+        retriable = (error as RetryAfterError).retryAfter;
       }
 
       const serializedError = minifyPrettyError(serializeError(error));
@@ -1066,6 +1255,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     })(() => {
       this.timeout?.clear();
       this.checkpointingMaxRuntimeTimer?.clear();
+      this.checkpointingMaxBufferIntervalTimer?.clear();
       void checkpointResults.return();
     });
 
@@ -1080,11 +1270,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       stepCompletionOrder: [...this.options.stepCompletionOrder],
       remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
       setCheckpoint: (checkpoint: Checkpoint) => {
+        this.debug("setting checkpoint:", checkpoint.type);
+
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
         return this.state.remainingStepsToBeSeen.size === 0;
       },
+      checkpointingStepBuffer: [],
+      metadata: new Map(),
     };
 
     return state;
@@ -1189,7 +1383,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if (!stepFoundThisTick) {
           warnOfParallelIndexing = true;
 
-          console.warn(
+          this.options.client["warnMetadata"](
+            { run_id: this.fnArg.runId },
+            ErrCode.AUTOMATIC_PARALLEL_INDEXING,
             prettyError({
               type: "warn",
               whatHappened:
@@ -1309,7 +1505,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * Therefore, we'll only show a warning here to indicate that this is
          * potentially an issue.
          */
-        console.warn(
+        this.options.client["warnMetadata"](
+          { run_id: this.fnArg.runId },
+          ErrCode.NESTING_STEPS,
           prettyError({
             whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
               opId.displayName ?? opId.id
@@ -1394,7 +1592,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         hashedId,
         input: stepState?.input,
 
-        fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
+        fn: opts?.fn ? () => opts.fn?.(this.fnArg, ...fnArgs) : undefined,
         promise,
         fulfilled: isFulfilled,
         hasStepState: Boolean(stepState),
@@ -1449,7 +1647,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * memoizing.
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
-        // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+        // biome-ignore lint/suspicious/noAssignInExpressions: intentional
         await (beforeExecHooksPromise = (async () => {
           await this.state.hooks?.afterMemoization?.();
           await this.state.hooks?.beforeExecution?.();
@@ -1462,7 +1660,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return createStepTools(this.options.client, this, stepHandler);
   }
 
-  private resumeStepWithResult(resultOp: OutgoingOp): FoundStep {
+  private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
     const userlandStep = this.state.steps.get(resultOp.id);
     if (!userlandStep) {
       throw new Error(
@@ -1474,14 +1672,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     userlandStep.data = data;
     userlandStep.timing = resultOp.timing;
-    userlandStep.fulfilled = true;
-    userlandStep.hasStepState = true;
     userlandStep.op = resultOp.op;
     userlandStep.id = resultOp.id;
 
-    this.state.stepState[resultOp.id] = userlandStep;
+    if (resume) {
+      userlandStep.fulfilled = true;
+      userlandStep.hasStepState = true;
+      this.state.stepState[resultOp.id] = userlandStep;
 
-    userlandStep.handle();
+      userlandStep.handle();
+    }
 
     return userlandStep;
   }
@@ -1510,6 +1710,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
     void this.timeout.then(async () => {
+      const { foundSteps, totalFoundSteps } = this.getStepNotFoundDetails();
+
       await this.state.hooks?.afterMemoization?.();
       await this.state.hooks?.beforeExecution?.();
       await this.state.hooks?.afterExecution?.();
@@ -1520,52 +1722,97 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           id: this.options.requestedRunStep as string,
           op: StepOpCode.StepNotFound,
         },
+        foundSteps,
+        totalFoundSteps,
       });
     });
   }
 
+  private getStepNotFoundDetails(): {
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  } {
+    const foundSteps = [...this.state.steps.values()]
+      .filter((step) => !step.hasStepState)
+      .map<BasicFoundStep>((step) => ({
+        id: step.hashedId,
+        name: step.name,
+        displayName: step.displayName,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    return {
+      foundSteps: foundSteps.slice(0, STEP_NOT_FOUND_MAX_FOUND_STEPS),
+      totalFoundSteps: foundSteps.length,
+    };
+  }
+
   private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
-    // Not checkpointing? Skip.
-    if (!this.options.checkpointingConfig) {
-      return;
+    this.debug(
+      "initializing checkpointing runtime timers",
+      this.options.checkpointingConfig,
+    );
+
+    if (this.options.checkpointingConfig?.maxRuntime) {
+      const maxRuntimeMs = Temporal.isTemporalDuration(
+        this.options.checkpointingConfig.maxRuntime,
+      )
+        ? this.options.checkpointingConfig.maxRuntime.total({
+            unit: "milliseconds",
+          })
+        : typeof this.options.checkpointingConfig.maxRuntime === "string"
+          ? ms(this.options.checkpointingConfig.maxRuntime as StringValue) // type assertion to satisfy ms package
+          : (this.options.checkpointingConfig.maxRuntime as number);
+
+      // 0 or negative max runtime? Skip.
+      if (Number.isFinite(maxRuntimeMs) && maxRuntimeMs > 0) {
+        this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
+
+        void this.checkpointingMaxRuntimeTimer.then(async () => {
+          await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
+          await this.state.hooks?.afterExecution?.();
+
+          state.setCheckpoint({
+            type: "checkpointing-runtime-reached",
+          });
+        });
+      }
     }
 
-    // Default checkpointing config? Skip.
-    if (typeof this.options.checkpointingConfig === "boolean") {
-      return;
+    if (this.options.checkpointingConfig?.maxInterval) {
+      const maxIntervalMs = Temporal.isTemporalDuration(
+        this.options.checkpointingConfig.maxInterval,
+      )
+        ? this.options.checkpointingConfig.maxInterval.total({
+            unit: "milliseconds",
+          })
+        : typeof this.options.checkpointingConfig.maxInterval === "string"
+          ? ms(this.options.checkpointingConfig.maxInterval as StringValue) // type assertion to satisfy ms package
+          : (this.options.checkpointingConfig.maxInterval as number);
+
+      // 0 or negative max interval? Skip.
+      if (Number.isFinite(maxIntervalMs) && maxIntervalMs > 0) {
+        this.checkpointingMaxBufferIntervalTimer =
+          createTimeoutPromise(maxIntervalMs);
+
+        void this.checkpointingMaxBufferIntervalTimer.then(async () => {
+          // Note that this will not immediately run; it will be queued like all
+          // other checkpoints so that we're never running multiple checkpoints
+          // at the same time and it's easier to reason about those decision
+          // points.
+          //
+          // A change in the future may be to make this particular checkpointing
+          // action immediate and have the checkpoint action itself be
+          // idempotent.
+          state.setCheckpoint({
+            type: "checkpointing-buffer-interval-reached",
+          });
+
+          this.checkpointingMaxBufferIntervalTimer?.reset();
+        });
+      }
     }
-
-    // Custom checkpointing config but no max runtime? Skip.
-    if (!this.options.checkpointingConfig.maxRuntime) {
-      return;
-    }
-
-    const maxRuntimeMs = Temporal.isTemporalDuration(
-      this.options.checkpointingConfig.maxRuntime,
-    )
-      ? this.options.checkpointingConfig.maxRuntime.total({
-          unit: "milliseconds",
-        })
-      : typeof this.options.checkpointingConfig.maxRuntime === "string"
-        ? ms(this.options.checkpointingConfig.maxRuntime as StringValue) // type assertion to satisfy ms package
-        : (this.options.checkpointingConfig.maxRuntime as number);
-
-    // 0 or negative max runtime? Skip.
-    if (!Number.isFinite(maxRuntimeMs) || maxRuntimeMs <= 0) {
-      return;
-    }
-
-    this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
-
-    void this.checkpointingMaxRuntimeTimer.then(async () => {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
-      await this.state.hooks?.afterExecution?.();
-
-      state.setCheckpoint({
-        type: "checkpointing-runtime-reached",
-      });
-    });
   }
 
   private async initializeMiddleware(): Promise<RunHookStack> {
@@ -1615,8 +1862,13 @@ export interface Checkpoints {
   "steps-found": { steps: [FoundStep, ...FoundStep[]] };
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
   "checkpointing-runtime-reached": {};
+  "checkpointing-buffer-interval-reached": {};
 }
 
 type Checkpoint = {
@@ -1748,6 +2000,16 @@ export interface V1ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * A buffer of steps that are currently queued to be checkpointed.
+   */
+  checkpointingStepBuffer: OutgoingOp[];
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<MetadataUpdate>>;
 }
 
 const hashId = (id: string): string => {

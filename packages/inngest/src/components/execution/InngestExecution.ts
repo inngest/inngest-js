@@ -3,15 +3,20 @@ import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import type {
-  CheckpointingOptions,
   Context,
   IncomingOp,
+  InternalCheckpointingOptions,
   OutgoingOp,
   StepMode,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -26,7 +31,11 @@ export interface ExecutionResults {
   "step-ran": { step: OutgoingOp; retriable?: boolean | string };
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
 
   /**
    * Indicates that we need to relinquish control back to Inngest in order to
@@ -47,6 +56,11 @@ export type ExecutionResult = {
     } & ExecutionResults[K]
   >;
 }[keyof ExecutionResults];
+
+export interface BasicFoundStep {
+  id: string;
+  displayName?: string;
+}
 
 export type ExecutionResultHandler<T = ActionResponse> = (
   result: ExecutionResult,
@@ -78,8 +92,18 @@ export interface MemoizedOp extends IncomingOp {
  * Changing this should not ever be a breaking change, as this will only change
  * new runs, not existing ones.
  */
-export const PREFERRED_EXECUTION_VERSION =
+export const PREFERRED_ASYNC_EXECUTION_VERSION =
   ExecutionVersion.V1 satisfies ExecutionVersion;
+
+/**
+ * The preferred execution version that will be used by the SDK when handling
+ * checkpointed runs where the Executor is allowing us to choose.
+ *
+ * Changing this should not ever be a breaking change, as this will only change
+ * new runs, not existing ones.
+ */
+export const PREFERRED_CHECKPOINTING_EXECUTION_VERSION =
+  ExecutionVersion.V2 satisfies ExecutionVersion;
 
 /**
  * Options for creating a new {@link InngestExecution} instance.
@@ -102,7 +126,7 @@ export interface InngestExecutionOptions {
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
-  checkpointingConfig?: CheckpointingOptions;
+  checkpointingConfig?: InternalCheckpointingOptions;
 
   /**
    * If this execution is being run from a queue job, this will be an identifier
@@ -151,4 +175,12 @@ export class InngestExecution {
 export interface IInngestExecution {
   version: ExecutionVersion;
   start(): Promise<ExecutionResult>;
+
+  addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ): boolean;
 }

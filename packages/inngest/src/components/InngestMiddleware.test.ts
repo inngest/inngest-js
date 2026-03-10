@@ -655,7 +655,7 @@ describe("stacking and inference", () => {
             json: () => Promise.resolve({ ids: [], status: 200 }),
             text: () => Promise.resolve(""),
           }),
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
       ) as any;
 
       beforeEach(() => {
@@ -900,7 +900,7 @@ describe("stacking and inference", () => {
             json: () => Promise.resolve({ ids: [], status: 200 }),
             text: () => Promise.resolve(""),
           }),
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
       ) as any;
 
       beforeEach(() => {

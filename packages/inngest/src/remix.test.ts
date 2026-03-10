@@ -6,24 +6,16 @@ import { testFramework } from "./test/helpers.ts";
 testFramework("Remix", RemixHandler, {
   transformReq: (req) => {
     const headers = new Headers();
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).headers = headers;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    (req as any).json = () => {
-      // Try and parse the body as JSON - this forces an error case where
-      // `req.json()` throws an error if the body is not valid JSON and ensures
-      // that we are correctly handling requests with no data like some PUTs.
-      if (req.method === "PUT" && !headers.has(headerKeys.ContentLength)) {
-        throw new Error("Unexpected input error");
-      }
-
-      return Promise.resolve(req.body);
-    };
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    (req as any).text = () =>
+      Promise.resolve(req.body === undefined ? "" : JSON.stringify(req.body));
 
     return [{ request: req }];
   },

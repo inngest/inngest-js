@@ -7,7 +7,7 @@
  * minors anyway, so at least with this we rely on fewer fields staying the
  * same.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type ZodLiteral<TValue = any> = {
   get value(): TValue;
   _def: {
@@ -16,13 +16,13 @@ export type ZodLiteral<TValue = any> = {
 };
 
 export type ZodTypeAny = {
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   _type: any;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   _output: any;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   _input: any;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   _def: any;
 };
 
@@ -52,7 +52,7 @@ export type ZodUnion<
   };
 };
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type AnyZodObject = ZodObject<any>;
 
 export type ZodAny = {

@@ -40,6 +40,7 @@ export enum envKeys {
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
+  InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
@@ -149,6 +150,8 @@ export enum headerKeys {
   TraceParent = "traceparent",
   TraceState = "tracestate",
   InngestRunId = "x-run-id",
+  InngestStepId = "x-inngest-step-id",
+  InngestForceStepPlan = "x-inngest-force-step-plan",
 }
 
 /**
@@ -177,16 +180,7 @@ export enum internalEvents {
   FunctionFinished = "inngest/function.finished",
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
-}
-
-/**
- * Events that are known globally by the Inngest platform.
- */
-export enum knownEvents {
-  /**
-   * An HTTP request has been received to trigger a function execution.
-   */
-  HttpRunStarted = "http/run.started",
+  HttpRequest = "inngest/http.request",
 }
 
 export const logPrefix: string = chalk.magenta.bold("[Inngest]");

@@ -8,7 +8,8 @@
       "!**/coverage",
       "!**/dist",
       "!**/src/proto",
-      "!**/package.json"
+      "!**/package.json",
+      "!**/.claude"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },

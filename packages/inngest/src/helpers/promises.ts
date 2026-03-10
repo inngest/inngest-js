@@ -67,7 +67,7 @@ export const resolveAfterPending = (count = 100): Promise<void> => {
 type DeferredPromiseReturn<T> = {
   promise: Promise<T>;
   resolve: (value: T) => DeferredPromiseReturn<T>;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   reject: (reason: any) => DeferredPromiseReturn<T>;
 };
 
@@ -111,7 +111,7 @@ export const createDeferredPromiseWithStack = <T>(): {
   results: AsyncGenerator<Awaited<T>, void, void>;
 } => {
   const settledPromises: Promise<T>[] = [];
-  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  // biome-ignore lint/suspicious/noConfusingVoidType: intentional
   let rotateQueue: (value: void) => void = () => {};
 
   const results = (async function* () {
@@ -181,7 +181,7 @@ export const createTimeoutPromise = (duration: number): TimeoutPromise => {
   const { promise, resolve } = createDeferredPromise<void>();
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  // biome-ignore lint/style/useConst: <explanation>
+  // biome-ignore lint/style/useConst: intentional
   let ret: TimeoutPromise;
 
   const start = () => {
@@ -216,10 +216,10 @@ export const createTimeoutPromise = (duration: number): TimeoutPromise => {
  * The passed `fn` can be undefined to support functions that may conditionally
  * be defined.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const runAsPromise = <T extends (() => any) | undefined>(
   fn: T,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 ): Promise<T extends () => any ? Awaited<ReturnType<T>> : T> => {
   return Promise.resolve().then(fn);
 };

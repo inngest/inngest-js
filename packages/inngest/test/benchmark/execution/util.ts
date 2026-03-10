@@ -1,14 +1,16 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Inngest } from "../../../src";
 import {
+  ExecutionVersion,
   type IInngestExecution,
   type InngestExecution,
   type MemoizedOp,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "../../../src/components/execution/InngestExecution";
 import { _internals } from "../../../src/components/execution/v1";
 import { STEP_INDEXING_SUFFIX } from "../../../src/components/InngestStepTools";
 import { ServerTiming } from "../../../src/helpers/ServerTiming";
+import { StepMode } from "../../../src/types";
 
 interface CreateExecutionWithMemoizedStepsOptions {
   stepCount: number;
@@ -56,7 +58,7 @@ export const createExecutionWithMemoizedSteps = ({
         }
       })
       ["createExecution"]({
-        version: PREFERRED_EXECUTION_VERSION,
+        version: ExecutionVersion.V2,
         partialOptions: {
           data: fromPartial({
             event: { name: "foo", data: {} },
@@ -70,6 +72,8 @@ export const createExecutionWithMemoizedSteps = ({
           disableImmediateExecution: false,
           reqArgs: [],
           headers: {},
+          stepMode: StepMode.Async,
+          client,
         },
       }) as IInngestExecution & InngestExecution;
 

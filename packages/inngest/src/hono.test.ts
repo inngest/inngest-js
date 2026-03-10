@@ -51,7 +51,10 @@ testFramework("Hono", HonoHandler, {
           new URLSearchParams(req.url.split("?")[1] || "").get(key),
         header: (key: string) => req.headers[key] as string,
         method: req.method,
-        json: () => Promise.resolve(req.body),
+        text: () =>
+          Promise.resolve(
+            req.body === undefined ? "" : JSON.stringify(req.body),
+          ),
       },
       body: (data: BodyInit, init: ResponseInit) => new Response(data, init),
     };
