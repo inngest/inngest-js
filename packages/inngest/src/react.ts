@@ -6,15 +6,6 @@ import {
 } from "./components/realtime/subscribe/index.ts";
 import type { Realtime } from "./components/realtime/types.ts";
 
-export enum RealtimeState {
-  Closed = "closed",
-  Error = "error",
-  RefreshingToken = "refresh_token",
-  Connecting = "connecting",
-  Active = "active",
-  Closing = "closing",
-}
-
 export type UseRealtimeConnectionStatus =
   | "idle"
   | "connecting"
@@ -347,6 +338,9 @@ export const useRealtime = <
     setMessagesByTopic({});
     setLastMessage(null);
     setResult(undefined);
+    setError(null);
+    runStatusRef.current = "unknown";
+    setRunStatus("unknown");
   };
 
   const flushBufferedMessages = () => {
@@ -366,7 +360,9 @@ export const useRealtime = <
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
-    if (bufferInterval > 0) {
+    if (bufferInterval <= 0) {
+      flushBufferedMessages();
+    } else {
       interval = setInterval(() => {
         flushBufferedMessages();
       }, bufferInterval);
