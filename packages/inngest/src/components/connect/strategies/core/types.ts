@@ -1,3 +1,4 @@
+import type { Logger } from "../../../../middleware/logger.ts";
 import type {
   GatewayExecutorRequestData,
   SDKResponse,
@@ -67,6 +68,11 @@ export interface BaseConnectionConfig {
  * Extends BaseConnectionConfig with strategy-specific fields.
  */
 export interface StrategyConfig extends BaseConnectionConfig {
+  /**
+   * The logger to use for internal logging.
+   */
+  internalLogger: Logger;
+
   /**
    * Request handlers mapped by app ID.
    */

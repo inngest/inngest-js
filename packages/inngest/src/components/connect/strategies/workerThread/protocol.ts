@@ -55,5 +55,5 @@ export type WorkerToMainMessage =
       type: "LOG";
       level: "debug" | "info" | "warn" | "error";
       message: string;
-      data?: unknown;
+      data?: Record<string, unknown>;
     };
