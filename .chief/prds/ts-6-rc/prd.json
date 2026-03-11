@@ -41,7 +41,7 @@
         "Any TS 6.0-specific workarounds are documented with inline comments explaining why"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-004",

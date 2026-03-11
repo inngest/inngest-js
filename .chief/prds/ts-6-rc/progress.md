@@ -27,3 +27,15 @@
   - `npm i typescript@rc` after `npm i ../../inngest.tgz` correctly overrides the version without disturbing the inngest installation
   - Adding a separate job (rather than extending to a matrix) is the cleanest way to satisfy "existing job unchanged" requirements
 ---
+
+## 2026-03-11 - US-003
+- Verified `test:types` (`tsc --noEmit --project tsconfig.types.json`) passes with `typescript@rc` (5.9.2) — no type errors found
+- Also verified `test:dist` (`tsc --noEmit dist/**/*.d.ts`) passes with `typescript@rc`
+- No code changes needed; the SDK source types are already compatible with the current RC
+- Files changed: none (verification-only story)
+- **Learnings for future iterations:**
+  - `typescript@rc` and `typescript@latest` both currently resolve to 5.9.2; the actual TS version depends on npm tag state at install time
+  - `test:types` uses `tsconfig.types.json` which extends `tsconfig.json` and includes all `**/*.test.ts` files (excluding `src/test/functions` and `src/test/integration`)
+  - `test:dist` runs `tsc --noEmit dist/**/*.d.ts` to validate declaration files
+  - The Nix environment has its own `tsc` in PATH (`/nix/store/...`); use `./node_modules/.bin/tsc` or `npx` to ensure the pnpm-installed version is used
+---
