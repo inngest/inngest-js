@@ -397,7 +397,7 @@ describe("OpenAI Responses Adapter Unit Tests", () => {
             id: "fc_1",
             type: "function_call",
             name: "add",
-            arguments: "{\"a\":1,\"b\":2}",
+            arguments: '{"a":1,"b":2}',
             call_id: "call_1",
           },
           {
@@ -413,9 +413,9 @@ describe("OpenAI Responses Adapter Unit Tests", () => {
       };
 
       expect(Array.isArray(response.output)).toBe(true);
-      const call = response.output.find((i) => (i as any).type === "function_call") as
-        | OpenAiResponsesApi.FunctionCallItem
-        | undefined;
+      const call = response.output.find(
+        (i) => (i as any).type === "function_call",
+      ) as OpenAiResponsesApi.FunctionCallItem | undefined;
       expect(call?.name).toBe("add");
       expect(call?.call_id).toBeDefined();
     });
