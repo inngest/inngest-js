@@ -182,6 +182,7 @@ export class TokenSubscription {
     };
 
     try {
+      this.#running = true;
       this.#ws = new WebSocket(this.getWsUrl(key));
 
       this.#ws.onopen = () => {
@@ -213,6 +214,7 @@ export class TokenSubscription {
           this.#debug(
             `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`,
           );
+          return;
         }
 
         switch (msg.kind) {
@@ -461,9 +463,8 @@ export class TokenSubscription {
         }
         this.close();
       };
-
-      this.#running = true;
     } catch (err) {
+      this.#running = false;
       ret.reject(err);
     }
 
