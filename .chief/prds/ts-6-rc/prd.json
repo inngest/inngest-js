@@ -1,0 +1,71 @@
+{
+  "project": "TypeScript 6.0 RC CI Support and Compatibility",
+  "description": "TypeScript 6.0 has a release candidate available. The Inngest JS SDK already tests against multiple TypeScript versions in CI (latest, ~5.9.0, ~5.8.0) via a matrix strategy in the PR workflow. This effort adds TS 6.0 RC to that matrix—covering test:types, test:dist, and test:composite—and fixes any type errors or incompatibilities surfaced by the new compiler version. The peer dependency range (\u003e=5.8.0) will not change until TS 6.0 reaches stable.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add TS 6.0 RC to the CI type-test matrix",
+      "description": "As a maintainer, I want the PR workflow to test the SDK against TypeScript 6.0 RC so that I'm alerted to incompatibilities before merging.",
+      "acceptanceCriteria": [
+        ".github/workflows/pr.yml inngest_types job matrix includes a \"rc\" entry (installs typescript@rc)",
+        "The rc matrix entry runs pnpm run test:types (same as other entries)",
+        "The rc matrix entry runs pnpm run test:dist (same as other entries)",
+        "The job is required to pass (no continue-on-error) — same enforcement as other TS versions",
+        "Existing matrix entries (latest, ~5.9.0, ~5.8.0) are unchanged",
+        "fail-fast: false is preserved so all versions report independently"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "US-002",
+      "title": "Add TS 6.0 RC composite test to CI",
+      "description": "As a maintainer, I want a CI job that runs the composite (end-to-end packaged) type test against TS 6.0 RC so that consumers of the published package are validated against the new compiler.",
+      "acceptanceCriteria": [
+        "A new CI job (or extension of the existing inngest_test_composite job) runs test:composite with TypeScript 6.0 RC",
+        "The composite test project (packages/inngest/test/composite_project) is configured to use TS 6.0 RC for this job (e.g. by overriding typescript before running npm run test)",
+        "The job must pass to merge (not informational)",
+        "The existing inngest_test_composite job (which uses the default/pinned TS version) continues to run unchanged"
+      ],
+      "priority": 2,
+      "passes": true
+    },
+    {
+      "id": "US-003",
+      "title": "Fix type errors surfaced by TS 6.0 RC in test:types",
+      "description": "As a maintainer, I want all type errors reported by tsc under TS 6.0 RC to be resolved so that the SDK is forward-compatible.",
+      "acceptanceCriteria": [
+        "pnpm run test:types passes when typescript@rc (6.0 RC) is installed",
+        "Fixes do not break compilation under TS 5.8, 5.9, or latest (all existing matrix entries still pass)",
+        "Fixes are minimal and do not introduce unnecessary refactoring",
+        "Any TS 6.0-specific workarounds are documented with inline comments explaining why"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-004",
+      "title": "Fix type errors surfaced by TS 6.0 RC in test:dist",
+      "description": "As a maintainer, I want the compiled .d.ts declaration files to be valid under TS 6.0 RC so that consumers see no type errors from our package.",
+      "acceptanceCriteria": [
+        "pnpm run test:dist passes when typescript@rc (6.0 RC) is installed",
+        "Fixes do not break test:dist under existing TS versions",
+        "If the issue is in the build output (tsdown/tsc config), the build config change is documented"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-005",
+      "title": "Fix type errors surfaced by TS 6.0 RC in test:composite",
+      "description": "As a maintainer, I want the composite project test to pass under TS 6.0 RC so that real-world consumers of the packaged SDK are validated.",
+      "acceptanceCriteria": [
+        "pnpm run test:composite passes when the composite project uses TS 6.0 RC",
+        "Fixes do not break test:composite under its default TS version (^5.3.3)",
+        "If composite project tsconfig.json needs changes for TS 6.0 compatibility, those changes are backward-compatible"
+      ],
+      "priority": 5,
+      "passes": false
+    }
+  ]
+}
