@@ -7,6 +7,8 @@
 - Working directory for inngest jobs is `packages/inngest`
 - The `test:composite` script: `pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)` — runs `tsc --build --force` in composite mode with `skipLibCheck: false`
 - To override TS version for composite tests in CI, break the script into separate steps and add `npm i typescript@<version>` after the tarball install
+- TS 6.0 RC introduces `TS5112`: specifying files on the command line when a tsconfig.json exists is now an error (was silently ignored in TS < 6). Fix: use a dedicated tsconfig project file instead of inline file arguments
+- The `--ignoreConfig` flag is new in TS 6.0 and does NOT exist in TS 5.x — do not use it if backward compatibility is needed
 
 ## 2026-03-11 - US-001
 - Added `"rc"` entry to the `tsVersion` matrix in the `inngest_types` job in `.github/workflows/pr.yml`
@@ -38,4 +40,18 @@
   - `test:types` uses `tsconfig.types.json` which extends `tsconfig.json` and includes all `**/*.test.ts` files (excluding `src/test/functions` and `src/test/integration`)
   - `test:dist` runs `tsc --noEmit dist/**/*.d.ts` to validate declaration files
   - The Nix environment has its own `tsc` in PATH (`/nix/store/...`); use `./node_modules/.bin/tsc` or `npx` to ensure the pnpm-installed version is used
+---
+
+## 2026-03-11 - US-004
+- TS 6.0 RC (6.0.1-rc) introduces error `TS5112`: when files are specified on the command line alongside a tsconfig.json, TS 6.0 now errors instead of silently ignoring the config
+- Created `packages/inngest/tsconfig.test-dist.json` with minimal settings (`noEmit`, `skipLibCheck: true`, `module: "Preserve"`, `moduleResolution: "bundler"`, `target: "ES2022"`, `lib: ["ES2022", "DOM"]`) and `include: ["dist/**/*.d.ts"]`
+- Changed `test:dist` script from `tsc --noEmit dist/**/*.d.ts` to `tsc -p tsconfig.test-dist.json`
+- Verified passes with TS 5.8.2, 5.9.3, and 6.0.1-rc
+- Files changed: `packages/inngest/package.json`, `packages/inngest/tsconfig.test-dist.json`
+- **Learnings for future iterations:**
+  - `typescript@rc` now resolves to 6.0.1-rc (not 5.9.2 as it did when US-003 was completed)
+  - TS 6.0 error `TS5112` requires either `--ignoreConfig` (TS 6.0+ only) or using a project file instead of CLI file arguments
+  - The `--ignoreConfig` flag does NOT exist in TS 5.x, so a project-based approach is the only backward-compatible solution
+  - `skipLibCheck: true` is important in the dist test tsconfig to avoid checking node_modules .d.ts files (which may have unrelated errors from peer deps like next, hono, etc.)
+  - When installing/uninstalling TS versions with pnpm, the version specifier in package.json may change (e.g., `^5.9.2` → `5.9.3`). Always verify and restore the original specifier
 ---
