@@ -704,12 +704,30 @@ export class ConnectionCore {
             return;
           }
 
+          // Use the current live connection's WebSocket for lease
+          // extensions. During a drain, the original WebSocket may be
+          // closed by the gateway while the request is still in flight,
+          // causing lease extension messages to silently fail and the
+          // gateway to time out the request.
+          const leaseWs = this.currentConnection?.ws ?? ws;
+
           this.callbacks.log("Extending lease", {
             connectionId,
             leaseId: currentLeaseId,
           });
 
-          ws.send(
+          if (leaseWs.readyState !== WebSocket.OPEN) {
+            this.callbacks.log(
+              "Cannot extend lease, no open WebSocket available",
+              {
+                connectionId,
+                requestId: gatewayExecutorRequest.requestId,
+              },
+            );
+            return;
+          }
+
+          leaseWs.send(
             ConnectMessage.encode(
               ConnectMessage.create({
                 kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
