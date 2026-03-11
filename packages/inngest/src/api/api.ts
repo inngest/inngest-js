@@ -569,14 +569,16 @@ export class InngestApi {
    * @returns The raw Response from the API
    */
   /**
-   * POST buffered stream data to the checkpoint stream ingest endpoint.
-   * The body is a ReadableStream containing the SSE frames.
+   * POST stream data to the realtime publish/tee endpoint, forwarding raw
+   * bytes to all subscribers via the broadcaster.
    */
   async checkpointStream(args: {
     runId: string;
     body: ReadableStream;
   }): Promise<void> {
-    const url = await this.getTargetUrl(`/v1/checkpoint/${args.runId}/stream`);
+    const url = await this.getTargetUrl(
+      `/v1/realtime/publish/tee?channel=${encodeURIComponent(args.runId)}`,
+    );
 
     const res = await fetchWithAuthFallback({
       authToken: this.hashedKey,

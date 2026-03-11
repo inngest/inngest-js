@@ -551,26 +551,16 @@ class InngestExecutionEngine
     try {
       const encoder = new TextEncoder();
 
-      // Header frame: first line of the POST body, tells the Dev Server what
-      // HTTP status and headers to use when replaying to clients.
-      const headerFrame =
-        JSON.stringify({
-          status_code: 200,
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-          },
-        }) + "\n";
-
+      // Prepend the SSE metadata frame so subscribers know the run ID.
+      // No header frame is needed — the realtime publish/tee endpoint
+      // forwards raw bytes directly to subscribers.
       const metadataFrame = buildSSEMetadataFrame(
         this.fnArg.runId,
         this.fnArg.attempt,
       );
 
-      const prefix = headerFrame + metadataFrame;
-
       const bodyStream = prependToStream(
-        encoder.encode(prefix),
+        encoder.encode(metadataFrame),
         this.streamTools.readable,
       );
 

@@ -55,6 +55,8 @@ async function readSSEStream(
         parsed = data;
       }
 
+      console.log("[sse]", event, parsed);
+
       if (event === "inngest") {
         const obj = parsed as Record<string, unknown>;
         if (typeof obj.run_id === "string") {
@@ -81,12 +83,22 @@ async function readSSEStream(
 
 /**
  * Start an SSE stream against the given endpoint, following redirects
- * to the checkpoint stream if the function goes async.
+ * to the realtime SSE endpoint if the function goes async.
  */
 export async function startStream(
   endpoint: string,
   callbacks: StreamCallbacks
 ): Promise<void> {
+  let capturedRunId: string | null = null;
+
+  const wrappedCallbacks: StreamCallbacks = {
+    ...callbacks,
+    onRunId: (runId: string) => {
+      capturedRunId = runId;
+      callbacks.onRunId(runId);
+    },
+  };
+
   const res = await fetch(endpoint, {
     headers: { Accept: "text/event-stream" },
   });
@@ -95,13 +107,23 @@ export async function startStream(
     throw new Error("No response body");
   }
 
-  const redirectUrl = await readSSEStream(res, callbacks);
+  const redirectUrl = await readSSEStream(res, wrappedCallbacks);
 
-  if (redirectUrl) {
-    // @ts-expect-error duplex not in RequestInit types yet
-    const asyncRes = await fetch(redirectUrl, { duplex: "half" });
+  if (redirectUrl && capturedRunId) {
+    // Get a realtime JWT for this run
+    const tokenRes = await fetch(
+      `/api/stream-token?runId=${encodeURIComponent(capturedRunId)}`
+    );
+    if (!tokenRes.ok) {
+      throw new Error("Failed to get realtime token");
+    }
+    const { token } = await tokenRes.json();
+
+    // Connect to the dev server's realtime SSE endpoint
+    const realtimeUrl = `http://localhost:8288/v1/realtime/sse?token=${encodeURIComponent(token)}`;
+    const asyncRes = await fetch(realtimeUrl);
     if (!asyncRes.body) {
-      throw new Error("No body from async stream");
+      throw new Error("No body from realtime stream");
     }
 
     await readSSEStream(asyncRes, callbacks);
