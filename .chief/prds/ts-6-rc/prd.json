@@ -53,7 +53,7 @@
         "If the issue is in the build output (tsdown/tsc config), the build config change is documented"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-005",
