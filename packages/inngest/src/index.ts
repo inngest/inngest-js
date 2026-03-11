@@ -56,6 +56,7 @@ export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
+export { realtime } from "./components/realtime/index.ts";
 export { StepError } from "./components/StepError.ts";
 export {
   cron,

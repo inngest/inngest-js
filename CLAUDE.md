@@ -67,7 +67,7 @@ pnpm build            # Build all packages recursively
 - **`packages/test/`**: Testing utilities (`@inngest/test`)
 - **`packages/ai/`**: AI integration package (`@inngest/ai`)
 - **`packages/middleware-*/`**: Various middleware packages
-- **`packages/realtime/`**: Real-time functionality
+- **`packages/inngest/src/components/realtime/`**: Built-in realtime implementation in the core SDK
 - **`packages/eslint-plugin/`**: ESLint plugin for Inngest
 
 ### Key SDK Concepts

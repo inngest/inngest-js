@@ -60,11 +60,28 @@ import {
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
+import {
+  getSubscriptionToken as realtimeGetSubscriptionToken,
+  subscribe as realtimeSubscribe,
+} from "./realtime/subscribe/index.ts";
 import type { Realtime } from "./realtime/types";
 import {
   type HandlerWithTriggers,
   isValidatable,
 } from "./triggers/typeHelpers.ts";
+
+type ChannelTopicNames<InputChannel extends Realtime.ChannelInput> = Extract<
+  keyof Realtime.Channel.InferTopics<InputChannel>,
+  string
+>;
+
+type ChannelTopicsInput<InputChannel extends Realtime.ChannelInput> = [
+  ChannelTopicNames<InputChannel>,
+] extends [never]
+  ? string[]
+  : string extends ChannelTopicNames<InputChannel>
+    ? string[]
+    : ChannelTopicNames<InputChannel>[];
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -564,60 +581,57 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   public realtime: {
     /**
-     * Unlike step-level realtime methods (`step.realtime.*`), these tools will
-     * never be their own durable steps when run. Use these methods inside of a
-     * step to make them durable, or anywhere outside of an Inngest function
-     * too.
+     * Subscribe to realtime messages on a channel, returning a readable stream.
      */
-    publish: Realtime.PublishFn;
+    subscribe: {
+      <
+        const InputChannel extends Realtime.ChannelInput,
+        const InputTopics extends ChannelTopicsInput<InputChannel>,
+        const TToken extends Realtime.Subscribe.Token<
+          InputChannel,
+          InputTopics
+        >,
+      >(opts: {
+        channel: InputChannel;
+        topics: InputTopics;
+        validate?: boolean;
+        onMessage: Realtime.Subscribe.Callback<TToken>;
+        onError?: (err: unknown) => void;
+      }): Promise<Realtime.Subscribe.CallbackSubscription>;
+      <
+        const InputChannel extends Realtime.ChannelInput,
+        const InputTopics extends ChannelTopicsInput<InputChannel>,
+        const TToken extends Realtime.Subscribe.Token<
+          InputChannel,
+          InputTopics
+        >,
+      >(opts: {
+        channel: InputChannel;
+        topics: InputTopics;
+        validate?: boolean;
+      }): Promise<Realtime.Subscribe.StreamSubscription<TToken>>;
+    };
 
     /**
      * Generate a subscription token for subscribing to realtime messages.
      */
-    getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
+    token: <
+      const InputChannel extends Realtime.ChannelInput,
+      const InputTopics extends ChannelTopicsInput<InputChannel>,
+      const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
+    >(opts: {
+      channel: InputChannel;
+      topics: InputTopics;
+    }) => Promise<TToken>;
   } = {
-    publish: async (opts) => {
-      const [{ topic, channel, data }, ctx] = await Promise.all([
-        opts,
-        getAsyncCtx(),
-      ]);
-
-      const runId = ctx?.execution?.ctx.runId;
-
-      const res = await this.inngestApi.publish(
-        {
-          channel: channel,
-          topics: [topic],
-          runId,
-        },
-        data,
-      );
-
-      if (res.ok) {
-        return data;
-      }
-
-      throw new Error(
-        `Failed to publish event: ${res.error?.error || "Unknown error"}`,
-      );
+    subscribe: async (opts) => {
+      // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
+      return realtimeSubscribe({ ...opts, app: this } as any) as any;
     },
 
-    getSubscriptionToken: async ({ channel, topics }) => {
-      const channelId = typeof channel === "string" ? channel : channel.name;
-      if (!channelId) {
-        throw new Error(
-          "Channel ID is required to create a subscription token",
-        );
-      }
-
-      const key = await this.inngestApi.getSubscriptionToken(channelId, topics);
-
-      return {
-        channel: channelId,
-        topics,
-        key,
-        // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
-      } as any;
+    token: async (opts) => {
+      // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
+      return realtimeGetSubscriptionToken(this, opts as any) as any;
     },
   };
 
@@ -738,6 +752,48 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     return { ...result, data: decryptedData };
   }
+
+  /**
+   * Publish data to a realtime channel topic.
+   *
+   * This is a non-durable publish — it executes immediately and is not
+   * memoized. If called inside an Inngest function, it will automatically
+   * include the current run ID. For durable publishing inside functions, use
+   * `step.realtime.publish()`.
+   *
+   * ```ts
+   * await inngest.publish(ch.status, { message: "Processing..." });
+   * ```
+   */
+  public publish: Realtime.TypedPublishFn = async (topicRef, data) => {
+    const topicConfig = topicRef.config;
+    if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
+      const result = await topicConfig.schema["~standard"].validate(data);
+      if (result.issues) {
+        throw new Error(
+          `Schema validation failed for topic "${topicRef.topic}"`,
+        );
+      }
+    }
+
+    const ctx = await getAsyncCtx();
+    const runId = ctx?.execution?.ctx.runId;
+
+    const res = await this.inngestApi.publish(
+      {
+        channel: topicRef.channel,
+        topics: [topicRef.topic],
+        runId,
+      },
+      data,
+    );
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
+      );
+    }
+  };
 
   /**
    * Send one or many events to Inngest. Takes an entire payload (including
