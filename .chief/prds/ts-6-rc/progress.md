@@ -9,6 +9,8 @@
 - To override TS version for composite tests in CI, break the script into separate steps and add `npm i typescript@<version>` after the tarball install
 - TS 6.0 RC introduces `TS5112`: specifying files on the command line when a tsconfig.json exists is now an error (was silently ignored in TS < 6). Fix: use a dedicated tsconfig project file instead of inline file arguments
 - The `--ignoreConfig` flag is new in TS 6.0 and does NOT exist in TS 5.x — do not use it if backward compatibility is needed
+- TS 6.0 RC deprecates `baseUrl` (TS5101) and `target=ES5` (TS5107) — these are errors in `--build` mode. Fix: remove `baseUrl` (not needed since TS 5.0 for `paths` resolution) and change `target` to `es2020`+
+- The composite_project tsconfig.json `paths` field works without `baseUrl` in TS 5.0+ — paths are resolved relative to the tsconfig.json directory
 
 ## 2026-03-11 - US-001
 - Added `"rc"` entry to the `tsVersion` matrix in the `inngest_types` job in `.github/workflows/pr.yml`
@@ -54,4 +56,18 @@
   - The `--ignoreConfig` flag does NOT exist in TS 5.x, so a project-based approach is the only backward-compatible solution
   - `skipLibCheck: true` is important in the dist test tsconfig to avoid checking node_modules .d.ts files (which may have unrelated errors from peer deps like next, hono, etc.)
   - When installing/uninstalling TS versions with pnpm, the version specifier in package.json may change (e.g., `^5.9.2` → `5.9.3`). Always verify and restore the original specifier
+---
+
+## 2026-03-11 - US-005
+- TS 6.0.1-rc raises deprecation errors in composite project's `tsc --build --force`: `TS5101` (Option 'baseUrl' is deprecated) and `TS5107` (Option 'target=ES5' is deprecated)
+- Fixed `packages/inngest/test/composite_project/tsconfig.json`: removed `baseUrl` (unnecessary since TS 5.0+ resolves `paths` relative to tsconfig directory) and changed `target` from `"es5"` to `"es2020"`
+- Verified passes with TS 5.3.3 (default), TS 5.8.3, TS 5.9.3, and TS 6.0.1-rc
+- Verified full `pnpm run test:composite` flow passes end-to-end
+- Files changed: `packages/inngest/test/composite_project/tsconfig.json`
+- **Learnings for future iterations:**
+  - TS 6.0 turns deprecation warnings into hard errors in `--build` mode (TS5101, TS5107)
+  - `baseUrl` is deprecated in TS 6.0 — remove it if only used for `paths` resolution (TS 5.0+ handles `paths` without `baseUrl`)
+  - `target: "es5"` is deprecated in TS 6.0 — upgrade to `"es2020"` or later
+  - The npm sandbox in this environment blocks registry access; use `--cache /tmp/claude-1000/npm-cache` and `dangerouslyDisableSandbox` for npm operations in the composite project
+  - The `npm pack` command also needs `--cache` flag to use a writable cache directory
 ---

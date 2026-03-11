@@ -65,7 +65,7 @@
         "If composite project tsconfig.json needs changes for TS 6.0 compatibility, those changes are backward-compatible"
       ],
       "priority": 5,
-      "passes": false
+      "passes": true
     }
   ]
 }
