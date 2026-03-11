@@ -171,6 +171,10 @@ export class InngestTestRun {
 
           processChain();
         },
+        "change-mode": () => {
+          // In test environment, we don't need to actually change modes
+          processChain();
+        },
       };
 
       resultHandlers[exec.result.type]();
