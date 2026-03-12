@@ -858,8 +858,21 @@ export class ConnectionCore {
           return;
         }
 
+        // Skip heartbeat ticks when the WebSocket is no longer open. During
+        // drain the Gateway may close the old WS while in-flight requests are
+        // still running. Sending on a closed socket is a no-op and we must not
+        // treat the missing response as a failure.
+        //
+        // TODO: We need a better way to handle this. This isn't a horrible
+        // hack, but it isn't ideal. Over the life of a worker, it'll have N-1
+        // noop heartbeat intervals, where N is the number of times it
+        // reconnected.
+        if (ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
         if (conn.pendingHeartbeats >= 2) {
-          this.callbacks.log("Gateway heartbeat missed");
+          this.callbacks.log("Gateway heartbeat missed", { connectionId });
           void onConnectionError(
             new ReconnectError(
               `Consecutive gateway heartbeats missed (${connectionId})`,
