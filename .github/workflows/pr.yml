@@ -64,6 +64,7 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "rc"
           - "~5.9.0"
           - "~5.8.0"
     steps:
@@ -141,6 +142,22 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run test:composite
+
+  inngest_test_composite_ts_rc:
+    name: "inngest: Composite tests (TS RC)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - name: Pack SDK
+        run: pnpm run local:pack
+      - name: Install SDK and TS RC in composite project
+        run: cd test/composite_project && npm i ../../inngest.tgz && npm i typescript@rc
+      - name: Run composite test
+        run: cd test/composite_project && npm run test
 
   itest:
     name: "itest"
