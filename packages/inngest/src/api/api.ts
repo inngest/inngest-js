@@ -607,13 +607,19 @@ export class InngestApi {
   }
 
   /**
-   * Get the full URL for the checkpoint stream output endpoint. Used to
-   * build the redirect URL that clients connect to for async streaming.
+   * Get a realtime subscription token and the full SSE URL for a run's
+   * stream channel. Used to build the redirect payload that tells clients
+   * where to reconnect for async streaming.
    */
-  async getCheckpointStreamUrl(runId: string, token: string): Promise<string> {
-    const url = await this.getTargetUrl(`/v1/checkpoint/${runId}/stream`);
-    url.searchParams.set("token", token);
-    return url.toString();
+  async getRealtimeStreamRedirect(runId: string): Promise<{
+    token: string;
+    url: string;
+  }> {
+    const token = await this.getSubscriptionToken(runId, ["$stream"]);
+    const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
+    sseUrl.searchParams.set("token", token);
+
+    return { token, url: sseUrl.toString() };
   }
 
   async getRunOutput(runId: string, token: string): Promise<Response> {

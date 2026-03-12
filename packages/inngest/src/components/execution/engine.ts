@@ -409,19 +409,22 @@ class InngestExecutionEngine
     // If the SSE stream is already active, inform the client that execution
     // is switching to async mode so it can reconnect elsewhere.
     if (this.streamTools.activated) {
+      let realtimeToken = token;
       let url: string | undefined;
       try {
-        url = await this.options.client["inngestApi"].getCheckpointStreamUrl(
-          this.fnArg.runId,
-          token,
-        );
+        const redirect =
+          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
+            this.fnArg.runId,
+          );
+        realtimeToken = redirect.token;
+        url = redirect.url;
       } catch {
         // Best-effort; client can still construct URL from run_id + token
       }
 
       this.streamTools.redirect({
         run_id: this.fnArg.runId,
-        token,
+        token: realtimeToken,
         url,
       });
     }
