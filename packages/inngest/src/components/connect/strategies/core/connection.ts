@@ -132,7 +132,7 @@ export class ConnectionCore {
     }
 
     const state = this.callbacks.getState();
-    if (state === ConnectionState.CLOSING || state === ConnectionState.CLOSED) {
+    if (state === ConnectionState.CLOSED) {
       throw new Error("Connection already closed");
     }
 
@@ -142,12 +142,21 @@ export class ConnectionCore {
 
     while (true) {
       const currentState = this.callbacks.getState();
-      if (
-        currentState === ConnectionState.CLOSING ||
-        currentState === ConnectionState.CLOSED
-      ) {
+      if (currentState === ConnectionState.CLOSED) {
         break;
       }
+
+      // NOTE: We can get here when the state is CLOSING, therefore it's
+      // possible to reconnect while the CLOSING. This is intentional so that
+      // the worker can reconnect while waiting for pending requests during a
+      // graceful shutdown. If we didn't allow reconnect in that case,
+      // heartbeats and lease extensions would stop and the Inngest Server would
+      // think the worker died.
+      //
+      // However, the state can be CLOSING during a shutdown without pending
+      // requests. The window of that happening is very small, but it's
+      // technically possible that we could mistakenly reconnect during a
+      // shutdown if the Inngest Server send a drain message.
 
       // Flush any pending messages before attempting connection
       if (this.callbacks.beforeConnect) {
@@ -190,8 +199,7 @@ export class ConnectionCore {
         this.callbacks.log(`Reconnecting in ${delay}ms`);
 
         const cancelled = await waitWithCancel(delay, () => {
-          const s = this.callbacks.getState();
-          return s === ConnectionState.CLOSING || s === ConnectionState.CLOSED;
+          return this.callbacks.getState() === ConnectionState.CLOSED;
         });
         if (cancelled) {
           this.callbacks.log("Reconnect backoff cancelled");
