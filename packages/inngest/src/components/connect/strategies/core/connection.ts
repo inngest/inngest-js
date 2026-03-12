@@ -871,6 +871,10 @@ export class ConnectionCore {
         // still running. Sending on a closed socket is a no-op and we must not
         // treat the missing response as a failure.
         //
+        // This is safe because each connection gets its own heartbeat
+        // interval. Once we reconnect, we can safely skip the old WS
+        // heartbeats because the new WS is heartbeating.
+        //
         // TODO: We need a better way to handle this. This isn't a horrible
         // hack, but it isn't ideal. Over the life of a worker, it'll have N-1
         // noop heartbeat intervals, where N is the number of times it
