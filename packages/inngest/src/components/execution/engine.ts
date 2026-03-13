@@ -352,6 +352,7 @@ class InngestExecutionEngine
           appId: res.data.app_id,
           fnId: res.data.fn_id,
           token: res.data.token,
+          realtimeToken: res.data.realtime_token,
         };
       } else {
         await retryWithBackoff(
@@ -409,19 +410,23 @@ class InngestExecutionEngine
     // If the SSE stream is already active, inform the client that execution
     // is switching to async mode so it can reconnect elsewhere.
     if (this.streamTools.activated) {
+      let realtimeToken = token;
       let url: string | undefined;
       try {
-        url = await this.options.client["inngestApi"].getCheckpointStreamUrl(
-          this.fnArg.runId,
-          token,
-        );
+        const redirect =
+          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
+            this.fnArg.runId,
+            this.state.checkpointedRun.realtimeToken,
+          );
+        realtimeToken = redirect.token;
+        url = redirect.url;
       } catch {
         // Best-effort; client can still construct URL from run_id + token
       }
 
       this.streamTools.redirect({
         run_id: this.fnArg.runId,
-        token,
+        token: realtimeToken,
         url,
       });
     }
@@ -551,26 +556,16 @@ class InngestExecutionEngine
     try {
       const encoder = new TextEncoder();
 
-      // Header frame: first line of the POST body, tells the Dev Server what
-      // HTTP status and headers to use when replaying to clients.
-      const headerFrame =
-        JSON.stringify({
-          status_code: 200,
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-          },
-        }) + "\n";
-
+      // Prepend the SSE metadata frame so subscribers know the run ID.
+      // No header frame is needed — the realtime publish/tee endpoint
+      // forwards raw bytes directly to subscribers.
       const metadataFrame = buildSSEMetadataFrame(
         this.fnArg.runId,
         this.fnArg.attempt,
       );
 
-      const prefix = headerFrame + metadataFrame;
-
       const bodyStream = prependToStream(
-        encoder.encode(prefix),
+        encoder.encode(metadataFrame),
         this.streamTools.readable,
       );
 
@@ -2430,6 +2425,7 @@ export interface ExecutionState {
     fnId: string;
     appId: string;
     token?: string;
+    realtimeToken?: string;
   };
 
   /**

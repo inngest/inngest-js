@@ -39,6 +39,7 @@ const checkpointNewRunResponseSchema = z.object({
     app_id: z.string().min(1),
     run_id: z.string().min(1),
     token: z.string().min(1).optional(),
+    realtime_token: z.string().min(1).optional(),
   }),
 });
 
@@ -569,14 +570,16 @@ export class InngestApi {
    * @returns The raw Response from the API
    */
   /**
-   * POST buffered stream data to the checkpoint stream ingest endpoint.
-   * The body is a ReadableStream containing the SSE frames.
+   * POST stream data to the realtime publish/tee endpoint, forwarding raw
+   * bytes to all subscribers via the broadcaster.
    */
   async checkpointStream(args: {
     runId: string;
     body: ReadableStream;
   }): Promise<void> {
-    const url = await this.getTargetUrl(`/v1/checkpoint/${args.runId}/stream`);
+    const url = await this.getTargetUrl(
+      `/v1/realtime/publish/tee?channel=${encodeURIComponent(args.runId)}`,
+    );
 
     const res = await fetchWithAuthFallback({
       authToken: this.hashedKey,
@@ -605,13 +608,31 @@ export class InngestApi {
   }
 
   /**
-   * Get the full URL for the checkpoint stream output endpoint. Used to
-   * build the redirect URL that clients connect to for async streaming.
+   * Get a realtime subscription token and the full SSE URL for a run's
+   * stream channel. Used to build the redirect payload that tells clients
+   * where to reconnect for async streaming.
+   *
+   * If `existingToken` is provided (e.g. from CheckpointNewRunResponse),
+   * it is used directly, skipping the round-trip to /v1/realtime/token.
    */
-  async getCheckpointStreamUrl(runId: string, token: string): Promise<string> {
-    const url = await this.getTargetUrl(`/v1/checkpoint/${runId}/stream`);
-    url.searchParams.set("token", token);
-    return url.toString();
+  async getRealtimeStreamRedirect(
+    runId: string,
+    existingToken?: string,
+  ): Promise<{
+    token: string;
+    url: string;
+  }> {
+    let token: string;
+    if (existingToken) {
+      token = existingToken;
+    } else {
+      token = await this.getSubscriptionToken(runId, ["$stream"]);
+    }
+
+    const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
+    sseUrl.searchParams.set("token", token);
+
+    return { token, url: sseUrl.toString() };
   }
 
   async getRunOutput(runId: string, token: string): Promise<Response> {

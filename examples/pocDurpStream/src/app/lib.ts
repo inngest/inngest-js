@@ -55,6 +55,8 @@ async function readSSEStream(
         parsed = data;
       }
 
+      console.log("[sse]", event, parsed);
+
       if (event === "inngest") {
         const obj = parsed as Record<string, unknown>;
         if (typeof obj.run_id === "string") {
@@ -81,7 +83,7 @@ async function readSSEStream(
 
 /**
  * Start an SSE stream against the given endpoint, following redirects
- * to the checkpoint stream if the function goes async.
+ * to the realtime SSE endpoint if the function goes async.
  */
 export async function startStream(
   endpoint: string,
@@ -98,10 +100,10 @@ export async function startStream(
   const redirectUrl = await readSSEStream(res, callbacks);
 
   if (redirectUrl) {
-    // @ts-expect-error duplex not in RequestInit types yet
-    const asyncRes = await fetch(redirectUrl, { duplex: "half" });
+    // The redirect URL already contains the realtime JWT — connect directly
+    const asyncRes = await fetch(redirectUrl);
     if (!asyncRes.body) {
-      throw new Error("No body from async stream");
+      throw new Error("No body from realtime stream");
     }
 
     await readSSEStream(asyncRes, callbacks);
