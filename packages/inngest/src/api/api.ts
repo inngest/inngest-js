@@ -39,6 +39,7 @@ const checkpointNewRunResponseSchema = z.object({
     app_id: z.string().min(1),
     run_id: z.string().min(1),
     token: z.string().min(1).optional(),
+    realtime_token: z.string().min(1).optional(),
   }),
 });
 
@@ -610,12 +611,24 @@ export class InngestApi {
    * Get a realtime subscription token and the full SSE URL for a run's
    * stream channel. Used to build the redirect payload that tells clients
    * where to reconnect for async streaming.
+   *
+   * If `existingToken` is provided (e.g. from CheckpointNewRunResponse),
+   * it is used directly, skipping the round-trip to /v1/realtime/token.
    */
-  async getRealtimeStreamRedirect(runId: string): Promise<{
+  async getRealtimeStreamRedirect(
+    runId: string,
+    existingToken?: string,
+  ): Promise<{
     token: string;
     url: string;
   }> {
-    const token = await this.getSubscriptionToken(runId, ["$stream"]);
+    let token: string;
+    if (existingToken) {
+      token = existingToken;
+    } else {
+      token = await this.getSubscriptionToken(runId, ["$stream"]);
+    }
+
     const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
     sseUrl.searchParams.set("token", token);
 

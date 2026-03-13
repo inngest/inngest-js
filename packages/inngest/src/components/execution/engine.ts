@@ -352,6 +352,7 @@ class InngestExecutionEngine
           appId: res.data.app_id,
           fnId: res.data.fn_id,
           token: res.data.token,
+          realtimeToken: res.data.realtime_token,
         };
       } else {
         await retryWithBackoff(
@@ -415,6 +416,7 @@ class InngestExecutionEngine
         const redirect =
           await this.options.client["inngestApi"].getRealtimeStreamRedirect(
             this.fnArg.runId,
+            this.state.checkpointedRun.realtimeToken,
           );
         realtimeToken = redirect.token;
         url = redirect.url;
@@ -2423,6 +2425,7 @@ export interface ExecutionState {
     fnId: string;
     appId: string;
     token?: string;
+    realtimeToken?: string;
   };
 
   /**
