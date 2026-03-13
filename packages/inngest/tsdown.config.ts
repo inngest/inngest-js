@@ -27,6 +27,7 @@ export default defineConfig({
     "src/redwood.ts",
     "src/remix.ts",
     "src/sveltekit.ts",
+    "src/durable-endpoints.ts",
     "src/types.ts",
 
     // Connect worker thread runner. Must be an entrypoint so that it compiles

@@ -11,6 +11,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "jsonwebtoken": "^9.0.3",
     "next": "^15.1.0",
+    "openai": "^6.27.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "4.3.6"

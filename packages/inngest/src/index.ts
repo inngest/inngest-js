@@ -38,6 +38,7 @@
  */
 
 export * from "@inngest/ai";
+export { getRunId } from "./components/execution/als.ts";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
@@ -52,7 +53,10 @@ export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
 export { step } from "./components/InngestStepTools.ts";
-export type { StreamTools } from "./components/InngestStreamTools.ts";
+export type {
+  PipeSource,
+  StreamTools,
+} from "./components/InngestStreamTools.ts";
 export { stream } from "./components/InngestStreamTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";

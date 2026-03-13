@@ -1,5 +1,72 @@
 import { createTimeoutPromise } from "../../helpers/promises.ts";
 
+// ---------------------------------------------------------------------------
+// Shared frame type definitions
+// ---------------------------------------------------------------------------
+// These types are the single source of truth for the SSE wire format.
+// Both the build helpers (below) and the parse helper (iterSSE / parseSSEFrame)
+// are derived from them, so the two sides can never drift apart.
+
+/** Metadata frame — first frame sent on any streaming response. */
+export type SSEMetadataFrame = {
+  type: "metadata";
+  run_id: string;
+  attempt: number;
+};
+
+/** Stream frame — carries user-pushed data from stream.push() / stream.pipe(). */
+export type SSEStreamFrame = {
+  type: "stream";
+  data: unknown;
+};
+
+/** Result frame — terminal frame carrying the function's return value. */
+export type SSEResultFrame = {
+  type: "result";
+  data: unknown;
+};
+
+/** Step lifecycle frame — emitted at the start, end, and on error of each step. */
+export type SSEStepFrame = {
+  type: "step";
+  id: string;
+  status: "running" | "completed" | "errored";
+  error?: string;
+  will_retry?: boolean;
+  /** The execution attempt number (0-based). Present on errored frames. */
+  attempt?: number;
+};
+
+/** Redirect frame — tells the client to reconnect to the async checkpoint stream. */
+export type SSERedirectFrame = {
+  type: "redirect";
+  run_id: string;
+  token: string;
+  url?: string;
+};
+
+/** Union of all SSE frames produced by this SDK. */
+export type SSEFrame =
+  | SSEMetadataFrame
+  | SSEStreamFrame
+  | SSEResultFrame
+  | SSEStepFrame
+  | SSERedirectFrame;
+
+// ---------------------------------------------------------------------------
+// Raw SSE line-level type (internal to the parser)
+// ---------------------------------------------------------------------------
+
+/** A single parsed SSE event before JSON-decoding the data field. */
+export type RawSSEEvent = {
+  event: string;
+  data: string;
+};
+
+// ---------------------------------------------------------------------------
+// Internal frame builder
+// ---------------------------------------------------------------------------
+
 /**
  * Builds a single SSE frame with the given event name and JSON-serialized data.
  *
@@ -9,6 +76,139 @@ import { createTimeoutPromise } from "../../helpers/promises.ts";
  */
 function buildSSEFrame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`;
+}
+
+// ---------------------------------------------------------------------------
+// SSE parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Async generator that reads a `ReadableStream<Uint8Array>` and yields each
+ * complete SSE event as a `RawSSEEvent` (event name + raw data string).
+ *
+ * The caller is responsible for JSON-parsing `data` if needed.  Use
+ * `parseSSEFrame` to go from a `RawSSEEvent` to a typed `SSEFrame`.
+ *
+ * @example
+ * ```ts
+ * for await (const raw of iterSSE(response.body)) {
+ *   const frame = parseSSEFrame(raw);
+ *   if (frame?.type === "stream") { ... }
+ * }
+ * ```
+ */
+export async function* iterSSE(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<RawSSEEvent> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      // The last element is always an incomplete frame (or empty string at end).
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+
+        let event = "message";
+        let data = "";
+
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: ")) {
+            event = line.slice(7);
+          } else if (line.startsWith("data: ")) {
+            data = line.slice(6);
+          }
+        }
+
+        yield { event, data };
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Parse a raw SSE event into a typed `SSEFrame`, or return `null` for
+ * unrecognised event names.
+ *
+ * JSON parsing errors on the data field are treated as `null` (unknown frame)
+ * rather than thrown, so callers can safely skip unrecognised frames.
+ */
+export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.data);
+  } catch {
+    parsed = raw.data;
+  }
+
+  const obj =
+    parsed !== null && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+
+  switch (raw.event) {
+    case "inngest": {
+      if (typeof obj.run_id !== "string") return null;
+      return {
+        type: "metadata",
+        run_id: obj.run_id,
+        attempt: typeof obj.attempt === "number" ? obj.attempt : 0,
+      };
+    }
+
+    case "stream": {
+      return { type: "stream", data: parsed };
+    }
+
+    case "result": {
+      return { type: "result", data: parsed };
+    }
+
+    case "step": {
+      const status = obj.status;
+      if (
+        status !== "running" &&
+        status !== "completed" &&
+        status !== "errored"
+      ) {
+        return null;
+      }
+      return {
+        type: "step",
+        id: typeof obj.id === "string" ? obj.id : "",
+        status,
+        error: typeof obj.error === "string" ? obj.error : undefined,
+        will_retry: obj.will_retry === true ? true : undefined,
+        attempt: typeof obj.attempt === "number" ? obj.attempt : undefined,
+      };
+    }
+
+    case "redirect": {
+      if (typeof obj.run_id !== "string" || typeof obj.token !== "string") {
+        return null;
+      }
+      return {
+        type: "redirect",
+        run_id: obj.run_id,
+        token: obj.token,
+        url: typeof obj.url === "string" ? obj.url : undefined,
+      };
+    }
+
+    default:
+      return null;
+  }
 }
 
 /**
@@ -37,6 +237,22 @@ export function buildSSEStreamFrame(data: unknown): string {
  */
 export function buildSSEResultFrame(data: unknown): string {
   return buildSSEFrame("result", data);
+}
+
+/**
+ * Builds an SSE step lifecycle frame string.
+ *
+ * Used to notify clients when a step starts, completes, or errors so they
+ * can implement rollback on retry.
+ */
+export function buildSSEStepFrame(data: {
+  id: string;
+  status: "running" | "completed" | "errored";
+  error?: string;
+  will_retry?: boolean;
+  attempt?: number;
+}): string {
+  return buildSSEFrame("step", data);
 }
 
 /**
