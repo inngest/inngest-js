@@ -5,6 +5,7 @@ import { Inngest } from "../Inngest.ts";
 import { createStrategy } from "./strategies/index.ts";
 import { SameThreadStrategy } from "./strategies/sameThread/index.ts";
 import type { ConnectHandlerOptions } from "./types.ts";
+import type { Mode } from "../../helpers/env.ts";
 
 // Mock WebSocket globally
 class MockWebSocket {
@@ -237,7 +238,7 @@ describe("createStrategy", () => {
     },
     envName: undefined,
     apiBaseUrl: undefined,
-    mode: { isDev: true, isInferred: false },
+    mode: "dev" as Mode,
     connectionData: {
       marshaledCapabilities: "",
       manualReadinessAck: false,
