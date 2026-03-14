@@ -18,7 +18,7 @@ function buildSSEFrame(event: string, data: unknown): string {
  * (run ID and attempt number) to consumers of the stream.
  */
 export function buildSSEMetadataFrame(runId: string, attempt: number): string {
-  return buildSSEFrame("inngest", { run_id: runId, attempt });
+  return buildSSEFrame("inngest.metadata", { run_id: runId, attempt });
 }
 
 /**
@@ -36,7 +36,7 @@ export function buildSSEStreamFrame(data: unknown): string {
  * response. This is the last frame sent before the stream closes.
  */
 export function buildSSEResultFrame(data: unknown): string {
-  return buildSSEFrame("result", data);
+  return buildSSEFrame("inngest.result", data);
 }
 
 /**
@@ -51,7 +51,7 @@ export function buildSSERedirectFrame(data: {
   token: string;
   url?: string;
 }): string {
-  return buildSSEFrame("redirect", data);
+  return buildSSEFrame("inngest.redirect_info", data);
 }
 
 /**

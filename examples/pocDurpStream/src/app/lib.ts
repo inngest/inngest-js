@@ -57,16 +57,16 @@ async function readSSEStream(
 
       console.log("[sse]", event, parsed);
 
-      if (event === "inngest") {
+      if (event === "inngest.metadata") {
         const obj = parsed as Record<string, unknown>;
         if (typeof obj.run_id === "string") {
           callbacks.onRunId(obj.run_id);
         }
-      } else if (event === "stream" || event === "result") {
+      } else if (event === "stream" || event === "inngest.result") {
         const display =
           typeof parsed === "string" ? parsed : JSON.stringify(parsed);
         callbacks.onData(display);
-      } else if (event === "redirect") {
+      } else if (event === "inngest.redirect_info") {
         const obj = parsed as Record<string, unknown>;
         if (typeof obj.url === "string") {
           return obj.url;

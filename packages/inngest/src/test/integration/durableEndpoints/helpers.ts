@@ -60,7 +60,7 @@ export async function readSSEStream(
           }
         }
 
-        if (event === "redirect") {
+        if (event === "inngest.redirect_info") {
           try {
             const parsed = JSON.parse(data);
             if (parsed.url) {
@@ -255,7 +255,7 @@ export function startSSEReader(res: Response, timeoutMs = 30_000) {
             }
           }
 
-          if (event === "redirect") {
+          if (event === "inngest.redirect_info") {
             try {
               const parsed = JSON.parse(data);
               if (parsed.url) {
@@ -320,7 +320,7 @@ export async function pollForAsyncStream(
 
         const hasContent =
           events.some((e) => e.event === "stream") ||
-          events.some((e) => e.event === "result");
+          events.some((e) => e.event === "inngest.result");
         if (hasContent) {
           return events;
         }

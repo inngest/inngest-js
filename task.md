@@ -52,7 +52,11 @@ Note that `inngest.redirect_info` is sent before the DE does async mode: it's im
 
 ### Server-side API
 
-Example DE:
+Individually chunks are streamed with `stream.push("my chunk")`.
+
+Existing streams can be piped to the client with `stream.pipe(otherStream)`.
+
+#### Example
 
 ```ts
 import { Inngest } from "inngest";
@@ -64,12 +68,12 @@ const inngest = new Inngest({ id: "my-app", endpointAdapter });
 export const GET = inngest.endpoint(async () => {
   await step.run("before-async-mode-1", async () => {
     // Streamed directly to the client
-    stream("Hello");
+    stream.push("Hello");
   });
 
   await step.run("before-async-mode-2", async () => {
     // Streamed directly to the client
-    stream("World");
+    stream.push("World");
   });
 
   // Force async mode
@@ -77,8 +81,8 @@ export const GET = inngest.endpoint(async () => {
 
   await step.run("after-async-mode", async () => {
     // Streamed to the client via the IS
-    stream("Hola");
-    stream("mundo");
+    stream.push("Hola");
+    stream.push("mundo");
   });
 
   // Streamed to the client via the IS

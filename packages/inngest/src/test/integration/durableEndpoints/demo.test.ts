@@ -77,7 +77,7 @@ test(
     await sse.done;
 
     // Metadata event with run_id
-    const metadataEvents = sse.events.filter((e) => e.event === "inngest");
+    const metadataEvents = sse.events.filter((e) => e.event === "inngest.metadata");
     expect(metadataEvents.length).toBe(1);
     const metadata = JSON.parse(metadataEvents[0]!.data);
     expect(metadata).toHaveProperty("run_id");
@@ -101,7 +101,7 @@ test(
     await sse2.done;
 
     // Terminal result event with the function's return value
-    const resultEvents = sse2.events.filter((e) => e.event === "result");
+    const resultEvents = sse2.events.filter((e) => e.event === "inngest.result");
     expect(resultEvents.length).toBe(1);
     expect(JSON.parse(resultEvents[0]!.data)).toBe("Done\n");
 
