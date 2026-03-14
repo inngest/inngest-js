@@ -1,3 +1,4 @@
+import type { Mode } from "../../../../helpers/env.ts";
 import type { Logger } from "../../../../middleware/logger.ts";
 import type {
   GatewayExecutorRequestData,
@@ -60,7 +61,7 @@ export interface BaseConnectionConfig {
   /**
    * The mode of the Inngest client.
    */
-  mode: { isDev: boolean; isInferred: boolean };
+  mode: Mode;
 }
 
 /**

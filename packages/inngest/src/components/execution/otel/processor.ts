@@ -15,6 +15,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
+import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -25,7 +26,7 @@ const processorDevDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 /**
  * A set of resource attributes that are used to identify the Inngest app and
  *  the function that is being executed. This is used to store the resource
- * attributes for the spans that are exported to the Inngest endpoint, and cache
+ *  attributes for the spans that are exported to the Inngest endpoint, and cache
  *  them for later use.
  */
 let _resourceAttributes: Resource | undefined;
@@ -40,6 +41,7 @@ export type ParentState = {
   appId: string | undefined;
   functionId: string | undefined;
   traceRef: string | undefined;
+  rootSpanId: string;
 };
 
 /**
@@ -117,6 +119,23 @@ export class InngestSpanProcessor implements SpanProcessor {
       this.#traceParents.delete(spanId);
     }
   });
+
+  /**
+   * Tracks the currently-executing step for each execution, keyed by root span
+   * ID. Used to compute deterministic parent span IDs for userland spans when
+   * checkpointing is enabled and multiple steps run in a single invocation.
+   */
+  #activeStepContext = new Map<
+    string,
+    { hashedStepId: string; attempt: number }
+  >();
+
+  /**
+   * Root span IDs that have had at least one step execution declared, meaning
+   * they are checkpointing runs. Used to filter out infrastructure spans
+   * (checkpoint POSTs, dev server polls) that fire between steps.
+   */
+  #checkpointingRoots = new Set<string>();
 
   /**
    * In order to only capture a subset of spans, we need to declare the initial
@@ -202,9 +221,40 @@ export class InngestSpanProcessor implements SpanProcessor {
         runId,
         traceparent,
         traceRef,
+        rootSpanId: span.spanContext().spanId,
       },
       span,
+      true,
     );
+  }
+
+  /**
+   * Declare that a step is currently executing. Userland spans created while
+   * a step context is active will have their `inngest.traceparent` rewritten
+   * to reference a deterministic span ID derived from the step, matching the
+   * span the Go executor will create via checkpoint.
+   */
+  public declareStepExecution(
+    rootSpanId: string,
+    hashedStepId: string,
+    attempt: number,
+  ): void {
+    processorDevDebug(
+      "declareStepExecution: rootSpanId=%s hashedStepId=%s attempt=%d",
+      rootSpanId,
+      hashedStepId,
+      attempt,
+    );
+    this.#checkpointingRoots.add(rootSpanId);
+    this.#activeStepContext.set(rootSpanId, { hashedStepId, attempt });
+  }
+
+  /**
+   * Clear the active step context after a step finishes executing.
+   */
+  public clearStepExecution(rootSpanId: string): void {
+    processorDevDebug("clearStepExecution: rootSpanId=%s", rootSpanId);
+    this.#activeStepContext.delete(rootSpanId);
   }
 
   /**
@@ -282,12 +332,42 @@ export class InngestSpanProcessor implements SpanProcessor {
    * Mark a span as being tracked by this processor, meaning it will be exported
    * to the Inggest endpoint when it ends.
    */
-  private trackSpan(parentState: ParentState, span: Span): void {
+  private trackSpan(
+    parentState: ParentState,
+    span: Span,
+    isRoot = false,
+  ): void {
+    const trackDebug = processorDevDebug.extend("trackSpan");
     const spanId = span.spanContext().spanId;
 
     this.#spanCleanup.register(span, spanId, span);
     this.#spansToExport.add(span);
     this.#traceParents.set(spanId, parentState);
+
+    // For direct children of the root span during step execution, set a
+    // dedicated attribute with the deterministic step span ID. The Go executor
+    // creates executor.step spans with the same deterministic ID (from the same
+    // seed), so the ingestion can parent userland spans under the correct step.
+    if (!isRoot) {
+      const spanParentId =
+        (span as unknown as ReadableSpan).parentSpanContext?.spanId ??
+        (span as unknown as { parentSpanId?: string }).parentSpanId;
+
+      if (spanParentId === parentState.rootSpanId) {
+        const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
+        if (stepCtx) {
+          const seed = stepCtx.hashedStepId + ":" + String(stepCtx.attempt);
+          const newSpanId = deterministicSpanID(seed);
+          trackDebug(
+            "setting inngest.step.parentSpanId=%s (seed=%s) on span %s",
+            newSpanId,
+            seed,
+            spanId,
+          );
+          span.setAttribute(Attribute.InngestStepParentSpanId, newSpanId);
+        }
+      }
+    }
 
     span.setAttribute(Attribute.InngestTraceparent, parentState.traceparent);
     span.setAttribute(Attribute.InngestRunId, parentState.runId);
@@ -333,9 +413,11 @@ export class InngestSpanProcessor implements SpanProcessor {
   onStart(span: Span): void {
     const devDebug = processorDevDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
-    // 🤫 It seems to work
-    const parentSpanId = (span as unknown as ReadableSpan).parentSpanContext
-      ?.spanId;
+    // Support both OTel SDK v2.x (parentSpanContext.spanId) and v1.x
+    // (parentSpanId as a plain string) since users may have either version.
+    const parentSpanId =
+      (span as unknown as ReadableSpan).parentSpanContext?.spanId ??
+      (span as unknown as { parentSpanId?: string }).parentSpanId;
 
     // The root span isn't captured here, but we can capture children of it
     // here.
@@ -349,6 +431,21 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     const parentState = this.#traceParents.get(parentSpanId);
     if (parentState) {
+      // In checkpointing mode, only track spans during active step execution.
+      // This filters out infrastructure spans (checkpoint POSTs, dev server
+      // polls) that fire between steps and would otherwise pollute the tree.
+      if (
+        this.#checkpointingRoots.has(parentState.rootSpanId) &&
+        !this.#activeStepContext.has(parentState.rootSpanId)
+      ) {
+        processorDevDebug(
+          "skipping span",
+          spanId,
+          "- checkpointing between steps",
+        );
+        return;
+      }
+
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
       devDebug(
