@@ -1,9 +1,5 @@
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
-import {
-  allProcessEnv,
-  checkModeConfiguration,
-  getEnvironmentName,
-} from "../../helpers/env.ts";
+import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import {
@@ -369,7 +365,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         requestHandlers,
         options: this.options,
         apiBaseUrl: this.inngest.apiBaseUrl,
-        mode: { isDev: this.inngest.mode === "dev", isInferred: false },
+        mode: this.inngest["mode"],
       },
       this.options,
     );
