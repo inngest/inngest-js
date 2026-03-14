@@ -125,6 +125,7 @@ export namespace Middleware {
   export type WrapRequestArgs = DeepReadonly<{
     fn: InngestFunction.Any | null;
     next: () => Promise<Response>;
+    requestArgs: readonly unknown[];
     requestInfo: Request;
     runId: string;
   }>;
