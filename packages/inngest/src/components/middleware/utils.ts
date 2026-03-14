@@ -64,7 +64,8 @@ export function buildWrapRequestChain({
     const mw = middleware[i];
     if (mw?.wrapRequest) {
       const next = chain;
-      chain = () => mw.wrapRequest!({ next, requestArgs, requestInfo, runId, fn });
+      chain = () =>
+        mw.wrapRequest!({ next, requestArgs, requestInfo, runId, fn });
     }
   }
   return chain;
