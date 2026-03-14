@@ -132,7 +132,7 @@ export class ConnectionCore {
     }
 
     const state = this.callbacks.getState();
-    if (state === ConnectionState.CLOSING || state === ConnectionState.CLOSED) {
+    if (state === ConnectionState.CLOSED) {
       throw new Error("Connection already closed");
     }
 
@@ -142,12 +142,21 @@ export class ConnectionCore {
 
     while (true) {
       const currentState = this.callbacks.getState();
-      if (
-        currentState === ConnectionState.CLOSING ||
-        currentState === ConnectionState.CLOSED
-      ) {
+      if (currentState === ConnectionState.CLOSED) {
         break;
       }
+
+      // NOTE: We can get here when the state is CLOSING, therefore it's
+      // possible to reconnect while the CLOSING. This is intentional so that
+      // the worker can reconnect while waiting for pending requests during a
+      // graceful shutdown. If we didn't allow reconnect in that case,
+      // heartbeats and lease extensions would stop and the Inngest Server would
+      // think the worker died.
+      //
+      // However, the state can be CLOSING during a shutdown without pending
+      // requests. The window of that happening is very small, but it's
+      // technically possible that we could mistakenly reconnect during a
+      // shutdown if the Inngest Server send a drain message.
 
       // Flush any pending messages before attempting connection
       if (this.callbacks.beforeConnect) {
@@ -190,8 +199,7 @@ export class ConnectionCore {
         this.callbacks.log(`Reconnecting in ${delay}ms`);
 
         const cancelled = await waitWithCancel(delay, () => {
-          const s = this.callbacks.getState();
-          return s === ConnectionState.CLOSING || s === ConnectionState.CLOSED;
+          return this.callbacks.getState() === ConnectionState.CLOSED;
         });
         if (cancelled) {
           this.callbacks.log("Reconnect backoff cancelled");
@@ -704,12 +712,30 @@ export class ConnectionCore {
             return;
           }
 
+          // Use the current live connection's WebSocket for lease
+          // extensions. During a drain, the original WebSocket may be
+          // closed by the gateway while the request is still in flight,
+          // causing lease extension messages to silently fail and the
+          // gateway to time out the request.
+          const leaseWs = this.currentConnection?.ws ?? ws;
+
           this.callbacks.log("Extending lease", {
             connectionId,
             leaseId: currentLeaseId,
           });
 
-          ws.send(
+          if (leaseWs.readyState !== WebSocket.OPEN) {
+            this.callbacks.log(
+              "Cannot extend lease, no open WebSocket available",
+              {
+                connectionId,
+                requestId: gatewayExecutorRequest.requestId,
+              },
+            );
+            return;
+          }
+
+          leaseWs.send(
             ConnectMessage.encode(
               ConnectMessage.create({
                 kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
@@ -840,8 +866,25 @@ export class ConnectionCore {
           return;
         }
 
+        // Skip heartbeat ticks when the WebSocket is no longer open. During
+        // drain the Gateway may close the old WS while in-flight requests are
+        // still running. Sending on a closed socket is a no-op and we must not
+        // treat the missing response as a failure.
+        //
+        // This is safe because each connection gets its own heartbeat
+        // interval. Once we reconnect, we can safely skip the old WS
+        // heartbeats because the new WS is heartbeating.
+        //
+        // TODO: We need a better way to handle this. This isn't a horrible
+        // hack, but it isn't ideal. Over the life of a worker, it'll have N-1
+        // noop heartbeat intervals, where N is the number of times it
+        // reconnected.
+        if (ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
         if (conn.pendingHeartbeats >= 2) {
-          this.callbacks.log("Gateway heartbeat missed");
+          this.callbacks.log("Gateway heartbeat missed", { connectionId });
           void onConnectionError(
             new ReconnectError(
               `Consecutive gateway heartbeats missed (${connectionId})`,
