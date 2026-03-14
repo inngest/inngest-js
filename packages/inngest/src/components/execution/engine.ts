@@ -291,7 +291,7 @@ class InngestExecutionEngine
       // response wins the race and the loop later rejects, we don't want to
       // crash the process.
       coreLoop.catch((err) => {
-        this.debug("core loop rejected after early stream response:", err);
+        this.devDebug("core loop rejected after early stream response:", err);
       });
 
       return Promise.race([this.earlyStreamResponse.promise, coreLoop]);
@@ -578,10 +578,10 @@ class InngestExecutionEngine
           body: bodyStream,
         })
         .catch((err: unknown) => {
-          this.debug("checkpoint stream POST error:", err);
+          this.devDebug("checkpoint stream POST error:", err);
         });
     } catch (err) {
-      this.debug("checkpoint stream POST error:", err);
+      this.devDebug("checkpoint stream POST error:", err);
     }
   }
 
@@ -606,7 +606,7 @@ class InngestExecutionEngine
         ]);
       }
     } catch (err) {
-      this.debug(
+      this.devDebug(
         "error during background checkpoint of SSE result, client stream unaffected:",
         err,
       );
