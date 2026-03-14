@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { envKeys } from "../../helpers/consts.ts";
+import type { Mode } from "../../helpers/env.ts";
 import { WorkerConnectRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { Inngest } from "../Inngest.ts";
 import { createStrategy } from "./strategies/index.ts";
 import { SameThreadStrategy } from "./strategies/sameThread/index.ts";
 import type { ConnectHandlerOptions } from "./types.ts";
-import type { Mode } from "../../helpers/env.ts";
 
 // Mock WebSocket globally
 class MockWebSocket {
