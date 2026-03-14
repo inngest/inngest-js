@@ -68,12 +68,12 @@ const inngest = new Inngest({ id: "my-app", endpointAdapter });
 export const GET = inngest.endpoint(async () => {
   await step.run("before-async-mode-1", async () => {
     // Streamed directly to the client
-    stream.push("Hello");
+    stream.push("Hello\n");
   });
 
   await step.run("before-async-mode-2", async () => {
     // Streamed directly to the client
-    stream.push("World");
+    stream.push("World\n");
   });
 
   // Force async mode
@@ -81,8 +81,8 @@ export const GET = inngest.endpoint(async () => {
 
   await step.run("after-async-mode", async () => {
     // Streamed to the client via the IS
-    stream.push("Hola");
-    stream.push("mundo");
+    stream.push("Hola\n");
+    stream.push("mundo\n");
   });
 
   // Streamed to the client via the IS
