@@ -123,6 +123,12 @@ class InngestExecutionEngine
     | undefined;
 
   /**
+   * Whether the `inngest.redirect_info` SSE frame has already been sent.
+   * Prevents duplicate redirect frames.
+   */
+  private redirectSent = false;
+
+  /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
    * will be a `Promise` that resolves after no steps have been found for
    * `timeoutDuration` milliseconds.
@@ -356,6 +362,11 @@ class InngestExecutionEngine
           token: res.data.token,
           realtimeToken: res.data.realtime_token,
         };
+
+        // Send redirect info as soon as we have the realtime token.
+        // If the stream isn't activated yet, this is a no-op and
+        // handleStreamActivated will call it later.
+        this.sendRedirectIfReady();
       } else {
         await retryWithBackoff(
           () =>
@@ -409,28 +420,11 @@ class InngestExecutionEngine
 
     const token = this.state.checkpointedRun.token;
 
-    // If the SSE stream is already active, inform the client that execution
-    // is switching to async mode so it can reconnect elsewhere.
+    // End the stream without a result frame when switching to async mode.
+    // The redirect_info frame was already sent, so the client knows where
+    // to reconnect for the real result.
     if (this.streamTools.activated) {
-      let realtimeToken = token;
-      let url: string | undefined;
-      try {
-        const redirect =
-          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
-            this.fnArg.runId,
-            this.state.checkpointedRun.realtimeToken,
-          );
-        realtimeToken = redirect.token;
-        url = redirect.url;
-      } catch {
-        // Best-effort; client can still construct URL from run_id + token
-      }
-
-      this.streamTools.redirect({
-        run_id: this.fnArg.runId,
-        token: realtimeToken,
-        url,
-      });
+      this.streamTools.end();
     }
 
     return {
@@ -540,7 +534,56 @@ class InngestExecutionEngine
     // flow to the Dev Server in real-time rather than being buffered
     // until the function completes.
     this.postCheckpointStream();
+    this.sendRedirectIfReady();
     return undefined;
+  }
+
+  /**
+   * Sends the `inngest.redirect_info` SSE frame if both conditions are met:
+   * 1. The stream has been activated (stream.push/pipe was called)
+   * 2. We have a realtime token (first checkpoint has completed)
+   *
+   * Called from two places: after the first checkpoint and when the stream
+   * is first activated. This ensures the redirect is sent as soon as both
+   * pieces of information are available, rather than waiting until the DE
+   * goes async (which may never happen, or may be triggered by a crash).
+   */
+  private sendRedirectIfReady(): void {
+    if (this.redirectSent) {
+      return;
+    }
+
+    if (!this.streamTools.activated) {
+      return;
+    }
+
+    if (!this.state.checkpointedRun?.realtimeToken) {
+      return;
+    }
+
+    this.redirectSent = true;
+
+    void (async () => {
+      try {
+        const redirect =
+          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
+            this.fnArg.runId,
+            this.state.checkpointedRun!.realtimeToken,
+          );
+
+        this.streamTools.sendRedirectInfo({
+          run_id: this.fnArg.runId,
+          token: redirect.token,
+          url: redirect.url,
+        });
+      } catch {
+        // Best-effort; client can still construct URL from run_id + token
+        this.streamTools.sendRedirectInfo({
+          run_id: this.fnArg.runId,
+          token: this.state.checkpointedRun!.realtimeToken!,
+        });
+      }
+    })();
   }
 
   /**

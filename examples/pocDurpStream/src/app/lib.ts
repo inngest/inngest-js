@@ -19,6 +19,7 @@ async function readSSEStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let redirectUrl: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -69,16 +70,15 @@ async function readSSEStream(
       } else if (event === "inngest.redirect_info") {
         const obj = parsed as Record<string, unknown>;
         if (typeof obj.url === "string") {
-          return obj.url;
+          redirectUrl = obj.url;
         }
-        return null;
       }
     }
 
     callbacks.onScroll();
   }
 
-  return null;
+  return redirectUrl;
 }
 
 /**

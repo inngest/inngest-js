@@ -146,15 +146,15 @@ export class InngestStream {
   }
 
   /**
-   * Write a redirect frame and close the writer. Tells the client that
-   * execution has switched to async mode. Internal use only.
+   * Write a redirect info frame. Tells the client where to reconnect if the
+   * DE goes async. Does NOT close the writer — more stream frames may follow
+   * before the DE actually switches to async mode. Internal use only.
    */
-  redirect(data: { run_id: string; token: string; url?: string }): void {
+  sendRedirectInfo(data: { run_id: string; token: string; url?: string }): void {
     const frame = buildSSERedirectFrame(data);
 
     this.writeChain = this.writeChain
       .then(() => this.writer.write(this.encoder.encode(frame)))
-      .then(() => this.writer.close())
       .catch(() => {
         // Writer already errored/closed — nothing to do.
       });
@@ -173,6 +173,18 @@ export class InngestStream {
 
     this.writeChain = this.writeChain
       .then(() => this.writer.write(this.encoder.encode(frame)))
+      .then(() => this.writer.close())
+      .catch(() => {
+        // Writer already errored/closed — nothing to do.
+      });
+  }
+
+  /**
+   * Close the writer without writing a result frame. Used when the DE goes
+   * async and the real result will arrive on the redirected stream.
+   */
+  end(): void {
+    this.writeChain = this.writeChain
       .then(() => this.writer.close())
       .catch(() => {
         // Writer already errored/closed — nothing to do.
