@@ -23,7 +23,7 @@ export namespace StepFetch {
   }
 }
 
-const debug = Debug("inngest:fetch");
+const devDebug = Debug("inngest:fetch");
 
 const createFetchShim = (): StepFetch => {
   // biome-ignore lint/style/useConst: need this to allow fns to be defined
@@ -40,7 +40,7 @@ const createFetchShim = (): StepFetch => {
         );
       }
 
-      debug(
+      devDebug(
         "step.fetch() called outside of a function; falling back to global fetch",
       );
 
@@ -57,7 +57,7 @@ const createFetchShim = (): StepFetch => {
         );
       }
 
-      debug(
+      devDebug(
         `step.fetch() called inside step "${ctx.execution.executingStep.id}"; falling back to global fetch`,
       );
 
@@ -71,7 +71,7 @@ const createFetchShim = (): StepFetch => {
       input instanceof Request ? input.url : input.toString(),
     );
 
-    debug("step.fetch() shimming request to", targetUrl.hostname);
+    devDebug("step.fetch() shimming request to", targetUrl.hostname);
 
     // Purposefully do not try/cacth this; if it throws then we treat that as a
     // regular `fetch()` throw, which also would not return a `Response`.

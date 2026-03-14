@@ -183,10 +183,10 @@ export type InngestExecutionFactory = (
 ) => IInngestExecution;
 
 export class InngestExecution {
-  protected debug: Debugger;
+  protected devDebug: Debugger;
 
   constructor(protected options: InngestExecutionOptions) {
-    this.debug = Debug(`${debugPrefix}:${this.options.runId}`);
+    this.devDebug = Debug(`${debugPrefix}:${this.options.runId}`);
   }
 }
 

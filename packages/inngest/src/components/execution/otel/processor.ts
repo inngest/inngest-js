@@ -20,7 +20,7 @@ import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
 import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
 
-const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
+const processorDevDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 
 /**
  * A set of resource attributes that are used to identify the Inngest app and
@@ -149,7 +149,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     // If we don't have a traceparent, then we can't track this span. This is
     // likely a span that we don't care about, so we can ignore it.
     if (!traceparent) {
-      return processorDebug(
+      return processorDevDebug(
         "no traceparent found for span",
         span.spanContext().spanId,
         "so skipping it",
@@ -173,7 +173,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         functionId = entries[TraceStateKey.FunctionId];
         traceRef = entries[TraceStateKey.TraceRef];
       } catch (err) {
-        processorDebug(
+        processorDevDebug(
           "failed to parse tracestate",
           tracestate,
           "so skipping it;",
@@ -184,7 +184,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
-    processorDebug.extend("declareStartingSpan")(
+    processorDevDebug.extend("declareStartingSpan")(
       "declaring:",
       span.spanContext().spanId,
       "for traceparent",
@@ -255,7 +255,7 @@ export class InngestSpanProcessor implements SpanProcessor {
           const path = "/v1/traces/userland";
           const url = new URL(path, app.apiBaseUrl);
 
-          processorDebug(
+          processorDevDebug(
             "batcher lazily accessed; creating new batcher with URL",
             url,
           );
@@ -331,7 +331,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    * spans that are children of spans we care about.
    */
   onStart(span: Span): void {
-    const debug = processorDebug.extend("onStart");
+    const devDebug = processorDevDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
     // 🤫 It seems to work
     const parentSpanId = (span as unknown as ReadableSpan).parentSpanContext
@@ -342,7 +342,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     if (!parentSpanId) {
       // All spans that Inngest cares about will have a parent, so ignore this
-      debug("no parent span ID for", spanId, "so skipping it");
+      devDebug("no parent span ID for", spanId, "so skipping it");
 
       return;
     }
@@ -351,7 +351,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     if (parentState) {
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
-      debug(
+      devDebug(
         "found traceparent",
         parentState,
         "in span ID",
@@ -370,23 +370,23 @@ export class InngestSpanProcessor implements SpanProcessor {
    * endpoint.
    */
   onEnd(span: ReadableSpan): void {
-    const debug = processorDebug.extend("onEnd");
+    const devDebug = processorDevDebug.extend("onEnd");
     const spanId = span.spanContext().spanId;
 
     try {
       if (this.#spansToExport.has(span as unknown as Span)) {
         if (!this.#batcher) {
-          return debug(
+          return devDebug(
             "batcher not initialized, so failed exporting span",
             spanId,
           );
         }
 
-        debug("exporting span", spanId);
+        devDebug("exporting span", spanId);
         return void this.#batcher.then((batcher) => batcher.onEnd(span));
       }
 
-      debug("not exporting span", spanId, "as we don't care about it");
+      devDebug("not exporting span", spanId, "as we don't care about it");
     } finally {
       this.cleanupSpan(span as unknown as Span);
     }
@@ -403,7 +403,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    * serverless process is killed.
    */
   async forceFlush(): Promise<void> {
-    const flushDebug = processorDebug.extend("forceFlush");
+    const flushDebug = processorDevDebug.extend("forceFlush");
     flushDebug("force flushing batcher");
 
     return this.#batcher
@@ -414,7 +414,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   async shutdown(): Promise<void> {
-    processorDebug.extend("shutdown")("shutting down batcher");
+    processorDevDebug.extend("shutdown")("shutting down batcher");
 
     return this.#batcher?.then((batcher) => batcher.shutdown());
   }

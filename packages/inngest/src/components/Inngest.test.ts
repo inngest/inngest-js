@@ -1124,6 +1124,65 @@ describe("endpointProxy", () => {
   };
 
   test("throws error when no endpoint adapter is configured", () => {
+    const inngest = createClient({ id: "test", isDev: true });
+
+    expect(() => inngest.endpointProxy()).toThrow(
+      "No endpoint adapter configured for this Inngest client.",
+    );
+  });
+
+  test("throws error when adapter does not support proxy handlers", () => {
+    const inngest = createClient({
+      id: "test",
+      endpointAdapter: createMockAdapter(),
+      isDev: true,
+    });
+
+    expect(() => inngest.endpointProxy()).toThrow(
+      "The configured endpoint adapter does not support proxy handlers.",
+    );
+  });
+
+  test("returns proxy handler when adapter supports it", () => {
+    const mockProxyHandler = () => Promise.resolve(new Response());
+
+    const inngest = createClient({
+      id: "test",
+      endpointAdapter: createMockAdapter(() => mockProxyHandler),
+      isDev: true,
+    });
+
+    expect(inngest.endpointProxy()).toBe(mockProxyHandler);
+  });
+
+  test("passes client to createProxyHandler", () => {
+    const createProxyHandler = vi.fn().mockReturnValue(() => {});
+
+    const inngest = createClient({
+      id: "test",
+      endpointAdapter: createMockAdapter(createProxyHandler),
+      isDev: true,
+    });
+
+    inngest.endpointProxy();
+
+    expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
+  });
+});
+
+describe("endpointProxy", () => {
+  // Helper to create mock adapters with consistent shape
+  // biome-ignore lint/suspicious/noExplicitAny: test helper
+  const createMockAdapter = (createProxyHandler?: () => any) => {
+    const adapter = Object.assign(() => {}, {
+      [Symbol.toStringTag]: "Inngest.EndpointAdapter" as const,
+      withOptions: () => adapter,
+      ...(createProxyHandler && { createProxyHandler }),
+    });
+    return adapter;
+  };
+
+  test("throws error when no endpoint adapter is configured", () => {
     const inngest = createClient({ id: "test" });
 
     expect(() => inngest.endpointProxy()).toThrow(

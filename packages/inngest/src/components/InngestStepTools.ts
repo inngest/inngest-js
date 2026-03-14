@@ -37,6 +37,7 @@ import {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   type MetadataStepTool,
@@ -44,6 +45,7 @@ import {
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import type { Middleware } from "./middleware/index.ts";
+import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
 import type { EventType } from "./triggers/triggers.ts";
 
@@ -260,12 +262,33 @@ export const createStepTools = <
     const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
       const op = matchOp(stepOptions, ...rest);
 
+      const alsCtx = getAsyncCtxSync()?.execution;
+
+      if (alsCtx?.insideExperimentSelect) {
+        throw new NonRetriableError(
+          "Step tools (step.run, step.sleep, etc.) cannot be called inside " +
+            "an experiment select() callback. Move step calls into variant " +
+            "callbacks instead.",
+        );
+      }
+
       // Explicit option takes precedence, then check ALS context
-      const parallelMode =
-        stepOptions.parallelMode ?? getAsyncCtxSync()?.execution?.parallelMode;
+      const parallelMode = stepOptions.parallelMode ?? alsCtx?.parallelMode;
 
       if (parallelMode) {
         op.opts = { ...op.opts, parallelMode };
+      }
+
+      // Propagate experiment context to variant sub-steps
+      const experimentContext = alsCtx?.experimentContext;
+      if (experimentContext) {
+        op.opts = { ...op.opts, ...experimentContext };
+      }
+
+      // Track that a step tool was invoked inside a variant callback
+      const tracker = alsCtx?.experimentStepTracker;
+      if (tracker) {
+        tracker.found = true;
       }
 
       return op;
@@ -890,6 +913,11 @@ export const createStepTools = <
     memoizationId: string,
   ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
 
+  // Attach a step.run variant with opts.type = "group.experiment" for use by
+  // group.experiment(). The symbol keeps it off the public `step` surface.
+  (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
+    createStepRun("group.experiment");
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -947,6 +975,15 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
 
 export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
   [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
+};
+
+export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
+
+export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
+  [experimentStepRunSymbol]: (
+    idOrOptions: StepOptionsOrId,
+    fn: () => unknown,
+  ) => Promise<unknown>;
 };
 
 /**
@@ -1024,6 +1061,35 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
   // If we're here, we're in the context of a function execution already and
   // we can return the existing step tooling.
   return ctx.execution.ctx.step;
+};
+
+const getDeferredGroupTooling = async (): Promise<GroupTools> => {
+  const ctx = await getAsyncCtx();
+  if (!ctx) {
+    throw new Error(
+      "`group` tools can only be used within Inngest function executions; no context was found",
+    );
+  }
+
+  if (!ctx.execution) {
+    throw new Error(
+      "`group` tools can only be used within Inngest function executions; no execution context was found",
+    );
+  }
+
+  return ctx.execution.ctx.group;
+};
+
+/**
+ * A deferred proxy for `group` tools that delegates through ALS context.
+ *
+ * @public
+ */
+export const group: GroupTools = {
+  parallel: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
+  experiment: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
 };
 
 /**

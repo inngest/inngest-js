@@ -5,7 +5,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
 export const DEFAULT_SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"];
 
 export interface ConnectApp {
-  client: Inngest.Like;
+  client: Inngest.Any;
   functions?: Array<InngestFunction.Like>;
 }
 
