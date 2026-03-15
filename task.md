@@ -31,6 +31,8 @@ The checkpointing endpoints are:
 - `POST /checkpoint`: Create the DE run and save its first step. This is called after the first step executes.
 - `POST /checkpoint/{runId}/steps`: Save a step. This is called for every step except the first step.
 
+Unlike apps with Inngest functions, DE apps don't need to sync with an IS before running.
+
 ## What's new
 
 We're adding support for streaming. Users are able to stream arbitrary data back to the client at any arbitrary point in the DE. In other words, we aren't restricting streaming to a returned stream. These "arbitrary streaming" capabilities are table stakes for AI use cases.
