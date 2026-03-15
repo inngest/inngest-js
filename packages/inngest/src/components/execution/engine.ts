@@ -117,6 +117,7 @@ class InngestExecutionEngine
    * If we're not supposed to run a particular step, this will be `undefined`.
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
+  private rootSpanId?: string;
 
   /**
    * If we're checkpointing and have been given a maximum runtime, this will be
@@ -206,6 +207,7 @@ class InngestExecutionEngine
           },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
+              this.rootSpanId = span.spanContext().spanId;
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
                 span,
                 runId: this.options.runId,
@@ -461,6 +463,15 @@ class InngestExecutionEngine
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
+        // Clear `executingStep` immediately after resuming, before any await.
+        // `resumeStepWithResult` resolves the step's promise, queuing a
+        // microtask for the function to continue. Any subsequent await (e.g.
+        // the `transformOutput` hook) yields and lets that microtask run, so
+        // `executingStep` must already be cleared to avoid a false positive
+        // NESTING_STEPS warning in the next step's handler.
+        delete this.state.executingStep;
+
+        // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
           data: stepResult.data,
@@ -581,6 +592,11 @@ class InngestExecutionEngine
 
         // Resume the step with original data for user code
         const stepToResume = this.resumeStepWithResult(result);
+
+        // Clear executingStep now that the step result has been processed.
+        // Without this, the next step discovery would see stale state and
+        // emit a false positive NESTING_STEPS warning.
+        delete this.state.executingStep;
 
         return void (await this.checkpoint([stepToResume]));
       },
@@ -945,6 +961,16 @@ class InngestExecutionEngine
 
     this.devDebug(`executing step "${id}"`);
 
+    if (this.rootSpanId && this.options.checkpointingConfig) {
+      clientProcessorMap
+        .get(this.options.client)
+        ?.declareStepExecution(
+          this.rootSpanId,
+          hashedId,
+          this.options.data?.attempt ?? 0,
+        );
+    }
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
@@ -975,6 +1001,12 @@ class InngestExecutionEngine
         this.devDebug(`finished executing step "${id}"`);
 
         this.state.executingStep = undefined;
+
+        if (this.rootSpanId && this.options.checkpointingConfig) {
+          clientProcessorMap
+            .get(this.options.client)
+            ?.clearStepExecution(this.rootSpanId);
+        }
 
         if (store?.execution) {
           delete store.execution.executingStep;

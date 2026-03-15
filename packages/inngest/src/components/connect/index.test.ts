@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { envKeys } from "../../helpers/consts.ts";
+import type { Mode } from "../../helpers/env.ts";
 import { WorkerConnectRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { Inngest } from "../Inngest.ts";
 import { createStrategy } from "./strategies/index.ts";
@@ -237,7 +238,7 @@ describe("createStrategy", () => {
     },
     envName: undefined,
     apiBaseUrl: undefined,
-    mode: { isDev: true, isInferred: false },
+    mode: "dev" as Mode,
     connectionData: {
       marshaledCapabilities: "",
       manualReadinessAck: false,
