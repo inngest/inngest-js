@@ -2,6 +2,80 @@ import { Inngest } from "inngest";
 import { InngestTestEngine } from "../";
 
 describe("InngestTestEngine", () => {
+  describe("state object uses human-readable step IDs (#1194)", () => {
+    it("should use human-readable step IDs as keys in state object, not hashed IDs", async () => {
+      const inngest = new Inngest({ id: "test-app" });
+
+      const fn = inngest.createFunction(
+        { id: "my-function" },
+        { event: "test/event" },
+        async ({ step }) => {
+          return step.run("my-step", async () => {
+            return "hello";
+          });
+        },
+      );
+
+      const t = new InngestTestEngine({ function: fn });
+      const { state } = await t.execute();
+
+      expect(state["my-step"]).toBeDefined();
+    });
+
+    it("should use human-readable step IDs for multiple steps", async () => {
+      const inngest = new Inngest({ id: "test-app" });
+
+      const fn = inngest.createFunction(
+        { id: "multi-step-function" },
+        { event: "test/event" },
+        async ({ step }) => {
+          const first = await step.run("first-step", async () => {
+            return "first";
+          });
+
+          const second = await step.run("second-step", async () => {
+            return "second";
+          });
+
+          return { first, second };
+        },
+      );
+
+      const t = new InngestTestEngine({ function: fn });
+      const { state } = await t.execute();
+
+      expect(state["first-step"]).toBeDefined();
+      expect(state["second-step"]).toBeDefined();
+
+      await expect(state["first-step"]).resolves.toBe("first");
+      await expect(state["second-step"]).resolves.toBe("second");
+    });
+
+    it("should use indexed step IDs for parallel steps with the same base ID", async () => {
+      const inngest = new Inngest({ id: "test-app" });
+
+      const fn = inngest.createFunction(
+        { id: "parallel-function" },
+        { event: "test/event" },
+        async ({ step }) => {
+          const results = await Promise.all([
+            step.run("my-step", async () => "first"),
+            step.run("my-step", async () => "second"),
+            step.run("my-step", async () => "third"),
+          ]);
+          return results;
+        },
+      );
+
+      const t = new InngestTestEngine({ function: fn });
+      const { state } = await t.execute();
+
+      expect(state["my-step"]).toBeDefined();
+      expect(state["my-step:1"]).toBeDefined();
+      expect(state["my-step:2"]).toBeDefined();
+    });
+  });
+
   describe("lazy execution of mocked steps", () => {
     it("should only call mock handlers when steps actually run, not on initial access", async () => {
       const inngest = new Inngest({ id: "test-app" });
@@ -33,7 +107,7 @@ describe("InngestTestEngine", () => {
             step2Result,
             step3Result,
           };
-        }
+        },
       );
 
       const t = new InngestTestEngine({
@@ -93,7 +167,7 @@ describe("InngestTestEngine", () => {
           });
 
           return { step1Result, step2Result };
-        }
+        },
       );
 
       const t = new InngestTestEngine({
@@ -150,7 +224,7 @@ describe("InngestTestEngine", () => {
           ]);
 
           return results;
-        }
+        },
       );
 
       const t = new InngestTestEngine({
@@ -205,7 +279,7 @@ describe("InngestTestEngine", () => {
           });
 
           return { step1Result, step2Result };
-        }
+        },
       );
 
       const t = new InngestTestEngine({
