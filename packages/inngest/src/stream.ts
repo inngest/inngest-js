@@ -2,7 +2,7 @@
  * Client-side streaming utilities for consuming Durable Endpoint SSE streams.
  *
  * This module provides `subscribeToRun()` (low-level async generator) and
- * `RunStream` (high-level hook-based API) for consuming SSE streams produced
+ * `streamRun()` (high-level hook-based API) for consuming SSE streams produced
  * by Inngest Durable Endpoints.
  */
 
@@ -33,21 +33,12 @@ export async function* subscribeToRun(
   opts: SubscribeToRunOptions,
 ): AsyncGenerator<SSEFrame> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
-
-  yield* consumeStream(opts.url, fetchFn, opts.signal);
-}
-
-async function* consumeStream(
-  url: string,
-  fetchFn: typeof globalThis.fetch,
-  signal?: AbortSignal,
-): AsyncGenerator<SSEFrame> {
-  let currentUrl: string | undefined = url;
+  let currentUrl: string | undefined = opts.url;
 
   while (currentUrl) {
     const res = await fetchFn(currentUrl, {
       headers: { Accept: "text/event-stream" },
-      signal,
+      signal: opts.signal,
     });
 
     if (!res.ok) {
@@ -85,7 +76,7 @@ async function* consumeStream(
 }
 
 // ---------------------------------------------------------------------------
-// RunStream — high-level hook-based API
+// streamRun — high-level hook-based API
 // ---------------------------------------------------------------------------
 
 export interface RunStreamOptions<TData = unknown> {
@@ -97,42 +88,75 @@ export interface RunStreamOptions<TData = unknown> {
   fetch?: typeof globalThis.fetch;
   /** Optional parse function to transform raw data chunks. */
   parse?: (data: unknown) => TData;
+  /** Called for each parsed data chunk. */
+  onData?: (data: TData) => void;
+  /** Called when chunks are rolled back on retry/error. */
+  onRollback?: (rolledBack: TData[]) => void;
+  /**
+   * Called when the final result frame arrives. The data is `unknown` because
+   * SSE transport erases the original return type.
+   */
+  onResult?: (data: unknown) => void;
+  /** Called when a step begins running. */
+  onStepRunning?: (stepId: string, data?: unknown) => void;
+  /**
+   * Called when a step completes successfully. The data is `unknown` because
+   * SSE transport erases the original step output type.
+   */
+  onStepCompleted?: (stepId: string, data?: unknown) => void;
+  /** Called when a step errors. */
+  onStepErrored?: (
+    stepId: string,
+    info: { willRetry: boolean; error: string; attempt: number },
+  ) => void;
+  /** Called when run metadata is received. */
+  onMetadata?: (runId: string, attempt: number) => void;
+  /** Called when the stream is fully consumed (including on abort or error). */
+  onDone?: () => void;
+  /** Called when a stream-level error occurs (network failure, non-200, etc.). */
+  onError?: (error: unknown) => void;
 }
 
-type DataHook<TData> = (data: TData) => void;
-type RollbackHook<TData> = (rolledBack: TData[]) => void;
-type ResultHook = (data: unknown) => void;
-type StepHook = (stepId: string, data?: unknown) => void;
-type ErrorHook = (
-  stepId: string,
-  info: { willRetry: boolean; error: string; attempt: number },
-) => void;
-type MetadataHook = (runId: string, attempt: number) => void;
-type DoneHook = () => void;
+/**
+ * Create a stream that connects to a Durable Endpoint SSE stream.
+ *
+ * The returned object is both awaitable (hooks-only) and async-iterable
+ * (for consuming chunks directly):
+ *
+ * @example Hooks-only — just `await` the stream
+ * ```ts
+ * import { streamRun } from "inngest/durable-endpoints";
+ *
+ * await streamRun<string>("/api/demo", {
+ *   parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
+ *   onData: (chunk) => console.log(chunk),
+ *   onResult: (data) => console.log("result:", data),
+ * });
+ * ```
+ *
+ * @example Iteration — consume chunks directly
+ * ```ts
+ * for await (const chunk of streamRun<string>("/api/demo")) {
+ *   console.log(chunk);
+ * }
+ * ```
+ */
+export function streamRun<TData = unknown>(
+  url: string,
+  opts?: Omit<RunStreamOptions<TData>, "url">,
+): RunStream<TData> {
+  return new RunStream({ ...opts, url });
+}
 
 /**
- * A high-level streaming client that provides a hook-based API for consuming
- * Durable Endpoint SSE streams.
+ * Internal streaming client. Use `streamRun()` to create instances.
  *
- * Features:
- * - `.onData()`, `.onRollback()`, `.onResult()` hooks
- * - AsyncIterable interface (for await...of)
- * - Built-in accumulator with automatic rollback on retry
- * - Optional `parse` function for transforming raw chunks
+ * @internal
  */
 export class RunStream<TData = unknown> {
   private _chunks: TData[] = [];
   private _consumed = false;
   private _source: AsyncIterable<SSEFrame> | undefined;
-
-  private _dataHooks: DataHook<TData>[] = [];
-  private _rollbackHooks: RollbackHook<TData>[] = [];
-  private _resultHooks: ResultHook[] = [];
-  private _stepRunningHooks: StepHook[] = [];
-  private _stepCompletedHooks: StepHook[] = [];
-  private _stepErroredHooks: ErrorHook[] = [];
-  private _metadataHooks: MetadataHook[] = [];
-  private _doneHooks: DoneHook[] = [];
 
   private _parseFn: (data: unknown) => TData;
 
@@ -145,48 +169,9 @@ export class RunStream<TData = unknown> {
     return this._chunks;
   }
 
-  onData(fn: DataHook<TData>): this {
-    this._dataHooks.push(fn);
-    return this;
-  }
-
-  onRollback(fn: RollbackHook<TData>): this {
-    this._rollbackHooks.push(fn);
-    return this;
-  }
-
-  onResult(fn: ResultHook): this {
-    this._resultHooks.push(fn);
-    return this;
-  }
-
-  onStepRunning(fn: StepHook): this {
-    this._stepRunningHooks.push(fn);
-    return this;
-  }
-
-  onStepCompleted(fn: StepHook): this {
-    this._stepCompletedHooks.push(fn);
-    return this;
-  }
-
-  onStepErrored(fn: ErrorHook): this {
-    this._stepErroredHooks.push(fn);
-    return this;
-  }
-
-  onMetadata(fn: MetadataHook): this {
-    this._metadataHooks.push(fn);
-    return this;
-  }
-
-  onDone(fn: DoneHook): this {
-    this._doneHooks.push(fn);
-    return this;
-  }
-
   /**
    * Inject a pre-built source for testing. Skips the real fetch.
+   * @internal
    */
   _fromSource(source: AsyncIterable<SSEFrame>): this {
     this._source = source;
@@ -194,15 +179,26 @@ export class RunStream<TData = unknown> {
   }
 
   /**
-   * Start consuming the stream. Returns a promise that resolves when the
-   * stream is fully consumed. Hooks fire as side effects.
+   * Makes the stream awaitable. `await streamRun(url, opts)` consumes the
+   * stream using hooks only (no manual iteration needed).
    */
-  async start(): Promise<void> {
-    const gen = this._consume();
-    while (true) {
-      const { done } = await gen.next();
-      if (done) break;
-    }
+  then<TResult1 = void, TResult2 = never>(
+    onfulfilled?: // biome-ignore lint/suspicious/noConfusingVoidType: matches PromiseLike signature
+    ((value: void) => TResult1 | PromiseLike<TResult1>) | null | undefined,
+    onrejected?:
+      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+      | null
+      | undefined,
+  ): Promise<TResult1 | TResult2> {
+    const drain = async (): Promise<void> => {
+      const gen = this._consume();
+      while (true) {
+        const { done } = await gen.next();
+        if (done) break;
+      }
+    };
+
+    return drain().then(onfulfilled, onrejected);
   }
 
   /**
@@ -238,73 +234,77 @@ export class RunStream<TData = unknown> {
     let inStep = false;
     let chunksSinceStepStart = 0;
     let currentStepId: string | undefined;
-    // Label the outer loop so we can break out of it from inside the switch.
-    // This is necessary because `break` inside a `switch` only exits the
-    // switch, and after receiving `inngest.result` the underlying SSE
-    // connection may stay open — meaning `source.next()` would block forever
-    // if we relied on the loop's next iteration to check a flag.
-    outer: for await (const frame of source) {
-      switch (frame.type) {
-        case "stream": {
-          const parsed = this._parseFn(frame.data);
-          this._chunks.push(parsed);
-          chunksSinceStepStart++;
-          for (const fn of this._dataHooks) fn(parsed);
-          yield parsed;
-          break;
-        }
-        case "inngest.step": {
-          if (frame.status === "running") {
-            inStep = true;
-            chunksSinceStepStart = 0;
-            currentStepId = frame.step_id;
-            for (const fn of this._stepRunningHooks) fn(frame.step_id);
-          } else if (frame.status === "completed") {
-            inStep = false;
-            currentStepId = undefined;
-            for (const fn of this._stepCompletedHooks)
-              fn(frame.step_id, frame.data);
-          } else if (frame.status === "errored") {
-            const data = frame.data as Record<string, unknown> | undefined;
-            if (chunksSinceStepStart > 0) {
-              const rolledBack = this._chunks.splice(-chunksSinceStepStart);
-              for (const fn of this._rollbackHooks) fn(rolledBack);
-            }
-            inStep = false;
-            currentStepId = undefined;
-            for (const fn of this._stepErroredHooks)
-              fn(frame.step_id, {
+
+    try {
+      // Label the outer loop so we can break out of it from inside the switch.
+      // This is necessary because `break` inside a `switch` only exits the
+      // switch, and after receiving `inngest.result` the underlying SSE
+      // connection may stay open — meaning `source.next()` would block forever
+      // if we relied on the loop's next iteration to check a flag.
+      outer: for await (const frame of source) {
+        switch (frame.type) {
+          case "stream": {
+            const parsed = this._parseFn(frame.data);
+            this._chunks.push(parsed);
+            chunksSinceStepStart++;
+            this.opts.onData?.(parsed);
+            yield parsed;
+            break;
+          }
+          case "inngest.step": {
+            if (frame.status === "running") {
+              inStep = true;
+              chunksSinceStepStart = 0;
+              currentStepId = frame.step_id;
+              this.opts.onStepRunning?.(frame.step_id, frame.data);
+            } else if (frame.status === "completed") {
+              inStep = false;
+              chunksSinceStepStart = 0;
+              currentStepId = undefined;
+              this.opts.onStepCompleted?.(frame.step_id, frame.data);
+            } else if (frame.status === "errored") {
+              const data = frame.data as Record<string, unknown> | undefined;
+              if (chunksSinceStepStart > 0) {
+                const rolledBack = this._chunks.splice(-chunksSinceStepStart);
+                this.opts.onRollback?.(rolledBack);
+              }
+              inStep = false;
+              chunksSinceStepStart = 0;
+              currentStepId = undefined;
+              this.opts.onStepErrored?.(frame.step_id, {
                 willRetry: (data?.will_retry as boolean) ?? false,
                 error: (data?.error as string) ?? "unknown",
                 attempt: (data?.attempt as number) ?? 0,
               });
+            }
+            break;
           }
-          break;
+          case "inngest.result":
+            this.opts.onResult?.(frame.data);
+            break outer;
+          case "inngest.metadata":
+            this.opts.onMetadata?.(frame.run_id, frame.attempt);
+            break;
+          default:
+            break;
         }
-        case "inngest.result":
-          for (const fn of this._resultHooks) fn(frame.data);
-          break outer;
-        case "inngest.metadata":
-          for (const fn of this._metadataHooks)
-            fn(frame.run_id, frame.attempt);
-          break;
-        default:
-          break;
       }
-    }
 
-    // Synthesize rollback if disconnected mid-step
-    if (inStep && chunksSinceStepStart > 0) {
-      const rolledBack = this._chunks.splice(-chunksSinceStepStart);
-      for (const fn of this._rollbackHooks) fn(rolledBack);
-      for (const fn of this._stepErroredHooks)
-        fn(currentStepId ?? "unknown", {
+      // Synthesize rollback if disconnected mid-step
+      if (inStep && chunksSinceStepStart > 0) {
+        const rolledBack = this._chunks.splice(-chunksSinceStepStart);
+        this.opts.onRollback?.(rolledBack);
+        this.opts.onStepErrored?.(currentStepId ?? "unknown", {
           willRetry: false,
           error: "stream disconnected",
           attempt: 0,
         });
+      }
+    } catch (error) {
+      this.opts.onError?.(error);
+      throw error;
+    } finally {
+      this.opts.onDone?.();
     }
-
-    for (const fn of this._doneHooks) fn();
   }
 }

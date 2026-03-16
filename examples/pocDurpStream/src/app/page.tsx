@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { RunStream } from "inngest/durable-endpoints";
+import { streamRun } from "inngest/durable-endpoints";
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
@@ -31,43 +31,34 @@ export default function Home() {
     setWaitingForInput(false);
 
     try {
-      const stream = new RunStream<string>({
-        url: "/api/demo",
+      await streamRun<string>("/api/demo", {
         parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
-      });
-
-      stream.onData((chunk) => {
-        // Check for await-input signal
-        try {
-          const parsed = JSON.parse(chunk);
-          if (parsed?.type === "await-input" && parsed?.correlationId) {
-            setCorrelationId(parsed.correlationId);
-            setWaitingForInput(true);
-            return;
+        onData: (chunk) => {
+          // Check for await-input signal
+          try {
+            const parsed = JSON.parse(chunk);
+            if (parsed?.type === "await-input" && parsed?.correlationId) {
+              setCorrelationId(parsed.correlationId);
+              setWaitingForInput(true);
+              return;
+            }
+          } catch {
+            // Not JSON — treat as display text
           }
-        } catch {
-          // Not JSON — treat as display text
-        }
 
-        setLines((prev) => [...prev, chunk]);
-        scrollToBottom();
+          setLines((prev) => [...prev, chunk]);
+          scrollToBottom();
+        },
+        onResult: (data) => {
+          const display =
+            typeof data === "string" ? data : JSON.stringify(data);
+          setLines((prev) => [...prev, display]);
+          scrollToBottom();
+        },
+        onRollback: () => {
+          console.log("[rollback] chunks rolled back");
+        },
       });
-
-      stream.onResult((data) => {
-        const display =
-          typeof data === "string" ? data : JSON.stringify(data);
-        setLines((prev) => [...prev, display]);
-        scrollToBottom();
-      });
-
-      stream.onRollback(() => {
-        // On rollback, we could clear lines but for this demo just log
-        console.log("[rollback] chunks rolled back");
-      });
-
-      for await (const _ of stream) {
-        // Iteration drives the stream — hooks fire as side effects
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLines((prev) => [...prev, `[error] ${msg}`]);

@@ -3,28 +3,28 @@
  *
  * @example
  * ```ts
- * import { RunStream } from "inngest/durable-endpoints";
+ * import { streamRun } from "inngest/durable-endpoints";
  *
- * const stream = new RunStream({ url: "/api/demo" });
- * stream.onData((chunk) => console.log(chunk));
- * await stream.start();
+ * await streamRun("/api/demo", {
+ *   onData: (chunk) => console.log(chunk),
+ * });
  * ```
  *
  * @module
  */
-export {
-  RunStream,
-  subscribeToRun,
-  type RunStreamOptions,
-  type SubscribeToRunOptions,
-} from "./stream.ts";
-
 export type {
+  RawSSEEvent,
   SSEFrame,
   SSEMetadataFrame,
-  SSEStreamFrame,
+  SSERedirectFrame,
   SSEResultFrame,
   SSEStepFrame,
-  SSERedirectFrame,
-  RawSSEEvent,
+  SSEStreamFrame,
 } from "./components/execution/streaming.ts";
+
+export {
+  type RunStreamOptions,
+  type SubscribeToRunOptions,
+  streamRun,
+  subscribeToRun,
+} from "./stream.ts";

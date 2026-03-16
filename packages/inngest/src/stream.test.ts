@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import type { SSEFrame } from "./components/execution/streaming.ts";
-import { RunStream } from "./stream.ts";
+import { streamRun } from "./stream.ts";
 
 /**
  * Helper: create an async iterable from an array of SSEFrames.
@@ -11,22 +11,21 @@ async function* framesFrom(frames: SSEFrame[]): AsyncGenerator<SSEFrame> {
   }
 }
 
-describe("RunStream", () => {
+describe("streamRun", () => {
   test("emits data chunks and collects them", async () => {
     const collected: string[] = [];
 
-    const rs = new RunStream<string>({ url: "http://test" });
+    const rs = streamRun<string>("http://test", {
+      onData: (d) => collected.push(d),
+    });
     rs._fromSource(
       framesFrom([
         { type: "stream", data: "hello" },
         { type: "stream", data: " world" },
       ]),
     );
-    rs.onData((d) => collected.push(d));
 
-    for await (const chunk of rs) {
-      // iteration drives the pump
-    }
+    await rs;
 
     expect(collected).toEqual(["hello", " world"]);
     expect(rs.chunks).toEqual(["hello", " world"]);
@@ -35,18 +34,17 @@ describe("RunStream", () => {
   test("calls onResult when result frame arrives", async () => {
     const results: unknown[] = [];
 
-    const rs = new RunStream({ url: "http://test" });
+    const rs = streamRun("http://test", {
+      onResult: (d) => results.push(d),
+    });
     rs._fromSource(
       framesFrom([
         { type: "stream", data: "chunk" },
         { type: "inngest.result", data: "final" },
       ]),
     );
-    rs.onResult((d) => results.push(d));
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
     expect(results).toEqual(["final"]);
   });
@@ -54,7 +52,9 @@ describe("RunStream", () => {
   test("rolls back chunks on step error", async () => {
     const rolledBack: unknown[][] = [];
 
-    const rs = new RunStream<string>({ url: "http://test" });
+    const rs = streamRun<string>("http://test", {
+      onRollback: (chunks) => rolledBack.push([...chunks]),
+    });
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
@@ -68,11 +68,8 @@ describe("RunStream", () => {
         },
       ]),
     );
-    rs.onRollback((chunks) => rolledBack.push([...chunks]));
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
     expect(rolledBack).toEqual([["a", "b"]]);
     expect(rs.chunks).toEqual([]);
@@ -83,7 +80,11 @@ describe("RunStream", () => {
     const completed: string[] = [];
     const errored: string[] = [];
 
-    const rs = new RunStream({ url: "http://test" });
+    const rs = streamRun("http://test", {
+      onStepRunning: (id) => running.push(id),
+      onStepCompleted: (id) => completed.push(id),
+      onStepErrored: (id) => errored.push(id),
+    });
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
@@ -97,22 +98,16 @@ describe("RunStream", () => {
         },
       ]),
     );
-    rs.onStepRunning((id) => running.push(id));
-    rs.onStepCompleted((id) => completed.push(id));
-    rs.onStepErrored((id) => errored.push(id));
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
     expect(running).toEqual(["s1", "s2"]);
     expect(completed).toEqual(["s1"]);
     expect(errored).toEqual(["s2"]);
   });
 
-  test("uses parse function to transform data", async () => {
-    const rs = new RunStream<number>({
-      url: "http://test",
+  test("yields parsed chunks via async iteration", async () => {
+    const rs = streamRun<number>("http://test", {
       parse: (d) => Number(d),
     });
     rs._fromSource(
@@ -130,25 +125,14 @@ describe("RunStream", () => {
     expect(results).toEqual([42, 7]);
   });
 
-  test("calls onDone when stream completes", async () => {
-    const done = vi.fn();
-
-    const rs = new RunStream({ url: "http://test" });
-    rs._fromSource(framesFrom([{ type: "stream", data: "x" }]));
-    rs.onDone(done);
-
-    for await (const _ of rs) {
-      // drain
-    }
-
-    expect(done).toHaveBeenCalledOnce();
-  });
-
   test("synthesizes rollback on mid-step disconnect", async () => {
     const rolledBack: unknown[][] = [];
     const errored: Array<{ id: string; info: unknown }> = [];
 
-    const rs = new RunStream<string>({ url: "http://test" });
+    const rs = streamRun<string>("http://test", {
+      onRollback: (chunks) => rolledBack.push([...chunks]),
+      onStepErrored: (id, info) => errored.push({ id, info }),
+    });
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
@@ -156,12 +140,8 @@ describe("RunStream", () => {
         // Stream ends without step:completed or step:errored
       ]),
     );
-    rs.onRollback((chunks) => rolledBack.push([...chunks]));
-    rs.onStepErrored((id, info) => errored.push({ id, info }));
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
     expect(rolledBack).toEqual([["partial"]]);
     expect(errored[0]?.id).toBe("s1");
@@ -172,34 +152,25 @@ describe("RunStream", () => {
   });
 
   test("throws if consumed twice", async () => {
-    const rs = new RunStream({ url: "http://test" });
+    const rs = streamRun("http://test");
     rs._fromSource(framesFrom([]));
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
-    await expect(async () => {
-      for await (const _ of rs) {
-        // should throw
-      }
-    }).rejects.toThrow("already been consumed");
+    await expect(rs).rejects.toThrow("already been consumed");
   });
 
   test("calls onMetadata when metadata frame arrives", async () => {
     const metadata: Array<{ runId: string; attempt: number }> = [];
 
-    const rs = new RunStream({ url: "http://test" });
+    const rs = streamRun("http://test", {
+      onMetadata: (runId, attempt) => metadata.push({ runId, attempt }),
+    });
     rs._fromSource(
-      framesFrom([
-        { type: "inngest.metadata", run_id: "run-123", attempt: 0 },
-      ]),
+      framesFrom([{ type: "inngest.metadata", run_id: "run-123", attempt: 0 }]),
     );
-    rs.onMetadata((runId, attempt) => metadata.push({ runId, attempt }));
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
     expect(metadata).toEqual([{ runId: "run-123", attempt: 0 }]);
   });
@@ -209,7 +180,7 @@ describe("RunStream", () => {
     const done = vi.fn();
 
     // Simulate a source that sends a result then keeps sending (server
-    // didn't close the connection). The RunStream should stop after result.
+    // didn't close the connection). The stream should stop after result.
     async function* neverEnding(): AsyncGenerator<SSEFrame> {
       yield { type: "stream", data: "a" } as SSEFrame;
       yield { type: "inngest.result", data: "done" } as SSEFrame;
@@ -217,36 +188,129 @@ describe("RunStream", () => {
       yield { type: "stream", data: "SHOULD NOT APPEAR" } as SSEFrame;
     }
 
-    const rs = new RunStream<string>({ url: "http://test" });
+    const rs = streamRun<string>("http://test", {
+      onData: (d) => collected.push(d),
+      onDone: done,
+    });
     rs._fromSource(neverEnding());
-    rs.onData((d) => collected.push(d));
-    rs.onDone(done);
 
-    for await (const _ of rs) {
-      // drain
-    }
+    await rs;
 
     expect(collected).toEqual(["a"]);
     expect(done).toHaveBeenCalledOnce();
   });
 
-  test("start() drives hooks without iteration", async () => {
+  test("await drives hooks without manual iteration", async () => {
     const collected: string[] = [];
     const done = vi.fn();
 
-    const rs = new RunStream<string>({ url: "http://test" });
+    const rs = streamRun<string>("http://test", {
+      onData: (d) => collected.push(d),
+      onDone: done,
+    });
     rs._fromSource(
       framesFrom([
         { type: "stream", data: "x" },
         { type: "stream", data: "y" },
       ]),
     );
-    rs.onData((d) => collected.push(d));
-    rs.onDone(done);
 
-    await rs.start();
+    await rs;
 
     expect(collected).toEqual(["x", "y"]);
     expect(done).toHaveBeenCalledOnce();
+  });
+
+  test("calls onError and onDone when source throws", async () => {
+    const onError = vi.fn();
+    const onDone = vi.fn();
+
+    async function* exploding(): AsyncGenerator<SSEFrame> {
+      yield { type: "stream", data: "ok" } as SSEFrame;
+      throw new Error("network failure");
+    }
+
+    const rs = streamRun<string>("http://test", {
+      onError,
+      onDone,
+    });
+    rs._fromSource(exploding());
+
+    await expect(rs).rejects.toThrow("network failure");
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0]![0]).toBeInstanceOf(Error);
+    expect((onError.mock.calls[0]![0] as Error).message).toBe(
+      "network failure",
+    );
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  test("calls onDone even when stream is aborted", async () => {
+    const onDone = vi.fn();
+    const controller = new AbortController();
+
+    async function* abortable(): AsyncGenerator<SSEFrame> {
+      yield { type: "stream", data: "a" } as SSEFrame;
+      controller.abort();
+      // Simulate abort by throwing AbortError
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+
+    const rs = streamRun<string>("http://test", {
+      signal: controller.signal,
+      onDone,
+    });
+    rs._fromSource(abortable());
+
+    await expect(rs).rejects.toThrow();
+
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  test("does not spuriously rollback chunks between steps on disconnect", async () => {
+    const rolledBack: unknown[][] = [];
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: (chunks) => rolledBack.push([...chunks]),
+    });
+    rs._fromSource(
+      framesFrom([
+        { type: "inngest.step", step_id: "s1", status: "running" },
+        { type: "stream", data: "a" },
+        { type: "inngest.step", step_id: "s1", status: "completed" },
+        // Chunks emitted between steps (after s1 completed, before s2 starts)
+        { type: "stream", data: "between" },
+        // Stream disconnects here — no step is active, so no rollback
+      ]),
+    );
+
+    await rs;
+
+    // No rollback should occur — we're not inside a step
+    expect(rolledBack).toEqual([]);
+    expect(rs.chunks).toEqual(["a", "between"]);
+  });
+
+  test("forwards data to onStepRunning", async () => {
+    const running: Array<{ id: string; data: unknown }> = [];
+
+    const rs = streamRun("http://test", {
+      onStepRunning: (id, data) => running.push({ id, data }),
+    });
+    rs._fromSource(
+      framesFrom([
+        {
+          type: "inngest.step",
+          step_id: "s1",
+          status: "running",
+          data: { some: "info" },
+        },
+      ]),
+    );
+
+    await rs;
+
+    expect(running).toEqual([{ id: "s1", data: { some: "info" } }]);
   });
 });
