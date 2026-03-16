@@ -42,7 +42,7 @@ describe("new Inngest()", () => {
             process.env[key] = env[key];
             return acc;
           },
-          {}
+          {},
         );
       }
 
@@ -209,7 +209,7 @@ describe("send", () => {
       const inngest = createClient({ id: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
-        "Failed to send event"
+        "Failed to send event",
       );
     });
 
@@ -220,7 +220,7 @@ describe("send", () => {
       });
 
       await expect(
-        inngest.send({ name: "test", data: {} })
+        inngest.send({ name: "test", data: {} }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -239,9 +239,9 @@ describe("send", () => {
           method: "POST",
 
           body: expect.stringMatching(
-            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+            new RegExp(JSON.stringify(testEvent).slice(1, -1)),
           ),
-        })
+        }),
       );
     });
 
@@ -259,9 +259,9 @@ describe("send", () => {
           method: "POST",
 
           body: expect.stringMatching(
-            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+            new RegExp(JSON.stringify(testEvent).slice(1, -1)),
           ),
-        })
+        }),
       );
     });
 
@@ -279,9 +279,9 @@ describe("send", () => {
           method: "POST",
 
           body: expect.stringMatching(
-            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+            new RegExp(JSON.stringify(testEvent).slice(1, -1)),
           ),
-        })
+        }),
       );
     });
 
@@ -312,7 +312,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -320,7 +320,7 @@ describe("send", () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       await expect(
-        inngest.send(testEvent, { env: "foo" })
+        inngest.send(testEvent, { env: "foo" }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -332,7 +332,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -355,7 +355,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -379,7 +379,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -402,7 +402,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -416,7 +416,7 @@ describe("send", () => {
       });
 
       await expect(
-        inngest.send(testEvent, { env: "foo" })
+        inngest.send(testEvent, { env: "foo" }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -428,7 +428,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -451,7 +451,7 @@ describe("send", () => {
       expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[0]?.[1]?.body as string
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -459,7 +459,7 @@ describe("send", () => {
           ...testEventWithoutTs,
 
           ts: expect.any(Number),
-        })
+        }),
       );
     });
 
@@ -481,14 +481,14 @@ describe("send", () => {
       expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[0]?.[1]?.body as string
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
         expect.objectContaining({
           ...testEventWithoutData,
           data: {},
-        })
+        }),
       );
     });
 
@@ -531,7 +531,7 @@ describe("send", () => {
           class extends Middleware.BaseMiddleware {
             readonly id = "test";
             override transformSendEvent(
-              arg: Middleware.TransformSendEventArgs
+              arg: Middleware.TransformSendEventArgs,
             ) {
               return {
                 ...arg,
@@ -549,7 +549,7 @@ describe("send", () => {
       });
 
       await expect(
-        inngest.send({ ...testEvent, data: { foo: true } })
+        inngest.send({ ...testEvent, data: { foo: true } }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -564,10 +564,10 @@ describe("send", () => {
               JSON.stringify({
                 ...testEvent,
                 data: { foo: true, bar: true },
-              }).slice(1, -1)
-            )
+              }).slice(1, -1),
+            ),
           ),
-        })
+        }),
       );
     });
 
@@ -623,7 +623,7 @@ describe("send", () => {
       });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError(
-        "Cannot process event payload"
+        "Cannot process event payload",
       );
     });
 
@@ -645,7 +645,7 @@ describe("send", () => {
       test.todo("disallows sending invalid fields");
 
       test.todo(
-        "disallows sending invalid fields when sending multiple events"
+        "disallows sending invalid fields when sending multiple events",
       );
 
       test("allows sending a single event with an object", () => {
@@ -685,7 +685,7 @@ describe("createFunction", () => {
           },
           ({ attempt }) => {
             assertType<number>(attempt);
-          }
+          },
         );
       });
     });
@@ -700,7 +700,7 @@ describe("createFunction", () => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
             assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
-          }
+          },
         );
       });
 
@@ -712,7 +712,7 @@ describe("createFunction", () => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
             assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
-          }
+          },
         );
       });
 
@@ -723,7 +723,7 @@ describe("createFunction", () => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
             assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
-          }
+          },
         );
       });
 
@@ -734,7 +734,7 @@ describe("createFunction", () => {
             assertType<string>(event.name);
             // Cron triggers have empty data, and invoked events also have empty data (without schema)
             assertType<IsEqual<typeof event.data, {} | { cron: string }>>(true);
-          }
+          },
         );
       });
 
@@ -745,7 +745,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<{}>(event.data);
-          }
+          },
         );
       });
 
@@ -756,7 +756,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<{}>(event.data);
-          }
+          },
         );
       });
     });
@@ -889,7 +889,7 @@ describe("helper types", () => {
       class extends Middleware.BaseMiddleware {
         readonly id = "test";
         override transformFunctionInput(
-          arg: Middleware.TransformFunctionInputArgs
+          arg: Middleware.TransformFunctionInputArgs,
         ) {
           return {
             ...arg,
@@ -938,7 +938,7 @@ describe("helper types", () => {
 
         async () => {
           return "foo" as const;
-        }
+        },
       );
 
       type Expected = "foo";
@@ -951,7 +951,7 @@ describe("helper types", () => {
         { id: "test", triggers: [{ event: "foo" }] },
         () => {
           return "foo" as const;
-        }
+        },
       );
 
       type Expected = "foo";
@@ -965,7 +965,7 @@ describe("helper types", () => {
 
         async () => {
           return "foo" as const;
-        }
+        },
       );
 
       const ref = referenceFunction<typeof fn>({ functionId: "test" });
@@ -980,7 +980,7 @@ describe("helper types", () => {
         { id: "test", triggers: [{ event: "foo" }] },
         () => {
           return "foo" as const;
-        }
+        },
       );
 
       const ref = referenceFunction<typeof fn>({ functionId: "test" });
@@ -1022,7 +1022,7 @@ describe("helper types", () => {
         { id: "test", triggers: [{ event: "foo" }] },
         async () => {
           return new Date() as Date;
-        }
+        },
       );
 
       // With the middleware, Date should be preserved (not turned into string)
@@ -1035,7 +1035,7 @@ describe("helper types", () => {
         { id: "test", triggers: [{ event: "foo" }] },
         async () => {
           return { date: new Date(), value: "hello" as const };
-        }
+        },
       );
 
       // Date becomes string via Jsonify, string literal preserved
@@ -1071,7 +1071,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({ id: "test" });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client."
+      "No endpoint adapter configured for this Inngest client.",
     );
   });
 
@@ -1082,7 +1082,7 @@ describe("endpointProxy", () => {
     });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers."
+      "The configured endpoint adapter does not support proxy handlers.",
     );
   });
 
@@ -1127,7 +1127,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({ id: "test", isDev: true });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client."
+      "No endpoint adapter configured for this Inngest client.",
     );
   });
 
@@ -1139,7 +1139,7 @@ describe("endpointProxy", () => {
     });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers."
+      "The configured endpoint adapter does not support proxy handlers.",
     );
   });
 
@@ -1186,7 +1186,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({ id: "test" });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client."
+      "No endpoint adapter configured for this Inngest client.",
     );
   });
 
@@ -1197,7 +1197,7 @@ describe("endpointProxy", () => {
     });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers."
+      "The configured endpoint adapter does not support proxy handlers.",
     );
   });
 
@@ -1242,7 +1242,7 @@ describe("endpointProxy", () => {
     const inngest = createClient({ id: "test" });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client."
+      "No endpoint adapter configured for this Inngest client.",
     );
   });
 
@@ -1253,7 +1253,7 @@ describe("endpointProxy", () => {
     });
 
     expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers."
+      "The configured endpoint adapter does not support proxy handlers.",
     );
   });
 
@@ -1305,7 +1305,7 @@ describe("endpointProxy", () => {
           channel: "test",
           topics: ["status"],
         }),
-        { message: "hello" }
+        { message: "hello" },
       );
     });
 
@@ -1324,7 +1324,7 @@ describe("endpointProxy", () => {
 
       await expect(
         // @ts-expect-error intentional invalid payload for runtime validation
-        inngest.publish(ch.status, { message: 123 })
+        inngest.publish(ch.status, { message: 123 }),
       ).rejects.toThrow("Schema validation failed");
     });
 
@@ -1346,7 +1346,7 @@ describe("endpointProxy", () => {
       });
 
       await expect(
-        inngest.publish(ch.status, { message: "hello" })
+        inngest.publish(ch.status, { message: "hello" }),
       ).rejects.toThrow("Failed to publish to realtime: Nope");
     });
 
@@ -1376,7 +1376,7 @@ describe("endpointProxy", () => {
           channel: "test",
           topics: ["tokens"],
         }),
-        { token: 999 }
+        { token: 999 },
       );
     });
 
@@ -1401,7 +1401,7 @@ describe("endpointProxy", () => {
       // Zod schema validates at runtime — invalid data throws.
       await expect(
         // @ts-expect-error intentional invalid payload
-        inngest.publish(ch.status, { message: 999 })
+        inngest.publish(ch.status, { message: 999 }),
       ).rejects.toThrow("Schema validation failed");
     });
   });
