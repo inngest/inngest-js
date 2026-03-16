@@ -1,5 +1,11 @@
 # inngest
 
+## 4.0.0
+
+### Major Changes
+
+- [#1346](https://github.com/inngest/inngest-js/pull/1346) [`e8024132`](https://github.com/inngest/inngest-js/commit/e80241321f1735dfe512dacacbfc5791c9f5da53) Thanks [@amh4r](https://github.com/amh4r)! - See list of changes in the migration guide: https://www.inngest.com/docs/reference/typescript/v4/migrations/v3-to-v4
+
 ## 3.52.7
 
 ### Patch Changes
