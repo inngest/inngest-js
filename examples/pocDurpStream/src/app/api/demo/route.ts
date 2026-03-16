@@ -1,57 +1,37 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { step, stream } from "inngest";
-import { getAsyncCtx } from "inngest/experimental";
 import { inngest } from "@/inngest";
-import { sleep } from "../helpers";
-
-const delay = 1000;
 
 /**
  * Stream an Anthropic chat completion, piping tokens to `stream` for the
  * client and simultaneously collecting them into a string that is returned.
  */
-async function streamAndCollect(
-  prompt: string,
-): Promise<string> {
+async function streamAndCollect(prompt: string): Promise<string> {
   const client = new Anthropic();
-  const encoder = new TextEncoder();
-  const chunks: string[] = [];
 
-  const anthropicStream = client.messages.stream({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 512,
-    messages: [{ role: "user", content: prompt }],
-  });
+  return stream.pipe(async function* () {
+    const anthropicStream = client.messages.stream({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 512,
+      messages: [{ role: "user", content: prompt }],
+    });
 
-  const readable = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      for await (const event of anthropicStream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          chunks.push(event.delta.text);
-          controller.enqueue(encoder.encode(event.delta.text));
-        }
+    for await (const event of anthropicStream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        yield event.delta.text;
       }
-      controller.enqueue(encoder.encode("\n"));
-      controller.close();
-    },
+    }
+    yield "\n";
   });
-
-  const [forStream] = readable.tee();
-  await stream.pipe(forStream);
-
-  return chunks.join("");
 }
 
 export const GET = inngest.endpoint(async () => {
-  const ctx = await getAsyncCtx();
-  const runId = ctx?.execution?.ctx?.runId;
-  if (!runId) {
-    // Unreachable
-    throw new Error("No runId in context");
-  }
+  const correlationId = await step.run("correlation-id", () =>
+    crypto.randomUUID()
+  );
 
   const sentences = await step.run("first-llm", async () => {
     stream.push("👋 First, we'll generate some random text in English:\n");
@@ -63,11 +43,14 @@ export const GET = inngest.endpoint(async () => {
 
   await step.run("language-prompt", () => {
     stream.push("\n🤔 What language should I translate to?\n");
+    stream.push(
+      JSON.stringify({ type: "await-input", correlationId }) + "\n"
+    );
   });
 
   const choice = await step.waitForEvent("wait-for-language", {
     event: "language-chosen",
-    if: `async.data.runId == "${runId}"`,
+    if: `async.data.correlationId == "${correlationId}"`,
     timeout: "60s",
   });
 

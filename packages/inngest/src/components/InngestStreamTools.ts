@@ -2,8 +2,22 @@ import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
   buildSSERedirectFrame,
   buildSSEResultFrame,
+  buildSSEStepFrame,
   buildSSEStreamFrame,
+  type SSEStepFrame,
 } from "./execution/streaming.ts";
+
+/**
+ * Accepted source types for `stream.pipe()`.
+ *
+ * - `ReadableStream` — piped directly
+ * - `AsyncIterable<string>` — iterated; each yielded value becomes a chunk
+ * - `() => AsyncIterable<string>` — factory invoked lazily, then iterated
+ */
+export type PipeSource =
+  | ReadableStream
+  | AsyncIterable<string>
+  | (() => AsyncIterable<string>);
 
 /**
  * The public interface for stream tools available to user code.
@@ -19,13 +33,17 @@ export interface StreamTools {
   push(data: unknown): void;
 
   /**
-   * Pipe a `ReadableStream` to the client, writing each chunk as an SSE stream
-   * frame. Resolves with the concatenated content of all chunks when the
-   * readable is fully consumed.
+   * Pipe a source to the client, writing each chunk as an SSE stream frame.
+   * Resolves with the concatenated content of all chunks when the source is
+   * fully consumed.
+   *
+   * Accepts a `ReadableStream`, an `AsyncIterable<string>`, or a factory
+   * function that returns an `AsyncIterable<string>` (e.g. an async
+   * generator function).
    *
    * Outside of an Inngest execution context this resolves with an empty string.
    */
-  pipe(readable: ReadableStream): Promise<string>;
+  pipe(source: PipeSource): Promise<string>;
 }
 
 /**
@@ -80,6 +98,30 @@ export class InngestStream {
   }
 
   /**
+   * Enqueue a pre-built SSE frame string onto the write chain.
+   */
+  private enqueue(frame: string): void {
+    this.writeChain = this.writeChain
+      .then(() => this.writer.write(this.encoder.encode(frame)))
+      .catch(() => {
+        // Writer errored (e.g. stream closed) — swallow so the chain
+        // doesn't break and subsequent writes fail gracefully.
+      });
+  }
+
+  /**
+   * Emit a step lifecycle SSE frame (`step:running`, `step:completed`,
+   * `step:errored`). Internal use only — called by the execution engine.
+   */
+  stepLifecycle(
+    stepId: string,
+    status: SSEStepFrame["status"],
+    data?: unknown,
+  ): void {
+    this.enqueue(buildSSEStepFrame(stepId, status, data));
+  }
+
+  /**
    * Write a single SSE stream frame containing `data`.
    */
   push(data: unknown): void {
@@ -93,53 +135,73 @@ export class InngestStream {
       return;
     }
 
-    this.writeChain = this.writeChain
-      .then(() => this.writer.write(this.encoder.encode(frame)))
-      .catch(() => {
-        // Writer errored (e.g. stream closed) — swallow so the chain
-        // doesn't break and subsequent writes fail gracefully.
-      });
+    this.enqueue(frame);
   }
 
   /**
-   * Read all chunks from `readable`, write each as an SSE stream frame, and
-   * return the concatenated content of all chunks.
+   * Pipe a source to the client, writing each chunk as an SSE stream frame.
+   * Returns the concatenated content of all chunks.
    */
-  async pipe(readable: ReadableStream): Promise<string> {
+  async pipe(source: PipeSource): Promise<string> {
     this.activate();
+
+    // Resolve the source into an AsyncIterable<string>.
+    // Check ReadableStream first — on Node 18+ ReadableStream implements
+    // Symbol.asyncIterator, so the instanceof check must come before
+    // the async-iterable duck-type test.
+    const iterable: AsyncIterable<string> =
+      source instanceof ReadableStream
+        ? this.readableToAsyncIterable(source)
+        : typeof source === "function"
+          ? source()
+          : source;
+
+    return this.pipeIterable(iterable);
+  }
+
+  /**
+   * Adapt a ReadableStream into an AsyncIterable<string>.
+   */
+  private async *readableToAsyncIterable(
+    readable: ReadableStream,
+  ): AsyncIterable<string> {
     const reader = readable.getReader();
     const decoder = new TextDecoder();
-    const chunks: string[] = [];
-
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        // value may be a string or Uint8Array depending on the stream source
-        const chunk = typeof value === "string" ? value : decoder.decode(value);
-        chunks.push(chunk);
-
-        let frame: string;
-        try {
-          frame = buildSSEStreamFrame(chunk);
-        } catch {
-          continue;
-        }
-
-        await this.writeChain;
-        this.writeChain = this.writer
-          .write(this.encoder.encode(frame))
-          .catch(() => {
-            // Writer errored — swallow to keep the read loop draining
-            // so we still collect all chunks for the return value.
-          });
-        await this.writeChain;
+        if (done) break;
+        yield typeof value === "string" ? value : decoder.decode(value);
       }
     } finally {
       reader.releaseLock();
+    }
+  }
+
+  /**
+   * Core pipe loop: iterate an async iterable, writing each chunk as an SSE
+   * stream frame and collecting the concatenated result.
+   */
+  private async pipeIterable(source: AsyncIterable<string>): Promise<string> {
+    const chunks: string[] = [];
+
+    for await (const chunk of source) {
+      chunks.push(chunk);
+
+      let frame: string;
+      try {
+        frame = buildSSEStreamFrame(chunk);
+      } catch {
+        continue;
+      }
+
+      this.writeChain = this.writeChain
+        .then(() => this.writer.write(this.encoder.encode(frame)))
+        .catch(() => {
+          // Writer errored — swallow to keep the read loop draining
+          // so we still collect all chunks for the return value.
+        });
+      await this.writeChain;
     }
 
     return chunks.join("");
@@ -151,13 +213,7 @@ export class InngestStream {
    * before the DE actually switches to async mode. Internal use only.
    */
   sendRedirectInfo(data: { run_id: string; token: string; url?: string }): void {
-    const frame = buildSSERedirectFrame(data);
-
-    this.writeChain = this.writeChain
-      .then(() => this.writer.write(this.encoder.encode(frame)))
-      .catch(() => {
-        // Writer already errored/closed — nothing to do.
-      });
+    this.enqueue(buildSSERedirectFrame(data));
   }
 
   /**
@@ -238,15 +294,15 @@ export const stream: StreamTools = {
         // Suppress: outside an execution context or ALS lookup failed.
       });
   },
-  pipe: async (readable) => {
+  pipe: async (source) => {
     const syncStream = getStreamToolsSync();
     if (syncStream) {
-      return syncStream.pipe(readable);
+      return syncStream.pipe(source);
     }
 
     const s = await getDeferredStreamTooling();
     if (s) {
-      return s.pipe(readable);
+      return s.pipe(source);
     }
     return "";
   },

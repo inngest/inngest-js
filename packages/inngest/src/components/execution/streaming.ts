@@ -1,4 +1,56 @@
+// No Node.js imports — this file is shared between server and client code.
+
 import { createTimeoutPromise } from "../../helpers/promises.ts";
+
+// ---------------------------------------------------------------------------
+// Typed SSE frame definitions
+// ---------------------------------------------------------------------------
+
+export interface SSEMetadataFrame {
+  type: "inngest.metadata";
+  run_id: string;
+  attempt: number;
+}
+
+export interface SSEStreamFrame {
+  type: "stream";
+  data: unknown;
+}
+
+export interface SSEResultFrame {
+  type: "inngest.result";
+  data: unknown;
+}
+
+export interface SSEStepFrame {
+  type: "inngest.step";
+  step_id: string;
+  status: "running" | "completed" | "errored";
+  data?: unknown;
+}
+
+export interface SSERedirectFrame {
+  type: "inngest.redirect_info";
+  run_id: string;
+  token: string;
+  url?: string;
+}
+
+export type SSEFrame =
+  | SSEMetadataFrame
+  | SSEStreamFrame
+  | SSEResultFrame
+  | SSEStepFrame
+  | SSERedirectFrame;
+
+export interface RawSSEEvent {
+  event: string;
+  data: string;
+}
+
+// ---------------------------------------------------------------------------
+// Frame builders
+// ---------------------------------------------------------------------------
 
 /**
  * Builds a single SSE frame with the given event name and JSON-serialized data.
@@ -188,5 +240,125 @@ export async function drainStreamWithTimeout(
     throw new Error("Stream drain timed out");
   } finally {
     timeout.clear();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step frame builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds an SSE step lifecycle frame.
+ */
+export function buildSSEStepFrame(
+  stepId: string,
+  status: SSEStepFrame["status"],
+  data?: unknown,
+): string {
+  const payload: Record<string, unknown> = { step_id: stepId, status };
+  if (data !== undefined) {
+    payload.data = data;
+  }
+  return buildSSEFrame("inngest.step", payload);
+}
+
+// ---------------------------------------------------------------------------
+// SSE line parser (async generator)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses a `ReadableStream<Uint8Array>` as an SSE byte stream, yielding
+ * `RawSSEEvent` objects for each complete event.
+ */
+export async function* iterSSE(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<RawSSEEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+
+        let event = "message";
+        const dataLines: string[] = [];
+
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: ")) {
+            event = line.slice(7);
+          } else if (line.startsWith("data: ")) {
+            dataLines.push(line.slice(6));
+          }
+        }
+
+        const data = dataLines.join("\n");
+
+        yield { event, data };
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raw SSE event -> typed SSE frame
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a `RawSSEEvent` into a typed `SSEFrame`, or returns `undefined`
+ * if the event type is unrecognised.
+ */
+export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.data);
+  } catch {
+    parsed = raw.data;
+  }
+
+  switch (raw.event) {
+    case "inngest.metadata": {
+      const obj = parsed as Record<string, unknown>;
+      return {
+        type: "inngest.metadata",
+        run_id: obj.run_id as string,
+        attempt: obj.attempt as number,
+      };
+    }
+    case "stream":
+      return { type: "stream", data: parsed };
+    case "inngest.result":
+      return { type: "inngest.result", data: parsed };
+    case "inngest.step": {
+      const obj = parsed as Record<string, unknown>;
+      return {
+        type: "inngest.step",
+        step_id: obj.step_id as string,
+        status: obj.status as SSEStepFrame["status"],
+        ...(obj.data !== undefined ? { data: obj.data } : {}),
+      };
+    }
+    case "inngest.redirect_info": {
+      const obj = parsed as Record<string, unknown>;
+      return {
+        type: "inngest.redirect_info",
+        run_id: obj.run_id as string,
+        token: obj.token as string,
+        ...(typeof obj.url === "string" ? { url: obj.url } : {}),
+      };
+    }
+    default:
+      return undefined;
   }
 }

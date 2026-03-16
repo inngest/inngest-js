@@ -527,6 +527,11 @@ class InngestExecutionEngine
         data: clientResponse,
       });
 
+      // The first checkpoint may have already fired (e.g. a non-streaming
+      // step ran before this activation). Try sending the redirect now that
+      // the stream is activated.
+      this.sendRedirectIfReady();
+
       return undefined;
     }
 
@@ -1326,6 +1331,9 @@ class InngestExecutionEngine
 
     this.devDebug(`executing step "${id}"`);
 
+    // Emit step:running lifecycle frame
+    this.streamTools.stepLifecycle(id, "running");
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
@@ -1370,6 +1378,9 @@ class InngestExecutionEngine
         // block until the step is actually memoized (i.e. handle() fires
         // with confirmed data from the server). handle() resolves it.
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
+
+        // Emit step:completed lifecycle frame
+        this.streamTools.stepLifecycle(id, "completed");
 
         return {
           ...outgoingOp,
@@ -1485,6 +1496,13 @@ class InngestExecutionEngine
       error instanceof Error ? error : new Error(String(error)),
       isFinal,
     );
+
+    // Emit step:errored lifecycle frame
+    this.streamTools.stepLifecycle(id, "errored", {
+      will_retry: !isFinal,
+      error: error instanceof Error ? error.message : String(error),
+      attempt: this.fnArg.attempt,
+    });
 
     return {
       ...outgoingOp,
