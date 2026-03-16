@@ -362,10 +362,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
       hashedSigningKey: this.config.hashedSigningKey,
       instanceId: this.config.options.instanceId,
       maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
-      mode: {
-        isDev: this.config.mode.isDev,
-        isInferred: this.config.mode.isInferred,
-      },
+      mode: this.config.mode,
     };
   }
 }

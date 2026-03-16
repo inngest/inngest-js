@@ -1,6 +1,5 @@
 import httpMocks from "node-mocks-http";
 import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
-import { InngestCommHandler } from "../index.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
