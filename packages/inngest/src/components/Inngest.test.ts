@@ -1111,298 +1111,127 @@ describe("endpointProxy", () => {
   });
 });
 
-describe("endpointProxy", () => {
-  // Helper to create mock adapters with consistent shape
-  // biome-ignore lint/suspicious/noExplicitAny: test helper
-  const createMockAdapter = (createProxyHandler?: () => any) => {
-    const adapter = Object.assign(() => {}, {
-      [Symbol.toStringTag]: "Inngest.EndpointAdapter" as const,
-      withOptions: () => adapter,
-      ...(createProxyHandler && { createProxyHandler }),
-    });
-    return adapter;
-  };
+describe("inngest.publish", () => {
+  test("publishes to the realtime API", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
 
-  test("throws error when no endpoint adapter is configured", () => {
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    const publishSpy = vi
+      .spyOn(inngest["inngestApi"], "publish")
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    await inngest.publish(ch.status, { message: "hello" });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "test",
+        topics: ["status"],
+      }),
+      { message: "hello" },
+    );
+  });
+
+  test("validates data against the topic schema", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
     const inngest = createClient({ id: "test", isDev: true });
 
-    expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client.",
+    await expect(
+      // @ts-expect-error intentional invalid payload for runtime validation
+      inngest.publish(ch.status, { message: 123 }),
+    ).rejects.toThrow("Schema validation failed");
+  });
+
+  test("throws if the publish API returns an error", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
+      ok: false,
+      error: { error: "Nope", status: 500 },
+    });
+
+    await expect(
+      inngest.publish(ch.status, { message: "hello" }),
+    ).rejects.toThrow("Failed to publish to realtime: Nope");
+  });
+
+  test("staticSchema topics skip runtime validation (passthrough)", async () => {
+    const { realtime, staticSchema } = await import("../index.ts");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        tokens: { schema: staticSchema<{ token: string }>() },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    const publishSpy = vi
+      .spyOn(inngest["inngestApi"], "publish")
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    //
+    // staticSchema's validate is a passthrough — it never returns issues,
+    // so invalid data at runtime is not rejected.
+    // @ts-expect-error intentional invalid payload to demonstrate passthrough
+    await inngest.publish(ch.tokens, { token: 999 });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "test",
+        topics: ["tokens"],
+      }),
+      { token: 999 },
     );
   });
 
-  test("throws error when adapter does not support proxy handlers", () => {
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(),
-      isDev: true,
+  test("zod schema topics reject invalid data at runtime", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
     });
 
-    expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers.",
-    );
-  });
-
-  test("returns proxy handler when adapter supports it", () => {
-    const mockProxyHandler = () => Promise.resolve(new Response());
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(() => mockProxyHandler),
-      isDev: true,
+    const inngest = createClient({ id: "test", isDev: true });
+    vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
+      ok: true,
+      value: undefined,
     });
 
-    expect(inngest.endpointProxy()).toBe(mockProxyHandler);
-  });
-
-  test("passes client to createProxyHandler", () => {
-    const createProxyHandler = vi.fn().mockReturnValue(() => {});
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(createProxyHandler),
-      isDev: true,
-    });
-
-    inngest.endpointProxy();
-
-    expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
-  });
-});
-
-describe("endpointProxy", () => {
-  // Helper to create mock adapters with consistent shape
-  // biome-ignore lint/suspicious/noExplicitAny: test helper
-  const createMockAdapter = (createProxyHandler?: () => any) => {
-    const adapter = Object.assign(() => {}, {
-      [Symbol.toStringTag]: "Inngest.EndpointAdapter" as const,
-      withOptions: () => adapter,
-      ...(createProxyHandler && { createProxyHandler }),
-    });
-    return adapter;
-  };
-
-  test("throws error when no endpoint adapter is configured", () => {
-    const inngest = createClient({ id: "test" });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client.",
-    );
-  });
-
-  test("throws error when adapter does not support proxy handlers", () => {
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(),
-    });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers.",
-    );
-  });
-
-  test("returns proxy handler when adapter supports it", () => {
-    const mockProxyHandler = () => Promise.resolve(new Response());
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(() => mockProxyHandler),
-    });
-
-    expect(inngest.endpointProxy()).toBe(mockProxyHandler);
-  });
-
-  test("passes client to createProxyHandler", () => {
-    const createProxyHandler = vi.fn().mockReturnValue(() => {});
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(createProxyHandler),
-    });
-
-    inngest.endpointProxy();
-
-    expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
-  });
-});
-
-describe("endpointProxy", () => {
-  // Helper to create mock adapters with consistent shape
-  // biome-ignore lint/suspicious/noExplicitAny: test helper
-  const createMockAdapter = (createProxyHandler?: () => any) => {
-    const adapter = Object.assign(() => {}, {
-      [Symbol.toStringTag]: "Inngest.EndpointAdapter" as const,
-      withOptions: () => adapter,
-      ...(createProxyHandler && { createProxyHandler }),
-    });
-    return adapter;
-  };
-
-  test("throws error when no endpoint adapter is configured", () => {
-    const inngest = createClient({ id: "test" });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client.",
-    );
-  });
-
-  test("throws error when adapter does not support proxy handlers", () => {
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(),
-    });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers.",
-    );
-  });
-
-  test("returns proxy handler when adapter supports it", () => {
-    const mockProxyHandler = () => Promise.resolve(new Response());
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(() => mockProxyHandler),
-    });
-
-    expect(inngest.endpointProxy()).toBe(mockProxyHandler);
-  });
-
-  test("passes client to createProxyHandler", () => {
-    const createProxyHandler = vi.fn().mockReturnValue(() => {});
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(createProxyHandler),
-    });
-
-    inngest.endpointProxy();
-
-    expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
-  });
-
-  describe("inngest.publish", () => {
-    test("publishes to the realtime API", async () => {
-      const { realtime } = await import("../index.ts");
-      const { z } = await import("zod/v3");
-
-      const ch = realtime.channel({
-        name: "test",
-        topics: {
-          status: { schema: z.object({ message: z.string() }) },
-        },
-      });
-
-      const inngest = createClient({ id: "test", isDev: true });
-      const publishSpy = vi
-        .spyOn(inngest["inngestApi"], "publish")
-        .mockResolvedValue({ ok: true, value: undefined });
-
-      await inngest.publish(ch.status, { message: "hello" });
-
-      expect(publishSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "test",
-          topics: ["status"],
-        }),
-        { message: "hello" },
-      );
-    });
-
-    test("validates data against the topic schema", async () => {
-      const { realtime } = await import("../index.ts");
-      const { z } = await import("zod/v3");
-
-      const ch = realtime.channel({
-        name: "test",
-        topics: {
-          status: { schema: z.object({ message: z.string() }) },
-        },
-      });
-
-      const inngest = createClient({ id: "test", isDev: true });
-
-      await expect(
-        // @ts-expect-error intentional invalid payload for runtime validation
-        inngest.publish(ch.status, { message: 123 }),
-      ).rejects.toThrow("Schema validation failed");
-    });
-
-    test("throws if the publish API returns an error", async () => {
-      const { realtime } = await import("../index.ts");
-      const { z } = await import("zod/v3");
-
-      const ch = realtime.channel({
-        name: "test",
-        topics: {
-          status: { schema: z.object({ message: z.string() }) },
-        },
-      });
-
-      const inngest = createClient({ id: "test", isDev: true });
-      vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
-        ok: false,
-        error: { error: "Nope", status: 500 },
-      });
-
-      await expect(
-        inngest.publish(ch.status, { message: "hello" }),
-      ).rejects.toThrow("Failed to publish to realtime: Nope");
-    });
-
-    test("staticSchema topics skip runtime validation (passthrough)", async () => {
-      const { realtime, staticSchema } = await import("../index.ts");
-
-      const ch = realtime.channel({
-        name: "test",
-        topics: {
-          tokens: { schema: staticSchema<{ token: string }>() },
-        },
-      });
-
-      const inngest = createClient({ id: "test", isDev: true });
-      const publishSpy = vi
-        .spyOn(inngest["inngestApi"], "publish")
-        .mockResolvedValue({ ok: true, value: undefined });
-
-      //
-      // staticSchema's validate is a passthrough — it never returns issues,
-      // so invalid data at runtime is not rejected.
-      // @ts-expect-error intentional invalid payload to demonstrate passthrough
-      await inngest.publish(ch.tokens, { token: 999 });
-
-      expect(publishSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "test",
-          topics: ["tokens"],
-        }),
-        { token: 999 },
-      );
-    });
-
-    test("zod schema topics reject invalid data at runtime", async () => {
-      const { realtime } = await import("../index.ts");
-      const { z } = await import("zod/v3");
-
-      const ch = realtime.channel({
-        name: "test",
-        topics: {
-          status: { schema: z.object({ message: z.string() }) },
-        },
-      });
-
-      const inngest = createClient({ id: "test", isDev: true });
-      vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
-        ok: true,
-        value: undefined,
-      });
-
-      //
-      // Zod schema validates at runtime — invalid data throws.
-      await expect(
-        // @ts-expect-error intentional invalid payload
-        inngest.publish(ch.status, { message: 999 }),
-      ).rejects.toThrow("Schema validation failed");
-    });
+    //
+    // Zod schema validates at runtime — invalid data throws.
+    await expect(
+      // @ts-expect-error intentional invalid payload
+      inngest.publish(ch.status, { message: 999 }),
+    ).rejects.toThrow("Schema validation failed");
   });
 });
