@@ -11,6 +11,7 @@ import ms from "ms";
 import { headerKeys } from "../../../../helpers/consts.ts";
 import { allProcessEnv, getPlatformName } from "../../../../helpers/env.ts";
 import { resolveApiBaseUrl } from "../../../../helpers/url.ts";
+import type { Logger } from "../../../../middleware/logger.ts";
 import {
   ConnectMessage,
   GatewayConnectionReadyData,
@@ -45,6 +46,13 @@ import type { BaseConnectionConfig } from "./types.ts";
 
 const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 
+function toError(value: unknown): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  return new Error(String(value));
+}
+
 /**
  * Connection object representing an active WebSocket connection.
  */
@@ -62,7 +70,7 @@ export interface Connection {
 export interface ConnectionCoreConfig extends BaseConnectionConfig {
   instanceId?: string;
   maxWorkerConcurrency?: number;
-  rewriteGatewayEndpoint?: (endpoint: string) => string;
+  gatewayUrl?: string;
   appIds: string[];
 }
 
@@ -70,7 +78,7 @@ export interface ConnectionCoreConfig extends BaseConnectionConfig {
  * Callbacks for connection core events.
  */
 export interface ConnectionCoreCallbacks {
-  log: (message: string, data?: unknown) => void;
+  logger: Logger;
   onStateChange: (state: ConnectionState) => void;
   getState: () => ConnectionState;
   handleExecutionRequest: (
@@ -136,7 +144,7 @@ export class ConnectionCore {
       throw new Error("Connection already closed");
     }
 
-    this.callbacks.log("Establishing connection", { attempt });
+    this.callbacks.logger.debug({ attempt }, "Establishing connection");
 
     let useSigningKey = this.config.hashedSigningKey;
 
@@ -167,10 +175,7 @@ export class ConnectionCore {
         await this.prepareConnection(useSigningKey, attempt, [...path]);
         return;
       } catch (err) {
-        this.callbacks.log(
-          "Failed to connect",
-          err instanceof Error ? err.message : err,
-        );
+        this.callbacks.logger.warn({ err: toError(err) }, "Failed to connect");
 
         if (!(err instanceof ReconnectError)) {
           throw err;
@@ -182,7 +187,7 @@ export class ConnectionCore {
           const switchToFallback =
             useSigningKey === this.config.hashedSigningKey;
           if (switchToFallback) {
-            this.callbacks.log("Switching to fallback signing key");
+            this.callbacks.logger.debug("Switching to fallback signing key");
           }
           useSigningKey = switchToFallback
             ? this.config.hashedFallbackKey
@@ -190,19 +195,19 @@ export class ConnectionCore {
         }
 
         if (err instanceof ConnectionLimitError) {
-          console.error(
+          this.callbacks.logger.error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
         }
 
         const delay = expBackoff(attempt);
-        this.callbacks.log(`Reconnecting in ${delay}ms`);
+        this.callbacks.logger.debug({ delay }, "Reconnecting");
 
         const cancelled = await waitWithCancel(delay, () => {
           return this.callbacks.getState() === ConnectionState.CLOSED;
         });
         if (cancelled) {
-          this.callbacks.log("Reconnect backoff cancelled");
+          this.callbacks.logger.debug("Reconnect backoff cancelled");
           break;
         }
 
@@ -210,7 +215,7 @@ export class ConnectionCore {
       }
     }
 
-    this.callbacks.log("Exiting connect loop");
+    this.callbacks.logger.debug("Exiting connect loop");
   }
 
   /**
@@ -288,7 +293,7 @@ export class ConnectionCore {
   ): Promise<Connection> {
     let closed = false;
 
-    this.callbacks.log("Preparing connection", { attempt, path });
+    this.callbacks.logger.debug({ attempt, path }, "Preparing connection");
 
     const startedAt = new Date();
     const startResp = await this.sendStartRequest(hashedSigningKey, attempt);
@@ -312,23 +317,22 @@ export class ConnectionCore {
       );
     }, 10_000);
 
-    let finalEndpoint = startResp.gatewayEndpoint;
-    if (this.config.rewriteGatewayEndpoint) {
-      const rewritten = this.config.rewriteGatewayEndpoint(
-        startResp.gatewayEndpoint,
+    const finalEndpoint = this.config.gatewayUrl || startResp.gatewayEndpoint;
+    if (finalEndpoint !== startResp.gatewayEndpoint) {
+      this.callbacks.logger.debug(
+        { original: startResp.gatewayEndpoint, override: finalEndpoint },
+        "Overriding gateway endpoint",
       );
-      this.callbacks.log("Rewriting gateway endpoint", {
-        original: startResp.gatewayEndpoint,
-        rewritten,
-      });
-      finalEndpoint = rewritten;
     }
 
-    this.callbacks.log("Connecting to gateway", {
-      endpoint: finalEndpoint,
-      gatewayGroup: startResp.gatewayGroup,
-      connectionId,
-    });
+    this.callbacks.logger.debug(
+      {
+        endpoint: finalEndpoint,
+        gatewayGroup: startResp.gatewayGroup,
+        connectionId,
+      },
+      "Connecting to gateway",
+    );
 
     const ws = new WebSocket(finalEndpoint, [ConnectWebSocketProtocol]);
     ws.binaryType = "arraybuffer";
@@ -337,17 +341,17 @@ export class ConnectionCore {
     {
       onConnectionError = (error: unknown) => {
         if (closed) {
-          this.callbacks.log(
-            "Connection error while initializing but already in closed state, skipping",
+          this.callbacks.logger.debug(
             { connectionId },
+            "Connection error while initializing but already in closed state, skipping",
           );
           return;
         }
         closed = true;
 
-        this.callbacks.log(
-          "Connection error in connecting state, rejecting promise",
+        this.callbacks.logger.debug(
           { connectionId },
+          "Connection error in connecting state, rejecting promise",
         );
 
         this.excludeGateways.add(startResp.gatewayGroup);
@@ -394,9 +398,9 @@ export class ConnectionCore {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
       const connectMessage = parseConnectMessage(messageBytes);
 
-      this.callbacks.log(
-        `Received message: ${gatewayMessageTypeToJSON(connectMessage.kind)}`,
-        { connectionId },
+      this.callbacks.logger.debug(
+        { kind: gatewayMessageTypeToJSON(connectMessage.kind), connectionId },
+        "Received message",
       );
 
       if (!setupState.receivedGatewayHello) {
@@ -489,14 +493,17 @@ export class ConnectionCore {
         return;
       }
 
-      this.callbacks.log("Unexpected message type during setup", {
-        kind: gatewayMessageTypeToJSON(connectMessage.kind),
-        rawKind: connectMessage.kind,
-        attempt,
-        setupState,
-        state: this.callbacks.getState(),
-        connectionId,
-      });
+      this.callbacks.logger.warn(
+        {
+          kind: gatewayMessageTypeToJSON(connectMessage.kind),
+          rawKind: connectMessage.kind,
+          attempt,
+          setupState,
+          state: this.callbacks.getState(),
+          connectionId,
+        },
+        "Unexpected message type during setup",
+      );
     };
 
     await websocketConnectedPromise;
@@ -527,15 +534,13 @@ export class ConnectionCore {
     // connectionId is available in the onStateChange callback.
     this.callbacks.onStateChange(ConnectionState.ACTIVE);
 
-    this.callbacks.log(`Connection ready (${connectionId})`);
-
     let isDraining = false;
     {
       onConnectionError = async (error: unknown) => {
         if (closed) {
-          this.callbacks.log(
-            "Connection error but already in closed state, skipping",
+          this.callbacks.logger.debug(
             { connectionId },
+            "Connection error but already in closed state, skipping",
           );
           return;
         }
@@ -548,8 +553,9 @@ export class ConnectionCore {
           currentState === ConnectionState.CLOSING ||
           currentState === ConnectionState.CLOSED
         ) {
-          this.callbacks.log(
-            `Connection error (${connectionId}) but already closing or closed, skipping`,
+          this.callbacks.logger.debug(
+            { connectionId },
+            "Connection error but already closing or closed, skipping",
           );
           return;
         }
@@ -558,15 +564,19 @@ export class ConnectionCore {
         this.excludeGateways.add(startResp.gatewayGroup);
 
         if (isDraining) {
-          this.callbacks.log(
-            `Connection error (${connectionId}) but already draining, skipping`,
+          this.callbacks.logger.debug(
+            { connectionId },
+            "Connection error but already draining, skipping",
           );
           return;
         }
 
-        this.callbacks.log(
-          `Connection error (${connectionId})`,
-          error instanceof Error ? error.message : error,
+        this.callbacks.logger.warn(
+          {
+            connectionId,
+            err: toError(error),
+          },
+          "Connection error",
         );
         this.connect(attempt + 1, [...path, "onConnectionError"]);
       };
@@ -585,22 +595,25 @@ export class ConnectionCore {
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
         isDraining = true;
-        this.callbacks.log("Received draining message", { connectionId });
+        this.callbacks.logger.info(
+          { connectionId },
+          "Received draining message",
+        );
         try {
-          this.callbacks.log(
-            "Setting up new connection while keeping previous connection open",
+          this.callbacks.logger.debug(
             { connectionId },
+            "Setting up new connection while keeping previous connection open",
           );
 
           await this.connect(0, [...path]);
           await conn.cleanup();
         } catch (err) {
-          this.callbacks.log(
-            "Failed to reconnect after receiving draining message",
+          this.callbacks.logger.warn(
             {
               connectionId,
-              err: err instanceof Error ? err.message : err,
+              err: toError(err),
             },
+            "Failed to reconnect after receiving draining message",
           );
 
           await conn.cleanup();
@@ -617,16 +630,20 @@ export class ConnectionCore {
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
         conn.pendingHeartbeats = 0;
-        this.callbacks.log("Handled gateway heartbeat", { connectionId });
+        this.callbacks.logger.debug(
+          { connectionId },
+          "Handled gateway heartbeat",
+        );
         return;
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
         const currentState = this.callbacks.getState();
         if (currentState !== ConnectionState.ACTIVE) {
-          this.callbacks.log("Received request while not active, skipping", {
-            connectionId,
-          });
+          this.callbacks.logger.warn(
+            { connectionId },
+            "Received request while not active, skipping",
+          );
           return;
         }
 
@@ -634,38 +651,47 @@ export class ConnectionCore {
           connectMessage.payload,
         );
 
-        this.callbacks.log("Received gateway executor request", {
-          requestId: gatewayExecutorRequest.requestId,
-          appId: gatewayExecutorRequest.appId,
-          appName: gatewayExecutorRequest.appName,
-          functionSlug: gatewayExecutorRequest.functionSlug,
-          stepId: gatewayExecutorRequest.stepId,
-          connectionId,
-        });
-
-        if (
-          typeof gatewayExecutorRequest.appName !== "string" ||
-          gatewayExecutorRequest.appName.length === 0
-        ) {
-          this.callbacks.log("No app name in request, skipping", {
-            requestId: gatewayExecutorRequest.requestId,
-            appId: gatewayExecutorRequest.appId,
-            functionSlug: gatewayExecutorRequest.functionSlug,
-            stepId: gatewayExecutorRequest.stepId,
-            connectionId,
-          });
-          return;
-        }
-
-        if (!this.config.appIds.includes(gatewayExecutorRequest.appName)) {
-          this.callbacks.log("No request handler found for app, skipping", {
+        this.callbacks.logger.debug(
+          {
             requestId: gatewayExecutorRequest.requestId,
             appId: gatewayExecutorRequest.appId,
             appName: gatewayExecutorRequest.appName,
             functionSlug: gatewayExecutorRequest.functionSlug,
             stepId: gatewayExecutorRequest.stepId,
             connectionId,
-          });
+          },
+          "Received gateway executor request",
+        );
+
+        if (
+          typeof gatewayExecutorRequest.appName !== "string" ||
+          gatewayExecutorRequest.appName.length === 0
+        ) {
+          this.callbacks.logger.warn(
+            {
+              requestId: gatewayExecutorRequest.requestId,
+              appId: gatewayExecutorRequest.appId,
+              functionSlug: gatewayExecutorRequest.functionSlug,
+              stepId: gatewayExecutorRequest.stepId,
+              connectionId,
+            },
+            "No app name in request, skipping",
+          );
+          return;
+        }
+
+        if (!this.config.appIds.includes(gatewayExecutorRequest.appName)) {
+          this.callbacks.logger.warn(
+            {
+              requestId: gatewayExecutorRequest.requestId,
+              appId: gatewayExecutorRequest.appId,
+              appName: gatewayExecutorRequest.appName,
+              functionSlug: gatewayExecutorRequest.functionSlug,
+              stepId: gatewayExecutorRequest.stepId,
+              connectionId,
+            },
+            "No request handler found for app, skipping",
+          );
           return;
         }
 
@@ -717,25 +743,28 @@ export class ConnectionCore {
           // closed by the gateway while the request is still in flight,
           // causing lease extension messages to silently fail and the
           // gateway to time out the request.
-          const leaseWs = this.currentConnection?.ws ?? ws;
+          const latestConn = {
+            ws: this.currentConnection?.ws ?? ws,
+            id: this.currentConnection?.id ?? connectionId,
+          };
 
-          this.callbacks.log("Extending lease", {
-            connectionId,
-            leaseId: currentLeaseId,
-          });
+          this.callbacks.logger.debug(
+            { connectionId: latestConn.id, leaseId: currentLeaseId },
+            "Extending lease",
+          );
 
-          if (leaseWs.readyState !== WebSocket.OPEN) {
-            this.callbacks.log(
-              "Cannot extend lease, no open WebSocket available",
+          if (latestConn.ws.readyState !== WebSocket.OPEN) {
+            this.callbacks.logger.warn(
               {
-                connectionId,
+                connectionId: latestConn.id,
                 requestId: gatewayExecutorRequest.requestId,
               },
+              "Cannot extend lease, no open WebSocket available",
             );
             return;
           }
 
-          leaseWs.send(
+          latestConn.ws.send(
             ConnectMessage.encode(
               ConnectMessage.create({
                 kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
@@ -764,16 +793,11 @@ export class ConnectionCore {
             gatewayExecutorRequest,
           );
 
-          this.callbacks.log("Sending worker reply", {
-            connectionId,
-            requestId: gatewayExecutorRequest.requestId,
-          });
-
           if (!this.currentConnection) {
-            this.callbacks.log("No current WebSocket, buffering response", {
-              connectionId,
-              requestId: gatewayExecutorRequest.requestId,
-            });
+            this.callbacks.logger.warn(
+              { requestId: gatewayExecutorRequest.requestId },
+              "No current WebSocket, buffering response",
+            );
             if (this.callbacks.onBufferResponse) {
               this.callbacks.onBufferResponse(
                 gatewayExecutorRequest.requestId,
@@ -782,6 +806,14 @@ export class ConnectionCore {
             }
             return;
           }
+
+          this.callbacks.logger.debug(
+            {
+              connectionId: this.currentConnection.id,
+              requestId: gatewayExecutorRequest.requestId,
+            },
+            "Sending worker reply",
+          );
 
           this.currentConnection.ws.send(
             ConnectMessage.encode(
@@ -792,9 +824,12 @@ export class ConnectionCore {
             ).finish(),
           );
         } catch (err) {
-          this.callbacks.log(
-            `Execution error for request ${gatewayExecutorRequest.requestId}`,
-            err instanceof Error ? err.message : err,
+          this.callbacks.logger.debug(
+            {
+              requestId: gatewayExecutorRequest.requestId,
+              err: toError(err),
+            },
+            "Execution error",
           );
         } finally {
           this.inProgressRequests.wg.done();
@@ -810,10 +845,10 @@ export class ConnectionCore {
       if (connectMessage.kind === GatewayMessageType.WORKER_REPLY_ACK) {
         const replyAck = parseWorkerReplyAck(connectMessage.payload);
 
-        this.callbacks.log("Acknowledging reply ack", {
-          connectionId,
-          requestId: replyAck.requestId,
-        });
+        this.callbacks.logger.debug(
+          { connectionId, requestId: replyAck.requestId },
+          "Acknowledging reply ack",
+        );
 
         this.callbacks.onReplyAck?.(replyAck.requestId);
         return;
@@ -827,19 +862,19 @@ export class ConnectionCore {
           connectMessage.payload,
         );
 
-        this.callbacks.log("Received extend lease ack", {
-          connectionId,
-          newLeaseId: extendLeaseAck.newLeaseId,
-        });
+        this.callbacks.logger.debug(
+          { connectionId, newLeaseId: extendLeaseAck.newLeaseId },
+          "Received extend lease ack",
+        );
 
         if (extendLeaseAck.newLeaseId) {
           this.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
             extendLeaseAck.newLeaseId;
         } else {
-          this.callbacks.log("Unable to extend lease", {
-            connectionId,
-            requestId: extendLeaseAck.requestId,
-          });
+          this.callbacks.logger.warn(
+            { connectionId, requestId: extendLeaseAck.requestId },
+            "Unable to extend lease",
+          );
           delete this.inProgressRequests.requestLeases[
             extendLeaseAck.requestId
           ];
@@ -848,14 +883,17 @@ export class ConnectionCore {
         return;
       }
 
-      this.callbacks.log("Unexpected message type", {
-        kind: gatewayMessageTypeToJSON(connectMessage.kind),
-        rawKind: connectMessage.kind,
-        attempt,
-        setupState,
-        state: this.callbacks.getState(),
-        connectionId,
-      });
+      this.callbacks.logger.warn(
+        {
+          kind: gatewayMessageTypeToJSON(connectMessage.kind),
+          rawKind: connectMessage.kind,
+          attempt,
+          setupState,
+          state: this.callbacks.getState(),
+          connectionId,
+        },
+        "Unexpected message type",
+      );
     };
 
     // Heartbeat interval
@@ -884,7 +922,10 @@ export class ConnectionCore {
         }
 
         if (conn.pendingHeartbeats >= 2) {
-          this.callbacks.log("Gateway heartbeat missed", { connectionId });
+          this.callbacks.logger.warn(
+            { connectionId },
+            "Gateway heartbeat missed",
+          );
           void onConnectionError(
             new ReconnectError(
               `Consecutive gateway heartbeats missed (${connectionId})`,
@@ -894,7 +935,10 @@ export class ConnectionCore {
           return;
         }
 
-        this.callbacks.log("Sending worker heartbeat", { connectionId });
+        this.callbacks.logger.debug(
+          { connectionId },
+          "Sending worker heartbeat",
+        );
 
         conn.pendingHeartbeats++;
         ws.send(
@@ -913,9 +957,9 @@ export class ConnectionCore {
       }
       closed = true;
 
-      this.callbacks.log("Cleaning up connection", { connectionId });
+      this.callbacks.logger.debug({ connectionId }, "Cleaning up connection");
       if (ws.readyState === WebSocket.OPEN) {
-        this.callbacks.log("Sending pause message", { connectionId });
+        this.callbacks.logger.debug({ connectionId }, "Sending pause message");
         ws.send(
           ConnectMessage.encode(
             ConnectMessage.create({
@@ -925,7 +969,7 @@ export class ConnectionCore {
         );
       }
 
-      this.callbacks.log("Closing connection", { connectionId });
+      this.callbacks.logger.debug({ connectionId }, "Closing connection");
       ws.onerror = () => {};
       ws.onclose = () => {};
 
@@ -940,7 +984,10 @@ export class ConnectionCore {
         this.currentConnection = undefined;
       }
 
-      this.callbacks.log("Cleaning up worker heartbeat", { connectionId });
+      this.callbacks.logger.debug(
+        { connectionId },
+        "Cleaning up worker heartbeat",
+      );
       clearInterval(heartbeatInterval);
     };
 

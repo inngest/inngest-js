@@ -1,11 +1,4 @@
-import {
-  ErrCode,
-  fixEventKeyMissingSteps,
-  isSerializedError,
-  minifyPrettyError,
-  prettyError,
-  serializeError,
-} from "./errors.ts";
+import { isSerializedError, serializeError } from "./errors.ts";
 
 interface ErrorTests {
   name: string;
@@ -108,60 +101,5 @@ describe("serializeError", () => {
     name: "Existing serialized error",
     error: serializeError(new Error("test")),
     tests: { message: "test" },
-  });
-});
-
-describe("minifyPrettyError", () => {
-  describe("should minify a pretty error", () => {
-    const originalErr = serializeError(
-      new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
-        }),
-      ),
-    );
-
-    const err = minifyPrettyError(originalErr);
-
-    const expected = "Failed to send event";
-
-    test("sets message", () => {
-      expect(err.message).toBe(expected);
-    });
-
-    test("sets stack", () => {
-      expect(err.stack).toMatch(`Error: ${expected}\n`);
-      expect(err.stack).toMatch(originalErr.stack);
-    });
-  });
-
-  describe("should prepend code", () => {
-    const originalErr = serializeError(
-      new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
-          code: ErrCode.NESTING_STEPS,
-        }),
-      ),
-    );
-
-    const err = minifyPrettyError(originalErr);
-
-    const expected = `${ErrCode.NESTING_STEPS} - Failed to send event`;
-
-    test("sets message", () => {
-      expect(err.message).toBe(expected);
-    });
-
-    test("sets stack", () => {
-      expect(err.stack).toMatch(`Error: ${expected}\n`);
-      expect(err.stack).toMatch(originalErr.stack);
-    });
   });
 });

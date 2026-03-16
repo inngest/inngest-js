@@ -1,9 +1,9 @@
 import { serializeError } from "../helpers/errors";
 import { StepMode } from "../types";
 import {
-  createV1InngestExecution,
+  createExecutionEngine,
   _internals as v1Internals,
-} from "./execution/v1";
+} from "./execution/engine.ts";
 import { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
@@ -15,8 +15,11 @@ describe("StepFailed OpCode with try/catch", () => {
     let caughtError = false;
 
     const fn = inngest.createFunction(
-      { id: "test-step-failed-try-catch", retries: 1 },
-      { event: "test/event" },
+      {
+        id: "test-step-failed-try-catch",
+        retries: 1,
+        triggers: [{ event: "test/event" }],
+      },
       async ({ step }) => {
         try {
           await step.run("failing-step", () => {
@@ -32,7 +35,7 @@ describe("StepFailed OpCode with try/catch", () => {
 
     // Simulate memoized step state with a failed step
     const stepHashedId = v1Internals.hashId("failing-step");
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {
@@ -76,8 +79,11 @@ describe("StepFailed OpCode with try/catch", () => {
     let caughtError = false;
 
     const fn = inngest.createFunction(
-      { id: "test-max-attempts-try-catch", retries: 1 },
-      { event: "test/event" },
+      {
+        id: "test-max-attempts-try-catch",
+        retries: 1,
+        triggers: [{ event: "test/event" }],
+      },
       async ({ step, attempt: _attempt, maxAttempts: _maxAttempts }) => {
         try {
           await step.run("failing-step-2", () => {
@@ -93,7 +99,7 @@ describe("StepFailed OpCode with try/catch", () => {
 
     // Simulate that we're at max attempts with a memoized failed step
     const stepHashedId = v1Internals.hashId("failing-step-2");
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {
@@ -136,8 +142,11 @@ describe("StepFailed OpCode with try/catch", () => {
 
   test("data with name/message that is not a serialized error resolves on resume", async () => {
     const fn = inngest.createFunction(
-      { id: "test-error-shaped-data", retries: 1 },
-      { event: "test/event" },
+      {
+        id: "test-error-shaped-data",
+        retries: 1,
+        triggers: [{ event: "test/event" }],
+      },
       async ({ step }) => {
         // First call returns an object that looks error-ish but is not serialized
         const value = await step.run("error-shaped", () => {
@@ -148,7 +157,7 @@ describe("StepFailed OpCode with try/catch", () => {
     );
 
     const stepHashedId = v1Internals.hashId("error-shaped");
-    const execution = createV1InngestExecution({
+    const execution = createExecutionEngine({
       client: inngest,
       fn: fn as InngestFunction.Any,
       data: {

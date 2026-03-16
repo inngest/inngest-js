@@ -1,13 +1,12 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Inngest } from "../../../src";
+import { _internals } from "../../../src/components/execution/engine";
 import {
   ExecutionVersion,
   type IInngestExecution,
   type InngestExecution,
   type MemoizedOp,
-  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "../../../src/components/execution/InngestExecution";
-import { _internals } from "../../../src/components/execution/v1";
 import { STEP_INDEXING_SUFFIX } from "../../../src/components/InngestStepTools";
 import { ServerTiming } from "../../../src/helpers/ServerTiming";
 import { StepMode } from "../../../src/types";
@@ -49,14 +48,17 @@ export const createExecutionWithMemoizedSteps = ({
 
   const run = async () => {
     const execution = client
-      .createFunction({ id: "test" }, { event: "test" }, async ({ step }) => {
-        for (let i = 0; i < stepCount; i++) {
-          await step.run(
-            i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`,
-            () => userStepOutput,
-          );
-        }
-      })
+      .createFunction(
+        { id: "test", triggers: [{ event: "test" }] },
+        async ({ step }) => {
+          for (let i = 0; i < stepCount; i++) {
+            await step.run(
+              i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`,
+              () => userStepOutput,
+            );
+          }
+        },
+      )
       ["createExecution"]({
         version: ExecutionVersion.V2,
         partialOptions: {

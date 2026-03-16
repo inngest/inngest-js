@@ -9,22 +9,21 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
-import type { EventSchemas } from "./components/EventSchemas.ts";
-import type {
-  builtInMiddleware,
-  GetEvents,
-  Inngest,
-} from "./components/Inngest.ts";
+import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
-import type {
-  ExtendSendEventWithMiddleware,
-  InngestMiddleware,
-} from "./components/InngestMiddleware.ts";
+import type { createGroupTools } from "./components/InngestGroupTools.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
+import type { Middleware } from "./components/middleware/index.ts";
+import type {
+  EventType,
+  EventTypeWithAnySchema,
+} from "./components/triggers/triggers.ts";
 import type { internalEvents } from "./helpers/consts.ts";
+import type { Jsonify } from "./helpers/jsonify.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
 import type {
@@ -33,7 +32,6 @@ import type {
   IsNever,
   Public,
   Simplify,
-  WithoutInternal,
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
 
@@ -484,77 +482,17 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
- * Makes sure that all event names are stringified and not enums or other
- * values.
- */
-type StringifyAllEvents<T> = {
-  [K in keyof T as `${K & string}`]: Simplify<
-    Omit<T[K], "name"> & { name: `${K & string}` }
-  >;
-};
-
-/**
- * Given a client and a set of triggers, returns a record of all the events that
- * can be used to trigger a function. This will also include invocation events,
- * which currently could represent any of the triggers.
- */
-type GetSelectedEvents<
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient>,
-> = Pick<GetEvents<TClient, true>, TTriggers> &
-  StringifyAllEvents<{
-    // Invocation events could (currently) represent any of the payloads that
-    // could be used to trigger the function. We use a distributive `Pick` over allto
-    // ensure this is represented correctly in typing.
-    [internalEvents.FunctionInvoked]: Simplify<{
-      name: `${internalEvents.FunctionInvoked}`;
-    }> &
-      Pick<
-        Pick<GetEvents<TClient, true>, TTriggers>[keyof Pick<
-          GetEvents<TClient, true>,
-          TTriggers
-        >],
-        AssertKeysAreFrom<EventPayload, "id" | "data" | "user" | "v" | "ts">
-      >;
-  }>;
-
-/**
- * Returns a union of all the events that can be used to trigger a function
- * based on the given `TClient` and `TTriggers`.
- *
- * Can optionally include or exclude internal events with `TExcludeInternal`.
- */
-type GetContextEvents<
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient>,
-  TExcludeInternal extends boolean = false,
-  // TInvokeSchema extends ValidSchemaInput = never,
-> = Simplify<
-  TExcludeInternal extends true
-    ? WithoutInternal<
-        GetSelectedEvents<TClient, TTriggers>
-      >[keyof WithoutInternal<GetSelectedEvents<TClient, TTriggers>>]
-    : GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
-        TClient,
-        TTriggers
-      >]
->;
-
-/**
  * Base context object, omitting any extras that may be added by middleware or
  * function configuration.
  *
  * @public
  */
-export type BaseContext<
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
-> = {
+export type BaseContext<TClient extends Inngest.Any> = {
   /**
    * The event data present in the payload.
    */
-  event: GetContextEvents<TClient, TTriggers>;
-  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
+  event: Simplify<EventPayload>;
+  events: AsTuple<Simplify<EventPayload>>;
 
   /**
    * The run ID for the current function execution
@@ -562,6 +500,11 @@ export type BaseContext<
   runId: string;
 
   step: ReturnType<typeof createStepTools<TClient>>;
+
+  /**
+   * Tools for grouping and coordinating steps.
+   */
+  group: ReturnType<typeof createGroupTools>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -584,9 +527,8 @@ export type BaseContext<
  */
 export type Context<
   TClient extends Inngest.Any = Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
+> = Omit<BaseContext<TClient>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -609,18 +551,14 @@ export namespace Context {
  */
 export type Handler<
   TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TClient, TTriggers, TOverrides>,
+  ctx: Context<TClient, TOverrides>,
 ) => unknown;
-
-export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
-  keyof GetEvents<TClient, true> & string;
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -633,16 +571,8 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-  export type Any = Handler<Inngest.Any, any, any>;
+  export type Any = Handler<Inngest.Any, any>;
 }
-
-/**
- * Asserts that the given keys `U` are all present in the given object `T`.
- *
- * Used as an internal type guard to ensure that changes to keys are accounted
- * for
- */
-type AssertKeysAreFrom<T, K extends keyof T> = K;
 
 /**
  * The shape of a single event's payload without any fields used to identify the
@@ -666,13 +596,6 @@ export interface MinimalEventPayload<TData = any> {
    * Any data pertinent to the event
    */
   data?: TData;
-
-  /**
-   * Any user data associated with the event
-   * All fields ending in "_id" will be used to attribute the event to a particular user
-   */
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  user?: any;
 
   /**
    * A specific event schema version
@@ -745,11 +668,172 @@ export type SendEventOutput<TOpts extends ClientOptions> = Omit<
 > &
   SendEventOutputWithMiddleware<TOpts>;
 
-export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
-  ExtendSendEventWithMiddleware<
-    [typeof builtInMiddleware, NonNullable<TOpts["middleware"]>],
-    SendEventBaseOutput
-  >;
+export type SendEventOutputWithMiddleware<_TOpts extends ClientOptions> =
+  SendEventBaseOutput;
+
+/**
+ * Discriminator for which output transform to extract from middleware.
+ */
+type TransformKind = "functionOutputTransform" | "stepOutputTransform";
+
+/**
+ * Extract the `functionOutputTransform` from a middleware class.
+ */
+type GetMiddlewareRunTransformer<TMw> = TMw extends Middleware.Class
+  ? InstanceType<TMw> extends {
+      functionOutputTransform: infer TTransform extends
+        Middleware.StaticTransform;
+    }
+    ? TTransform
+    : Middleware.DefaultStaticTransform
+  : Middleware.DefaultStaticTransform;
+
+/**
+ * Extract the `stepOutputTransform` from a middleware class.
+ */
+type GetMiddlewareStepTransformer<TMw> = TMw extends Middleware.Class
+  ? InstanceType<TMw> extends {
+      stepOutputTransform: infer TTransform extends Middleware.StaticTransform;
+    }
+    ? TTransform
+    : Middleware.DefaultStaticTransform
+  : Middleware.DefaultStaticTransform;
+
+/**
+ * Dispatch to the correct transformer extractor based on `TKind`.
+ */
+type GetMiddlewareTransformerByKind<
+  TMw,
+  TKind extends TransformKind,
+> = TKind extends "functionOutputTransform"
+  ? GetMiddlewareRunTransformer<TMw>
+  : GetMiddlewareStepTransformer<TMw>;
+
+/**
+ * Apply all middleware transforms in sequence.
+ * Each middleware's transform is applied to the result of the previous one.
+ * When no middleware is provided, applies Jsonify as the default transform.
+ */
+export type ApplyAllMiddlewareTransforms<
+  TMw extends Middleware.Class[] | undefined,
+  T,
+  TKind extends TransformKind = "stepOutputTransform",
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
+  ? ApplyMiddlewareTransformsInternal<TMw, T, TKind>
+  : Jsonify<T>; // No middleware or empty array - apply default Jsonify
+
+/**
+ * Internal helper that recursively applies middleware transforms.
+ * Does NOT apply Jsonify at the end, as that's only for the no-middleware case.
+ *
+ * Processes from the end of the array first to match the runtime onion model:
+ * the last middleware in the array is innermost and transforms first, while the
+ * first middleware is outermost and transforms last. For `[MW1, MW2]` with
+ * input `T`, this gives `MW1(MW2(T))`.
+ */
+type ApplyMiddlewareTransformsInternal<
+  TMw extends Middleware.Class[] | undefined,
+  T,
+  TKind extends TransformKind,
+> = TMw extends [...infer Rest extends Middleware.Class[], infer Last]
+  ? ApplyMiddlewareTransformsInternal<
+      Rest,
+      ApplyMiddlewareStaticTransform<
+        GetMiddlewareTransformerByKind<Last, TKind>,
+        T
+      >,
+      TKind
+    >
+  : T;
+
+/**
+ * Apply the output transformation using the In/Out interface pattern.
+ *
+ * @example
+ * ```ts
+ * interface PreserveDate extends MiddlewareStaticTransform {
+ *   Out: this["In"] extends Date ? Date : Jsonify<this["In"]>;
+ * }
+ *
+ * // ApplyStaticTransform<PreserveDate, Date> = Date
+ * ```
+ */
+export type ApplyMiddlewareStaticTransform<
+  TTransformer extends { In: unknown; Out: unknown },
+  T,
+> = (TTransformer & { In: T })["Out"];
+
+/**
+ * Extract the context extensions from a middleware class (constructor).
+ * Looks at the return type of `transformFunctionInput` and extracts additional
+ * properties on `ctx` (excluding base `TransformFunctionInputArgs["ctx"]` properties).
+ */
+type GetMiddlewareCtxExtensions<T> = T extends Middleware.Class
+  ? InstanceType<T> extends {
+      transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
+        ctx: infer TCtx;
+      };
+    }
+    ? Omit<TCtx, keyof Middleware.TransformFunctionInputArgs["ctx"]>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware context extensions.
+ * Each middleware's ctx extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareCtxExtensions<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
+  ? ApplyMiddlewareCtxExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware ctx extensions.
+ */
+type ApplyMiddlewareCtxExtensionsInternal<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
+  ? GetMiddlewareCtxExtensions<First> &
+      ApplyMiddlewareCtxExtensionsInternal<Rest>
+  : {};
+
+/**
+ * Extract the step extensions from a middleware class (constructor).
+ * Looks at the return type of `transformFunctionInput` and extracts additional
+ * properties on `ctx.step` (excluding base `StepTools` properties).
+ */
+type GetMiddlewareStepExtensions<T> = T extends Middleware.Class
+  ? InstanceType<T> extends {
+      transformFunctionInput(arg: Middleware.TransformFunctionInputArgs): {
+        ctx: { step: infer TStep };
+      };
+    }
+    ? Omit<TStep, keyof Middleware.StepTools>
+    : {}
+  : {};
+
+/**
+ * Apply all middleware step extensions.
+ * Each middleware's step extensions are merged into the final type.
+ * When no middleware is provided, returns an empty object.
+ */
+export type ApplyAllMiddlewareStepExtensions<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [Middleware.Class, ...Middleware.Class[]]
+  ? ApplyMiddlewareStepExtensionsInternal<TMw>
+  : {};
+
+/**
+ * Internal helper that recursively merges middleware step extensions.
+ */
+type ApplyMiddlewareStepExtensionsInternal<
+  TMw extends Middleware.Class[] | undefined,
+> = TMw extends [infer First, ...infer Rest extends Middleware.Class[]]
+  ? GetMiddlewareStepExtensions<First> &
+      ApplyMiddlewareStepExtensionsInternal<Rest>
+  : {};
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
@@ -845,31 +929,6 @@ export interface ClientOptions {
   fetch?: typeof fetch;
 
   /**
-   * Provide an `EventSchemas` class to type events, providing type safety when
-   * sending events and running functions via Inngest.
-   *
-   * You can provide generated Inngest types, custom types, types using Zod, or
-   * a combination of the above. See {@link EventSchemas} for more information.
-   *
-   * @example
-   *
-   * ```ts
-   * export const inngest = new Inngest({
-   *   id: "my-app",
-   *   schemas: new EventSchemas().fromZod({
-   *     "app/user.created": {
-   *       data: z.object({
-   *         id: z.string(),
-   *         name: z.string(),
-   *       }),
-   *     },
-   *   }),
-   * });
-   * ```
-   */
-  schemas?: EventSchemas<Record<string, EventPayload>>;
-
-  /**
    * The Inngest environment to send events to. Defaults to whichever
    * environment this client's event key is associated with.
    *
@@ -893,7 +952,24 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
-  middleware?: InngestMiddleware.Stack;
+
+  /**
+   * A separate logger for SDK internal messages (registration, middleware
+   * errors, request parsing, etc.). If not provided, falls back to `logger`.
+   *
+   * Use this to route SDK internals to a different destination or to tag them
+   * for filtering, e.g. `pino.child({ component: "inngest" })`.
+   *
+   * User function logs via `ctx.logger` are not affected.
+   */
+  internalLogger?: Logger;
+
+  /**
+   * Middleware classes that provide simpler hooks for common operations.
+   * Each class is instantiated fresh per-request so that middleware can safely
+   * use `this` for request-scoped state.
+   */
+  middleware?: Middleware.Class[];
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will
@@ -912,15 +988,12 @@ export interface ClientOptions {
   appVersion?: string;
 
   /**
-   * If `true`, parallel steps within functions are optimized to reduce traffic
-   * during `Promise` resolution, which can hugely reduce the time taken and
-   * number of requests for each run.
+   * Optimizes parallel steps to reduce traffic during `Promise` resolution,
+   * reducing time and requests per run. `Promise.*()` waits for all promises
+   * to settle before resolving. Use `group.parallel()` for `Promise.race()`
+   * semantics.
    *
-   * Note that this will be the default behaviour in v4 and in its current form
-   * will cause `Promise.*()` to wait for all promises to settle before
-   * resolving.
-   *
-   * @default false
+   * @default true
    */
   optimizeParallelism?: boolean;
 
@@ -947,6 +1020,8 @@ export interface ClientOptions {
    * Whether or not to use checkpointing by default for executions of functions
    * created using this client.
    *
+   * If `false`, disables checkpointing.
+   *
    * If `true`, enables checkpointing with default settings, which is a safe,
    * blocking version of checkpointing, where we check in with Inngest after
    * every step is run.
@@ -957,8 +1032,22 @@ export interface ClientOptions {
    *
    * We recommend starting with the default `true` configuration and only tweak
    * the parameters directly if necessary.
+   *
+   * @default true
    */
   checkpointing?: CheckpointingOptions;
+
+  /**
+   * The signing key used to authenticate requests from Inngest.
+   * If not provided, will search for the `INNGEST_SIGNING_KEY` environment variable.
+   */
+  signingKey?: string;
+
+  /**
+   * A fallback signing key used to authenticate requests from Inngest during key rotation.
+   * If not provided, will search for the `INNGEST_SIGNING_KEY_FALLBACK` environment variable.
+   */
+  signingKeyFallback?: string;
 
   /**
    * An optional endpoint adapter to use when creating Durable Endpoints using
@@ -1050,46 +1139,6 @@ export type LogLevel = (typeof logLevels)[number];
  */
 export interface RegisterOptions {
   /**
-   * A key used to sign requests to and from Inngest in order to prove that the
-   * source is legitimate.
-   *
-   * You must provide a signing key to communicate securely with Inngest. If
-   * your key is not provided here, we'll try to retrieve it from the
-   * `INNGEST_SIGNING_KEY` environment variable.
-   *
-   * You can retrieve your signing key from the Inngest UI inside the "Secrets"
-   * section at {@link https://app.inngest.com/secrets}. We highly recommend
-   * that you add this to your platform's available environment variables as
-   * `INNGEST_SIGNING_KEY`.
-   *
-   * If no key can be found, you will not be able to register your functions or
-   * receive events from Inngest.
-   */
-  signingKey?: string;
-
-  /**
-   * The same as signingKey, except used as a fallback when auth fails using the
-   * primary signing key.
-   */
-  signingKeyFallback?: string;
-
-  /**
-   * The URL used to register functions with Inngest.
-   * Defaults to https://api.inngest.com/fn/register
-   */
-  baseUrl?: string;
-
-  /**
-   * If provided, will override the used `fetch` implementation. Useful for
-   * giving the library a particular implementation if accessing it is not done
-   * via globals.
-   *
-   * By default the library will try to use the native Web API fetch, falling
-   * back to a Node implementation if no global fetch can be found.
-   */
-  fetch?: typeof fetch;
-
-  /**
    * The path to the Inngest serve endpoint. e.g.:
    *
    *     "/some/long/path/to/inngest/endpoint"
@@ -1102,33 +1151,26 @@ export interface RegisterOptions {
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
    *
-   * To also provide a custom hostname, use `serveHost`.
+   * To also provide a custom hostname, use `serveOrigin`.
    */
   servePath?: string;
 
   /**
-   * The host used to access the Inngest serve endpoint, e.g.:
+   * The origin used to access the Inngest serve endpoint, e.g.:
    *
-   *     "https://myapp.com"
+   *     "https://myapp.com" or "https://myapp.com:1234"
    *
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
    * when dealing with proxies/redirects).
    *
-   * Provide the custom hostname here to ensure that the path is reported
+   * Provide the custom origin here to ensure that the path is reported
    * correctly when registering functions with Inngest.
    *
    * To also provide a custom path, use `servePath`.
    */
-  serveHost?: string;
-
-  /**
-   * The minimum level to log from the Inngest serve endpoint.
-   *
-   * Default level: "info"
-   */
-  logLevel?: LogLevel;
+  serveOrigin?: string;
 
   /**
    * Some serverless providers (especially those with edge compute) may support
@@ -1136,27 +1178,14 @@ export interface RegisterOptions {
    * restrictive request timeouts and other limitations. It is only available if
    * the serve handler being used supports streaming.
    *
-   * If this is `"allow"`, the SDK will attempt to stream responses back to
-   * Inngest if it can confidently detect support for it by verifyng that the
-   * platform and the serve handler supports streaming.
-   *
-   * If this is `"force"`, the SDK will always attempt to stream responses back
-   * to Inngest regardless of whether we can detect support for it or not. This
-   * will override `allowStreaming`, but will still not attempt to stream if
-   * the serve handler does not support it.
+   * If this is `"true"`, the SDK will attempt to stream responses back
+   * to Inngest. If the serve handler does not support streaming, an error will be thrown.
    *
    * If this is `false`, streaming will never be used.
    *
    * Defaults to `false`.
    */
-  streaming?: "allow" | "force" | false;
-
-  /**
-   * The ID of this app. This is used to group functions together in the Inngest
-   * UI. The ID of the passed client is used by default.
-   * @deprecated Will be removed in v4.
-   */
-  id?: string;
+  streaming?: true | false;
 }
 
 /**
@@ -1211,69 +1240,67 @@ export interface ConcurrencyOption {
  *
  * @public
  */
-export type Cancellation<Events extends Record<string, EventPayload>> = {
-  [K in keyof Events & string]: {
-    /**
-     * The name of the event that should cancel the function run.
-     */
-    event: K;
+export type Cancellation = {
+  /**
+   * The name of the event that should cancel the function run.
+   */
+  event: string | EventTypeWithAnySchema<string>;
 
-    /**
-     * The expression that must evaluate to true in order to cancel the function run. There
-     * are two variables available in this expression:
-     * - event, referencing the original function's event trigger
-     * - async, referencing the new cancel event.
-     *
-     * @example
-     *
-     * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
-     * field:
-     *
-     * ```ts
-     * "async.data.user_id == event.data.user_id"
-     * ```
-     */
-    if?: string;
+  /**
+   * The expression that must evaluate to true in order to cancel the function run. There
+   * are two variables available in this expression:
+   * - event, referencing the original function's event trigger
+   * - async, referencing the new cancel event.
+   *
+   * @example
+   *
+   * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
+   * field:
+   *
+   * ```ts
+   * "async.data.user_id == event.data.user_id"
+   * ```
+   */
+  if?: string;
 
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     *
-     * @deprecated Use `if` instead.
-     */
-    match?: string;
+  /**
+   * If provided, the step function will wait for the incoming event to match
+   * particular criteria. If the event does not match, it will be ignored and
+   * the step function will wait for another event.
+   *
+   * It must be a string of a dot-notation field name within both events to
+   * compare, e.g. `"data.id"` or `"user.email"`.
+   *
+   * ```
+   * // Wait for an event where the `user.email` field matches
+   * match: "user.email"
+   * ```
+   *
+   * All of these are helpers for the `if` option, which allows you to specify
+   * a custom condition to check. This can be useful if you need to compare
+   * multiple fields or use a more complex condition.
+   *
+   * See the Inngest expressions docs for more information.
+   *
+   * {@link https://www.inngest.com/docs/functions/expressions}
+   *
+   * @deprecated Use `if` instead.
+   */
+  match?: string;
 
-    /**
-     * An optional timeout that the cancel is valid for.  If this isn't
-     * specified, cancellation triggers are valid for up to a year or until the
-     * function ends.
-     *
-     * The time to wait can be specified using a `number` of milliseconds, an
-     * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-     * a `Date` object.
-     *
-     * {@link https://npm.im/ms}
-     */
-    timeout?: number | string | Date;
-  };
-}[keyof Events & string];
+  /**
+   * An optional timeout that the cancel is valid for.  If this isn't
+   * specified, cancellation triggers are valid for up to a year or until the
+   * function ends.
+   *
+   * The time to wait can be specified using a `number` of milliseconds, an
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+   * a `Date` object.
+   *
+   * {@link https://npm.im/ms}
+   */
+  timeout?: number | string | Date;
+};
 
 /**
  * The response to send to Inngest when pushing function config either directly
@@ -1379,7 +1406,6 @@ export interface InBandRegisterRequest
  */
 export interface UnauthenticatedIntrospection {
   extra: {
-    is_mode_explicit: boolean;
     native_crypto: boolean;
   };
   function_count: number;
@@ -1390,7 +1416,10 @@ export interface UnauthenticatedIntrospection {
 }
 
 export interface AuthenticatedIntrospection
-  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded"> {
+  extends Omit<
+    UnauthenticatedIntrospection,
+    "authentication_succeeded" | "extra"
+  > {
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;
@@ -1398,7 +1427,7 @@ export interface AuthenticatedIntrospection
   env: string | null;
   event_api_origin: string;
   event_key_hash: string | null;
-  extra: UnauthenticatedIntrospection["extra"] & {
+  extra: {
     is_streaming: boolean;
     native_crypto: boolean;
   };
@@ -1549,23 +1578,25 @@ export interface DevServerInfo {
 }
 
 /**
- * Given a set of events and a user-friendly trigger paramter, returns the name
- * of the event that the user intends to listen to.
+ * Given a user-friendly trigger parameter, returns the name of the event that
+ * the user intends to listen to.
  *
  * @public
  */
-export type EventNameFromTrigger<
-  Events extends Record<string, EventPayload>,
-  T extends InngestFunction.Trigger<keyof Events & string>,
-> = IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
-  ? `${internalEvents.FunctionInvoked}`
-  : T extends string // `string` indicates a migration from v2 to v3
-    ? T
-    : T extends { event: infer IEvent } // an event trigger
-      ? IEvent
-      : T extends { cron: string } // a cron trigger
-        ? `${internalEvents.ScheduledTimer}`
-        : never;
+export type EventNameFromTrigger<T extends InngestFunction.Trigger<string>> =
+  IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
+    ? `${internalEvents.FunctionInvoked}`
+    : T extends string // `string` indicates a migration from v2 to v3
+      ? T
+      : // If the trigger is an event string (e.g. `{ event: "my-event" }`)
+        T extends { event: infer IEvent } // an event trigger
+        ? // If the event is an EventType (e.g. `{ event: eventType("my-event") }`)
+          IEvent extends EventType<infer TName, infer _TSchema>
+          ? TName // Extract name from EventType
+          : IEvent // Use event directly if it's a string
+        : T extends { cron: string } // a cron trigger
+          ? `${internalEvents.ScheduledTimer}`
+          : never;
 
 /**
  * A union to represent known names of supported frameworks that we can use
@@ -1610,6 +1641,18 @@ export interface StepOptions {
    * changed at any time without affecting the step's behaviour.
    */
   name?: string;
+
+  /**
+   * The parallel execution mode for this step. Used with optimized parallelism
+   * to control how steps behave in parallel execution contexts.
+   *
+   * - `"race"`: Indicates this step is part of a `Promise.race()` group. When
+   *   one step in the race completes, the executor can cancel remaining steps.
+   *
+   * Can be set directly on step options or automatically via
+   * `group.parallel()`.
+   */
+  parallelMode?: "race";
 }
 
 /**
@@ -1649,19 +1692,12 @@ export type MetadataTarget =
       span_id: string;
     };
 
-export type EventsFromFunction<T extends InngestFunction.Any> =
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  T extends InngestFunction<any, any, any, infer IClient, any, any>
-    ? GetEvents<IClient, true>
-    : never;
-
 /**
  * A function that can be invoked by Inngest.
  */
 export type InvokeTargetFunctionDefinition =
   | Public<InngestFunctionReference.Any>
-  | Public<InngestFunction.Any>
-  | string;
+  | Public<InngestFunction.Any>;
 
 /**
  * Given an invocation target, extract the payload that will be used to trigger
@@ -1682,6 +1718,76 @@ export type TriggerEventFromFunction<
     : MinimalEventPayload;
 
 /**
+ * Extracts the input type from invoke trigger schemas only.
+ * For `step.invoke`, we need the schema INPUT type (what the caller provides),
+ * not the output type (what the function receives after transformation).
+ *
+ * Only extracts from `invoke(schema)` triggers (event: "inngest/function.invoked").
+ * Returns a union of all invoke trigger input types.
+ *
+ * @internal
+ */
+type ExtractInvokeSchemaInput<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends {
+        event: "inngest/function.invoked";
+        schema: infer TSchema;
+      }
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData | ExtractInvokeSchemaInput<Rest>
+        : ExtractInvokeSchemaInput<Rest>
+      : ExtractInvokeSchemaInput<Rest>
+    : never;
+
+/**
+ * Extracts the input type from any trigger with a schema.
+ * Used as a fallback when no invoke triggers exist.
+ *
+ * @internal
+ */
+type ExtractTriggerSchemaInput<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends { schema: infer TSchema }
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData
+        : ExtractTriggerSchemaInput<Rest>
+      : ExtractTriggerSchemaInput<Rest>
+    : never;
+
+/**
+ * Checks if a trigger array contains an invoke trigger with a schema.
+ *
+ * @internal
+ */
+type HasInvokeTriggerWithSchema<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends {
+        event: "inngest/function.invoked";
+        // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
+        schema: StandardSchemaV1<any>;
+      }
+      ? true
+      : HasInvokeTriggerWithSchema<Rest>
+    : false;
+
+/**
+ * Checks if a trigger array contains any trigger with a schema.
+ *
+ * @internal
+ */
+type HasTriggerWithSchema<T extends readonly unknown[]> = T extends readonly [
+  infer First,
+  ...infer Rest,
+]
+  ? First extends {
+      // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
+      schema: StandardSchemaV1<any>;
+    }
+    ? true
+    : HasTriggerWithSchema<Rest>
+  : false;
+
+/**
  * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
  * that will be used to trigger it.
  *
@@ -1697,12 +1803,6 @@ export type TriggerEventFromFunction<
  */
 export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
-  TEvents extends Record<
-    string,
-    EventPayload
-  > = TFunction extends InngestFunction.Any
-    ? EventsFromFunction<TFunction>
-    : never,
 > = TFunction extends InngestFunction<
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
@@ -1712,21 +1812,23 @@ export type PayloadForAnyInngestFunction<
   any,
   // biome-ignore lint/suspicious/noExplicitAny: intentional
   any,
-  // biome-ignore lint/suspicious/noExplicitAny: intentional
-  any,
-  infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
+  infer ITriggers extends InngestFunction.Trigger<string>[]
 >
-  ? IsEqual<
-      TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
-      `${internalEvents.ScheduledTimer}`
-    > extends true
-    ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
-    : Simplify<
-        Omit<
-          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
-          "name" | "ts"
-        >
-      >
+  ? // First check: Does this function have an invoke trigger with a schema?
+    // If so, only invoke schemas should be used (not eventType schemas)
+    HasInvokeTriggerWithSchema<ITriggers> extends true
+    ? { data: ExtractInvokeSchemaInput<ITriggers> }
+    : // Second check: Does this function have any trigger with a schema?
+      HasTriggerWithSchema<ITriggers> extends true
+      ? // If so, use the schema's input type for the data property
+        { data: ExtractTriggerSchemaInput<ITriggers> }
+      : // Otherwise, fall back to existing behavior
+        IsEqual<
+            EventNameFromTrigger<ITriggers[number]>,
+            `${internalEvents.ScheduledTimer}`
+          > extends true
+        ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+        : MinimalEventPayload
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;

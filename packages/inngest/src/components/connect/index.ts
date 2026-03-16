@@ -1,4 +1,3 @@
-import debug from "debug";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
 import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
@@ -11,7 +10,7 @@ import {
 import type { Capabilities, FunctionConfig } from "../../types.ts";
 import { version } from "../../version.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
-import type { Inngest } from "../Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import {
@@ -49,7 +48,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private inngest: Inngest.Any;
   private options: ConnectHandlerOptions;
   private strategy: ConnectionStrategy | undefined;
-  private debugLog = debug("inngest:connect");
 
   constructor(options: ConnectHandlerOptions) {
     if (
@@ -110,9 +108,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     const env = allProcessEnv();
-    options.signingKey = options.signingKey || env[envKeys.InngestSigningKey];
-    options.signingKeyFallback =
-      options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
 
     if (options.maxWorkerConcurrency === undefined) {
       const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];
@@ -124,11 +119,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
     }
 
-    // Check for worker thread env var
+    // Check for worker thread env var (opt-out: false/0 disables isolation)
     if (options.isolateExecution === undefined) {
       const envValue = env[envKeys.InngestConnectIsolateExecution];
-      if (envValue === "1" || envValue === "true") {
-        options.isolateExecution = true;
+      if (envValue === "0" || envValue === "false") {
+        options.isolateExecution = false;
+      }
+    }
+
+    if (options.gatewayUrl === undefined) {
+      const envValue = env[envKeys.InngestConnectGatewayUrl];
+      if (envValue) {
+        options.gatewayUrl = envValue;
       }
     }
 
@@ -164,21 +166,20 @@ class WebSocketWorkerConnection implements WorkerConnection {
    * Establish a persistent connection to the gateway.
    */
   async connect(attempt = 0): Promise<void> {
-    this.debugLog("Establishing connection", { attempt });
+    this.inngest[internalLoggerSymbol].debug(
+      { attempt },
+      "Establishing connection",
+    );
 
     const envName = this.inngest.env ?? getEnvironmentName();
 
-    if (this.inngest["mode"].isCloud && !this.options.signingKey) {
-      throw new Error("Signing key is required");
-    }
-
-    const hashedSigningKey = this.options.signingKey
-      ? hashSigningKey(this.options.signingKey)
+    const hashedSigningKey = this.inngest.signingKey
+      ? hashSigningKey(this.inngest.signingKey)
       : undefined;
 
     if (
-      this.options.signingKey &&
-      this.options.signingKey.startsWith(
+      this.inngest.signingKey &&
+      this.inngest.signingKey.startsWith(
         InngestBranchEnvironmentSigningKeyPrefix,
       ) &&
       !envName
@@ -188,8 +189,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     }
 
-    const hashedFallbackKey = this.options.signingKeyFallback
-      ? hashSigningKey(this.options.signingKeyFallback)
+    const hashedFallbackKey = this.inngest.signingKeyFallback
+      ? hashSigningKey(this.inngest.signingKeyFallback)
       : undefined;
 
     // Build capabilities
@@ -221,19 +222,22 @@ class WebSocketWorkerConnection implements WorkerConnection {
       };
     }
 
-    this.debugLog("Prepared sync data", {
-      functionSlugs: Object.entries(functionConfigs).map(
-        ([appId, { functions }]) => {
-          return JSON.stringify({
-            appId,
-            functions: functions.map((f) => ({
-              id: f.id,
-              stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
-            })),
-          });
-        },
-      ),
-    });
+    this.inngest[internalLoggerSymbol].debug(
+      {
+        functionSlugs: Object.entries(functionConfigs).map(
+          ([appId, { functions }]) => {
+            return JSON.stringify({
+              appId,
+              functions: functions.map((f) => ({
+                id: f.id,
+                stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
+              })),
+            });
+          },
+        ),
+      },
+      "Prepared sync data",
+    );
 
     // Build connection establish data
     const connectionData: ConnectionEstablishData = {
@@ -257,12 +261,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
         client: client,
         functions: functions,
         frameworkName: "connect",
-        signingKey: this.options.signingKey,
-        signingKeyFallback: this.options.signingKeyFallback,
         skipSignatureValidation: true,
         handler: (msg: GatewayExecutorRequestData) => {
           const asString = new TextDecoder().decode(msg.requestPayload);
-          const parsed = parseFnData(JSON.parse(asString));
+          const parsed = parseFnData(
+            JSON.parse(asString),
+            undefined,
+            this.inngest[internalLoggerSymbol],
+          );
 
           const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
@@ -339,6 +345,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
           };
         },
       });
+
+      if (!inngestCommHandler.checkModeConfiguration()) {
+        throw new Error("Signing key is required");
+      }
+
       const requestHandler = inngestCommHandler.createHandler();
       requestHandlers[appId] = requestHandler;
     }
@@ -348,6 +359,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       {
         hashedSigningKey,
         hashedFallbackKey,
+        internalLogger: this.inngest[internalLoggerSymbol],
         envName,
         connectionData,
         requestHandlers,

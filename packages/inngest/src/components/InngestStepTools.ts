@@ -1,7 +1,7 @@
 import { type AiAdapter, models } from "@inngest/ai";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
-import { getAsyncCtx } from "../experimental";
-import { logPrefix } from "../helpers/consts.ts";
+
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
@@ -9,10 +9,9 @@ import type {
   ExclusiveKeys,
   ParametersExceptFirst,
   SendEventPayload,
-  SimplifyDeep,
-  WithoutInternalStr,
 } from "../helpers/types.ts";
 import {
+  type ApplyAllMiddlewareTransforms,
   type Context,
   type EventPayload,
   type HashedOp,
@@ -25,26 +24,61 @@ import {
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
-  type TriggersFromClient,
 } from "../types.ts";
+import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
-import type {
-  ClientOptionsFromInngest,
-  GetEvents,
-  GetFunctionOutput,
-  GetStepTools,
-  Inngest,
+import {
+  type ClientOptionsFromInngest,
+  type GetFunctionOutputRaw,
+  type GetStepTools,
+  type Inngest,
+  internalLoggerSymbol,
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   type MetadataStepTool,
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import type { Middleware } from "./middleware/index.ts";
+import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
+import type { EventType } from "./triggers/triggers.ts";
+
+/**
+ * Middleware context for a step, created during step registration.
+ *
+ * Uses a "deferred handler" pattern: the `wrapStep` middleware chain starts
+ * during discovery (so middleware can inject its own steps), but the real
+ * handler isn't known until after the memoization lookup. `setActualHandler`
+ * bridges the gap — the chain blocks on a deferred promise that is resolved
+ * once `executeStep` determines the real result.
+ */
+export interface StepMiddlewareContext {
+  /**
+   * Sets the handler that the middleware pipeline will eventually call.
+   * Called after memoization lookup to set either:
+   * - A handler returning memoized data, OR
+   * - A handler executing the step fresh
+   */
+  setActualHandler: (handler: () => Promise<unknown>) => void;
+
+  /**
+   * Step info after middleware transformations. The `options.id` may differ
+   * from the original if middleware modified it via `transformStepInput`.
+   */
+  stepInfo: Middleware.StepInfo;
+
+  /**
+   * The middleware pipeline entry point. Call this to execute the step
+   * through all middleware transformations.
+   */
+  wrappedHandler: () => Promise<unknown>;
+}
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -89,6 +123,34 @@ export interface FoundStep extends HashedOp {
   // TODO This is used to track the input we want for this step. Might be
   // present in ctx from Executor.
   input?: unknown;
+
+  /**
+   * Middleware context for this step. Holds the `wrapStep` chain entry point
+   * and the deferred handler setter used by `executeStep`.
+   */
+  middleware: StepMiddlewareContext;
+
+  /**
+   * For new steps where wrappedHandler is called during discovery,
+   * this holds the resolve/reject to be called when the step's data is
+   * memoized. Resolved with server-transformed data (post-wrapStepHandler),
+   * which unblocks wrapStep's `next()`.
+   *
+   * Is undefined when any of the following is true:
+   * - The step is fulfilled
+   * - The step has no handler (`step.sleep`, `step.waitForSignal`, etc.)
+   */
+  memoizationDeferred?: {
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+  };
+
+  /**
+   * For new steps where `wrappedHandler` is called during discovery, this holds
+   * the promise for the wrapStep-transformed result. In checkpointing mode,
+   * handle() reuses this promise to avoid a duplicate wrapStep call.
+   */
+  transformedResultPromise?: Promise<unknown>;
 }
 
 export type MatchOpFn<
@@ -155,7 +217,24 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <TClient extends Inngest.Any>(
+/**
+ * Merge client-level and function-level middleware into a single array type
+ * for use with ApplyAllMiddlewareTransforms etc.
+ */
+type MergedMiddleware<
+  TClient extends Inngest.Any,
+  TFnMiddleware extends Middleware.Class[] | undefined,
+> = [
+  ...(ClientOptionsFromInngest<TClient>["middleware"] extends Middleware.Class[]
+    ? ClientOptionsFromInngest<TClient>["middleware"]
+    : []),
+  ...(TFnMiddleware extends Middleware.Class[] ? TFnMiddleware : []),
+];
+
+export const createStepTools = <
+  TClient extends Inngest.Any,
+  TFnMiddleware extends Middleware.Class[] | undefined = undefined,
+>(
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler,
@@ -180,9 +259,44 @@ export const createStepTools = <TClient extends Inngest.Any>(
     matchOp: MatchOpFn<T>,
     opts?: StepToolOptions<T>,
   ): T => {
+    const wrappedMatchOp: MatchOpFn<T> = (stepOptions, ...rest) => {
+      const op = matchOp(stepOptions, ...rest);
+
+      const alsCtx = getAsyncCtxSync()?.execution;
+
+      if (alsCtx?.insideExperimentSelect) {
+        throw new NonRetriableError(
+          "Step tools (step.run, step.sleep, etc.) cannot be called inside " +
+            "an experiment select() callback. Move step calls into variant " +
+            "callbacks instead.",
+        );
+      }
+
+      // Explicit option takes precedence, then check ALS context
+      const parallelMode = stepOptions.parallelMode ?? alsCtx?.parallelMode;
+
+      if (parallelMode) {
+        op.opts = { ...op.opts, parallelMode };
+      }
+
+      // Propagate experiment context to variant sub-steps
+      const experimentContext = alsCtx?.experimentContext;
+      if (experimentContext) {
+        op.opts = { ...op.opts, ...experimentContext };
+      }
+
+      // Track that a step tool was invoked inside a variant callback
+      const tracker = alsCtx?.experimentStepTracker;
+      if (tracker) {
+        tracker.found = true;
+      }
+
+      return op;
+    };
+
     return (async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
-      return stepHandler({ args: parsedArgs, matchOp, opts });
+      return stepHandler({ args: parsedArgs, matchOp: wrappedMatchOp, opts });
     }) as T;
   };
 
@@ -219,18 +333,13 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         ...input: Parameters<TFn>
       ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
-        SimplifyDeep<
-          Jsonify<
-            TFn extends (...args: Parameters<TFn>) => Promise<infer U>
-              ? Awaited<U extends void ? null : U>
-              : ReturnType<TFn> extends void
-                ? null
-                : ReturnType<TFn>
-          >
+        ApplyAllMiddlewareTransforms<
+          MergedMiddleware<TClient, TFnMiddleware>,
+          TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+            ? Awaited<U extends void ? null : U>
+            : ReturnType<TFn> extends void
+              ? null
+              : ReturnType<TFn>
         >
       >
     >(
@@ -336,9 +445,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<
-      <Payload extends SendEventPayload<GetEvents<TClient>>>(
+      (
         idOrOptions: StepOptionsOrId,
-        payload: Payload,
+        payload: SendEventPayload,
       ) => Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>
     >(
       ({ id, name }) => {
@@ -356,9 +465,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
       },
       {
         fn: (_ctx, _idOrOptions, payload) => {
+          const fn = execution["options"]["fn"];
           return client["_send"]({
             payload,
             headers: execution["options"]["headers"],
+            fnMiddleware: fn.opts.middleware ?? [],
+            fn,
           });
         },
       },
@@ -480,14 +592,33 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
+      <
+        TOpts extends {
+          /**
+           * The event to wait for.
+           */
+          event:
+            | string
+            // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
+            | EventType<string, any>;
+
+          /**
+           * The step function will wait for the event for a maximum of this
+           * time, at which point the signal will be returned as `null` instead
+           * of any signal data.
+           *
+           * The time to wait can be specified using a `number` of milliseconds,
+           * an `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or
+           * `"2.5d"`, or a `Date` object.
+           *
+           * {@link https://npm.im/ms}
+           */
+          timeout: number | string | Date;
+        } & ExclusiveKeys<{ match?: string; if?: string }, "match", "if">,
+      >(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>,
-      ) => Promise<
-        IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
-          ? GetEvents<TClient, false>[IncomingEvent] | null
-          : IncomingEvent | null
-      >
+        opts: TOpts,
+      ) => Promise<WaitForEventResult<TOpts>>
     >(
       (
         { id, name },
@@ -509,11 +640,15 @@ export const createStepTools = <TClient extends Inngest.Any>(
           }
         }
 
+        // Extract event name from string or EventType object
+        const eventName =
+          typeof opts.event === "string" ? opts.event : opts.event.name;
+
         return {
           id,
           mode: StepMode.Async,
           op: StepOpCode.WaitForEvent,
-          name: opts.event,
+          name: eventName,
           opts: matchOpts,
           displayName: name ?? id,
           userland: { id },
@@ -673,13 +808,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
-        // TODO PrettyError
-        console.warn(
-          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
-          err,
+        client[internalLoggerSymbol].warn(
+          { err },
+          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
         );
 
-        // TODO PrettyError
         throw new Error(
           `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
             time
@@ -692,15 +825,18 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * Invoke a passed Inngest `function` with the given `data`. Returns the
      * result of the returned value of the function or `null` if the function
      * does not return a value.
-     *
-     * A string ID can also be passed to reference functions outside of the
-     * current app.
      */
     invoke: createTool<
       <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>,
-      ) => InvocationResult<GetFunctionOutput<TFunction>>
+      ) => InvocationResult<
+        ApplyAllMiddlewareTransforms<
+          MergedMiddleware<TClient, TFnMiddleware>,
+          GetFunctionOutputRaw<TFunction>,
+          "functionOutputTransform"
+        >
+      >
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
@@ -710,15 +846,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       const parsedFnOpts = optsSchema
         .extend({
-          _type: z.literal("fullId").optional().default("fullId"),
-          function: z.string().min(1),
+          _type: z.literal("fnInstance").optional().default("fnInstance"),
+          function: z.instanceof(InngestFunction),
         })
-        .or(
-          optsSchema.extend({
-            _type: z.literal("fnInstance").optional().default("fnInstance"),
-            function: z.instanceof(InngestFunction),
-          }),
-        )
         .or(
           optsSchema.extend({
             _type: z.literal("refInstance").optional().default("refInstance"),
@@ -729,12 +859,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       if (!parsedFnOpts.success) {
         throw new Error(
-          `Invalid invocation options passed to invoke; must include either a function or functionId.`,
+          `Invalid invocation options passed to invoke; must include a function instance or referenceFunction().`,
         );
       }
 
-      const { _type, function: fn, data, user, v, timeout } = parsedFnOpts.data;
-      const payload = { data, user, v } satisfies MinimalEventPayload;
+      const { _type, function: fn, data, v, timeout } = parsedFnOpts.data;
+      const payload = { data, v } satisfies MinimalEventPayload;
       const opts: {
         payload: MinimalEventPayload;
         function_id: string;
@@ -748,13 +878,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
       switch (_type) {
         case "fnInstance":
           opts.function_id = fn.id(fn["client"].id);
-          break;
-
-        case "fullId":
-          console.warn(
-            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`,
-          );
-          opts.function_id = fn;
           break;
 
         case "refInstance":
@@ -789,6 +912,11 @@ export const createStepTools = <TClient extends Inngest.Any>(
   (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
     memoizationId: string,
   ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
+
+  // Attach a step.run variant with opts.type = "group.experiment" for use by
+  // group.experiment(). The symbol keeps it off the public `step` surface.
+  (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
+    createStepRun("group.experiment");
 
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
@@ -847,6 +975,15 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
 
 export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
   [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
+};
+
+export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
+
+export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
+  [experimentStepRunSymbol]: (
+    idOrOptions: StepOptionsOrId,
+    fn: () => unknown,
+  ) => Promise<unknown>;
 };
 
 /**
@@ -926,13 +1063,41 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
   return ctx.execution.ctx.step;
 };
 
+const getDeferredGroupTooling = async (): Promise<GroupTools> => {
+  const ctx = await getAsyncCtx();
+  if (!ctx) {
+    throw new Error(
+      "`group` tools can only be used within Inngest function executions; no context was found",
+    );
+  }
+
+  if (!ctx.execution) {
+    throw new Error(
+      "`group` tools can only be used within Inngest function executions; no execution context was found",
+    );
+  }
+
+  return ctx.execution.ctx.group;
+};
+
+/**
+ * A deferred proxy for `group` tools that delegates through ALS context.
+ *
+ * @public
+ */
+export const group: GroupTools = {
+  parallel: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
+  experiment: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
+};
+
 /**
  * The event payload portion of the options for `step.invoke()`. This does not
  * include non-payload options like `timeout` or the function to invoke.
  */
 export const invokePayloadSchema = z.object({
   data: z.record(z.any()).optional(),
-  user: z.record(z.any()).optional(),
   v: z.string().optional(),
 });
 
@@ -1012,70 +1177,59 @@ type WaitForSignalOpts = {
 };
 
 /**
- * A set of optional parameters given to a `waitForEvent` call to control how
- * the event is handled.
+ * Computes the return type for `waitForEvent` based on the options provided.
+ *
+ * Handles three cases:
+ * 1. `event: EventType<TName, TSchema>` - extracts name and data from EventType
+ * 2. `event: string` with `schema` - uses string as name and schema for data
+ * 3. `event: string` without schema - uses string as name with untyped data
  */
-type WaitForEventOpts<
-  Events extends Record<string, EventPayload>,
-  IncomingEvent extends keyof Events,
-> = {
-  event: IncomingEvent;
-
-  /**
-   * The step function will wait for the event for a maximum of this time, at
-   * which point the event will be returned as `null` instead of any event data.
-   *
-   * The time to wait can be specified using a `number` of milliseconds, an
-   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-   * a `Date` object.
-   *
-   * {@link https://npm.im/ms}
-   */
-  timeout: number | string | Date;
-} & ExclusiveKeys<
-  {
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     *
-     * @deprecated Use `if` instead.
-     */
-    match?: string;
-
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * the given condition. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * The condition is a string of Google's Common Expression Language. For most
-     * simple cases, you might prefer to use `match` instead.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     */
-    if?: string;
-  },
-  "match",
-  "if"
->;
+type WaitForEventResult<TOpts> =
+  // Case 1: event is an EventType with a schema
+  TOpts extends {
+    event: EventType<
+      infer TName extends string,
+      StandardSchemaV1<infer TData extends Record<string, unknown>>
+    >;
+  }
+    ? { name: TName; data: TData; id: string; ts: number; v?: string } | null
+    : // Case 2: event is an EventType without a schema
+      TOpts extends {
+          event: EventType<infer TName extends string, undefined>;
+        }
+      ? {
+          name: TName;
+          // biome-ignore lint/suspicious/noExplicitAny: fallback for untyped events
+          data: Record<string, any>;
+          id: string;
+          ts: number;
+          v?: string;
+        } | null
+      : // Case 3: event is a string with schema (spread EventType)
+        TOpts extends {
+            event: infer TName extends string;
+            schema: StandardSchemaV1<
+              infer TData extends Record<string, unknown>
+            >;
+          }
+        ? {
+            name: TName;
+            data: TData;
+            id: string;
+            ts: number;
+            v?: string;
+          } | null
+        : // Case 4: event is just a string
+          TOpts extends { event: infer TName extends string }
+          ? {
+              name: TName;
+              // biome-ignore lint/suspicious/noExplicitAny: fallback for untyped events
+              data: Record<string, any>;
+              id: string;
+              ts: number;
+              v?: string;
+            } | null
+          : EventPayload | null;
 
 /**
  * Options for `step.ai.infer()`.

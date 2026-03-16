@@ -1,5 +1,3 @@
-import chalk from "chalk";
-
 /**
  * Keys for accessing query parameters included in requests from Inngest to run
  * functions.
@@ -33,14 +31,15 @@ export enum envKeys {
   InngestBaseUrl = "INNGEST_BASE_URL",
   InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
   InngestApiBaseUrl = "INNGEST_API_BASE_URL",
-  InngestServeHost = "INNGEST_SERVE_HOST",
+  InngestServeHost = "INNGEST_SERVE_HOST", // Deprecated, use INNGEST_SERVE_ORIGIN
   InngestServePath = "INNGEST_SERVE_PATH",
-  InngestLogLevel = "INNGEST_LOG_LEVEL",
+  InngestServeOrigin = "INNGEST_SERVE_ORIGIN",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
+  InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
@@ -183,7 +182,7 @@ export enum internalEvents {
   HttpRequest = "inngest/http.request",
 }
 
-export const logPrefix: string = chalk.magenta.bold("[Inngest]");
+export const logPrefix: string = "[Inngest]";
 
 export const debugPrefix = "inngest";
 
@@ -206,14 +205,6 @@ export enum syncKind {
  * accounted for for a given operation.
  */
 export enum ExecutionVersion {
-  /**
-   * Very legacy, initial version of the executor. Uses hashed op objects and
-   * `pos` to determine the order of execution and which ops to run.
-   *
-   * Very stubborn about determinism.
-   */
-  V0 = 0,
-
   /**
    * Uses a more flexible approach to execution and is more lenient about
    * determinism, allowing non-step async actions and non-determinism.

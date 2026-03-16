@@ -1,4 +1,3 @@
-import { typedInngest } from "./events";
+import { inngest } from "./events";
 
-// Export the typed client instead of the untyped one
-export const inngest = typedInngest;
+export { inngest };

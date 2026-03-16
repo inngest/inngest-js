@@ -8,8 +8,7 @@ import { segmentContacts } from "@/lib/openai";
 import { sendEmail } from "@/lib/resend";
 
 export const contactImport = inngest.createFunction(
-  { id: "contact-import" },
-  { event: "app/contact.import" },
+  { id: "contact-import", triggers: [{ event: "app/contact.import" }] },
   async ({ event, step }) => {
     // 1. Parse contacts from event data
     const contactList = event.data.contacts;
@@ -91,8 +90,7 @@ export const campaignSendChannel = channel(
 );
 
 export const campaignSend = inngest.createFunction(
-  { id: "campaign-send" },
-  { event: "app/campaign.send" },
+  { id: "campaign-send", triggers: [{ event: "app/campaign.send" }] },
   async ({ event, step, publish }) => {
     const {
       campaignId,

@@ -8,8 +8,7 @@ export const helloChannel = channel("hello-world").addTopic(
 );
 
 export const helloWorld = inngest.createFunction(
-  { id: "hello-world" },
-  { event: "test/hello.world" },
+  { id: "hello-world", triggers: [{ event: "test/hello.world" }] },
   async ({ event, step, publish, runId }) => {
     publish(helloChannel().logs(`Hello from ${runId}`));
 

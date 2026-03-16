@@ -7,8 +7,7 @@ import { serve } from "inngest/express";
 const inngest = new Inngest({ id: "anthropic-claude-pdf-processing" });
 
 const pdfFunction = inngest.createFunction(
-  { id: "pdf-function" },
-  { event: "pdf-function/event" },
+  { id: "pdf-function", triggers: [{ event: "pdf-function/event" }] },
   async ({ step }) => {
     const result = await step.ai.infer("parse-pdf", {
       model: anthropic({

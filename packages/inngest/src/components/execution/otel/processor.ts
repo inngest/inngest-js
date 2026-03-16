@@ -15,19 +15,13 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-} from "../../../helpers/consts.ts";
 import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
-import { devServerAvailable } from "../../../helpers/devserver.ts";
-import { devServerHost } from "../../../helpers/env.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
 import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
 
-const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
+const processorDevDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 
 /**
  * A set of resource attributes that are used to identify the Inngest app and
@@ -174,7 +168,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     // If we don't have a traceparent, then we can't track this span. This is
     // likely a span that we don't care about, so we can ignore it.
     if (!traceparent) {
-      return processorDebug(
+      return processorDevDebug(
         "no traceparent found for span",
         span.spanContext().spanId,
         "so skipping it",
@@ -198,7 +192,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         functionId = entries[TraceStateKey.FunctionId];
         traceRef = entries[TraceStateKey.TraceRef];
       } catch (err) {
-        processorDebug(
+        processorDevDebug(
           "failed to parse tracestate",
           tracestate,
           "so skipping it;",
@@ -209,7 +203,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
-    processorDebug.extend("declareStartingSpan")(
+    processorDevDebug.extend("declareStartingSpan")(
       "declaring:",
       span.spanContext().spanId,
       "for traceparent",
@@ -245,7 +239,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     hashedStepId: string,
     attempt: number,
   ): void {
-    processorDebug(
+    processorDevDebug(
       "declareStepExecution: rootSpanId=%s hashedStepId=%s attempt=%d",
       rootSpanId,
       hashedStepId,
@@ -259,7 +253,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    * Clear the active step context after a step finishes executing.
    */
   public clearStepExecution(rootSpanId: string): void {
-    processorDebug("clearStepExecution: rootSpanId=%s", rootSpanId);
+    processorDevDebug("clearStepExecution: rootSpanId=%s", rootSpanId);
     this.#activeStepContext.delete(rootSpanId);
   }
 
@@ -308,39 +302,19 @@ export class InngestSpanProcessor implements SpanProcessor {
 
           const app = store.app as Inngest.Any;
 
-          // Fetch the URL for the Inngest endpoint using the app's config.
-          let url: URL;
           const path = "/v1/traces/userland";
-          if (app.apiBaseUrl) {
-            url = new URL(path, app.apiBaseUrl);
-          } else {
-            url = new URL(path, defaultInngestApiBaseUrl);
+          const url = new URL(path, app.apiBaseUrl);
 
-            if (app["mode"] && app["mode"].isDev && app["mode"].isInferred) {
-              const devHost = devServerHost() || defaultDevServerHost;
-              const hasDevServer = await devServerAvailable(
-                devHost,
-                app["fetch"],
-              );
-              if (hasDevServer) {
-                url = new URL(path, devHost);
-              }
-            } else if (app["mode"]?.explicitDevUrl) {
-              url = new URL(path, app["mode"].explicitDevUrl.href);
-            }
-          }
-
-          processorDebug(
+          processorDevDebug(
             "batcher lazily accessed; creating new batcher with URL",
             url,
           );
 
           const exporter = new OTLPTraceExporter({
             url: url.href,
-
             headers: {
-              ...app["headers"],
-              Authorization: `Bearer ${app["inngestApi"]["signingKey"]}`,
+              ...app.headers,
+              Authorization: `Bearer ${app.signingKey}`,
             },
           });
 
@@ -363,7 +337,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     span: Span,
     isRoot = false,
   ): void {
-    const trackDebug = processorDebug.extend("trackSpan");
+    const trackDebug = processorDevDebug.extend("trackSpan");
     const spanId = span.spanContext().spanId;
 
     this.#spanCleanup.register(span, spanId, span);
@@ -437,7 +411,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    * spans that are children of spans we care about.
    */
   onStart(span: Span): void {
-    const debug = processorDebug.extend("onStart");
+    const devDebug = processorDevDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
     // Support both OTel SDK v2.x (parentSpanContext.spanId) and v1.x
     // (parentSpanId as a plain string) since users may have either version.
@@ -450,7 +424,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     if (!parentSpanId) {
       // All spans that Inngest cares about will have a parent, so ignore this
-      debug("no parent span ID for", spanId, "so skipping it");
+      devDebug("no parent span ID for", spanId, "so skipping it");
 
       return;
     }
@@ -464,13 +438,17 @@ export class InngestSpanProcessor implements SpanProcessor {
         this.#checkpointingRoots.has(parentState.rootSpanId) &&
         !this.#activeStepContext.has(parentState.rootSpanId)
       ) {
-        debug("skipping span", spanId, "- checkpointing between steps");
+        processorDevDebug(
+          "skipping span",
+          spanId,
+          "- checkpointing between steps",
+        );
         return;
       }
 
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
-      debug(
+      devDebug(
         "found traceparent",
         parentState,
         "in span ID",
@@ -489,23 +467,23 @@ export class InngestSpanProcessor implements SpanProcessor {
    * endpoint.
    */
   onEnd(span: ReadableSpan): void {
-    const debug = processorDebug.extend("onEnd");
+    const devDebug = processorDevDebug.extend("onEnd");
     const spanId = span.spanContext().spanId;
 
     try {
       if (this.#spansToExport.has(span as unknown as Span)) {
         if (!this.#batcher) {
-          return debug(
+          return devDebug(
             "batcher not initialized, so failed exporting span",
             spanId,
           );
         }
 
-        debug("exporting span", spanId);
+        devDebug("exporting span", spanId);
         return void this.#batcher.then((batcher) => batcher.onEnd(span));
       }
 
-      debug("not exporting span", spanId, "as we don't care about it");
+      devDebug("not exporting span", spanId, "as we don't care about it");
     } finally {
       this.cleanupSpan(span as unknown as Span);
     }
@@ -517,12 +495,12 @@ export class InngestSpanProcessor implements SpanProcessor {
    * are currently in the batcher. This is used to ensure that spans are
    * exported to the Inngest endpoint before the process exits.
    *
-   * Notably, we call this in the `beforeResponse` middleware hook to ensure
+   * Notably, we call this in the `wrapRequest` middleware hook to ensure
    * that spans for a run as exported as soon as possible and before the
    * serverless process is killed.
    */
   async forceFlush(): Promise<void> {
-    const flushDebug = processorDebug.extend("forceFlush");
+    const flushDebug = processorDevDebug.extend("forceFlush");
     flushDebug("force flushing batcher");
 
     return this.#batcher
@@ -533,7 +511,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   async shutdown(): Promise<void> {
-    processorDebug.extend("shutdown")("shutting down batcher");
+    processorDevDebug.extend("shutdown")("shutting down batcher");
 
     return this.#batcher?.then((batcher) => batcher.shutdown());
   }

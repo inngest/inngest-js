@@ -15,7 +15,6 @@
 import { Inngest } from "../components/Inngest.ts";
 import { InngestEndpointAdapter } from "../components/InngestEndpointAdapter.ts";
 import { InngestFunction } from "../components/InngestFunction.ts";
-import { InngestMiddleware } from "../components/InngestMiddleware.ts";
 import { headerKeys } from "./consts.ts";
 
 /**
@@ -42,19 +41,6 @@ export const isInngestFunction = (
 ): input is InngestFunction.Any => {
   // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === InngestFunction.Tag;
-};
-
-/**
- * Asserts that the given `input` is an `InngestMiddleware` object.
- */
-export const isInngestMiddleware = (
-  /**
-   * The input to check.
-   */
-  input: unknown,
-): input is InngestMiddleware.Any => {
-  // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
-  return (input as any)[Symbol.toStringTag] === InngestMiddleware.Tag;
 };
 
 /**

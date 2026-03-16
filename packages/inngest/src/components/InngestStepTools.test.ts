@@ -9,13 +9,7 @@ import {
   type StepTools,
   testClientId,
 } from "../test/helpers.ts";
-import {
-  type ClientOptions,
-  type InvocationResult,
-  StepOpCode,
-} from "../types.ts";
-import { EventSchemas } from "./EventSchemas.ts";
-import type { Inngest } from "./Inngest.ts";
+import { type InvocationResult, StepOpCode } from "../types.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
@@ -802,92 +796,6 @@ describe("sendEvent", () => {
         ]);
       });
     });
-
-    describe("multiple custom types", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        foo: {
-          name: "foo";
-          data: { foo: string };
-        };
-        bar: {
-          data: { bar: string };
-        };
-        baz: {};
-      }>();
-
-      const opts = (<T extends ClientOptions>(x: T): T => x)({
-        id: "",
-        schemas,
-      });
-
-      type Client = Inngest<typeof opts>;
-
-      const sendEvent: ReturnType<
-        typeof createStepTools<Client>
-        // biome-ignore lint/suspicious/noExplicitAny: intentional
-      >["sendEvent"] = (() => undefined) as any;
-
-      test("disallows sending a single unknown event with a string", () => {
-        // @ts-expect-error Unknown event
-        void sendEvent("id", { name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending a single unknown event with an object", () => {
-        // @ts-expect-error Unknown event
-        void sendEvent("id", { name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending multiple unknown events", () => {
-        void sendEvent("id", [
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown2", data: { foo: "" } },
-        ]);
-      });
-
-      test("disallows sending one unknown event with multiple known events", () => {
-        void sendEvent("id", [
-          { name: "foo", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-        ]);
-      });
-
-      test("disallows sending a single known event with a string and invalid data", () => {
-        // @ts-expect-error Invalid data
-        void sendEvent("id", { name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending a single known event with an object and invalid data", () => {
-        // @ts-expect-error Invalid data
-        void sendEvent("id", { name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending multiple known events with invalid data", () => {
-        void sendEvent("id", [
-          // @ts-expect-error Invalid data
-          { name: "foo", data: { bar: "" } },
-          // @ts-expect-error Invalid data
-          { name: "bar", data: { foo: "" } },
-        ]);
-      });
-
-      test("allows sending a single known event with a string", () => {
-        void sendEvent("id", { name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending a single known event with an object", () => {
-        void sendEvent("id", { name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending multiple known events", () => {
-        void sendEvent("id", [
-          { name: "foo", data: { foo: "" } },
-          { name: "bar", data: { bar: "" } },
-        ]);
-      });
-    });
   });
 });
 
@@ -942,19 +850,6 @@ describe("invoke", () => {
         ).resolves.toMatchObject({
           opts: {
             function_id: fn.id(testClientId),
-          },
-        });
-      });
-
-      test("with `function` string", async () => {
-        await expect(
-          step.invoke("id", {
-            function: "some-client-some-fn",
-            data: { foo: "foo" },
-          }),
-        ).resolves.toMatchObject({
-          opts: {
-            function_id: "some-client-some-fn",
           },
         });
       });
@@ -1044,23 +939,7 @@ describe("invoke", () => {
   });
 
   describe("types", () => {
-    const schemas = new EventSchemas().fromRecord<{
-      foo: {
-        name: "foo";
-        data: { foo: string };
-      };
-      bar: {
-        data: { bar: string };
-      };
-      baz: {};
-    }>();
-
-    const opts = (<T extends ClientOptions>(x: T): T => x)({
-      id: "test-client",
-      schemas,
-    });
-
-    const client = createClient(opts);
+    const client = createClient({ id: "test-client" });
 
     const invoke = null as unknown as ReturnType<
       typeof createStepTools<typeof client>
@@ -1071,22 +950,13 @@ describe("invoke", () => {
       ReturnType<T>
     >;
 
-    test("allows specifying function as a string", () => {
-      const _test = () => invoke("id", { function: "test-fn", data: "foo" });
-    });
-
     test("allows specifying function as an instance", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-    });
-
-    test("allows specifying function as a string", () => {
-      const _test = () => invoke("id", { function: "fn", data: { foo: "" } });
     });
 
     test("allows specifying function as a reference function", () => {
@@ -1097,61 +967,19 @@ describe("invoke", () => {
         });
     });
 
-    test("requires no payload if a cron", () => {
+    test("allows no payload if a cron", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { cron: "* * * * *" },
+        { id: "fn", triggers: [{ cron: "* * * * *" }] },
         () => "return",
       );
 
       // Allowed
       const _test = () => invoke("id", { function: fn });
-
-      // Disallowed
-      // @ts-expect-error No payload should be provided for a cron
-      const _test2 = () => invoke("id", { function: fn, data: { foo: "" } });
     });
 
     test("disallows no `function` given", () => {
       // @ts-expect-error No function provided
       const _test = () => invoke("id", { data: { foo: "" } });
-    });
-
-    test("disallows no payload if an event", () => {
-      const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
-        () => "return",
-      );
-
-      // @ts-expect-error No payload provided
-      const _test = () => invoke("id", { function: fn });
-    });
-
-    test("disallows incorrect payload with an event", () => {
-      const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
-        () => "return",
-      );
-
-      // @ts-expect-error Invalid payload provided
-      const _test = () => invoke("id", { function: fn, data: { bar: "" } });
-    });
-
-    test("disallows incorrect payload with a reference function", () => {
-      const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
-        () => "return",
-      );
-
-      const _test = () =>
-        invoke("id", {
-          function: referenceFunction<typeof fn>({ functionId: "fn" }),
-          // @ts-expect-error Invalid payload provided
-          data: { bar: "" },
-        });
     });
 
     test("disallows missing payload with a reference function and schema", () => {
@@ -1181,18 +1009,12 @@ describe("invoke", () => {
         });
     });
 
-    /**
-     * This test is a trade-off for not yet allowing local invocation schemas
-     * but adding multiple triggers.
-     *
-     * In the future, I foresee this being disallowed and requiring that either
-     * an invocation schema exists or that the user must provide a `name` to
-     * represent the payload they are trying to send.
-     */
     test("allows any data shape when invoking a function with multiple triggers", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        {
+          id: "fn",
+          triggers: [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        },
         () => "return",
       );
 
@@ -1203,17 +1025,13 @@ describe("invoke", () => {
             foo: "",
             bar: "",
             cron: "",
-            // @ts-expect-error Make sure this still fails, so that we're
-            // definitely only picking up expected properties
-            boof: "",
           },
         });
     });
 
     test("returns correct output type for function", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -1225,8 +1043,7 @@ describe("invoke", () => {
 
     test("returns correct output type for function with reference", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -1271,8 +1088,7 @@ describe("invoke", () => {
 
     test("returns correct output const type for function", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return" as const,
       );
 
@@ -1284,8 +1100,7 @@ describe("invoke", () => {
 
     test("returns correct output const type for function with reference", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return" as const,
       );
 
@@ -1300,9 +1115,12 @@ describe("invoke", () => {
     });
 
     test("returns null if function returns undefined|void", () => {
-      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-        // no-op
-      });
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
 
@@ -1311,9 +1129,12 @@ describe("invoke", () => {
     });
 
     test("returns null if function returns undefined|void with reference", () => {
-      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-        // no-op
-      });
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
 
       const _test = () =>
         invoke("id", {

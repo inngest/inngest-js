@@ -1,157 +1,74 @@
-import fetch from "cross-fetch";
-import { z } from "zod/v3";
-import { EventSchemas } from "../components/EventSchemas.ts";
-import { InngestCommHandler } from "../components/InngestCommHandler.ts";
-import type { InngestFunction } from "../components/InngestFunction.ts";
-import { envKeys } from "../helpers/consts.ts";
-import { hashSigningKey } from "../helpers/strings.ts";
+import httpMocks from "node-mocks-http";
+import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
+import { internalLoggerSymbol } from "./Inngest.ts";
 
 /**
- * When signingKey is provided via serve() options but NOT via
- * process.env.INNGEST_SIGNING_KEY, the InngestApi instance never receives
- * the key. This causes outgoing API calls (getRunBatch, getRunSteps) to send
- * an empty "Authorization: Bearer " header, resulting in 401 errors.
+ * Helper to run a POST request through a Next.js serve handler and capture
+ * the full response including status, body, and headers.
  */
-describe("signing key propagation from serve() to InngestApi", () => {
-  const signingKey =
-    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f";
-
-  let prevEnv: NodeJS.ProcessEnv;
-
-  beforeEach(() => {
-    prevEnv = process.env;
-    // Ensure INNGEST_SIGNING_KEY is NOT in process.env
-    process.env = { ...prevEnv };
-    delete process.env[envKeys.InngestSigningKey];
-    delete process.env[envKeys.InngestSigningKeyFallback];
-  });
-
-  afterEach(() => {
-    process.env = prevEnv;
-  });
-
-  /**
-   * Helper: create a comm handler backed by a simple Request-based adapter.
-   * This avoids framework-specific type issues (e.g. NextRequest).
-   */
-  const createTestHandler = (
-    client: ReturnType<typeof createClient>,
-    functions: InngestFunction.Any[],
-    opts: { signingKey?: string } = {},
-  ) => {
-    const commHandler = new InngestCommHandler({
-      client,
-      frameworkName: "test",
-      functions,
-      fetch,
-      signingKey: opts.signingKey,
-      handler: (req: Request) => {
-        return {
-          body: () => req.text(),
-          headers: (key: string) => req.headers.get(key),
-          method: () => req.method,
-          url: () => new URL(req.url),
-          transformResponse: ({
-            body,
-            headers,
-            status,
-          }: {
-            body: string;
-            headers: Record<string, string>;
-            status: number;
-          }) => {
-            return new Response(body, { status, headers });
-          },
-        };
-      },
-    });
-
-    return commHandler["createHandler"]();
+const runHandler = async (
+  handler: ReturnType<typeof serve>,
+  opts?: {
+    body?: Record<string, unknown>;
+    env?: Record<string, string>;
+    actionOverrides?: Record<string, unknown>;
+  },
+) => {
+  const body = opts?.body ?? {
+    ctx: { fn_id: "test-test", run_id: "run-123", step_id: "step" },
+    event: { name: "demo/event.sent", data: {} },
+    events: [{ name: "demo/event.sent", data: {} }],
+    steps: {},
+    use_api: false,
   };
 
-  test("serve() signingKey propagates to InngestApi when env var is absent", async () => {
-    const client = createClient({ id: "test" });
-
-    // Helper to access private inngestApi.signingKey
-    const getApiSigningKey = (): string =>
-      (client as unknown as { inngestApi: { signingKey: string } })[
-        "inngestApi"
-      ]["signingKey"];
-
-    // InngestApi starts with empty signing key
-    expect(getApiSigningKey()).toBe("");
-    // An empty key hashes to "" → would produce "Authorization: Bearer "
-    expect(hashSigningKey("")).toBe("");
-
-    const fn = client.createFunction(
-      { id: "test-fn", name: "Test" },
-      { event: "test/event" },
-      () => "ok",
-    );
-
-    // Create a handler with signingKey in serve() options
-    const handler = createTestHandler(client, [fn], { signingKey });
-
-    // Trigger a GET request which calls initRequest() -> upsertKeysFromEnv()
-    const req = new Request("https://localhost:3000/api/inngest", {
-      method: "GET",
-      headers: { host: "localhost:3000" },
-    });
-    await handler(req);
-
-    // serve() signing key should be propagated to InngestApi for outgoing
-    // API calls (getRunBatch, getRunSteps, etc.)
-    expect(getApiSigningKey()).toBe(signingKey);
-
-    // The hashed key used in Authorization headers should be non-empty
-    const hashedKey = hashSigningKey(signingKey);
-    expect(hashedKey).not.toBe("");
-    expect(hashedKey).toMatch(/^signkey-test-/);
+  const req = httpMocks.createRequest({
+    method: "POST",
+    url: "/api/inngest?fnId=test-test&stepId=step",
+    headers: {
+      host: "localhost:3000",
+      "content-type": "application/json",
+      "content-length": `${JSON.stringify(body).length}`,
+      [headerKeys.InngestRunId]: "run-123",
+      [headerKeys.Signature]: "",
+    },
+    body,
   });
-});
+  const res = httpMocks.createResponse();
 
-describe("#153", () => {
-  test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {
-    const literalSchema = z.union([
-      z.string(),
-      z.number(),
-      z.boolean(),
-      z.null(),
-    ]);
-    type Literal = z.infer<typeof literalSchema>;
-    type Json = Literal | { [key: string]: Json } | Json[];
+  const prevEnv = process.env;
+  if (opts?.env) {
+    process.env = { ...prevEnv, ...opts.env };
+  }
 
-    const inngest = createClient({
-      id: "My App",
-      schemas: new EventSchemas().fromRecord<{
-        foo: {
-          name: "foo";
-          data: {
-            json: Json;
-          };
-        };
-      }>(),
-    });
+  try {
+    const args: unknown[] = [req, res];
+    if (opts?.actionOverrides) {
+      args.push({ actionOverrides: opts.actionOverrides });
+    }
 
-    /**
-     * This would throw:
-     * "Type instantiation is excessively deep and possibly infinite.ts(2589)"
-     */
-    serve({ client: inngest, functions: [] });
-  });
-});
+    await (handler as (...args: unknown[]) => Promise<unknown>)(...args);
+
+    return {
+      status: res.statusCode,
+      body: res._getData(),
+      headers: res.getHeaders() as Record<string, string>,
+    };
+  } finally {
+    process.env = prevEnv;
+  }
+};
 
 describe("ServeHandler", () => {
   describe("functions argument", () => {
     test("types: allows mutable functions array", () => {
-      const inngest = createClient({ id: "test" });
+      const inngest = createClient({ id: "test", isDev: true });
 
       const functions = [
         inngest.createFunction(
-          { id: "test" },
-          { event: "demo/event.sent" },
+          { id: "test", triggers: [{ event: "demo/event.sent" }] },
           () => "test",
         ),
       ];
@@ -160,12 +77,11 @@ describe("ServeHandler", () => {
     });
 
     test("types: allows readonly functions array", () => {
-      const inngest = createClient({ id: "test" });
+      const inngest = createClient({ id: "test", isDev: true });
 
       const functions = [
         inngest.createFunction(
-          { id: "test" },
-          { event: "demo/event.sent" },
+          { id: "test", triggers: [{ event: "demo/event.sent" }] },
           () => "test",
         ),
       ] as const;
@@ -173,25 +89,344 @@ describe("ServeHandler", () => {
       serve({ client: inngest, functions });
     });
   });
-});
 
-describe("#597", () => {
-  test("does not mark `fetch` as custom if none given to `new Inngest()`", () => {
-    const inngest = createClient({ id: "test" });
+  describe("streaming: force validation", () => {
+    const inngest = createClient({ id: "test", isDev: true });
 
-    const commHandler = new InngestCommHandler({
-      client: inngest,
-      frameworkName: "test-framework",
-      functions: [],
-      handler: () => ({
-        body: () => "body",
-        headers: () => undefined,
-        method: () => "GET",
-        url: () => new URL("https://www.inngest.com"),
-        transformResponse: (response) => response,
-      }),
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+
+    test("throws error when streaming is true but handler doesn't support it", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+        streaming: true,
+      });
+
+      const result = await runHandler(handler, {
+        actionOverrides: { transformStreamingResponse: undefined },
+      });
+
+      expect(result.status).toBe(500);
+      expect(result.body).toMatch(/streaming/i);
     });
 
-    expect(commHandler["fetch"]).toBe(inngest["fetch"]);
+    test("throws error when INNGEST_STREAMING=true env var but handler doesn't support it", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+      });
+
+      const result = await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "true" },
+        actionOverrides: { transformStreamingResponse: undefined },
+      });
+
+      expect(result.status).toBe(500);
+      expect(result.body).toMatch(/streaming/i);
+    });
+  });
+
+  describe("streaming: deprecation warnings", () => {
+    afterEach(() => {
+      vi.resetModules();
+      vi.restoreAllMocks();
+    });
+
+    const runHandler = async (
+      handler: ReturnType<typeof serve>,
+      opts?: {
+        env?: Record<string, string>;
+      },
+    ) => {
+      const body = {
+        ctx: { fn_id: "test-test", run_id: "run-123", step_id: "step" },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+        use_api: false,
+      };
+
+      const req = httpMocks.createRequest({
+        method: "POST",
+        url: "/api/inngest?fnId=test-test&stepId=step",
+        headers: {
+          host: "localhost:3000",
+          "content-type": "application/json",
+          "content-length": `${JSON.stringify(body).length}`,
+          [headerKeys.InngestRunId]: "run-123",
+          [headerKeys.Signature]: "",
+        },
+        body,
+      });
+      const res = httpMocks.createResponse();
+
+      const prevEnv = process.env;
+      if (opts?.env) {
+        process.env = { ...prevEnv, ...opts.env };
+      }
+
+      try {
+        await (handler as (...args: unknown[]) => Promise<unknown>)(req, res);
+        return { status: res.statusCode, body: res._getData() };
+      } finally {
+        process.env = prevEnv;
+      }
+    };
+
+    test("logs deprecation warning when INNGEST_STREAMING=allow", async () => {
+      const { serve } = await import("../next.ts");
+      const { createClient } = await import("../test/helpers.ts");
+
+      const inngest = createClient({ id: "test", isDev: true });
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
+        () => "test",
+      );
+
+      const handler = serve({ client: inngest, functions: [fn] });
+      await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "allow" },
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ value: "allow" }),
+        expect.stringContaining("is deprecated"),
+      );
+    });
+
+    test("logs deprecation warning when INNGEST_STREAMING=force", async () => {
+      const { serve } = await import("../next.ts");
+      const { createClient } = await import("../test/helpers.ts");
+
+      const inngest = createClient({ id: "test", isDev: true });
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
+        () => "test",
+      );
+
+      const handler = serve({ client: inngest, functions: [fn] });
+      await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "force" },
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ value: "force" }),
+        expect.stringContaining("is deprecated"),
+      );
+    });
+
+    test("does not log deprecation warning when INNGEST_STREAMING=true", async () => {
+      const { serve } = await import("../next.ts");
+      const { createClient } = await import("../test/helpers.ts");
+
+      const inngest = createClient({ id: "test", isDev: true });
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
+        () => "test",
+      );
+
+      const handler = serve({ client: inngest, functions: [fn] });
+      await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "true" },
+      });
+
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("is deprecated"),
+      );
+    });
+
+    test("does not log deprecation warning when INNGEST_STREAMING is unset", async () => {
+      const { serve } = await import("../next.ts");
+      const { createClient } = await import("../test/helpers.ts");
+
+      const inngest = createClient({ id: "test", isDev: true });
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
+        () => "test",
+      );
+
+      const handler = serve({ client: inngest, functions: [fn] });
+      await runHandler(handler);
+
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("is deprecated"),
+      );
+    });
+
+    test("logs the deprecation warning only once across multiple requests", async () => {
+      const { serve } = await import("../next.ts");
+      const { createClient } = await import("../test/helpers.ts");
+
+      const inngest = createClient({ id: "test", isDev: true });
+      const warnSpy = vi.spyOn(inngest[internalLoggerSymbol], "warn");
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "demo/event.sent" }] },
+        () => "test",
+      );
+
+      const handler = serve({ client: inngest, functions: [fn] });
+
+      await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "allow" },
+      });
+      await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "allow" },
+      });
+
+      const deprecationCalls = warnSpy.mock.calls.filter(
+        (args) =>
+          typeof args[1] === "string" && args[1].includes("is deprecated"),
+      );
+      expect(deprecationCalls).toHaveLength(1);
+    });
+  });
+});
+
+describe("response version header", () => {
+  const inngest = createClient({ id: "test", isDev: true });
+
+  const fn = inngest.createFunction(
+    { id: "test", triggers: [{ event: "demo/event.sent" }] },
+    () => "test",
+  );
+
+  const handler = serve({ client: inngest, functions: [fn] });
+
+  test("responds with V2 even when request sends V1", async () => {
+    const result = await runHandler(handler, {
+      body: {
+        version: ExecutionVersion.V1,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+    });
+
+    expect(result.status).toBe(206);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
+  });
+
+  test("responds with V2 when request sends V2", async () => {
+    const result = await runHandler(handler, {
+      body: {
+        version: ExecutionVersion.V2,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+    });
+
+    expect(result.status).toBe(206);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
+  });
+
+  test("responds with V2 when no version in request", async () => {
+    const result = await runHandler(handler);
+
+    expect(result.status).toBe(206);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
+  });
+
+  test("responds with V1 when function opts out of optimized parallelism", async () => {
+    const client = createClient({ id: "test", isDev: true });
+
+    const optedOutFn = client.createFunction(
+      {
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+        optimizeParallelism: false,
+      },
+      () => "test",
+    );
+
+    const optedOutHandler = serve({ client, functions: [optedOutFn] });
+
+    const result = await runHandler(optedOutHandler);
+
+    expect(result.status).toBe(206);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V1.toString(),
+    );
+  });
+
+  test("responds with V1 when client opts out of optimized parallelism", async () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      optimizeParallelism: false,
+    });
+
+    const fn = client.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+
+    const handler = serve({ client, functions: [fn] });
+
+    const result = await runHandler(handler);
+
+    expect(result.status).toBe(206);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V1.toString(),
+    );
+  });
+
+  test("function-level optimizeParallelism overrides client-level", async () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      optimizeParallelism: false,
+    });
+
+    const fnWithOverride = client.createFunction(
+      {
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+        optimizeParallelism: true,
+      },
+      () => "test",
+    );
+
+    const handler = serve({ client, functions: [fnWithOverride] });
+
+    const result = await runHandler(handler);
+
+    expect(result.status).toBe(206);
+    expect(result.headers[headerKeys.RequestVersion]).toBe(
+      ExecutionVersion.V2.toString(),
+    );
   });
 });

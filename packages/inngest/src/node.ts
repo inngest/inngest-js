@@ -94,7 +94,7 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
           }
           return req.method;
         },
-        url: () => getURL(req, options.serveHost),
+        url: () => getURL(req, options.serveOrigin),
         transformResponse: ({ body, status, headers }) => {
           res.writeHead(status, headers);
           res.end(body);
@@ -188,7 +188,7 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
  */
 export const createServer = (options: ServeHandlerOptions) => {
   const server = http.createServer((req, res) => {
-    const url = getURL(req, options.serveHost);
+    const url = getURL(req, options.serveOrigin);
     const pathname = options.servePath || "/api/inngest";
     if (url.pathname === pathname) {
       return serve(options)(req, res);

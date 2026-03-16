@@ -9,8 +9,6 @@ type CatchAll =
   | Inngest.ClientOptions
   | Inngest.ClientOptionsFromInngest<any>
   | Inngest.Context.Any
-  | Inngest.EventSchemas
-  | Inngest.GetEvents<any>
   | Inngest.GetFunctionInput<any>
   | Inngest.GetFunctionOutput<any>
   | Inngest.GetStepTools<any>
@@ -18,9 +16,8 @@ type CatchAll =
   | Inngest.InngestCommHandler
   | Inngest.InngestFunction.Any
   | Inngest.InngestFunctionReference.Any
-  | Inngest.InngestMiddleware.Any
+  | typeof Inngest.Middleware
   | Inngest.Logger
-  | Inngest.MiddlewareOptions
   | Inngest.NonRetriableError
   | Inngest.OutgoingOp
   | Inngest.ProxyLogger
@@ -34,64 +31,62 @@ type CatchAll =
   | Inngest.StepOptionsOrId
   | Inngest.StrictUnion<any>
   | Inngest.TimeStr
-  | Inngest.UnionKeys<any>
-  | Inngest.ZodEventSchemas;
+  | Inngest.UnionKeys<any>;
+
+class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
+  readonly id = "test";
+
+  onRunStart(arg: Inngest.Middleware.OnRunStartArgs) {
+    console.log("onRunStart", arg);
+  }
+
+  onRunComplete(arg: Inngest.Middleware.OnRunCompleteArgs) {
+    console.log("onRunComplete", arg);
+  }
+
+  onStepStart(arg: Inngest.Middleware.OnStepStartArgs) {
+    console.log("onStepStart", arg);
+  }
+
+  onStepComplete(arg: Inngest.Middleware.OnStepCompleteArgs) {
+    console.log("onStepComplete", arg);
+  }
+
+  onStepError(arg: Inngest.Middleware.OnStepErrorArgs) {
+    console.log("onStepError", arg);
+  }
+
+  onMemoizationEnd() {
+    console.log("onMemoizationEnd");
+  }
+
+  override async wrapFunctionHandler({
+    next,
+  }: Inngest.Middleware.WrapFunctionHandlerArgs) {
+    console.log("wrapFunctionHandler:before");
+    const result = await next();
+    console.log("wrapFunctionHandler:after");
+    return result;
+  }
+
+  override async wrapStep({ next }: Inngest.Middleware.WrapStepArgs) {
+    console.log("wrapStep:before");
+    const result = await next();
+    console.log("wrapStep:after");
+    return result;
+  }
+
+  override async wrapRequest({ next }: Inngest.Middleware.WrapRequestArgs) {
+    console.log("wrapRequest:before");
+    const result = await next();
+    console.log("wrapRequest:after");
+    return result;
+  }
+}
 
 export const inngest = new Inngest.Inngest({
   id: "me",
-  schemas: new Inngest.EventSchemas().fromRecord<{
-    foo: { data: { foo: string } };
-    bar: { data: { bar: string } };
-  }>(),
-  middleware: [
-    new Inngest.InngestMiddleware({
-      name: "foo",
-      init() {
-        return {
-          onFunctionRun(ctx) {
-            console.log(ctx);
-
-            return {
-              transformInput(ctx) {
-                console.log("transformInput", ctx);
-              },
-              afterExecution() {
-                console.log("afterExecution");
-              },
-              afterMemoization() {
-                console.log("afterMemoization");
-              },
-              beforeExecution() {
-                console.log("beforeExecution");
-              },
-              beforeMemoization() {
-                console.log("beforeMemoization");
-              },
-              beforeResponse() {
-                console.log("beforeResponse");
-              },
-              transformOutput(ctx) {
-                console.log("transformOutput", ctx);
-              },
-              finished() {
-                console.log("finished");
-              },
-            };
-          },
-          onSendEvent() {
-            return {
-              transformInput(ctx) {
-                console.log(ctx);
-              },
-              transformOutput(ctx) {
-                console.log(ctx);
-              },
-            };
-          },
-        };
-      },
-    }),
-  ],
+  middleware: [MyMiddleware],
 });
 
 void inngest.send({ name: "foo", data: { foo: "bar" } });
@@ -100,11 +95,8 @@ void inngest.sendSignal({ signal: "foo", data: { foo: "bar" } });
 
 void inngest.setEnvVars({});
 
-void inngest.setEventKey("");
-
 const fn = inngest.createFunction(
-  { id: "my-fn" },
-  { event: "foo" },
+  { id: "my-fn", triggers: [{ event: "foo" }] },
   async (ctx) => {
     console.log(ctx);
     return { foo: "bar" };
@@ -112,8 +104,7 @@ const fn = inngest.createFunction(
 );
 
 const fn2 = inngest.createFunction(
-  { id: "my-fn-2" },
-  [{ event: "foo" }, { cron: "* * * * *" }],
+  { id: "my-fn-2", triggers: [{ event: "foo" }, { cron: "* * * * *" }] },
   async (ctx) => {
     console.log(ctx);
     return { foo: "bar" };
@@ -121,8 +112,11 @@ const fn2 = inngest.createFunction(
 );
 
 inngest.createFunction(
-  { id: "my-fn-3", cancelOn: [{ event: "foo", match: "data.foo" }] },
-  [{ event: "foo" }, { cron: "* * * * *" }],
+  {
+    id: "my-fn-3",
+    cancelOn: [{ event: "foo", match: "data.foo" }],
+    triggers: [{ event: "foo" }, { cron: "* * * * *" }],
+  },
   async (ctx) => {
     console.log(ctx);
 

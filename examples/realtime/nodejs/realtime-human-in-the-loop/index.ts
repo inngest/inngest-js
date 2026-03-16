@@ -11,23 +11,13 @@ import {
   subscribe,
   topic,
 } from "@inngest/realtime";
-import { EventSchemas, Inngest } from "inngest";
+import { Inngest } from "inngest";
 import { serve } from "inngest/node";
 
-// Initialize the Inngest client with an ID, middleware, and event schemas
+// Initialize the Inngest client with an ID and middleware
 const inngest = new Inngest({
   id: "realtime-human-in-the-loop", // Unique identifier for this Inngest app
   middleware: [realtimeMiddleware()], // Enables realtime features
-  schemas: new EventSchemas().fromZod({
-    // Define the events this app will use
-    "agentic-workflow/start": {}, // Event to start the workflow
-    "agentic-workflow/confirmation": {
-      data: z.object({
-        confirmationUUid: z.string(), // Unique ID for confirmation
-        confirmation: z.boolean(), // User's confirmation response
-      }),
-    },
-  }),
 });
 
 // Create a realtime channel for the workflow, with a topic for messages
@@ -42,8 +32,7 @@ export const agenticWorkflowChannel = channel("agentic-workflow").addTopic(
 
 // Define the main workflow function
 export const agenticWorkflow = inngest.createFunction(
-  { id: "agentic-workflow" }, // Unique function ID
-  { event: "agentic-workflow/start" }, // Triggered by this event
+  { id: "agentic-workflow", triggers: [{ event: "agentic-workflow/start" }] }, // Unique function ID, triggered by this event
   async ({ step, publish, logger }) => {
     logger.info("Starting agentic workflow");
 
