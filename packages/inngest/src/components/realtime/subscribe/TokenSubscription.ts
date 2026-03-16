@@ -124,6 +124,17 @@ export class TokenSubscription {
     return url;
   }
 
+  private isExpectedChannel(channel: string): boolean {
+    if (channel === this.#channelId) {
+      return true;
+    }
+
+    this.#debug(
+      `Received message for unexpected channel "${channel}" (expected "${this.#channelId}")`,
+    );
+    return false;
+  }
+
   public async connect() {
     this.#debug(
       `Establishing connection to channel "${
@@ -171,6 +182,7 @@ export class TokenSubscription {
     };
 
     try {
+      this.#running = true;
       this.#ws = new WebSocket(this.getWsUrl(key));
 
       this.#ws.onopen = () => {
@@ -202,6 +214,7 @@ export class TokenSubscription {
           this.#debug(
             `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`,
           );
+          return;
         }
 
         switch (msg.kind) {
@@ -210,6 +223,10 @@ export class TokenSubscription {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no channel`,
               );
+              return;
+            }
+
+            if (!this.isExpectedChannel(msg.channel)) {
               return;
             }
 
@@ -259,6 +276,10 @@ export class TokenSubscription {
           }
 
           case "run": {
+            if (msg.channel && !this.isExpectedChannel(msg.channel)) {
+              return;
+            }
+
             this.#debug(`Received run lifecycle message on "${msg.channel}"`);
             return this.#fanout.write({
               channel: msg.channel,
@@ -277,6 +298,10 @@ export class TokenSubscription {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no channel or topic`,
               );
+              return;
+            }
+
+            if (!this.isExpectedChannel(msg.channel)) {
               return;
             }
 
@@ -327,6 +352,10 @@ export class TokenSubscription {
               return;
             }
 
+            if (!this.isExpectedChannel(msg.channel)) {
+              return;
+            }
+
             const endStreamId: unknown = msg.data;
             if (typeof endStreamId !== "string" || !endStreamId) {
               this.#debug(
@@ -366,6 +395,10 @@ export class TokenSubscription {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no channel or topic`,
               );
+              return;
+            }
+
+            if (!this.isExpectedChannel(msg.channel)) {
               return;
             }
 
@@ -430,9 +463,8 @@ export class TokenSubscription {
         }
         this.close();
       };
-
-      this.#running = true;
     } catch (err) {
+      this.#running = false;
       ret.reject(err);
     }
 

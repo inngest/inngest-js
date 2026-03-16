@@ -62,6 +62,26 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
 
 export type Mode = "cloud" | "dev";
 
+export function checkModeConfiguration({
+  internalLogger,
+  mode,
+  signingKey,
+}: {
+  internalLogger: Logger;
+  mode: Mode;
+  signingKey: string | undefined;
+}): boolean {
+  if (mode === "cloud" && !signingKey) {
+    internalLogger.error(
+      `In cloud mode but no signing key found. For local dev, set the INNGEST_DEV=1 env var. For production, set the ${envKeys.InngestSigningKey} env var`,
+    );
+
+    return false;
+  }
+
+  return true;
+}
+
 export const normalizeUrl = (
   urlString: string,
   scheme: string = "http://",

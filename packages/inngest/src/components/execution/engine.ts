@@ -52,6 +52,8 @@ import type {
 } from "../InngestMetadata.ts";
 import {
   createStepTools,
+  type ExperimentStepTools,
+  experimentStepRunSymbol,
   type FoundStep,
   getStepOptions,
   STEP_INDEXING_SUFFIX,
@@ -115,6 +117,7 @@ class InngestExecutionEngine
    * If we're not supposed to run a particular step, this will be `undefined`.
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
+  private rootSpanId?: string;
 
   /**
    * If we're checkpointing and have been given a maximum runtime, this will be
@@ -174,14 +177,14 @@ class InngestExecutionEngine
     this.initializeTimer(this.state);
     this.initializeCheckpointRuntimeTimer(this.state);
 
-    this.debug(
+    this.devDebug(
       "created new V1 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
         : "discovering steps",
     );
 
-    this.debug("existing state keys:", Object.keys(this.state.stepState));
+    this.devDebug("existing state keys:", Object.keys(this.state.stepState));
   }
 
   /**
@@ -189,7 +192,7 @@ class InngestExecutionEngine
    */
   public start() {
     if (!this.execution) {
-      this.debug("starting V1 execution");
+      this.devDebug("starting V1 execution");
 
       const tracer = trace.getTracer("inngest", version);
 
@@ -204,6 +207,7 @@ class InngestExecutionEngine
           },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
+              this.rootSpanId = span.spanContext().spanId;
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
                 span,
                 runId: this.options.runId,
@@ -213,7 +217,7 @@ class InngestExecutionEngine
 
               return this._start()
                 .then((result) => {
-                  this.debug("result:", result);
+                  this.devDebug("result:", result);
                   return result;
                 })
                 .finally(() => {
@@ -380,7 +384,7 @@ class InngestExecutionEngine
     const commonCheckpointHandler: CheckpointHandlers[StepMode][""] = (
       checkpoint,
     ) => {
-      this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
+      this.devDebug(`${this.options.stepMode} checkpoint:`, checkpoint);
     };
 
     const stepRanHandler = async (
@@ -459,6 +463,15 @@ class InngestExecutionEngine
       if (stepResult) {
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
+        // Clear `executingStep` immediately after resuming, before any await.
+        // `resumeStepWithResult` resolves the step's promise, queuing a
+        // microtask for the function to continue. Any subsequent await (e.g.
+        // the `transformOutput` hook) yields and lets that microtask run, so
+        // `executingStep` must already be cleared to avoid a false positive
+        // NESTING_STEPS warning in the next step's handler.
+        delete this.state.executingStep;
+
+        // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
           data: stepResult.data,
@@ -471,10 +484,10 @@ class InngestExecutionEngine
         this.state.checkpointingStepBuffer.length >=
           this.options.checkpointingConfig.bufferedSteps
       ) {
-        this.debug("checkpointing and resuming execution after step run");
+        this.devDebug("checkpointing and resuming execution after step run");
 
         try {
-          this.debug(
+          this.devDebug(
             `checkpointing all buffered steps:`,
             this.state.checkpointingStepBuffer
               .map((op) => op.displayName || op.id)
@@ -487,7 +500,7 @@ class InngestExecutionEngine
         } catch (err) {
           // If checkpointing fails for any reason, fall back to the async
           // flow
-          this.debug(
+          this.devDebug(
             "error checkpointing after step run, so falling back to async",
             err,
           );
@@ -500,7 +513,7 @@ class InngestExecutionEngine
           this.state.checkpointingStepBuffer = [];
         }
       } else {
-        this.debug(
+        this.devDebug(
           `not checkpointing yet, continuing execution as we haven't reached buffered step limit of ${this.options.checkpointingConfig?.bufferedSteps}`,
         );
       }
@@ -579,6 +592,11 @@ class InngestExecutionEngine
 
         // Resume the step with original data for user code
         const stepToResume = this.resumeStepWithResult(result);
+
+        // Clear executingStep now that the step result has been processed.
+        // Without this, the next step discovery would see stale state and
+        // emit a false positive NESTING_STEPS warning.
+        delete this.state.executingStep;
 
         return void (await this.checkpoint([stepToResume]));
       },
@@ -730,7 +748,7 @@ class InngestExecutionEngine
             },
           );
 
-          this.debug("split found steps in to:", {
+          this.devDebug("split found steps in to:", {
             stepsToResume: stepsToResume.length,
             newSteps: newSteps.length,
           });
@@ -739,7 +757,7 @@ class InngestExecutionEngine
           if (!this.options.requestedRunStep && newSteps.length) {
             const stepResult = await this.tryExecuteStep(newSteps);
             if (stepResult) {
-              this.debug(`executed step "${stepResult.id}" successfully`);
+              this.devDebug(`executed step "${stepResult.id}" successfully`);
 
               // We executed a step!
               //
@@ -776,7 +794,7 @@ class InngestExecutionEngine
 
           // If we have stepsToResume, resume as many as possible and resume execution
           if (stepsToResume.length) {
-            this.debug(`resuming ${stepsToResume.length} steps`);
+            this.devDebug(`resuming ${stepsToResume.length} steps`);
 
             for (const st of stepsToResume) {
               this.resumeStepWithResult({
@@ -918,7 +936,7 @@ class InngestExecutionEngine
     const { id, name, opts, fn, displayName, userland, hashedId } = foundStep;
     const { stepInfo, wrappedHandler, setActualHandler } = foundStep.middleware;
 
-    this.debug(`preparing to execute step "${id}"`);
+    this.devDebug(`preparing to execute step "${id}"`);
 
     this.timeout?.clear();
 
@@ -941,7 +959,17 @@ class InngestExecutionEngine
       };
     }
 
-    this.debug(`executing step "${id}"`);
+    this.devDebug(`executing step "${id}"`);
+
+    if (this.rootSpanId && this.options.checkpointingConfig) {
+      clientProcessorMap
+        .get(this.options.client)
+        ?.declareStepExecution(
+          this.rootSpanId,
+          hashedId,
+          this.options.data?.attempt ?? 0,
+        );
+    }
 
     let interval: GoInterval | undefined;
 
@@ -970,7 +998,15 @@ class InngestExecutionEngine
 
     return goIntervalTiming(() => wrappedActualHandler())
       .finally(() => {
-        this.debug(`finished executing step "${id}"`);
+        this.devDebug(`finished executing step "${id}"`);
+
+        this.state.executingStep = undefined;
+
+        if (this.rootSpanId && this.options.checkpointingConfig) {
+          clientProcessorMap
+            .get(this.options.client)
+            ?.clearStepExecution(this.rootSpanId);
+        }
 
         if (store?.execution) {
           delete store.execution.executingStep;
@@ -1212,7 +1248,7 @@ class InngestExecutionEngine
       stepCompletionOrder: [...this.options.stepCompletionOrder],
       remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
       setCheckpoint: (checkpoint: Checkpoint) => {
-        this.debug("setting checkpoint:", checkpoint.type);
+        this.devDebug("setting checkpoint:", checkpoint.type);
 
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
@@ -1232,11 +1268,14 @@ class InngestExecutionEngine
 
   private createFnArg(): Context.Any {
     const step = this.createStepTools();
+    const experimentStepRun = (step as unknown as ExperimentStepTools)[
+      experimentStepRunSymbol
+    ];
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-      group: createGroupTools(),
+      group: createGroupTools({ experimentStepRun }),
     } as Context.Any;
 
     /**
@@ -1556,7 +1595,7 @@ class InngestExecutionEngine
             return false;
           }
 
-          this.debug(`handling step "${hashedId}"`);
+          this.devDebug(`handling step "${hashedId}"`);
 
           step.handled = true;
 
@@ -1887,7 +1926,7 @@ class InngestExecutionEngine
   }
 
   private initializeCheckpointRuntimeTimer(state: ExecutionState): void {
-    this.debug(
+    this.devDebug(
       "initializing checkpointing runtime timers",
       this.options.checkpointingConfig,
     );

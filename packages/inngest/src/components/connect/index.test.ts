@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { envKeys } from "../../helpers/consts.ts";
+import type { Mode } from "../../helpers/env.ts";
 import { WorkerConnectRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { Inngest } from "../Inngest.ts";
 import { createStrategy } from "./strategies/index.ts";
@@ -229,9 +230,15 @@ describe("createStrategy", () => {
   const stubConfig = {
     hashedSigningKey: undefined,
     hashedFallbackKey: undefined,
+    internalLogger: {
+      debug: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+    },
     envName: undefined,
     apiBaseUrl: undefined,
-    mode: { isDev: true, isInferred: false },
+    mode: "dev" as Mode,
     connectionData: {
       marshaledCapabilities: "",
       manualReadinessAck: false,

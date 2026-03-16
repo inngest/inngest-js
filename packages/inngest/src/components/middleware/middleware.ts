@@ -240,6 +240,7 @@ export namespace Middleware {
     | "ai.infer"
     | "ai.wrap"
     | "fetch"
+    | "group.experiment"
     | "invoke"
     | "realtime.publish"
     | "run"

@@ -1,4 +1,3 @@
-import debug from "debug";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
 import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
@@ -49,7 +48,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private inngest: Inngest.Any;
   private options: ConnectHandlerOptions;
   private strategy: ConnectionStrategy | undefined;
-  private debugLog = debug("inngest:connect");
 
   constructor(options: ConnectHandlerOptions) {
     if (
@@ -168,13 +166,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
    * Establish a persistent connection to the gateway.
    */
   async connect(attempt = 0): Promise<void> {
-    this.debugLog("Establishing connection", { attempt });
+    this.inngest[internalLoggerSymbol].debug(
+      { attempt },
+      "Establishing connection",
+    );
 
     const envName = this.inngest.env ?? getEnvironmentName();
-
-    if (this.inngest.mode === "cloud" && !this.inngest.signingKey) {
-      throw new Error("Signing key is required");
-    }
 
     const hashedSigningKey = this.inngest.signingKey
       ? hashSigningKey(this.inngest.signingKey)
@@ -225,19 +222,22 @@ class WebSocketWorkerConnection implements WorkerConnection {
       };
     }
 
-    this.debugLog("Prepared sync data", {
-      functionSlugs: Object.entries(functionConfigs).map(
-        ([appId, { functions }]) => {
-          return JSON.stringify({
-            appId,
-            functions: functions.map((f) => ({
-              id: f.id,
-              stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
-            })),
-          });
-        },
-      ),
-    });
+    this.inngest[internalLoggerSymbol].debug(
+      {
+        functionSlugs: Object.entries(functionConfigs).map(
+          ([appId, { functions }]) => {
+            return JSON.stringify({
+              appId,
+              functions: functions.map((f) => ({
+                id: f.id,
+                stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
+              })),
+            });
+          },
+        ),
+      },
+      "Prepared sync data",
+    );
 
     // Build connection establish data
     const connectionData: ConnectionEstablishData = {
@@ -345,6 +345,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
           };
         },
       });
+
+      if (!inngestCommHandler.checkModeConfiguration()) {
+        throw new Error("Signing key is required");
+      }
+
       const requestHandler = inngestCommHandler.createHandler();
       requestHandlers[appId] = requestHandler;
     }
@@ -354,12 +359,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       {
         hashedSigningKey,
         hashedFallbackKey,
+        internalLogger: this.inngest[internalLoggerSymbol],
         envName,
         connectionData,
         requestHandlers,
         options: this.options,
         apiBaseUrl: this.inngest.apiBaseUrl,
-        mode: { isDev: this.inngest.mode === "dev", isInferred: false },
+        mode: this.inngest["mode"],
       },
       this.options,
     );

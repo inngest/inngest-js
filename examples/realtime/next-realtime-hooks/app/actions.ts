@@ -1,28 +1,30 @@
 "use server";
 
 import { getInngestApp } from "@/inngest";
-import { helloChannel } from "@/inngest/channels";
-import { getSubscriptionToken } from "inngest/react";
+import { helloChannel } from "@/inngest/functions/helloWorld";
+import { getSubscriptionToken, Realtime } from "@inngest/realtime";
 
-export const fetchRealtimeSubscriptionToken = async () => {
+export type HelloToken = Realtime.Token<typeof helloChannel, ["logs"]>;
+
+export async function fetchRealtimeSubscriptionToken(): Promise<HelloToken> {
   const token = await getSubscriptionToken(getInngestApp(), {
-    channel: helloChannel,
+    channel: helloChannel(),
     topics: ["logs"],
   });
 
-  if (!token.key) {
-    throw new Error("No realtime subscription token key returned");
-  }
+  return token;
+}
 
-  return token.key;
-};
-
-export const pause = async () => {
+export async function pause(): Promise<void> {
   const inngest = getInngestApp();
-  await inngest.send({ name: "test/cancel.signal" });
-};
+  await inngest.send({
+    name: "test/cancel.signal",
+  });
+}
 
-export const resume = async () => {
+export async function resume(): Promise<void> {
   const inngest = getInngestApp();
-  await inngest.send({ name: "test/hello.world" });
-};
+  await inngest.send({
+    name: "test/hello.world",
+  });
+}

@@ -70,6 +70,19 @@ import {
   isValidatable,
 } from "./triggers/typeHelpers.ts";
 
+type ChannelTopicNames<InputChannel extends Realtime.ChannelInput> = Extract<
+  keyof Realtime.Channel.InferTopics<InputChannel>,
+  string
+>;
+
+type ChannelTopicsInput<InputChannel extends Realtime.ChannelInput> = [
+  ChannelTopicNames<InputChannel>,
+] extends [never]
+  ? string[]
+  : string extends ChannelTopicNames<InputChannel>
+    ? string[]
+    : ChannelTopicNames<InputChannel>[];
+
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
  */
@@ -568,18 +581,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   public realtime: {
     /**
-     * Generate a subscription token for subscribing to realtime messages.
-     */
-    getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
-
-    /**
      * Subscribe to realtime messages on a channel, returning a readable stream.
      */
     subscribe: {
       <
         const InputChannel extends Realtime.ChannelInput,
-        const InputTopics extends
-          (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
+        const InputTopics extends ChannelTopicsInput<InputChannel>,
         const TToken extends Realtime.Subscribe.Token<
           InputChannel,
           InputTopics
@@ -593,8 +600,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       }): Promise<Realtime.Subscribe.CallbackSubscription>;
       <
         const InputChannel extends Realtime.ChannelInput,
-        const InputTopics extends
-          (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
+        const InputTopics extends ChannelTopicsInput<InputChannel>,
         const TToken extends Realtime.Subscribe.Token<
           InputChannel,
           InputTopics
@@ -611,32 +617,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      */
     token: <
       const InputChannel extends Realtime.ChannelInput,
-      const InputTopics extends
-        (keyof Realtime.Channel.InferTopics<InputChannel> & string)[],
+      const InputTopics extends ChannelTopicsInput<InputChannel>,
       const TToken extends Realtime.Subscribe.Token<InputChannel, InputTopics>,
     >(opts: {
       channel: InputChannel;
       topics: InputTopics;
     }) => Promise<TToken>;
   } = {
-    getSubscriptionToken: async ({ channel, topics }) => {
-      const channelId = typeof channel === "string" ? channel : channel.name;
-      if (!channelId) {
-        throw new Error(
-          "Channel ID is required to create a subscription token",
-        );
-      }
-
-      const key = await this.inngestApi.getSubscriptionToken(channelId, topics);
-
-      return {
-        channel,
-        topics,
-        key,
-        // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
-      } as any;
-    },
-
     subscribe: async (opts) => {
       // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
       return realtimeSubscribe({ ...opts, app: this } as any) as any;

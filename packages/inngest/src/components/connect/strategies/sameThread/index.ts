@@ -18,7 +18,7 @@ export class SameThreadStrategy extends BaseStrategy {
   private readonly core: ConnectionCore;
 
   constructor(config: StrategyConfig) {
-    super();
+    super({ logger: config.internalLogger });
     this.config = config;
 
     // Create the connection core with callbacks
@@ -36,7 +36,7 @@ export class SameThreadStrategy extends BaseStrategy {
         gatewayUrl: config.options.gatewayUrl,
       },
       {
-        log: (message, data) => this.debugLog(message, data),
+        logger: this.internalLogger,
         onStateChange: (state) => {
           this._state = state;
         },
@@ -73,6 +73,7 @@ export class SameThreadStrategy extends BaseStrategy {
     this.messageBuffer = new MessageBuffer({
       envName: config.envName,
       getApiBaseUrl: () => this.core.getApiBaseUrl(),
+      logger: this.internalLogger,
     });
   }
 
@@ -83,26 +84,29 @@ export class SameThreadStrategy extends BaseStrategy {
   async close(): Promise<void> {
     this.cleanupShutdown();
     this.setClosing();
-    this.debugLog("Cleaning up connection resources");
+    this.internalLogger.debug("Cleaning up connection resources");
 
     await this.core.cleanup();
 
-    this.debugLog("Connection closed");
-    this.debugLog("Waiting for in-flight requests to complete");
+    this.internalLogger.debug("Connection closed");
+    this.internalLogger.debug("Waiting for in-flight requests to complete");
 
     await this.core.waitForInProgress();
 
-    this.debugLog("Flushing messages before closing");
+    this.internalLogger.debug("Flushing messages before closing");
 
     try {
       await this.messageBuffer.flush(this.config.hashedSigningKey);
     } catch (err) {
-      this.debugLog("Failed to flush messages, using fallback key", err);
+      this.internalLogger.debug(
+        { err },
+        "Failed to flush messages, using fallback key",
+      );
       await this.messageBuffer.flush(this.config.hashedFallbackKey);
     }
 
     this.setClosed();
-    this.debugLog("Fully closed");
+    this.internalLogger.debug("Fully closed");
   }
 
   async connect(attempt = 0): Promise<void> {
@@ -115,7 +119,10 @@ export class SameThreadStrategy extends BaseStrategy {
     try {
       await this.messageBuffer.flush(this.config.hashedSigningKey);
     } catch (err) {
-      this.debugLog("Failed to flush messages, using fallback key", err);
+      this.internalLogger.debug(
+        { err },
+        "Failed to flush messages, using fallback key",
+      );
       await this.messageBuffer.flush(this.config.hashedFallbackKey);
     }
 
