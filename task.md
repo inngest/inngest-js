@@ -99,13 +99,13 @@ event: inngest.metadata
 data: {"run_id":"01KKPZEPCEDA9DCEWFAN33RKMY","attempt":0}
 
 event: stream
-data: "Hello"
+data: "Hello\n"
 
 event: inngest.redirect_info
 data: {"url":"http://localhost:8288/v1/realtime/sse?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJydC5pbm5nZXN0LmNvbSIsInN1YiI6IjAwMDAwMDAwLTAwMDAtNDAwMC1hMDAwLTAwMDAwMDAwMDAwMCIsImV4cCI6MTc3MzUxODk5NiwiaWF0IjoxNzczNTE4OTM2LCJqdGkiOiIwMUtLUFpFUEQzUzJZVjdBMVAxVE1ZUjE0NCIsImVudiI6IjAwMDAwMDAwLTAwMDAtNDAwMC1iMDAwLTAwMDAwMDAwMDAwMCIsInRvcGljcyI6W3sia2luZCI6InJ1biIsImVudl9pZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC1iMDAwLTAwMDAwMDAwMDAwMCIsImNoYW5uZWwiOiIwMUtLUFpFUENFREE5RENFV0ZBTjMzUktNWSIsIm5hbWUiOiIkc3RyZWFtIn1dLCJwdWJsaXNoIjpmYWxzZX0.pwQ1t20rDhI9TNDP4_ioFQFAEofOijKa_HKmGH8qhNI"}
 
 event: stream
-data: "World"
+data: "World\n"
 ```
 
 Once the response ends, the client knows it needs to send a `GET` request to the URL in the `inngest.redirect_info` event data. The following SSE events are streamed DE->IS->client:
@@ -115,10 +115,10 @@ event: inngest.metadata
 data: {"run_id":"01KKPZZ71Z8GCBMCA0FEPH1TZ1"}
 
 event: stream
-data: "Hola"
+data: "Hola\n"
 
 event: stream
-data: "mundo"
+data: "mundo\n"
 
 event: inngest.result
 data: "All done"
