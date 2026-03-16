@@ -18,9 +18,9 @@ When a DE "goes async mode", we have to do a few things:
 2. Interrupt control flow within the DE (nothing runs after the async mode step).
 3. Immediately return a response to the user. This is not the value returned by the DE.
 
-At some point in the future (e.g. 1 minute later if the async mode step was `step.sleep("zzz", "1m")`), we'll "reenter" the DE via a request sent by the IS. Note that this request is sent by the IS, but the initial client is still ultimately the true "client" from the DE's perspective. This means the client is responsible for sending a request to the IS to get the DE's return value.
+At some point in the future (e.g. 1 minute later if the async mode step was `step.sleep("zzz", "1m")`), we'll "reenter" the DE via a request sent by the IS. Note that this request is sent by the IS, but the initial client is still ultimately the true "client" from the DE's perspective.
 
-Note that async mode can also happen when there's an error. For example, if the DE errors on the second `step.run` then the IS will send a retry request.
+Async mode can also happen when there's an error. For example, if the DE errors on the second `step.run` then the IS will send a retry request.
 
 ### Checkpointing
 
@@ -41,7 +41,7 @@ We currently have a working demo for this, found in `examples/pocDurpStream`. We
 
 We also need to make some backend changes. These can be found in our "OSS" repo (branch is `poc-durp-streaming`). The changes in OSS are minimal because we only needed to tweak existing endpoints:
 
-- `POST /realtime/publish/tee?channel={runId}`: Stream data to the IS, which ultimately should stream back to the client.
+- `POST /realtime/publish/tee?channel={runId}`: Stream data to the IS, which ultimately should stream back to the client. Authed with the signing key.
 - `GET /v1/realtime/sse?token={realtimeJwt}`: Stream data sent to the other endpoint. The client uses this.
 
 Streaming uses SSE. Our internal events use the `inngest` prefix:
@@ -136,6 +136,8 @@ High-level requirements:
 ### Unsolved problems
 
 - How do we clear the stream buffer on the client when the DE is retried? We don't want old events from a previous attempt to be streamed to the client.
+- How do we handle realtime JWT expiration? It has a 1 minute expiry, so we have a problem if >=1m elapses between run creation and async mode.
+- How do we handle the `GET /v1/realtime/sse` request taking >=15m? The endpoint has a max duration of 15 minutes.
 
 ## Out of scope
 
