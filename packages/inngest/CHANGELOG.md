@@ -1,5 +1,13 @@
 # inngest
 
+## 3.52.7
+
+### Patch Changes
+
+- [#1359](https://github.com/inngest/inngest-js/pull/1359) [`b4d9833f`](https://github.com/inngest/inngest-js/commit/b4d9833fe632f542aad10c6faf5da3fd6a6fc9b7) Thanks [@Linell](https://github.com/Linell)! - fix: use deterministic IDs for correct checkpointed parenting
+
+- [#1370](https://github.com/inngest/inngest-js/pull/1370) [`037336dc`](https://github.com/inngest/inngest-js/commit/037336dce8731aa9fcf5d56ff3e2d8a48e5aee6f) Thanks [@amh4r](https://github.com/amh4r)! - Fix mishandling drain message (Connect only)
+
 ## 3.52.6
 
 ### Patch Changes
