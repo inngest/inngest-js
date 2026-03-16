@@ -23,6 +23,7 @@
 
 import type { RequestEvent } from "@sveltejs/kit";
 import {
+  type ActionResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
@@ -34,6 +35,27 @@ import type { SupportedFrameworkName } from "./types.ts";
  * dashboards and during testing.
  */
 export const frameworkName: SupportedFrameworkName = "sveltekit";
+
+const createResponse = ({
+  body,
+  headers,
+  status,
+}: ActionResponse<string | ReadableStream>): Response => {
+  /**
+   * If `Response` isn't included in this environment, it's probably a
+   * Node env that isn't already polyfilling. In this case, we can
+   * polyfill it here to be safe.
+   */
+  let Res: typeof Response;
+
+  if (typeof Response === "undefined") {
+    Res = require("cross-fetch").Response;
+  } else {
+    Res = Response;
+  }
+
+  return new Res(body, { status, headers });
+};
 
 /**
  * Using SvelteKit, serve and register any declared functions with Inngest,
@@ -77,32 +99,41 @@ export const serve = (
         body: () => event.request.text(),
         headers: (key) => event.request.headers.get(key),
         url: () => {
-          const protocol =
-            processEnv("NODE_ENV") === "development" ? "http" : "https";
+          let absoluteUrl: URL | undefined;
 
-          return new URL(
-            event.request.url,
-            `${protocol}://${
-              event.request.headers.get("host") || options.serveOrigin || ""
-            }`,
-          );
-        },
-        transformResponse: ({ body, headers, status }) => {
-          /**
-           * If `Response` isn't included in this environment, it's probably a
-           * Node env that isn't already polyfilling. In this case, we can
-           * polyfill it here to be safe.
-           */
-          let Res: typeof Response;
-
-          if (typeof Response === "undefined") {
-            Res = require("cross-fetch").Response;
-          } else {
-            Res = Response;
+          try {
+            absoluteUrl = new URL(event.request.url);
+          } catch {
+            // no-op
           }
 
-          return new Res(body, { status, headers });
+          if (absoluteUrl) {
+            const host = options.serveOrigin || event.request.headers.get("host");
+
+            if (host) {
+              const hostWithProtocol = new URL(
+                host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`,
+              );
+
+              absoluteUrl.protocol = hostWithProtocol.protocol;
+              absoluteUrl.host = hostWithProtocol.host;
+              absoluteUrl.port = hostWithProtocol.port;
+              absoluteUrl.username = hostWithProtocol.username;
+              absoluteUrl.password = hostWithProtocol.password;
+            }
+
+            return absoluteUrl;
+          }
+
+          const protocol =
+            processEnv("NODE_ENV") === "development" ? "http" : "https";
+          const host =
+            options.serveOrigin || event.request.headers.get("host") || "";
+
+          return new URL(event.request.url, `${protocol}://${host}`);
         },
+        transformResponse: createResponse,
+        transformStreamingResponse: createResponse,
       };
     },
   });
