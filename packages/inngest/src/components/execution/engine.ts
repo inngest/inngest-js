@@ -971,6 +971,16 @@ class InngestExecutionEngine
         );
     }
 
+    if (this.rootSpanId && this.options.checkpointingConfig) {
+      clientProcessorMap
+        .get(this.options.client)
+        ?.declareStepExecution(
+          this.rootSpanId,
+          hashedId,
+          this.options.data?.attempt ?? 0,
+        );
+    }
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
