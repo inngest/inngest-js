@@ -55,8 +55,8 @@ export default function Home() {
           setLines((prev) => [...prev, display]);
           scrollToBottom();
         },
-        onRollback: () => {
-          console.log("[rollback] chunks rolled back");
+        onRollback: (rolledBack) => {
+          setLines((prev) => prev.slice(0, prev.length - rolledBack.length));
         },
       });
     } catch (err) {

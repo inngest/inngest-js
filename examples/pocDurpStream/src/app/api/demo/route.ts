@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { step, stream } from "inngest";
+import { NonRetriableError, step, stream } from "inngest";
 import { inngest } from "@/inngest";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Stream an Anthropic chat completion, piping tokens to `stream` for the
@@ -30,7 +34,7 @@ async function streamAndCollect(prompt: string): Promise<string> {
 
 export const GET = inngest.endpoint(async () => {
   const correlationId = await step.run("correlation-id", () =>
-    crypto.randomUUID()
+    crypto.randomUUID(),
   );
 
   const sentences = await step.run("first-llm", async () => {
@@ -43,9 +47,7 @@ export const GET = inngest.endpoint(async () => {
 
   await step.run("language-prompt", () => {
     stream.push("\n🤔 What language should I translate to?\n");
-    stream.push(
-      JSON.stringify({ type: "await-input", correlationId }) + "\n"
-    );
+    stream.push(JSON.stringify({ type: "await-input", correlationId }) + "\n");
   });
 
   const choice = await step.waitForEvent("wait-for-language", {
@@ -55,13 +57,21 @@ export const GET = inngest.endpoint(async () => {
   });
 
   if (!choice) {
-    return "\n⌛️ Timed out waiting for language choice.\n";
+    return "\n⌛ Timed out waiting for language choice.\n";
   }
 
   const language = choice.data.language as string;
 
   await step.run("second-llm", async () => {
     stream.push(`\n📚 Translating to ${language}:\n`);
+    await sleep(300);
+
+    if (language === "Sindarin" && Math.random() < 0.1) {
+      stream.push("🧙 ye shall not pass!\n");
+      throw new Error("Ye shall not pass!");
+    } else if (language.toLowerCase() === "dog") {
+      throw new NonRetriableError("Dog Speak is Much Too Hard to Translate");
+    }
 
     return streamAndCollect(
       `Translate the following text to ${language}. Output only the translation, no commentary.\n\n${sentences}`,
