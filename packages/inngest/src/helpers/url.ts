@@ -1,5 +1,6 @@
 import { defaultDevServerHost, defaultInngestApiBaseUrl } from "./consts.ts";
 import { devServerAvailable } from "./devserver.ts";
+import type { Mode } from "./env.ts";
 
 interface ResolveApiBaseUrlOpts {
   /**
@@ -12,10 +13,7 @@ interface ResolveApiBaseUrlOpts {
    * The current mode of the SDK, indicating whether it's running in dev or
    * cloud mode and whether that was explicitly set or inferred.
    */
-  mode: {
-    isDev: boolean;
-    isInferred: boolean;
-  };
+  mode: Mode;
 
   /**
    * The fetch implementation to use when checking for dev server availability.
@@ -36,22 +34,13 @@ interface ResolveApiBaseUrlOpts {
  * This function is used by both `InngestApi` and `ConnectionCore` to ensure
  * consistent URL resolution logic across the SDK.
  */
-export async function resolveApiBaseUrl(
-  opts: ResolveApiBaseUrlOpts,
-): Promise<string> {
+export function resolveApiBaseUrl(opts: ResolveApiBaseUrlOpts): string {
   if (opts.apiBaseUrl !== undefined) {
     return opts.apiBaseUrl;
   }
 
-  if (opts.mode.isDev && opts.mode.isInferred) {
-    const devAvailable = await devServerAvailable(
-      defaultDevServerHost,
-      opts.fetch ?? globalThis.fetch,
-    );
-
-    if (devAvailable) {
-      return defaultDevServerHost;
-    }
+  if (opts.mode === "dev") {
+    return defaultDevServerHost;
   }
 
   return defaultInngestApiBaseUrl;
