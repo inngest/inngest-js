@@ -14,5 +14,5 @@ export const fetchSubscriptionToken = async (campaignId: string) => {
     throw new Error("No realtime subscription token key returned");
   }
 
-  return token;
+  return token.key;
 };
