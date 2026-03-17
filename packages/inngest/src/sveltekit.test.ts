@@ -131,17 +131,20 @@ describe("SvelteKit streaming", () => {
     });
   });
 
-  test('uses a streamed response for `streaming: "force"`', async () => {
+  test('uses a streamed response for `streaming: true`', async () => {
     const client = createClient({ id: "test", isDev: true });
     const fn = client.createFunction(
-      { name: "Test", id: "test" },
-      { event: "demo/event.sent" },
+      {
+        name: "Test",
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+      },
       () => "fn",
     );
     const event = {
       data: {},
       id: "",
-      name: "inngest/scheduled.timer",
+      name: "demo/event.sent",
       ts: 1674082830001,
       user: {},
       v: "1",
@@ -151,7 +154,7 @@ describe("SvelteKit streaming", () => {
       {
         client,
         functions: [fn],
-        streaming: "force",
+        streaming: true,
       },
       createRequestEvent({
         method: "POST",
@@ -177,23 +180,29 @@ describe("SvelteKit streaming", () => {
     expect(response.status).toEqual(201);
     const streamedBody = JSON.parse((await response.text()).trimStart());
 
-    expect(streamedBody).toMatchObject({
-      status: 200,
-      body: JSON.stringify("fn"),
-    });
+    expect(streamedBody.status).toEqual(206);
+    expect(JSON.parse(streamedBody.body)).toMatchObject([
+      {
+        op: "RunComplete",
+        data: "fn",
+      },
+    ]);
   });
 
-  test('uses a streamed response for `streaming: "allow"` on supported platforms', async () => {
+  test("uses a streamed response when INNGEST_STREAMING=true", async () => {
     const client = createClient({ id: "test", isDev: true });
     const fn = client.createFunction(
-      { name: "Test", id: "test" },
-      { event: "demo/event.sent" },
+      {
+        name: "Test",
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+      },
       () => "fn",
     );
     const event = {
       data: {},
       id: "",
-      name: "inngest/scheduled.timer",
+      name: "demo/event.sent",
       ts: 1674082830001,
       user: {},
       v: "1",
@@ -203,7 +212,6 @@ describe("SvelteKit streaming", () => {
       {
         client,
         functions: [fn],
-        streaming: "allow",
       },
       createRequestEvent({
         method: "POST",
@@ -223,16 +231,19 @@ describe("SvelteKit streaming", () => {
       "POST",
       {
         [envKeys.InngestDevMode]: "1",
-        [envKeys.IsCloudflarePages]: "1",
+        [envKeys.InngestStreaming]: "true",
       },
     );
 
     expect(response.status).toEqual(201);
     const streamedBody = JSON.parse((await response.text()).trimStart());
 
-    expect(streamedBody).toMatchObject({
-      status: 200,
-      body: JSON.stringify("fn"),
-    });
+    expect(streamedBody.status).toEqual(206);
+    expect(JSON.parse(streamedBody.body)).toMatchObject([
+      {
+        op: "RunComplete",
+        data: "fn",
+      },
+    ]);
   });
 });
