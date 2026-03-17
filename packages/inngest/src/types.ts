@@ -16,6 +16,7 @@ import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type { createGroupTools } from "./components/InngestGroupTools.ts";
+import type { MetadataUpdate } from "./components/InngestMetadata.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
 import type {
@@ -56,7 +57,7 @@ const maybeJsonErrorSchema: z.ZodType<{
     message: z.string().trim(),
     stack: z.string().trim().optional(),
     cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
-  }),
+  })
 );
 
 export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
@@ -439,12 +440,7 @@ export type OutgoingOp = Pick<
    * When present, these are sent to the server as part of the checkpoint
    * payload so that metadata spans can be created for the step.
    */
-  metadata?: Array<{
-    kind: string;
-    scope: string;
-    op: string;
-    values: Record<string, unknown>;
-  }>;
+  metadata?: MetadataUpdate[];
 };
 
 /**
@@ -569,7 +565,7 @@ export type Handler<
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TClient, TOverrides>,
+  ctx: Context<TClient, TOverrides>
 ) => unknown;
 
 /**
@@ -891,7 +887,7 @@ export type Step<TContext = unknown> = (
    * The context for this step, including the triggering event and any previous
    * step output.
    */
-  context: TContext,
+  context: TContext
 ) => Promise<Response> | Response;
 
 /**
@@ -1472,7 +1468,7 @@ export const functionConfigSchema = z.strictObject({
       z.strictObject({
         cron: z.string(),
       }),
-    ]),
+    ])
   ),
   steps: z.record(
     z.strictObject({
@@ -1487,7 +1483,7 @@ export const functionConfigSchema = z.strictObject({
           attempts: z.number().optional(),
         })
         .optional(),
-    }),
+    })
   ),
   idempotency: z.string().optional(),
   batchEvents: z
@@ -1525,7 +1521,7 @@ export const functionConfigSchema = z.strictObject({
         event: z.string(),
         if: z.string().optional(),
         timeout: z.string().optional(),
-      }),
+      })
     )
     .optional(),
   debounce: z
