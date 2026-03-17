@@ -1856,6 +1856,7 @@ class InngestExecutionEngine
     userlandStep.timing = resultOp.timing;
     userlandStep.op = resultOp.op;
     userlandStep.id = resultOp.id;
+    userlandStep.metadata = resultOp.metadata;
 
     if (resume) {
       userlandStep.fulfilled = true;

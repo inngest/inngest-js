@@ -433,7 +433,19 @@ export type OutgoingOp = Pick<
   | "displayName"
   | "userland"
   | "timing"
->;
+> & {
+  /**
+   * Optional metadata updates attached to this step operation.
+   * When present, these are sent to the server as part of the checkpoint
+   * payload so that metadata spans can be created for the step.
+   */
+  metadata?: Array<{
+    kind: string;
+    scope: string;
+    op: string;
+    values: Record<string, unknown>;
+  }>;
+};
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate
