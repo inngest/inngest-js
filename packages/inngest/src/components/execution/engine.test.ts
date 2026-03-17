@@ -5,6 +5,7 @@ import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
 import { StepMode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
+import type { MetadataUpdate } from "../InngestMetadata.ts";
 import type { ExecutionResults } from "./InngestExecution.ts";
 
 describe("Execution engine checkpoint retry behavior", () => {
@@ -147,6 +148,90 @@ describe("Execution engine checkpoint retry behavior", () => {
           name: "Error",
           message: "Server unreachable",
         });
+      });
+    });
+
+    describe("metadata propagation to checkpoint payload", () => {
+      test("includes metadata from state.metadata in the checkpoint steps", async () => {
+        const client = createClient({ id: "test" });
+
+        const mockCheckpointNewRun = vi.fn().mockResolvedValue({
+          data: {
+            app_id: "app-123",
+            fn_id: "fn-456",
+            token: "token-789",
+          },
+        });
+
+        const mockCheckpointSteps = vi.fn().mockResolvedValue(undefined);
+
+        (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi =
+          {
+            checkpointNewRun: mockCheckpointNewRun,
+            checkpointSteps: mockCheckpointSteps,
+          } as Partial<InngestApi> as InngestApi;
+
+        const fn = new InngestFunction(
+          client,
+          { id: "test-fn", triggers: [{ event: "test/event" }] },
+          async ({ step }) => {
+            const result = await step.run("my-step", () => "step-result");
+            return result;
+          },
+        );
+
+        const execution = fn["createExecution"]({
+          partialOptions: {
+            client,
+            data: fromPartial({ event: mockEvent }),
+            runId: "test-run-id",
+            stepState: {},
+            stepCompletionOrder: [],
+            reqArgs: [],
+            headers: {},
+            stepMode: StepMode.Sync,
+            createResponse: async (data) => ({
+              status: 200,
+              body: JSON.stringify(data),
+              headers: {},
+              version: ExecutionVersion.V2,
+            }),
+          },
+        });
+
+        // Pre-populate metadata for the step (keyed by unhashed display name)
+        const metadataUpdates: MetadataUpdate[] = [
+          {
+            kind: "userland.test",
+            scope: "step",
+            op: "merge",
+            values: { status: "processing" },
+          },
+        ];
+        (
+          execution as unknown as {
+            state: { metadata: Map<string, MetadataUpdate[]> };
+          }
+        ).state.metadata = new Map([["my-step", metadataUpdates]]);
+
+        const executionPromise = execution.start();
+        await advanceThroughRetries();
+        const result = await executionPromise;
+
+        expect(result.type).toBe("function-resolved");
+
+        // The first checkpoint (checkpointNewRun) should include the step
+        // with metadata from the execution
+        expect(mockCheckpointNewRun).toHaveBeenCalledTimes(1);
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const firstCheckpointSteps = mockCheckpointNewRun.mock.calls[0]![0]
+          .steps as Array<{ metadata?: MetadataUpdate[] }>;
+        const stepWithMetadata = firstCheckpointSteps.find(
+          (s) => s.metadata && s.metadata.length > 0,
+        );
+
+        expect(stepWithMetadata).toBeDefined();
+        expect(stepWithMetadata!.metadata).toEqual(metadataUpdates);
       });
     });
   });
