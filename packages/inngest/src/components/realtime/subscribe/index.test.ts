@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { TokenSubscription } from "./TokenSubscription.ts";
 import { subscribe } from "./index.ts";
 
 class MockWebSocket {
@@ -71,6 +72,7 @@ describe("realtime subscribe helper", () => {
   });
 
   test("supports callback-style subscriptions via onMessage", async () => {
+    const getJsonStreamSpy = vi.spyOn(TokenSubscription.prototype, "getJsonStream");
     const onMessage = vi.fn();
 
     const handle = await subscribe({
@@ -97,7 +99,21 @@ describe("realtime subscribe helper", () => {
 
     await nextTick();
     expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(getJsonStreamSpy).toHaveBeenCalledTimes(1);
 
     handle.unsubscribe("done");
+  });
+
+  test("does not create streams if connect rejects", async () => {
+    const getJsonStreamSpy = vi.spyOn(TokenSubscription.prototype, "getJsonStream");
+
+    await expect(
+      subscribe({
+        channel: "test",
+        topics: ["status"],
+      }),
+    ).rejects.toThrow("No getSubscriptionToken handler provided");
+
+    expect(getJsonStreamSpy).not.toHaveBeenCalled();
   });
 });
