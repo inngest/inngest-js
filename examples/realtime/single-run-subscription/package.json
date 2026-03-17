@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "inngest": "^3.52.0",
+    "inngest": "^4.0.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
