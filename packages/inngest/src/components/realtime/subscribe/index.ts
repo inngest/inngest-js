@@ -80,9 +80,6 @@ export async function subscribe<
     validate: token.validate,
   });
 
-  const retStream = subscription.getJsonStream();
-  const callbackStream = subscription.getJsonStream();
-
   await subscription.connect();
 
   const extras = {
@@ -94,16 +91,15 @@ export async function subscribe<
 
   const onMessage = token.onMessage || callback;
   if (onMessage) {
+    const callbackStream = subscription.getJsonStream();
     subscription.useCallback(onMessage, callbackStream, token.onError);
-  } else {
-    callbackStream.cancel("Not needed");
   }
 
   if (token.onMessage) {
-    retStream.cancel("Callback subscription doesn't expose a stream");
     return extras;
   }
 
+  const retStream = subscription.getJsonStream();
   return Object.assign(retStream, extras) as unknown as TOutput;
 }
 
