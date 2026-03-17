@@ -49,17 +49,17 @@ describe("streamRun", () => {
     expect(results).toEqual(["final"]);
   });
 
-  test("rolls back chunks on step error", async () => {
-    const rolledBack: unknown[][] = [];
+  test("rolls back chunks on step error using channel", async () => {
+    const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (chunks) => rolledBack.push([...chunks]),
+      onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "a" },
-        { type: "stream", data: "b" },
+        { type: "stream", data: "a", channel: "s1" },
+        { type: "stream", data: "b", channel: "s1" },
         {
           type: "inngest.step",
           step_id: "s1",
@@ -71,7 +71,7 @@ describe("streamRun", () => {
 
     await rs;
 
-    expect(rolledBack).toEqual([["a", "b"]]);
+    expect(rolledBack).toEqual([2]);
     expect(rs.chunks).toEqual([]);
   });
 
@@ -126,24 +126,24 @@ describe("streamRun", () => {
   });
 
   test("synthesizes rollback on mid-step disconnect", async () => {
-    const rolledBack: unknown[][] = [];
+    const rolledBack: number[] = [];
     const errored: Array<{ id: string; info: unknown }> = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (chunks) => rolledBack.push([...chunks]),
+      onRollback: (count) => rolledBack.push(count),
       onStepErrored: (id, info) => errored.push({ id, info }),
     });
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "partial" },
+        { type: "stream", data: "partial", channel: "s1" },
         // Stream ends without step:completed or step:errored
       ]),
     );
 
     await rs;
 
-    expect(rolledBack).toEqual([["partial"]]);
+    expect(rolledBack).toEqual([1]);
     expect(errored[0]?.id).toBe("s1");
     expect(errored[0]?.info).toMatchObject({
       willRetry: false,
@@ -269,17 +269,17 @@ describe("streamRun", () => {
   });
 
   test("does not spuriously rollback chunks between steps on disconnect", async () => {
-    const rolledBack: unknown[][] = [];
+    const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (chunks) => rolledBack.push([...chunks]),
+      onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "a" },
+        { type: "stream", data: "a", channel: "s1" },
         { type: "inngest.step", step_id: "s1", status: "completed" },
-        // Chunks emitted between steps (after s1 completed, before s2 starts)
+        // Chunks emitted between steps (no channel — outside any step)
         { type: "stream", data: "between" },
         // Stream disconnects here — no step is active, so no rollback
       ]),
@@ -312,5 +312,59 @@ describe("streamRun", () => {
     await rs;
 
     expect(running).toEqual([{ id: "s1", data: { some: "info" } }]);
+  });
+
+  test("parallel steps: only rolls back the errored step's chunks", async () => {
+    const rolledBack: number[] = [];
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: (count) => rolledBack.push(count),
+    });
+    rs._fromSource(
+      framesFrom([
+        { type: "inngest.step", step_id: "A", status: "running" },
+        { type: "inngest.step", step_id: "B", status: "running" },
+        { type: "stream", data: "A1", channel: "A" },
+        { type: "stream", data: "B1", channel: "B" },
+        { type: "stream", data: "A2", channel: "A" },
+        {
+          type: "inngest.step",
+          step_id: "B",
+          status: "errored",
+          data: { will_retry: true, error: "fail", attempt: 0 },
+        },
+        { type: "inngest.step", step_id: "A", status: "completed" },
+      ]),
+    );
+
+    await rs;
+
+    // Only B's chunk was rolled back; A's chunks survive.
+    expect(rolledBack).toEqual([1]);
+    expect(rs.chunks).toEqual(["A1", "A2"]);
+  });
+
+  test("no rollback when errored step had no streamed chunks", async () => {
+    const rolledBack: number[] = [];
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: (count) => rolledBack.push(count),
+    });
+    rs._fromSource(
+      framesFrom([
+        { type: "inngest.step", step_id: "s1", status: "running" },
+        {
+          type: "inngest.step",
+          step_id: "s1",
+          status: "errored",
+          data: { will_retry: true, error: "boom", attempt: 0 },
+        },
+      ]),
+    );
+
+    await rs;
+
+    // onRollback should not fire when there's nothing to roll back
+    expect(rolledBack).toEqual([]);
   });
 });

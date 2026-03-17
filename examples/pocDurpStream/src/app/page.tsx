@@ -55,8 +55,8 @@ export default function Home() {
           setLines((prev) => [...prev, display]);
           scrollToBottom();
         },
-        onRollback: (rolledBack) => {
-          setLines((prev) => prev.slice(0, prev.length - rolledBack.length));
+        onRollback: (count) => {
+          setLines((prev) => prev.slice(0, prev.length - count));
         },
       });
     } catch (err) {

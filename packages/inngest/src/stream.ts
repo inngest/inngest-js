@@ -90,8 +90,8 @@ export interface RunStreamOptions<TData = unknown> {
   parse?: (data: unknown) => TData;
   /** Called for each parsed data chunk. */
   onData?: (data: TData) => void;
-  /** Called when chunks are rolled back on retry/error. */
-  onRollback?: (rolledBack: TData[]) => void;
+  /** Called when chunks are rolled back due to a step error or disconnect. */
+  onRollback?: (count: number) => void;
   /**
    * Called when the final result frame arrives. The data is `unknown` because
    * SSE transport erases the original return type.
@@ -154,6 +154,7 @@ export function streamRun<TData = unknown>(
  * @internal
  */
 export class RunStream<TData = unknown> {
+  private _tagged: Array<{ data: TData; channel?: string }> = [];
   private _chunks: TData[] = [];
   private _consumed = false;
   private _source: AsyncIterable<SSEFrame> | undefined;
@@ -167,6 +168,22 @@ export class RunStream<TData = unknown> {
   /** All accumulated data chunks (automatically rolled back on retry). */
   get chunks(): readonly TData[] {
     return this._chunks;
+  }
+
+  private _pushChunk(data: TData, channel?: string): void {
+    this._tagged.push({ data, channel });
+    this._chunks.push(data);
+  }
+
+  /**
+   * Remove all chunks belonging to the given channel and return how many
+   * were removed.
+   */
+  private _rollbackChannel(channel: string): number {
+    const before = this._tagged.length;
+    this._tagged = this._tagged.filter((c) => c.channel !== channel);
+    this._chunks = this._tagged.map((c) => c.data);
+    return before - this._tagged.length;
   }
 
   /**
@@ -231,9 +248,8 @@ export class RunStream<TData = unknown> {
 
     const source = this._resolveSource();
 
-    let inStep = false;
-    let chunksSinceStepStart = 0;
-    let currentStepId: string | undefined;
+    // Track which steps are currently executing (supports parallel steps).
+    const inFlightSteps = new Set<string>();
 
     try {
       // Label the outer loop so we can break out of it from inside the switch.
@@ -242,35 +258,30 @@ export class RunStream<TData = unknown> {
       // connection may stay open — meaning `source.next()` would block forever
       // if we relied on the loop's next iteration to check a flag.
       outer: for await (const frame of source) {
+        console.log(JSON.stringify(frame)); // TODO: this would be useful for debugging
+
         switch (frame.type) {
           case "stream": {
             const parsed = this._parseFn(frame.data);
-            this._chunks.push(parsed);
-            chunksSinceStepStart++;
+            this._pushChunk(parsed, frame.channel);
             this.opts.onData?.(parsed);
             yield parsed;
             break;
           }
           case "inngest.step": {
             if (frame.status === "running") {
-              inStep = true;
-              chunksSinceStepStart = 0;
-              currentStepId = frame.step_id;
+              inFlightSteps.add(frame.step_id);
               this.opts.onStepRunning?.(frame.step_id, frame.data);
             } else if (frame.status === "completed") {
-              inStep = false;
-              chunksSinceStepStart = 0;
-              currentStepId = undefined;
+              inFlightSteps.delete(frame.step_id);
               this.opts.onStepCompleted?.(frame.step_id, frame.data);
             } else if (frame.status === "errored") {
-              const data = frame.data as Record<string, unknown> | undefined;
-              if (chunksSinceStepStart > 0) {
-                const rolledBack = this._chunks.splice(-chunksSinceStepStart);
-                this.opts.onRollback?.(rolledBack);
+              inFlightSteps.delete(frame.step_id);
+              const count = this._rollbackChannel(frame.step_id);
+              if (count > 0) {
+                this.opts.onRollback?.(count);
               }
-              inStep = false;
-              chunksSinceStepStart = 0;
-              currentStepId = undefined;
+              const data = frame.data as Record<string, unknown> | undefined;
               this.opts.onStepErrored?.(frame.step_id, {
                 willRetry: (data?.will_retry as boolean) ?? false,
                 error: (data?.error as string) ?? "unknown",
@@ -290,11 +301,13 @@ export class RunStream<TData = unknown> {
         }
       }
 
-      // Synthesize rollback if disconnected mid-step
-      if (inStep && chunksSinceStepStart > 0) {
-        const rolledBack = this._chunks.splice(-chunksSinceStepStart);
-        this.opts.onRollback?.(rolledBack);
-        this.opts.onStepErrored?.(currentStepId ?? "unknown", {
+      // Synthesize rollback for any steps still in flight on disconnect.
+      for (const stepId of inFlightSteps) {
+        const count = this._rollbackChannel(stepId);
+        if (count > 0) {
+          this.opts.onRollback?.(count);
+        }
+        this.opts.onStepErrored?.(stepId, {
           willRetry: false,
           error: "stream disconnected",
           attempt: 0,

@@ -15,6 +15,7 @@ export interface SSEMetadataFrame {
 export interface SSEStreamFrame {
   type: "stream";
   data: unknown;
+  channel?: string;
 }
 
 export interface SSEResultFrame {
@@ -79,8 +80,13 @@ export function buildSSEMetadataFrame(runId: string, attempt: number): string {
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSSEStreamFrame(data: unknown): string {
-  return buildSSEFrame("stream", data);
+export function buildSSEStreamFrame(
+  data: unknown,
+  channel?: string,
+): string {
+  const payload: Record<string, unknown> = { data };
+  if (channel) payload.channel = channel;
+  return buildSSEFrame("stream", payload);
 }
 
 /**
@@ -336,8 +342,14 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
         attempt: obj.attempt as number,
       };
     }
-    case "stream":
-      return { type: "stream", data: parsed };
+    case "stream": {
+      const obj = parsed as Record<string, unknown>;
+      return {
+        type: "stream",
+        data: obj.data,
+        ...(typeof obj.channel === "string" ? { channel: obj.channel } : {}),
+      };
+    }
     case "inngest.result":
       return { type: "inngest.result", data: parsed };
     case "inngest.step": {
