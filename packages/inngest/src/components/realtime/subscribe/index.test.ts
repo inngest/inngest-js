@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { TokenSubscription } from "./TokenSubscription.ts";
 import { subscribe } from "./index.ts";
+import { TokenSubscription } from "./TokenSubscription.ts";
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -72,7 +72,10 @@ describe("realtime subscribe helper", () => {
   });
 
   test("supports callback-style subscriptions via onMessage", async () => {
-    const getJsonStreamSpy = vi.spyOn(TokenSubscription.prototype, "getJsonStream");
+    const getJsonStreamSpy = vi.spyOn(
+      TokenSubscription.prototype,
+      "getJsonStream",
+    );
     const onMessage = vi.fn();
 
     const handle = await subscribe({
@@ -105,7 +108,10 @@ describe("realtime subscribe helper", () => {
   });
 
   test("does not create streams if connect rejects", async () => {
-    const getJsonStreamSpy = vi.spyOn(TokenSubscription.prototype, "getJsonStream");
+    const getJsonStreamSpy = vi.spyOn(
+      TokenSubscription.prototype,
+      "getJsonStream",
+    );
 
     await expect(
       subscribe({
