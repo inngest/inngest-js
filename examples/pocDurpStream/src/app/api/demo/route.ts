@@ -7,29 +7,34 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Stream an Anthropic chat completion, piping tokens to `stream` for the
- * client and simultaneously collecting them into a string that is returned.
+ * Stream an Anthropic chat completion, pushing tokens to `stream` for the
+ * client and returning the collected text.
  */
 async function streamAndCollect(prompt: string): Promise<string> {
   const client = new Anthropic();
-
-  return stream.pipe(async function* () {
-    const anthropicStream = client.messages.stream({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 512,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    for await (const event of anthropicStream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        yield event.delta.text;
-      }
-    }
-    yield "\n";
+  const response = client.messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 512,
+    messages: [{ role: "user", content: prompt }],
   });
+
+  // Option A: Use the Anthropic SDK's event callback + finalText().
+  response.on("text", (text) => stream.push(text));
+  return await response.finalText();
+
+  // Option B: Pipe an async generator. Works with any provider that
+  // exposes an async iterable of events.
+  //
+  // return stream.pipe(async function* () {
+  //   for await (const event of response) {
+  //     if (
+  //       event.type === "content_block_delta" &&
+  //       event.delta.type === "text_delta"
+  //     ) {
+  //       yield event.delta.text;
+  //     }
+  //   }
+  // });
 }
 
 export const GET = inngest.endpoint(async () => {
@@ -41,7 +46,7 @@ export const GET = inngest.endpoint(async () => {
     stream.push("👋 First, we'll generate some random text in English:\n");
 
     return streamAndCollect(
-      "Write exactly 5 random sentences in English. No preamble, just the sentences. Put it in a single paragraph.",
+      "Write exactly two random sentences in English. No preamble, just the sentences. Put it in a single paragraph.",
     );
   });
 
@@ -79,14 +84,14 @@ export const GET = inngest.endpoint(async () => {
   });
 
   if (language.toLowerCase() === "sindarin") {
-    Promise.all([
+    await Promise.all([
       await step.run("sindarin-fist-bump", async () => {
-        sleep(300);
+        await sleep(300);
         stream.push("\nnerd cred 👊");
         return "you win the game";
       }),
       await step.run("example-non-streamer", async () => {
-        sleep(3000);
+        await sleep(3000);
         return "Did some processing!";
       }),
     ]);

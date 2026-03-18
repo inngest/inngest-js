@@ -55,6 +55,8 @@ export async function* subscribeToRun(
       const frame = parseSSEFrame(raw);
       if (!frame) continue;
 
+      console.log(JSON.stringify(frame));
+
       if (frame.type === "inngest.redirect_info") {
         redirectUrl = frame.url;
         yield frame;
