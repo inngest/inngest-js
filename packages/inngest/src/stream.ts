@@ -79,6 +79,15 @@ export async function* subscribeToRun(
 // streamRun — high-level hook-based API
 // ---------------------------------------------------------------------------
 
+/**
+ * Information about a step error, passed to the `onStepErrored` callback.
+ */
+export interface StepErrorInfo {
+  willRetry: boolean;
+  error: string;
+  attempt: number;
+}
+
 export interface RunStreamOptions<TData = unknown> {
   /** The URL of the Durable Endpoint to connect to. */
   url: string;
@@ -105,10 +114,7 @@ export interface RunStreamOptions<TData = unknown> {
    */
   onStepCompleted?: (stepId: string, data?: unknown) => void;
   /** Called when a step errors. */
-  onStepErrored?: (
-    stepId: string,
-    info: { willRetry: boolean; error: string; attempt: number },
-  ) => void;
+  onStepErrored?: (stepId: string, info: StepErrorInfo) => void;
   /** Called when run metadata is received. */
   onMetadata?: (runId: string, attempt: number) => void;
   /** Called when the stream is fully consumed (including on abort or error). */
@@ -187,6 +193,20 @@ export class RunStream<TData = unknown> {
   }
 
   /**
+   * Mark all chunks belonging to `channel` as committed by clearing their
+   * channel tag. Committed chunks can never be rolled back — even if a
+   * same-named step retries and errors later, only uncommitted chunks from
+   * that retry will be removed.
+   */
+  private _commitChannel(channel: string): void {
+    for (const entry of this._tagged) {
+      if (entry.channel === channel) {
+        entry.channel = undefined;
+      }
+    }
+  }
+
+  /**
    * Inject a pre-built source for testing. Skips the real fetch.
    * @internal
    */
@@ -258,8 +278,6 @@ export class RunStream<TData = unknown> {
       // connection may stay open — meaning `source.next()` would block forever
       // if we relied on the loop's next iteration to check a flag.
       outer: for await (const frame of source) {
-        console.log(JSON.stringify(frame)); // TODO: this would be useful for debugging
-
         switch (frame.type) {
           case "stream": {
             const parsed = this._parseFn(frame.data);
@@ -274,6 +292,7 @@ export class RunStream<TData = unknown> {
               this.opts.onStepRunning?.(frame.step_id, frame.data);
             } else if (frame.status === "completed") {
               inFlightSteps.delete(frame.step_id);
+              this._commitChannel(frame.step_id);
               this.opts.onStepCompleted?.(frame.step_id, frame.data);
             } else if (frame.status === "errored") {
               inFlightSteps.delete(frame.step_id);
@@ -281,11 +300,10 @@ export class RunStream<TData = unknown> {
               if (count > 0) {
                 this.opts.onRollback?.(count);
               }
-              const data = frame.data as Record<string, unknown> | undefined;
               this.opts.onStepErrored?.(frame.step_id, {
-                willRetry: (data?.will_retry as boolean) ?? false,
-                error: (data?.error as string) ?? "unknown",
-                attempt: (data?.attempt as number) ?? 0,
+                willRetry: frame.will_retry,
+                error: frame.error,
+                attempt: frame.attempt,
               });
             }
             break;

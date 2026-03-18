@@ -23,12 +23,41 @@ export interface SSEResultFrame {
   data: unknown;
 }
 
-export interface SSEStepFrame {
+/**
+ * Payload included with every `inngest.step` errored frame. Describes the
+ * failure so the client can decide whether to show an error or wait for a
+ * retry.
+ */
+export interface StepErrorData {
+  will_retry: boolean;
+  error: string;
+  attempt: number;
+}
+
+export interface SSEStepRunningFrame {
   type: "inngest.step";
   step_id: string;
-  status: "running" | "completed" | "errored";
+  status: "running";
   data?: unknown;
 }
+
+export interface SSEStepCompletedFrame {
+  type: "inngest.step";
+  step_id: string;
+  status: "completed";
+  data?: unknown;
+}
+
+export interface SSEStepErroredFrame extends StepErrorData {
+  type: "inngest.step";
+  step_id: string;
+  status: "errored";
+}
+
+export type SSEStepFrame =
+  | SSEStepRunningFrame
+  | SSEStepCompletedFrame
+  | SSEStepErroredFrame;
 
 export interface SSERedirectFrame {
   type: "inngest.redirect_info";
@@ -354,11 +383,27 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       return { type: "inngest.result", data: parsed };
     case "inngest.step": {
       const obj = parsed as Record<string, unknown>;
+      const stepId = obj.step_id as string;
+      const status = obj.status as string;
+
+      if (status === "errored") {
+        const err = (obj.data ?? {}) as Record<string, unknown>;
+        return {
+          type: "inngest.step",
+          step_id: stepId,
+          status: "errored",
+          will_retry:
+            typeof err.will_retry === "boolean" ? err.will_retry : false,
+          error: typeof err.error === "string" ? err.error : "unknown",
+          attempt: typeof err.attempt === "number" ? err.attempt : 0,
+        };
+      }
+
       return {
-        type: "inngest.step",
-        step_id: obj.step_id as string,
-        status: obj.status as SSEStepFrame["status"],
-        ...(obj.data !== undefined ? { data: obj.data } : {}),
+        type: "inngest.step" as const,
+        step_id: stepId,
+        status: status as "running" | "completed",
+        data: obj.data,
       };
     }
     case "inngest.redirect_info": {

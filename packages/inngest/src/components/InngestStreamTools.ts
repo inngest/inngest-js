@@ -5,6 +5,7 @@ import {
   buildSSEStepFrame,
   buildSSEStreamFrame,
   type SSEStepFrame,
+  type StepErrorData,
 } from "./execution/streaming.ts";
 
 /**
@@ -121,10 +122,13 @@ export class InngestStream {
    * Emit a step lifecycle SSE frame (`step:running`, `step:completed`,
    * `step:errored`). Internal use only — called by the execution engine.
    */
+  stepLifecycle(stepId: string, status: "running"): void;
+  stepLifecycle(stepId: string, status: "completed"): void;
+  stepLifecycle(stepId: string, status: "errored", data: StepErrorData): void;
   stepLifecycle(
     stepId: string,
     status: SSEStepFrame["status"],
-    data?: unknown,
+    data?: StepErrorData,
   ): void {
     this.enqueue(buildSSEStepFrame(stepId, status, data));
   }

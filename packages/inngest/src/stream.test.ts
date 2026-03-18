@@ -64,7 +64,9 @@ describe("streamRun", () => {
           type: "inngest.step",
           step_id: "s1",
           status: "errored",
-          data: { will_retry: true, error: "boom", attempt: 0 },
+          will_retry: true,
+          error: "boom",
+          attempt: 0,
         },
       ]),
     );
@@ -94,7 +96,9 @@ describe("streamRun", () => {
           type: "inngest.step",
           step_id: "s2",
           status: "errored",
-          data: { will_retry: false, error: "fail", attempt: 1 },
+          will_retry: false,
+          error: "fail",
+          attempt: 1,
         },
       ]),
     );
@@ -331,7 +335,9 @@ describe("streamRun", () => {
           type: "inngest.step",
           step_id: "B",
           status: "errored",
-          data: { will_retry: true, error: "fail", attempt: 0 },
+          will_retry: true,
+          error: "fail",
+          attempt: 0,
         },
         { type: "inngest.step", step_id: "A", status: "completed" },
       ]),
@@ -357,7 +363,9 @@ describe("streamRun", () => {
           type: "inngest.step",
           step_id: "s1",
           status: "errored",
-          data: { will_retry: true, error: "boom", attempt: 0 },
+          will_retry: true,
+          error: "boom",
+          attempt: 0,
         },
       ]),
     );
@@ -366,5 +374,38 @@ describe("streamRun", () => {
 
     // onRollback should not fire when there's nothing to roll back
     expect(rolledBack).toEqual([]);
+  });
+
+  test("committed chunks survive rollback when same step ID retries", async () => {
+    const rolledBack: number[] = [];
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: (count) => rolledBack.push(count),
+    });
+    rs._fromSource(
+      framesFrom([
+        // Step "A" runs and completes — its chunks are committed
+        { type: "inngest.step", step_id: "A", status: "running" },
+        { type: "stream", data: "first-A", channel: "A" },
+        { type: "inngest.step", step_id: "A", status: "completed" },
+        // Same step ID runs again (retry) and errors
+        { type: "inngest.step", step_id: "A", status: "running" },
+        { type: "stream", data: "retry-A", channel: "A" },
+        {
+          type: "inngest.step",
+          step_id: "A",
+          status: "errored",
+          will_retry: true,
+          error: "retry fail",
+          attempt: 1,
+        },
+      ]),
+    );
+
+    await rs;
+
+    // Only the retry chunk should be rolled back, not the committed one
+    expect(rolledBack).toEqual([1]);
+    expect(rs.chunks).toEqual(["first-A"]);
   });
 });

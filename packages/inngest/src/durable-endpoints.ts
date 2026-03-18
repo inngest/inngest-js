@@ -18,12 +18,17 @@ export type {
   SSEMetadataFrame,
   SSERedirectFrame,
   SSEResultFrame,
+  SSEStepCompletedFrame,
+  SSEStepErroredFrame,
   SSEStepFrame,
+  SSEStepRunningFrame,
   SSEStreamFrame,
+  StepErrorData,
 } from "./components/execution/streaming.ts";
 
 export {
   type RunStreamOptions,
+  type StepErrorInfo,
   type SubscribeToRunOptions,
   streamRun,
   subscribeToRun,
