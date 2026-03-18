@@ -439,23 +439,17 @@ class InngestExecutionEngine
   /**
    * Handles `function-resolved` when the response should be delivered as SSE.
    *
-   * Triggered when `stream.push()`/`pipe()` was called, the client sent
-   * `Accept: text/event-stream`, or the function returned a streaming
-   * Response. The checkpointable data is the function's return value — the
-   * SSE frames are just a delivery mechanism.
+   * Triggered when the client sent `Accept: text/event-stream` but
+   * `stream.push()`/`pipe()` was NOT called during execution. The
+   * checkpointable data is the function's return value — the SSE frames are
+   * just a delivery mechanism.
    */
   private handleActivatedStreamResolved(
     checkpoint: Simplify<
       { type: "function-resolved" } & Checkpoints["function-resolved"]
     >,
   ): ExecutionResult {
-    // If the function returned a Response, extract its body text so the
-    // result frame contains the actual content rather than `{}`.
-    let resultData: unknown = checkpoint.data;
-    if (checkpoint.data instanceof Response) {
-      // Can't await here since transformOutput is sync; use raw data
-      resultData = checkpoint.data;
-    }
+    const resultData: unknown = checkpoint.data;
 
     // Close the stream with a terminal result frame
     this.streamTools.close(resultData);
@@ -825,14 +819,20 @@ class InngestExecutionEngine
           return this.transformOutput({ data: resultData });
         }
 
-        // If the client accepts SSE or the function returned a streaming
-        // Response (but stream.push() was NOT called), build the SSE
-        // Response now.
-        if (
-          this.options.acceptsSSE ||
-          (checkpoint.data instanceof Response &&
-            checkpoint.data.body instanceof ReadableStream)
-        ) {
+        // Response pass-through: the user explicitly constructed a Response,
+        // so deliver it as-is regardless of Accept headers. The Response body
+        // may be a ReadableStream that can only be consumed once, so
+        // checkpoint a placeholder in the background instead of trying to
+        // serialize it.
+        if (checkpoint.data instanceof Response) {
+          void this.checkpointReturnValue(null);
+          return this.transformOutput({ data: checkpoint.data });
+        }
+
+        // If the client accepts SSE (but stream.push() was NOT called),
+        // build the SSE Response now. Only applies to plain return values
+        // (strings, objects, etc.) — Response objects are handled above.
+        if (this.options.acceptsSSE) {
           return this.handleActivatedStreamResolved(checkpoint);
         }
 

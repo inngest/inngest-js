@@ -999,9 +999,9 @@ export class InngestCommHandler<
         });
       },
       "function-resolved": ({ data }) => {
-        // If the execution returned a Response with a ReadableStream body
-        // (SSE streaming), pipe it through as a streaming response.
-        if (data instanceof Response && data.body instanceof ReadableStream) {
+        // If the execution returned a Response (SSE from the engine or a
+        // user-constructed Response), pass it through directly.
+        if (data instanceof Response) {
           return data;
         }
 

@@ -67,6 +67,32 @@ export default function Home() {
     }
   }
 
+  async function handleDownload() {
+    try {
+      const text = lines.join("");
+      const res = await fetch(
+        `/api/download?text=${encodeURIComponent(text)}`,
+      );
+
+      if (!res.ok) {
+        const body = await res.text();
+        setLines((prev) => [...prev, `[download failed: ${body}]\n`]);
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transcript.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLines((prev) => [...prev, `[download error] ${msg}\n`]);
+    }
+  }
+
   async function handleInput(value: string) {
     setWaitingForInput(false);
     const language = value.trim();
@@ -113,6 +139,17 @@ export default function Home() {
           }}
         >
           {running ? "Streaming..." : "Run"}
+        </button>
+        <button
+          onClick={() => handleDownload()}
+          disabled={running || lines.length === 0}
+          style={{
+            padding: "8px 20px",
+            fontSize: 14,
+            cursor: running || lines.length === 0 ? "not-allowed" : "pointer",
+          }}
+        >
+          Download Transcript
         </button>
       </div>
 
