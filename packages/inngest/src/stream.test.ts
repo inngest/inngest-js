@@ -66,7 +66,6 @@ describe("streamRun", () => {
           status: "errored",
           will_retry: true,
           error: "boom",
-          attempt: 0,
         },
       ]),
     );
@@ -98,7 +97,6 @@ describe("streamRun", () => {
           status: "errored",
           will_retry: false,
           error: "fail",
-          attempt: 1,
         },
       ]),
     );
@@ -165,18 +163,18 @@ describe("streamRun", () => {
   });
 
   test("calls onMetadata when metadata frame arrives", async () => {
-    const metadata: Array<{ runId: string; attempt: number }> = [];
+    const metadata: Array<{ runId: string }> = [];
 
     const rs = streamRun("http://test", {
-      onMetadata: (runId, attempt) => metadata.push({ runId, attempt }),
+      onMetadata: (runId) => metadata.push({ runId }),
     });
     rs._fromSource(
-      framesFrom([{ type: "inngest.metadata", run_id: "run-123", attempt: 0 }]),
+      framesFrom([{ type: "inngest.metadata", run_id: "run-123" }]),
     );
 
     await rs;
 
-    expect(metadata).toEqual([{ runId: "run-123", attempt: 0 }]);
+    expect(metadata).toEqual([{ runId: "run-123" }]);
   });
 
   test("stops consuming after inngest.result frame", async () => {
@@ -337,7 +335,6 @@ describe("streamRun", () => {
           status: "errored",
           will_retry: true,
           error: "fail",
-          attempt: 0,
         },
         { type: "inngest.step", step_id: "A", status: "completed" },
       ]),
@@ -365,7 +362,6 @@ describe("streamRun", () => {
           status: "errored",
           will_retry: true,
           error: "boom",
-          attempt: 0,
         },
       ]),
     );
@@ -397,7 +393,6 @@ describe("streamRun", () => {
           status: "errored",
           will_retry: true,
           error: "retry fail",
-          attempt: 1,
         },
       ]),
     );

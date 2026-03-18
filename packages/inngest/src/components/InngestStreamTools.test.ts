@@ -89,7 +89,6 @@ describe("InngestStream.stepLifecycle", () => {
     s.stepLifecycle("my-step", "errored", {
       will_retry: true,
       error: "boom",
-      attempt: 0,
     });
     s.end();
 

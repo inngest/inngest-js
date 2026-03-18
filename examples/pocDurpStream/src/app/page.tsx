@@ -92,7 +92,14 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: 32, fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto" }}>
+    <main
+      style={{
+        padding: 32,
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: 720,
+        margin: "0 auto",
+      }}
+    >
       <h1 style={{ marginBottom: 16 }}>Durp streaming POC</h1>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

@@ -66,7 +66,7 @@ export const GET = inngest.endpoint(async () => {
     stream.push(`\n📚 Translating to ${language}:\n`);
     await sleep(300);
 
-    if (language === "Sindarin" && Math.random() < 0.1) {
+    if (language.toLowerCase() === "sindarin" && Math.random() < 0.1) {
       stream.push("🧙 ye shall not pass!\n");
       throw new Error("Ye shall not pass!");
     } else if (language.toLowerCase() === "dog") {
@@ -77,6 +77,20 @@ export const GET = inngest.endpoint(async () => {
       `Translate the following text to ${language}. Output only the translation, no commentary.\n\n${sentences}`,
     );
   });
+
+  if (language.toLowerCase() === "sindarin") {
+    Promise.all([
+      await step.run("sindarin-fist-bump", async () => {
+        sleep(300);
+        stream.push("\nnerd cred 👊");
+        return "you win the game";
+      }),
+      await step.run("example-non-streamer", async () => {
+        sleep(3000);
+        return "Did some processing!";
+      }),
+    ]);
+  }
 
   return "\n🎉 We're all done here! Bye bye!";
 });

@@ -9,7 +9,6 @@ import { createTimeoutPromise } from "../../helpers/promises.ts";
 export interface SSEMetadataFrame {
   type: "inngest.metadata";
   run_id: string;
-  attempt: number;
 }
 
 export interface SSEStreamFrame {
@@ -31,7 +30,6 @@ export interface SSEResultFrame {
 export interface StepErrorData {
   will_retry: boolean;
   error: string;
-  attempt: number;
 }
 
 export interface SSEStepRunningFrame {
@@ -97,10 +95,10 @@ function buildSSEFrame(event: string, data: unknown): string {
  * Builds an SSE metadata frame string for a streaming response.
  *
  * The frame follows the Server-Sent Events format and provides run context
- * (run ID and attempt number) to consumers of the stream.
+ * (run ID) to consumers of the stream.
  */
-export function buildSSEMetadataFrame(runId: string, attempt: number): string {
-  return buildSSEFrame("inngest.metadata", { run_id: runId, attempt });
+export function buildSSEMetadataFrame(runId: string): string {
+  return buildSSEFrame("inngest.metadata", { run_id: runId });
 }
 
 /**
@@ -368,7 +366,6 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       return {
         type: "inngest.metadata",
         run_id: obj.run_id as string,
-        attempt: obj.attempt as number,
       };
     }
     case "stream": {
@@ -395,7 +392,6 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
           will_retry:
             typeof err.will_retry === "boolean" ? err.will_retry : false,
           error: typeof err.error === "string" ? err.error : "unknown",
-          attempt: typeof err.attempt === "number" ? err.attempt : 0,
         };
       }
 

@@ -85,7 +85,6 @@ export async function* subscribeToRun(
 export interface StepErrorInfo {
   willRetry: boolean;
   error: string;
-  attempt: number;
 }
 
 export interface RunStreamOptions<TData = unknown> {
@@ -116,7 +115,7 @@ export interface RunStreamOptions<TData = unknown> {
   /** Called when a step errors. */
   onStepErrored?: (stepId: string, info: StepErrorInfo) => void;
   /** Called when run metadata is received. */
-  onMetadata?: (runId: string, attempt: number) => void;
+  onMetadata?: (runId: string) => void;
   /** Called when the stream is fully consumed (including on abort or error). */
   onDone?: () => void;
   /** Called when a stream-level error occurs (network failure, non-200, etc.). */
@@ -303,7 +302,6 @@ export class RunStream<TData = unknown> {
               this.opts.onStepErrored?.(frame.step_id, {
                 willRetry: frame.will_retry,
                 error: frame.error,
-                attempt: frame.attempt,
               });
             }
             break;
@@ -312,7 +310,7 @@ export class RunStream<TData = unknown> {
             this.opts.onResult?.(frame.data);
             break outer;
           case "inngest.metadata":
-            this.opts.onMetadata?.(frame.run_id, frame.attempt);
+            this.opts.onMetadata?.(frame.run_id);
             break;
           default:
             break;
@@ -328,7 +326,6 @@ export class RunStream<TData = unknown> {
         this.opts.onStepErrored?.(stepId, {
           willRetry: false,
           error: "stream disconnected",
-          attempt: 0,
         });
       }
     } catch (error) {

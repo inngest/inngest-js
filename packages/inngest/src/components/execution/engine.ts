@@ -461,10 +461,7 @@ class InngestExecutionEngine
     this.streamTools.close(resultData);
 
     // Prepend the metadata frame to the stream
-    const metadataFrame = buildSSEMetadataFrame(
-      this.fnArg.runId,
-      this.fnArg.attempt,
-    );
+    const metadataFrame = buildSSEMetadataFrame(this.fnArg.runId);
     const clientStream = prependToStream(
       new TextEncoder().encode(metadataFrame),
       this.streamTools.readable,
@@ -502,10 +499,7 @@ class InngestExecutionEngine
     // Sync mode: resolve the early stream response so the HTTP layer sends
     // the SSE Response to the client immediately.
     if (this.earlyStreamResponse) {
-      const metadataFrame = buildSSEMetadataFrame(
-        this.fnArg.runId,
-        this.fnArg.attempt,
-      );
+      const metadataFrame = buildSSEMetadataFrame(this.fnArg.runId);
 
       const clientStream = prependToStream(
         new TextEncoder().encode(metadataFrame),
@@ -609,10 +603,7 @@ class InngestExecutionEngine
       // Prepend the SSE metadata frame so subscribers know the run ID.
       // No header frame is needed — the realtime publish/tee endpoint
       // forwards raw bytes directly to subscribers.
-      const metadataFrame = buildSSEMetadataFrame(
-        this.fnArg.runId,
-        this.fnArg.attempt,
-      );
+      const metadataFrame = buildSSEMetadataFrame(this.fnArg.runId);
 
       const bodyStream = prependToStream(
         encoder.encode(metadataFrame),
@@ -1501,7 +1492,6 @@ class InngestExecutionEngine
     this.streamTools.stepLifecycle(id, "errored", {
       will_retry: !isFinal,
       error: error instanceof Error ? error.message : String(error),
-      attempt: this.fnArg.attempt,
     });
 
     return {
