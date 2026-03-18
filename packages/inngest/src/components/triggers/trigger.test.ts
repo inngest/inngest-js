@@ -396,6 +396,32 @@ describe("eventType with schema", () => {
       schema: z.array(z.object({ a: z.string() })),
     });
   });
+
+  test("schema is union", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", {
+            schema: z.union([
+              z.object({ a: z.string() }),
+              z.object({ b: z.number() }),
+            ]),
+          }),
+        ],
+      },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: number }>();
+      },
+    );
+  });
 });
 
 test("eventType with version", () => {
