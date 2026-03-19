@@ -1,5 +1,13 @@
 # inngest
 
+## 4.0.2
+
+### Patch Changes
+
+- [#1387](https://github.com/inngest/inngest-js/pull/1387) [`983f527b`](https://github.com/inngest/inngest-js/commit/983f527bdc202845752d060d9429868ff80d8bb6) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing function run hang
+
+- [#1387](https://github.com/inngest/inngest-js/pull/1387) [`983f527b`](https://github.com/inngest/inngest-js/commit/983f527bdc202845752d060d9429868ff80d8bb6) Thanks [@amh4r](https://github.com/amh4r)! - Fallback to async flow on checkpoint error
+
 ## 4.0.1
 
 ### Patch Changes
