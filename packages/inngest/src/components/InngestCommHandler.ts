@@ -914,6 +914,15 @@ export class InngestCommHandler<
       );
     }
 
+    // Fail early if we're in cloud mode without a signing key, rather than
+    // letting the checkpoint API call fail with a confusing 401.
+    if (!this.checkModeConfiguration()) {
+      return actions.transformResponse(
+        "creating signing key error response",
+        internalServerErrorResponse,
+      );
+    }
+
     // Check we're not in a context already...
     const ctx = await getAsyncCtx();
     if (ctx) {
