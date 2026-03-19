@@ -457,7 +457,7 @@ class InngestExecutionEngine
       stepResult?: OutgoingOp,
       resume = true,
       force = false,
-    ) => {
+    ): Promise<ExecutionResult | undefined> => {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
@@ -498,16 +498,27 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
-          // If checkpointing fails for any reason, fall back to the async
-          // flow
+          // If checkpointing fails for any reason, fall back to returning
+          // ALL buffered steps to the executor via the normal async flow.
+          // The executor persists completed steps and rediscovers any
+          // parallel/errored steps on the next invocation.
           this.devDebug(
             "error checkpointing after step run, so falling back to async",
             err,
           );
 
-          if (stepResult) {
-            return stepRanHandler(stepResult);
+          const buffered = this.state.checkpointingStepBuffer;
+
+          if (buffered.length) {
+            return {
+              type: "steps-found" as const,
+              ctx: this.fnArg,
+              ops: this.ops,
+              steps: buffered as [OutgoingOp, ...OutgoingOp[]],
+            };
           }
+
+          return;
         } finally {
           // Clear the checkpointing buffer
           this.state.checkpointingStepBuffer = [];
@@ -605,7 +616,11 @@ class InngestExecutionEngine
         return this.checkpointAndSwitchToAsync([
           {
             op: StepOpCode.DiscoveryRequest,
-            id: _internals.hashId("discovery-request"), // ID doesn't matter
+
+            // Append with time because we don't want Executor-side
+            // idempotency to dedupe. There may have been a previous
+            // discovery request.
+            id: _internals.hashId(`discovery-request-${Date.now()}`),
           },
         ]);
       },
@@ -721,7 +736,14 @@ class InngestExecutionEngine
         "function-rejected": async (checkpoint) => {
           // If we have buffered steps, attempt checkpointing them first
           if (this.state.checkpointingStepBuffer.length) {
-            await attemptCheckpointAndResume(undefined, false);
+            const fallback = await attemptCheckpointAndResume(
+              undefined,
+              false,
+              true,
+            );
+            if (fallback) {
+              return fallback;
+            }
           }
 
           return await this.transformOutput({ error: checkpoint.error });
@@ -767,7 +789,14 @@ class InngestExecutionEngine
                 // Flush buffered steps before falling back to async,
                 // so previously-successful steps aren't lost.
                 if (this.state.checkpointingStepBuffer.length) {
-                  await attemptCheckpointAndResume(undefined, false, true);
+                  const fallback = await attemptCheckpointAndResume(
+                    undefined,
+                    false,
+                    true,
+                  );
+                  if (fallback) {
+                    return fallback;
+                  }
                 }
 
                 // If we failed, go back to the regular async flow.
@@ -786,7 +815,14 @@ class InngestExecutionEngine
             // back with requestedRunStep, those steps would be missing
             // from stepState, causing "step not found" errors.
             if (this.state.checkpointingStepBuffer.length) {
-              await attemptCheckpointAndResume(undefined, false, true);
+              const fallback = await attemptCheckpointAndResume(
+                undefined,
+                false,
+                true,
+              );
+              if (fallback) {
+                return fallback;
+              }
             }
 
             return maybeReturnNewSteps();
@@ -814,7 +850,11 @@ class InngestExecutionEngine
             steps: [
               {
                 op: StepOpCode.DiscoveryRequest,
-                id: _internals.hashId("discovery-request"), // ID doesn't matter
+
+                // Append with time because we don't want Executor-side
+                // idempotency to dedupe. There may have been a previous
+                // discovery request.
+                id: _internals.hashId(`discovery-request-${Date.now()}`),
               },
             ],
           };
