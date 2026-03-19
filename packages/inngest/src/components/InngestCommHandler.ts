@@ -1005,8 +1005,15 @@ export class InngestCommHandler<
           return data;
         }
 
-        // Non-streaming: return the data directly.
-        return data;
+        // Non-streaming: wrap in a framework response.
+        return actions.transformResponse("creating sync success response", {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(data)),
+        });
       },
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
@@ -1595,6 +1602,14 @@ export class InngestCommHandler<
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
+              ),
+              fn_id: await actions.headers(
+                "getting function ID for forced execution",
+                headerKeys.InngestFnId,
+              ),
+              qi_id: await actions.headers(
+                "getting queue item ref for forced execution",
+                headerKeys.InngestQueueItemRef,
               ),
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },

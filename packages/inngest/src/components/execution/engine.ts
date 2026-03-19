@@ -839,12 +839,19 @@ class InngestExecutionEngine
 
         // Non-streaming path
         const transformedData = checkpoint.data;
+        const wrappedResponse = new Response(
+          JSON.stringify(transformedData),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
 
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(transformedData),
+            data: await this.options.createResponse!(wrappedResponse),
           },
         ]);
 
