@@ -597,11 +597,23 @@ class InngestExecutionEngine
         // Otherwise we're good to start executing things right now.
         const result = await this.executeStep(steps[0]);
 
+        const transformed = await stepRanHandler(result);
+        if (transformed.type !== "step-ran") {
+          throw new Error(
+            "Unexpected checkpoint handler result type after running step in sync mode",
+          );
+        }
+
         if (result.error) {
-          return this.checkpointAndSwitchToAsync([result]);
+          return this.checkpointAndSwitchToAsync([transformed.step]);
         }
 
         // Resume the step with original data for user code
+        //
+        // Note: We should likely also pass this through `transformOutput` and
+        // then `transformInput` to mimic the entire middleware cycle, to ensure
+        // that any transformations that purposefully skew the resulting type
+        // are supported.
         const stepToResume = this.resumeStepWithResult(result);
 
         // Clear executingStep now that the step result has been processed.
@@ -609,7 +621,13 @@ class InngestExecutionEngine
         // emit a false positive NESTING_STEPS warning.
         delete this.state.executingStep;
 
-        return void (await this.checkpoint([stepToResume]));
+        // Checkpoint with transformed data from middleware
+        const stepForCheckpoint = {
+          ...stepToResume,
+          data: transformed.step.data,
+        };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {
@@ -1177,9 +1195,15 @@ class InngestExecutionEngine
       isFinal,
     );
 
+    // Serialize the error so it survives JSON.stringify (raw Error
+    // objects have non-enumerable properties that get dropped).
+    // This is critical for checkpoint requests where the error is
+    // sent as JSON in the request body.
+    const serialized = serializeError(error);
+
     return {
       ...outgoingOp,
-      error,
+      error: serialized,
       op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
       ...(metadata && metadata.length > 0 ? { metadata } : {}),
     };
