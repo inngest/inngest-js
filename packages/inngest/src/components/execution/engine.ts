@@ -605,7 +605,11 @@ class InngestExecutionEngine
         return this.checkpointAndSwitchToAsync([
           {
             op: StepOpCode.DiscoveryRequest,
-            id: _internals.hashId("discovery-request"), // ID doesn't matter
+
+            // Append with time because we don't want Executor-side
+            // idempotency to dedupe. There may have been a previous
+            // discovery request.
+            id: _internals.hashId(`discovery-request-${Date.now()}`),
           },
         ]);
       },
@@ -814,7 +818,11 @@ class InngestExecutionEngine
             steps: [
               {
                 op: StepOpCode.DiscoveryRequest,
-                id: _internals.hashId("discovery-request"), // ID doesn't matter
+
+                // Append with time because we don't want Executor-side
+                // idempotency to dedupe. There may have been a previous
+                // discovery request.
+                id: _internals.hashId(`discovery-request-${Date.now()}`),
               },
             ],
           };
