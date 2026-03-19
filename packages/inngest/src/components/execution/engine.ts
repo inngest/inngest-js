@@ -1022,6 +1022,17 @@ class InngestExecutionEngine
             }
             this.resumeStepWithResult(stepResult);
             delete this.state.executingStep;
+
+            // Execute remaining unfulfilled parallel steps in this
+            // batch so that Promise.all can resolve and the function
+            // continues. Without this, the other steps' promises stay
+            // pending forever and the core loop deadlocks.
+            const parallelError =
+              await this.executeRemainingParallelSteps(steps, stepResult.id);
+            if (parallelError) {
+              return stepRanHandler(parallelError);
+            }
+
             return;
           }
 
@@ -1069,6 +1080,13 @@ class InngestExecutionEngine
             i,
           );
           if (output?.type === "function-resolved") {
+            // When running to completion (DE re-entry), return the
+            // function result directly instead of wrapping it in a
+            // steps-found checkpoint for the IS.
+            if (this.options.runToCompletion) {
+              return output;
+            }
+
             const steps = this.state.checkpointingStepBuffer.concat({
               op: StepOpCode.RunComplete,
               id: _internals.hashId("complete"), // ID is not important here
@@ -1146,6 +1164,24 @@ class InngestExecutionEngine
               // If we're here, we successfully ran a step, so we may now need
               // to checkpoint it depending on the step buffer configured.
               return await attemptCheckpointAndResume(stepResult);
+            }
+
+            // When running to completion, execute all unfulfilled
+            // steps locally so Promise.all resolves and the function
+            // can continue. Without this the handler returns them to
+            // the IS as a 206, which causes an infinite retry loop.
+            if (this.options.runToCompletion) {
+              const parallelError =
+                await this.executeRemainingParallelSteps(newSteps);
+              if (parallelError) {
+                if (this.state.checkpointingStepBuffer.length) {
+                  await attemptCheckpointAndResume(undefined, false, true);
+                }
+
+                return stepRanHandler(parallelError);
+              }
+
+              return;
             }
 
             // Flush any buffered checkpoint steps before returning
@@ -1230,6 +1266,40 @@ class InngestExecutionEngine
      * find it, but also that we don't reset if we found and executed it.
      */
     return void this.timeout?.reset();
+  }
+
+  /**
+   * Execute all unfulfilled parallel steps so that `Promise.all` can resolve
+   * and the function continues. Used in `runToCompletion` mode where the SDK
+   * must handle parallelism locally instead of deferring to the IS.
+   *
+   * Returns the first error result if any step fails, or `undefined` on
+   * success.
+   */
+  private async executeRemainingParallelSteps(
+    steps: FoundStep[],
+    excludeId?: string,
+  ): Promise<OutgoingOp | undefined> {
+    for (const step of steps) {
+      if (step.hashedId === excludeId || step.hasStepState || !step.fn) {
+        continue;
+      }
+
+      const result = await this.executeStep(step);
+      if (result.error) {
+        return result;
+      }
+
+      const userlandStep = this.state.steps.get(result.id);
+      if (userlandStep) {
+        userlandStep.handled = false;
+      }
+
+      this.resumeStepWithResult(result);
+      delete this.state.executingStep;
+    }
+
+    return undefined;
   }
 
   /**
