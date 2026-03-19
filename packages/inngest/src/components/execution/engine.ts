@@ -558,11 +558,12 @@ class InngestExecutionEngine
 
     void (async () => {
       try {
-        const redirect =
-          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
-            this.fnArg.runId,
-            this.state.checkpointedRun!.realtimeToken,
-          );
+        const redirect = await this.options.client[
+          "inngestApi"
+        ].getRealtimeStreamRedirect(
+          this.fnArg.runId,
+          this.state.checkpointedRun!.realtimeToken,
+        );
 
         this.streamTools.sendRedirectInfo({
           run_id: this.fnArg.runId,
@@ -962,7 +963,7 @@ class InngestExecutionEngine
         // We need to do this even here for async, as we could be returning
         // data from an API endpoint, even if we were triggered async.
         if (this.options.createResponse) {
-          const wrappedResponse = new Response(JSON.stringify(data), {
+          const wrappedResponse = new Response(JSON.stringify(resultData), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });

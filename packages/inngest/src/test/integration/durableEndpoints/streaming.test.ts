@@ -59,13 +59,11 @@ test(
     });
 
     const { port, server } = await createEndpointServer(handler);
-    onTestFinished(
-      () => {
-        return new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        });
-      },
-    );
+    onTestFinished(() => {
+      return new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    });
 
     // --- Phase 1: Initial sync request → SSE stream ---
     const res = await fetch(`http://localhost:${port}/api/demo`, {

@@ -560,16 +560,6 @@ export class InngestApi {
   }
 
   /**
-   * Fetch the output of a completed run using a token.
-   *
-   * This uses token-based auth (not signing key) and is intended for use by
-   * proxy endpoints that fetch results on behalf of users.
-   *
-   * @param runId - The ID of the run to fetch output for
-   * @param token - The token used to authenticate the request
-   * @returns The raw Response from the API
-   */
-  /**
    * POST stream data to the realtime publish/tee endpoint, forwarding raw
    * bytes to all subscribers via the broadcaster.
    */
@@ -635,6 +625,16 @@ export class InngestApi {
     return { token, url: sseUrl.toString() };
   }
 
+  /**
+   * Fetch the output of a completed run using a token.
+   *
+   * This uses token-based auth (not signing key) and is intended for use by
+   * proxy endpoints that fetch results on behalf of users.
+   *
+   * @param runId - The ID of the run to fetch output for
+   * @param token - The token used to authenticate the request
+   * @returns The raw Response from the API
+   */
   async getRunOutput(runId: string, token: string): Promise<Response> {
     const url = await this.getTargetUrl(`/v1/http/runs/${runId}/output`);
     url.searchParams.set("token", token);

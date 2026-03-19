@@ -85,12 +85,12 @@ export const GET = inngest.endpoint(async () => {
 
   if (language.toLowerCase() === "sindarin") {
     await Promise.all([
-      await step.run("sindarin-fist-bump", async () => {
+      step.run("sindarin-fist-bump", async () => {
         await sleep(300);
         stream.push("\nnerd cred 👊");
         return "you win the game";
       }),
-      await step.run("example-non-streamer", async () => {
+      step.run("example-non-streamer", async () => {
         await sleep(3000);
         return "Did some processing!";
       }),

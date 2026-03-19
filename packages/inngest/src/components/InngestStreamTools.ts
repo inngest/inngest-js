@@ -228,7 +228,11 @@ export class InngestStream {
    * DE goes async. Does NOT close the writer — more stream frames may follow
    * before the DE actually switches to async mode. Internal use only.
    */
-  sendRedirectInfo(data: { run_id: string; token: string; url?: string }): void {
+  sendRedirectInfo(data: {
+    run_id: string;
+    token: string;
+    url?: string;
+  }): void {
     this.enqueue(buildSSERedirectFrame(data));
   }
 

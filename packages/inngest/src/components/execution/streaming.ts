@@ -107,10 +107,7 @@ export function buildSSEMetadataFrame(runId: string): string {
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSSEStreamFrame(
-  data: unknown,
-  stepId?: string,
-): string {
+export function buildSSEStreamFrame(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
   if (stepId) payload.step_id = stepId;
   return buildSSEFrame("stream", payload);

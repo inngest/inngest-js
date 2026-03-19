@@ -186,7 +186,8 @@ export function getStreamData(events: SSEEvent[]): string[] {
     .filter((e) => e.event === "stream")
     .map((e) => {
       try {
-        return JSON.parse(e.data) as string;
+        const parsed = JSON.parse(e.data);
+        return (parsed?.data ?? parsed) as string;
       } catch {
         return e.data;
       }
@@ -328,6 +329,7 @@ export async function pollForAsyncStream(
     } catch {
       // Dev server may not have the data ready yet
     }
+    await sleep(intervalMs);
   }
 
   return [];
