@@ -14,7 +14,7 @@ export interface SSEMetadataFrame {
 export interface SSEStreamFrame {
   type: "stream";
   data: unknown;
-  channel?: string;
+  step_id?: string;
 }
 
 export interface SSEResultFrame {
@@ -109,10 +109,10 @@ export function buildSSEMetadataFrame(runId: string): string {
  */
 export function buildSSEStreamFrame(
   data: unknown,
-  channel?: string,
+  stepId?: string,
 ): string {
   const payload: Record<string, unknown> = { data };
-  if (channel) payload.channel = channel;
+  if (stepId) payload.step_id = stepId;
   return buildSSEFrame("stream", payload);
 }
 
@@ -373,7 +373,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       return {
         type: "stream",
         data: obj.data,
-        ...(typeof obj.channel === "string" ? { channel: obj.channel } : {}),
+        ...(typeof obj.step_id === "string" ? { step_id: obj.step_id } : {}),
       };
     }
     case "inngest.result":

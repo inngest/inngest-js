@@ -1317,13 +1317,14 @@ class InngestExecutionEngine
       store.execution.executingStep = {
         id,
         name: displayName,
+        hashedId,
       };
     }
 
     this.devDebug(`executing step "${id}"`);
 
     // Emit step:running lifecycle frame
-    this.streamTools.stepLifecycle(id, "running");
+    this.streamTools.stepLifecycle(hashedId, "running");
 
     let interval: GoInterval | undefined;
 
@@ -1371,7 +1372,7 @@ class InngestExecutionEngine
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
         // Emit step:completed lifecycle frame
-        this.streamTools.stepLifecycle(id, "completed");
+        this.streamTools.stepLifecycle(hashedId, "completed");
 
         return {
           ...outgoingOp,
@@ -1385,6 +1386,7 @@ class InngestExecutionEngine
         return this.buildStepErrorOp({
           error,
           id,
+          hashedId,
           outgoingOp,
           stepInfo,
         });
@@ -1471,11 +1473,13 @@ class InngestExecutionEngine
   private async buildStepErrorOp({
     error,
     id,
+    hashedId,
     outgoingOp,
     stepInfo,
   }: {
     error: unknown;
     id: string;
+    hashedId: string;
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
@@ -1489,7 +1493,7 @@ class InngestExecutionEngine
     );
 
     // Emit step:errored lifecycle frame
-    this.streamTools.stepLifecycle(id, "errored", {
+    this.streamTools.stepLifecycle(hashedId, "errored", {
       will_retry: !isFinal,
       error: error instanceof Error ? error.message : String(error),
     });

@@ -92,11 +92,11 @@ export class InngestStream {
   }
 
   /**
-   * Resolve the current channel for stream frames. Defaults to the
-   * executing step's ID (read from ALS), or undefined if outside a step.
+   * Resolve the current step ID for stream frames. Returns the executing
+   * step's hashed ID (read from ALS), or undefined if outside a step.
    */
-  private currentChannel(): string | undefined {
-    return getAsyncCtxSync()?.execution?.executingStep?.id;
+  private currentStepId(): string | undefined {
+    return getAsyncCtxSync()?.execution?.executingStep?.hashedId;
   }
 
   private activate(): void {
@@ -134,17 +134,17 @@ export class InngestStream {
   }
 
   /**
-   * Write a single SSE stream frame containing `data`. The current step ID
-   * is automatically included as the channel for rollback tracking.
+   * Write a single SSE stream frame containing `data`. The current step's
+   * hashed ID is automatically included as step_id for rollback tracking.
    */
   push(data: unknown): void {
     this.activate();
 
-    const channel = this.currentChannel();
+    const stepId = this.currentStepId();
 
     let frame: string;
     try {
-      frame = buildSSEStreamFrame(data, channel);
+      frame = buildSSEStreamFrame(data, stepId);
     } catch {
       // data is not JSON-serializable (e.g. circular reference) — skip
       return;
@@ -198,7 +198,7 @@ export class InngestStream {
    * stream frame and collecting the concatenated result.
    */
   private async pipeIterable(source: AsyncIterable<string>): Promise<string> {
-    const channel = this.currentChannel();
+    const stepId = this.currentStepId();
     const chunks: string[] = [];
 
     for await (const chunk of source) {
@@ -206,7 +206,7 @@ export class InngestStream {
 
       let frame: string;
       try {
-        frame = buildSSEStreamFrame(chunk, channel);
+        frame = buildSSEStreamFrame(chunk, stepId);
       } catch {
         continue;
       }

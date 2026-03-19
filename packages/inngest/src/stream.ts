@@ -161,7 +161,7 @@ export function streamRun<TData = unknown>(
  * @internal
  */
 export class RunStream<TData = unknown> {
-  private _tagged: Array<{ data: TData; channel?: string }> = [];
+  private _tagged: Array<{ data: TData; step_id?: string }> = [];
   private _chunks: TData[] = [];
   private _consumed = false;
   private _source: AsyncIterable<SSEFrame> | undefined;
@@ -177,32 +177,32 @@ export class RunStream<TData = unknown> {
     return this._chunks;
   }
 
-  private _pushChunk(data: TData, channel?: string): void {
-    this._tagged.push({ data, channel });
+  private _pushChunk(data: TData, stepId?: string): void {
+    this._tagged.push({ data, step_id: stepId });
     this._chunks.push(data);
   }
 
   /**
-   * Remove all chunks belonging to the given channel and return how many
+   * Remove all chunks belonging to the given step ID and return how many
    * were removed.
    */
-  private _rollbackChannel(channel: string): number {
+  private _rollbackStepId(stepId: string): number {
     const before = this._tagged.length;
-    this._tagged = this._tagged.filter((c) => c.channel !== channel);
+    this._tagged = this._tagged.filter((c) => c.step_id !== stepId);
     this._chunks = this._tagged.map((c) => c.data);
     return before - this._tagged.length;
   }
 
   /**
-   * Mark all chunks belonging to `channel` as committed by clearing their
-   * channel tag. Committed chunks can never be rolled back — even if a
+   * Mark all chunks belonging to `stepId` as committed by clearing their
+   * step_id tag. Committed chunks can never be rolled back — even if a
    * same-named step retries and errors later, only uncommitted chunks from
    * that retry will be removed.
    */
-  private _commitChannel(channel: string): void {
+  private _commitStepId(stepId: string): void {
     for (const entry of this._tagged) {
-      if (entry.channel === channel) {
-        entry.channel = undefined;
+      if (entry.step_id === stepId) {
+        entry.step_id = undefined;
       }
     }
   }
@@ -282,7 +282,7 @@ export class RunStream<TData = unknown> {
         switch (frame.type) {
           case "stream": {
             const parsed = this._parseFn(frame.data);
-            this._pushChunk(parsed, frame.channel);
+            this._pushChunk(parsed, frame.step_id);
             this.opts.onData?.(parsed);
             yield parsed;
             break;
@@ -293,11 +293,11 @@ export class RunStream<TData = unknown> {
               this.opts.onStepRunning?.(frame.step_id, frame.data);
             } else if (frame.status === "completed") {
               inFlightSteps.delete(frame.step_id);
-              this._commitChannel(frame.step_id);
+              this._commitStepId(frame.step_id);
               this.opts.onStepCompleted?.(frame.step_id, frame.data);
             } else if (frame.status === "errored") {
               inFlightSteps.delete(frame.step_id);
-              const count = this._rollbackChannel(frame.step_id);
+              const count = this._rollbackStepId(frame.step_id);
               if (count > 0) {
                 this.opts.onRollback?.(count);
               }
@@ -321,7 +321,7 @@ export class RunStream<TData = unknown> {
 
       // Synthesize rollback for any steps still in flight on disconnect.
       for (const stepId of inFlightSteps) {
-        const count = this._rollbackChannel(stepId);
+        const count = this._rollbackStepId(stepId);
         if (count > 0) {
           this.opts.onRollback?.(count);
         }

@@ -49,7 +49,7 @@ describe("streamRun", () => {
     expect(results).toEqual(["final"]);
   });
 
-  test("rolls back chunks on step error using channel", async () => {
+  test("rolls back chunks on step error using step_id", async () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
@@ -58,8 +58,8 @@ describe("streamRun", () => {
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "a", channel: "s1" },
-        { type: "stream", data: "b", channel: "s1" },
+        { type: "stream", data: "a", step_id: "s1" },
+        { type: "stream", data: "b", step_id: "s1" },
         {
           type: "inngest.step",
           step_id: "s1",
@@ -138,7 +138,7 @@ describe("streamRun", () => {
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "partial", channel: "s1" },
+        { type: "stream", data: "partial", step_id: "s1" },
         // Stream ends without step:completed or step:errored
       ]),
     );
@@ -279,9 +279,9 @@ describe("streamRun", () => {
     rs._fromSource(
       framesFrom([
         { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "a", channel: "s1" },
+        { type: "stream", data: "a", step_id: "s1" },
         { type: "inngest.step", step_id: "s1", status: "completed" },
-        // Chunks emitted between steps (no channel — outside any step)
+        // Chunks emitted between steps (no step_id — outside any step)
         { type: "stream", data: "between" },
         // Stream disconnects here — no step is active, so no rollback
       ]),
@@ -326,9 +326,9 @@ describe("streamRun", () => {
       framesFrom([
         { type: "inngest.step", step_id: "A", status: "running" },
         { type: "inngest.step", step_id: "B", status: "running" },
-        { type: "stream", data: "A1", channel: "A" },
-        { type: "stream", data: "B1", channel: "B" },
-        { type: "stream", data: "A2", channel: "A" },
+        { type: "stream", data: "A1", step_id: "A" },
+        { type: "stream", data: "B1", step_id: "B" },
+        { type: "stream", data: "A2", step_id: "A" },
         {
           type: "inngest.step",
           step_id: "B",
@@ -382,11 +382,11 @@ describe("streamRun", () => {
       framesFrom([
         // Step "A" runs and completes — its chunks are committed
         { type: "inngest.step", step_id: "A", status: "running" },
-        { type: "stream", data: "first-A", channel: "A" },
+        { type: "stream", data: "first-A", step_id: "A" },
         { type: "inngest.step", step_id: "A", status: "completed" },
         // Same step ID runs again (retry) and errors
         { type: "inngest.step", step_id: "A", status: "running" },
-        { type: "stream", data: "retry-A", channel: "A" },
+        { type: "stream", data: "retry-A", step_id: "A" },
         {
           type: "inngest.step",
           step_id: "A",
