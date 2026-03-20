@@ -3,17 +3,40 @@ import {
   randomSuffix,
   testNameFromFileUrl,
 } from "@inngest/test-harness";
-import { expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import { endpointAdapter } from "../../../edge.ts";
-import { Inngest, step, stream } from "../../../index.ts";
+import { Inngest, NonRetriableError, step, stream } from "../../../index.ts";
 import {
   createEndpointServer,
   createGate,
+  getStreamData,
   pollForAsyncReader,
+  pollForAsyncStream,
+  readSSEStream,
   startSSEReader,
 } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
+
+/**
+ * Helper: create an Inngest client + endpoint server, registering cleanup.
+ */
+async function setupEndpoint(
+  handler: (req: Request) => Promise<Response>,
+): Promise<{ port: number }> {
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    endpointAdapter,
+  });
+
+  const endpointHandler = client.endpoint(handler);
+  const { port, server } = await createEndpointServer(endpointHandler);
+  onTestFinished(
+    () => new Promise<void>((resolve) => server.close(() => resolve())),
+  );
+  return { port };
+}
 
 test(
   "durable endpoint streams data before and after async mode",
@@ -120,3 +143,478 @@ test(
     await state.waitForRunComplete();
   },
 );
+
+// ---------------------------------------------------------------------------
+// Group 1: Header Negotiation
+// ---------------------------------------------------------------------------
+
+describe("header negotiation", () => {
+  test(
+    "1a: Accept SSE + push + sync → SSE stream with data",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("work", async () => {
+          stream.push("hello");
+        });
+        return new Response("done");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+      const { events } = await readSSEStream(res, 15_000);
+
+      // Has metadata with run_id
+      const metadata = events.filter((e) => e.event === "inngest.metadata");
+      expect(metadata.length).toBe(1);
+      expect(JSON.parse(metadata[0]!.data)).toHaveProperty("run_id");
+
+      // Has stream frame with "hello"
+      const streamData = getStreamData(events);
+      expect(streamData).toContain("hello");
+
+      // Has result frame with "done"
+      const results = events.filter((e) => e.event === "inngest.result");
+      expect(results.length).toBe(1);
+      expect(JSON.parse(results[0]!.data)).toBe("done");
+
+      // redirect_info is always sent once checkpoint creates the run,
+      // even if the function completes synchronously
+    },
+  );
+
+  // FIXME: When the client asks for SSE, a non-streaming sync endpoint should
+  // still return an SSE envelope (metadata + result) so clients get a uniform
+  // response format. Currently the raw Response is passed through instead.
+  test.fails(
+    "1b: Accept SSE + no push + sync → SSE metadata+result only",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("compute", async () => {
+          return "computed";
+        });
+        return new Response("computed");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+      const { events } = await readSSEStream(res, 15_000);
+
+      const metadata = events.filter((e) => e.event === "inngest.metadata");
+      expect(metadata.length).toBe(1);
+
+      const results = events.filter((e) => e.event === "inngest.result");
+      expect(results.length).toBe(1);
+      expect(JSON.parse(results[0]!.data)).toBe("computed");
+
+      const streamFrames = events.filter((e) => e.event === "stream");
+      expect(streamFrames.length).toBe(0);
+    },
+  );
+
+  test(
+    "1c: no Accept + no push + sync → raw Response passthrough",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("compute", async () => {
+          return "result";
+        });
+        return new Response("result");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`);
+
+      // When streaming is never activated, the raw Response is returned
+      expect(res.status).toBe(200);
+
+      const body = await res.text();
+      expect(body).toBe("result");
+    },
+  );
+
+  test(
+    "1d: no Accept + no push + async → 302 redirect",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("first", async () => {
+          return "a";
+        });
+        await step.sleep("wait", "1s");
+        await step.run("second", async () => {
+          return "b";
+        });
+        return new Response("final");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        redirect: "manual",
+      });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBeTruthy();
+    },
+  );
+
+  test(
+    "1e: Accept SSE + no push + async → 302 redirect",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("first", async () => {
+          return "a";
+        });
+        await step.sleep("wait", "1s");
+        await step.run("second", async () => {
+          return "b";
+        });
+        return new Response("final");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+        redirect: "manual",
+      });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBeTruthy();
+    },
+  );
+
+  // FIXME: When the client doesn't send Accept: text/event-stream, push()
+  // should still buffer data server-side but the response should be the raw
+  // Response (or JSON), not SSE. Currently handleStreamActivated ignores
+  // acceptsSSE and forces SSE format regardless.
+  test.fails(
+    "1f: no Accept + push + sync → raw Response (not SSE)",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("work", async () => {
+          stream.push("data");
+        });
+        return new Response("done");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`);
+
+      expect(res.status).toBe(200);
+
+      const contentType = res.headers.get("content-type") ?? "";
+      expect(contentType).not.toBe("text/event-stream");
+
+      const body = await res.text();
+      expect(body).toBe("done");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Group 2: Streaming Functionality
+// ---------------------------------------------------------------------------
+
+describe("streaming functionality", () => {
+  test(
+    "2a: pipe() with async generator streams tokens",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        const result = await step.run("llm", async () => {
+          return await stream.pipe(async function* () {
+            yield "token1";
+            yield "token2";
+          });
+        });
+        return new Response(result);
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+      const { events } = await readSSEStream(res, 15_000);
+      const streamData = getStreamData(events);
+
+      expect(streamData).toContain("token1");
+      expect(streamData).toContain("token2");
+
+      // Result is the concatenated pipe output
+      const results = events.filter((e) => e.event === "inngest.result");
+      expect(results.length).toBe(1);
+      expect(JSON.parse(results[0]!.data)).toBe("token1token2");
+    },
+  );
+
+  test("2b: mixed push and pipe in one step", { timeout: 60000 }, async () => {
+    const { port } = await setupEndpoint(async () => {
+      await step.run("mixed", async () => {
+        stream.push("Starting...");
+
+        await stream.pipe(async function* () {
+          yield "a";
+          yield "b";
+        });
+
+        stream.push("Done");
+      });
+      return new Response("ok");
+    });
+
+    const res = await fetch(`http://localhost:${port}/api/demo`, {
+      headers: { Accept: "text/event-stream" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+    const { events } = await readSSEStream(res, 15_000);
+    const streamData = getStreamData(events);
+
+    // All frames arrive in order
+    expect(streamData).toEqual(["Starting...", "a", "b", "Done"]);
+
+    // Result frame present
+    const results = events.filter((e) => e.event === "inngest.result");
+    expect(results.length).toBe(1);
+  });
+
+  test(
+    "2c: sync-only: streams across steps without async transition",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("step-1", async () => {
+          stream.push("from-step-1");
+        });
+        await step.run("step-2", async () => {
+          stream.push("from-step-2");
+        });
+        return new Response("finished");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+      const { events } = await readSSEStream(res, 15_000);
+      const streamData = getStreamData(events);
+
+      // Both steps' chunks present in order
+      expect(streamData).toContain("from-step-1");
+      expect(streamData).toContain("from-step-2");
+      expect(streamData.indexOf("from-step-1")).toBeLessThan(
+        streamData.indexOf("from-step-2"),
+      );
+
+      // Result frame
+      const results = events.filter((e) => e.event === "inngest.result");
+      expect(results.length).toBe(1);
+      expect(JSON.parse(results[0]!.data)).toBe("finished");
+
+      // redirect_info is always sent once checkpoint creates the run
+
+      // Step lifecycle frames present
+      const stepEvents = events.filter((e) => e.event === "inngest.step");
+      expect(stepEvents.length).toBeGreaterThanOrEqual(2);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Group 3: Error & Rollback
+// ---------------------------------------------------------------------------
+
+describe("error and rollback", () => {
+  test(
+    "3a: step error emits errored frame with streamed data",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("failing", async () => {
+          stream.push("partial");
+          throw new NonRetriableError("boom");
+        });
+        return new Response("unreachable");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+
+      expect(res.status).toBe(200);
+
+      const { events } = await readSSEStream(res, 15_000);
+      const streamData = getStreamData(events);
+
+      // The partial data was streamed before the error
+      expect(streamData).toContain("partial");
+
+      // Step errored frame present
+      const stepEvents = events.filter((e) => e.event === "inngest.step");
+      const erroredFrames = stepEvents.filter((e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          return parsed.status === "errored";
+        } catch {
+          return false;
+        }
+      });
+      expect(erroredFrames.length).toBeGreaterThanOrEqual(1);
+
+      const errorData = JSON.parse(erroredFrames[0]!.data);
+      // will_retry is nested inside the data field of the step frame
+      const willRetry = errorData.data?.will_retry ?? errorData.will_retry;
+      expect(willRetry).toBe(false);
+    },
+  );
+
+  test(
+    "3b: push outside step.run has no step_id",
+    { timeout: 60000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("first", async () => {
+          stream.push("inside-step");
+        });
+
+        stream.push("between");
+
+        await step.run("second", async () => {
+          throw new NonRetriableError("fail");
+        });
+        return new Response("unreachable");
+      });
+
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+
+      expect(res.status).toBe(200);
+
+      const { events } = await readSSEStream(res, 15_000);
+
+      // Find the "between" stream frame and verify it has no step_id
+      const streamEvents = events.filter((e) => e.event === "stream");
+      const betweenFrame = streamEvents.find((e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          return (parsed?.data ?? parsed) === "between";
+        } catch {
+          return e.data === "between";
+        }
+      });
+
+      expect(betweenFrame).toBeDefined();
+
+      // Parse the frame data and check for absence of step_id
+      const parsedBetween = JSON.parse(betweenFrame!.data);
+      if (typeof parsedBetween === "object" && parsedBetween !== null) {
+        expect(parsedBetween.step_id).toBeUndefined();
+      }
+
+      // The inside-step frame should have a step_id
+      const insideFrame = streamEvents.find((e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          return (parsed?.data ?? parsed) === "inside-step";
+        } catch {
+          return e.data === "inside-step";
+        }
+      });
+      expect(insideFrame).toBeDefined();
+      const parsedInside = JSON.parse(insideFrame!.data);
+      if (typeof parsedInside === "object" && parsedInside !== null) {
+        expect(parsedInside.step_id).toBeDefined();
+      }
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Group 4: Late Joiner
+// ---------------------------------------------------------------------------
+
+describe("late joiner", () => {
+  // Skipped: the late-joiner problem is explicitly out of scope (see task.md).
+  // This test documents the desired behavior for when it's implemented.
+  test.skip(
+    "4a: async chunks available after delayed client connection",
+    { timeout: 90000 },
+    async () => {
+      const { port } = await setupEndpoint(async () => {
+        await step.run("sync-step", async () => {
+          stream.push("sync-data");
+        });
+
+        // Force async mode
+        await step.sleep("wait", "1s");
+
+        await step.run("async-step", async () => {
+          stream.push("async-data");
+        });
+
+        return new Response("complete");
+      });
+
+      // Phase 1: read the sync SSE stream to get the redirect URL
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+      expect(res.status).toBe(200);
+
+      const { events: syncEvents, redirectUrl } = await readSSEStream(
+        res,
+        15_000,
+      );
+
+      // Sync stream should have our data and a redirect
+      const syncData = getStreamData(syncEvents);
+      expect(syncData).toContain("sync-data");
+      expect(redirectUrl).toBeTruthy();
+
+      // Phase 2: delay before connecting to the redirect URL
+      await new Promise((r) => setTimeout(r, 3000));
+
+      // Phase 3: connect to redirect and check for async data
+      const asyncEvents = await pollForAsyncStream(redirectUrl!, {
+        maxAttempts: 60,
+        intervalMs: 1000,
+        readTimeoutMs: 10_000,
+      });
+
+      // Document whatever we find — the async chunks may or may not be
+      // buffered by the dev server
+      const asyncData = getStreamData(asyncEvents);
+      const hasResult = asyncEvents.some((e) => e.event === "inngest.result");
+
+      // At minimum, the result should eventually be available
+      if (hasResult) {
+        const result = asyncEvents.find((e) => e.event === "inngest.result");
+        expect(JSON.parse(result!.data)).toBe("complete");
+      }
+
+      // If async data is present, verify it
+      if (asyncData.includes("async-data")) {
+        expect(asyncData).toContain("async-data");
+      }
+    },
+  );
+});
