@@ -1,5 +1,11 @@
 # inngest
 
+## 4.0.4
+
+### Patch Changes
+
+- [#1397](https://github.com/inngest/inngest-js/pull/1397) [`103a7212`](https://github.com/inngest/inngest-js/commit/103a721217ff38c7e149304b49ded17ed372347c) Thanks [@amh4r](https://github.com/amh4r)! - Fix eventType can't be combined with if expression
+
 ## 4.0.3
 
 ### Patch Changes
