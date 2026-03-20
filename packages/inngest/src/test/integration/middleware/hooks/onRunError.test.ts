@@ -78,6 +78,57 @@ describe("args", () => {
   }
 });
 
+test("multiple attempts with step-level error", async () => {
+  const state = createState({
+    attempts: 0,
+    calls: [] as Middleware.OnRunErrorArgs[],
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
+    override onRunError(args: Middleware.OnRunErrorArgs) {
+      state.calls.push(args);
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      retries: 1,
+      triggers: [{ event: eventName }],
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      await step.run("a", () => {
+        throw new MyError("fn error");
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunFailed();
+
+  console.log(state.calls);
+
+  expect(state.calls).toEqual([
+    {
+      ctx: anyContext,
+      error: expect.any(Error),
+      fn,
+      isFinalAttempt: true,
+    },
+  ]);
+});
+
 test("multiple attempts", async () => {
   const state = createState({
     attempts: 0,
