@@ -6,7 +6,12 @@ import {
   waitFor,
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
-import { Inngest, Middleware } from "../../../../index.ts";
+import {
+  Inngest,
+  Middleware,
+  NonRetriableError,
+  StepError,
+} from "../../../../index.ts";
 import { createServer } from "../../../../node.ts";
 import { anyContext } from "../../utils.ts";
 
@@ -78,10 +83,13 @@ describe("args", () => {
   }
 });
 
-test("multiple attempts with step-level error", async () => {
+test("uncaught step-level error", async () => {
+  // An uncaught step-level error is not retried.
+
   const state = createState({
     attempts: 0,
     calls: [] as Middleware.OnRunErrorArgs[],
+    stepCount: 0,
   });
 
   class TestMiddleware extends Middleware.BaseMiddleware {
@@ -107,7 +115,8 @@ test("multiple attempts with step-level error", async () => {
     async ({ runId, step }) => {
       state.runId = runId;
       await step.run("a", () => {
-        throw new MyError("fn error");
+        state.stepCount++;
+        throw new MyError("step error");
       });
     },
   );
@@ -117,19 +126,139 @@ test("multiple attempts with step-level error", async () => {
   await client.send({ name: eventName });
   await state.waitForRunFailed();
 
-  console.log(state.calls);
-
   expect(state.calls).toEqual([
     {
       ctx: anyContext,
-      error: expect.any(Error),
+      error: expect.any(StepError),
       fn,
       isFinalAttempt: true,
     },
   ]);
+  expect(state.stepCount).toBe(2);
 });
 
-test("multiple attempts", async () => {
+test("step-level NonRetriableError", async () => {
+  const state = createState({
+    attempts: 0,
+    calls: [] as Middleware.OnRunErrorArgs[],
+    stepCount: 0,
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
+    override onRunError(args: Middleware.OnRunErrorArgs) {
+      state.calls.push(args);
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      retries: 1,
+      triggers: [{ event: eventName }],
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      await step.run("a", () => {
+        state.stepCount++;
+        throw new NonRetriableError("step error");
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunFailed();
+
+  expect(state.calls).toEqual([
+    {
+      ctx: anyContext,
+      error: expect.any(StepError),
+      fn,
+      isFinalAttempt: true,
+    },
+  ]);
+  expect(state.stepCount).toBe(1);
+});
+
+test("catch-and-replace step-level error", async () => {
+  const state = createState({
+    attempts: 0,
+    calls: [] as Middleware.OnRunErrorArgs[],
+    stepCount: 0,
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
+    override onRunError(args: Middleware.OnRunErrorArgs) {
+      state.calls.push(args);
+    }
+  }
+
+  class MyError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "MyError";
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      retries: 1,
+      triggers: [{ event: eventName }],
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      try {
+        await step.run("a", () => {
+          state.stepCount++;
+          throw new Error("step error");
+        });
+      } catch (error) {
+        throw new MyError("fn error");
+      }
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunFailed();
+
+  expect(state.calls).toEqual([
+    {
+      ctx: anyContext,
+      error: expect.any(MyError),
+      fn,
+      isFinalAttempt: false,
+    },
+    {
+      ctx: anyContext,
+      error: expect.any(MyError),
+      fn,
+      isFinalAttempt: true,
+    },
+  ]);
+  expect(state.stepCount).toBe(2);
+});
+
+test("multiple attempts with function-level error", async () => {
   const state = createState({
     attempts: 0,
     calls: [] as Middleware.OnRunErrorArgs[],
