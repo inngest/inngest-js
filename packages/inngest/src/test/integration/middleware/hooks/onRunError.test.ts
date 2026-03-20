@@ -207,6 +207,45 @@ test("fires when function throws after steps complete", async () => {
   expect(state.calls[0]!.isFinalAttempt).toBe(true);
 });
 
+test("marks onRunError as final after final step retry", async () => {
+  const state = createState({
+    calls: [] as Middleware.OnRunErrorArgs[],
+  });
+
+  class TestMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "test";
+    override onRunError(args: Middleware.OnRunErrorArgs) {
+      state.calls.push(args);
+    }
+  }
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TestMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 1, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      await step.run("my-step", () => {
+        throw new MyError("step failure");
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunFailed();
+
+  expect(state.calls).toHaveLength(1);
+  expect(state.calls[0]!.error.name).toBe("StepError");
+  expect(state.calls[0]!.isFinalAttempt).toBe(true);
+});
+
 test("throws", async () => {
   const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 

@@ -1165,6 +1165,14 @@ class InngestExecutionEngine
       return true;
     }
 
+    if (
+      error instanceof StepError ||
+      // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+      (error as any)?.name === "StepError"
+    ) {
+      return true;
+    }
+
     return Boolean(
       this.fnArg.maxAttempts &&
         this.fnArg.maxAttempts - 1 === this.fnArg.attempt,
