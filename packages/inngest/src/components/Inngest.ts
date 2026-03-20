@@ -954,6 +954,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     rawOptions,
     handler,
   ) => {
+    if (typeof handler !== "function") {
+      throw new Error(
+        `"createFunction" expected a handler function as the second argument. Triggers belong in the first argument: createFunction({ id, triggers: { event: "..." } }, handler)`,
+      );
+    }
+
     const options = {
       ...rawOptions,
       triggers: this.sanitizeTriggers(rawOptions.triggers),
