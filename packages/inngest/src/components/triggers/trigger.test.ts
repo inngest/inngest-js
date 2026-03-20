@@ -131,6 +131,34 @@ describe("eventType without options", () => {
     );
   });
 
+  test("function config serializes event name as string", () => {
+    const inngest = new Inngest({ id: "app" });
+
+    // Direct EventType trigger
+    const fn1 = inngest.createFunction({ id: "fn1", triggers: [et] }, () => {});
+    const config1 = fn1["getConfig"]({
+      baseUrl: new URL("http://localhost:3000"),
+      appPrefix: "app",
+    });
+    expect(config1[0]!.triggers).toEqual([{ event: "event-1" }]);
+
+    // EventType in object trigger with 'if' condition
+    const fn2 = inngest.createFunction(
+      {
+        id: "fn2",
+        triggers: [{ event: et, if: "event.data.foo == 'bar'" }],
+      },
+      () => {},
+    );
+    const config2 = fn2["getConfig"]({
+      baseUrl: new URL("http://localhost:3000"),
+      appPrefix: "app",
+    });
+    expect(config2[0]!.triggers).toEqual([
+      { event: "event-1", expression: "event.data.foo == 'bar'" },
+    ]);
+  });
+
   test("function options", () => {
     const inngest = new Inngest({ id: "app" });
 
@@ -503,6 +531,21 @@ describe("invoke", () => {
     const inngest = new Inngest({ id: "app" });
     const fn = inngest.createFunction(
       { id: "fn", triggers: [invoke(z.object({ msg: z.string() }))] },
+      () => {},
+    );
+    const config = fn["getConfig"]({
+      baseUrl: new URL("http://localhost:3000"),
+      appPrefix: "app",
+    });
+    expect(config).toHaveLength(1);
+    expect(config[0]!.triggers).toEqual([]);
+  });
+
+  test("invoke trigger with EventType is also filtered", () => {
+    const inngest = new Inngest({ id: "app" });
+    const inv = invoke(z.object({ msg: z.string() }));
+    const fn = inngest.createFunction(
+      { id: "fn", triggers: [{ event: inv, if: "event.data.msg == 'hi'" }] },
       () => {},
     );
     const config = fn["getConfig"]({
