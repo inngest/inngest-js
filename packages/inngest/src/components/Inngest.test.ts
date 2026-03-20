@@ -670,6 +670,23 @@ describe("send", () => {
 });
 
 describe("createFunction", () => {
+  test("throws if handler is not a function (v3-style 3-arg call)", () => {
+    const inngest = createClient({ id: "test" });
+
+    expect(() => {
+      // Simulate v3 signature: `createFunction(config, trigger, handler)`
+      // The trigger object lands in the handler parameter.
+      inngest.createFunction(
+        { id: "fn-1" },
+        { event: "event-1" },
+        // @ts-expect-error - Intentional
+        async () => {},
+      );
+    }).toThrow(
+      `"createFunction" expected a handler function as the second argument`,
+    );
+  });
+
   describe("types", () => {
     describe("function input", () => {
       const inngest = createClient({ id: "test" });
