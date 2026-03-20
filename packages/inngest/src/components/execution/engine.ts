@@ -1148,27 +1148,55 @@ class InngestExecutionEngine
           err = new Error(String(error));
         }
 
-        await this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
+        await this.middlewareManager.onRunError(err, !this.retriability(err));
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
   }
 
   /**
-   * Whether this error will not be retried (NonRetriableError or last attempt).
+   * Determine whether the given error is retriable. Returns `false` when the
+   * run should not be retried, a duration string for `RetryAfterError`, or
+   * `true` for normal retry behavior.
    */
-  private isFinalAttempt(error: unknown): boolean {
+  private retriability(error: unknown): boolean | string {
+    const areRetriesExhausted =
+      this.fnArg.maxAttempts &&
+      this.fnArg.maxAttempts - 1 === this.fnArg.attempt;
+    if (areRetriesExhausted) {
+      return false;
+    }
+
+    // TODO: Replace this fragile inheritance + name check. Maybe we should have
+    // an "~inngest" field with an object that specifies "isRetriable".
     if (
       error instanceof NonRetriableError ||
       // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
       (error as any)?.name === "NonRetriableError"
     ) {
-      return true;
+      return false;
     }
 
-    return Boolean(
-      this.fnArg.maxAttempts &&
-        this.fnArg.maxAttempts - 1 === this.fnArg.attempt,
-    );
+    // If the function-level code did not change the error, then we don't want
+    // to retry. The vast majority of the time this means there wasn't a `catch`
+    // block.
+    const isUncaughtStepError =
+      error instanceof StepError &&
+      error === this.state.recentlyRejectedStepError;
+    if (isUncaughtStepError) {
+      return false;
+    }
+
+    // TODO: Replace this fragile inheritance + name check. Maybe we should have
+    // an "~inngest" field with an object that specifies "retryAfter".
+    if (
+      error instanceof RetryAfterError ||
+      // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+      (error as any)?.name === "RetryAfterError"
+    ) {
+      return (error as RetryAfterError).retryAfter;
+    }
+
+    return true;
   }
 
   /**
@@ -1186,7 +1214,7 @@ class InngestExecutionEngine
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
-    const isFinal = this.isFinalAttempt(error);
+    const isFinal = !this.retriability(error);
     const metadata = this.state.metadata?.get(id);
 
     await this.middlewareManager.onStepError(
@@ -1237,26 +1265,7 @@ class InngestExecutionEngine
     const { data, error } = dataOrError;
 
     if (typeof error !== "undefined") {
-      /**
-       * Ensure we give middleware the chance to decide on retriable behaviour
-       * by looking at the error returned from output transformation.
-       */
-      let retriable: boolean | string = !(
-        error instanceof NonRetriableError ||
-        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-        (error as any)?.name === "NonRetriableError" ||
-        (error instanceof StepError &&
-          error === this.state.recentlyRejectedStepError)
-      );
-      if (
-        retriable &&
-        (error instanceof RetryAfterError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (error as any)?.name === "RetryAfterError")
-      ) {
-        retriable = (error as RetryAfterError).retryAfter;
-      }
-
+      const retriable = this.retriability(error);
       const serializedError = serializeError(error);
 
       return {
