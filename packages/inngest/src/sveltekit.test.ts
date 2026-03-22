@@ -159,6 +159,9 @@ describe("SvelteKit streaming", () => {
       createRequestEvent({
         method: "POST",
         url: "https://localhost:3000/api/inngest?fnId=test-test&stepId=step",
+        headers: {
+          host: "localhost:3000",
+        },
         body: {
           ctx: {
             fn_id: "local-testing-local-cron",
@@ -216,6 +219,9 @@ describe("SvelteKit streaming", () => {
       createRequestEvent({
         method: "POST",
         url: "https://localhost:3000/api/inngest?fnId=test-test&stepId=step",
+        headers: {
+          host: "localhost:3000",
+        },
         body: {
           ctx: {
             fn_id: "local-testing-local-cron",

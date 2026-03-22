@@ -102,7 +102,6 @@ export const serve = (
         url: () => {
           const protocol =
             processEnv(envKeys.NodeEnv) === "development" ? "http" : "https";
-
           return new URL(
             event.request.url,
             `${protocol}://${
