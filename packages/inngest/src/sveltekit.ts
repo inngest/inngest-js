@@ -99,38 +99,14 @@ export const serve = (
         body: () => event.request.text(),
         headers: (key) => event.request.headers.get(key),
         url: () => {
-          let absoluteUrl: URL | undefined;
-
-          try {
-            absoluteUrl = new URL(event.request.url);
-          } catch {
-            // no-op
-          }
-
-          if (absoluteUrl) {
-            const host = options.serveOrigin || event.request.headers.get("host");
-
-            if (host) {
-              const hostWithProtocol = new URL(
-                host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`,
-              );
-
-              absoluteUrl.protocol = hostWithProtocol.protocol;
-              absoluteUrl.host = hostWithProtocol.host;
-              absoluteUrl.port = hostWithProtocol.port;
-              absoluteUrl.username = hostWithProtocol.username;
-              absoluteUrl.password = hostWithProtocol.password;
-            }
-
-            return absoluteUrl;
-          }
-
           const protocol =
             processEnv("NODE_ENV") === "development" ? "http" : "https";
-          const host =
-            options.serveOrigin || event.request.headers.get("host") || "";
-
-          return new URL(event.request.url, `${protocol}://${host}`);
+          return new URL(
+            event.request.url,
+            `${protocol}://${
+              event.request.headers.get("host") || options.serveOrigin || ""
+            }`,
+          );
         },
         transformResponse: createResponse,
         transformStreamingResponse: createResponse,
