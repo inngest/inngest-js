@@ -4,5 +4,5 @@ export {
   getSubscriptionToken,
   subscribe,
 } from "./components/realtime/subscribe/index.ts";
-export { staticSchema } from "./components/triggers/triggers.ts";
 export type { Realtime } from "./components/realtime/types.ts";
+export { staticSchema } from "./components/triggers/triggers.ts";
