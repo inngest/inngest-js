@@ -1059,7 +1059,7 @@ export function builtInMiddleware(baseLogger: Logger) {
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
       readonly id = "inngest:logger";
-      #proxyLogger = new ProxyLogger(baseLogger);
+      proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
         arg: Middleware.TransformFunctionInputArgs,
@@ -1080,35 +1080,35 @@ export function builtInMiddleware(baseLogger: Logger) {
           }
         }
 
-        this.#proxyLogger = new ProxyLogger(logger);
+        this.proxyLogger = new ProxyLogger(logger);
 
         return {
           ...arg,
           ctx: Object.assign({}, arg.ctx, {
-            logger: this.#proxyLogger as Logger,
+            logger: this.proxyLogger as Logger,
           }),
         };
       }
 
       override onMemoizationEnd() {
-        this.#proxyLogger.enable();
+        this.proxyLogger.enable();
       }
 
       override onStepError(arg: Middleware.OnStepErrorArgs) {
-        this.#proxyLogger.error({ err: arg.error }, "Inngest step error");
+        this.proxyLogger.error({ err: arg.error }, "Inngest step error");
       }
 
       override wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
         return next().catch((err: unknown) => {
-          this.#proxyLogger.error({ err }, "Inngest function error");
+          this.proxyLogger.error({ err }, "Inngest function error");
           throw err;
         });
       }
 
       override wrapRequest({ next }: Middleware.WrapRequestArgs) {
-        return next().finally(() => this.#proxyLogger.flush());
+        return next().finally(() => this.proxyLogger.flush());
       }
     },
   ] as const;
