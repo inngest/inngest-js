@@ -996,11 +996,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
  * so the no-arg constructors can capture the base logger.
  */
 export function builtInMiddleware(baseLogger: Logger) {
-  let proxyLogger = new ProxyLogger(baseLogger);
-
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
       readonly id = "inngest:logger";
+      proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
         arg: Middleware.TransformFunctionInputArgs,
@@ -1021,35 +1020,35 @@ export function builtInMiddleware(baseLogger: Logger) {
           }
         }
 
-        proxyLogger = new ProxyLogger(logger);
+        this.proxyLogger = new ProxyLogger(logger);
 
         return {
           ...arg,
           ctx: Object.assign({}, arg.ctx, {
-            logger: proxyLogger as Logger,
+            logger: this.proxyLogger as Logger,
           }),
         };
       }
 
       override onMemoizationEnd() {
-        proxyLogger.enable();
+        this.proxyLogger.enable();
       }
 
       override onStepError(arg: Middleware.OnStepErrorArgs) {
-        proxyLogger.error({ err: arg.error }, "Inngest step error");
+        this.proxyLogger.error({ err: arg.error }, "Inngest step error");
       }
 
       override wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
         return next().catch((err: unknown) => {
-          proxyLogger.error({ err }, "Inngest function error");
+          this.proxyLogger.error({ err }, "Inngest function error");
           throw err;
         });
       }
 
       override wrapRequest({ next }: Middleware.WrapRequestArgs) {
-        return next().finally(() => proxyLogger.flush());
+        return next().finally(() => this.proxyLogger.flush());
       }
     },
   ] as const;
