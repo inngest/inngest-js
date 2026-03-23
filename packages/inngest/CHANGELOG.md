@@ -1,5 +1,29 @@
 # inngest
 
+## 4.0.4
+
+### Patch Changes
+
+- [#1397](https://github.com/inngest/inngest-js/pull/1397) [`103a7212`](https://github.com/inngest/inngest-js/commit/103a721217ff38c7e149304b49ded17ed372347c) Thanks [@amh4r](https://github.com/amh4r)! - Fix eventType can't be combined with if expression
+
+## 4.0.3
+
+### Patch Changes
+
+- [#1395](https://github.com/inngest/inngest-js/pull/1395) [`c4861ff8`](https://github.com/inngest/inngest-js/commit/c4861ff866c3236ef0d4a1bb3aa7add7eeb71dd3) Thanks [@amh4r](https://github.com/amh4r)! - Error when function config is v3-style
+
+- [#1389](https://github.com/inngest/inngest-js/pull/1389) [`905d4b24`](https://github.com/inngest/inngest-js/commit/905d4b245c0512a4ac5d825ef1b2898f9cc3587d) Thanks [@amh4r](https://github.com/amh4r)! - Ensure we track retries when creating a new run
+
+- [#1396](https://github.com/inngest/inngest-js/pull/1396) [`9baa304f`](https://github.com/inngest/inngest-js/commit/9baa304f9cb3b776fabd9732d9f08207c9686d41) Thanks [@amh4r](https://github.com/amh4r)! - Fix onRunError hook's isFinalAttempt not true on final attempt
+
+## 4.0.2
+
+### Patch Changes
+
+- [#1387](https://github.com/inngest/inngest-js/pull/1387) [`983f527b`](https://github.com/inngest/inngest-js/commit/983f527bdc202845752d060d9429868ff80d8bb6) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing function run hang
+
+- [#1387](https://github.com/inngest/inngest-js/pull/1387) [`983f527b`](https://github.com/inngest/inngest-js/commit/983f527bdc202845752d060d9429868ff80d8bb6) Thanks [@amh4r](https://github.com/amh4r)! - Fallback to async flow on checkpoint error
+
 ## 4.0.1
 
 ### Patch Changes

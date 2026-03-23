@@ -457,7 +457,7 @@ class InngestExecutionEngine
       stepResult?: OutgoingOp,
       resume = true,
       force = false,
-    ) => {
+    ): Promise<ExecutionResult | undefined> => {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
@@ -498,16 +498,27 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
-          // If checkpointing fails for any reason, fall back to the async
-          // flow
+          // If checkpointing fails for any reason, fall back to returning
+          // ALL buffered steps to the executor via the normal async flow.
+          // The executor persists completed steps and rediscovers any
+          // parallel/errored steps on the next invocation.
           this.devDebug(
             "error checkpointing after step run, so falling back to async",
             err,
           );
 
-          if (stepResult) {
-            return stepRanHandler(stepResult);
+          const buffered = this.state.checkpointingStepBuffer;
+
+          if (buffered.length) {
+            return {
+              type: "steps-found" as const,
+              ctx: this.fnArg,
+              ops: this.ops,
+              steps: buffered as [OutgoingOp, ...OutgoingOp[]],
+            };
           }
+
+          return;
         } finally {
           // Clear the checkpointing buffer
           this.state.checkpointingStepBuffer = [];
@@ -586,11 +597,23 @@ class InngestExecutionEngine
         // Otherwise we're good to start executing things right now.
         const result = await this.executeStep(steps[0]);
 
+        const transformed = await stepRanHandler(result);
+        if (transformed.type !== "step-ran") {
+          throw new Error(
+            "Unexpected checkpoint handler result type after running step in sync mode",
+          );
+        }
+
         if (result.error) {
-          return this.checkpointAndSwitchToAsync([result]);
+          return this.checkpointAndSwitchToAsync([transformed.step]);
         }
 
         // Resume the step with original data for user code
+        //
+        // Note: We should likely also pass this through `transformOutput` and
+        // then `transformInput` to mimic the entire middleware cycle, to ensure
+        // that any transformations that purposefully skew the resulting type
+        // are supported.
         const stepToResume = this.resumeStepWithResult(result);
 
         // Clear executingStep now that the step result has been processed.
@@ -598,14 +621,24 @@ class InngestExecutionEngine
         // emit a false positive NESTING_STEPS warning.
         delete this.state.executingStep;
 
-        return void (await this.checkpoint([stepToResume]));
+        // Checkpoint with transformed data from middleware
+        const stepForCheckpoint = {
+          ...stepToResume,
+          data: transformed.step.data,
+        };
+
+        return void (await this.checkpoint([stepForCheckpoint]));
       },
 
       "checkpointing-runtime-reached": () => {
         return this.checkpointAndSwitchToAsync([
           {
             op: StepOpCode.DiscoveryRequest,
-            id: _internals.hashId("discovery-request"), // ID doesn't matter
+
+            // Append with time because we don't want Executor-side
+            // idempotency to dedupe. There may have been a previous
+            // discovery request.
+            id: _internals.hashId(`discovery-request-${Date.now()}`),
           },
         ]);
       },
@@ -721,7 +754,14 @@ class InngestExecutionEngine
         "function-rejected": async (checkpoint) => {
           // If we have buffered steps, attempt checkpointing them first
           if (this.state.checkpointingStepBuffer.length) {
-            await attemptCheckpointAndResume(undefined, false);
+            const fallback = await attemptCheckpointAndResume(
+              undefined,
+              false,
+              true,
+            );
+            if (fallback) {
+              return fallback;
+            }
           }
 
           return await this.transformOutput({ error: checkpoint.error });
@@ -767,7 +807,14 @@ class InngestExecutionEngine
                 // Flush buffered steps before falling back to async,
                 // so previously-successful steps aren't lost.
                 if (this.state.checkpointingStepBuffer.length) {
-                  await attemptCheckpointAndResume(undefined, false, true);
+                  const fallback = await attemptCheckpointAndResume(
+                    undefined,
+                    false,
+                    true,
+                  );
+                  if (fallback) {
+                    return fallback;
+                  }
                 }
 
                 // If we failed, go back to the regular async flow.
@@ -786,7 +833,14 @@ class InngestExecutionEngine
             // back with requestedRunStep, those steps would be missing
             // from stepState, causing "step not found" errors.
             if (this.state.checkpointingStepBuffer.length) {
-              await attemptCheckpointAndResume(undefined, false, true);
+              const fallback = await attemptCheckpointAndResume(
+                undefined,
+                false,
+                true,
+              );
+              if (fallback) {
+                return fallback;
+              }
             }
 
             return maybeReturnNewSteps();
@@ -814,7 +868,11 @@ class InngestExecutionEngine
             steps: [
               {
                 op: StepOpCode.DiscoveryRequest,
-                id: _internals.hashId("discovery-request"), // ID doesn't matter
+
+                // Append with time because we don't want Executor-side
+                // idempotency to dedupe. There may have been a previous
+                // discovery request.
+                id: _internals.hashId(`discovery-request-${Date.now()}`),
               },
             ],
           };
@@ -1090,27 +1148,55 @@ class InngestExecutionEngine
           err = new Error(String(error));
         }
 
-        await this.middlewareManager.onRunError(err, this.isFinalAttempt(err));
+        await this.middlewareManager.onRunError(err, !this.retriability(err));
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
   }
 
   /**
-   * Whether this error will not be retried (NonRetriableError or last attempt).
+   * Determine whether the given error is retriable. Returns `false` when the
+   * run should not be retried, a duration string for `RetryAfterError`, or
+   * `true` for normal retry behavior.
    */
-  private isFinalAttempt(error: unknown): boolean {
+  private retriability(error: unknown): boolean | string {
+    const areRetriesExhausted =
+      this.fnArg.maxAttempts &&
+      this.fnArg.maxAttempts - 1 === this.fnArg.attempt;
+    if (areRetriesExhausted) {
+      return false;
+    }
+
+    // TODO: Replace this fragile inheritance + name check. Maybe we should have
+    // an "~inngest" field with an object that specifies "isRetriable".
     if (
       error instanceof NonRetriableError ||
       // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
       (error as any)?.name === "NonRetriableError"
     ) {
-      return true;
+      return false;
     }
 
-    return Boolean(
-      this.fnArg.maxAttempts &&
-        this.fnArg.maxAttempts - 1 === this.fnArg.attempt,
-    );
+    // If the function-level code did not change the error, then we don't want
+    // to retry. The vast majority of the time this means there wasn't a `catch`
+    // block.
+    const isUncaughtStepError =
+      error instanceof StepError &&
+      error === this.state.recentlyRejectedStepError;
+    if (isUncaughtStepError) {
+      return false;
+    }
+
+    // TODO: Replace this fragile inheritance + name check. Maybe we should have
+    // an "~inngest" field with an object that specifies "retryAfter".
+    if (
+      error instanceof RetryAfterError ||
+      // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
+      (error as any)?.name === "RetryAfterError"
+    ) {
+      return (error as RetryAfterError).retryAfter;
+    }
+
+    return true;
   }
 
   /**
@@ -1128,7 +1214,7 @@ class InngestExecutionEngine
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
-    const isFinal = this.isFinalAttempt(error);
+    const isFinal = !this.retriability(error);
     const metadata = this.state.metadata?.get(id);
 
     await this.middlewareManager.onStepError(
@@ -1137,9 +1223,15 @@ class InngestExecutionEngine
       isFinal,
     );
 
+    // Serialize the error so it survives JSON.stringify (raw Error
+    // objects have non-enumerable properties that get dropped).
+    // This is critical for checkpoint requests where the error is
+    // sent as JSON in the request body.
+    const serialized = serializeError(error);
+
     return {
       ...outgoingOp,
-      error,
+      error: serialized,
       op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
       ...(metadata && metadata.length > 0 ? { metadata } : {}),
     };
@@ -1173,26 +1265,7 @@ class InngestExecutionEngine
     const { data, error } = dataOrError;
 
     if (typeof error !== "undefined") {
-      /**
-       * Ensure we give middleware the chance to decide on retriable behaviour
-       * by looking at the error returned from output transformation.
-       */
-      let retriable: boolean | string = !(
-        error instanceof NonRetriableError ||
-        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-        (error as any)?.name === "NonRetriableError" ||
-        (error instanceof StepError &&
-          error === this.state.recentlyRejectedStepError)
-      );
-      if (
-        retriable &&
-        (error instanceof RetryAfterError ||
-          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
-          (error as any)?.name === "RetryAfterError")
-      ) {
-        retriable = (error as RetryAfterError).retryAfter;
-      }
-
+      const retriable = this.retriability(error);
       const serializedError = serializeError(error);
 
       return {
