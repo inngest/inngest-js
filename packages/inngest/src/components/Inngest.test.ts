@@ -1111,7 +1111,7 @@ describe("endpointProxy", () => {
   });
 });
 
-describe("inngest.publish", () => {
+describe("inngest.realtime.publish", () => {
   test("publishes to the realtime API", async () => {
     const { realtime } = await import("../index.ts");
     const { z } = await import("zod/v3");
@@ -1128,7 +1128,7 @@ describe("inngest.publish", () => {
       .spyOn(inngest["inngestApi"], "publish")
       .mockResolvedValue({ ok: true, value: undefined });
 
-    await inngest.publish(ch.status, { message: "hello" });
+    await inngest.realtime.publish(ch.status, { message: "hello" });
 
     expect(publishSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1154,7 +1154,7 @@ describe("inngest.publish", () => {
 
     await expect(
       // @ts-expect-error intentional invalid payload for runtime validation
-      inngest.publish(ch.status, { message: 123 }),
+      inngest.realtime.publish(ch.status, { message: 123 }),
     ).rejects.toThrow("Schema validation failed");
   });
 
@@ -1176,7 +1176,7 @@ describe("inngest.publish", () => {
     });
 
     await expect(
-      inngest.publish(ch.status, { message: "hello" }),
+      inngest.realtime.publish(ch.status, { message: "hello" }),
     ).rejects.toThrow("Failed to publish to realtime: Nope");
   });
 
@@ -1199,7 +1199,7 @@ describe("inngest.publish", () => {
     // staticSchema's validate is a passthrough — it never returns issues,
     // so invalid data at runtime is not rejected.
     // @ts-expect-error intentional invalid payload to demonstrate passthrough
-    await inngest.publish(ch.tokens, { token: 999 });
+    await inngest.realtime.publish(ch.tokens, { token: 999 });
 
     expect(publishSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1231,7 +1231,7 @@ describe("inngest.publish", () => {
     // Zod schema validates at runtime — invalid data throws.
     await expect(
       // @ts-expect-error intentional invalid payload
-      inngest.publish(ch.status, { message: 999 }),
+      inngest.realtime.publish(ch.status, { message: 999 }),
     ).rejects.toThrow("Schema validation failed");
   });
 });

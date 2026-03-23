@@ -517,7 +517,7 @@ export const createStepTools = <
     realtime: {
       /**
        * Publish a realtime message as a durable step. Memoized and will not
-       * re-fire on retry, unlike context-level `publish()`.
+       * re-fire on retry, unlike client-level `inngest.realtime.publish()`.
        *
        * Uses topic accessors: `step.realtime.publish("id", chat.status, data)`
        */

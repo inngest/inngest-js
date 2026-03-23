@@ -25,14 +25,14 @@ const aiChat = inngest.createFunction(
     const chat = agentChat({ threadId: event.data.threadId });
 
     // Non-durable publish via the client
-    await inngest.publish(chat.status, { message: "Thinking..." });
+    await inngest.realtime.publish(chat.status, { message: "Thinking..." });
 
     const response = await step.run("generate", async () => {
       return llm.generate(event.data.prompt);
     });
 
     for (const token of response.tokens) {
-      await inngest.publish(chat.tokens, { token });
+      await inngest.realtime.publish(chat.tokens, { token });
     }
 
     // Durable publish — memoized, won't re-fire on retry
@@ -182,14 +182,14 @@ type ChatParams = typeof agentChat.$params;
 
 All publish functions take two arguments: a **topic accessor** (where) and **data** (what). The data argument is type-checked against the topic's schema or type definition.
 
-### `inngest.publish(ref, data)` — non-durable
+### `inngest.realtime.publish(ref, data)` — non-durable
 
-Available on the Inngest client. Executes immediately, **not** memoized. Can be used anywhere: inside functions, from server routes, or any server-side code. When called inside an Inngest function, it automatically picks up the current run ID:
+Available on the Inngest client at `inngest.realtime.publish`. Executes immediately, **not** memoized. Can be used anywhere: inside functions, from server routes, or any server-side code. When called inside an Inngest function, it automatically picks up the current run ID:
 
 ```ts
 async ({ event, step }) => {
   const chat = agentChat({ threadId: event.data.threadId });
-  await inngest.publish(chat.tokens, { token: "Hello" });
+  await inngest.realtime.publish(chat.tokens, { token: "Hello" });
 };
 ```
 
@@ -208,7 +208,7 @@ async ({ step }) => {
 
 ### When to use which
 
-| | `inngest.publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
+| | `inngest.realtime.publish(ref, data)` | `step.realtime.publish(id, ref, data)` |
 |---|---|---|
 | Durable / memoized | No | Yes |
 | Re-fires on retry | Yes | No (skipped via memoization) |
