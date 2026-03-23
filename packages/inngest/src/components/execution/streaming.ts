@@ -1,5 +1,6 @@
 // No Node.js imports — this file is shared between server and client code.
 
+import { z } from "zod/v3";
 import { createTimeoutPromise } from "../../helpers/promises.ts";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,36 @@ export interface RawSSEEvent {
   event: string;
   data: string;
 }
+
+// ---------------------------------------------------------------------------
+// Zod schemas for runtime validation of parsed SSE frames
+// ---------------------------------------------------------------------------
+
+const sseMetadataPayloadSchema = z.object({
+  run_id: z.string(),
+});
+
+const sseStreamPayloadSchema = z.object({
+  data: z.unknown(),
+  step_id: z.string().optional(),
+});
+
+const stepErrorDataSchema = z.object({
+  will_retry: z.boolean(),
+  error: z.string(),
+});
+
+const sseStepPayloadSchema = z.object({
+  step_id: z.string(),
+  status: z.enum(["running", "completed", "errored"]),
+  data: z.unknown().optional(),
+});
+
+const sseRedirectPayloadSchema = z.object({
+  run_id: z.string(),
+  token: z.string(),
+  url: z.string().optional(),
+});
 
 // ---------------------------------------------------------------------------
 // Frame builders
@@ -314,6 +345,8 @@ export async function* iterSSE(
 
       buffer += decoder.decode(value, { stream: true });
 
+      // SSE events are delimited by a blank line (double newline) per the
+      // Server-Sent Events spec.
       const parts = buffer.split("\n\n");
       buffer = parts.pop() ?? "";
 
@@ -359,53 +392,53 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
 
   switch (raw.event) {
     case "inngest.metadata": {
-      const obj = parsed as Record<string, unknown>;
-      return {
-        type: "inngest.metadata",
-        run_id: obj.run_id as string,
-      };
+      const result = sseMetadataPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+      return { type: "inngest.metadata", run_id: result.data.run_id };
     }
     case "stream": {
-      const obj = parsed as Record<string, unknown>;
+      const result = sseStreamPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
       return {
         type: "stream",
-        data: obj.data,
-        ...(typeof obj.step_id === "string" ? { step_id: obj.step_id } : {}),
+        data: result.data.data,
+        ...(result.data.step_id ? { step_id: result.data.step_id } : {}),
       };
     }
     case "inngest.result":
       return { type: "inngest.result", data: parsed };
     case "inngest.step": {
-      const obj = parsed as Record<string, unknown>;
-      const stepId = obj.step_id as string;
-      const status = obj.status as string;
+      const result = sseStepPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+
+      const { step_id, status, data } = result.data;
 
       if (status === "errored") {
-        const err = (obj.data ?? {}) as Record<string, unknown>;
+        const errResult = stepErrorDataSchema.safeParse(data ?? {});
         return {
           type: "inngest.step",
-          step_id: stepId,
+          step_id,
           status: "errored",
-          will_retry:
-            typeof err.will_retry === "boolean" ? err.will_retry : false,
-          error: typeof err.error === "string" ? err.error : "unknown",
+          will_retry: errResult.success ? errResult.data.will_retry : false,
+          error: errResult.success ? errResult.data.error : "unknown",
         };
       }
 
       return {
         type: "inngest.step" as const,
-        step_id: stepId,
-        status: status as "running" | "completed",
-        data: obj.data,
+        step_id,
+        status,
+        data,
       };
     }
     case "inngest.redirect_info": {
-      const obj = parsed as Record<string, unknown>;
+      const result = sseRedirectPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
       return {
         type: "inngest.redirect_info",
-        run_id: obj.run_id as string,
-        token: obj.token as string,
-        ...(typeof obj.url === "string" ? { url: obj.url } : {}),
+        run_id: result.data.run_id,
+        token: result.data.token,
+        ...(result.data.url ? { url: result.data.url } : {}),
       };
     }
     default:

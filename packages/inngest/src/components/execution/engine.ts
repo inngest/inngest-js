@@ -545,7 +545,7 @@ class InngestExecutionEngine
    *
    * Called from two places: after the first checkpoint and when the stream
    * is first activated. This ensures the redirect is sent as soon as both
-   * pieces of information are available, rather than waiting until the DE
+   * pieces of information are available, rather than waiting until the durabl endpoint
    * goes async (which may never happen, or may be triggered by a crash).
    */
   private sendRedirectIfReady(): void {
@@ -559,6 +559,9 @@ class InngestExecutionEngine
 
     const run = this.state.checkpointedRun;
     if (!run?.realtimeToken) {
+      this.options.client[internalLoggerSymbol].error(
+        "realtimeToken missing from checkpointed run; cannot send redirect info",
+      );
       return;
     }
 
@@ -882,8 +885,12 @@ class InngestExecutionEngine
                   op: StepOpCode.StepError,
                   error: checkpoint.error,
                 },
-              ]).catch(() => {
-                // Best-effort: don't crash if the IS rejects this.
+              ]).catch((err) => {
+                // Best-effort: don't crash if the Inngest Server rejects this.
+                this.options.client[internalLoggerSymbol].warn(
+                  { err },
+                  "Failed to checkpoint step error for retry",
+                );
               });
             }
 
@@ -1102,9 +1109,9 @@ class InngestExecutionEngine
             i,
           );
           if (output?.type === "function-resolved") {
-            // When running to completion (DE re-entry), return the
-            // function result directly instead of wrapping it in a
-            // steps-found checkpoint for the IS.
+            // When running to completion (durable endpoint re-entry), return
+            // the function result directly instead of wrapping it in a
+            // steps-found checkpoint for the Inngest Server.
             if (this.options.runToCompletion) {
               return output;
             }
@@ -1183,9 +1190,9 @@ class InngestExecutionEngine
                 return stepRanHandler(stepResult);
               }
 
-              // When running to completion (DE re-entry), resume the step
-              // locally so the core loop continues instead of blocking on a
-              // checkpoint POST to the IS.
+              // When running to completion (durable endpoint re-entry), resume
+              // the step locally so the core loop continues instead of
+              // blocking on a checkpoint POST to the Inngest Server.
               if (this.options.runToCompletion) {
                 const stepToResume = this.resumeStepLocally(stepResult);
 
@@ -1195,8 +1202,12 @@ class InngestExecutionEngine
                   data: stepResult.data,
                 });
                 void this.checkpoint(this.state.checkpointingStepBuffer).catch(
-                  () => {
-                    // Best-effort: don't crash if the IS rejects this.
+                  (err) => {
+                    // Best-effort: don't crash if the Inngest Server rejects this.
+                    this.options.client[internalLoggerSymbol].warn(
+                      { err },
+                      "Failed to checkpoint step during runToCompletion",
+                    );
                   },
                 );
                 this.state.checkpointingStepBuffer = [];
@@ -1222,7 +1233,7 @@ class InngestExecutionEngine
             // When running to completion, execute all unfulfilled
             // steps locally so Promise.all resolves and the function
             // can continue. Without this the handler returns them to
-            // the IS as a 206, which causes an infinite retry loop.
+            // the Inngest Server as a 206, which causes an infinite retry loop.
             if (this.options.runToCompletion) {
               const parallelError =
                 await this.executeUnfulfilledSteps(newSteps);
@@ -1291,8 +1302,12 @@ class InngestExecutionEngine
           if (this.options.runToCompletion) {
             if (this.state.checkpointingStepBuffer.length) {
               void this.checkpoint(this.state.checkpointingStepBuffer).catch(
-                () => {
-                  // Best-effort: don't crash if the IS rejects this.
+                (err) => {
+                  // Best-effort: don't crash if the Inngest Server rejects this.
+                  this.options.client[internalLoggerSymbol].warn(
+                    { err },
+                    "Failed to checkpoint buffer during runToCompletion",
+                  );
                 },
               );
               this.state.checkpointingStepBuffer = [];
@@ -1345,7 +1360,7 @@ class InngestExecutionEngine
   /**
    * Execute all unfulfilled steps locally so that `Promise.all` can resolve
    * and the function continues. Used in `runToCompletion` mode where the SDK
-   * must handle parallelism locally instead of deferring to the IS.
+   * must handle parallelism locally instead of deferring to the Inngest Server.
    *
    * Steps are executed sequentially — the parallelism lives in the user's
    * `Promise.all`; the engine just needs to resolve every step's deferred

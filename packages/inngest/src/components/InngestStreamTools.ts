@@ -122,9 +122,6 @@ export class InngestStream {
    * Emit a step lifecycle SSE frame (`step:running`, `step:completed`,
    * `step:errored`). Internal use only — called by the execution engine.
    */
-  stepLifecycle(stepId: string, status: "running"): void;
-  stepLifecycle(stepId: string, status: "completed"): void;
-  stepLifecycle(stepId: string, status: "errored", data: StepErrorData): void;
   stepLifecycle(
     stepId: string,
     status: SSEStepFrame["status"],
@@ -164,12 +161,14 @@ export class InngestStream {
     // Check ReadableStream first — on Node 18+ ReadableStream implements
     // Symbol.asyncIterator, so the instanceof check must come before
     // the async-iterable duck-type test.
-    const iterable: AsyncIterable<string> =
-      source instanceof ReadableStream
-        ? this.readableToAsyncIterable(source)
-        : typeof source === "function"
-          ? source()
-          : source;
+    let iterable: AsyncIterable<string>;
+    if (source instanceof ReadableStream) {
+      iterable = this.readableToAsyncIterable(source);
+    } else if (typeof source === "function") {
+      iterable = source();
+    } else {
+      iterable = source;
+    }
 
     return this.pipeIterable(iterable);
   }
@@ -211,12 +210,7 @@ export class InngestStream {
         continue;
       }
 
-      this.writeChain = this.writeChain
-        .then(() => this.writer.write(this.encoder.encode(frame)))
-        .catch(() => {
-          // Writer errored — swallow to keep the read loop draining
-          // so we still collect all chunks for the return value.
-        });
+      this.enqueue(frame);
       await this.writeChain;
     }
 
@@ -225,8 +219,9 @@ export class InngestStream {
 
   /**
    * Write a redirect info frame. Tells the client where to reconnect if the
-   * DE goes async. Does NOT close the writer — more stream frames may follow
-   * before the DE actually switches to async mode. Internal use only.
+   * durable endpoint goes async. Does NOT close the writer — more stream
+   * frames may follow before the durable endpoint actually switches to async
+   * mode. Internal use only.
    */
   sendRedirectInfo(data: {
     run_id: string;
@@ -256,7 +251,7 @@ export class InngestStream {
   }
 
   /**
-   * Close the writer without writing a result frame. Used when the DE goes
+   * Close the writer without writing a result frame. Used when the durable endpoint goes
    * async and the real result will arrive on the redirected stream.
    */
   end(): void {
