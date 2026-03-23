@@ -995,61 +995,63 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
  * middleware. Returns new-style `Middleware.Class` constructors. Uses a closure
  * so the no-arg constructors can capture the base logger.
  */
-function createLoggerMiddleware(baseLogger: Logger) {
-  return class LoggerMiddleware extends Middleware.BaseMiddleware {
-    readonly id = "inngest:logger";
-    #proxyLogger = new ProxyLogger(baseLogger);
+export function builtInMiddleware(baseLogger: Logger): Middleware.Class[] {
+  return [
+    class LoggerMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "inngest:logger";
+      #proxyLogger = new ProxyLogger(baseLogger);
 
-    override transformFunctionInput(
-      arg: Middleware.TransformFunctionInputArgs,
-    ) {
-      let logger: Logger = baseLogger;
+      override transformFunctionInput(
+        arg: Middleware.TransformFunctionInputArgs,
+      ) {
+        let logger: Logger = baseLogger;
 
-      // Create a child logger with run metadata if supported
-      if ("child" in logger) {
-        try {
-          logger = (logger.child as (meta: Record<string, unknown>) => Logger)({
-            runID: arg.ctx.runId,
-            eventName: arg.ctx.event.name,
-          });
-        } catch (err) {
-          logger.error({ err }, 'failed to create "childLogger" with error');
+        // Create a child logger with run metadata if supported
+        if ("child" in logger) {
+          try {
+            logger = (
+              logger.child as (meta: Record<string, unknown>) => Logger
+            )({
+              runID: arg.ctx.runId,
+              eventName: arg.ctx.event.name,
+            });
+          } catch (err) {
+            logger.error({ err }, 'failed to create "childLogger" with error');
+          }
         }
+
+        this.#proxyLogger = new ProxyLogger(logger);
+
+        return {
+          ...arg,
+          ctx: Object.assign({}, arg.ctx, {
+            logger: this.#proxyLogger as Logger,
+          }),
+        };
       }
 
-      this.#proxyLogger = new ProxyLogger(logger);
+      override onMemoizationEnd() {
+        this.#proxyLogger.enable();
+      }
 
-      return {
-        ...arg,
-        ctx: Object.assign({}, arg.ctx, {
-          logger: this.#proxyLogger as Logger,
-        }),
-      };
-    }
+      override onStepError(arg: Middleware.OnStepErrorArgs) {
+        this.#proxyLogger.error({ err: arg.error }, "Inngest step error");
+      }
 
-    override onMemoizationEnd() {
-      this.#proxyLogger.enable();
-    }
+      override wrapFunctionHandler({
+        next,
+      }: Middleware.WrapFunctionHandlerArgs) {
+        return next().catch((err: unknown) => {
+          this.#proxyLogger.error({ err }, "Inngest function error");
+          throw err;
+        });
+      }
 
-    override onStepError(arg: Middleware.OnStepErrorArgs) {
-      this.#proxyLogger.error({ err: arg.error }, "Inngest step error");
-    }
-
-    override wrapFunctionHandler({ next }: Middleware.WrapFunctionHandlerArgs) {
-      return next().catch((err: unknown) => {
-        this.#proxyLogger.error({ err }, "Inngest function error");
-        throw err;
-      });
-    }
-
-    override wrapRequest({ next }: Middleware.WrapRequestArgs) {
-      return next().finally(() => this.#proxyLogger.flush());
-    }
-  };
-}
-
-export function builtInMiddleware(baseLogger: Logger) {
-  return [createLoggerMiddleware(baseLogger)] as const;
+      override wrapRequest({ next }: Middleware.WrapRequestArgs) {
+        return next().finally(() => this.#proxyLogger.flush());
+      }
+    },
+  ] as const;
 }
 
 /**
