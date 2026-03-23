@@ -26,6 +26,7 @@ import {
   workerDisconnectReasonToJSON,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { version } from "../../../../version.ts";
+import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
 import {
   createStartRequest,
   parseConnectMessage,
@@ -447,12 +448,14 @@ export class ConnectionCore {
         ).finish();
 
         ws.send(
-          ConnectMessage.encode(
-            ConnectMessage.create({
-              kind: GatewayMessageType.WORKER_CONNECT,
-              payload: workerConnectRequestMsgBytes,
-            }),
-          ).finish(),
+          ensureUnsharedArrayBuffer(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_CONNECT,
+                payload: workerConnectRequestMsgBytes,
+              }),
+            ).finish(),
+          ),
         );
 
         setupState.sentWorkerConnect = true;
@@ -697,24 +700,26 @@ export class ConnectionCore {
 
         // Send ACK
         ws.send(
-          ConnectMessage.encode(
-            ConnectMessage.create({
-              kind: GatewayMessageType.WORKER_REQUEST_ACK,
-              payload: WorkerRequestAckData.encode(
-                WorkerRequestAckData.create({
-                  accountId: gatewayExecutorRequest.accountId,
-                  envId: gatewayExecutorRequest.envId,
-                  appId: gatewayExecutorRequest.appId,
-                  functionSlug: gatewayExecutorRequest.functionSlug,
-                  requestId: gatewayExecutorRequest.requestId,
-                  stepId: gatewayExecutorRequest.stepId,
-                  userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                  systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                  runId: gatewayExecutorRequest.runId,
-                }),
-              ).finish(),
-            }),
-          ).finish(),
+          ensureUnsharedArrayBuffer(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_REQUEST_ACK,
+                payload: WorkerRequestAckData.encode(
+                  WorkerRequestAckData.create({
+                    accountId: gatewayExecutorRequest.accountId,
+                    envId: gatewayExecutorRequest.envId,
+                    appId: gatewayExecutorRequest.appId,
+                    functionSlug: gatewayExecutorRequest.functionSlug,
+                    requestId: gatewayExecutorRequest.requestId,
+                    stepId: gatewayExecutorRequest.stepId,
+                    userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+                    systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+                    runId: gatewayExecutorRequest.runId,
+                  }),
+                ).finish(),
+              }),
+            ).finish(),
+          ),
         );
 
         this.inProgressRequests.wg.add(1);
@@ -765,25 +770,27 @@ export class ConnectionCore {
           }
 
           latestConn.ws.send(
-            ConnectMessage.encode(
-              ConnectMessage.create({
-                kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
-                payload: WorkerRequestExtendLeaseData.encode(
-                  WorkerRequestExtendLeaseData.create({
-                    accountId: gatewayExecutorRequest.accountId,
-                    envId: gatewayExecutorRequest.envId,
-                    appId: gatewayExecutorRequest.appId,
-                    functionSlug: gatewayExecutorRequest.functionSlug,
-                    requestId: gatewayExecutorRequest.requestId,
-                    stepId: gatewayExecutorRequest.stepId,
-                    runId: gatewayExecutorRequest.runId,
-                    userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                    systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                    leaseId: currentLeaseId,
-                  }),
-                ).finish(),
-              }),
-            ).finish(),
+            ensureUnsharedArrayBuffer(
+              ConnectMessage.encode(
+                ConnectMessage.create({
+                  kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+                  payload: WorkerRequestExtendLeaseData.encode(
+                    WorkerRequestExtendLeaseData.create({
+                      accountId: gatewayExecutorRequest.accountId,
+                      envId: gatewayExecutorRequest.envId,
+                      appId: gatewayExecutorRequest.appId,
+                      functionSlug: gatewayExecutorRequest.functionSlug,
+                      requestId: gatewayExecutorRequest.requestId,
+                      stepId: gatewayExecutorRequest.stepId,
+                      runId: gatewayExecutorRequest.runId,
+                      userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+                      systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+                      leaseId: currentLeaseId,
+                    }),
+                  ).finish(),
+                }),
+              ).finish(),
+            ),
           );
         }, extendLeaseIntervalMs);
 
@@ -816,12 +823,14 @@ export class ConnectionCore {
           );
 
           this.currentConnection.ws.send(
-            ConnectMessage.encode(
-              ConnectMessage.create({
-                kind: GatewayMessageType.WORKER_REPLY,
-                payload: responseBytes,
-              }),
-            ).finish(),
+            ensureUnsharedArrayBuffer(
+              ConnectMessage.encode(
+                ConnectMessage.create({
+                  kind: GatewayMessageType.WORKER_REPLY,
+                  payload: responseBytes,
+                }),
+              ).finish(),
+            ),
           );
         } catch (err) {
           this.callbacks.logger.debug(
@@ -942,11 +951,13 @@ export class ConnectionCore {
 
         conn.pendingHeartbeats++;
         ws.send(
-          ConnectMessage.encode(
-            ConnectMessage.create({
-              kind: GatewayMessageType.WORKER_HEARTBEAT,
-            }),
-          ).finish(),
+          ensureUnsharedArrayBuffer(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_HEARTBEAT,
+              }),
+            ).finish(),
+          ),
         );
       }, heartbeatIntervalMs);
     }
@@ -961,11 +972,13 @@ export class ConnectionCore {
       if (ws.readyState === WebSocket.OPEN) {
         this.callbacks.logger.debug({ connectionId }, "Sending pause message");
         ws.send(
-          ConnectMessage.encode(
-            ConnectMessage.create({
-              kind: GatewayMessageType.WORKER_PAUSE,
-            }),
-          ).finish(),
+          ensureUnsharedArrayBuffer(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_PAUSE,
+              }),
+            ).finish(),
+          ),
         );
       }
 
