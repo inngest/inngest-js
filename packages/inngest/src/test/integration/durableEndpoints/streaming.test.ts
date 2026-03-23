@@ -151,8 +151,6 @@ test(
 //   1. Whether the client sent Accept: text/event-stream
 //   2. Whether user code called stream.push() or stream.pipe()
 //   3. Whether the function completed synchronously or went async
-//
-// The tests below cover the full 2×2×2 matrix.
 // ---------------------------------------------------------------------------
 
 describe("header negotiation", () => {
@@ -178,9 +176,7 @@ describe("header negotiation", () => {
 
           const { events } = await readSSEStream(res, 15_000);
 
-          const metadata = events.filter(
-            (e) => e.event === "inngest.metadata",
-          );
+          const metadata = events.filter((e) => e.event === "inngest.metadata");
           expect(metadata.length).toBe(1);
           expect(JSON.parse(metadata[0]!.data)).toHaveProperty("run_id");
 
@@ -252,9 +248,7 @@ describe("header negotiation", () => {
 
           const { events } = await readSSEStream(res, 15_000);
 
-          const metadata = events.filter(
-            (e) => e.event === "inngest.metadata",
-          );
+          const metadata = events.filter((e) => e.event === "inngest.metadata");
           expect(metadata.length).toBe(1);
 
           const results = events.filter((e) => e.event === "inngest.result");
@@ -266,30 +260,26 @@ describe("header negotiation", () => {
         },
       );
 
-      test(
-        "async: returns 302 redirect",
-        { timeout: 60000 },
-        async () => {
-          const { port } = await setupEndpoint(async () => {
-            await step.run("first", async () => {
-              return "a";
-            });
-            await step.sleep("wait", "1s");
-            await step.run("second", async () => {
-              return "b";
-            });
-            return new Response("final");
+      test("async: returns 302 redirect", { timeout: 60000 }, async () => {
+        const { port } = await setupEndpoint(async () => {
+          await step.run("first", async () => {
+            return "a";
           });
-
-          const res = await fetch(`http://localhost:${port}/api/demo`, {
-            headers: { Accept: "text/event-stream" },
-            redirect: "manual",
+          await step.sleep("wait", "1s");
+          await step.run("second", async () => {
+            return "b";
           });
+          return new Response("final");
+        });
 
-          expect(res.status).toBe(302);
-          expect(res.headers.get("location")).toBeTruthy();
-        },
-      );
+        const res = await fetch(`http://localhost:${port}/api/demo`, {
+          headers: { Accept: "text/event-stream" },
+          redirect: "manual",
+        });
+
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBeTruthy();
+      });
     });
   });
 
@@ -318,29 +308,25 @@ describe("header negotiation", () => {
         },
       );
 
-      test(
-        "async: returns 302 redirect",
-        { timeout: 60000 },
-        async () => {
-          const { port } = await setupEndpoint(async () => {
-            await step.run("work", async () => {
-              stream.push("buffered-data");
-            });
-            await step.sleep("wait", "1s");
-            await step.run("after-async", async () => {
-              return "result";
-            });
-            return new Response("final");
+      test("async: returns 302 redirect", { timeout: 60000 }, async () => {
+        const { port } = await setupEndpoint(async () => {
+          await step.run("work", async () => {
+            stream.push("buffered-data");
           });
-
-          const res = await fetch(`http://localhost:${port}/api/demo`, {
-            redirect: "manual",
+          await step.sleep("wait", "1s");
+          await step.run("after-async", async () => {
+            return "result";
           });
+          return new Response("final");
+        });
 
-          expect(res.status).toBe(302);
-          expect(res.headers.get("location")).toBeTruthy();
-        },
-      );
+        const res = await fetch(`http://localhost:${port}/api/demo`, {
+          redirect: "manual",
+        });
+
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBeTruthy();
+      });
     });
 
     describe("without streaming", () => {
@@ -364,29 +350,25 @@ describe("header negotiation", () => {
         },
       );
 
-      test(
-        "async: returns 302 redirect",
-        { timeout: 60000 },
-        async () => {
-          const { port } = await setupEndpoint(async () => {
-            await step.run("first", async () => {
-              return "a";
-            });
-            await step.sleep("wait", "1s");
-            await step.run("second", async () => {
-              return "b";
-            });
-            return new Response("final");
+      test("async: returns 302 redirect", { timeout: 60000 }, async () => {
+        const { port } = await setupEndpoint(async () => {
+          await step.run("first", async () => {
+            return "a";
           });
-
-          const res = await fetch(`http://localhost:${port}/api/demo`, {
-            redirect: "manual",
+          await step.sleep("wait", "1s");
+          await step.run("second", async () => {
+            return "b";
           });
+          return new Response("final");
+        });
 
-          expect(res.status).toBe(302);
-          expect(res.headers.get("location")).toBeTruthy();
-        },
-      );
+        const res = await fetch(`http://localhost:${port}/api/demo`, {
+          redirect: "manual",
+        });
+
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBeTruthy();
+      });
     });
   });
 });
