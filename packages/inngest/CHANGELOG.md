@@ -1,5 +1,11 @@
 # inngest
 
+## 4.0.5
+
+### Patch Changes
+
+- [#1400](https://github.com/inngest/inngest-js/pull/1400) [`a545f98e`](https://github.com/inngest/inngest-js/commit/a545f98e42204646627188e1744826ce58693de2) Thanks [@amh4r](https://github.com/amh4r)! - Fix triggers applying to onFailure handler
+
 ## 4.0.4
 
 ### Patch Changes
