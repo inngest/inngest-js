@@ -999,13 +999,15 @@ export class InngestCommHandler<
         });
       },
       "function-resolved": ({ data }) => {
-        // If the execution returned a Response (SSE from the engine or a
-        // user-constructed Response), pass it through directly.
+        // If the execution returned a Response (SSE streaming from the
+        // engine, or a user-constructed Response in a durable endpoint),
+        // pass it through directly — the headers and body are already set.
         if (data instanceof Response) {
           return data;
         }
 
-        // Non-streaming: wrap in a framework response.
+        // Non-streaming path: plain return values from the function are
+        // JSON-serialized and wrapped in a framework response.
         return actions.transformResponse("creating sync success response", {
           status: 200,
           headers: {

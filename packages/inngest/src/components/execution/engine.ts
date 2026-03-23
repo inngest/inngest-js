@@ -129,6 +129,13 @@ class InngestExecutionEngine
   private redirectSent = false;
 
   /**
+   * Promise that resolves once the redirect frame has been written (or the
+   * attempt completes). Stored so that `checkpointAndSwitchToAsync` can
+   * await it before closing the writer.
+   */
+  private redirectPromise: Promise<void> = Promise.resolve();
+
+  /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
    * will be a `Promise` that resolves after no steps have been found for
    * `timeoutDuration` milliseconds.
@@ -422,6 +429,11 @@ class InngestExecutionEngine
 
     const token = this.state.checkpointedRun.token;
 
+    // Ensure the redirect_info frame has been flushed before closing the
+    // stream. sendRedirectIfReady fires the redirect asynchronously (it
+    // fetches the redirect URL from the API), so we must wait for it here.
+    await this.redirectPromise;
+
     // End the stream without a result frame when switching to async mode.
     // The redirect_info frame was already sent, so the client knows where
     // to reconnect for the real result.
@@ -545,7 +557,7 @@ class InngestExecutionEngine
    *
    * Called from two places: after the first checkpoint and when the stream
    * is first activated. This ensures the redirect is sent as soon as both
-   * pieces of information are available, rather than waiting until the durabl endpoint
+   * pieces of information are available, rather than waiting until the durable endpoint
    * goes async (which may never happen, or may be triggered by a crash).
    */
   private sendRedirectIfReady(): void {
@@ -559,6 +571,7 @@ class InngestExecutionEngine
 
     const run = this.state.checkpointedRun;
     if (!run?.realtimeToken) {
+      // TODO: Can we make realtimeToken a required field on checkpointedRun?
       this.options.client[internalLoggerSymbol].error(
         "realtimeToken missing from checkpointed run; cannot send redirect info",
       );
@@ -569,7 +582,7 @@ class InngestExecutionEngine
 
     const { realtimeToken } = run;
 
-    void (async () => {
+    this.redirectPromise = (async () => {
       try {
         const redirect = await this.options.client[
           "inngestApi"
@@ -580,12 +593,11 @@ class InngestExecutionEngine
           token: redirect.token,
           url: redirect.url,
         });
-      } catch {
-        // Best-effort; client can still construct URL from run_id + token
-        this.streamTools.sendRedirectInfo({
-          run_id: this.fnArg.runId,
-          token: realtimeToken,
-        });
+      } catch (err) {
+        this.options.client[internalLoggerSymbol].warn(
+          { err },
+          "Failed to fetch realtime stream redirect URL",
+        );
       }
     })();
   }
@@ -1282,6 +1294,10 @@ class InngestExecutionEngine
           if (this.options.runToCompletion) {
             return;
           }
+
+          this.options.client[internalLoggerSymbol].debug(
+            "Checkpointing runtime reached; sending discovery request",
+          );
 
           return {
             type: "steps-found",
