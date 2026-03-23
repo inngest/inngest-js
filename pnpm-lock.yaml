@@ -180,6 +180,9 @@ importers:
       debug:
         specifier: ^4.3.4
         version: 4.3.4
+      eventsource-parser:
+        specifier: ^3.0.6
+        version: 3.0.6
       hash.js:
         specifier: ^1.1.7
         version: 1.1.7
@@ -297,7 +300,7 @@ importers:
         version: 0.1.11
       next:
         specifier: ^13.5.4
-        version: 13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+        version: 13.5.4(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0)
       nock:
         specifier: ^13.2.9
         version: 13.2.9
@@ -361,7 +364,7 @@ importers:
         version: 4.0.0
       inngest:
         specifier: '>=4.0.0-beta.2 <5.0.0'
-        version: 4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.5.2)(zod@4.3.6)
+        version: 4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.5.2)(zod@4.3.6)
       typescript:
         specifier: ~5.5.2
         version: 5.5.2
@@ -385,7 +388,7 @@ importers:
         version: 22.13.10
       inngest:
         specifier: '>=4.0.0-beta.2 <5.0.0'
-        version: 4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.3.6)
+        version: 4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.3.6)
       typescript:
         specifier: ~5.8.2
         version: 5.8.2
@@ -400,7 +403,7 @@ importers:
         version: 1.0.0
       inngest:
         specifier: ^3.44.1
-        version: 3.44.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76)
+        version: 3.44.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76)
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -449,7 +452,7 @@ importers:
         version: 4.3.4
       inngest:
         specifier: ^3.42.3
-        version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@3.25.76)
+        version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@3.25.76)
       zod:
         specifier: ^3.25.0
         version: 3.25.76
@@ -501,7 +504,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.42.3
-        version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.9.2)(zod@4.3.6)
+        version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.9.2)(zod@4.3.6)
       tinyspy:
         specifier: ^3.0.2
         version: 3.0.2
@@ -3058,25 +3061,21 @@ packages:
     resolution: {integrity: sha512-+xmiDGGaSfIIOXMzkhJ++Oa0Gwvl9oXUeIiwarsdRXSe27HUIvjbSIpPxvnNsRebsNdUo7uAiQVgBD1hVriwSQ==}
     cpu: [arm]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.44.2':
     resolution: {integrity: sha512-bDHvhzOfORk3wt8yxIra8N4k/N0MnKInCW5OGZaeDYa/hMrdPaJzo7CSkjKZqX4JFUWjUGm88lI6QJLCM7lDrA==}
     cpu: [arm]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.44.2':
     resolution: {integrity: sha512-NMsDEsDiYghTbeZWEGnNi4F0hSbGnsuOG+VnNvxkKg0IGDvFh7UVpM/14mnMwxRxUf9AdAVJgHPvKXf6FpMB7A==}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.44.2':
     resolution: {integrity: sha512-lb5bxXnxXglVq+7imxykIp5xMq+idehfl+wOgiiix0191av84OqbjUED+PRC5OA8eFJYj5xAGcpAZ0pF2MnW+A==}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-loongarch64-gnu@4.44.2':
     resolution: {integrity: sha512-Yl5Rdpf9pIc4GW1PmkUGHdMtbx0fBLE1//SxDmuf3X0dUC57+zMepow2LK0V21661cjXdTn8hO2tXDdAWAqE5g==}
@@ -3092,31 +3091,26 @@ packages:
     resolution: {integrity: sha512-iYtAqBg5eEMG4dEfVlkqo05xMOk6y/JXIToRca2bAWuqjrJYJlx/I7+Z+4hSrsWU8GdJDFPL4ktV3dy4yBSrzg==}
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.44.2':
     resolution: {integrity: sha512-e6vEbgaaqz2yEHqtkPXa28fFuBGmUJ0N2dOJK8YUfijejInt9gfCSA7YDdJ4nYlv67JfP3+PSWFX4IVw/xRIPg==}
     cpu: [riscv64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.44.2':
     resolution: {integrity: sha512-evFOtkmVdY3udE+0QKrV5wBx7bKI0iHz5yEVx5WqDJkxp9YQefy4Mpx3RajIVcM6o7jxTvVd/qpC1IXUhGc1Mw==}
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.44.2':
     resolution: {integrity: sha512-/bXb0bEsWMyEkIsUL2Yt5nFB5naLAwyOWMEviQfQY1x3l5WsLKgvZf66TM7UTfED6erckUVUJQ/jJ1FSpm3pRQ==}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.44.2':
     resolution: {integrity: sha512-3D3OB1vSSBXmkGEZR27uiMRNiwN08/RVAcBKwhUYPaiZ8bcvdeEwWPvbnXvvXHY+A/7xluzcN+kaiOFNiOZwWg==}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-win32-arm64-msvc@4.44.2':
     resolution: {integrity: sha512-VfU0fsMK+rwdK8mwODqYeM2hDrF2WiHaSmCBrS7gColkQft95/8tphyzv2EupVxn3iE0FI78wzffoULH1G+dkw==}
@@ -4850,6 +4844,10 @@ packages:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
 
+  eventsource-parser@3.0.6:
+    resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
+    engines: {node: '>=18.0.0'}
+
   execa@5.1.1:
     resolution: {integrity: sha512-8uSpZZocAZRBAPIEINJj3Lo9HyGitllczc27Eh5YYojjMFMn8yHMDMaUHE2Jqfq05D/wucwI4JGURyXt1vchyg==}
     engines: {node: '>=10'}
@@ -5999,10 +5997,6 @@ packages:
   long@5.3.1:
     resolution: {integrity: sha512-ka87Jz3gcx/I7Hal94xaN2tZEOPoUOEVftkQqZx2EeQRN7LGdfLlI3FvZ+7WDplm+vK2Urx9ULrvSowtdCieng==}
 
-  loose-envify@1.4.0:
-    resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
-    hasBin: true
-
   loupe@3.1.4:
     resolution: {integrity: sha512-wJzkKwJrheKtknCOKNEtDK4iqg/MxmZheEMtSTYvnzRdEYaZzmgH976nenp8WdJRdx5Vc1X/9MO0Oszl6ezeXg==}
 
@@ -6641,11 +6635,6 @@ packages:
     resolution: {integrity: sha512-8zGqypfENjCIqGhgXToC8aB2r7YrBX+AQAfIPs/Mlk+BtPTztOvTS01NRW/3Eh60J+a48lt8qsCzirQ6loCVfA==}
     engines: {node: '>= 0.8'}
 
-  react-dom@18.2.0:
-    resolution: {integrity: sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==}
-    peerDependencies:
-      react: ^18.2.0
-
   react-dom@19.2.4:
     resolution: {integrity: sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==}
     peerDependencies:
@@ -6842,9 +6831,6 @@ packages:
 
   sax@1.3.0:
     resolution: {integrity: sha512-0s+oAmw9zLl1V1cS9BtZN7JAd0cW5e0QH4W3LWEK6a4LaLEA2OTpGYWDY+6XasBLtz6wkm3u1xRw95mRuJ59WA==}
-
-  scheduler@0.23.2:
-    resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
 
   scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
@@ -13088,6 +13074,8 @@ snapshots:
 
   events@3.3.0: {}
 
+  eventsource-parser@3.0.6: {}
+
   execa@5.1.1:
     dependencies:
       cross-spawn: 7.0.6
@@ -13710,7 +13698,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  inngest@3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@3.25.76):
+  inngest@3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@3.25.76):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -13744,13 +13732,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+      next: 15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0)
       typescript: 5.8.2
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.9.2)(zod@4.3.6):
+  inngest@3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.9.2)(zod@4.3.6):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -13784,13 +13772,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+      next: 15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0)
       typescript: 5.9.2
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.44.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76):
+  inngest@3.44.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -13824,13 +13812,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+      next: 15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0)
       typescript: 5.6.3
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.3.6):
+  inngest@4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.3.6):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -13865,14 +13853,14 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+      next: 15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0)
       typescript: 5.8.2
     transitivePeerDependencies:
       - '@opentelemetry/core'
       - encoding
       - supports-color
 
-  inngest@4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.5.2)(zod@4.3.6):
+  inngest@4.0.0-beta.2(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0))(typescript@5.5.2)(zod@4.3.6):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -13907,7 +13895,7 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+      next: 15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0)
       typescript: 5.5.2
     transitivePeerDependencies:
       - '@opentelemetry/core'
@@ -14831,10 +14819,6 @@ snapshots:
 
   long@5.3.1: {}
 
-  loose-envify@1.4.0:
-    dependencies:
-      js-tokens: 4.0.0
-
   loupe@3.1.4: {}
 
   lru-cache@10.0.3: {}
@@ -14998,7 +14982,7 @@ snapshots:
 
   negotiator@0.6.3: {}
 
-  next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0):
+  next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0):
     dependencies:
       '@next/env': 13.5.4
       '@swc/helpers': 0.5.2
@@ -15006,8 +14990,8 @@ snapshots:
       caniuse-lite: 1.0.30001571
       postcss: 8.4.31
       react: 19.0.0
-      react-dom: 18.2.0(react@19.0.0)
-      styled-jsx: 5.1.1(@babel/core@7.23.6)(react@19.0.0)
+      react-dom: 19.2.4(react@19.0.0)
+      styled-jsx: 5.1.1(react@19.0.0)
       watchpack: 2.4.0
     optionalDependencies:
       '@next/swc-darwin-arm64': 13.5.4
@@ -15024,6 +15008,31 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
+  next@15.5.12(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0):
+    dependencies:
+      '@next/env': 15.5.12
+      '@swc/helpers': 0.5.15
+      caniuse-lite: 1.0.30001776
+      postcss: 8.4.31
+      react: 19.0.0
+      react-dom: 19.2.4(react@19.0.0)
+      styled-jsx: 5.1.6(@babel/core@7.23.6)(react@19.0.0)
+    optionalDependencies:
+      '@next/swc-darwin-arm64': 15.5.12
+      '@next/swc-darwin-x64': 15.5.12
+      '@next/swc-linux-arm64-gnu': 15.5.12
+      '@next/swc-linux-arm64-musl': 15.5.12
+      '@next/swc-linux-x64-gnu': 15.5.12
+      '@next/swc-linux-x64-musl': 15.5.12
+      '@next/swc-win32-arm64-msvc': 15.5.12
+      '@next/swc-win32-x64-msvc': 15.5.12
+      '@opentelemetry/api': 1.9.0
+      sharp: 0.34.5
+    transitivePeerDependencies:
+      - '@babel/core'
+      - babel-plugin-macros
+    optional: true
+
   next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.0.0))(react@19.0.0):
     dependencies:
       '@next/env': 15.5.12
@@ -15032,7 +15041,7 @@ snapshots:
       postcss: 8.4.31
       react: 19.0.0
       react-dom: 19.2.4(react@19.0.0)
-      styled-jsx: 5.1.6(react@19.0.0)
+      styled-jsx: 5.1.6(@babel/core@7.23.6)(react@19.0.0)
     optionalDependencies:
       '@next/swc-darwin-arm64': 15.5.12
       '@next/swc-darwin-x64': 15.5.12
@@ -15444,12 +15453,6 @@ snapshots:
       iconv-lite: 0.4.24
       unpipe: 1.0.0
 
-  react-dom@18.2.0(react@19.0.0):
-    dependencies:
-      loose-envify: 1.4.0
-      react: 19.0.0
-      scheduler: 0.23.2
-
   react-dom@19.2.4(react@19.0.0):
     dependencies:
       react: 19.0.0
@@ -15698,10 +15701,6 @@ snapshots:
   sax@1.2.1: {}
 
   sax@1.3.0: {}
-
-  scheduler@0.23.2:
-    dependencies:
-      loose-envify: 1.4.0
 
   scheduler@0.27.0: {}
 
@@ -15979,17 +15978,17 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  styled-jsx@5.1.1(@babel/core@7.23.6)(react@19.0.0):
+  styled-jsx@5.1.1(react@19.0.0):
+    dependencies:
+      client-only: 0.0.1
+      react: 19.0.0
+
+  styled-jsx@5.1.6(@babel/core@7.23.6)(react@19.0.0):
     dependencies:
       client-only: 0.0.1
       react: 19.0.0
     optionalDependencies:
       '@babel/core': 7.23.6
-
-  styled-jsx@5.1.6(react@19.0.0):
-    dependencies:
-      client-only: 0.0.1
-      react: 19.0.0
 
   supports-color@5.5.0:
     dependencies:

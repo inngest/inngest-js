@@ -79,7 +79,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import { buildSSEMetadataFrame, prependToStream } from "./streaming.ts";
+import { buildSseMetadataFrame, prependToStream } from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -443,11 +443,11 @@ class InngestExecutionEngine
    * The returned stream can be used as a fetch body or Response body.
    *
    * NOTE: `this.streamTools.readable` can only be consumed once, so only one
-   * of `buildSSEResponse` or `postCheckpointStream` may be called per
+   * of `buildSseResponse` or `postCheckpointStream` may be called per
    * execution.
    */
   private buildMetadataPrefixedStream(): ReadableStream<Uint8Array> {
-    const metadataFrame = buildSSEMetadataFrame(this.fnArg.runId);
+    const metadataFrame = buildSseMetadataFrame(this.fnArg.runId);
     return prependToStream(
       new TextEncoder().encode(metadataFrame),
       this.streamTools.readable,
@@ -458,7 +458,7 @@ class InngestExecutionEngine
    * Build a complete SSE `Response` backed by the stream's readable side,
    * prefixed with the metadata frame.
    */
-  private buildSSEResponse(): Response {
+  private buildSseResponse(): Response {
     return new Response(this.buildMetadataPrefixedStream(), {
       status: 200,
       headers: {
@@ -486,7 +486,7 @@ class InngestExecutionEngine
     // Close the stream with a terminal result frame
     this.streamTools.close(resultData);
 
-    const clientResponse = this.buildSSEResponse();
+    const clientResponse = this.buildSseResponse();
 
     // Run transformOutput to fire middleware hooks
     const result = this.transformOutput({ data: resultData });
@@ -519,7 +519,7 @@ class InngestExecutionEngine
         type: "function-resolved",
         ctx: this.fnArg,
         ops: this.ops,
-        data: this.buildSSEResponse(),
+        data: this.buildSseResponse(),
       });
 
       // The first checkpoint may have already fired (e.g. a non-streaming

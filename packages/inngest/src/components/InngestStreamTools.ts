@@ -1,10 +1,10 @@
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
-  buildSSERedirectFrame,
-  buildSSEResultFrame,
-  buildSSEStepFrame,
-  buildSSEStreamFrame,
-  type SSEStepFrame,
+  buildSseRedirectFrame,
+  buildSseResultFrame,
+  buildSseStepFrame,
+  buildSseStreamFrame,
+  type SseStepFrame,
   type StepErrorData,
 } from "./execution/streaming.ts";
 
@@ -127,10 +127,10 @@ export class InngestStream {
   stepLifecycle(stepId: string, status: "errored", data: StepErrorData): void;
   stepLifecycle(
     stepId: string,
-    status: SSEStepFrame["status"],
+    status: SseStepFrame["status"],
     data?: StepErrorData,
   ): void {
-    this.enqueue(buildSSEStepFrame(stepId, status, data));
+    this.enqueue(buildSseStepFrame(stepId, status, data));
   }
 
   /**
@@ -144,7 +144,7 @@ export class InngestStream {
 
     let frame: string;
     try {
-      frame = buildSSEStreamFrame(data, stepId);
+      frame = buildSseStreamFrame(data, stepId);
     } catch {
       // data is not JSON-serializable (e.g. circular reference) — skip
       return;
@@ -206,7 +206,7 @@ export class InngestStream {
 
       let frame: string;
       try {
-        frame = buildSSEStreamFrame(chunk, stepId);
+        frame = buildSseStreamFrame(chunk, stepId);
       } catch {
         continue;
       }
@@ -233,7 +233,7 @@ export class InngestStream {
     token: string;
     url?: string;
   }): void {
-    this.enqueue(buildSSERedirectFrame(data));
+    this.enqueue(buildSseRedirectFrame(data));
   }
 
   /**
@@ -242,9 +242,9 @@ export class InngestStream {
   close(resultData?: unknown): void {
     let frame: string;
     try {
-      frame = buildSSEResultFrame(resultData);
+      frame = buildSseResultFrame(resultData);
     } catch {
-      frame = buildSSEResultFrame({ error: "Failed to serialize result" });
+      frame = buildSseResultFrame({ error: "Failed to serialize result" });
     }
 
     this.writeChain = this.writeChain

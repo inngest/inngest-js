@@ -13,16 +13,15 @@
  * @module
  */
 export type {
-  RawSSEEvent,
-  SSEFrame,
-  SSEMetadataFrame,
-  SSERedirectFrame,
-  SSEResultFrame,
-  SSEStepCompletedFrame,
-  SSEStepErroredFrame,
-  SSEStepFrame,
-  SSEStepRunningFrame,
-  SSEStreamFrame,
+  SseFrame,
+  SseMetadataFrame,
+  SseRedirectFrame,
+  SseResultFrame,
+  SseStepCompletedFrame,
+  SseStepErroredFrame,
+  SseStepFrame,
+  SseStepRunningFrame,
+  SseStreamFrame,
   StepErrorData,
 } from "./components/execution/streaming.ts";
 

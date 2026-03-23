@@ -1,10 +1,74 @@
 import http from "node:http";
+import { createParser, type EventSourceMessage } from "eventsource-parser";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface SSEEvent {
   event: string;
   data: string;
+}
+
+function eventSourceMessageToSSEEvent(event: EventSourceMessage): SSEEvent {
+  return {
+    event: event.event || "message",
+    data: event.data,
+  };
+}
+
+function extractRedirectUrl(event: SSEEvent): string | null {
+  if (event.event !== "inngest.redirect_info") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(event.data) as { url?: unknown };
+    return typeof parsed.url === "string" ? parsed.url : null;
+  } catch {
+    return null;
+  }
+}
+
+async function consumeSSEBody(
+  body: ReadableStream<Uint8Array>,
+  timeoutMs: number,
+  onEvent: (event: SSEEvent) => void,
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let timedOut = false;
+
+  const parser = createParser({
+    onEvent(event) {
+      onEvent(eventSourceMessageToSSEEvent(event));
+    },
+  });
+
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    reader.cancel("SSE read timed out").catch(() => {});
+  }, timeoutMs);
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      parser.feed(decoder.decode(value, { stream: true }));
+    }
+
+    const finalChunk = decoder.decode();
+    if (finalChunk) {
+      parser.feed(finalChunk);
+    }
+  } catch (err) {
+    if (!timedOut) {
+      throw err;
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
@@ -22,65 +86,13 @@ export async function readSSEStream(
     return { events, redirectUrl };
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let timedOut = false;
-
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    reader.cancel("SSE read timed out").catch(() => {});
-  }, timeoutMs);
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() ?? "";
-
-      for (const part of parts) {
-        if (!part.trim()) {
-          continue;
-        }
-
-        let event = "message";
-        let data = "";
-
-        for (const line of part.split("\n")) {
-          if (line.startsWith("event: ")) {
-            event = line.slice(7);
-          } else if (line.startsWith("data: ")) {
-            data = line.slice(6);
-          }
-        }
-
-        if (event === "inngest.redirect_info") {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.url) {
-              redirectUrl = parsed.url;
-            }
-          } catch {
-            // ignore parse errors
-          }
-        }
-
-        events.push({ event, data });
-      }
+  await consumeSSEBody(res.body, timeoutMs, (event) => {
+    const url = extractRedirectUrl(event);
+    if (url) {
+      redirectUrl = url;
     }
-  } catch (err) {
-    if (!timedOut) {
-      throw err;
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
+    events.push(event);
+  });
 
   return { events, redirectUrl };
 }
@@ -219,64 +231,13 @@ export function startSSEReader(res: Response, timeoutMs = 30_000) {
       return;
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let timedOut = false;
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      reader.cancel("SSE read timed out").catch(() => {});
-    }, timeoutMs);
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-
-        for (const part of parts) {
-          if (!part.trim()) {
-            continue;
-          }
-
-          let event = "message";
-          let data = "";
-
-          for (const line of part.split("\n")) {
-            if (line.startsWith("event: ")) {
-              event = line.slice(7);
-            } else if (line.startsWith("data: ")) {
-              data = line.slice(6);
-            }
-          }
-
-          if (event === "inngest.redirect_info") {
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.url) {
-                redirectUrl = parsed.url;
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          events.push({ event, data });
-        }
+    await consumeSSEBody(res.body, timeoutMs, (event) => {
+      const url = extractRedirectUrl(event);
+      if (url) {
+        redirectUrl = url;
       }
-    } catch (err) {
-      if (!timedOut) {
-        throw err;
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
+      events.push(event);
+    });
   })();
 
   async function waitForStreamData(value: string, waitMs = 10_000) {

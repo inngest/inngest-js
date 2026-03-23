@@ -6,11 +6,7 @@
  * by Inngest Durable Endpoints.
  */
 
-import {
-  iterSSE,
-  parseSSEFrame,
-  type SSEFrame,
-} from "./components/execution/streaming.ts";
+import { iterSse, type SseFrame } from "./components/execution/streaming.ts";
 
 // ---------------------------------------------------------------------------
 // subscribeToRun — low-level async generator
@@ -31,7 +27,7 @@ export interface SubscribeToRunOptions {
  */
 export async function* subscribeToRun(
   opts: SubscribeToRunOptions,
-): AsyncGenerator<SSEFrame> {
+): AsyncGenerator<SseFrame> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
   let currentUrl: string | undefined = opts.url;
 
@@ -51,10 +47,7 @@ export async function* subscribeToRun(
 
     let redirectUrl: string | undefined;
 
-    for await (const raw of iterSSE(res.body)) {
-      const frame = parseSSEFrame(raw);
-      if (!frame) continue;
-
+    for await (const frame of iterSse(res.body)) {
       if (frame.type === "inngest.redirect_info") {
         redirectUrl = frame.url;
         yield frame;
@@ -162,7 +155,7 @@ export class RunStream<TData = unknown> {
   private _tagged: Array<{ data: TData; step_id?: string }> = [];
   private _chunks: TData[] = [];
   private _consumed = false;
-  private _source: AsyncIterable<SSEFrame> | undefined;
+  private _source: AsyncIterable<SseFrame> | undefined;
 
   private _parseFn: (data: unknown) => TData;
 
@@ -209,7 +202,7 @@ export class RunStream<TData = unknown> {
    * Inject a pre-built source for testing. Skips the real fetch.
    * @internal
    */
-  _fromSource(source: AsyncIterable<SSEFrame>): this {
+  _fromSource(source: AsyncIterable<SseFrame>): this {
     this._source = source;
     return this;
   }
@@ -244,7 +237,7 @@ export class RunStream<TData = unknown> {
     yield* this._consume();
   }
 
-  private _resolveSource(): AsyncIterable<SSEFrame> {
+  private _resolveSource(): AsyncIterable<SseFrame> {
     return (
       this._source ??
       subscribeToRun({

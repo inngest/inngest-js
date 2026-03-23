@@ -1,23 +1,24 @@
 // No Node.js imports — this file is shared between server and client code.
 
+import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { createTimeoutPromise } from "../../helpers/promises.ts";
 
 // ---------------------------------------------------------------------------
 // Typed SSE frame definitions
 // ---------------------------------------------------------------------------
 
-export interface SSEMetadataFrame {
+export interface SseMetadataFrame {
   type: "inngest.metadata";
   run_id: string;
 }
 
-export interface SSEStreamFrame {
+export interface SseStreamFrame {
   type: "stream";
   data: unknown;
   step_id?: string;
 }
 
-export interface SSEResultFrame {
+export interface SseResultFrame {
   type: "inngest.result";
   data: unknown;
 }
@@ -32,49 +33,44 @@ export interface StepErrorData {
   error: string;
 }
 
-export interface SSEStepRunningFrame {
+export interface SseStepRunningFrame {
   type: "inngest.step";
   step_id: string;
   status: "running";
   data?: unknown;
 }
 
-export interface SSEStepCompletedFrame {
+export interface SseStepCompletedFrame {
   type: "inngest.step";
   step_id: string;
   status: "completed";
   data?: unknown;
 }
 
-export interface SSEStepErroredFrame extends StepErrorData {
+export interface SseStepErroredFrame extends StepErrorData {
   type: "inngest.step";
   step_id: string;
   status: "errored";
 }
 
-export type SSEStepFrame =
-  | SSEStepRunningFrame
-  | SSEStepCompletedFrame
-  | SSEStepErroredFrame;
+export type SseStepFrame =
+  | SseStepRunningFrame
+  | SseStepCompletedFrame
+  | SseStepErroredFrame;
 
-export interface SSERedirectFrame {
+export interface SseRedirectFrame {
   type: "inngest.redirect_info";
   run_id: string;
   token: string;
   url?: string;
 }
 
-export type SSEFrame =
-  | SSEMetadataFrame
-  | SSEStreamFrame
-  | SSEResultFrame
-  | SSEStepFrame
-  | SSERedirectFrame;
-
-export interface RawSSEEvent {
-  event: string;
-  data: string;
-}
+export type SseFrame =
+  | SseMetadataFrame
+  | SseStreamFrame
+  | SseResultFrame
+  | SseStepFrame
+  | SseRedirectFrame;
 
 // ---------------------------------------------------------------------------
 // Frame builders
@@ -87,7 +83,7 @@ export interface RawSSEEvent {
  * JSON (since `JSON.stringify(undefined)` returns the JS primitive `undefined`,
  * not the string `"null"`).
  */
-function buildSSEFrame(event: string, data: unknown): string {
+function buildSseFrame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`;
 }
 
@@ -97,8 +93,8 @@ function buildSSEFrame(event: string, data: unknown): string {
  * The frame follows the Server-Sent Events format and provides run context
  * (run ID) to consumers of the stream.
  */
-export function buildSSEMetadataFrame(runId: string): string {
-  return buildSSEFrame("inngest.metadata", { run_id: runId });
+export function buildSseMetadataFrame(runId: string): string {
+  return buildSseFrame("inngest.metadata", { run_id: runId });
 }
 
 /**
@@ -107,18 +103,18 @@ export function buildSSEMetadataFrame(runId: string): string {
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSSEStreamFrame(data: unknown, stepId?: string): string {
+export function buildSseStreamFrame(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
   if (stepId) payload.step_id = stepId;
-  return buildSSEFrame("stream", payload);
+  return buildSseFrame("stream", payload);
 }
 
 /**
  * Builds an SSE result frame string for the terminal value of a streaming
  * response. This is the last frame sent before the stream closes.
  */
-export function buildSSEResultFrame(data: unknown): string {
-  return buildSSEFrame("inngest.result", data);
+export function buildSseResultFrame(data: unknown): string {
+  return buildSseFrame("inngest.result", data);
 }
 
 /**
@@ -128,12 +124,12 @@ export function buildSSEResultFrame(data: unknown): string {
  * When `url` is provided the client can connect directly to that URL to
  * continue receiving the stream.
  */
-export function buildSSERedirectFrame(data: {
+export function buildSseRedirectFrame(data: {
   run_id: string;
   token: string;
   url?: string;
 }): string {
-  return buildSSEFrame("inngest.redirect_info", data);
+  return buildSseFrame("inngest.redirect_info", data);
 }
 
 /**
@@ -280,16 +276,16 @@ export async function drainStreamWithTimeout(
 /**
  * Builds an SSE step lifecycle frame.
  */
-export function buildSSEStepFrame(
+export function buildSseStepFrame(
   stepId: string,
-  status: SSEStepFrame["status"],
+  status: SseStepFrame["status"],
   data?: unknown,
 ): string {
   const payload: Record<string, unknown> = { step_id: stepId, status };
   if (data !== undefined) {
     payload.data = data;
   }
-  return buildSSEFrame("inngest.step", payload);
+  return buildSseFrame("inngest.step", payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -298,58 +294,64 @@ export function buildSSEStepFrame(
 
 /**
  * Parses a `ReadableStream<Uint8Array>` as an SSE byte stream, yielding
- * `RawSSEEvent` objects for each complete event.
+ * typed `SseFrame` objects for each recognised event.
  */
-export async function* iterSSE(
+export async function* iterSse(
   body: ReadableStream<Uint8Array>,
-): AsyncGenerator<RawSSEEvent> {
+): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  const pendingFrames: SseFrame[] = [];
+
+  const parser = createParser({
+    onEvent(event) {
+      const frame = parseSseFrame(event);
+      if (frame) {
+        pendingFrames.push(frame);
+      }
+    },
+  });
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() ?? "";
-
-      for (const part of parts) {
-        if (!part.trim()) continue;
-
-        let event = "message";
-        const dataLines: string[] = [];
-
-        for (const line of part.split("\n")) {
-          if (line.startsWith("event: ")) {
-            event = line.slice(7);
-          } else if (line.startsWith("data: ")) {
-            dataLines.push(line.slice(6));
-          }
-        }
-
-        const data = dataLines.join("\n");
-
-        yield { event, data };
+      if (done) {
+        break;
       }
+
+      parser.feed(decoder.decode(value, { stream: true }));
+
+      for (const frame of pendingFrames) {
+        yield frame;
+      }
+      pendingFrames.length = 0;
     }
+
+    const finalChunk = decoder.decode();
+    if (finalChunk) {
+      parser.feed(finalChunk);
+    }
+
+    for (const frame of pendingFrames) {
+      yield frame;
+    }
+    pendingFrames.length = 0;
   } finally {
     reader.releaseLock();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Raw SSE event -> typed SSE frame
+// Parsed SSE event -> typed SSE frame
 // ---------------------------------------------------------------------------
 
 /**
- * Converts a `RawSSEEvent` into a typed `SSEFrame`, or returns `undefined`
- * if the event type is unrecognised.
+ * Converts an `EventSourceMessage` into a typed `SseFrame`, or returns
+ * `undefined` if the event type is unrecognised.
  */
-export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
+function parseSseFrame(raw: EventSourceMessage): SseFrame | undefined {
+  const eventType = raw.event || "message";
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw.data);
@@ -357,7 +359,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
     parsed = raw.data;
   }
 
-  switch (raw.event) {
+  switch (eventType) {
     case "inngest.metadata": {
       const obj = parsed as Record<string, unknown>;
       return {
