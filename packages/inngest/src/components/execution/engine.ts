@@ -282,7 +282,9 @@ class InngestExecutionEngine
   private async _start(): Promise<ExecutionResult> {
     // In sync mode, set up a deferred promise that handleStreamActivated can
     // resolve to return the SSE Response early while the loop keeps running.
-    if (this.options.stepMode === StepMode.Sync) {
+    // Only do this when the client accepts SSE — otherwise stream.push() should
+    // buffer server-side only and the HTTP response should be the raw result.
+    if (this.options.stepMode === StepMode.Sync && this.options.acceptsSSE) {
       this.earlyStreamResponse = createDeferredPromise<ExecutionResult>();
     }
 
@@ -796,38 +798,54 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint) => {
-        // If stream.push()/pipe() was already called, the SSE Response was
-        // returned to the client via handleStreamActivated. Close the stream
-        // with a result frame, checkpoint the return value in the background,
-        // and return a result to terminate the core loop.
+        // Was an SSE response sent to the client via earlyStreamResponse?
+        const sseDeliveredToClient = !!this.earlyStreamResponse;
+
         if (this.streamTools.activated) {
           let resultData: unknown = checkpoint.data;
           if (checkpoint.data instanceof Response) {
-            resultData = await checkpoint.data.text();
+            // Clone before reading so the original Response body stays intact
+            // for the non-SSE passthrough path below.
+            resultData = await (sseDeliveredToClient
+              ? checkpoint.data.text()
+              : checkpoint.data.clone().text());
           }
+
+          // Always close the stream — either the SSE client or the
+          // server-side checkpoint POST needs the terminal result frame.
           this.streamTools.close(resultData);
-          void this.checkpointReturnValue(resultData);
 
-          // Return a result to end the core loop. The actual HTTP response
-          // was already sent via earlyStreamResponse.
-          return this.transformOutput({ data: resultData });
-        }
+          if (sseDeliveredToClient) {
+            // SSE path: HTTP response was already sent. Checkpoint the
+            // return value in background and terminate the core loop.
+            void this.checkpointReturnValue(resultData);
+            return this.transformOutput({ data: resultData });
+          }
 
-        // Response pass-through: the user explicitly constructed a Response,
-        // so deliver it as-is regardless of Accept headers. The Response body
-        // may be a ReadableStream that can only be consumed once, so
-        // checkpoint a placeholder in the background instead of trying to
-        // serialize it.
-        if (checkpoint.data instanceof Response) {
-          void this.checkpointReturnValue(null);
-          return this.transformOutput({ data: checkpoint.data });
+          // Non-SSE path: stream was activated for server-side buffering only.
+          // Fall through to normal response handling below.
         }
 
         // If the client accepts SSE (but stream.push() was NOT called),
-        // build the SSE Response now. Only applies to plain return values
-        // (strings, objects, etc.) — Response objects are handled above.
+        // build the SSE Response now. Extract the body from Response objects
+        // so they can be wrapped as SSE result frames.
         if (this.options.acceptsSSE) {
+          if (checkpoint.data instanceof Response) {
+            checkpoint = {
+              ...checkpoint,
+              data: await checkpoint.data.text(),
+            };
+          }
           return this.wrapResultAsSSE(checkpoint);
+        }
+
+        // Response pass-through: the user explicitly constructed a Response,
+        // so deliver it as-is. The Response body may be a ReadableStream that
+        // can only be consumed once, so checkpoint a placeholder in the
+        // background instead of trying to serialize it.
+        if (checkpoint.data instanceof Response) {
+          void this.checkpointReturnValue(null);
+          return this.transformOutput({ data: checkpoint.data });
         }
 
         // Non-streaming path
@@ -850,28 +868,30 @@ class InngestExecutionEngine
       },
 
       "function-rejected": async (checkpoint) => {
-        // If stream was already activated, close with an error frame and
-        // terminate the loop. The HTTP response was already sent via
-        // earlyStreamResponse, so the return value here just ends the
-        // core loop.
+        const sseDeliveredToClient = !!this.earlyStreamResponse;
+
         if (this.streamTools.activated) {
           this.streamTools.close({ error: String(checkpoint.error) });
 
-          // Mirror the non-stream path: if not on the final attempt,
-          // inform the IS so it can schedule a retry.
-          if (this.inFinalAttempt() !== true) {
-            void this.checkpoint([
-              {
-                id: _internals.hashId("complete"),
-                op: StepOpCode.StepError,
-                error: checkpoint.error,
-              },
-            ]).catch(() => {
-              // Best-effort: don't crash if the IS rejects this.
-            });
+          if (sseDeliveredToClient) {
+            // SSE path: close stream with error, checkpoint retry if needed.
+            if (this.inFinalAttempt() !== true) {
+              void this.checkpoint([
+                {
+                  id: _internals.hashId("complete"),
+                  op: StepOpCode.StepError,
+                  error: checkpoint.error,
+                },
+              ]).catch(() => {
+                // Best-effort: don't crash if the IS rejects this.
+              });
+            }
+
+            return this.transformOutput({ error: checkpoint.error });
           }
 
-          return this.transformOutput({ error: checkpoint.error });
+          // Non-SSE path: stream closed for server-side POST.
+          // Fall through to normal error handling (retry via async, or final attempt).
         }
 
         // If the function throws during sync execution, we want to switch to

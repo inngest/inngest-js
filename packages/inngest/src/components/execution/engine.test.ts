@@ -292,7 +292,7 @@ describe("Sync mode function-resolved response handling", () => {
     expect(body).toBe("file content");
   });
 
-  test("Response pass-through takes precedence over acceptsSSE", async () => {
+  test("acceptsSSE wraps Response in SSE envelope", async () => {
     const userResponse = new Response("file content", {
       headers: { "Content-Type": "text/plain" },
     });
@@ -309,9 +309,12 @@ describe("Sync mode function-resolved response handling", () => {
     const resolved = result as ExecutionResult & { data: unknown };
     expect(resolved.data).toBeInstanceOf(Response);
 
-    // Should be the user's original Response, NOT an SSE-wrapped one
+    // When acceptsSSE is true, the Response body is extracted and wrapped
+    // in SSE format (metadata + result frames)
     const body = await (resolved.data as Response).text();
-    expect(body).toBe("file content");
+    expect(body).toContain("event: inngest.metadata");
+    expect(body).toContain("event: inngest.result");
+    expect(body).toContain("file content");
   });
 
   test("plain value with acceptsSSE returns SSE response", async () => {

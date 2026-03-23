@@ -145,180 +145,250 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// Group 1: Header Negotiation
+// Header Negotiation
+//
+// The response format depends on three factors:
+//   1. Whether the client sent Accept: text/event-stream
+//   2. Whether user code called stream.push() or stream.pipe()
+//   3. Whether the function completed synchronously or went async
+//
+// The tests below cover the full 2×2×2 matrix.
 // ---------------------------------------------------------------------------
 
 describe("header negotiation", () => {
-  test(
-    "1a: Accept SSE + push + sync → SSE stream with data",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("work", async () => {
-          stream.push("hello");
-        });
-        return new Response("done");
-      });
+  describe("Accept: text/event-stream", () => {
+    describe("with streaming (push/pipe called)", () => {
+      test(
+        "sync: returns SSE stream with metadata, data, and result",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("work", async () => {
+              stream.push("hello");
+            });
+            return new Response("done");
+          });
 
-      const res = await fetch(`http://localhost:${port}/api/demo`, {
-        headers: { Accept: "text/event-stream" },
-      });
+          const res = await fetch(`http://localhost:${port}/api/demo`, {
+            headers: { Accept: "text/event-stream" },
+          });
 
-      expect(res.status).toBe(200);
-      expect(res.headers.get("content-type")).toBe("text/event-stream");
+          expect(res.status).toBe(200);
+          expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-      const { events } = await readSSEStream(res, 15_000);
+          const { events } = await readSSEStream(res, 15_000);
 
-      // Has metadata with run_id
-      const metadata = events.filter((e) => e.event === "inngest.metadata");
-      expect(metadata.length).toBe(1);
-      expect(JSON.parse(metadata[0]!.data)).toHaveProperty("run_id");
+          const metadata = events.filter(
+            (e) => e.event === "inngest.metadata",
+          );
+          expect(metadata.length).toBe(1);
+          expect(JSON.parse(metadata[0]!.data)).toHaveProperty("run_id");
 
-      // Has stream frame with "hello"
-      const streamData = getStreamData(events);
-      expect(streamData).toContain("hello");
+          const streamData = getStreamData(events);
+          expect(streamData).toContain("hello");
 
-      // Has result frame with "done"
-      const results = events.filter((e) => e.event === "inngest.result");
-      expect(results.length).toBe(1);
-      expect(JSON.parse(results[0]!.data)).toBe("done");
+          const results = events.filter((e) => e.event === "inngest.result");
+          expect(results.length).toBe(1);
+          expect(JSON.parse(results[0]!.data)).toBe("done");
+        },
+      );
 
-      // redirect_info is always sent once checkpoint creates the run,
-      // even if the function completes synchronously
-    },
-  );
+      test(
+        "async: returns SSE stream with redirect frame for async handoff",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("work", async () => {
+              stream.push("sync-data");
+            });
+            await step.sleep("wait", "1s");
+            await step.run("after-async", async () => {
+              return "async-result";
+            });
+            return new Response("final");
+          });
 
-  // FIXME: When the client asks for SSE, a non-streaming sync endpoint should
-  // still return an SSE envelope (metadata + result) so clients get a uniform
-  // response format. Currently the raw Response is passed through instead.
-  test.fails(
-    "1b: Accept SSE + no push + sync → SSE metadata+result only",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("compute", async () => {
-          return "computed";
-        });
-        return new Response("computed");
-      });
+          const res = await fetch(`http://localhost:${port}/api/demo`, {
+            headers: { Accept: "text/event-stream" },
+          });
 
-      const res = await fetch(`http://localhost:${port}/api/demo`, {
-        headers: { Accept: "text/event-stream" },
-      });
+          expect(res.status).toBe(200);
+          expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-      expect(res.status).toBe(200);
-      expect(res.headers.get("content-type")).toBe("text/event-stream");
+          const { events, redirectUrl } = await readSSEStream(res, 15_000);
 
-      const { events } = await readSSEStream(res, 15_000);
+          // Sync phase streams data before the async transition
+          const streamData = getStreamData(events);
+          expect(streamData).toContain("sync-data");
 
-      const metadata = events.filter((e) => e.event === "inngest.metadata");
-      expect(metadata.length).toBe(1);
+          // Redirect frame tells the client where to reconnect
+          const redirects = events.filter(
+            (e) => e.event === "inngest.redirect_info",
+          );
+          expect(redirects.length).toBe(1);
+          expect(redirectUrl).toBeTruthy();
+        },
+      );
+    });
 
-      const results = events.filter((e) => e.event === "inngest.result");
-      expect(results.length).toBe(1);
-      expect(JSON.parse(results[0]!.data)).toBe("computed");
+    describe("without streaming", () => {
+      test(
+        "sync: returns SSE envelope with metadata and result only",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("compute", async () => {
+              return "computed";
+            });
+            return new Response("computed");
+          });
 
-      const streamFrames = events.filter((e) => e.event === "stream");
-      expect(streamFrames.length).toBe(0);
-    },
-  );
+          const res = await fetch(`http://localhost:${port}/api/demo`, {
+            headers: { Accept: "text/event-stream" },
+          });
 
-  test(
-    "1c: no Accept + no push + sync → raw Response passthrough",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("compute", async () => {
-          return "result";
-        });
-        return new Response("result");
-      });
+          expect(res.status).toBe(200);
+          expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-      const res = await fetch(`http://localhost:${port}/api/demo`);
+          const { events } = await readSSEStream(res, 15_000);
 
-      // When streaming is never activated, the raw Response is returned
-      expect(res.status).toBe(200);
+          const metadata = events.filter(
+            (e) => e.event === "inngest.metadata",
+          );
+          expect(metadata.length).toBe(1);
 
-      const body = await res.text();
-      expect(body).toBe("result");
-    },
-  );
+          const results = events.filter((e) => e.event === "inngest.result");
+          expect(results.length).toBe(1);
+          expect(JSON.parse(results[0]!.data)).toBe("computed");
 
-  test(
-    "1d: no Accept + no push + async → 302 redirect",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("first", async () => {
-          return "a";
-        });
-        await step.sleep("wait", "1s");
-        await step.run("second", async () => {
-          return "b";
-        });
-        return new Response("final");
-      });
+          const streamFrames = events.filter((e) => e.event === "stream");
+          expect(streamFrames.length).toBe(0);
+        },
+      );
 
-      const res = await fetch(`http://localhost:${port}/api/demo`, {
-        redirect: "manual",
-      });
+      test(
+        "async: returns 302 redirect",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("first", async () => {
+              return "a";
+            });
+            await step.sleep("wait", "1s");
+            await step.run("second", async () => {
+              return "b";
+            });
+            return new Response("final");
+          });
 
-      expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toBeTruthy();
-    },
-  );
+          const res = await fetch(`http://localhost:${port}/api/demo`, {
+            headers: { Accept: "text/event-stream" },
+            redirect: "manual",
+          });
 
-  test(
-    "1e: Accept SSE + no push + async → 302 redirect",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("first", async () => {
-          return "a";
-        });
-        await step.sleep("wait", "1s");
-        await step.run("second", async () => {
-          return "b";
-        });
-        return new Response("final");
-      });
+          expect(res.status).toBe(302);
+          expect(res.headers.get("location")).toBeTruthy();
+        },
+      );
+    });
+  });
 
-      const res = await fetch(`http://localhost:${port}/api/demo`, {
-        headers: { Accept: "text/event-stream" },
-        redirect: "manual",
-      });
+  describe("no Accept header", () => {
+    describe("with streaming (push/pipe called)", () => {
+      test(
+        "sync: returns raw Response, not SSE",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("work", async () => {
+              stream.push("data");
+            });
+            return new Response("done");
+          });
 
-      expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toBeTruthy();
-    },
-  );
+          const res = await fetch(`http://localhost:${port}/api/demo`);
 
-  // FIXME: When the client doesn't send Accept: text/event-stream, push()
-  // should still buffer data server-side but the response should be the raw
-  // Response (or JSON), not SSE. Currently handleStreamActivated ignores
-  // acceptsSSE and forces SSE format regardless.
-  test.fails(
-    "1f: no Accept + push + sync → raw Response (not SSE)",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("work", async () => {
-          stream.push("data");
-        });
-        return new Response("done");
-      });
+          expect(res.status).toBe(200);
 
-      const res = await fetch(`http://localhost:${port}/api/demo`);
+          const contentType = res.headers.get("content-type") ?? "";
+          expect(contentType).not.toBe("text/event-stream");
 
-      expect(res.status).toBe(200);
+          const body = await res.text();
+          expect(body).toBe("done");
+        },
+      );
 
-      const contentType = res.headers.get("content-type") ?? "";
-      expect(contentType).not.toBe("text/event-stream");
+      test(
+        "async: returns 302 redirect",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("work", async () => {
+              stream.push("buffered-data");
+            });
+            await step.sleep("wait", "1s");
+            await step.run("after-async", async () => {
+              return "result";
+            });
+            return new Response("final");
+          });
 
-      const body = await res.text();
-      expect(body).toBe("done");
-    },
-  );
+          const res = await fetch(`http://localhost:${port}/api/demo`, {
+            redirect: "manual",
+          });
+
+          expect(res.status).toBe(302);
+          expect(res.headers.get("location")).toBeTruthy();
+        },
+      );
+    });
+
+    describe("without streaming", () => {
+      test(
+        "sync: returns raw Response passthrough",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("compute", async () => {
+              return "result";
+            });
+            return new Response("result");
+          });
+
+          const res = await fetch(`http://localhost:${port}/api/demo`);
+
+          expect(res.status).toBe(200);
+
+          const body = await res.text();
+          expect(body).toBe("result");
+        },
+      );
+
+      test(
+        "async: returns 302 redirect",
+        { timeout: 60000 },
+        async () => {
+          const { port } = await setupEndpoint(async () => {
+            await step.run("first", async () => {
+              return "a";
+            });
+            await step.sleep("wait", "1s");
+            await step.run("second", async () => {
+              return "b";
+            });
+            return new Response("final");
+          });
+
+          const res = await fetch(`http://localhost:${port}/api/demo`, {
+            redirect: "manual",
+          });
+
+          expect(res.status).toBe(302);
+          expect(res.headers.get("location")).toBeTruthy();
+        },
+      );
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
