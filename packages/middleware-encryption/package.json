@@ -1,6 +1,6 @@
 {
   "name": "@inngest/middleware-encryption",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "E2E encryption middleware for Inngest.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -53,7 +53,7 @@
     "@types/crypto-js": "^4.2.1",
     "@types/libsodium-wrappers": "^0.7.14",
     "cross-fetch": "^4.0.0",
-    "inngest": ">=4.0.0-beta.2 <5.0.0",
+    "inngest": "^4.0.0",
     "typescript": "~5.5.2",
     "vitest": "^3.0.0"
   },

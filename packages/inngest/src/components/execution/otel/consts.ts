@@ -13,4 +13,5 @@ export enum Attribute {
   InngestAppId1 = "sdk.app.id",
   InngestAppId2 = "sys.app.id",
   InngestFunctionId = "sys.function.id",
+  InngestStepParentSpanId = "inngest.step.parentSpanId",
 }

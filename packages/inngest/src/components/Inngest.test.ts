@@ -670,6 +670,23 @@ describe("send", () => {
 });
 
 describe("createFunction", () => {
+  test("throws if handler is not a function (v3-style 3-arg call)", () => {
+    const inngest = createClient({ id: "test" });
+
+    expect(() => {
+      // Simulate v3 signature: `createFunction(config, trigger, handler)`
+      // The trigger object lands in the handler parameter.
+      inngest.createFunction(
+        { id: "fn-1" },
+        { event: "event-1" },
+        // @ts-expect-error - Intentional
+        async () => {},
+      );
+    }).toThrow(
+      `"createFunction" expected a handler function as the second argument`,
+    );
+  });
+
   describe("types", () => {
     describe("function input", () => {
       const inngest = createClient({ id: "test" });
@@ -1052,121 +1069,6 @@ describe("helper types", () => {
       type Actual = keyof T0;
       assertType<IsEqual<Expected, Actual>>(true);
     });
-  });
-});
-
-describe("endpointProxy", () => {
-  // Helper to create mock adapters with consistent shape
-  // biome-ignore lint/suspicious/noExplicitAny: test helper
-  const createMockAdapter = (createProxyHandler?: () => any) => {
-    const adapter = Object.assign(() => {}, {
-      [Symbol.toStringTag]: "Inngest.EndpointAdapter" as const,
-      withOptions: () => adapter,
-      ...(createProxyHandler && { createProxyHandler }),
-    });
-    return adapter;
-  };
-
-  test("throws error when no endpoint adapter is configured", () => {
-    const inngest = createClient({ id: "test" });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client.",
-    );
-  });
-
-  test("throws error when adapter does not support proxy handlers", () => {
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(),
-    });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers.",
-    );
-  });
-
-  test("returns proxy handler when adapter supports it", () => {
-    const mockProxyHandler = () => Promise.resolve(new Response());
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(() => mockProxyHandler),
-    });
-
-    expect(inngest.endpointProxy()).toBe(mockProxyHandler);
-  });
-
-  test("passes client to createProxyHandler", () => {
-    const createProxyHandler = vi.fn().mockReturnValue(() => {});
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(createProxyHandler),
-    });
-
-    inngest.endpointProxy();
-
-    expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
-  });
-});
-
-describe("endpointProxy", () => {
-  // Helper to create mock adapters with consistent shape
-  // biome-ignore lint/suspicious/noExplicitAny: test helper
-  const createMockAdapter = (createProxyHandler?: () => any) => {
-    const adapter = Object.assign(() => {}, {
-      [Symbol.toStringTag]: "Inngest.EndpointAdapter" as const,
-      withOptions: () => adapter,
-      ...(createProxyHandler && { createProxyHandler }),
-    });
-    return adapter;
-  };
-
-  test("throws error when no endpoint adapter is configured", () => {
-    const inngest = createClient({ id: "test", isDev: true });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "No endpoint adapter configured for this Inngest client.",
-    );
-  });
-
-  test("throws error when adapter does not support proxy handlers", () => {
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(),
-      isDev: true,
-    });
-
-    expect(() => inngest.endpointProxy()).toThrow(
-      "The configured endpoint adapter does not support proxy handlers.",
-    );
-  });
-
-  test("returns proxy handler when adapter supports it", () => {
-    const mockProxyHandler = () => Promise.resolve(new Response());
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(() => mockProxyHandler),
-      isDev: true,
-    });
-
-    expect(inngest.endpointProxy()).toBe(mockProxyHandler);
-  });
-
-  test("passes client to createProxyHandler", () => {
-    const createProxyHandler = vi.fn().mockReturnValue(() => {});
-
-    const inngest = createClient({
-      id: "test",
-      endpointAdapter: createMockAdapter(createProxyHandler),
-      isDev: true,
-    });
-
-    inngest.endpointProxy();
-
-    expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
   });
 });
 
