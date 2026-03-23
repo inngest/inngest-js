@@ -130,7 +130,7 @@ export interface RunStreamOptions<TData = unknown> {
  *
  * @example Hooks-only — just `await` the stream
  * ```ts
- * import { streamRun } from "inngest/durable-endpoints";
+ * import { streamRun } from "inngest/experimental/durable-endpoints";
  *
  * await streamRun<string>("/api/demo", {
  *   parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),

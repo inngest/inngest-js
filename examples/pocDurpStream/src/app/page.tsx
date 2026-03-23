@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { streamRun } from "inngest/durable-endpoints";
+import { streamRun } from "inngest/experimental/durable-endpoints";
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);

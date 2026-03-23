@@ -3,7 +3,7 @@
  *
  * @example
  * ```ts
- * import { streamRun } from "inngest/durable-endpoints";
+ * import { streamRun } from "inngest/experimental/durable-endpoints";
  *
  * await streamRun("/api/demo", {
  *   onData: (chunk) => console.log(chunk),
@@ -24,7 +24,7 @@ export type {
   SSEStepRunningFrame,
   SSEStreamFrame,
   StepErrorData,
-} from "./components/execution/streaming.ts";
+} from "../components/execution/streaming.ts";
 
 export {
   type RunStreamOptions,
@@ -32,4 +32,4 @@ export {
   type SubscribeToRunOptions,
   streamRun,
   subscribeToRun,
-} from "./stream.ts";
+} from "../stream.ts";
