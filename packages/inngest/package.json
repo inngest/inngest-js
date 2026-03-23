@@ -19,7 +19,7 @@
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
-    "test:dist": "tsc --noEmit --ignoreConfig dist/**/*.d.ts",
+    "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
     "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
     "lint": "biome check",
