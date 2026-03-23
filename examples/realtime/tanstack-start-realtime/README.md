@@ -47,7 +47,7 @@ const contentPipeline = realtime.channel({
 
 A three-step function demonstrating both publish modes:
 
-- **`publish()`** — Fire-and-forget for transient status updates and streaming tokens
+- **`inngest.realtime.publish()`** — Fire-and-forget for transient status updates and streaming tokens
 - **`step.realtime.publish()`** — Durable publish for artifacts (memoized, won't re-fire on retry)
 
 ### Server functions (`src/routes/index.tsx`)

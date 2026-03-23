@@ -10,7 +10,7 @@ const inngest = new Inngest({
 
 export const agenticWorkflow = inngest.createFunction(
   { id: "agentic-workflow", triggers: [{ event: "agentic-workflow/start" }] },
-  async ({ step, publish, logger }) => {
+  async ({ step, logger }) => {
     logger.info("Starting agentic workflow");
     logger.info("Waiting 3 seconds");
     await step.sleep("wait-3s", "3s");
@@ -20,7 +20,7 @@ export const agenticWorkflow = inngest.createFunction(
     );
     logger.info("Publishing confirmation message");
 
-    await publish(agenticWorkflowChannel.messages, {
+    await inngest.realtime.publish(agenticWorkflowChannel.messages, {
       message: "Confirm to proceed?",
       confirmationUUid,
     });
@@ -36,7 +36,7 @@ export const agenticWorkflow = inngest.createFunction(
     } else {
       logger.info("Workflow cancelled!");
     }
-  }
+  },
 );
 
 const serveApp = () => {

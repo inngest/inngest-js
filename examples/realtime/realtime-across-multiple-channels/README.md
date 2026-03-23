@@ -5,7 +5,7 @@ This Node.js example demonstrates first-class realtime in the core `inngest` SDK
 It shows:
 
 - Declarative channels with `realtime.channel(...)`
-- Publishing in a function via `publish(topicRef, data)`
+- Publishing in a function via `inngest.realtime.publish(topicRef, data)`
 - Subscribing from Node with `inngest.realtime.subscribe(...)`
 - Streaming across both a global channel and a parameterized channel
 

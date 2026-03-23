@@ -23,7 +23,10 @@ const processData = inngest.createFunction(
     // 1. Publish to the Zod-validated "status" topic — valid data
     // -----------------------------------------------------------------------
     console.log("\n--- Publishing valid status (Zod schema) ---");
-    await inngest.publish(ch.status, { message: "Starting", step: "init" });
+    await inngest.realtime.publish(ch.status, {
+      message: "Starting",
+      step: "init",
+    });
     console.log("✓ Valid status published successfully");
 
     // -----------------------------------------------------------------------
@@ -33,7 +36,7 @@ const processData = inngest.createFunction(
     console.log("\n--- Publishing invalid status (Zod schema) ---");
     try {
       // @ts-expect-error — deliberately passing wrong type to show runtime validation
-      await inngest.publish(ch.status, { message: 42 });
+      await inngest.realtime.publish(ch.status, { message: 42 });
       console.log("✗ Should not reach here");
     } catch (err) {
       console.log(`✓ Correctly rejected: ${(err as Error).message}`);
@@ -43,7 +46,7 @@ const processData = inngest.createFunction(
     // 3. Publish to the staticSchema "tokens" topic — valid data
     // -----------------------------------------------------------------------
     console.log("\n--- Publishing valid tokens (staticSchema) ---");
-    await inngest.publish(ch.tokens, { token: "Hello" });
+    await inngest.realtime.publish(ch.tokens, { token: "Hello" });
     console.log("✓ Valid tokens published successfully");
 
     // -----------------------------------------------------------------------
@@ -56,7 +59,7 @@ const processData = inngest.createFunction(
     console.log("\n--- Publishing invalid tokens (staticSchema) ---");
     try {
       // @ts-expect-error — deliberately passing wrong type to show NO runtime validation
-      await inngest.publish(ch.tokens, { token: 999 });
+      await inngest.realtime.publish(ch.tokens, { token: 999 });
       console.log("✓ Published without error (staticSchema is a passthrough)");
     } catch (err) {
       console.log(`✗ Unexpected rejection: ${(err as Error).message}`);

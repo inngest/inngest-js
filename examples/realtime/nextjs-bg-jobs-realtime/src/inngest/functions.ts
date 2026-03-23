@@ -91,7 +91,7 @@ export const campaignSendChannel = realtime.channel({
 
 export const campaignSend = inngest.createFunction(
   { id: "campaign-send", triggers: [{ event: "app/campaign.send" }] },
-  async ({ event, step, publish }) => {
+  async ({ event, step }) => {
     const {
       campaignId,
       segmentId,
@@ -101,7 +101,7 @@ export const campaignSend = inngest.createFunction(
     } = event.data;
     const campaignChannel = campaignSendChannel({ campaignId });
 
-    await publish(campaignChannel.progress, {
+    await inngest.realtime.publish(campaignChannel.progress, {
       message: "Preparing the campaign...",
       complete: false,
     });
@@ -127,7 +127,7 @@ export const campaignSend = inngest.createFunction(
       .innerJoin(contactSegments, eq(contactSegments.contactId, contacts.id))
       .where(eq(contactSegments.segmentId, segmentId));
 
-    await publish(campaignChannel.progress, {
+    await inngest.realtime.publish(campaignChannel.progress, {
       message: `Sending ${campaign.name} to ${segmentContacts.length} contacts`,
       complete: false,
     });
@@ -155,14 +155,14 @@ export const campaignSend = inngest.createFunction(
       // Every 5 contacts, pause and publish progress
       if ((i + 1) % 5 === 0 || i === segmentContacts.length - 1) {
         await step.sleep("wait-1s", 1000);
-        await publish(campaignChannel.progress, {
+        await inngest.realtime.publish(campaignChannel.progress, {
           message: `Sent ${i + 1} of ${segmentContacts.length} contacts... (Subject: ${emailSubject})`,
           complete: false,
         });
       }
     }
 
-    await publish(campaignChannel.progress, {
+    await inngest.realtime.publish(campaignChannel.progress, {
       message: `The ${campaign.name} is now sent! (Subject: ${emailSubject})`,
       complete: true,
     });

@@ -14,14 +14,14 @@ const uploadFile = inngest.createFunction(
     retries: 0,
     triggers: [{ event: "app/process-upload" }],
   },
-  async ({ event, step, publish }) => {
+  async ({ event, step }) => {
     const { uploadId, uuid } = event.data as {
       uploadId: string;
       uuid: string;
     };
     const ch = uploads({ uuid });
 
-    await publish(ch.status, {
+    await inngest.realtime.publish(ch.status, {
       message: `Processing upload ${uploadId}`,
       uploadId,
     });
@@ -39,7 +39,7 @@ const uploadFile = inngest.createFunction(
       uploadId,
     });
 
-    await publish(ch.status, {
+    await inngest.realtime.publish(ch.status, {
       message: `Upload ${uploadId} complete`,
       uploadId,
     });

@@ -5,10 +5,10 @@ const inngest = getInngestApp();
 
 export const helloWorld = inngest.createFunction(
   { id: "hello-world", triggers: [{ event: "test/hello.world" }] },
-  async ({ event, step, publish, runId }) => {
+  async ({ event, step, runId }) => {
     const ch = helloChannel;
 
-    await publish(ch.logs, { message: `Hello from ${runId}` });
+    await inngest.realtime.publish(ch.logs, { message: `Hello from ${runId}` });
 
     //
     // Wait 2 seconds for a cancel signal before re-triggering

@@ -18,14 +18,16 @@ const likePost = app.createFunction(
       data: { postId = "123" },
     },
     step,
-    publish,
   }) => {
     if (!postId) {
-      await publish(globalChannel.logs, "Missing postId when trying to like post");
+      await app.realtime.publish(
+        globalChannel.logs,
+        "Missing postId when trying to like post",
+      );
       throw new Error("Missing postId");
     }
 
-    await publish(globalChannel.logs, `Liking post ${postId}`);
+    await app.realtime.publish(globalChannel.logs, `Liking post ${postId}`);
 
     const post = await step.run("update-likes", async () => {
       const fakePost = {
@@ -33,7 +35,10 @@ const likePost = app.createFunction(
         likes: Math.floor(Math.random() * 10000),
       };
 
-      await publish(postChannel({ postId: fakePost.id }).updated, fakePost);
+      await app.realtime.publish(
+        postChannel({ postId: fakePost.id }).updated,
+        fakePost,
+      );
       return fakePost;
     });
 

@@ -17,16 +17,16 @@ export const generatePost = inngest.createFunction(
     // Try uncommenting any of these to see TypeScript errors:
 
     // ❌ Wrong topic data shape — "message" must be a string, not a number:
-    // await inngest.publish(ch.status, { message: 42 });
+    // await inngest.realtime.publish(ch.status, { message: 42 });
 
     // ❌ Missing required field — "artifact" requires kind, title, and body:
-    // await inngest.publish(ch.artifact, { kind: "research", title: "Notes" });
+    // await inngest.realtime.publish(ch.artifact, { kind: "research", title: "Notes" });
 
     // ❌ Invalid enum value — kind must be "research" | "outline" | "draft":
-    // await inngest.publish(ch.artifact, { kind: "summary", title: "X", body: "Y" });
+    // await inngest.realtime.publish(ch.artifact, { kind: "summary", title: "X", body: "Y" });
 
     // ❌ Wrong topic — "ch.status" expects { message, step? }, not { token }:
-    // await inngest.publish(ch.status, { token: "hello" });
+    // await inngest.realtime.publish(ch.status, { token: "hello" });
 
     const streamLLM = async (
       system: string,
@@ -49,7 +49,7 @@ export const generatePost = inngest.createFunction(
           //
           // Non-durable publish via the client — fine for high-frequency
           // streaming where duplicates on retry are harmless.
-          await inngest.publish(ch.tokens, { token, step: stepName });
+          await inngest.realtime.publish(ch.tokens, { token, step: stepName });
         }
       }
       return fullText;

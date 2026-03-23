@@ -5,7 +5,7 @@ This Node.js example demonstrates a human-in-the-loop workflow using first-class
 It shows:
 
 - `realtime.channel(...)` for a typed workflow message stream
-- `publish(topicRef, data)` to prompt the user
+- `inngest.realtime.publish(topicRef, data)` to prompt the user
 - `step.waitForEvent(...)` to pause for user confirmation
 - `inngest.realtime.subscribe(...)` to receive prompts in a terminal subscriber
 

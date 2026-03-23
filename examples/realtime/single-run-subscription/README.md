@@ -5,7 +5,7 @@ This example demonstrates the new realtime API built into the core `inngest` pac
 ## What it shows
 
 - **Declarative channels** with `realtime.channel()` and typed topics
-- **Non-durable publish** via `publish(topicRef, data)` in the function context
+- **Non-durable publish** via `inngest.realtime.publish(topicRef, data)`
 - **Durable publish** via `step.realtime.publish(id, topicRef, data)`
 - **Server-side subscribe** via `inngest.realtime.subscribe()`
 - **Shared channel definitions** imported by both publisher and subscriber

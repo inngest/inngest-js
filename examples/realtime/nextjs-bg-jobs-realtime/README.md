@@ -5,7 +5,7 @@ This is the v2 version of the Next.js background-jobs demo, updated to use first
 It uses:
 
 - `realtime.channel(...)` for typed channel/topic definitions
-- `publish(topicRef, data)` in Inngest functions
+- `inngest.realtime.publish(topicRef, data)` in Inngest functions
 - `getSubscriptionToken` from `inngest/react` in a server action
 - `useRealtime` from `inngest/react` on the campaign page
 
