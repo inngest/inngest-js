@@ -64,6 +64,7 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "~6.0.0"
           - "~5.9.0"
           - "~5.8.0"
     steps:
