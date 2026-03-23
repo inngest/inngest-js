@@ -145,3 +145,18 @@ function isUnsharedArrayBuffer(
 
   return value.buffer instanceof ArrayBuffer;
 }
+
+/**
+ * Throws an error if the value is not an unshared ArrayBuffer. This should be
+ * safe because we shouldn't be using `SharedArrayBuffer` at runtime, but our
+ * protobuf types have `Uint8Array` as the return type (no generic), which
+ * effectively defaults to a union of `ArrayBuffer` and `SharedArrayBuffer`.
+ */
+export function ensureUnsharedArrayBuffer(
+  value: Uint8Array<ArrayBufferLike>,
+): Uint8Array<ArrayBuffer> {
+  if (!isUnsharedArrayBuffer(value)) {
+    throw new Error("Unreachable: response bytes are not an ArrayBuffer");
+  }
+  return value;
+}

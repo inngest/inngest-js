@@ -1241,6 +1241,14 @@ class InngestExecutionEngine
    * Validate event data against schemas defined in function triggers.
    */
   private async validateEventSchemas(): Promise<void> {
+    if (this.options.isFailureHandler) {
+      // Skip validation because the main function's triggers don't apply to its
+      // `onFailure` handler. The `onFailure` handler is a separate Inngest
+      // function that's implicitly triggered by the "inngest/function.failed"
+      // event.
+      return;
+    }
+
     const triggers = this.options.fn.opts.triggers;
     if (!triggers || triggers.length === 0) return;
 
