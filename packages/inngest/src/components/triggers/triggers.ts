@@ -210,7 +210,8 @@ type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
     ? // Undefined schema is OK
       undefined
     : TSchema extends StandardSchemaV1<infer TInput, infer TOutput>
-      ? TInput extends TOutput
+      ? // Wrap in tuples to prevent distributive conditional over union types. This ensures that the schema can be a union.
+        [TInput] extends [TOutput]
         ? // Input and output schemas match, so we're good
           TSchema
         : // Return an error message since the input and output schemas don't match

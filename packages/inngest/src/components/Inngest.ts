@@ -174,7 +174,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this.dummyDurableEndpointFunction = new InngestFunction(
       this,
       { id: "__proxy__", triggers: [] },
-      async () => {},
+      async () => {}
     );
     return this.dummyDurableEndpointFunction;
   }
@@ -300,7 +300,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   get metadata(): MetadataBuilder {
     if (!this.experimentalMetadataEnabled) {
       throw new Error(
-        'inngest.metadata is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
+        'inngest.metadata is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.'
       );
     }
     return new UnscopedMetadataBuilder(this);
@@ -366,7 +366,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * update the client with those values as requests come in.
    */
   public setEnvVars(
-    env: Record<string, string | undefined> = allProcessEnv(),
+    env: Record<string, string | undefined> = allProcessEnv()
   ): this {
     this._env = { ...this._env, ...env };
 
@@ -396,7 +396,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private async getResponseError(
     response: globalThis.Response,
     rawBody: unknown,
-    foundErr = "Unknown error",
+    foundErr = "Unknown error"
   ): Promise<Error> {
     let errorMessage = foundErr;
 
@@ -492,14 +492,14 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }): Promise<InngestApi.SendSignalResponse> {
     const res = await this.inngestApi.sendSignal(
       { signal, data },
-      { ...this.headers, ...headers },
+      { ...this.headers, ...headers }
     );
     if (res.ok) {
       return res.value;
     }
 
     throw new Error(
-      `Failed to send signal: ${res.error?.error || "Unknown error"}`,
+      `Failed to send signal: ${res.error?.error || "Unknown error"}`
     );
   }
 
@@ -521,14 +521,14 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         target,
         metadata,
       },
-      { headers },
+      { headers }
     );
     if (res.ok) {
       return res.value;
     }
 
     throw new Error(
-      `Failed to update metadata: ${res.error?.error || "Unknown error"}`,
+      `Failed to update metadata: ${res.error?.error || "Unknown error"}`
     );
   }
 
@@ -536,7 +536,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private async warnMetadata(
     target: MetadataTarget,
     kind: ErrCode,
-    log: StructuredLogMessage,
+    log: StructuredLogMessage
   ) {
     const fields: Record<string, unknown> = {};
     if (log.code) {
@@ -581,6 +581,20 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   public realtime: {
     /**
+     * Publish data to a realtime channel topic.
+     *
+     * This is a non-durable publish, it executes immediately and is not
+     * memoized. If called inside an Inngest function, it will automatically
+     * include the current run ID. For durable publishing inside functions, use
+     * `step.realtime.publish()`.
+     *
+     * ```ts
+     * await inngest.realtime.publish(ch.status, { message: "Processing..." });
+     * ```
+     */
+    publish: Realtime.TypedPublishFn;
+
+    /**
      * Subscribe to realtime messages on a channel, returning a readable stream.
      */
     subscribe: {
@@ -624,6 +638,38 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       topics: InputTopics;
     }) => Promise<TToken>;
   } = {
+    publish: async (topicRef, data) => {
+      const topicConfig = topicRef.config;
+      if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
+        const result = await topicConfig.schema["~standard"].validate(data);
+        if (result.issues) {
+          throw new Error(
+            `Schema validation failed for topic "${topicRef.topic}"`
+          );
+        }
+      }
+
+      const ctx = await getAsyncCtx();
+      const runId = ctx?.execution?.ctx.runId;
+
+      const res = await this.inngestApi.publish(
+        {
+          channel: topicRef.channel,
+          topics: [topicRef.topic],
+          runId,
+        },
+        data
+      );
+
+      if (!res.ok) {
+        throw new Error(
+          `Failed to publish to realtime: ${
+            res.error?.error || "Unknown error"
+          }`
+        );
+      }
+    },
+
     subscribe: async (opts) => {
       // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
       return realtimeSubscribe({ ...opts, app: this } as any) as any;
@@ -636,11 +682,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   };
 
   public endpoint<THandler extends Inngest.EndpointHandler<this>>(
-    handler: THandler,
+    handler: THandler
   ): THandler {
     if (!this.options.endpointAdapter) {
       throw new Error(
-        "No endpoint adapter configured for this Inngest client.",
+        "No endpoint adapter configured for this Inngest client."
       );
     }
 
@@ -685,13 +731,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   public endpointProxy(): Inngest.ProxyHandler<this> {
     if (!this.options.endpointAdapter) {
       throw new Error(
-        "No endpoint adapter configured for this Inngest client.",
+        "No endpoint adapter configured for this Inngest client."
       );
     }
 
     if (!this.options.endpointAdapter.createProxyHandler) {
       throw new Error(
-        "The configured endpoint adapter does not support proxy handlers.",
+        "The configured endpoint adapter does not support proxy handlers."
       );
     }
 
@@ -711,7 +757,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via bracket notation by InngestProxyHandler
   private async decryptProxyResult<T extends { data?: unknown }>(
-    result: T,
+    result: T
   ): Promise<T> {
     if (!result.data) {
       return result;
@@ -754,48 +800,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
-   * Publish data to a realtime channel topic.
-   *
-   * This is a non-durable publish — it executes immediately and is not
-   * memoized. If called inside an Inngest function, it will automatically
-   * include the current run ID. For durable publishing inside functions, use
-   * `step.realtime.publish()`.
-   *
-   * ```ts
-   * await inngest.publish(ch.status, { message: "Processing..." });
-   * ```
-   */
-  public publish: Realtime.TypedPublishFn = async (topicRef, data) => {
-    const topicConfig = topicRef.config;
-    if (topicConfig && "schema" in topicConfig && topicConfig.schema) {
-      const result = await topicConfig.schema["~standard"].validate(data);
-      if (result.issues) {
-        throw new Error(
-          `Schema validation failed for topic "${topicRef.topic}"`,
-        );
-      }
-    }
-
-    const ctx = await getAsyncCtx();
-    const runId = ctx?.execution?.ctx.runId;
-
-    const res = await this.inngestApi.publish(
-      {
-        channel: topicRef.channel,
-        topics: [topicRef.topic],
-        runId,
-      },
-      data,
-    );
-
-    if (!res.ok) {
-      throw new Error(
-        `Failed to publish to realtime: ${res.error?.error || "Unknown error"}`,
-      );
-    }
-  };
-
-  /**
    * Send one or many events to Inngest. Takes an entire payload (including
    * name) as each input.
    *
@@ -817,7 +821,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
        * multiple systems together using branch names.
        */
       env?: string;
-    },
+    }
   ): Promise<SendEventOutput<TClientOpts>> {
     const headers: Record<string, string> = {
       ...(options?.env ? { [headerKeys.Environment]: options.env } : {}),
@@ -862,7 +866,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     } catch (err) {
       this[internalLoggerSymbol].debug(
         { err },
-        "Event-sending retries disabled",
+        "Event-sending retries disabled"
       );
 
       // Disable retries.
@@ -877,7 +881,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     // Instantiate fresh middleware per send() call.
     const mwInstances = [...this.middleware, ...fnMiddleware].map(
-      (Cls) => new Cls({ client: this }),
+      (Cls) => new Cls({ client: this })
     );
     for (const mw of mwInstances) {
       if (mw?.transformSendEvent) {
@@ -917,7 +921,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      */
     if (!payloads.length) {
       this[internalLoggerSymbol].warn(
-        "inngest.send() called with no events; the returned promise will resolve, but no events have been sent",
+        "inngest.send() called with no events; the returned promise will resolve, but no events have been sent"
       );
 
       return { ids: [] } as SendEventOutput<TClientOpts>;
@@ -933,7 +937,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
           explanation:
             "Your event or events were not sent to Inngest. We couldn't find an event key to use to send events to Inngest.",
           action: fixEventKeyMissingSteps.join("; "),
-        }),
+        })
       );
     }
 
@@ -947,7 +951,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
           // not signing keys
           const url = new URL(
             `e/${this.eventKey ?? dummyEventKey}`,
-            this.eventBaseUrl,
+            this.eventBaseUrl
           );
           const response = await this.fetch(url.href, {
             method: "POST",
@@ -971,7 +975,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         {
           maxAttempts,
           baseDelay: 100,
-        },
+        }
       );
 
       return { ids: body.ids } as SendEventOutput<TClientOpts>;
@@ -981,7 +985,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       mwInstances,
       innerHandler,
       payloads,
-      fn,
+      fn
     );
 
     return (await wrappedHandler()) as SendEventOutput<TClientOpts>;
@@ -989,7 +993,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   public createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
-    handler,
+    handler
   ) => {
     const fn = this._createFunction(rawOptions, handler);
 
@@ -1008,7 +1012,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
-    handler,
+    handler
   ) => {
     const options = {
       ...rawOptions,
@@ -1024,7 +1028,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private sanitizeTriggers<
     T extends SingleOrArray<InngestFunction.Trigger<string>> | undefined,
   >(
-    triggers: T | undefined,
+    triggers: T | undefined
   ): T extends undefined ? [] : AsArray<NonNullable<T>> {
     type Result = T extends undefined ? [] : AsArray<NonNullable<T>>;
 
@@ -1052,7 +1056,7 @@ export function builtInMiddleware(baseLogger: Logger) {
       #proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
-        arg: Middleware.TransformFunctionInputArgs,
+        arg: Middleware.TransformFunctionInputArgs
       ) {
         let logger: Logger = baseLogger;
 
@@ -1211,7 +1215,7 @@ export namespace Inngest {
     >,
   >(
     options: CreateFunctionInput<TFnMiddleware, TTriggers, TFailureHandler>,
-    handler: THandler,
+    handler: THandler
   ) => InngestFunction<
     InngestFunction.Options<ResolveTriggers<TTriggers>, TFailureHandler>,
     THandler,

@@ -209,7 +209,7 @@ export namespace Realtime {
         kind:
           | "step" // step data
           | "run" // run results
-          | "data" // misc stream data from `inngest.publish()`
+          | "data" // misc stream data from `inngest.realtime.publish()`
           | "datastream-start"
           | "datastream-end"
           | "ping" // keepalive server -> client

@@ -1,5 +1,11 @@
 # inngest
 
+## 4.0.1
+
+### Patch Changes
+
+- [#1384](https://github.com/inngest/inngest-js/pull/1384) [`02759eb6`](https://github.com/inngest/inngest-js/commit/02759eb62da03407c116ed39ad2debc94a7d210b) Thanks [@Linell](https://github.com/Linell)! - fix: wrap AssertNoTransform to prevent union distribution
+
 ## 4.0.0
 
 ### Major Changes
