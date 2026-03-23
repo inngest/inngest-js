@@ -995,11 +995,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
  * middleware. Returns new-style `Middleware.Class` constructors. Uses a closure
  * so the no-arg constructors can capture the base logger.
  */
-export function builtInMiddleware(baseLogger: Logger): Middleware.Class[] {
+export function builtInMiddleware(baseLogger: Logger) {
+  let proxyLogger = new ProxyLogger(baseLogger);
+
   return [
     class LoggerMiddleware extends Middleware.BaseMiddleware {
       readonly id = "inngest:logger";
-      #proxyLogger = new ProxyLogger(baseLogger);
 
       override transformFunctionInput(
         arg: Middleware.TransformFunctionInputArgs,
@@ -1020,35 +1021,35 @@ export function builtInMiddleware(baseLogger: Logger): Middleware.Class[] {
           }
         }
 
-        this.#proxyLogger = new ProxyLogger(logger);
+        proxyLogger = new ProxyLogger(logger);
 
         return {
           ...arg,
           ctx: Object.assign({}, arg.ctx, {
-            logger: this.#proxyLogger as Logger,
+            logger: proxyLogger as Logger,
           }),
         };
       }
 
       override onMemoizationEnd() {
-        this.#proxyLogger.enable();
+        proxyLogger.enable();
       }
 
       override onStepError(arg: Middleware.OnStepErrorArgs) {
-        this.#proxyLogger.error({ err: arg.error }, "Inngest step error");
+        proxyLogger.error({ err: arg.error }, "Inngest step error");
       }
 
       override wrapFunctionHandler({
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
         return next().catch((err: unknown) => {
-          this.#proxyLogger.error({ err }, "Inngest function error");
+          proxyLogger.error({ err }, "Inngest function error");
           throw err;
         });
       }
 
       override wrapRequest({ next }: Middleware.WrapRequestArgs) {
-        return next().finally(() => this.#proxyLogger.flush());
+        return next().finally(() => proxyLogger.flush());
       }
     },
   ] as const;
