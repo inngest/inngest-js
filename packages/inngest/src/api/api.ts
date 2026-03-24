@@ -39,7 +39,7 @@ const checkpointNewRunResponseSchema = z.object({
     app_id: z.string().min(1),
     run_id: z.string().min(1),
     token: z.string().min(1).optional(),
-    realtime_token: z.string().min(1).optional(),
+    realtime_token: z.string().min(1),
   }),
 });
 
@@ -537,6 +537,9 @@ export class InngestApi {
       steps: args.steps,
       ts: new Date().valueOf(),
     });
+
+    // console.log("checkpointStepsAsync")
+    // console.log(body);
 
     const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
       method: "POST",

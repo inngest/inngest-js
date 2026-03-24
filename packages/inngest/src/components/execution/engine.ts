@@ -555,17 +555,15 @@ class InngestExecutionEngine
       return;
     }
 
-    const run = this.state.checkpointedRun;
-    if (!run?.realtimeToken) {
-      this.options.client[internalLoggerSymbol].error(
-        "realtimeToken missing from checkpointed run; cannot send redirect info",
-      );
+    if (!this.state.checkpointedRun) {
+      // This is part of the happy path. We may not have checkpointed the run
+      // yet, which happens after the first step ends
       return;
     }
 
     this.redirectSent = true;
 
-    const { realtimeToken } = run;
+    const { realtimeToken } = this.state.checkpointedRun;
 
     this.redirectPromise = (async () => {
       try {
@@ -1241,14 +1239,14 @@ class InngestExecutionEngine
                   ...stepToResume,
                   data: stepResult.data,
                 });
-                void this.checkpoint(this.state.checkpointingStepBuffer).catch(
-                  (err) => {
-                    this.options.client[internalLoggerSymbol].warn(
-                      { err },
-                      "Failed to checkpoint step during runToCompletion",
-                    );
-                  },
-                );
+                try {
+                  await this.checkpoint(this.state.checkpointingStepBuffer);
+                } catch (err) {
+                  this.options.client[internalLoggerSymbol].warn(
+                    { err },
+                    "Failed to checkpoint step during runToCompletion",
+                  );
+                }
                 this.state.checkpointingStepBuffer = [];
 
                 // Execute remaining parallel steps so Promise.all resolves.
@@ -2788,7 +2786,7 @@ export interface ExecutionState {
     fnId: string;
     appId: string;
     token?: string;
-    realtimeToken?: string;
+    realtimeToken: string;
   };
 
   /**
