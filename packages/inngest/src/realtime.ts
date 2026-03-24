@@ -5,3 +5,4 @@ export {
   subscribe,
 } from "./components/realtime/subscribe/index.ts";
 export type { Realtime } from "./components/realtime/types.ts";
+export { staticSchema } from "./components/triggers/triggers.ts";

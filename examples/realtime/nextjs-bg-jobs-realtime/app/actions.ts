@@ -2,16 +2,17 @@
 
 import { inngest } from "@/lib/inngest";
 import { campaignSendChannel } from "@/src/inngest/functions";
-import { getSubscriptionToken, Realtime } from "@inngest/realtime";
+import { getSubscriptionToken } from "inngest/react";
 
-// securely fetch an Inngest Realtime subscription token from the server as a server action
-export async function fetchSubscriptionToken(
-  campaignId: string
-): Promise<Realtime.Token<typeof campaignSendChannel, ["progress"]>> {
+export const fetchSubscriptionToken = async (campaignId: string) => {
   const token = await getSubscriptionToken(inngest, {
-    channel: campaignSendChannel(campaignId),
+    channel: campaignSendChannel({ campaignId }),
     topics: ["progress"],
   });
 
-  return token;
-}
+  if (!token.key) {
+    throw new Error("No realtime subscription token key returned");
+  }
+
+  return token.key;
+};
