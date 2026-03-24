@@ -66,7 +66,6 @@ export const GET = inngest.endpoint(async () => {
   }
 
   const language = choice.data.language as string;
-
   await step.run("second-llm", async () => {
     stream.push(`\n📚 Translating to ${language}:\n`);
     await sleep(300);
@@ -97,5 +96,9 @@ export const GET = inngest.endpoint(async () => {
     ]);
   }
 
-  return "\n🎉 We're all done here! Bye bye!";
+  await step.run("goodbye", () => {
+    return stream.push("\nWe're all done here! 🤘\n");
+  });
+
+  return new Response(null, { status: 200 });
 });

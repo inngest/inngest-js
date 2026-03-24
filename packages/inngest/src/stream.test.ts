@@ -1,6 +1,78 @@
 import { describe, expect, test, vi } from "vitest";
 import type { SSEFrame } from "./components/execution/streaming.ts";
-import { streamRun } from "./stream.ts";
+import {
+  buildSSEFailedFrame,
+  buildSSEMetadataFrame,
+  buildSSERedirectFrame,
+  buildSSEStepFrame,
+  buildSSEStreamFrame,
+  buildSSESucceededFrame,
+} from "./components/execution/streaming.ts";
+import { streamRun, subscribeToRun } from "./stream.ts";
+
+// ---------------------------------------------------------------------------
+// Helpers for subscribeToRun tests
+// ---------------------------------------------------------------------------
+
+/** Convert a typed SSEFrame to its raw SSE text using the production builders. */
+function frameToSSE(f: SSEFrame): string {
+  switch (f.type) {
+    case "inngest.metadata":
+      return buildSSEMetadataFrame(f.run_id);
+    case "stream":
+      return buildSSEStreamFrame(f.data, f.step_id);
+    case "inngest.redirect_info":
+      return buildSSERedirectFrame({
+        run_id: f.run_id,
+        token: f.token,
+        url: f.url,
+      });
+    case "inngest.result":
+      return f.status === "succeeded"
+        ? buildSSESucceededFrame(f.data)
+        : buildSSEFailedFrame(f.error);
+    case "inngest.step":
+      return buildSSEStepFrame(
+        f.step_id,
+        f.status,
+        f.status === "errored"
+          ? { will_retry: f.will_retry, error: f.error }
+          : undefined,
+      );
+  }
+}
+
+/**
+ * Serialize an array of typed SSEFrames into raw SSE text and wrap it in a
+ * Response with a ReadableStream body — the same shape that `fetch()` returns.
+ */
+function mockSSEResponse(frames: SSEFrame[]): Response {
+  const encoder = new TextEncoder();
+  const text = frames.map(frameToSSE).join("");
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(text));
+      controller.close();
+    },
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+/** Collect all frames from an async generator into an array. */
+async function collectFrames(
+  gen: AsyncGenerator<SSEFrame>,
+): Promise<SSEFrame[]> {
+  const frames: SSEFrame[] = [];
+  for await (const frame of gen) {
+    frames.push(frame);
+  }
+  return frames;
+}
 
 /**
  * Helper: create an async iterable from an array of SSEFrames.
@@ -428,5 +500,441 @@ describe("streamRun", () => {
     // Only the retry chunk should be rolled back, not the committed one
     expect(rolledBack).toEqual([1]);
     expect(rs.chunks).toEqual(["first-A"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// subscribeToRun tests
+// ---------------------------------------------------------------------------
+
+describe("subscribeToRun", () => {
+  test("follows redirect after direct stream closes (baseline)", async () => {
+    const directFrames: SSEFrame[] = [
+      { type: "inngest.metadata", run_id: "run-1" },
+      { type: "stream", data: "a" },
+      {
+        type: "inngest.redirect_info",
+        run_id: "run-1",
+        token: "tok",
+        url: "http://redirect",
+      },
+      { type: "stream", data: "b" },
+    ];
+    const redirectFrames: SSEFrame[] = [
+      { type: "inngest.metadata", run_id: "run-1" },
+      { type: "stream", data: "c" },
+      { type: "inngest.result", status: "succeeded", data: "done" },
+    ];
+
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+    fetchSpy.mockResolvedValueOnce(mockSSEResponse(directFrames));
+    fetchSpy.mockResolvedValueOnce(mockSSEResponse(redirectFrames));
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://de");
+    expect(fetchSpy.mock.calls[1]![0]).toBe("http://redirect");
+
+    const types = frames.map((f) => f.type);
+    expect(types).toEqual([
+      "inngest.metadata",
+      "stream",
+      "inngest.redirect_info",
+      "stream",
+      "inngest.metadata",
+      "stream",
+      "inngest.result",
+    ]);
+  });
+
+  test("eagerly connects to redirect URL when redirect_info is received", async () => {
+    // Track when each fetch call starts relative to the direct stream ending.
+    let directStreamDone = false;
+    let eagerFetchStartedBeforeDirectDone = false;
+
+    const redirectFrames: SSEFrame[] = [
+      { type: "stream", data: "c" },
+      { type: "inngest.result", status: "succeeded", data: "ok" },
+    ];
+
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+
+    // Direct stream: use a custom ReadableStream so we can detect when it
+    // finishes being read vs when the second fetch is started.
+    const directSSE: SSEFrame[] = [
+      { type: "stream", data: "a" },
+      {
+        type: "inngest.redirect_info",
+        run_id: "r",
+        token: "t",
+        url: "http://redirect",
+      },
+      { type: "stream", data: "b" },
+    ];
+
+    const encoder = new TextEncoder();
+    const directSSEText = directSSE.map(frameToSSE).join("");
+
+    const slowDirectBody = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        // Enqueue all frames
+        controller.enqueue(encoder.encode(directSSEText));
+        // Delay before closing to give the eager fetch time to fire
+        await new Promise((r) => setTimeout(r, 20));
+        directStreamDone = true;
+        controller.close();
+      },
+    });
+
+    fetchSpy.mockImplementation(async (url) => {
+      if (url === "http://de") {
+        return new Response(slowDirectBody, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      // This is the redirect fetch — record whether it started before the
+      // direct stream finished.
+      if (!directStreamDone) {
+        eagerFetchStartedBeforeDirectDone = true;
+      }
+      return mockSSEResponse(redirectFrames);
+    });
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    expect(eagerFetchStartedBeforeDirectDone).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    // Frames still arrive in the correct order: all direct frames first.
+    const streamData = frames
+      .filter((f): f is SSEFrame & { type: "stream" } => f.type === "stream")
+      .map((f) => f.data);
+    expect(streamData).toEqual(["a", "b", "c"]);
+  });
+
+  test("yields all direct stream frames before any redirect stream frames", async () => {
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        { type: "stream", data: "a" },
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t",
+          url: "http://redirect",
+        },
+        { type: "stream", data: "b" },
+      ]),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([{ type: "stream", data: "c" }]),
+    );
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    const streamData = frames
+      .filter((f): f is SSEFrame & { type: "stream" } => f.type === "stream")
+      .map((f) => f.data);
+    expect(streamData).toEqual(["a", "b", "c"]);
+  });
+
+  test("falls back to fresh fetch when eager fetch fails", async () => {
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+
+    // Direct stream with redirect.
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        { type: "stream", data: "a" },
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t",
+          url: "http://redirect",
+        },
+      ]),
+    );
+    // Eager fetch fails.
+    fetchSpy.mockRejectedValueOnce(new Error("network blip"));
+    // Fallback fetch succeeds.
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        { type: "stream", data: "b" },
+        { type: "inngest.result", status: "succeeded", data: "ok" },
+      ]),
+    );
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const streamData = frames
+      .filter((f): f is SSEFrame & { type: "stream" } => f.type === "stream")
+      .map((f) => f.data);
+    expect(streamData).toEqual(["a", "b"]);
+  });
+
+  test("does not retry when abort signal fires", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+
+    // Direct stream: abort mid-read.
+    const encoder = new TextEncoder();
+    const redirectFrame: SSEFrame = {
+      type: "inngest.redirect_info",
+      run_id: "r",
+      token: "t",
+      url: "http://redirect",
+    };
+    let abortController: ReadableStreamDefaultController<Uint8Array>;
+    const directBody = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        abortController = ctrl;
+        ctrl.enqueue(encoder.encode(frameToSSE(redirectFrame)));
+      },
+      pull() {
+        // Abort on the second pull (after the redirect frame has been read).
+        controller.abort();
+        abortController.error(
+          new DOMException("The operation was aborted.", "AbortError"),
+        );
+      },
+    });
+
+    fetchSpy.mockImplementation(async (url) => {
+      if (url === "http://de") {
+        return new Response(directBody, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      // Eager/fallback fetch — should receive the signal.
+      return mockSSEResponse([]);
+    });
+
+    const gen = subscribeToRun({
+      url: "http://de",
+      fetch: fetchSpy,
+      signal: controller.signal,
+    });
+
+    await expect(collectFrames(gen)).rejects.toThrow();
+
+    // Exactly one redirect call (the eager fetch) — no fallback retry.
+    const redirectCalls = fetchSpy.mock.calls.filter(
+      (c) => c[0] === "http://redirect",
+    );
+    expect(redirectCalls.length).toBe(1);
+  });
+
+  test("cleans up eager response body when direct stream errors", async () => {
+    const cancelSpy = vi.fn();
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+
+    const encoder = new TextEncoder();
+    const redirectFrame: SSEFrame = {
+      type: "inngest.redirect_info",
+      run_id: "r",
+      token: "t",
+      url: "http://redirect",
+    };
+
+    // Direct stream: emit a redirect frame, then yield to let the eager fetch
+    // start, then error on the next read.
+    let errorController: ReadableStreamDefaultController<Uint8Array>;
+    const directBody = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        errorController = ctrl;
+        ctrl.enqueue(encoder.encode(frameToSSE(redirectFrame)));
+      },
+      pull() {
+        // Error on the second pull (after the redirect frame has been read).
+        errorController.error(new Error("connection reset"));
+      },
+    });
+
+    // Build a response whose body.cancel() we can spy on.
+    const streamFrame: SSEFrame = { type: "stream", data: "x" };
+    const eagerBody = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        ctrl.enqueue(encoder.encode(frameToSSE(streamFrame)));
+        ctrl.close();
+      },
+      cancel: cancelSpy,
+    });
+
+    fetchSpy.mockImplementation(async (url) => {
+      if (url === "http://de") {
+        return new Response(directBody, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+      return new Response(eagerBody, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    });
+
+    await expect(
+      collectFrames(subscribeToRun({ url: "http://de", fetch: fetchSpy })),
+    ).rejects.toThrow("connection reset");
+
+    // Give the finally block's async cleanup a tick to run.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(cancelSpy).toHaveBeenCalled();
+  });
+
+  test("skips eager fetch when redirect_info has no url", async () => {
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t",
+        } as SSEFrame,
+      ]),
+    );
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    // Only one fetch — no eager fetch, no redirect follow.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]!.type).toBe("inngest.redirect_info");
+  });
+
+  test("only starts one eager fetch even if multiple redirect frames arrive", async () => {
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t",
+          url: "http://first",
+        },
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t2",
+          url: "http://second",
+        },
+      ]),
+    );
+    // The eager fetch (to http://first) succeeds.
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([{ type: "stream", data: "from-redirect" }]),
+    );
+
+    await collectFrames(subscribeToRun({ url: "http://de", fetch: fetchSpy }));
+
+    // Two fetches total: original + one eager. No second eager fetch.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  test("forwards abort signal to eager fetch", async () => {
+    const controller = new AbortController();
+    const signals: Array<AbortSignal | undefined> = [];
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+
+    fetchSpy.mockImplementation(async (_url, init) => {
+      signals.push((init as RequestInit)?.signal ?? undefined);
+      return mockSSEResponse([
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t",
+          url: "http://redirect",
+        },
+      ]);
+    });
+
+    await collectFrames(
+      subscribeToRun({
+        url: "http://de",
+        fetch: fetchSpy,
+        signal: controller.signal,
+      }),
+    );
+
+    // Both the direct and eager fetch should have received the signal.
+    expect(signals.length).toBeGreaterThanOrEqual(2);
+    for (const sig of signals) {
+      expect(sig).toBe(controller.signal);
+    }
+  });
+
+  test("falls back to fresh fetch when eager fetch returns non-200", async () => {
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+
+    // Direct stream with redirect.
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        { type: "stream", data: "a" },
+        {
+          type: "inngest.redirect_info",
+          run_id: "r",
+          token: "t",
+          url: "http://redirect",
+        },
+      ]),
+    );
+    // Eager fetch returns 502.
+    fetchSpy.mockResolvedValueOnce(
+      new Response(null, { status: 502, statusText: "Bad Gateway" }),
+    );
+    // Fallback fetch succeeds.
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        { type: "stream", data: "b" },
+        { type: "inngest.result", status: "succeeded", data: "ok" },
+      ]),
+    );
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    // Fallback used the correct URL.
+    expect(fetchSpy.mock.calls[2]![0]).toBe("http://redirect");
+
+    const streamData = frames
+      .filter((f): f is SSEFrame & { type: "stream" } => f.type === "stream")
+      .map((f) => f.data);
+    expect(streamData).toEqual(["a", "b"]);
+  });
+
+  test("completes without redirect when no redirect frame is received", async () => {
+    const fetchSpy = vi.fn<typeof globalThis.fetch>();
+    fetchSpy.mockResolvedValueOnce(
+      mockSSEResponse([
+        { type: "inngest.metadata", run_id: "run-1" },
+        { type: "stream", data: "hello" },
+        { type: "inngest.result", status: "succeeded", data: "done" },
+      ]),
+    );
+
+    const frames = await collectFrames(
+      subscribeToRun({ url: "http://de", fetch: fetchSpy }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(frames).toHaveLength(3);
+
+    const types = frames.map((f) => f.type);
+    expect(types).toEqual(["inngest.metadata", "stream", "inngest.result"]);
   });
 });

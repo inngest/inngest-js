@@ -6,6 +6,7 @@ import {
 import { describe, expect, onTestFinished, test } from "vitest";
 import { endpointAdapter } from "../../../edge.ts";
 import { Inngest, NonRetriableError, step, stream } from "../../../index.ts";
+import { subscribeToRun } from "../../../stream.ts";
 import {
   createEndpointServer,
   createGate,
@@ -383,7 +384,7 @@ describe("header negotiation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 2: Streaming Functionality
+// Streaming Functionality
 // ---------------------------------------------------------------------------
 
 describe("streaming functionality", () => {
@@ -506,7 +507,7 @@ describe("streaming functionality", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 3: Error & Rollback
+// Error & Rollback
 // ---------------------------------------------------------------------------
 
 describe("error and rollback", () => {
@@ -687,7 +688,7 @@ describe("error and rollback", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 4: Late Joiner
+// Late Joiner
 // ---------------------------------------------------------------------------
 
 describe("late joiner", () => {
@@ -756,6 +757,99 @@ describe("late joiner", () => {
       if (asyncData.includes("async-data")) {
         expect(asyncData).toContain("async-data");
       }
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// subscribeToRun client integration
+// ---------------------------------------------------------------------------
+
+describe("subscribeToRun client", () => {
+  test(
+    "receives all data across sync and async phases via eager redirect",
+    { timeout: 60000 },
+    async () => {
+      const state = createState({});
+      const gate = createGate();
+
+      const { port } = await setupEndpoint(async () => {
+        await step.run("sync-step", async () => {
+          stream.push("sync-a");
+          stream.push("sync-b");
+        });
+
+        // Force async mode
+        await step.sleep("zzz", "1s");
+
+        await step.run("async-step", async () => {
+          stream.push("async-c");
+
+          // Gate so we can verify streaming arrives incrementally
+          await gate.promise;
+
+          stream.push("async-d");
+        });
+
+        return new Response("done");
+      });
+
+      // Use subscribeToRun as the client — this exercises the eager redirect
+      // path against a real dev server SSE endpoint.
+      const frames: Array<{ type: string; data?: unknown }> = [];
+      let runId: string | undefined;
+      let sawRedirect = false;
+      let gateOpened = false;
+
+      const gen = subscribeToRun({
+        url: `http://localhost:${port}/api/demo`,
+      });
+
+      for await (const frame of gen) {
+        frames.push(frame);
+
+        if (frame.type === "inngest.metadata") {
+          runId = frame.run_id;
+          state.runId = frame.run_id;
+        }
+
+        if (frame.type === "inngest.redirect_info") {
+          sawRedirect = true;
+        }
+
+        // Open the gate once we see the first async chunk so the endpoint
+        // can finish.
+        if (
+          frame.type === "stream" &&
+          frame.data === "async-c" &&
+          !gateOpened
+        ) {
+          gateOpened = true;
+          gate.open();
+        }
+
+        // subscribeToRun yields all frames including inngest.result but
+        // doesn't break on it (that's RunStream's job). Stop manually.
+        if (frame.type === "inngest.result") {
+          break;
+        }
+      }
+
+      // Basic structural assertions
+      expect(runId).toBeTruthy();
+      expect(sawRedirect).toBe(true);
+
+      // All stream data arrived in order, spanning both sync and async phases.
+      const streamData = frames
+        .filter((f) => f.type === "stream")
+        .map((f) => f.data);
+      expect(streamData).toEqual(["sync-a", "sync-b", "async-c", "async-d"]);
+
+      // Result frame arrived
+      const resultFrame = frames.find((f) => f.type === "inngest.result");
+      expect(resultFrame).toBeDefined();
+
+      await state.waitForRunComplete();
     },
   );
 });
