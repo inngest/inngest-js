@@ -20,7 +20,7 @@ import type {
 
 import type { Inngest } from "./Inngest.ts";
 import type { Middleware } from "./middleware/middleware.ts";
-import type { EventTypeWithAnySchema } from "./triggers/triggers.ts";
+import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -156,28 +156,35 @@ export class InngestFunction<
      */
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
+    const triggers: FunctionConfig["triggers"] = [];
+    for (const trigger of this.opts.triggers ?? []) {
+      if (trigger.cron) {
+        triggers.push({ cron: trigger.cron });
+        continue;
+      }
+
+      if (!trigger.event) {
+        continue;
+      }
+
+      // The invoke event is in the triggers if they used the `invoke` trigger
+      // helper. But we need to remove it in the config, or else the function
+      // will be triggered by any invoke.
+      let eventName = trigger.event;
+      if (eventName instanceof EventType) {
+        eventName = eventName.name;
+      }
+      if (eventName === internalEvents.FunctionInvoked) {
+        continue;
+      }
+
+      triggers.push({ event: eventName, expression: trigger.if });
+    }
+
     const fn: FunctionConfig = {
       id: fnId,
       name: this.name,
-      triggers: (this.opts.triggers ?? [])
-        .filter((trigger) => {
-          // The invoke event is in the triggers if they used the `invoke`
-          // trigger helper. But we need to remove it in the config, or else the
-          // function will be triggered by any invoke
-          return trigger.event !== internalEvents.FunctionInvoked;
-        })
-        .map((trigger) => {
-          if ("event" in trigger) {
-            return {
-              event: trigger.event as string,
-              expression: trigger.if,
-            };
-          }
-
-          return {
-            cron: trigger.cron,
-          };
-        }),
+      triggers,
       steps: {
         [InngestFunction.stepId]: {
           id: InngestFunction.stepId,

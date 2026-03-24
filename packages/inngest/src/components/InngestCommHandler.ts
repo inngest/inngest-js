@@ -1273,6 +1273,7 @@ export class InngestCommHandler<
         fn,
         handler: innerHandler,
         middleware: mwInstances,
+        requestArgs: args,
         requestInfo,
         runId,
       });
