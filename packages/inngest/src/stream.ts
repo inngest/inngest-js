@@ -28,49 +28,94 @@ export interface SubscribeToRunOptions {
 /**
  * Low-level async generator that fetches an SSE endpoint, parses frames,
  * and follows `inngest.redirect_info` frames transparently.
+ *
+ * When a redirect frame arrives, the redirect URL is fetched eagerly in the
+ * background so the connection is already established by the time the direct
+ * stream closes. This minimizes the window for late-joiner data loss.
  */
 export async function* subscribeToRun(
   opts: SubscribeToRunOptions,
 ): AsyncGenerator<SSEFrame> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
-  let currentUrl: string | undefined = opts.url;
+  const fetchOpts = {
+    headers: { Accept: "text/event-stream" },
+    signal: opts.signal,
+  };
 
-  while (currentUrl) {
-    const res = await fetchFn(currentUrl, {
-      headers: { Accept: "text/event-stream" },
-      signal: opts.signal,
-    });
+  const res = await fetchFn(opts.url, fetchOpts);
 
-    if (!res.ok) {
-      throw new Error(`Stream request failed: ${res.status} ${res.statusText}`);
-    }
+  if (!res.ok) {
+    throw new Error(`Stream request failed: ${res.status} ${res.statusText}`);
+  }
+  if (!res.body) {
+    throw new Error("No response body");
+  }
 
-    if (!res.body) {
-      throw new Error("No response body");
-    }
+  let redirectUrl: string | undefined;
+  let eagerResponse: Promise<Response | undefined> | undefined;
 
-    let redirectUrl: string | undefined;
-
+  try {
     for await (const raw of iterSSE(res.body)) {
       const frame = parseSSEFrame(raw);
       if (!frame) continue;
 
       if (frame.type === "inngest.redirect_info") {
         redirectUrl = frame.url;
+
+        // Start the redirect connection immediately (once only).
+        if (frame.url && !eagerResponse) {
+          eagerResponse = fetchFn(frame.url, fetchOpts).catch(() => undefined);
+        }
+
         yield frame;
-        // Don't break — keep consuming remaining frames from this response
         continue;
       }
 
       yield frame;
     }
 
-    // Follow redirect if we got one; otherwise we're done
-    if (redirectUrl) {
-      currentUrl = redirectUrl;
-      redirectUrl = undefined;
-    } else {
-      currentUrl = undefined;
+    if (!redirectUrl) return;
+
+    let redirectRes: Response | undefined;
+
+    if (eagerResponse) {
+      const eager = await eagerResponse;
+      if (eager?.ok && eager.body) {
+        redirectRes = eager;
+      } else {
+        await eager?.body?.cancel();
+      }
+    }
+
+    if (!redirectRes) {
+      if (opts.signal?.aborted) {
+        throw (
+          opts.signal.reason ??
+          new DOMException("The operation was aborted.", "AbortError")
+        );
+      }
+
+      const fallback = await fetchFn(redirectUrl, fetchOpts);
+      if (!fallback.ok) {
+        throw new Error(
+          `Stream request failed: ${fallback.status} ${fallback.statusText}`,
+        );
+      }
+      if (!fallback.body) {
+        throw new Error("No response body");
+      }
+      redirectRes = fallback;
+    }
+
+    for await (const raw of iterSSE(redirectRes.body!)) {
+      const frame = parseSSEFrame(raw);
+      if (!frame) continue;
+      yield frame;
+    }
+  } finally {
+    // Cancel any unconsumed eager response body to release the connection.
+    if (eagerResponse) {
+      void eagerResponse.then((r) => r?.body?.cancel()).catch(() => {});
     }
   }
 }
