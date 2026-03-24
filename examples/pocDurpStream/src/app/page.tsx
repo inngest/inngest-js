@@ -49,14 +49,18 @@ export default function Home() {
           setLines((prev) => [...prev, chunk]);
           scrollToBottom();
         },
-        onResult: (data) => {
+        onFunctionSucceeded: (data) => {
           const display =
             typeof data === "string" ? data : JSON.stringify(data);
           setLines((prev) => [...prev, display]);
           scrollToBottom();
         },
+        onFunctionFailed: (error) => {
+          setLines((prev) => [...prev, `\n❌ ${error}\n`]);
+        },
         onRollback: (count) => {
           setLines((prev) => prev.slice(0, prev.length - count));
+          console.log("Rolling back the streamed data!");
         },
       });
     } catch (err) {
@@ -70,9 +74,7 @@ export default function Home() {
   async function handleDownload() {
     try {
       const text = lines.join("");
-      const res = await fetch(
-        `/api/download?text=${encodeURIComponent(text)}`,
-      );
+      const res = await fetch(`/api/download?text=${encodeURIComponent(text)}`);
 
       if (!res.ok) {
         const body = await res.text();

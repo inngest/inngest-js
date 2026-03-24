@@ -1,9 +1,10 @@
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
+  buildSSEFailedFrame,
   buildSSERedirectFrame,
-  buildSSEResultFrame,
   buildSSEStepFrame,
   buildSSEStreamFrame,
+  buildSSESucceededFrame,
   type SSEStepFrame,
   type StepErrorData,
 } from "./execution/streaming.ts";
@@ -245,16 +246,26 @@ export class InngestStream {
   }
 
   /**
-   * Write a terminal result frame and close the writer. Internal use only.
+   * Write a succeeded result frame and close the writer. Internal use only.
    */
-  close(resultData?: unknown): void {
+  closeSucceeded(data?: unknown): void {
     let frame: string;
     try {
-      frame = buildSSEResultFrame(resultData);
+      frame = buildSSESucceededFrame(data);
     } catch {
-      frame = buildSSEResultFrame({ error: "Failed to serialize result" });
+      frame = buildSSEFailedFrame("Failed to serialize result");
     }
+    this.closeWithFrame(frame);
+  }
 
+  /**
+   * Write a failed result frame and close the writer. Internal use only.
+   */
+  closeFailed(error: string): void {
+    this.closeWithFrame(buildSSEFailedFrame(error));
+  }
+
+  private closeWithFrame(frame: string): void {
     this.writeChain = this.writeChain
       .then(() => this.writer.write(this.encoder.encode(frame)))
       .then(() => this.writer.close())

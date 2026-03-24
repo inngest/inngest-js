@@ -33,7 +33,7 @@ describe("InngestStream.pipe", () => {
     const resultPromise = s.pipe(readable);
 
     // Close after pipe completes
-    resultPromise.then(() => s.close());
+    resultPromise.then(() => s.closeSucceeded());
 
     const [result, raw] = await Promise.all([resultPromise, drain(s)]);
 
@@ -52,7 +52,7 @@ describe("InngestStream.pipe", () => {
     }
 
     const resultPromise = s.pipe(gen());
-    resultPromise.then(() => s.close());
+    resultPromise.then(() => s.closeSucceeded());
 
     const [result, raw] = await Promise.all([resultPromise, drain(s)]);
 
@@ -69,7 +69,7 @@ describe("InngestStream.pipe", () => {
       yield "b";
       yield "c";
     });
-    resultPromise.then(() => s.close());
+    resultPromise.then(() => s.closeSucceeded());
 
     const [result, raw] = await Promise.all([resultPromise, drain(s)]);
 

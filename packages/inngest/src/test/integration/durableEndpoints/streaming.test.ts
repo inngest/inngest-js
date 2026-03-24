@@ -138,7 +138,7 @@ test(
       (e) => e.event === "inngest.result",
     );
     expect(resultEvents.length).toBe(1);
-    expect(JSON.parse(resultEvents[0]!.data)).toBe("All done");
+    expect(JSON.parse(resultEvents[0]!.data)).toEqual({ status: "succeeded", data: "All done" });
 
     await state.waitForRunComplete();
   },
@@ -185,7 +185,7 @@ describe("header negotiation", () => {
 
           const results = events.filter((e) => e.event === "inngest.result");
           expect(results.length).toBe(1);
-          expect(JSON.parse(results[0]!.data)).toBe("done");
+          expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "done" });
         },
       );
 
@@ -253,7 +253,7 @@ describe("header negotiation", () => {
 
           const results = events.filter((e) => e.event === "inngest.result");
           expect(results.length).toBe(1);
-          expect(JSON.parse(results[0]!.data)).toBe("computed");
+          expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "computed" });
 
           const streamFrames = events.filter((e) => e.event === "stream");
           expect(streamFrames.length).toBe(0);
@@ -379,7 +379,7 @@ describe("header negotiation", () => {
 
 describe("streaming functionality", () => {
   test(
-    "2a: pipe() with async generator streams tokens",
+    "pipe() with async generator streams tokens",
     { timeout: 60000 },
     async () => {
       const { port } = await setupEndpoint(async () => {
@@ -408,11 +408,11 @@ describe("streaming functionality", () => {
       // Result is the concatenated pipe output
       const results = events.filter((e) => e.event === "inngest.result");
       expect(results.length).toBe(1);
-      expect(JSON.parse(results[0]!.data)).toBe("token1token2");
+      expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "token1token2" });
     },
   );
 
-  test("2b: mixed push and pipe in one step", { timeout: 60000 }, async () => {
+  test("mixed push and pipe in one step", { timeout: 60000 }, async () => {
     const { port } = await setupEndpoint(async () => {
       await step.run("mixed", async () => {
         stream.push("Starting...");
@@ -446,7 +446,7 @@ describe("streaming functionality", () => {
   });
 
   test(
-    "2c: sync-only: streams across steps without async transition",
+    "sync-only: streams across steps without async transition",
     { timeout: 60000 },
     async () => {
       const { port } = await setupEndpoint(async () => {
@@ -479,7 +479,7 @@ describe("streaming functionality", () => {
       // Result frame
       const results = events.filter((e) => e.event === "inngest.result");
       expect(results.length).toBe(1);
-      expect(JSON.parse(results[0]!.data)).toBe("finished");
+      expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "finished" });
 
       // redirect_info is always sent once checkpoint creates the run
 
@@ -496,7 +496,7 @@ describe("streaming functionality", () => {
 
 describe("error and rollback", () => {
   test(
-    "3a: step error emits errored frame with streamed data",
+    "step error emits errored frame with streamed data",
     { timeout: 60000 },
     async () => {
       const { port } = await setupEndpoint(async () => {
@@ -539,7 +539,7 @@ describe("error and rollback", () => {
   );
 
   test(
-    "3b: push outside step.run has no step_id",
+    "push outside step.run has no step_id",
     { timeout: 60000 },
     async () => {
       const { port } = await setupEndpoint(async () => {
@@ -598,6 +598,79 @@ describe("error and rollback", () => {
       }
     },
   );
+
+  test(
+    "NonRetriableError after async mode sends inngest.result failed frame",
+    { timeout: 60000 },
+    async () => {
+      const state = createState({});
+
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        endpointAdapter,
+      });
+
+      const handler = client.endpoint(async () => {
+        await step.run("setup", async () => {
+          stream.push("setting up\n");
+        });
+
+        // Force async mode
+        await step.sleep("pause", "1s");
+
+        await step.run("failing-after-async", async () => {
+          stream.push("about to fail\n");
+          throw new NonRetriableError("Dog Speak is Much Too Hard to Translate");
+        });
+
+        return new Response("unreachable");
+      });
+
+      const { port, server } = await createEndpointServer(handler);
+      onTestFinished(
+        () => new Promise<void>((resolve) => server.close(() => resolve())),
+      );
+
+      // Phase 1: Initial sync request → SSE stream
+      const res = await fetch(`http://localhost:${port}/api/demo`, {
+        headers: { Accept: "text/event-stream" },
+      });
+      expect(res.status).toBe(200);
+
+      const sse = startSSEReader(res, 15_000);
+      await sse.waitForStreamData("setting up\n");
+      await sse.done;
+
+      const metadataEvents = sse.events.filter(
+        (e) => e.event === "inngest.metadata",
+      );
+      expect(metadataEvents.length).toBe(1);
+      const metadata = JSON.parse(metadataEvents[0]!.data);
+      state.runId = metadata.run_id;
+
+      const redirectUrl = sse.getRedirectUrl();
+      expect(redirectUrl).toBeTruthy();
+
+      // Phase 2: Follow redirect → async stream from Dev Server
+      const asyncEvents = await pollForAsyncStream(redirectUrl!, {
+        maxAttempts: 30,
+        intervalMs: 500,
+        readTimeoutMs: 15_000,
+      });
+
+      // inngest.result failed frame must be present — this is the bug fix.
+      // Before the fix, the stream closed without a terminal result frame,
+      // so onFunctionFailed never fired on the client.
+      const resultEvents = asyncEvents.filter(
+        (e) => e.event === "inngest.result",
+      );
+      expect(resultEvents.length).toBe(1);
+      const resultData = JSON.parse(resultEvents[0]!.data);
+      expect(resultData.status).toBe("failed");
+      expect(resultData.error).toContain("Dog Speak");
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -608,7 +681,7 @@ describe("late joiner", () => {
   // Skipped: the late-joiner problem is explicitly out of scope (see task.md).
   // This test documents the desired behavior for when it's implemented.
   test.skip(
-    "4a: async chunks available after delayed client connection",
+    "async chunks available after delayed client connection",
     { timeout: 90000 },
     async () => {
       const { port } = await setupEndpoint(async () => {
@@ -660,7 +733,7 @@ describe("late joiner", () => {
       // At minimum, the result should eventually be available
       if (hasResult) {
         const result = asyncEvents.find((e) => e.event === "inngest.result");
-        expect(JSON.parse(result!.data)).toBe("complete");
+        expect(JSON.parse(result!.data)).toEqual({ status: "succeeded", data: "complete" });
       }
 
       // If async data is present, verify it

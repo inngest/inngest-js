@@ -101,10 +101,16 @@ export interface RunStreamOptions<TData = unknown> {
   /** Called when chunks are rolled back due to a step error or disconnect. */
   onRollback?: (count: number) => void;
   /**
-   * Called when the final result frame arrives. The data is `unknown` because
-   * SSE transport erases the original return type.
+   * Called when the function completes successfully. The data is `unknown`
+   * because SSE transport erases the original return type.
    */
-  onResult?: (data: unknown) => void;
+  onFunctionSucceeded?: (data: unknown) => void;
+  /**
+   * Called when the function fails permanently (NonRetriableError or final
+   * attempt). Will not fire for retryable errors — those simply end the
+   * stream without a result frame.
+   */
+  onFunctionFailed?: (error: string) => void;
   /** Called when a step begins running. */
   onStepRunning?: (stepId: string, data?: unknown) => void;
   /**
@@ -135,7 +141,8 @@ export interface RunStreamOptions<TData = unknown> {
  * await streamRun<string>("/api/demo", {
  *   parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
  *   onData: (chunk) => console.log(chunk),
- *   onResult: (data) => console.log("result:", data),
+ *   onFunctionSucceeded: (data) => console.log("done:", data),
+ *   onFunctionFailed: (error) => console.error("failed:", error),
  * });
  * ```
  *
@@ -307,7 +314,11 @@ export class RunStream<TData = unknown> {
             break;
           }
           case "inngest.result":
-            this.opts.onResult?.(frame.data);
+            if (frame.status === "succeeded") {
+              this.opts.onFunctionSucceeded?.(frame.data);
+            } else {
+              this.opts.onFunctionFailed?.(frame.error);
+            }
             break outer;
           case "inngest.metadata":
             this.opts.onMetadata?.(frame.run_id);

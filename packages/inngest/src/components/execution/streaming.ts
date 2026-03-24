@@ -18,10 +18,19 @@ export interface SSEStreamFrame {
   step_id?: string;
 }
 
-export interface SSEResultFrame {
+export interface SSEResultSucceededFrame {
   type: "inngest.result";
-  data: unknown;
+  status: "succeeded";
+  data?: unknown;
 }
+
+export interface SSEResultFailedFrame {
+  type: "inngest.result";
+  status: "failed";
+  error: string;
+}
+
+export type SSEResultFrame = SSEResultSucceededFrame | SSEResultFailedFrame;
 
 /**
  * Payload included with every `inngest.step` errored frame. Describes the
@@ -101,6 +110,11 @@ const sseStepPayloadSchema = z.object({
   data: z.unknown().optional(),
 });
 
+const sseResultPayloadSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("succeeded"), data: z.unknown().optional() }),
+  z.object({ status: z.literal("failed"), error: z.string() }),
+]);
+
 const sseRedirectPayloadSchema = z.object({
   run_id: z.string(),
   token: z.string(),
@@ -145,11 +159,19 @@ export function buildSSEStreamFrame(data: unknown, stepId?: string): string {
 }
 
 /**
- * Builds an SSE result frame string for the terminal value of a streaming
- * response. This is the last frame sent before the stream closes.
+ * Builds an SSE result frame for a successfully completed function.
+ * This is the last frame sent before the stream closes.
  */
-export function buildSSEResultFrame(data: unknown): string {
-  return buildSSEFrame("inngest.result", data);
+export function buildSSESucceededFrame(data: unknown): string {
+  return buildSSEFrame("inngest.result", { status: "succeeded", data });
+}
+
+/**
+ * Builds an SSE result frame for a permanently failed function.
+ * This is the last frame sent before the stream closes.
+ */
+export function buildSSEFailedFrame(error: string): string {
+  return buildSSEFrame("inngest.result", { status: "failed", error });
 }
 
 /**
@@ -405,8 +427,11 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
         ...(result.data.step_id ? { step_id: result.data.step_id } : {}),
       };
     }
-    case "inngest.result":
-      return { type: "inngest.result", data: parsed };
+    case "inngest.result": {
+      const result = sseResultPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+      return { type: "inngest.result", ...result.data };
+    }
     case "inngest.step": {
       const result = sseStepPayloadSchema.safeParse(parsed);
       if (!result.success) return undefined;

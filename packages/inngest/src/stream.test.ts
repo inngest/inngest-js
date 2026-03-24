@@ -31,22 +31,40 @@ describe("streamRun", () => {
     expect(rs.chunks).toEqual(["hello", " world"]);
   });
 
-  test("calls onResult when result frame arrives", async () => {
+  test("calls onFunctionSucceeded when succeeded result frame arrives", async () => {
     const results: unknown[] = [];
 
     const rs = streamRun("http://test", {
-      onResult: (d) => results.push(d),
+      onFunctionSucceeded: (d) => results.push(d),
     });
     rs._fromSource(
       framesFrom([
         { type: "stream", data: "chunk" },
-        { type: "inngest.result", data: "final" },
+        { type: "inngest.result", status: "succeeded", data: "final" },
       ]),
     );
 
     await rs;
 
     expect(results).toEqual(["final"]);
+  });
+
+  test("calls onFunctionFailed when failed result frame arrives", async () => {
+    const errors: string[] = [];
+
+    const rs = streamRun("http://test", {
+      onFunctionFailed: (e) => errors.push(e),
+    });
+    rs._fromSource(
+      framesFrom([
+        { type: "stream", data: "chunk" },
+        { type: "inngest.result", status: "failed", error: "Dog Speak is Much Too Hard to Translate" },
+      ]),
+    );
+
+    await rs;
+
+    expect(errors).toEqual(["Dog Speak is Much Too Hard to Translate"]);
   });
 
   test("rolls back chunks on step error using step_id", async () => {
@@ -185,7 +203,7 @@ describe("streamRun", () => {
     // didn't close the connection). The stream should stop after result.
     async function* neverEnding(): AsyncGenerator<SSEFrame> {
       yield { type: "stream", data: "a" } as SSEFrame;
-      yield { type: "inngest.result", data: "done" } as SSEFrame;
+      yield { type: "inngest.result", status: "succeeded", data: "done" } as SSEFrame;
       // These should never be reached:
       yield { type: "stream", data: "SHOULD NOT APPEAR" } as SSEFrame;
     }
