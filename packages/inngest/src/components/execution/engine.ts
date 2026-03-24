@@ -96,6 +96,12 @@ const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * Placeholder step ID used when completing a checkpointed run.
+ */
+const RUN_COMPLETE_STEP_ID = "complete";
+
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
@@ -621,7 +627,7 @@ class InngestExecutionEngine
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
-            id: _internals.hashId("complete"),
+            id: hashId(RUN_COMPLETE_STEP_ID),
             data: await this.options.createResponse(wrappedResponse),
           },
         ]);
@@ -853,7 +859,7 @@ class InngestExecutionEngine
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
-            id: _internals.hashId("complete"), // ID is not important here
+            id: hashId(RUN_COMPLETE_STEP_ID),
             data: await this.options.createResponse!(wrappedResponse),
           },
         ]);
@@ -878,7 +884,7 @@ class InngestExecutionEngine
             // SSE path: checkpoint the error so the server knows the outcome.
             void this.checkpoint([
               {
-                id: _internals.hashId("complete"),
+                id: hashId(RUN_COMPLETE_STEP_ID),
                 op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
                 error: checkpoint.error,
               },
@@ -907,7 +913,7 @@ class InngestExecutionEngine
         // so checkpointAndSwitchToAsync closes with end().
         return this.checkpointAndSwitchToAsync([
           {
-            id: _internals.hashId("complete"), // ID is not important here
+            id: hashId(RUN_COMPLETE_STEP_ID),
             op: StepOpCode.StepError,
             error: checkpoint.error,
           },
@@ -1141,7 +1147,7 @@ class InngestExecutionEngine
 
             const steps = this.state.checkpointingStepBuffer.concat({
               op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"), // ID is not important here
+              id: hashId(RUN_COMPLETE_STEP_ID),
               data: output.data,
             });
 
