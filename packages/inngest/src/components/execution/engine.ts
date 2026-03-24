@@ -92,6 +92,10 @@ const { sha1 } = hashjs;
  * 500 error, for AsyncCheckpointing the caller handles fallback.
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
@@ -127,6 +131,13 @@ class InngestExecutionEngine
    * Prevents duplicate redirect frames.
    */
   private redirectSent = false;
+
+  /**
+   * Promise that resolves once the redirect frame has been written (or the
+   * attempt completes). Stored so that `checkpointAndSwitchToAsync` can
+   * await it before closing the writer.
+   */
+  private redirectPromise: Promise<void> = Promise.resolve();
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -174,16 +185,16 @@ class InngestExecutionEngine
     }
 
     this.userFnToRun = this.getUserFnToRun();
-    this.streamTools = new InngestStream();
+    this.streamTools = new InngestStream({
+      onActivated: () => this.handleStreamActivated(),
+      onWriteError: (err) =>
+        this.devDebug(
+          "stream write error (client may have disconnected):",
+          err,
+        ),
+    });
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
-
-    // Wire up stream activation callback. Called directly (not through the
-    // checkpoint queue) so the SSE response is returned immediately even
-    // when the core loop is blocked inside executeStep.
-    this.streamTools.onActivated = () => {
-      this.handleStreamActivated();
-    };
 
     // Setup middleware
     const mwInstances =
@@ -280,22 +291,17 @@ class InngestExecutionEngine
    * Starts execution of the user's function and the core loop.
    */
   private async _start(): Promise<ExecutionResult> {
-    // In sync mode, set up a deferred promise that handleStreamActivated can
-    // resolve to return the SSE Response early while the loop keeps running.
-    if (this.options.stepMode === StepMode.Sync) {
+    // Set up a deferred promise that handleStreamActivated resolves to return
+    // the SSE Response early while the core loop keeps running.
+    if (this.options.stepMode === StepMode.Sync && this.options.acceptsSSE) {
       this.earlyStreamResponse = createDeferredPromise<ExecutionResult>();
     }
 
     const coreLoop = this.runCoreLoop();
 
     if (this.earlyStreamResponse) {
-      // Race: return whichever resolves first — the early stream response
-      // (from stream.push()) or the normal loop completion.
-      // The core loop continues running in the background either way.
-      //
-      // Suppress unhandled rejections from coreLoop — if the early stream
-      // response wins the race and the loop later rejects, we don't want to
-      // crash the process.
+      // Suppress: if earlyStreamResponse wins the race and coreLoop later
+      // rejects, the rejection must not go unhandled.
       coreLoop.catch((err) => {
         this.devDebug("core loop rejected after early stream response:", err);
       });
@@ -328,6 +334,11 @@ class InngestExecutionEngine
         }
       }
     } catch (error) {
+      // If earlyStreamResponse was set up, close the stream with an error frame.
+      if (this.earlyStreamResponse) {
+        this.streamTools.closeFailed("Internal execution error");
+      }
+
       return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
@@ -363,9 +374,7 @@ class InngestExecutionEngine
           realtimeToken: res.data.realtime_token,
         };
 
-        // Send redirect info as soon as we have the realtime token.
-        // If the stream isn't activated yet, this is a no-op and
-        // handleStreamActivated will call it later.
+        // Try sending redirect (no-op if stream isn't activated yet).
         this.sendRedirectIfReady();
       } else {
         await retryWithBackoff(
@@ -380,24 +389,12 @@ class InngestExecutionEngine
         );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
-      if (!this.options.queueItemId) {
-        throw new Error(
-          "Missing queueItemId for async checkpointing. This is a bug in the Inngest SDK.",
-        );
-      }
-
-      if (!this.options.internalFnId) {
-        throw new Error(
-          "Missing internalFnId for async checkpointing. This is a bug in the Inngest SDK.",
-        );
-      }
-
       await retryWithBackoff(
         () =>
           this.options.client["inngestApi"].checkpointStepsAsync({
             runId: this.fnArg.runId,
-            fnId: this.options.internalFnId!,
-            queueItemId: this.options.queueItemId!,
+            fnId: this.options.internalFnId,
+            queueItemId: this.options.queueItemId ?? "",
             steps,
           }),
         CHECKPOINT_RETRY_OPTIONS,
@@ -411,6 +408,7 @@ class InngestExecutionEngine
 
   private async checkpointAndSwitchToAsync(
     steps: OutgoingOp[],
+    stepError?: unknown,
   ): Promise<ExecutionResult> {
     await this.checkpoint(steps);
 
@@ -420,11 +418,20 @@ class InngestExecutionEngine
 
     const token = this.state.checkpointedRun.token;
 
-    // End the stream without a result frame when switching to async mode.
-    // The redirect_info frame was already sent, so the client knows where
-    // to reconnect for the real result.
+    // Wait for the redirect_info frame to flush — sendRedirectIfReady
+    // fetches the redirect URL asynchronously.
+    await this.redirectPromise;
+
     if (this.streamTools.activated) {
-      this.streamTools.end();
+      if (stepError && this.isFinalAttempt(stepError)) {
+        // Permanent failure — close with a failed frame so the client
+        // gets onFunctionFailed instead of silence.
+        this.streamTools.closeFailed(errorMessage(stepError));
+      } else {
+        // End stream without a result frame — client uses redirect_info
+        // to reconnect.
+        this.streamTools.end();
+      }
     }
 
     return {
@@ -437,46 +444,54 @@ class InngestExecutionEngine
   }
 
   /**
-   * Handles `function-resolved` when the response should be delivered as SSE.
+   * Prepend the `inngest.metadata` SSE frame to the stream's readable side.
+   * The returned stream can be used as a fetch body or Response body.
    *
-   * Triggered when `stream.push()`/`pipe()` was called, the client sent
-   * `Accept: text/event-stream`, or the function returned a streaming
-   * Response. The checkpointable data is the function's return value — the
-   * SSE frames are just a delivery mechanism.
+   * NOTE: `this.streamTools.readable` can only be consumed once, so only one
+   * of `buildSSEResponse` or `postCheckpointStream` may be called per
+   * execution.
    */
-  private handleActivatedStreamResolved(
-    checkpoint: Simplify<
-      { type: "function-resolved" } & Checkpoints["function-resolved"]
-    >,
-  ): ExecutionResult {
-    // If the function returned a Response, extract its body text so the
-    // result frame contains the actual content rather than `{}`.
-    let resultData: unknown = checkpoint.data;
-    if (checkpoint.data instanceof Response) {
-      // Can't await here since transformOutput is sync; use raw data
-      resultData = checkpoint.data;
-    }
-
-    // Close the stream with a terminal result frame
-    this.streamTools.close(resultData);
-
-    // Prepend the metadata frame to the stream
-    const metadataFrame = buildSSEMetadataFrame(
-      this.fnArg.runId,
-      this.fnArg.attempt,
-    );
-    const clientStream = prependToStream(
+  private buildMetadataPrefixedStream(): ReadableStream<Uint8Array> {
+    const metadataFrame = buildSSEMetadataFrame(this.fnArg.runId);
+    return prependToStream(
       new TextEncoder().encode(metadataFrame),
       this.streamTools.readable,
     );
+  }
 
-    const clientResponse = new Response(clientStream, {
+  /**
+   * Build a complete SSE `Response` backed by the stream's readable side,
+   * prefixed with the metadata frame.
+   */
+  private buildSSEResponse(): Response {
+    return new Response(this.buildMetadataPrefixedStream(), {
       status: 200,
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
       },
     });
+  }
+
+  /**
+   * Wraps a plain return value as an SSE Response.
+   *
+   * Used when the client sent `Accept: text/event-stream` but
+   * `stream.push()`/`pipe()` was NOT called during execution. The
+   * checkpointable data is the function's return value — the SSE frames are
+   * just a delivery mechanism.
+   */
+  private wrapResultAsSSE(
+    checkpoint: Simplify<
+      { type: "function-resolved" } & Checkpoints["function-resolved"]
+    >,
+  ): ExecutionResult {
+    const resultData: unknown = checkpoint.data;
+
+    // Close the stream with a terminal succeeded frame
+    this.streamTools.closeSucceeded(resultData);
+
+    const clientResponse = this.buildSSEResponse();
 
     // Run transformOutput to fire middleware hooks
     const result = this.transformOutput({ data: resultData });
@@ -499,54 +514,35 @@ class InngestExecutionEngine
    * checkpoint loop keeps running steps in the background.
    */
   private handleStreamActivated(): undefined {
-    // Sync mode: resolve the early stream response so the HTTP layer sends
-    // the SSE Response to the client immediately.
     if (this.earlyStreamResponse) {
-      const metadataFrame = buildSSEMetadataFrame(
-        this.fnArg.runId,
-        this.fnArg.attempt,
-      );
-
-      const clientStream = prependToStream(
-        new TextEncoder().encode(metadataFrame),
-        this.streamTools.readable,
-      );
-
-      const clientResponse = new Response(clientStream, {
-        status: 200,
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-        },
-      });
-
+      // "function-resolved" tells the HTTP layer to send the Response,
+      // even though the function is still running.
       this.earlyStreamResponse.resolve({
         type: "function-resolved",
         ctx: this.fnArg,
         ops: this.ops,
-        data: clientResponse,
+        data: this.buildSSEResponse(),
       });
+
+      // Checkpoint may have already provided the realtime token — try redirect now.
+      this.sendRedirectIfReady();
 
       return undefined;
     }
 
-    // Async mode: start the streaming POST immediately so that chunks
-    // flow to the Dev Server in real-time rather than being buffered
-    // until the function completes.
+    // Async mode: start the streaming POST immediately.
     this.postCheckpointStream();
     this.sendRedirectIfReady();
     return undefined;
   }
 
   /**
-   * Sends the `inngest.redirect_info` SSE frame if both conditions are met:
+   * Sends the `inngest.redirect_info` SSE frame when both conditions are met:
    * 1. The stream has been activated (stream.push/pipe was called)
    * 2. We have a realtime token (first checkpoint has completed)
    *
-   * Called from two places: after the first checkpoint and when the stream
-   * is first activated. This ensures the redirect is sent as soon as both
-   * pieces of information are available, rather than waiting until the DE
-   * goes async (which may never happen, or may be triggered by a crash).
+   * Called after the first checkpoint AND on stream activation, whichever
+   * comes second, so the redirect is sent as early as possible.
    */
   private sendRedirectIfReady(): void {
     if (this.redirectSent) {
@@ -557,31 +553,34 @@ class InngestExecutionEngine
       return;
     }
 
-    if (!this.state.checkpointedRun?.realtimeToken) {
+    const run = this.state.checkpointedRun;
+    if (!run?.realtimeToken) {
+      this.options.client[internalLoggerSymbol].error(
+        "realtimeToken missing from checkpointed run; cannot send redirect info",
+      );
       return;
     }
 
     this.redirectSent = true;
 
-    void (async () => {
+    const { realtimeToken } = run;
+
+    this.redirectPromise = (async () => {
       try {
-        const redirect =
-          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
-            this.fnArg.runId,
-            this.state.checkpointedRun!.realtimeToken,
-          );
+        const redirect = await this.options.client[
+          "inngestApi"
+        ].getRealtimeStreamRedirect(this.fnArg.runId, realtimeToken);
 
         this.streamTools.sendRedirectInfo({
           run_id: this.fnArg.runId,
           token: redirect.token,
           url: redirect.url,
         });
-      } catch {
-        // Best-effort; client can still construct URL from run_id + token
-        this.streamTools.sendRedirectInfo({
-          run_id: this.fnArg.runId,
-          token: this.state.checkpointedRun!.realtimeToken!,
-        });
+      } catch (err) {
+        this.options.client[internalLoggerSymbol].warn(
+          { err },
+          "Failed to fetch realtime stream redirect URL",
+        );
       }
     })();
   }
@@ -589,36 +588,16 @@ class InngestExecutionEngine
   /**
    * POST stream data to the checkpoint stream ingest endpoint.
    *
-   * May be called eagerly (from handleStreamActivated) so that chunks
-   * flow to the Dev Server in real-time, or after the function completes
-   * if stream.push() was never called. The POST body is:
-   *   1. A JSON header frame line (status + response headers)
-   *   2. SSE metadata frame
-   *   3. SSE stream frames (streamed in real-time if called eagerly)
-   *   4. The terminal result frame (written by streamTools.close())
+   * Called eagerly from handleStreamActivated so chunks flow in
+   * real-time, or after completion if stream.push() was never called.
    */
   private postCheckpointStream(): void {
     try {
-      const encoder = new TextEncoder();
-
-      // Prepend the SSE metadata frame so subscribers know the run ID.
-      // No header frame is needed — the realtime publish/tee endpoint
-      // forwards raw bytes directly to subscribers.
-      const metadataFrame = buildSSEMetadataFrame(
-        this.fnArg.runId,
-        this.fnArg.attempt,
-      );
-
-      const bodyStream = prependToStream(
-        encoder.encode(metadataFrame),
-        this.streamTools.readable,
-      );
-
       // Fire and forget — completes when the stream closes.
       void this.options.client["inngestApi"]
         .checkpointStream({
           runId: this.fnArg.runId,
-          body: bodyStream,
+          body: this.buildMetadataPrefixedStream(),
         })
         .catch((err: unknown) => {
           this.devDebug("checkpoint stream POST error:", err);
@@ -654,18 +633,6 @@ class InngestExecutionEngine
         err,
       );
     }
-  }
-
-  /**
-   * Returns whether we're in the final attempt of execution, or `null` if we
-   * can't determine this in the SDK.
-   */
-  private inFinalAttempt(): boolean | null {
-    if (typeof this.fnArg.maxAttempts !== "number") {
-      return null;
-    }
-
-    return this.fnArg.attempt + 1 >= this.fnArg.maxAttempts;
   }
 
   /**
@@ -812,42 +779,63 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint) => {
-        // If stream.push()/pipe() was already called, the SSE Response was
-        // returned to the client via handleStreamActivated. Close the stream
-        // with a result frame, checkpoint the return value in the background,
-        // and return a result to terminate the core loop.
+        // Was an SSE response sent to the client via earlyStreamResponse?
+        const sseDeliveredToClient = !!this.earlyStreamResponse;
+
         if (this.streamTools.activated) {
           let resultData: unknown = checkpoint.data;
           if (checkpoint.data instanceof Response) {
-            resultData = await checkpoint.data.text();
+            // Clone when not SSE so the Response body stays intact for passthrough.
+            resultData = await (sseDeliveredToClient
+              ? checkpoint.data.text()
+              : checkpoint.data.clone().text());
           }
-          this.streamTools.close(resultData);
-          void this.checkpointReturnValue(resultData);
 
-          // Return a result to end the core loop. The actual HTTP response
-          // was already sent via earlyStreamResponse.
-          return this.transformOutput({ data: resultData });
+          // Always close the stream — either the SSE client or the
+          // server-side checkpoint POST needs the terminal result frame.
+          this.streamTools.closeSucceeded(resultData);
+
+          if (sseDeliveredToClient) {
+            // SSE path: response already sent; checkpoint in background.
+            void this.checkpointReturnValue(resultData);
+            return this.transformOutput({ data: resultData });
+          }
+
+          // Non-SSE: fall through to normal response handling.
         }
 
-        // If the client accepts SSE or the function returned a streaming
-        // Response (but stream.push() was NOT called), build the SSE
-        // Response now.
-        if (
-          this.options.acceptsSSE ||
-          (checkpoint.data instanceof Response &&
-            checkpoint.data.body instanceof ReadableStream)
-        ) {
-          return this.handleActivatedStreamResolved(checkpoint);
+        // If the client accepts SSE (but stream.push() was NOT called),
+        // build the SSE Response now. Extract the body from Response objects
+        // so they can be wrapped as SSE result frames.
+        if (this.options.acceptsSSE) {
+          if (checkpoint.data instanceof Response) {
+            checkpoint = {
+              ...checkpoint,
+              data: await checkpoint.data.text(),
+            };
+          }
+          return this.wrapResultAsSSE(checkpoint);
+        }
+
+        // Response pass-through: deliver as-is. Checkpoint null because the
+        // Response body (ReadableStream) can only be consumed once.
+        if (checkpoint.data instanceof Response) {
+          void this.checkpointReturnValue(null);
+          return this.transformOutput({ data: checkpoint.data });
         }
 
         // Non-streaming path
         const transformedData = checkpoint.data;
+        const wrappedResponse = new Response(JSON.stringify(transformedData), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
 
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: _internals.hashId("complete"), // ID is not important here
-            data: await this.options.createResponse!(transformedData),
+            data: await this.options.createResponse!(wrappedResponse),
           },
         ]);
 
@@ -856,22 +844,48 @@ class InngestExecutionEngine
       },
 
       "function-rejected": async (checkpoint) => {
-        // If stream was already activated, close with an error frame and
-        // terminate the loop. The HTTP response was already sent.
+        const sseDeliveredToClient = !!this.earlyStreamResponse;
+        const isFinal = this.isFinalAttempt(checkpoint.error);
+
         if (this.streamTools.activated) {
-          this.streamTools.close({ error: String(checkpoint.error) });
-          return this.transformOutput({ error: checkpoint.error });
+          if (isFinal) {
+            this.streamTools.closeFailed(errorMessage(checkpoint.error));
+          } else {
+            // Retryable error — suppress the result frame; the run will retry.
+            this.streamTools.end();
+          }
+
+          if (sseDeliveredToClient) {
+            // SSE path: checkpoint the error so the server knows the outcome.
+            void this.checkpoint([
+              {
+                id: _internals.hashId("complete"),
+                op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+                error: checkpoint.error,
+              },
+            ]).catch((err) => {
+              this.options.client[internalLoggerSymbol].warn(
+                { err },
+                "Failed to checkpoint function error",
+              );
+            });
+
+            return this.transformOutput({ error: checkpoint.error });
+          }
+
+          // Non-SSE: fall through to normal error handling.
         }
 
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
-        if (this.inFinalAttempt()) {
-          // Apply middleware transformation before returning
+        if (this.isFinalAttempt(checkpoint.error)) {
           return this.transformOutput({ error: checkpoint.error });
         }
 
-        // Otherwise, checkpoint the error and switch to async mode
+        // Retryable — checkpoint the error and switch to async mode.
+        // stepError omitted: isFinalAttempt returned false above,
+        // so checkpointAndSwitchToAsync closes with end().
         return this.checkpointAndSwitchToAsync([
           {
             id: _internals.hashId("complete"), // ID is not important here
@@ -906,7 +920,7 @@ class InngestExecutionEngine
         const result = await this.executeStep(steps[0]);
 
         if (result.error) {
-          return this.checkpointAndSwitchToAsync([result]);
+          return this.checkpointAndSwitchToAsync([result], result.error);
         }
 
         // Resume the step with original data for user code
@@ -945,10 +959,16 @@ class InngestExecutionEngine
           resultData = await data.text();
         }
 
-        // Close the stream with a result frame. If stream.push() was
-        // called, the streaming POST was already started in
-        // handleStreamActivated and this close will end it naturally.
-        this.streamTools.close(resultData);
+        // Check for unreported new steps (e.g. from `Promise.race` where
+        // the winning branch completed before losing branches reported)
+        // before closing the stream — once closed, no more frames can be sent.
+        const newStepsResult = await maybeReturnNewSteps();
+        if (newStepsResult) {
+          return newStepsResult;
+        }
+
+        // Close the stream with a terminal succeeded frame.
+        this.streamTools.closeSucceeded(resultData);
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result frame.
@@ -956,17 +976,10 @@ class InngestExecutionEngine
           this.postCheckpointStream();
         }
 
-        // Check for unreported new steps (e.g. from `Promise.race` where
-        // the winning branch completed before losing branches reported)
-        const newStepsResult = await maybeReturnNewSteps();
-        if (newStepsResult) {
-          return newStepsResult;
-        }
-
         // We need to do this even here for async, as we could be returning
         // data from an API endpoint, even if we were triggered async.
         if (this.options.createResponse) {
-          const wrappedResponse = new Response(JSON.stringify(data), {
+          const wrappedResponse = new Response(JSON.stringify(resultData), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
@@ -980,10 +993,15 @@ class InngestExecutionEngine
        * The user's function has thrown an error.
        */
       "function-rejected": async (checkpoint) => {
-        this.streamTools.close({ error: String(checkpoint.error) });
+        const isFinal = this.isFinalAttempt(checkpoint.error);
 
-        // Only start a new POST if the streaming POST wasn't already
-        // started by handleStreamActivated.
+        if (isFinal) {
+          this.streamTools.closeFailed(errorMessage(checkpoint.error));
+        } else {
+          // Retryable error — suppress the result frame; the run will retry.
+          this.streamTools.end();
+        }
+
         if (!this.streamTools.activated) {
           this.postCheckpointStream();
         }
@@ -1004,20 +1022,25 @@ class InngestExecutionEngine
           // it can all be POSTed when the function completes.
           if (this.options.runToCompletion) {
             if (stepResult.error) {
-              // Let errors propagate naturally; function-rejected will fire.
+              this.closeStreamForStepError(stepResult);
               return stepRanHandler(stepResult);
             }
 
-            // Reset `handled` — reportNextTick already called handle()
-            // on this step (which is a no-op for unfulfilled steps but
-            // sets handled=true), so resumeStepWithResult's handle()
-            // call would be skipped without this reset.
-            const userlandStep = this.state.steps.get(stepResult.id);
-            if (userlandStep) {
-              userlandStep.handled = false;
+            this.resumeStepLocally(stepResult);
+
+            // Execute remaining unfulfilled parallel steps in this
+            // batch so that Promise.all can resolve and the function
+            // continues. Without this, the other steps' promises stay
+            // pending forever and the core loop deadlocks.
+            const parallelError = await this.executeUnfulfilledSteps(
+              steps,
+              stepResult.id,
+            );
+            if (parallelError) {
+              this.closeStreamForStepError(parallelError);
+              return stepRanHandler(parallelError);
             }
-            this.resumeStepWithResult(stepResult);
-            delete this.state.executingStep;
+
             return;
           }
 
@@ -1065,6 +1088,11 @@ class InngestExecutionEngine
             i,
           );
           if (output?.type === "function-resolved") {
+            // runToCompletion: return the result directly.
+            if (this.options.runToCompletion) {
+              return output;
+            }
+
             const steps = this.state.checkpointingStepBuffer.concat({
               op: StepOpCode.RunComplete,
               id: _internals.hashId("complete"), // ID is not important here
@@ -1135,13 +1163,66 @@ class InngestExecutionEngine
                   await attemptCheckpointAndResume(undefined, false, true);
                 }
 
-                // If we failed, go back to the regular async flow.
+                this.closeStreamForStepError(stepResult);
                 return stepRanHandler(stepResult);
+              }
+
+              // When running to completion (durable endpoint re-entry), resume
+              // the step locally so the core loop continues instead of
+              // blocking on a checkpoint POST to the Inngest Server.
+              if (this.options.runToCompletion) {
+                const stepToResume = this.resumeStepLocally(stepResult);
+
+                // Fire-and-forget checkpoint for observability — don't block.
+                this.state.checkpointingStepBuffer.push({
+                  ...stepToResume,
+                  data: stepResult.data,
+                });
+                void this.checkpoint(this.state.checkpointingStepBuffer).catch(
+                  (err) => {
+                    this.options.client[internalLoggerSymbol].warn(
+                      { err },
+                      "Failed to checkpoint step during runToCompletion",
+                    );
+                  },
+                );
+                this.state.checkpointingStepBuffer = [];
+
+                // Execute remaining parallel steps so Promise.all resolves.
+                const parallelError = await this.executeUnfulfilledSteps(
+                  newSteps,
+                  stepResult.id,
+                );
+                if (parallelError) {
+                  this.closeStreamForStepError(parallelError);
+                  return stepRanHandler(parallelError);
+                }
+
+                return;
               }
 
               // If we're here, we successfully ran a step, so we may now need
               // to checkpoint it depending on the step buffer configured.
               return await attemptCheckpointAndResume(stepResult);
+            }
+
+            // When running to completion, execute all unfulfilled
+            // steps locally so Promise.all resolves and the function
+            // can continue. Without this the handler returns them to
+            // the Inngest Server as a 206, which causes an infinite retry loop.
+            if (this.options.runToCompletion) {
+              const parallelError =
+                await this.executeUnfulfilledSteps(newSteps);
+              if (parallelError) {
+                if (this.state.checkpointingStepBuffer.length) {
+                  await attemptCheckpointAndResume(undefined, false, true);
+                }
+
+                this.closeStreamForStepError(parallelError);
+                return stepRanHandler(parallelError);
+              }
+
+              return;
             }
 
             // Flush any buffered checkpoint steps before returning
@@ -1172,6 +1253,15 @@ class InngestExecutionEngine
           return;
         },
         "checkpointing-runtime-reached": async () => {
+          // During runToCompletion, skip — don't terminate the core loop.
+          if (this.options.runToCompletion) {
+            return;
+          }
+
+          this.options.client[internalLoggerSymbol].debug(
+            "Checkpointing runtime reached; sending discovery request",
+          );
+
           return {
             type: "steps-found",
             ctx: this.fnArg,
@@ -1186,6 +1276,23 @@ class InngestExecutionEngine
         },
 
         "checkpointing-buffer-interval-reached": () => {
+          // During runToCompletion, fire-and-forget the checkpoint for
+          // observability but don't block the core loop.
+          if (this.options.runToCompletion) {
+            if (this.state.checkpointingStepBuffer.length) {
+              void this.checkpoint(this.state.checkpointingStepBuffer).catch(
+                (err) => {
+                  this.options.client[internalLoggerSymbol].warn(
+                    { err },
+                    "Failed to checkpoint buffer during runToCompletion",
+                  );
+                },
+              );
+              this.state.checkpointingStepBuffer = [];
+            }
+            return;
+          }
+
           return attemptCheckpointAndResume(undefined, false, true);
         },
       };
@@ -1226,6 +1333,38 @@ class InngestExecutionEngine
      * find it, but also that we don't reset if we found and executed it.
      */
     return void this.timeout?.reset();
+  }
+
+  /**
+   * Execute all unfulfilled steps locally so that `Promise.all` can resolve
+   * and the function continues. Used in `runToCompletion` mode where the SDK
+   * must handle parallelism locally instead of deferring to the Inngest Server.
+   *
+   * Steps are executed sequentially — the parallelism lives in the user's
+   * `Promise.all`; the engine just needs to resolve every step's deferred
+   * promise before the function can proceed.
+   *
+   * Returns the first error result if any step fails, or `undefined` on
+   * success.
+   */
+  private async executeUnfulfilledSteps(
+    steps: FoundStep[],
+    excludeId?: string,
+  ): Promise<OutgoingOp | undefined> {
+    for (const step of steps) {
+      if (step.hashedId === excludeId || step.hasStepState || !step.fn) {
+        continue;
+      }
+
+      const result = await this.executeStep(step);
+      if (result.error) {
+        return result;
+      }
+
+      this.resumeStepLocally(result);
+    }
+
+    return undefined;
   }
 
   /**
@@ -1321,10 +1460,14 @@ class InngestExecutionEngine
       store.execution.executingStep = {
         id,
         name: displayName,
+        hashedId,
       };
     }
 
     this.devDebug(`executing step "${id}"`);
+
+    // Emit step:running lifecycle frame
+    this.streamTools.stepLifecycle(hashedId, "running");
 
     let interval: GoInterval | undefined;
 
@@ -1371,6 +1514,9 @@ class InngestExecutionEngine
         // with confirmed data from the server). handle() resolves it.
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
+        // Emit step:completed lifecycle frame
+        this.streamTools.stepLifecycle(hashedId, "completed");
+
         return {
           ...outgoingOp,
           data: serverData,
@@ -1383,6 +1529,7 @@ class InngestExecutionEngine
         return this.buildStepErrorOp({
           error,
           id,
+          hashedId,
           outgoingOp,
           stepInfo,
         });
@@ -1445,6 +1592,30 @@ class InngestExecutionEngine
   }
 
   /**
+   * Close the stream with the appropriate terminal frame for a step error
+   * during `runToCompletion` mode. Without this, the main loop exits via
+   * `stepRanHandler` before `function-rejected` can fire, leaving the
+   * stream without an `inngest.result` frame.
+   */
+  private closeStreamForStepError(stepResult: OutgoingOp): void {
+    if (!this.options.runToCompletion) {
+      return;
+    }
+
+    const isFinal = stepResult.op === StepOpCode.StepFailed;
+
+    if (isFinal) {
+      this.streamTools.closeFailed(errorMessage(stepResult.error));
+    } else {
+      this.streamTools.end();
+    }
+
+    if (!this.streamTools.activated) {
+      this.postCheckpointStream();
+    }
+  }
+
+  /**
    * Whether this error will not be retried (NonRetriableError or last attempt).
    */
   private isFinalAttempt(error: unknown): boolean {
@@ -1469,11 +1640,13 @@ class InngestExecutionEngine
   private async buildStepErrorOp({
     error,
     id,
+    hashedId,
     outgoingOp,
     stepInfo,
   }: {
     error: unknown;
     id: string;
+    hashedId: string;
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
@@ -1485,6 +1658,12 @@ class InngestExecutionEngine
       error instanceof Error ? error : new Error(String(error)),
       isFinal,
     );
+
+    // Emit step:errored lifecycle frame
+    this.streamTools.stepLifecycle(hashedId, "errored", {
+      will_retry: !isFinal,
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     return {
       ...outgoingOp,
@@ -2189,6 +2368,27 @@ class InngestExecutionEngine
       stepState,
       isFulfilled,
     };
+  }
+
+  /**
+   * Resets the step's `handled` flag and resumes it locally, clearing
+   * `executingStep` so the core loop can continue.
+   *
+   * The `handled` reset is necessary because `reportNextTick` already called
+   * `handle()` during step discovery (setting `handled = true`). Without the
+   * reset, `resumeStepWithResult`'s `handle()` call would be a no-op and the
+   * step's deferred promise would never resolve.
+   */
+  private resumeStepLocally(result: OutgoingOp): FoundStep {
+    const userlandStep = this.state.steps.get(result.id);
+    if (userlandStep) {
+      userlandStep.handled = false;
+    }
+
+    const step = this.resumeStepWithResult(result);
+    delete this.state.executingStep;
+
+    return step;
   }
 
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {

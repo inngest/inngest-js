@@ -4,7 +4,7 @@ import z from "zod";
 
 const languageSchema = z.object({
   language: z.string(),
-  runId: z.string(),
+  correlationId: z.string(),
 });
 
 export async function POST(req: NextRequest) {

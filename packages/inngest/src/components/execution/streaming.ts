@@ -1,4 +1,129 @@
+// No Node.js imports — this file is shared between server and client code.
+
+import { z } from "zod/v3";
 import { createTimeoutPromise } from "../../helpers/promises.ts";
+
+// ---------------------------------------------------------------------------
+// Typed SSE frame definitions
+// ---------------------------------------------------------------------------
+
+export interface SSEMetadataFrame {
+  type: "inngest.metadata";
+  run_id: string;
+}
+
+export interface SSEStreamFrame {
+  type: "stream";
+  data: unknown;
+  step_id?: string;
+}
+
+export interface SSEResultSucceededFrame {
+  type: "inngest.result";
+  status: "succeeded";
+  data?: unknown;
+}
+
+export interface SSEResultFailedFrame {
+  type: "inngest.result";
+  status: "failed";
+  error: string;
+}
+
+export type SSEResultFrame = SSEResultSucceededFrame | SSEResultFailedFrame;
+
+/**
+ * Payload included with every `inngest.step` errored frame. Describes the
+ * failure so the client can decide whether to show an error or wait for a
+ * retry.
+ */
+export interface StepErrorData {
+  will_retry: boolean;
+  error: string;
+}
+
+export interface SSEStepRunningFrame {
+  type: "inngest.step";
+  step_id: string;
+  status: "running";
+  data?: unknown;
+}
+
+export interface SSEStepCompletedFrame {
+  type: "inngest.step";
+  step_id: string;
+  status: "completed";
+  data?: unknown;
+}
+
+export interface SSEStepErroredFrame extends StepErrorData {
+  type: "inngest.step";
+  step_id: string;
+  status: "errored";
+}
+
+export type SSEStepFrame =
+  | SSEStepRunningFrame
+  | SSEStepCompletedFrame
+  | SSEStepErroredFrame;
+
+export interface SSERedirectFrame {
+  type: "inngest.redirect_info";
+  run_id: string;
+  token: string;
+  url?: string;
+}
+
+export type SSEFrame =
+  | SSEMetadataFrame
+  | SSEStreamFrame
+  | SSEResultFrame
+  | SSEStepFrame
+  | SSERedirectFrame;
+
+export interface RawSSEEvent {
+  event: string;
+  data: string;
+}
+
+// ---------------------------------------------------------------------------
+// Zod schemas for runtime validation of parsed SSE frames
+// ---------------------------------------------------------------------------
+
+const sseMetadataPayloadSchema = z.object({
+  run_id: z.string(),
+});
+
+const sseStreamPayloadSchema = z.object({
+  data: z.unknown(),
+  step_id: z.string().optional(),
+});
+
+const stepErrorDataSchema = z.object({
+  will_retry: z.boolean(),
+  error: z.string(),
+});
+
+const sseStepPayloadSchema = z.object({
+  step_id: z.string(),
+  status: z.enum(["running", "completed", "errored"]),
+  data: z.unknown().optional(),
+});
+
+const sseResultPayloadSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("succeeded"), data: z.unknown().optional() }),
+  z.object({ status: z.literal("failed"), error: z.string() }),
+]);
+
+const sseRedirectPayloadSchema = z.object({
+  run_id: z.string(),
+  token: z.string(),
+  url: z.string().optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Frame builders
+// ---------------------------------------------------------------------------
 
 /**
  * Builds a single SSE frame with the given event name and JSON-serialized data.
@@ -15,10 +140,10 @@ function buildSSEFrame(event: string, data: unknown): string {
  * Builds an SSE metadata frame string for a streaming response.
  *
  * The frame follows the Server-Sent Events format and provides run context
- * (run ID and attempt number) to consumers of the stream.
+ * (run ID) to consumers of the stream.
  */
-export function buildSSEMetadataFrame(runId: string, attempt: number): string {
-  return buildSSEFrame("inngest.metadata", { run_id: runId, attempt });
+export function buildSSEMetadataFrame(runId: string): string {
+  return buildSSEFrame("inngest.metadata", { run_id: runId });
 }
 
 /**
@@ -27,16 +152,26 @@ export function buildSSEMetadataFrame(runId: string, attempt: number): string {
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSSEStreamFrame(data: unknown): string {
-  return buildSSEFrame("stream", data);
+export function buildSSEStreamFrame(data: unknown, stepId?: string): string {
+  const payload: Record<string, unknown> = { data };
+  if (stepId) payload.step_id = stepId;
+  return buildSSEFrame("stream", payload);
 }
 
 /**
- * Builds an SSE result frame string for the terminal value of a streaming
- * response. This is the last frame sent before the stream closes.
+ * Builds an SSE result frame for a successfully completed function.
+ * This is the last frame sent before the stream closes.
  */
-export function buildSSEResultFrame(data: unknown): string {
-  return buildSSEFrame("inngest.result", data);
+export function buildSSESucceededFrame(data: unknown): string {
+  return buildSSEFrame("inngest.result", { status: "succeeded", data });
+}
+
+/**
+ * Builds an SSE result frame for a permanently failed function.
+ * This is the last frame sent before the stream closes.
+ */
+export function buildSSEFailedFrame(error: string): string {
+  return buildSSEFrame("inngest.result", { status: "failed", error });
 }
 
 /**
@@ -188,5 +323,150 @@ export async function drainStreamWithTimeout(
     throw new Error("Stream drain timed out");
   } finally {
     timeout.clear();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step frame builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds an SSE step lifecycle frame.
+ */
+export function buildSSEStepFrame(
+  stepId: string,
+  status: SSEStepFrame["status"],
+  data?: unknown,
+): string {
+  const payload: Record<string, unknown> = { step_id: stepId, status };
+  if (data !== undefined) {
+    payload.data = data;
+  }
+  return buildSSEFrame("inngest.step", payload);
+}
+
+// ---------------------------------------------------------------------------
+// SSE line parser (async generator)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses a `ReadableStream<Uint8Array>` as an SSE byte stream, yielding
+ * `RawSSEEvent` objects for each complete event.
+ */
+export async function* iterSSE(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<RawSSEEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE events are delimited by a blank line (double newline) per the
+      // Server-Sent Events spec.
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+
+        let event = "message";
+        const dataLines: string[] = [];
+
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: ")) {
+            event = line.slice(7);
+          } else if (line.startsWith("data: ")) {
+            dataLines.push(line.slice(6));
+          }
+        }
+
+        const data = dataLines.join("\n");
+
+        yield { event, data };
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raw SSE event -> typed SSE frame
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a `RawSSEEvent` into a typed `SSEFrame`, or returns `undefined`
+ * if the event type is unrecognised.
+ */
+export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.data);
+  } catch {
+    parsed = raw.data;
+  }
+
+  switch (raw.event) {
+    case "inngest.metadata": {
+      const result = sseMetadataPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+      return { type: "inngest.metadata", run_id: result.data.run_id };
+    }
+    case "stream": {
+      const result = sseStreamPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+      return {
+        type: "stream",
+        data: result.data.data,
+        ...(result.data.step_id ? { step_id: result.data.step_id } : {}),
+      };
+    }
+    case "inngest.result": {
+      const result = sseResultPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+      return { type: "inngest.result", ...result.data };
+    }
+    case "inngest.step": {
+      const result = sseStepPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+
+      const { step_id, status, data } = result.data;
+
+      if (status === "errored") {
+        const errResult = stepErrorDataSchema.safeParse(data ?? {});
+        return {
+          type: "inngest.step",
+          step_id,
+          status: "errored",
+          will_retry: errResult.success ? errResult.data.will_retry : false,
+          error: errResult.success ? errResult.data.error : "unknown",
+        };
+      }
+
+      return {
+        type: "inngest.step" as const,
+        step_id,
+        status,
+        data,
+      };
+    }
+    case "inngest.redirect_info": {
+      const result = sseRedirectPayloadSchema.safeParse(parsed);
+      if (!result.success) return undefined;
+      return {
+        type: "inngest.redirect_info",
+        run_id: result.data.run_id,
+        token: result.data.token,
+        ...(result.data.url ? { url: result.data.url } : {}),
+      };
+    }
+    default:
+      return undefined;
   }
 }

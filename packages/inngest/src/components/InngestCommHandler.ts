@@ -999,14 +999,23 @@ export class InngestCommHandler<
         });
       },
       "function-resolved": ({ data }) => {
-        // If the execution returned a Response with a ReadableStream body
-        // (SSE streaming), pipe it through as a streaming response.
-        if (data instanceof Response && data.body instanceof ReadableStream) {
+        // If the execution returned a Response (SSE streaming from the
+        // engine, or a user-constructed Response in a durable endpoint),
+        // pass it through directly — the headers and body are already set.
+        if (data instanceof Response) {
           return data;
         }
 
-        // Non-streaming: return the data directly.
-        return data;
+        // Non-streaming path: plain return values from the function are
+        // JSON-serialized and wrapped in a framework response.
+        return actions.transformResponse("creating sync success response", {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(data)),
+        });
       },
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
@@ -2140,7 +2149,7 @@ export class InngestCommHandler<
 
       const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
         requestedRunStep,
-        ctx?.fn_id,
+        Boolean(ctx?.fn_id) || forceExecution,
         Boolean(ctx?.disable_immediate_execution),
       );
 

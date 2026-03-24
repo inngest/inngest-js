@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { startStream, sendInput } from "./lib";
-import type { StreamCallbacks } from "./lib";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { streamRun } from "inngest/experimental/durable-endpoints";
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [waitingForInput, setWaitingForInput] = useState(false);
 
@@ -19,29 +18,51 @@ export default function Home() {
     }
   }, [waitingForInput]);
 
+  const scrollToBottom = useCallback(() => {
+    if (termRef.current) {
+      termRef.current.scrollTop = termRef.current.scrollHeight;
+    }
+  }, []);
+
   async function handleSubmit() {
     setLines([]);
-    setRunId(null);
+    setCorrelationId(null);
     setRunning(true);
     setWaitingForInput(false);
 
-    const callbacks: StreamCallbacks = {
-      onRunId: (id) => setRunId(id),
-      onData: (display) => {
-        setLines((prev) => [...prev, display]);
-        if (display.includes("What language should I translate to?")) {
-          setWaitingForInput(true);
-        }
-      },
-      onScroll: () => {
-        if (termRef.current) {
-          termRef.current.scrollTop = termRef.current.scrollHeight;
-        }
-      },
-    };
-
     try {
-      await startStream("/api/demo", callbacks);
+      await streamRun<string>("/api/demo", {
+        parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
+        onData: (chunk) => {
+          // Check for await-input signal
+          try {
+            const parsed = JSON.parse(chunk);
+            if (parsed?.type === "await-input" && parsed?.correlationId) {
+              setCorrelationId(parsed.correlationId);
+              setWaitingForInput(true);
+              return;
+            }
+          } catch {
+            // Not JSON — treat as display text
+          }
+
+          setLines((prev) => [...prev, chunk]);
+          scrollToBottom();
+        },
+        onFunctionSucceeded: (data) => {
+          const display =
+            typeof data === "string" ? data : JSON.stringify(data);
+          setLines((prev) => [...prev, display]);
+          scrollToBottom();
+        },
+        onFunctionFailed: (error) => {
+          setLines((prev) => [...prev, `\n❌ ${error}\n`]);
+        },
+        onRollback: (count) => {
+          setLines((prev) => prev.slice(0, prev.length - count));
+          console.log("Rolling back the streamed data!");
+        },
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLines((prev) => [...prev, `[error] ${msg}`]);
@@ -50,33 +71,63 @@ export default function Home() {
     }
   }
 
+  async function handleDownload() {
+    try {
+      const text = lines.join("");
+      const res = await fetch(`/api/download?text=${encodeURIComponent(text)}`);
+
+      if (!res.ok) {
+        const body = await res.text();
+        setLines((prev) => [...prev, `[download failed: ${body}]\n`]);
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transcript.txt";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLines((prev) => [...prev, `[download error] ${msg}\n`]);
+    }
+  }
+
   async function handleInput(value: string) {
     setWaitingForInput(false);
     const language = value.trim();
     setLines((prev) => [...prev, `> ${language}\n`]);
 
-    if (language && runId) {
-      const ok = await sendInput(runId, language);
-      if (!ok) {
+    if (language && correlationId) {
+      const res = await fetch("/api/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language, correlationId }),
+      });
+      if (!res.ok) {
         setLines((prev) => [...prev, "[request failed]\n"]);
       }
     }
   }
 
   let status = "";
-  if (runId && running) {
+  if (running) {
     status = "Running";
-  } else if (runId && !running) {
+  } else if (correlationId) {
     status = "Done";
   }
 
-  let title = "\u00A0";
-  if (runId) {
-    title = `Run: ${runId}`;
-  }
-
   return (
-    <main style={{ padding: 32, fontFamily: "system-ui, sans-serif", maxWidth: 720, margin: "0 auto" }}>
+    <main
+      style={{
+        padding: 32,
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: 720,
+        margin: "0 auto",
+      }}
+    >
       <h1 style={{ marginBottom: 16 }}>Durp streaming POC</h1>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -90,6 +141,17 @@ export default function Home() {
           }}
         >
           {running ? "Streaming..." : "Run"}
+        </button>
+        <button
+          onClick={() => handleDownload()}
+          disabled={running || lines.length === 0}
+          style={{
+            padding: "8px 20px",
+            fontSize: 14,
+            cursor: running || lines.length === 0 ? "not-allowed" : "pointer",
+          }}
+        >
+          Download Transcript
         </button>
       </div>
 
@@ -111,7 +173,7 @@ export default function Home() {
             justifyContent: "space-between",
           }}
         >
-          <span>{title}</span>
+          <span>{"\u00A0"}</span>
           <span>{status}</span>
         </div>
 
