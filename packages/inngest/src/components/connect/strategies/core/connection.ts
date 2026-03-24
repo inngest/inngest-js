@@ -743,6 +743,21 @@ export class ConnectionCore {
             return;
           }
 
+          const leasePayload = WorkerRequestExtendLeaseData.encode(
+            WorkerRequestExtendLeaseData.create({
+              accountId: gatewayExecutorRequest.accountId,
+              envId: gatewayExecutorRequest.envId,
+              appId: gatewayExecutorRequest.appId,
+              functionSlug: gatewayExecutorRequest.functionSlug,
+              requestId: gatewayExecutorRequest.requestId,
+              stepId: gatewayExecutorRequest.stepId,
+              runId: gatewayExecutorRequest.runId,
+              userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+              systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+              leaseId: currentLeaseId,
+            }),
+          ).finish();
+
           // Use the current live connection's WebSocket for lease
           // extensions. During a drain, the original WebSocket may be
           // closed by the gateway while the request is still in flight,
@@ -758,40 +773,45 @@ export class ConnectionCore {
             "Extending lease",
           );
 
-          if (latestConn.ws.readyState !== WebSocket.OPEN) {
-            this.callbacks.logger.warn(
-              {
-                connectionId: latestConn.id,
-                requestId: gatewayExecutorRequest.requestId,
-              },
-              "Cannot extend lease, no open WebSocket available",
+          if (latestConn.ws.readyState === WebSocket.OPEN) {
+            latestConn.ws.send(
+              ensureUnsharedArrayBuffer(
+                ConnectMessage.encode(
+                  ConnectMessage.create({
+                    kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+                    payload: leasePayload,
+                  }),
+                ).finish(),
+              ),
             );
             return;
           }
 
-          latestConn.ws.send(
-            ensureUnsharedArrayBuffer(
-              ConnectMessage.encode(
-                ConnectMessage.create({
-                  kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
-                  payload: WorkerRequestExtendLeaseData.encode(
-                    WorkerRequestExtendLeaseData.create({
-                      accountId: gatewayExecutorRequest.accountId,
-                      envId: gatewayExecutorRequest.envId,
-                      appId: gatewayExecutorRequest.appId,
-                      functionSlug: gatewayExecutorRequest.functionSlug,
-                      requestId: gatewayExecutorRequest.requestId,
-                      stepId: gatewayExecutorRequest.stepId,
-                      runId: gatewayExecutorRequest.runId,
-                      userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                      systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                      leaseId: currentLeaseId,
-                    }),
-                  ).finish(),
-                }),
-              ).finish(),
-            ),
+          // HTTP fallback: WebSocket is down (e.g., during gateway drain/reconnection).
+          // Extend the lease via the API server directly, bypassing the gateway.
+          this.callbacks.logger.info(
+            {
+              connectionId: latestConn.id,
+              requestId: gatewayExecutorRequest.requestId,
+            },
+            "WebSocket unavailable, extending lease via HTTP fallback",
           );
+
+          void this.extendLeaseViaHttp(leasePayload).then((newLeaseId) => {
+            if (newLeaseId) {
+              this.inProgressRequests.requestLeases[
+                gatewayExecutorRequest.requestId
+              ] = newLeaseId;
+            }
+          }).catch((err) => {
+            this.callbacks.logger.warn(
+              {
+                requestId: gatewayExecutorRequest.requestId,
+                err,
+              },
+              "HTTP lease extension failed",
+            );
+          });
         }, extendLeaseIntervalMs);
 
         try {
@@ -1012,5 +1032,57 @@ export class ConnectionCore {
       apiBaseUrl: this.config.apiBaseUrl,
       mode: this.config.mode,
     });
+  }
+
+  /**
+   * Extend a lease via HTTP POST, bypassing the gateway WebSocket.
+   * Used as a fallback when the WebSocket is unavailable during
+   * gateway drain or reconnection.
+   *
+   * Returns the new lease ID on success, or undefined on failure.
+   */
+  private async extendLeaseViaHttp(
+    leasePayload: Uint8Array,
+  ): Promise<string | undefined> {
+    const apiBaseUrl = await this.getApiBaseUrl();
+    const targetUrl = new URL("/v0/connect/extend-lease", apiBaseUrl);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/protobuf",
+      ...(this.config.hashedSigningKey
+        ? { Authorization: `Bearer ${this.config.hashedSigningKey}` }
+        : {}),
+    };
+
+    if (this.config.envName) {
+      headers[headerKeys.Environment] = this.config.envName;
+    }
+
+    const resp = await fetch(targetUrl, {
+      method: "POST",
+      body: new Uint8Array(leasePayload),
+      headers,
+    });
+
+    if (!resp.ok) {
+      this.callbacks.logger.warn(
+        { status: resp.status },
+        "HTTP lease extension returned non-OK status",
+      );
+      return undefined;
+    }
+
+    const respBytes = new Uint8Array(await resp.arrayBuffer());
+    const ack = WorkerRequestExtendLeaseAckData.decode(respBytes);
+
+    if (ack.newLeaseId) {
+      this.callbacks.logger.debug(
+        { newLeaseId: ack.newLeaseId },
+        "Lease extended via HTTP fallback",
+      );
+      return ack.newLeaseId;
+    }
+
+    return undefined;
   }
 }
