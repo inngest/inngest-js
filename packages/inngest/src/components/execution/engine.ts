@@ -426,9 +426,7 @@ class InngestExecutionEngine
       if (stepError && this.isFinalAttempt(stepError)) {
         // Permanent failure — close with a failed frame so the client
         // gets onFunctionFailed instead of silence.
-        this.streamTools.closeFailed(
-          errorMessage(stepError),
-        );
+        this.streamTools.closeFailed(errorMessage(stepError));
       } else {
         // End stream without a result frame — client uses redirect_info
         // to reconnect.
@@ -851,9 +849,7 @@ class InngestExecutionEngine
 
         if (this.streamTools.activated) {
           if (isFinal) {
-            this.streamTools.closeFailed(
-              errorMessage(checkpoint.error),
-            );
+            this.streamTools.closeFailed(errorMessage(checkpoint.error));
           } else {
             // Retryable error — suppress the result frame; the run will retry.
             this.streamTools.end();
@@ -1000,9 +996,7 @@ class InngestExecutionEngine
         const isFinal = this.isFinalAttempt(checkpoint.error);
 
         if (isFinal) {
-          this.streamTools.closeFailed(
-            errorMessage(checkpoint.error),
-          );
+          this.streamTools.closeFailed(errorMessage(checkpoint.error));
         } else {
           // Retryable error — suppress the result frame; the run will retry.
           this.streamTools.end();

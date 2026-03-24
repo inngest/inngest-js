@@ -58,7 +58,11 @@ describe("streamRun", () => {
     rs._fromSource(
       framesFrom([
         { type: "stream", data: "chunk" },
-        { type: "inngest.result", status: "failed", error: "Dog Speak is Much Too Hard to Translate" },
+        {
+          type: "inngest.result",
+          status: "failed",
+          error: "Dog Speak is Much Too Hard to Translate",
+        },
       ]),
     );
 
@@ -203,7 +207,11 @@ describe("streamRun", () => {
     // didn't close the connection). The stream should stop after result.
     async function* neverEnding(): AsyncGenerator<SSEFrame> {
       yield { type: "stream", data: "a" } as SSEFrame;
-      yield { type: "inngest.result", status: "succeeded", data: "done" } as SSEFrame;
+      yield {
+        type: "inngest.result",
+        status: "succeeded",
+        data: "done",
+      } as SSEFrame;
       // These should never be reached:
       yield { type: "stream", data: "SHOULD NOT APPEAR" } as SSEFrame;
     }

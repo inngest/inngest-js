@@ -138,7 +138,10 @@ test(
       (e) => e.event === "inngest.result",
     );
     expect(resultEvents.length).toBe(1);
-    expect(JSON.parse(resultEvents[0]!.data)).toEqual({ status: "succeeded", data: "All done" });
+    expect(JSON.parse(resultEvents[0]!.data)).toEqual({
+      status: "succeeded",
+      data: "All done",
+    });
 
     await state.waitForRunComplete();
   },
@@ -185,7 +188,10 @@ describe("header negotiation", () => {
 
           const results = events.filter((e) => e.event === "inngest.result");
           expect(results.length).toBe(1);
-          expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "done" });
+          expect(JSON.parse(results[0]!.data)).toEqual({
+            status: "succeeded",
+            data: "done",
+          });
         },
       );
 
@@ -253,7 +259,10 @@ describe("header negotiation", () => {
 
           const results = events.filter((e) => e.event === "inngest.result");
           expect(results.length).toBe(1);
-          expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "computed" });
+          expect(JSON.parse(results[0]!.data)).toEqual({
+            status: "succeeded",
+            data: "computed",
+          });
 
           const streamFrames = events.filter((e) => e.event === "stream");
           expect(streamFrames.length).toBe(0);
@@ -408,7 +417,10 @@ describe("streaming functionality", () => {
       // Result is the concatenated pipe output
       const results = events.filter((e) => e.event === "inngest.result");
       expect(results.length).toBe(1);
-      expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "token1token2" });
+      expect(JSON.parse(results[0]!.data)).toEqual({
+        status: "succeeded",
+        data: "token1token2",
+      });
     },
   );
 
@@ -479,7 +491,10 @@ describe("streaming functionality", () => {
       // Result frame
       const results = events.filter((e) => e.event === "inngest.result");
       expect(results.length).toBe(1);
-      expect(JSON.parse(results[0]!.data)).toEqual({ status: "succeeded", data: "finished" });
+      expect(JSON.parse(results[0]!.data)).toEqual({
+        status: "succeeded",
+        data: "finished",
+      });
 
       // redirect_info is always sent once checkpoint creates the run
 
@@ -538,66 +553,62 @@ describe("error and rollback", () => {
     },
   );
 
-  test(
-    "push outside step.run has no step_id",
-    { timeout: 60000 },
-    async () => {
-      const { port } = await setupEndpoint(async () => {
-        await step.run("first", async () => {
-          stream.push("inside-step");
-        });
-
-        stream.push("between");
-
-        await step.run("second", async () => {
-          throw new NonRetriableError("fail");
-        });
-        return new Response("unreachable");
+  test("push outside step.run has no step_id", { timeout: 60000 }, async () => {
+    const { port } = await setupEndpoint(async () => {
+      await step.run("first", async () => {
+        stream.push("inside-step");
       });
 
-      const res = await fetch(`http://localhost:${port}/api/demo`, {
-        headers: { Accept: "text/event-stream" },
+      stream.push("between");
+
+      await step.run("second", async () => {
+        throw new NonRetriableError("fail");
       });
+      return new Response("unreachable");
+    });
 
-      expect(res.status).toBe(200);
+    const res = await fetch(`http://localhost:${port}/api/demo`, {
+      headers: { Accept: "text/event-stream" },
+    });
 
-      const { events } = await readSSEStream(res, 15_000);
+    expect(res.status).toBe(200);
 
-      // Find the "between" stream frame and verify it has no step_id
-      const streamEvents = events.filter((e) => e.event === "stream");
-      const betweenFrame = streamEvents.find((e) => {
-        try {
-          const parsed = JSON.parse(e.data);
-          return (parsed?.data ?? parsed) === "between";
-        } catch {
-          return e.data === "between";
-        }
-      });
+    const { events } = await readSSEStream(res, 15_000);
 
-      expect(betweenFrame).toBeDefined();
-
-      // Parse the frame data and check for absence of step_id
-      const parsedBetween = JSON.parse(betweenFrame!.data);
-      if (typeof parsedBetween === "object" && parsedBetween !== null) {
-        expect(parsedBetween.step_id).toBeUndefined();
+    // Find the "between" stream frame and verify it has no step_id
+    const streamEvents = events.filter((e) => e.event === "stream");
+    const betweenFrame = streamEvents.find((e) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        return (parsed?.data ?? parsed) === "between";
+      } catch {
+        return e.data === "between";
       }
+    });
 
-      // The inside-step frame should have a step_id
-      const insideFrame = streamEvents.find((e) => {
-        try {
-          const parsed = JSON.parse(e.data);
-          return (parsed?.data ?? parsed) === "inside-step";
-        } catch {
-          return e.data === "inside-step";
-        }
-      });
-      expect(insideFrame).toBeDefined();
-      const parsedInside = JSON.parse(insideFrame!.data);
-      if (typeof parsedInside === "object" && parsedInside !== null) {
-        expect(parsedInside.step_id).toBeDefined();
+    expect(betweenFrame).toBeDefined();
+
+    // Parse the frame data and check for absence of step_id
+    const parsedBetween = JSON.parse(betweenFrame!.data);
+    if (typeof parsedBetween === "object" && parsedBetween !== null) {
+      expect(parsedBetween.step_id).toBeUndefined();
+    }
+
+    // The inside-step frame should have a step_id
+    const insideFrame = streamEvents.find((e) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        return (parsed?.data ?? parsed) === "inside-step";
+      } catch {
+        return e.data === "inside-step";
       }
-    },
-  );
+    });
+    expect(insideFrame).toBeDefined();
+    const parsedInside = JSON.parse(insideFrame!.data);
+    if (typeof parsedInside === "object" && parsedInside !== null) {
+      expect(parsedInside.step_id).toBeDefined();
+    }
+  });
 
   test(
     "NonRetriableError after async mode sends inngest.result failed frame",
@@ -621,7 +632,9 @@ describe("error and rollback", () => {
 
         await step.run("failing-after-async", async () => {
           stream.push("about to fail\n");
-          throw new NonRetriableError("Dog Speak is Much Too Hard to Translate");
+          throw new NonRetriableError(
+            "Dog Speak is Much Too Hard to Translate",
+          );
         });
 
         return new Response("unreachable");
@@ -733,7 +746,10 @@ describe("late joiner", () => {
       // At minimum, the result should eventually be available
       if (hasResult) {
         const result = asyncEvents.find((e) => e.event === "inngest.result");
-        expect(JSON.parse(result!.data)).toEqual({ status: "succeeded", data: "complete" });
+        expect(JSON.parse(result!.data)).toEqual({
+          status: "succeeded",
+          data: "complete",
+        });
       }
 
       // If async data is present, verify it
