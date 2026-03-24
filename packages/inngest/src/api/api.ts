@@ -608,7 +608,7 @@ export class InngestApi {
   async getRealtimeStreamRedirect(
     runId: string,
     existingToken?: string,
-  ): Promise<string> {
+  ): Promise<{ url: string }> {
     let token: string;
     if (existingToken) {
       token = existingToken;
@@ -619,7 +619,7 @@ export class InngestApi {
     const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
     sseUrl.searchParams.set("token", token);
 
-    return sseUrl.toString()
+    return { url: sseUrl.toString() };
   }
 
   /**

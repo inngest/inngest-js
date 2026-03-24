@@ -70,8 +70,7 @@ export type SSEStepFrame =
 export interface SSERedirectFrame {
   type: "inngest.redirect_info";
   run_id: string;
-  token: string;
-  url?: string;
+  url: string;
 }
 
 export type SSEFrame =
@@ -117,8 +116,7 @@ const sseResultPayloadSchema = z.discriminatedUnion("status", [
 
 const sseRedirectPayloadSchema = z.object({
   run_id: z.string(),
-  token: z.string(),
-  url: z.string().optional(),
+  url: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -178,13 +176,12 @@ export function buildSSEFailedFrame(error: string): string {
  * Builds an SSE redirect frame telling the client that execution has switched
  * to async mode and it should reconnect elsewhere to get remaining output.
  *
- * When `url` is provided the client can connect directly to that URL to
- * continue receiving the stream.
+ * The `url` already contains the realtime JWT as a query parameter, so no
+ * separate token field is needed.
  */
 export function buildSSERedirectFrame(data: {
   run_id: string;
-  token: string;
-  url?: string;
+  url: string;
 }): string {
   return buildSSEFrame("inngest.redirect_info", data);
 }
@@ -462,8 +459,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       return {
         type: "inngest.redirect_info",
         run_id: result.data.run_id,
-        token: result.data.token,
-        ...(result.data.url ? { url: result.data.url } : {}),
+        url: result.data.url,
       };
     }
     default:

@@ -239,8 +239,7 @@ export class InngestStream {
    */
   sendRedirectInfo(data: {
     run_id: string;
-    token: string;
-    url?: string;
+    url: string;
   }): void {
     this.enqueue(buildSSERedirectFrame(data));
   }

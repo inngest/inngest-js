@@ -573,7 +573,6 @@ class InngestExecutionEngine
 
         this.streamTools.sendRedirectInfo({
           run_id: this.fnArg.runId,
-          token: redirect.token,
           url: redirect.url,
         });
       } catch (err) {
