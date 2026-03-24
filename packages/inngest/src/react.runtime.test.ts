@@ -202,6 +202,35 @@ describe("useRealtime runtime behavior", () => {
     await hook.unmount();
   });
 
+  test("accepts client subscription tokens from token factories", async () => {
+    const sub = createControlledSubscription();
+    mockedSubscribe.mockResolvedValue(sub.subscription);
+
+    const hook = await renderUseRealtime({
+      channel: "test-channel",
+      topics: ["status"],
+      token: async () => ({
+        key: "abc",
+        apiBaseUrl: "http://localhost:8288/",
+      }),
+      reconnect: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockedSubscribe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: "test-channel",
+          topics: ["status"],
+          key: "abc",
+          apiBaseUrl: "http://localhost:8288/",
+        }),
+      );
+      expect(hook.getLatest()?.connectionStatus).toBe("open");
+    });
+
+    await hook.unmount();
+  });
+
   test("pauses while hidden and resumes when visible again", async () => {
     const visibility = installFakeDocument("hidden");
     const sub = createControlledSubscription();

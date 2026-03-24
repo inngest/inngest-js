@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Inngest } from "./components/Inngest.ts";
 import {
-  getSubscriptionToken,
+  getClientSubscriptionToken,
   subscribe as realtimeSubscribe,
 } from "./components/realtime/subscribe/index.ts";
 import type { Realtime } from "./components/realtime/types.ts";
@@ -21,7 +21,11 @@ export type UseRealtimeRunStatus =
   | "failed"
   | "cancelled";
 
-type TokenFactory = () => Promise<string | Realtime.Subscribe.Token>;
+export type ClientSubscriptionToken = Realtime.Subscribe.ClientToken;
+
+type TokenFactory = () => Promise<
+  string | ClientSubscriptionToken | Realtime.Subscribe.Token
+>;
 type UseRealtimePauseReason = "hidden" | "disabled" | null;
 
 //
@@ -106,7 +110,8 @@ export interface UseRealtimeOptions<
 
   //
   // Either a pre-minted subscription token or a token factory that returns
-  // a token key or full token object.
+  // a token key string, a client token from
+  // `getClientSubscriptionToken()`, or a full token object.
   token?: Realtime.Subscribe.Token | TokenFactory;
 
   key?: string;
@@ -122,6 +127,11 @@ export interface UseRealtimeOptions<
   // Bound the number of messages retained in `messages.all`.
   // Set to `null` to disable the cap.
   historyLimit?: number | null;
+
+  //
+  // Override the base URL used for the realtime WebSocket connection.
+  // Normally this is resolved automatically via getClientSubscriptionToken.
+  apiBaseUrl?: string;
 
   reconnect?: boolean;
   reconnectMinMs?: number;
@@ -165,6 +175,12 @@ const getReconnectDelay = (attempt: number, minMs: number, maxMs: number) => {
 
 const toError = (err: unknown) => {
   return err instanceof Error ? err : new Error(String(err));
+};
+
+const isSubscriptionToken = (
+  value: ClientSubscriptionToken | Realtime.Subscribe.Token,
+): value is Realtime.Subscribe.Token => {
+  return "channel" in value && "topics" in value;
 };
 
 const normalizeRunStatus = (
@@ -255,6 +271,7 @@ export const useRealtime = <
   enabled = true,
   bufferInterval = 0,
   validate = true,
+  apiBaseUrl,
   historyLimit = 100,
   reconnect = true,
   reconnectMinMs = 250,
@@ -447,7 +464,26 @@ export const useRealtime = <
           } as Realtime.Subscribe.Token;
         }
 
-        return next;
+        //
+        // Token factory returned an object. If it has channel/topics, it's
+        // a full token; otherwise it's a { key, apiBaseUrl? } shorthand
+        // from a server function.
+        if (isSubscriptionToken(next)) {
+          return next as Realtime.Subscribe.Token;
+        }
+
+        if (!channel || !topics) {
+          throw new Error(
+            "useRealtime token() returned a key object but channel/topics were not provided",
+          );
+        }
+
+        return {
+          channel: channel as Realtime.ChannelInput,
+          topics: topics as string[],
+          key: next.key,
+          apiBaseUrl: next.apiBaseUrl,
+        } as Realtime.Subscribe.Token;
       }
 
       throw new Error("No token provided and no token() handler.");
@@ -507,6 +543,7 @@ export const useRealtime = <
           const stream = (await realtimeSubscribe({
             ...token,
             validate,
+            apiBaseUrl: apiBaseUrl ?? token.apiBaseUrl,
           })) as Realtime.Subscribe.StreamSubscription;
 
           if (cancelled) {
@@ -611,6 +648,7 @@ export const useRealtime = <
       setConnectionStatus((prev) => (prev === "open" ? "closed" : prev));
     };
   }, [
+    apiBaseUrl,
     autoCloseOnTerminal,
     channelKey,
     enabled,
@@ -645,5 +683,5 @@ export const useRealtime = <
   } as UseRealtimeResult<TChannel, TTopics>;
 };
 
-export { getSubscriptionToken };
+export { getClientSubscriptionToken };
 export type { Inngest };

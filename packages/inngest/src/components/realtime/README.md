@@ -236,16 +236,18 @@ for await (const msg of await inngest.realtime.subscribe({
 Mint scoped tokens server-side for client subscriptions:
 
 ```ts
+import { getClientSubscriptionToken } from "inngest/react";
+
 // Server route
 export async function POST(req: Request) {
   const { threadId } = await req.json();
 
-  const token = await inngest.realtime.token({
+  const token = await getClientSubscriptionToken(inngest, {
     channel: agentChat({ threadId }),
     topics: ["status", "tokens"],
   });
 
-  return Response.json({ token });
+  return Response.json(token);
 }
 ```
 

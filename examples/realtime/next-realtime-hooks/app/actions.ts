@@ -2,19 +2,13 @@
 
 import { getInngestApp } from "@/inngest";
 import { helloChannel } from "@/inngest/channels";
-import { getSubscriptionToken } from "inngest/react";
+import { getClientSubscriptionToken } from "inngest/react";
 
 export const fetchRealtimeSubscriptionToken = async () => {
-  const token = await getSubscriptionToken(getInngestApp(), {
+  return getClientSubscriptionToken(getInngestApp(), {
     channel: helloChannel,
     topics: ["logs"],
   });
-
-  if (!token.key) {
-    throw new Error("No realtime subscription token key returned");
-  }
-
-  return token.key;
 };
 
 export const pause = async () => {

@@ -1,12 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getSubscriptionToken } from "inngest/react";
+import { getClientSubscriptionToken } from "inngest/react";
 import { inngest } from "../inngest/client";
 import { contentPipeline } from "../inngest/channels";
 
 //
-// Type safety — getSubscriptionToken checks topic names against the channel.
+// Type safety -- getClientSubscriptionToken checks topic names against the channel.
 // Try uncommenting this to see a TypeScript error for a non-existent topic:
-// getSubscriptionToken(inngest, {
+// getClientSubscriptionToken(inngest, {
 //   channel: contentPipeline({ runId: "test" }),
 //   topics: ["status", "nonexistent"],
 // });
@@ -14,14 +14,10 @@ import { contentPipeline } from "../inngest/channels";
 export const getToken = createServerFn({ method: "GET" })
   .validator((input: { runId: string }) => input)
   .handler(async ({ data }) => {
-    const token = await getSubscriptionToken(inngest, {
+    return getClientSubscriptionToken(inngest, {
       channel: contentPipeline({ runId: data.runId }),
       topics: ["status", "tokens", "artifact"],
     });
-    if (!token.key) {
-      throw new Error("No realtime token returned");
-    }
-    return token.key;
   });
 
 export const startPipeline = createServerFn({ method: "POST" })
