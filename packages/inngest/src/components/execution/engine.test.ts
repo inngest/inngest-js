@@ -190,7 +190,6 @@ describe("Execution engine checkpoint retry behavior", () => {
           headers: {},
           stepMode: StepMode.AsyncCheckpointing,
           queueItemId: "queue-item-123",
-          internalFnId: "internal-fn-456",
         },
       });
 

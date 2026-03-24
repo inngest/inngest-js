@@ -63,9 +63,21 @@ export class InngestStream {
    * Used by the execution engine to fire a checkpoint that returns the SSE
    * Response to the client immediately.
    */
-  onActivated?: () => void;
+  private onActivated?: () => void;
 
-  constructor() {
+  /**
+   * Optional callback invoked when a write to the underlying stream fails
+   * (e.g. the client disconnected or the transform stream errored). Used by
+   * the execution engine to emit diagnostic logs.
+   */
+  private onWriteError?: (err: unknown) => void;
+
+  constructor(opts?: {
+    onActivated?: () => void;
+    onWriteError?: (err: unknown) => void;
+  }) {
+    this.onActivated = opts?.onActivated;
+    this.onWriteError = opts?.onWriteError;
     this.transform = new TransformStream<Uint8Array, Uint8Array>(
       undefined,
       undefined,
@@ -112,9 +124,10 @@ export class InngestStream {
   private enqueue(frame: string): void {
     this.writeChain = this.writeChain
       .then(() => this.writer.write(this.encoder.encode(frame)))
-      .catch(() => {
+      .catch((err) => {
         // Writer errored (e.g. stream closed) — swallow so the chain
         // doesn't break and subsequent writes fail gracefully.
+        this.onWriteError?.(err);
       });
   }
 
@@ -245,8 +258,9 @@ export class InngestStream {
     this.writeChain = this.writeChain
       .then(() => this.writer.write(this.encoder.encode(frame)))
       .then(() => this.writer.close())
-      .catch(() => {
+      .catch((err) => {
         // Writer already errored/closed — nothing to do.
+        this.onWriteError?.(err);
       });
   }
 
@@ -257,8 +271,9 @@ export class InngestStream {
   end(): void {
     this.writeChain = this.writeChain
       .then(() => this.writer.close())
-      .catch(() => {
+      .catch((err) => {
         // Writer already errored/closed — nothing to do.
+        this.onWriteError?.(err);
       });
   }
 }

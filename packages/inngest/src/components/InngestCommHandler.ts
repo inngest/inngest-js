@@ -1605,14 +1605,6 @@ export class InngestCommHandler<
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
               ),
-              fn_id: await actions.headers(
-                "getting function ID for forced execution",
-                headerKeys.InngestFnId,
-              ),
-              qi_id: await actions.headers(
-                "getting queue item ref for forced execution",
-                headerKeys.InngestQueueItemRef,
-              ),
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
@@ -2157,7 +2149,7 @@ export class InngestCommHandler<
 
       const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
         requestedRunStep,
-        ctx?.fn_id,
+        Boolean(ctx?.fn_id) || forceExecution,
         Boolean(ctx?.disable_immediate_execution),
       );
 

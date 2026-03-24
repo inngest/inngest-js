@@ -62,7 +62,6 @@ describe("Parallel steps in durable endpoints (runToCompletion)", () => {
         stepMode: opts.stepMode,
         requestedRunStep: opts.requestedRunStep,
         runToCompletion: true,
-        internalFnId: "fake-fn-id",
         queueItemId: "fake-queue-item-id",
         checkpointingConfig:
           opts.stepMode === StepMode.AsyncCheckpointing

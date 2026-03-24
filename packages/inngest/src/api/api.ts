@@ -526,13 +526,13 @@ export class InngestApi {
    */
   async checkpointStepsAsync(args: {
     runId: string;
-    fnId: string;
+    fnId?: string;
     queueItemId: string;
     steps: OutgoingOp[];
   }): Promise<void> {
     const body = JSON.stringify({
       run_id: args.runId,
-      fn_id: args.fnId,
+      ...(args.fnId && { fn_id: args.fnId }),
       qi_id: args.queueItemId,
       steps: args.steps,
       ts: new Date().valueOf(),

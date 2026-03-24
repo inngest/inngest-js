@@ -181,16 +181,19 @@ class InngestExecutionEngine
     }
 
     this.userFnToRun = this.getUserFnToRun();
-    this.streamTools = new InngestStream();
+    this.streamTools = new InngestStream({
+      // Called directly (not through the checkpoint queue) so the SSE
+      // response is returned immediately even when the core loop is blocked
+      // inside executeStep.
+      onActivated: () => this.handleStreamActivated(),
+      onWriteError: (err) =>
+        this.devDebug(
+          "stream write error (client may have disconnected):",
+          err,
+        ),
+    });
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
-
-    // Wire up stream activation callback. Called directly (not through the
-    // checkpoint queue) so the SSE response is returned immediately even
-    // when the core loop is blocked inside executeStep.
-    this.streamTools.onActivated = () => {
-      this.handleStreamActivated();
-    };
 
     // Setup middleware
     const mwInstances =
@@ -306,6 +309,10 @@ class InngestExecutionEngine
       // response wins the race and the loop later rejects, we don't want to
       // crash the process.
       coreLoop.catch((err) => {
+        // This should effectively never fire — runCoreLoop() has a
+        // comprehensive try/catch that always resolves. Keeping devDebug
+        // here rather than the always-active logger to avoid polluting
+        // warn calls in test environments where checkpoint APIs are absent.
         this.devDebug("core loop rejected after early stream response:", err);
       });
 
@@ -337,6 +344,13 @@ class InngestExecutionEngine
         }
       }
     } catch (error) {
+      // If the SSE response was already sent to the client, close the
+      // stream with an error frame so the client isn't left hanging
+      // forever waiting for a terminal frame that will never arrive.
+      if (this.earlyStreamResponse) {
+        this.streamTools.close({ error: "Internal execution error" });
+      }
+
       return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
@@ -389,24 +403,12 @@ class InngestExecutionEngine
         );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
-      if (!this.options.queueItemId) {
-        throw new Error(
-          "Missing queueItemId for async checkpointing. This is a bug in the Inngest SDK.",
-        );
-      }
-
-      if (!this.options.internalFnId) {
-        throw new Error(
-          "Missing internalFnId for async checkpointing. This is a bug in the Inngest SDK.",
-        );
-      }
-
       await retryWithBackoff(
         () =>
           this.options.client["inngestApi"].checkpointStepsAsync({
             runId: this.fnArg.runId,
-            fnId: this.options.internalFnId!,
-            queueItemId: this.options.queueItemId!,
+            fnId: this.options.internalFnId,
+            queueItemId: this.options.queueItemId ?? "",
             steps,
           }),
         CHECKPOINT_RETRY_OPTIONS,

@@ -2014,6 +2014,42 @@ describe("runFn", () => {
   describe.todo("sync mode (checkpointing) middleware");
 });
 
+describe("shouldAsyncCheckpoint", () => {
+  const client = createClient({ id: "test", isDev: true });
+
+  const fn = client.createFunction(
+    { id: "test-fn", triggers: [{ event: "test" }] },
+    () => undefined,
+  );
+
+  const call = (
+    requestedRunStep: string | undefined,
+    canAsyncCheckpoint: boolean,
+    disableImmediateExecution: boolean,
+  ) =>
+    fn["shouldAsyncCheckpoint"](
+      requestedRunStep,
+      canAsyncCheckpoint,
+      disableImmediateExecution,
+    );
+
+  test("returns config when canAsyncCheckpoint is true (forceExecution gate)", () => {
+    expect(call(undefined, true, false)).toBeDefined();
+  });
+
+  test("returns undefined when canAsyncCheckpoint is false", () => {
+    expect(call(undefined, false, false)).toBeUndefined();
+  });
+
+  test("returns undefined when requestedRunStep is set", () => {
+    expect(call("step-id", true, false)).toBeUndefined();
+  });
+
+  test("returns undefined when disableImmediateExecution is true", () => {
+    expect(call(undefined, true, true)).toBeUndefined();
+  });
+});
+
 describe("PREFERRED execution version constants", () => {
   test("PREFERRED_ASYNC_EXECUTION_VERSION is V2", () => {
     expect(PREFERRED_ASYNC_EXECUTION_VERSION).toBe(ExecutionVersion.V2);

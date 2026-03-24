@@ -157,7 +157,6 @@ export const runFnWithStack = async (
       reqArgs: [],
       headers: {},
       stepMode: StepMode.Async,
-      internalFnId: "fake-fn-id",
       queueItemId: "fake-queue-item-id",
     },
   });

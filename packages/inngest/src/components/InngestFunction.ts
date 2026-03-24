@@ -284,10 +284,10 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private shouldAsyncCheckpoint(
     requestedRunStep: string | undefined,
-    internalFnId: string | undefined,
+    canAsyncCheckpoint: boolean,
     disableImmediateExecution: boolean,
   ): InternalCheckpointingOptions | undefined {
-    if (requestedRunStep || !internalFnId || disableImmediateExecution) {
+    if (requestedRunStep || !canAsyncCheckpoint || disableImmediateExecution) {
       return;
     }
 
