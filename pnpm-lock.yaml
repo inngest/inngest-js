@@ -378,8 +378,8 @@ importers:
         specifier: ^9.7.0
         version: 9.7.0
       '@inngest/test':
-        specifier: workspace:^
-        version: link:../test
+        specifier: 0.1.9
+        version: 0.1.9(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76)
       '@types/eslint__js':
         specifier: ^8.42.3
         version: 8.42.3
@@ -1466,6 +1466,9 @@ packages:
 
   '@inngest/ai@0.1.3':
     resolution: {integrity: sha512-J8R/pff6Nsm16e5V9UvcNO/wfaaNVS54/wN7cE8CREb1OOFzlCd3Y4TyGb0wyw3y+iTayOLa/KJEYziaGMPIbA==}
+
+  '@inngest/test@0.1.9':
+    resolution: {integrity: sha512-yyDnXSZnkJYAi4BJU5YqDEnuFzeufgGcZkdGtQHyKEfHAsIvGBuBavP0AwKavj5XogmB1f5RavkagUAloD8k1w==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -8340,6 +8343,26 @@ snapshots:
     dependencies:
       '@types/node': 22.13.10
       typescript: 5.9.2
+
+  '@inngest/test@0.1.9(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76)':
+    dependencies:
+      inngest: 3.44.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76)
+      tinyspy: 3.0.2
+      ulid: 2.3.0
+    transitivePeerDependencies:
+      - '@sveltejs/kit'
+      - '@vercel/node'
+      - aws-lambda
+      - encoding
+      - express
+      - fastify
+      - h3
+      - hono
+      - koa
+      - next
+      - supports-color
+      - typescript
+      - zod
 
   '@isaacs/cliui@8.0.2':
     dependencies:
