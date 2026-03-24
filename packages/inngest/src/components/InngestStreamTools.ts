@@ -278,12 +278,7 @@ export class InngestStream {
   }
 }
 
-/**
- * Try to get the stream tools synchronously first (fast path), falling back
- * to the async ALS lookup. The sync path is available after the first ALS
- * initialization and is critical for fire-and-forget `push()` calls that
- * must activate the stream before the next microtask tick.
- */
+/** Synchronous ALS lookup for the stream tools (fast path). */
 const getStreamToolsSync = (): InngestStream | undefined => {
   const ctx = getAsyncCtxSync();
   return ctx?.execution?.stream;
@@ -297,18 +292,12 @@ const getDeferredStreamTooling = async (): Promise<
 };
 
 /**
- * A generic set of stream tools that can be used without typing information
- * about the client used to create them.
- *
- * These tools use AsyncLocalStorage to track the context in which they are
- * used. Outside of an Inngest execution context, `push()` is a silent no-op
- * and `pipe()` resolves immediately.
+ * Stream tools that use ALS to resolve the current execution context.
+ * Outside an Inngest execution, `push()` is a no-op and `pipe()` resolves immediately.
  */
 export const stream: StreamTools = {
   push: (data) => {
-    // Fast synchronous path: resolve the ALS store without going through
-    // a promise chain. This ensures the stream is activated immediately,
-    // before the next step's microtask can fire.
+    // Sync fast path: activate the stream before the next microtask tick.
     const syncStream = getStreamToolsSync();
     if (syncStream) {
       syncStream.push(data);
@@ -320,9 +309,7 @@ export const stream: StreamTools = {
       .then((s) => {
         s?.push(data);
       })
-      .catch(() => {
-        // Suppress: outside an execution context or ALS lookup failed.
-      });
+      .catch(() => {});
   },
   pipe: async (source) => {
     const syncStream = getStreamToolsSync();
