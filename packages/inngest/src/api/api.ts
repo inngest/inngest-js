@@ -538,9 +538,6 @@ export class InngestApi {
       ts: new Date().valueOf(),
     });
 
-    // console.log("checkpointStepsAsync")
-    // console.log(body);
-
     const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
       method: "POST",
       body,
@@ -611,10 +608,7 @@ export class InngestApi {
   async getRealtimeStreamRedirect(
     runId: string,
     existingToken?: string,
-  ): Promise<{
-    token: string;
-    url: string;
-  }> {
+  ): Promise<string> {
     let token: string;
     if (existingToken) {
       token = existingToken;
@@ -625,7 +619,7 @@ export class InngestApi {
     const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
     sseUrl.searchParams.set("token", token);
 
-    return { token, url: sseUrl.toString() };
+    return sseUrl.toString()
   }
 
   /**
