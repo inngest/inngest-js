@@ -8,7 +8,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "test": "jest",
+    "test": "vitest run",
     "build": "pnpm run build:clean && pnpm run build:tsc",
     "build:clean": "rm -rf ./dist",
     "build:tsc": "tsc --project tsconfig.build.json",
@@ -18,9 +18,9 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/index.js"
     }
   },
   "files": [
@@ -40,14 +40,15 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "inngest": "^3.42.3",
     "tinyspy": "^3.0.2",
     "ulid": "^2.3.0"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "jest": "^29.5.0",
-    "prettier": "^3.1.0",
-    "typescript": "^5.9.2"
+    "inngest": "^4.0.0",
+    "typescript": "~5.8.2",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "inngest": "^4.0.0"
   }
 }
