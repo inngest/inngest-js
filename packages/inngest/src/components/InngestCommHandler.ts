@@ -1592,6 +1592,7 @@ export class InngestCommHandler<
               // been reported and Inngest is now in control of when to stop, so
               // we remove this restriction.
               max_attempts: Infinity,
+              fn_id: fn?.fn.id(this.client.id),
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,

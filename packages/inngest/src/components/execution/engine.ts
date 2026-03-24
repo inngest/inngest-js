@@ -1018,6 +1018,25 @@ class InngestExecutionEngine
             }
             this.resumeStepWithResult(stepResult);
             delete this.state.executingStep;
+
+            // Checkpoint the step so the Dev Server sees it. Fire and
+            // forget so we don't block the function from continuing.
+            if (this.options.internalFnId) {
+              void this.options.client["inngestApi"]
+                .checkpointSteps({
+                  appId: this.options.client.id,
+                  fnId: this.options.internalFnId,
+                  runId: this.fnArg.runId,
+                  steps: [stepResult],
+                })
+                .catch((err: unknown) => {
+                  this.devDebug(
+                    "error checkpointing step during runToCompletion:",
+                    err,
+                  );
+                });
+            }
+
             return;
           }
 
