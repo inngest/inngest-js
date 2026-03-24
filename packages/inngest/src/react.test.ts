@@ -2,8 +2,8 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod/v3";
 import { realtime, staticSchema } from "./index.ts";
 import {
-  getClientSubscriptionToken,
   type ClientSubscriptionToken,
+  getClientSubscriptionToken,
   type UseRealtimeResult,
   useRealtime,
 } from "./react.ts";
