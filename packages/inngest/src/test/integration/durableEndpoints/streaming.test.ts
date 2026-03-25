@@ -25,7 +25,7 @@ const testFileName = testNameFromFileUrl(import.meta.url);
  */
 async function setupEndpoint(
   handler: (req: Request) => Promise<Response>,
-): Promise<{ port: number }> {
+): Promise<{ port: number; server: import("node:http").Server }> {
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
@@ -37,7 +37,7 @@ async function setupEndpoint(
   onTestFinished(
     () => new Promise<void>((resolve) => server.close(() => resolve())),
   );
-  return { port };
+  return { port, server };
 }
 
 test(
@@ -50,13 +50,7 @@ test(
       insideAsyncStep: createGate(),
     };
 
-    const client = new Inngest({
-      id: randomSuffix(testFileName),
-      isDev: true,
-      endpointAdapter,
-    });
-
-    const handler = client.endpoint(async (_req: Request) => {
+    const { port } = await setupEndpoint(async (_req: Request) => {
       await step.run("before-async-mode-1", async () => {
         stream.push("Hello\n");
       });
@@ -81,13 +75,6 @@ test(
       });
 
       return new Response("All done");
-    });
-
-    const { port, server } = await createEndpointServer(handler);
-    onTestFinished(() => {
-      return new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      });
     });
 
     // --- Phase 1: Initial sync request → SSE stream ---
@@ -550,7 +537,7 @@ describe("error and rollback", () => {
 
       const errorData = JSON.parse(erroredFrames[0]!.data);
       // will_retry is nested inside the data field of the step frame
-      const willRetry = errorData.data?.will_retry ?? errorData.will_retry;
+      const willRetry = errorData.data?.willRetry ?? errorData.willRetry;
       expect(willRetry).toBe(false);
     },
   );
@@ -619,13 +606,7 @@ describe("error and rollback", () => {
     async () => {
       const state = createState({});
 
-      const client = new Inngest({
-        id: randomSuffix(testFileName),
-        isDev: true,
-        endpointAdapter,
-      });
-
-      const handler = client.endpoint(async () => {
+      const { port } = await setupEndpoint(async () => {
         await step.run("setup", async () => {
           stream.push("setting up\n");
         });
@@ -642,11 +623,6 @@ describe("error and rollback", () => {
 
         return new Response("unreachable");
       });
-
-      const { port, server } = await createEndpointServer(handler);
-      onTestFinished(
-        () => new Promise<void>((resolve) => server.close(() => resolve())),
-      );
 
       // Phase 1: Initial sync request → SSE stream
       const res = await fetch(`http://localhost:${port}/api/demo`, {
