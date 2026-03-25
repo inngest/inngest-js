@@ -79,7 +79,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import { buildSseMetadataFrame, prependToStream } from "./streaming.ts";
+import { buildSseMetadataEvent, prependToStream } from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -133,13 +133,13 @@ class InngestExecutionEngine
     | undefined;
 
   /**
-   * Whether the `inngest.redirect_info` SSE frame has already been sent.
-   * Prevents duplicate redirect frames.
+   * Whether the `inngest.redirect_info` SSE event has already been sent.
+   * Prevents duplicate redirect events.
    */
   private redirectSent = false;
 
   /**
-   * Promise that resolves once the redirect frame has been written (or the
+   * Promise that resolves once the redirect event has been written (or the
    * attempt completes). Stored so that `checkpointAndSwitchToAsync` can
    * await it before closing the writer.
    */
@@ -342,7 +342,7 @@ class InngestExecutionEngine
         }
       }
     } catch (error) {
-      // If earlyStreamResponse was set up, close the stream with an error frame.
+      // If earlyStreamResponse was set up, close the stream with an error event.
       if (this.earlyStreamResponse) {
         this.streamTools.closeFailed("Internal execution error");
       }
@@ -439,17 +439,17 @@ class InngestExecutionEngine
 
     const token = this.state.checkpointedRun.token;
 
-    // Wait for the redirect_info frame to flush — sendRedirectIfReady
+    // Wait for the redirect_info event to flush — sendRedirectIfReady
     // fetches the redirect URL asynchronously.
     await this.redirectPromise;
 
     if (this.streamTools.activated) {
       if (stepError && !this.retriability(stepError)) {
-        // Permanent failure — close with a failed frame so the client
+        // Permanent failure — close with a failed event so the client
         // gets onFunctionFailed instead of silence.
         this.streamTools.closeFailed(errorMessage(stepError));
       } else {
-        // End stream without a result frame — client uses redirect_info
+        // End stream without a result event — client uses redirect_info
         // to reconnect.
         this.streamTools.end();
       }
@@ -465,7 +465,7 @@ class InngestExecutionEngine
   }
 
   /**
-   * Prepend the `inngest.metadata` SSE frame to the stream's readable side.
+   * Prepend the `inngest.metadata` SSE event to the stream's readable side.
    * The returned stream can be used as a fetch body or Response body.
    *
    * NOTE: `this.streamTools.readable` can only be consumed once, so only one
@@ -473,16 +473,16 @@ class InngestExecutionEngine
    * execution.
    */
   private buildMetadataPrefixedStream(): ReadableStream<Uint8Array> {
-    const metadataFrame = buildSseMetadataFrame(this.fnArg.runId);
+    const metadataEvent = buildSseMetadataEvent(this.fnArg.runId);
     return prependToStream(
-      new TextEncoder().encode(metadataFrame),
+      new TextEncoder().encode(metadataEvent),
       this.streamTools.readable,
     );
   }
 
   /**
    * Build a complete SSE `Response` backed by the stream's readable side,
-   * prefixed with the metadata frame.
+   * prefixed with the metadata event.
    */
   private buildSseResponse(): Response {
     return new Response(this.buildMetadataPrefixedStream(), {
@@ -499,7 +499,7 @@ class InngestExecutionEngine
    *
    * Used when the client sent `Accept: text/event-stream` but
    * `stream.push()`/`pipe()` was NOT called during execution. The
-   * checkpointable data is the function's return value — the SSE frames are
+   * checkpointable data is the function's return value — the SSE events are
    * just a delivery mechanism.
    */
   private wrapResultAsSse(
@@ -509,7 +509,7 @@ class InngestExecutionEngine
   ): ExecutionResult {
     const resultData: unknown = checkpoint.data;
 
-    // Close the stream with a terminal succeeded frame
+    // Close the stream with a terminal succeeded event
     this.streamTools.closeSucceeded(resultData);
 
     const clientResponse = this.buildSseResponse();
@@ -558,8 +558,8 @@ class InngestExecutionEngine
   }
 
   /**
-   * Sends the `inngest.redirect_info` SSE frame when both conditions are met:
-   * 1. The client accepts SSE (so there's a stream to write the frame to)
+   * Sends the `inngest.redirect_info` SSE event when both conditions are met:
+   * 1. The client accepts SSE (so there's a stream to write the event to)
    * 2. We have a realtime token (first checkpoint has completed)
    *
    * Called after the first checkpoint AND on stream activation, whichever
@@ -831,7 +831,7 @@ class InngestExecutionEngine
           }
 
           // Always close the stream — either the SSE client or the
-          // server-side checkpoint POST needs the terminal result frame.
+          // server-side checkpoint POST needs the terminal result event.
           this.streamTools.closeSucceeded(resultData);
 
           if (sseDeliveredToClient) {
@@ -892,7 +892,7 @@ class InngestExecutionEngine
           if (isFinal) {
             this.streamTools.closeFailed(errorMessage(checkpoint.error));
           } else {
-            // Retryable error — suppress the result frame; the run will retry.
+            // Retryable error — suppress the result event; the run will retry.
             this.streamTools.end();
           }
 
@@ -1029,17 +1029,17 @@ class InngestExecutionEngine
 
         // Check for unreported new steps (e.g. from `Promise.race` where
         // the winning branch completed before losing branches reported)
-        // before closing the stream — once closed, no more frames can be sent.
+        // before closing the stream — once closed, no more events can be sent.
         const newStepsResult = await maybeReturnNewSteps();
         if (newStepsResult) {
           return newStepsResult;
         }
 
-        // Close the stream with a terminal succeeded frame.
+        // Close the stream with a terminal succeeded event.
         this.streamTools.closeSucceeded(resultData);
 
         // If stream was never activated, start the POST now so the
-        // client waiting at the GET endpoint gets the result frame.
+        // client waiting at the GET endpoint gets the result event.
         if (!this.streamTools.activated) {
           this.postCheckpointStream();
         }
@@ -1066,7 +1066,7 @@ class InngestExecutionEngine
         if (isFinal) {
           this.streamTools.closeFailed(errorMessage(checkpoint.error));
         } else {
-          // Retryable error — suppress the result frame; the run will retry.
+          // Retryable error — suppress the result event; the run will retry.
           this.streamTools.end();
         }
 
@@ -1418,7 +1418,7 @@ class InngestExecutionEngine
 
     this.devDebug(`executing step "${id}"`);
 
-    // Emit step:running lifecycle frame
+    // Emit step:running lifecycle event
     this.streamTools.stepLifecycle(hashedId, "running");
 
     if (this.rootSpanId && this.options.checkpointingConfig) {
@@ -1482,7 +1482,7 @@ class InngestExecutionEngine
         // with confirmed data from the server). handle() resolves it.
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
-        // Emit step:completed lifecycle frame
+        // Emit step:completed lifecycle event
         this.streamTools.stepLifecycle(hashedId, "completed");
 
         return {
@@ -1631,7 +1631,7 @@ class InngestExecutionEngine
       isFinal,
     );
 
-    // Emit step:errored lifecycle frame
+    // Emit step:errored lifecycle event
     this.streamTools.stepLifecycle(hashedId, "errored", {
       willRetry: !isFinal,
       error: error instanceof Error ? error.message : String(error),

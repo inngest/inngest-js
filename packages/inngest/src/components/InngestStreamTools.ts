@@ -1,11 +1,11 @@
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
-  buildSseFailedFrame,
-  buildSseRedirectFrame,
-  buildSseStepFrame,
-  buildSseStreamFrame,
-  buildSseSucceededFrame,
-  type SseStepFrame,
+  buildSseFailedEvent,
+  buildSseRedirectEvent,
+  buildSseStepEvent,
+  buildSseStreamEvent,
+  buildSseSucceededEvent,
+  type SseStepEvent,
   type StepErrorData,
 } from "./execution/streaming.ts";
 
@@ -26,7 +26,7 @@ export type PipeSource =
  */
 export interface StreamTools {
   /**
-   * Push data to the client as an SSE stream frame. Fire-and-forget from the
+   * Push data to the client as an SSE stream event. Fire-and-forget from the
    * caller's perspective.
    *
    * Outside of an Inngest execution context this is a silent no-op (graceful
@@ -35,7 +35,7 @@ export interface StreamTools {
   push(data: unknown): void;
 
   /**
-   * Pipe a source to the client, writing each chunk as an SSE stream frame.
+   * Pipe a source to the client, writing each chunk as an SSE stream event.
    * Resolves with the concatenated content of all chunks when the source is
    * fully consumed.
    *
@@ -98,14 +98,14 @@ export class InngestStream {
 
   /**
    * The readable side of the underlying transform stream. Consumers (i.e. the
-   * HTTP response) read SSE frames from here.
+   * HTTP response) read SSE events from here.
    */
   get readable(): ReadableStream<Uint8Array> {
     return this.transform.readable;
   }
 
   /**
-   * Resolve the current step ID for stream frames. Returns the executing
+   * Resolve the current step ID for stream events. Returns the executing
    * step's hashed ID (read from ALS), or undefined if outside a step.
    */
   private currentStepId(): string | undefined {
@@ -120,11 +120,11 @@ export class InngestStream {
   }
 
   /**
-   * Enqueue a pre-built SSE frame string onto the write chain.
+   * Enqueue a pre-built SSE event string onto the write chain.
    */
-  private enqueue(frame: string): void {
+  private enqueue(sseEvent: string): void {
     this.writeChain = this.writeChain
-      .then(() => this.writer.write(this.encoder.encode(frame)))
+      .then(() => this.writer.write(this.encoder.encode(sseEvent)))
       .catch((err) => {
         // Writer errored (e.g. stream closed) — swallow so the chain
         // doesn't break and subsequent writes fail gracefully.
@@ -133,19 +133,19 @@ export class InngestStream {
   }
 
   /**
-   * Emit a step lifecycle SSE frame (`step:running`, `step:completed`,
+   * Emit a step lifecycle SSE event (`step:running`, `step:completed`,
    * `step:errored`). Internal use only — called by the execution engine.
    */
   stepLifecycle(
     stepId: string,
-    status: SseStepFrame["status"],
+    status: SseStepEvent["status"],
     data?: StepErrorData,
   ): void {
-    this.enqueue(buildSseStepFrame(stepId, status, data));
+    this.enqueue(buildSseStepEvent(stepId, status, data));
   }
 
   /**
-   * Write a single SSE stream frame containing `data`. The current step's
+   * Write a single SSE stream event containing `data`. The current step's
    * hashed ID is automatically included as stepId for rollback tracking.
    */
   push(data: unknown): void {
@@ -153,19 +153,19 @@ export class InngestStream {
 
     const stepId = this.currentStepId();
 
-    let frame: string;
+    let sseEvent: string;
     try {
-      frame = buildSseStreamFrame(data, stepId);
+      sseEvent = buildSseStreamEvent(data, stepId);
     } catch {
       // data is not JSON-serializable (e.g. circular reference) — skip
       return;
     }
 
-    this.enqueue(frame);
+    this.enqueue(sseEvent);
   }
 
   /**
-   * Pipe a source to the client, writing each chunk as an SSE stream frame.
+   * Pipe a source to the client, writing each chunk as an SSE stream event.
    * Returns the concatenated content of all chunks.
    */
   async pipe(source: PipeSource): Promise<string> {
@@ -208,7 +208,7 @@ export class InngestStream {
 
   /**
    * Core pipe loop: iterate an async iterable, writing each chunk as an SSE
-   * stream frame and collecting the concatenated result.
+   * stream event and collecting the concatenated result.
    */
   private async pipeIterable(source: AsyncIterable<string>): Promise<string> {
     const stepId = this.currentStepId();
@@ -217,14 +217,14 @@ export class InngestStream {
     for await (const chunk of source) {
       chunks.push(chunk);
 
-      let frame: string;
+      let sseEvent: string;
       try {
-        frame = buildSseStreamFrame(chunk, stepId);
+        sseEvent = buildSseStreamEvent(chunk, stepId);
       } catch {
         continue;
       }
 
-      this.enqueue(frame);
+      this.enqueue(sseEvent);
       await this.writeChain;
     }
 
@@ -232,38 +232,38 @@ export class InngestStream {
   }
 
   /**
-   * Write a redirect info frame. Tells the client where to reconnect if the
+   * Write a redirect info event. Tells the client where to reconnect if the
    * durable endpoint goes async. Does NOT close the writer — more stream
-   * frames may follow before the durable endpoint actually switches to async
+   * events may follow before the durable endpoint actually switches to async
    * mode. Internal use only.
    */
   sendRedirectInfo(data: { runId: string; url: string }): void {
-    this.enqueue(buildSseRedirectFrame(data));
+    this.enqueue(buildSseRedirectEvent(data));
   }
 
   /**
-   * Write a succeeded result frame and close the writer. Internal use only.
+   * Write a succeeded result event and close the writer. Internal use only.
    */
   closeSucceeded(data?: unknown): void {
-    let frame: string;
+    let sseEvent: string;
     try {
-      frame = buildSseSucceededFrame(data);
+      sseEvent = buildSseSucceededEvent(data);
     } catch {
-      frame = buildSseFailedFrame("Failed to serialize result");
+      sseEvent = buildSseFailedEvent("Failed to serialize result");
     }
-    this.closeWithFrame(frame);
+    this.closeWithEvent(sseEvent);
   }
 
   /**
-   * Write a failed result frame and close the writer. Internal use only.
+   * Write a failed result event and close the writer. Internal use only.
    */
   closeFailed(error: string): void {
-    this.closeWithFrame(buildSseFailedFrame(error));
+    this.closeWithEvent(buildSseFailedEvent(error));
   }
 
-  private closeWithFrame(frame: string): void {
+  private closeWithEvent(sseEvent: string): void {
     this.writeChain = this.writeChain
-      .then(() => this.writer.write(this.encoder.encode(frame)))
+      .then(() => this.writer.write(this.encoder.encode(sseEvent)))
       .then(() => this.writer.close())
       .catch((err) => {
         // Writer already errored/closed — nothing to do.
@@ -272,7 +272,7 @@ export class InngestStream {
   }
 
   /**
-   * Close the writer without writing a result frame. Used when the durable endpoint goes
+   * Close the writer without writing a result event. Used when the durable endpoint goes
    * async and the real result will arrive on the redirected stream.
    */
   end(): void {

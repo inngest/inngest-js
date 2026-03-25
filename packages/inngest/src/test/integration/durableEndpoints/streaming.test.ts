@@ -163,7 +163,7 @@ describe("header negotiation", () => {
       );
 
       test(
-        "async: returns SSE stream with redirect frame for async handoff",
+        "async: returns SSE stream with redirect event for async handoff",
         { timeout: 60000 },
         async () => {
           const { port } = await setupEndpoint(testFileName, async () => {
@@ -190,7 +190,7 @@ describe("header negotiation", () => {
           const streamData = getStreamData(events);
           expect(streamData).toContain("sync-data");
 
-          // Redirect frame tells the client where to reconnect
+          // Redirect event tells the client where to reconnect
           const redirects = events.filter(
             (e) => e.event === "inngest.redirect_info",
           );
@@ -231,8 +231,8 @@ describe("header negotiation", () => {
             data: "computed",
           });
 
-          const streamFrames = events.filter((e) => e.event === "stream");
-          expect(streamFrames.length).toBe(0);
+          const streamEvents = events.filter((e) => e.event === "stream");
+          expect(streamEvents.length).toBe(0);
         },
       );
 
@@ -416,10 +416,10 @@ describe("streaming functionality", () => {
     const { events } = await readSseStream(res, 15_000);
     const streamData = getStreamData(events);
 
-    // All frames arrive in order
+    // All events arrive in order
     expect(streamData).toEqual(["Starting...", "a", "b", "Done"]);
 
-    // Result frame present
+    // Result event present
     const results = events.filter((e) => e.event === "inngest.result");
     expect(results.length).toBe(1);
   });
@@ -455,7 +455,7 @@ describe("streaming functionality", () => {
         streamData.indexOf("from-step-2"),
       );
 
-      // Result frame
+      // Result event
       const results = events.filter((e) => e.event === "inngest.result");
       expect(results.length).toBe(1);
       expect(JSON.parse(results[0]!.data)).toEqual({
@@ -465,7 +465,7 @@ describe("streaming functionality", () => {
 
       // redirect_info is always sent once checkpoint creates the run
 
-      // Step lifecycle frames present
+      // Step lifecycle events present
       const stepEvents = events.filter((e) => e.event === "inngest.step");
       expect(stepEvents.length).toBeGreaterThanOrEqual(2);
     },
@@ -478,7 +478,7 @@ describe("streaming functionality", () => {
 
 describe("error and rollback", () => {
   test(
-    "step error emits errored frame with streamed data",
+    "step error emits errored event with streamed data",
     { timeout: 60000 },
     async () => {
       const { port } = await setupEndpoint(testFileName, async () => {
@@ -501,9 +501,9 @@ describe("error and rollback", () => {
       // The partial data was streamed before the error
       expect(streamData).toContain("partial");
 
-      // Step errored frame present
+      // Step errored event present
       const stepEvents = events.filter((e) => e.event === "inngest.step");
-      const erroredFrames = stepEvents.filter((e) => {
+      const erroredEvents = stepEvents.filter((e) => {
         try {
           const parsed = JSON.parse(e.data);
           return parsed.status === "errored";
@@ -511,10 +511,10 @@ describe("error and rollback", () => {
           return false;
         }
       });
-      expect(erroredFrames.length).toBeGreaterThanOrEqual(1);
+      expect(erroredEvents.length).toBeGreaterThanOrEqual(1);
 
-      const errorData = JSON.parse(erroredFrames[0]!.data);
-      // willRetry is nested inside the data field of the step frame
+      const errorData = JSON.parse(erroredEvents[0]!.data);
+      // willRetry is nested inside the data field of the step event
       const willRetry = errorData.data?.willRetry ?? errorData.willRetry;
       expect(willRetry).toBe(false);
     },
@@ -542,9 +542,9 @@ describe("error and rollback", () => {
 
     const { events } = await readSseStream(res, 15_000);
 
-    // Find the "between" stream frame and verify it has no stepId
+    // Find the "between" stream event and verify it has no stepId
     const streamEvents = events.filter((e) => e.event === "stream");
-    const betweenFrame = streamEvents.find((e) => {
+    const betweenEvent = streamEvents.find((e) => {
       try {
         const parsed = JSON.parse(e.data);
         return (parsed?.data ?? parsed) === "between";
@@ -553,16 +553,16 @@ describe("error and rollback", () => {
       }
     });
 
-    expect(betweenFrame).toBeDefined();
+    expect(betweenEvent).toBeDefined();
 
-    // Parse the frame data and check for absence of stepId
-    const parsedBetween = JSON.parse(betweenFrame!.data);
+    // Parse the event data and check for absence of stepId
+    const parsedBetween = JSON.parse(betweenEvent!.data);
     if (typeof parsedBetween === "object" && parsedBetween !== null) {
       expect(parsedBetween.stepId).toBeUndefined();
     }
 
-    // The inside-step frame should have a stepId
-    const insideFrame = streamEvents.find((e) => {
+    // The inside-step event should have a stepId
+    const insideEvent = streamEvents.find((e) => {
       try {
         const parsed = JSON.parse(e.data);
         return (parsed?.data ?? parsed) === "inside-step";
@@ -570,8 +570,8 @@ describe("error and rollback", () => {
         return e.data === "inside-step";
       }
     });
-    expect(insideFrame).toBeDefined();
-    const parsedInside = JSON.parse(insideFrame!.data);
+    expect(insideEvent).toBeDefined();
+    const parsedInside = JSON.parse(insideEvent!.data);
     if (typeof parsedInside === "object" && parsedInside !== null) {
       expect(parsedInside.stepId).toBeDefined();
     }
@@ -579,7 +579,7 @@ describe("error and rollback", () => {
 
   // Fails
   test.skip(
-    "NonRetriableError after async mode sends inngest.result failed frame",
+    "NonRetriableError after async mode sends inngest.result failed event",
     { timeout: 60000 },
     async () => {
       const state = createState({});
@@ -629,8 +629,8 @@ describe("error and rollback", () => {
         readTimeoutMs: 15_000,
       });
 
-      // inngest.result failed frame must be present — this is the bug fix.
-      // Before the fix, the stream closed without a terminal result frame,
+      // inngest.result failed event must be present — this is the bug fix.
+      // Before the fix, the stream closed without a terminal result event,
       // so onFunctionFailed never fired on the client.
       const resultEvents = asyncEvents.filter(
         (e) => e.event === "inngest.result",
