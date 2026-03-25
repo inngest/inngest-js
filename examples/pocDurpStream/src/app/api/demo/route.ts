@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { NonRetriableError, step, stream } from "inngest";
+import { NonRetriableError, step } from "inngest";
+import { stream } from "inngest/experimental/durable-endpoints";
 import { inngest } from "@/inngest";
 
 function sleep(ms: number): Promise<void> {

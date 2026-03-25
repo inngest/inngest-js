@@ -5,7 +5,9 @@ import {
 } from "@inngest/test-harness";
 import { describe, expect, onTestFinished, test } from "vitest";
 import { endpointAdapter } from "../../../edge.ts";
-import { Inngest, NonRetriableError, step, stream } from "../../../index.ts";
+import { stream } from "../../../experimental/durable-endpoints.ts";
+import { Inngest, NonRetriableError, step } from "../../../index.ts";
+
 import {
   createEndpointServer,
   createGate,

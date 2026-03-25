@@ -53,7 +53,6 @@ export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
 export { group, step } from "./components/InngestStepTools.ts";
-export { stream } from "./components/InngestStreamTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";

@@ -1,4 +1,5 @@
-import { step, stream } from "inngest";
+import { step } from "inngest";
+import { stream } from "inngest/experimental/durable-endpoints";
 import { inngest } from "@/inngest";
 
 export const GET = inngest.endpoint(async () => {
