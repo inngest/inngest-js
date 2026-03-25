@@ -1671,17 +1671,11 @@ export type MetadataTarget =
       run_id: string;
     }
   | {
-      // step level
-      run_id: string;
-      step_id: string; // user-defined
-      step_index?: number;
-    }
-  | {
       // step attempt level
       run_id: string;
       step_id: string; // user-defined
       step_index?: number;
-      step_attempt: number; // -1 === last attempt?
+      step_attempt?: number; // -1 also === last attempt?
     }
   | {
       // span level
