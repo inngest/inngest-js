@@ -1,6 +1,10 @@
 import http from "node:http";
 import { randomSuffix } from "@inngest/test-harness";
 import { onTestFinished } from "vitest";
+import {
+  type RawSseEvent,
+  iterSse,
+} from "../../../components/execution/streaming.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { Inngest, type Logger } from "../../../index.ts";
 import type { EndpointHandler } from "../../../node.ts";
@@ -11,11 +15,6 @@ import {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export interface SseEvent {
-  event: string;
-  data: string;
-}
-
 /**
  * Read an SSE stream from a fetch Response, collecting events until the
  * stream closes or the timeout fires.
@@ -24,7 +23,7 @@ export async function readSseStream(
   res: Response,
   timeoutMs = 30_000,
 ): Promise<{
-  events: SseEvent[];
+  events: RawSseEvent[];
   redirectUrl: string | null;
   runId: string | null;
 }> {
@@ -103,7 +102,7 @@ export function fakeTokenStream(tokens: string[]): ReadableStream<Uint8Array> {
 }
 
 /** Extract the parsed data payloads from stream-type SSE events. */
-export function getStreamData(events: SseEvent[]): string[] {
+export function getStreamData(events: RawSseEvent[]): string[] {
   return events
     .filter((e) => e.event === "stream")
     .map((e) => {
@@ -128,12 +127,45 @@ export function createGate(): { promise: Promise<void>; open: () => void } {
 }
 
 /**
+ * Wrap a ReadableStream so it auto-cancels after `ms` milliseconds.
+ * This lets us timeout an `iterSse` call without modifying the production code.
+ */
+function withTimeout(
+  body: ReadableStream<Uint8Array>,
+  ms: number,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let timer: ReturnType<typeof setTimeout>;
+
+  return new ReadableStream<Uint8Array>({
+    start() {
+      timer = setTimeout(() => {
+        reader.cancel("SSE read timed out").catch(() => {});
+      }, ms);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        clearTimeout(timer);
+        controller.close();
+      } else {
+        controller.enqueue(value);
+      }
+    },
+    cancel(reason) {
+      clearTimeout(timer);
+      return reader.cancel(reason);
+    },
+  });
+}
+
+/**
  * Start reading SSE events from a response in the background.
  * Events accumulate in `.events`; use `waitForStreamData` to
  * block until a specific chunk appears.
  */
 export function startSseReader(res: Response, timeoutMs = 30_000) {
-  const events: SseEvent[] = [];
+  const events: RawSseEvent[] = [];
   let redirectUrl: string | null = null;
   let runId: string | null = null;
 
@@ -142,80 +174,35 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
       return;
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let timedOut = false;
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      reader.cancel("SSE read timed out").catch(() => {});
-    }, timeoutMs);
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-
-        for (const part of parts) {
-          if (!part.trim()) {
-            continue;
+    for await (const raw of iterSse(withTimeout(res.body, timeoutMs))) {
+      if (raw.event === "inngest.metadata") {
+        try {
+          const parsed = JSON.parse(raw.data);
+          if (parsed.runId) {
+            runId = parsed.runId;
           }
-
-          let event = "message";
-          let data = "";
-
-          for (const line of part.split("\n")) {
-            if (line.startsWith("event: ")) {
-              event = line.slice(7);
-            } else if (line.startsWith("data: ")) {
-              data = line.slice(6);
-            }
-          }
-
-          if (event === "inngest.metadata") {
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.runId) {
-                runId = parsed.runId;
-              }
-            } catch {
-              // ignore
-            }
-          }
-          if (event === "inngest.redirect_info") {
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.url) {
-                redirectUrl = parsed.url;
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          events.push({ event, data });
-
-          // Terminal events mean the stream is logically done, even if the
-          // server keeps the connection open (e.g. Dev Server SSE).
-          if (event === "inngest.result") {
-            reader.cancel("terminal event received").catch(() => {});
-            break;
-          }
+        } catch {
+          // ignore
         }
       }
-    } catch (err) {
-      if (!timedOut) {
-        throw err;
+      if (raw.event === "inngest.redirect_info") {
+        try {
+          const parsed = JSON.parse(raw.data);
+          if (parsed.url) {
+            redirectUrl = parsed.url;
+          }
+        } catch {
+          // ignore
+        }
       }
-    } finally {
-      clearTimeout(timeout);
+
+      events.push(raw);
+
+      // Terminal events mean the stream is logically done, even if the
+      // server keeps the connection open (e.g. Dev Server SSE).
+      if (raw.event === "inngest.result") {
+        break;
+      }
     }
   })();
 
@@ -255,7 +242,7 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
 export async function pollForAsyncStream(
   redirectUrl: string,
   { maxAttempts = 30, intervalMs = 500, readTimeoutMs = 5_000 } = {},
-): Promise<SseEvent[]> {
+): Promise<RawSseEvent[]> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetch(redirectUrl);
