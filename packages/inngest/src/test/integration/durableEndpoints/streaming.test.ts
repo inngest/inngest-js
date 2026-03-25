@@ -12,8 +12,8 @@ import {
   getStreamData,
   pollForAsyncReader,
   pollForAsyncStream,
-  readSSEStream,
-  startSSEReader,
+  readSseStream,
+  startSseReader,
 } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -95,7 +95,7 @@ test(
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-    const sse = startSSEReader(res, 15_000);
+    const sse = startSseReader(res, 15_000);
 
     // First chunk streamed
     await sse.waitForStreamData("Hello\n");
@@ -177,7 +177,7 @@ describe("header negotiation", () => {
           expect(res.status).toBe(200);
           expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-          const { events } = await readSSEStream(res, 15_000);
+          const { events } = await readSseStream(res, 15_000);
 
           const metadata = events.filter((e) => e.event === "inngest.metadata");
           expect(metadata.length).toBe(1);
@@ -217,7 +217,7 @@ describe("header negotiation", () => {
           expect(res.status).toBe(200);
           expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-          const { events, redirectUrl } = await readSSEStream(res, 15_000);
+          const { events, redirectUrl } = await readSseStream(res, 15_000);
 
           // Sync phase streams data before the async transition
           const streamData = getStreamData(events);
@@ -252,7 +252,7 @@ describe("header negotiation", () => {
           expect(res.status).toBe(200);
           expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-          const { events } = await readSSEStream(res, 15_000);
+          const { events } = await readSseStream(res, 15_000);
 
           const metadata = events.filter((e) => e.event === "inngest.metadata");
           expect(metadata.length).toBe(1);
@@ -408,7 +408,7 @@ describe("streaming functionality", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-      const { events } = await readSSEStream(res, 15_000);
+      const { events } = await readSseStream(res, 15_000);
       const streamData = getStreamData(events);
 
       expect(streamData).toContain("token1");
@@ -446,7 +446,7 @@ describe("streaming functionality", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-    const { events } = await readSSEStream(res, 15_000);
+    const { events } = await readSseStream(res, 15_000);
     const streamData = getStreamData(events);
 
     // All frames arrive in order
@@ -478,7 +478,7 @@ describe("streaming functionality", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("text/event-stream");
 
-      const { events } = await readSSEStream(res, 15_000);
+      const { events } = await readSseStream(res, 15_000);
       const streamData = getStreamData(events);
 
       // Both steps' chunks present in order
@@ -528,7 +528,7 @@ describe("error and rollback", () => {
 
       expect(res.status).toBe(200);
 
-      const { events } = await readSSEStream(res, 15_000);
+      const { events } = await readSseStream(res, 15_000);
       const streamData = getStreamData(events);
 
       // The partial data was streamed before the error
@@ -573,7 +573,7 @@ describe("error and rollback", () => {
 
     expect(res.status).toBe(200);
 
-    const { events } = await readSSEStream(res, 15_000);
+    const { events } = await readSseStream(res, 15_000);
 
     // Find the "between" stream frame and verify it has no stepId
     const streamEvents = events.filter((e) => e.event === "stream");
@@ -652,7 +652,7 @@ describe("error and rollback", () => {
       });
       expect(res.status).toBe(200);
 
-      const sse = startSSEReader(res, 15_000);
+      const sse = startSseReader(res, 15_000);
       await sse.waitForStreamData("setting up\n");
       await sse.done;
 

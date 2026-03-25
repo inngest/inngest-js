@@ -1,11 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import type { SSEFrame } from "./components/execution/streaming.ts";
+import type { SseFrame } from "./components/execution/streaming.ts";
 import { streamRun } from "./stream.ts";
 
 /**
- * Helper: create an async iterable from an array of SSEFrames.
+ * Helper: create an async iterable from an array of SseFrames.
  */
-async function* framesFrom(frames: SSEFrame[]): AsyncGenerator<SSEFrame> {
+async function* framesFrom(frames: SseFrame[]): AsyncGenerator<SseFrame> {
   for (const frame of frames) {
     yield frame;
   }
@@ -205,15 +205,15 @@ describe("streamRun", () => {
 
     // Simulate a source that sends a result then keeps sending (server
     // didn't close the connection). The stream should stop after result.
-    async function* neverEnding(): AsyncGenerator<SSEFrame> {
-      yield { type: "stream", data: "a" } as SSEFrame;
+    async function* neverEnding(): AsyncGenerator<SseFrame> {
+      yield { type: "stream", data: "a" } as SseFrame;
       yield {
         type: "inngest.result",
         status: "succeeded",
         data: "done",
-      } as SSEFrame;
+      } as SseFrame;
       // These should never be reached:
-      yield { type: "stream", data: "SHOULD NOT APPEAR" } as SSEFrame;
+      yield { type: "stream", data: "SHOULD NOT APPEAR" } as SseFrame;
     }
 
     const rs = streamRun<string>("http://test", {
@@ -253,8 +253,8 @@ describe("streamRun", () => {
     const onError = vi.fn();
     const onDone = vi.fn();
 
-    async function* exploding(): AsyncGenerator<SSEFrame> {
-      yield { type: "stream", data: "ok" } as SSEFrame;
+    async function* exploding(): AsyncGenerator<SseFrame> {
+      yield { type: "stream", data: "ok" } as SseFrame;
       throw new Error("network failure");
     }
 
@@ -278,8 +278,8 @@ describe("streamRun", () => {
     const onDone = vi.fn();
     const controller = new AbortController();
 
-    async function* abortable(): AsyncGenerator<SSEFrame> {
-      yield { type: "stream", data: "a" } as SSEFrame;
+    async function* abortable(): AsyncGenerator<SseFrame> {
+      yield { type: "stream", data: "a" } as SseFrame;
       controller.abort();
       // Simulate abort by throwing AbortError
       throw new DOMException("The operation was aborted.", "AbortError");

@@ -931,7 +931,7 @@ export class InngestCommHandler<
       "checking accept header",
       "Accept",
     );
-    const acceptsSSE = acceptHeader?.includes("text/event-stream") ?? false;
+    const acceptsSse = acceptHeader?.includes("text/event-stream") ?? false;
 
     const exeVersion = ExecutionVersion.V2;
 
@@ -952,7 +952,7 @@ export class InngestCommHandler<
         stepState: {},
         disableImmediateExecution: false,
         isFailureHandler: false,
-        acceptsSSE,
+        acceptsSse,
         timer,
         createResponse: (data: unknown) =>
           actions.experimentalTransformSyncResponse!(

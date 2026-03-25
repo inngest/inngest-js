@@ -701,7 +701,7 @@ describe("Sync mode function-resolved response handling", () => {
 
   function createSyncExecution(
     handler: () => Promise<unknown>,
-    opts?: { acceptsSSE?: boolean },
+    opts?: { acceptsSse?: boolean },
   ) {
     const client = createClient({ id: "test" });
 
@@ -733,7 +733,7 @@ describe("Sync mode function-resolved response handling", () => {
         reqArgs: [],
         headers: {},
         stepMode: StepMode.Sync,
-        acceptsSSE: opts?.acceptsSSE ?? false,
+        acceptsSse: opts?.acceptsSse ?? false,
         createResponse: async (data) => ({
           status: 200,
           body: JSON.stringify(data),
@@ -766,13 +766,13 @@ describe("Sync mode function-resolved response handling", () => {
     expect(body).toBe("file content");
   });
 
-  test("acceptsSSE wraps Response in SSE envelope", async () => {
+  test("acceptsSse wraps Response in SSE envelope", async () => {
     const userResponse = new Response("file content", {
       headers: { "Content-Type": "text/plain" },
     });
 
     const { execution } = createSyncExecution(async () => userResponse, {
-      acceptsSSE: true,
+      acceptsSse: true,
     });
 
     const resultPromise = execution.start();
@@ -783,7 +783,7 @@ describe("Sync mode function-resolved response handling", () => {
     const resolved = result as ExecutionResult & { data: unknown };
     expect(resolved.data).toBeInstanceOf(Response);
 
-    // When acceptsSSE is true, the Response body is extracted and wrapped
+    // When acceptsSse is true, the Response body is extracted and wrapped
     // in SSE format (metadata + result frames)
     const body = await (resolved.data as Response).text();
     expect(body).toContain("event: inngest.metadata");
@@ -791,9 +791,9 @@ describe("Sync mode function-resolved response handling", () => {
     expect(body).toContain("file content");
   });
 
-  test("plain value with acceptsSSE returns SSE response", async () => {
+  test("plain value with acceptsSse returns SSE response", async () => {
     const { execution } = createSyncExecution(async () => "hello", {
-      acceptsSSE: true,
+      acceptsSse: true,
     });
 
     const resultPromise = execution.start();
@@ -812,7 +812,7 @@ describe("Sync mode function-resolved response handling", () => {
     expect(body).toContain("event: inngest.result");
   });
 
-  test("plain value without acceptsSSE uses non-streaming path", async () => {
+  test("plain value without acceptsSse uses non-streaming path", async () => {
     const { execution, mockCheckpointNewRun } = createSyncExecution(
       async () => "hello",
     );

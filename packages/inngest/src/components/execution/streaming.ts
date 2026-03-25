@@ -7,30 +7,30 @@ import { createTimeoutPromise } from "../../helpers/promises.ts";
 // Typed SSE frame definitions
 // ---------------------------------------------------------------------------
 
-export interface SSEMetadataFrame {
+export interface SseMetadataFrame {
   type: "inngest.metadata";
   runId: string;
 }
 
-export interface SSEStreamFrame {
+export interface SseStreamFrame {
   type: "stream";
   data: unknown;
   stepId?: string;
 }
 
-export interface SSEResultSucceededFrame {
+export interface SseResultSucceededFrame {
   type: "inngest.result";
   status: "succeeded";
   data?: unknown;
 }
 
-export interface SSEResultFailedFrame {
+export interface SseResultFailedFrame {
   type: "inngest.result";
   status: "failed";
   error: string;
 }
 
-export type SSEResultFrame = SSEResultSucceededFrame | SSEResultFailedFrame;
+export type SseResultFrame = SseResultSucceededFrame | SseResultFailedFrame;
 
 /**
  * Payload included with every `inngest.step` errored frame. Describes the
@@ -42,45 +42,45 @@ export interface StepErrorData {
   error: string;
 }
 
-export interface SSEStepRunningFrame {
+export interface SseStepRunningFrame {
   type: "inngest.step";
   stepId: string;
   status: "running";
   data?: unknown;
 }
 
-export interface SSEStepCompletedFrame {
+export interface SseStepCompletedFrame {
   type: "inngest.step";
   stepId: string;
   status: "completed";
   data?: unknown;
 }
 
-export interface SSEStepErroredFrame extends StepErrorData {
+export interface SseStepErroredFrame extends StepErrorData {
   type: "inngest.step";
   stepId: string;
   status: "errored";
 }
 
-export type SSEStepFrame =
-  | SSEStepRunningFrame
-  | SSEStepCompletedFrame
-  | SSEStepErroredFrame;
+export type SseStepFrame =
+  | SseStepRunningFrame
+  | SseStepCompletedFrame
+  | SseStepErroredFrame;
 
-export interface SSERedirectFrame {
+export interface SseRedirectFrame {
   type: "inngest.redirect_info";
   runId: string;
   url: string;
 }
 
-export type SSEFrame =
-  | SSEMetadataFrame
-  | SSEStreamFrame
-  | SSEResultFrame
-  | SSEStepFrame
-  | SSERedirectFrame;
+export type SseFrame =
+  | SseMetadataFrame
+  | SseStreamFrame
+  | SseResultFrame
+  | SseStepFrame
+  | SseRedirectFrame;
 
-export interface RawSSEEvent {
+export interface RawSseEvent {
   event: string;
   data: string;
 }
@@ -130,7 +130,7 @@ const sseRedirectPayloadSchema = z.object({
  * JSON (since `JSON.stringify(undefined)` returns the JS primitive `undefined`,
  * not the string `"null"`).
  */
-function buildSSEFrame(event: string, data: unknown): string {
+function buildSseFrame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`;
 }
 
@@ -140,8 +140,8 @@ function buildSSEFrame(event: string, data: unknown): string {
  * The frame follows the Server-Sent Events format and provides run context
  * (run ID) to consumers of the stream.
  */
-export function buildSSEMetadataFrame(runId: string): string {
-  return buildSSEFrame("inngest.metadata", { runId });
+export function buildSseMetadataFrame(runId: string): string {
+  return buildSseFrame("inngest.metadata", { runId });
 }
 
 /**
@@ -150,26 +150,26 @@ export function buildSSEMetadataFrame(runId: string): string {
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSSEStreamFrame(data: unknown, stepId?: string): string {
+export function buildSseStreamFrame(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
   if (stepId) payload.stepId = stepId;
-  return buildSSEFrame("stream", payload);
+  return buildSseFrame("stream", payload);
 }
 
 /**
  * Builds an SSE result frame for a successfully completed function.
  * This is the last frame sent before the stream closes.
  */
-export function buildSSESucceededFrame(data: unknown): string {
-  return buildSSEFrame("inngest.result", { status: "succeeded", data });
+export function buildSseSucceededFrame(data: unknown): string {
+  return buildSseFrame("inngest.result", { status: "succeeded", data });
 }
 
 /**
  * Builds an SSE result frame for a permanently failed function.
  * This is the last frame sent before the stream closes.
  */
-export function buildSSEFailedFrame(error: string): string {
-  return buildSSEFrame("inngest.result", { status: "failed", error });
+export function buildSseFailedFrame(error: string): string {
+  return buildSseFrame("inngest.result", { status: "failed", error });
 }
 
 /**
@@ -179,11 +179,11 @@ export function buildSSEFailedFrame(error: string): string {
  * The `url` already contains the realtime JWT as a query parameter, so no
  * separate token field is needed.
  */
-export function buildSSERedirectFrame(data: {
+export function buildSseRedirectFrame(data: {
   runId: string;
   url: string;
 }): string {
-  return buildSSEFrame("inngest.redirect_info", data);
+  return buildSseFrame("inngest.redirect_info", data);
 }
 
 /**
@@ -330,16 +330,16 @@ export async function drainStreamWithTimeout(
 /**
  * Builds an SSE step lifecycle frame.
  */
-export function buildSSEStepFrame(
+export function buildSseStepFrame(
   stepId: string,
-  status: SSEStepFrame["status"],
+  status: SseStepFrame["status"],
   data?: unknown,
 ): string {
   const payload: Record<string, unknown> = { stepId, status };
   if (data !== undefined) {
     payload.data = data;
   }
-  return buildSSEFrame("inngest.step", payload);
+  return buildSseFrame("inngest.step", payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -348,11 +348,11 @@ export function buildSSEStepFrame(
 
 /**
  * Parses a `ReadableStream<Uint8Array>` as an SSE byte stream, yielding
- * `RawSSEEvent` objects for each complete event.
+ * `RawSseEvent` objects for each complete event.
  */
-export async function* iterSSE(
+export async function* iterSse(
   body: ReadableStream<Uint8Array>,
-): AsyncGenerator<RawSSEEvent> {
+): AsyncGenerator<RawSseEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -398,10 +398,10 @@ export async function* iterSSE(
 // ---------------------------------------------------------------------------
 
 /**
- * Converts a `RawSSEEvent` into a typed `SSEFrame`, or returns `undefined`
+ * Converts a `RawSseEvent` into a typed `SseFrame`, or returns `undefined`
  * if the event type is unrecognised.
  */
-export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
+export function parseSseFrame(raw: RawSseEvent): SseFrame | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw.data);

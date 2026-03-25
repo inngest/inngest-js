@@ -1,11 +1,11 @@
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
-  buildSSEFailedFrame,
-  buildSSERedirectFrame,
-  buildSSEStepFrame,
-  buildSSEStreamFrame,
-  buildSSESucceededFrame,
-  type SSEStepFrame,
+  buildSseFailedFrame,
+  buildSseRedirectFrame,
+  buildSseStepFrame,
+  buildSseStreamFrame,
+  buildSseSucceededFrame,
+  type SseStepFrame,
   type StepErrorData,
 } from "./execution/streaming.ts";
 
@@ -138,10 +138,10 @@ export class InngestStream {
    */
   stepLifecycle(
     stepId: string,
-    status: SSEStepFrame["status"],
+    status: SseStepFrame["status"],
     data?: StepErrorData,
   ): void {
-    this.enqueue(buildSSEStepFrame(stepId, status, data));
+    this.enqueue(buildSseStepFrame(stepId, status, data));
   }
 
   /**
@@ -155,7 +155,7 @@ export class InngestStream {
 
     let frame: string;
     try {
-      frame = buildSSEStreamFrame(data, stepId);
+      frame = buildSseStreamFrame(data, stepId);
     } catch {
       // data is not JSON-serializable (e.g. circular reference) — skip
       return;
@@ -219,7 +219,7 @@ export class InngestStream {
 
       let frame: string;
       try {
-        frame = buildSSEStreamFrame(chunk, stepId);
+        frame = buildSseStreamFrame(chunk, stepId);
       } catch {
         continue;
       }
@@ -238,7 +238,7 @@ export class InngestStream {
    * mode. Internal use only.
    */
   sendRedirectInfo(data: { runId: string; url: string }): void {
-    this.enqueue(buildSSERedirectFrame(data));
+    this.enqueue(buildSseRedirectFrame(data));
   }
 
   /**
@@ -247,9 +247,9 @@ export class InngestStream {
   closeSucceeded(data?: unknown): void {
     let frame: string;
     try {
-      frame = buildSSESucceededFrame(data);
+      frame = buildSseSucceededFrame(data);
     } catch {
-      frame = buildSSEFailedFrame("Failed to serialize result");
+      frame = buildSseFailedFrame("Failed to serialize result");
     }
     this.closeWithFrame(frame);
   }
@@ -258,7 +258,7 @@ export class InngestStream {
    * Write a failed result frame and close the writer. Internal use only.
    */
   closeFailed(error: string): void {
-    this.closeWithFrame(buildSSEFailedFrame(error));
+    this.closeWithFrame(buildSseFailedFrame(error));
   }
 
   private closeWithFrame(frame: string): void {

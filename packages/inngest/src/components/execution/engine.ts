@@ -79,7 +79,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import { buildSSEMetadataFrame, prependToStream } from "./streaming.ts";
+import { buildSseMetadataFrame, prependToStream } from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -301,7 +301,7 @@ class InngestExecutionEngine
   private async _start(): Promise<ExecutionResult> {
     // Set up a deferred promise that handleStreamActivated resolves to return
     // the SSE Response early while the core loop keeps running.
-    if (this.options.stepMode === StepMode.Sync && this.options.acceptsSSE) {
+    if (this.options.stepMode === StepMode.Sync && this.options.acceptsSse) {
       this.earlyStreamResponse = createDeferredPromise<ExecutionResult>();
     }
 
@@ -456,11 +456,11 @@ class InngestExecutionEngine
    * The returned stream can be used as a fetch body or Response body.
    *
    * NOTE: `this.streamTools.readable` can only be consumed once, so only one
-   * of `buildSSEResponse` or `postCheckpointStream` may be called per
+   * of `buildSseResponse` or `postCheckpointStream` may be called per
    * execution.
    */
   private buildMetadataPrefixedStream(): ReadableStream<Uint8Array> {
-    const metadataFrame = buildSSEMetadataFrame(this.fnArg.runId);
+    const metadataFrame = buildSseMetadataFrame(this.fnArg.runId);
     return prependToStream(
       new TextEncoder().encode(metadataFrame),
       this.streamTools.readable,
@@ -471,7 +471,7 @@ class InngestExecutionEngine
    * Build a complete SSE `Response` backed by the stream's readable side,
    * prefixed with the metadata frame.
    */
-  private buildSSEResponse(): Response {
+  private buildSseResponse(): Response {
     return new Response(this.buildMetadataPrefixedStream(), {
       status: 200,
       headers: {
@@ -489,7 +489,7 @@ class InngestExecutionEngine
    * checkpointable data is the function's return value — the SSE frames are
    * just a delivery mechanism.
    */
-  private wrapResultAsSSE(
+  private wrapResultAsSse(
     checkpoint: Simplify<
       { type: "function-resolved" } & Checkpoints["function-resolved"]
     >,
@@ -499,7 +499,7 @@ class InngestExecutionEngine
     // Close the stream with a terminal succeeded frame
     this.streamTools.closeSucceeded(resultData);
 
-    const clientResponse = this.buildSSEResponse();
+    const clientResponse = this.buildSseResponse();
 
     // Run transformOutput to fire middleware hooks
     const result = this.transformOutput({ data: resultData });
@@ -529,7 +529,7 @@ class InngestExecutionEngine
         type: "function-resolved",
         ctx: this.fnArg,
         ops: this.ops,
-        data: this.buildSSEResponse(),
+        data: this.buildSseResponse(),
       });
 
       // Checkpoint may have already provided the realtime token — try redirect now.
@@ -832,14 +832,14 @@ class InngestExecutionEngine
         // If the client accepts SSE (but stream.push() was NOT called),
         // build the SSE Response now. Extract the body from Response objects
         // so they can be wrapped as SSE result frames.
-        if (this.options.acceptsSSE) {
+        if (this.options.acceptsSse) {
           if (checkpoint.data instanceof Response) {
             checkpoint = {
               ...checkpoint,
               data: await checkpoint.data.text(),
             };
           }
-          return this.wrapResultAsSSE(checkpoint);
+          return this.wrapResultAsSse(checkpoint);
         }
 
         // Response pass-through: deliver as-is. Checkpoint null because the

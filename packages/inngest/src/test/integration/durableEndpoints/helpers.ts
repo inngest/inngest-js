@@ -2,7 +2,7 @@ import http from "node:http";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export interface SSEEvent {
+export interface SseEvent {
   event: string;
   data: string;
 }
@@ -11,11 +11,11 @@ export interface SSEEvent {
  * Read an SSE stream from a fetch Response, collecting events until the
  * stream closes or the timeout fires.
  */
-export async function readSSEStream(
+export async function readSseStream(
   res: Response,
   timeoutMs = 30_000,
-): Promise<{ events: SSEEvent[]; redirectUrl: string | null }> {
-  const events: SSEEvent[] = [];
+): Promise<{ events: SseEvent[]; redirectUrl: string | null }> {
+  const events: SseEvent[] = [];
   let redirectUrl: string | null = null;
 
   if (!res.body) {
@@ -181,7 +181,7 @@ export function fakeTokenStream(tokens: string[]): ReadableStream<Uint8Array> {
 }
 
 /** Extract the parsed data payloads from stream-type SSE events. */
-export function getStreamData(events: SSEEvent[]): string[] {
+export function getStreamData(events: SseEvent[]): string[] {
   return events
     .filter((e) => e.event === "stream")
     .map((e) => {
@@ -210,8 +210,8 @@ export function createGate(): { promise: Promise<void>; open: () => void } {
  * Events accumulate in `.events`; use `waitForStreamData` to
  * block until a specific chunk appears.
  */
-export function startSSEReader(res: Response, timeoutMs = 30_000) {
-  const events: SSEEvent[] = [];
+export function startSseReader(res: Response, timeoutMs = 30_000) {
+  const events: SseEvent[] = [];
   let redirectUrl: string | null = null;
 
   const done = (async () => {
@@ -312,12 +312,12 @@ export function startSSEReader(res: Response, timeoutMs = 30_000) {
 export async function pollForAsyncStream(
   redirectUrl: string,
   { maxAttempts = 30, intervalMs = 500, readTimeoutMs = 5_000 } = {},
-): Promise<SSEEvent[]> {
+): Promise<SseEvent[]> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const res = await fetch(redirectUrl);
       if (res.ok && res.body) {
-        const { events } = await readSSEStream(res, readTimeoutMs);
+        const { events } = await readSseStream(res, readTimeoutMs);
 
         const hasContent =
           events.some((e) => e.event === "stream") ||
@@ -337,7 +337,7 @@ export async function pollForAsyncStream(
 
 /**
  * Poll a redirect URL until it yields a live SSE connection, then return
- * an incremental reader (like `startSSEReader`) so the caller can assert
+ * an incremental reader (like `startSseReader`) so the caller can assert
  * on data as it arrives.
  */
 export async function pollForAsyncReader(
@@ -348,7 +348,7 @@ export async function pollForAsyncReader(
     try {
       const res = await fetch(redirectUrl);
       if (res.ok && res.body) {
-        return startSSEReader(res, readerTimeoutMs);
+        return startSseReader(res, readerTimeoutMs);
       }
     } catch {
       // Dev server may not be ready yet

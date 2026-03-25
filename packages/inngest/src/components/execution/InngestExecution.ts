@@ -151,7 +151,7 @@ export interface InngestExecutionOptions {
    * the execution engine may deliver the result as an SSE stream even if
    * `stream.push()` was not called.
    */
-  acceptsSSE?: boolean;
+  acceptsSse?: boolean;
 
   /**
    * When true, the execution engine will run to completion instead of
