@@ -1,8 +1,3 @@
-/*
- * Integration tests that exercise the client-side `streamRun` API, including
- * `subscribeToRun` redirect following and frame parsing.
- */
-
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { stream } from "../../../experimental/durable-endpoints.ts";
