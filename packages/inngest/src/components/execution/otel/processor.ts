@@ -127,7 +127,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    */
   #activeStepContext = new Map<
     string,
-    { hashedStepId: string; attempt: number, id: string , index: number }
+    { hashedStepId: string; attempt: number; id: string; index: number }
   >();
 
   /**
@@ -248,7 +248,12 @@ export class InngestSpanProcessor implements SpanProcessor {
       attempt,
     );
     this.#checkpointingRoots.add(rootSpanId);
-    this.#activeStepContext.set(rootSpanId, { hashedStepId, attempt, id, index });
+    this.#activeStepContext.set(rootSpanId, {
+      hashedStepId,
+      attempt,
+      id,
+      index,
+    });
   }
 
   /**

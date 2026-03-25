@@ -1024,7 +1024,7 @@ class InngestExecutionEngine
         .get(this.options.client)
         ?.declareStepExecution(
           this.rootSpanId,
-          userland.id ?? '',
+          userland.id ?? "",
           userland.index ?? 0,
           hashedId,
           this.options.data?.attempt ?? 0,
