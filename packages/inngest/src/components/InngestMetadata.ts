@@ -8,7 +8,7 @@ import { Middleware } from "./middleware/middleware.ts";
 /**
  * The level at which to attach the metadata.
  */
-export type MetadataScope = "run" | "step" | "step_attempt" | "extended_trace";
+export type MetadataScope = "run" | "step" | "extended_trace";
 
 /**
  * Metadata of the same kind attached to the same item at the same scope are combined.
@@ -208,18 +208,12 @@ export function buildTarget(
       step_attempt: config.attempt ?? ctxAttempt,
       span_id: config.spanId,
     };
-  } else if (config.attempt !== undefined) {
-    return {
-      run_id: targetRunId,
-      step_id: config.stepId ?? ctxStepId,
-      step_index: config.stepIndex,
-      step_attempt: config.attempt ?? ctxAttempt,
-    };
   } else if (config.stepId !== undefined) {
     return {
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
+      step_attempt: config.attempt ?? ctxAttempt,
     };
   } else if (config.runId !== undefined) {
     return {
@@ -277,11 +271,10 @@ export async function sendMetadataViaAPI(
 
 function getBatchScope(config: BuilderConfig): MetadataScope {
   if (config.spanId !== undefined) return "extended_trace";
-  if (config.attempt !== undefined) return "step_attempt";
   if (config.stepId !== undefined) return "step";
   if (config.runId !== undefined) return "run";
 
-  return "step_attempt";
+  return "step";
 }
 
 async function performOp(
