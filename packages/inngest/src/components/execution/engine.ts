@@ -559,7 +559,7 @@ class InngestExecutionEngine
 
   /**
    * Sends the `inngest.redirect_info` SSE frame when both conditions are met:
-   * 1. The stream has been activated (stream.push/pipe was called)
+   * 1. The client accepts SSE (so there's a stream to write the frame to)
    * 2. We have a realtime token (first checkpoint has completed)
    *
    * Called after the first checkpoint AND on stream activation, whichever
@@ -570,7 +570,7 @@ class InngestExecutionEngine
       return;
     }
 
-    if (!this.streamTools.activated) {
+    if (!this.options.acceptsSse) {
       return;
     }
 

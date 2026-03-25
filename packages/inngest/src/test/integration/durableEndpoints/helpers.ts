@@ -1,6 +1,7 @@
 import http from "node:http";
-import { randomSuffix, testNameFromFileUrl } from "@inngest/test-harness";
+import { randomSuffix } from "@inngest/test-harness";
 import { onTestFinished } from "vitest";
+import { stream } from "../../../experimental/durable-endpoints.ts";
 import { Inngest } from "../../../index.ts";
 import type { EndpointHandler } from "../../../node.ts";
 import {
@@ -22,10 +23,18 @@ export interface SseEvent {
 export async function readSseStream(
   res: Response,
   timeoutMs = 30_000,
-): Promise<{ events: SseEvent[]; redirectUrl: string | null }> {
+): Promise<{
+  events: SseEvent[];
+  redirectUrl: string | null;
+  runId: string | null;
+}> {
   const sse = startSseReader(res, timeoutMs);
   await sse.done;
-  return { events: sse.events, redirectUrl: sse.getRedirectUrl() };
+  return {
+    events: sse.events,
+    redirectUrl: sse.getRedirectUrl(),
+    runId: sse.getRunId(),
+  };
 }
 
 /**
@@ -122,6 +131,7 @@ export function createGate(): { promise: Promise<void>; open: () => void } {
 export function startSseReader(res: Response, timeoutMs = 30_000) {
   const events: SseEvent[] = [];
   let redirectUrl: string | null = null;
+  let runId: string | null = null;
 
   const done = (async () => {
     if (!res.body) {
@@ -165,6 +175,16 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
             }
           }
 
+          if (event === "inngest.metadata") {
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.runId) {
+                runId = parsed.runId;
+              }
+            } catch {
+              // ignore
+            }
+          }
           if (event === "inngest.redirect_info") {
             try {
               const parsed = JSON.parse(data);
@@ -212,6 +232,9 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
     events,
     getRedirectUrl() {
       return redirectUrl;
+    },
+    getRunId() {
+      return runId;
     },
     streamData() {
       return getStreamData(events);
@@ -275,4 +298,32 @@ export async function pollForAsyncReader(
   throw new Error(
     `pollForAsyncReader: no live connection after ${maxAttempts} attempts`,
   );
+}
+
+export const streamingMethods = [
+  "push",
+  "pipe-generator",
+  "pipe-stream",
+] as const;
+
+export async function streamWith(
+  method: (typeof streamingMethods)[number],
+  data: string,
+) {
+  if (method === "push") {
+    stream.push(data);
+  } else if (method === "pipe-generator") {
+    await stream.pipe(async function* () {
+      yield data;
+    });
+  } else {
+    await stream.pipe(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(data));
+          controller.close();
+        },
+      }),
+    );
+  }
 }
