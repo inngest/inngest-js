@@ -1631,7 +1631,7 @@ class InngestExecutionEngine
 
     // Emit step:errored lifecycle frame
     this.streamTools.stepLifecycle(hashedId, "errored", {
-      will_retry: !isFinal,
+      willRetry: !isFinal,
       error: error instanceof Error ? error.message : String(error),
     });
 

@@ -27,6 +27,7 @@ export default defineConfig({
     "src/redwood.ts",
     "src/remix.ts",
     "src/experimental/durable-endpoints.ts",
+    "src/experimental/durable-endpoints/client.ts",
     "src/sveltekit.ts",
     "src/types.ts",
 

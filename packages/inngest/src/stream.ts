@@ -174,6 +174,7 @@ export class RunStream<TData = unknown> {
   private _parseFn: (data: unknown) => TData;
 
   constructor(private opts: RunStreamOptions<TData>) {
+    console.log("RunStream constructor");
     this._parseFn = opts.parse ?? ((d: unknown) => d as TData);
   }
 
@@ -307,7 +308,7 @@ export class RunStream<TData = unknown> {
                 this.opts.onRollback?.(count);
               }
               this.opts.onStepErrored?.(frame.stepId, {
-                willRetry: frame.will_retry,
+                willRetry: frame.willRetry,
                 error: frame.error,
               });
             }

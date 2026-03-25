@@ -233,6 +233,14 @@
       },
       "import": "./experimental/durable-endpoints.js",
       "require": "./experimental/durable-endpoints.cjs"
+    },
+    "./experimental/durable-endpoints/client": {
+      "types": {
+        "import": "./experimental/durable-endpoints/client.d.ts",
+        "require": "./experimental/durable-endpoints/client.d.cts"
+      },
+      "import": "./experimental/durable-endpoints/client.js",
+      "require": "./experimental/durable-endpoints/client.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",

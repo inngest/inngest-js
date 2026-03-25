@@ -2,76 +2,102 @@
 
 import { z } from "zod/v3";
 import { createTimeoutPromise } from "../../helpers/promises.ts";
+import { isRecord } from "../../helpers/types.ts";
 
 // ---------------------------------------------------------------------------
-// Typed SSE frame definitions
+// Schemas — single source of truth for both runtime validation and types
 // ---------------------------------------------------------------------------
 
-export interface SseMetadataFrame {
-  type: "inngest.metadata";
-  runId: string;
-}
+const sseMetadataSchema = z.object({
+  type: z.literal("inngest.metadata"),
+  runId: z.string(),
+});
 
-export interface SseStreamFrame {
-  type: "stream";
-  data: unknown;
-  stepId?: string;
-}
+const sseStreamSchema = z.object({
+  type: z.literal("stream"),
+  data: z.unknown(),
+  stepId: z.string().optional(),
+});
 
-export interface SseResultSucceededFrame {
-  type: "inngest.result";
-  status: "succeeded";
-  data?: unknown;
-}
+const stepErrorDataSchema = z.object({
+  willRetry: z.boolean(),
+  error: z.string(),
+});
 
-export interface SseResultFailedFrame {
-  type: "inngest.result";
-  status: "failed";
-  error: string;
-}
+const sseStepRunningSchema = z.object({
+  type: z.literal("inngest.step"),
+  stepId: z.string(),
+  status: z.literal("running"),
+  data: z.unknown().optional(),
+});
 
-export type SseResultFrame = SseResultSucceededFrame | SseResultFailedFrame;
+const sseStepCompletedSchema = z.object({
+  type: z.literal("inngest.step"),
+  stepId: z.string(),
+  status: z.literal("completed"),
+  data: z.unknown().optional(),
+});
+
+const sseStepErroredSchema = z.object({
+  type: z.literal("inngest.step"),
+  stepId: z.string(),
+  status: z.literal("errored"),
+  willRetry: z.boolean(),
+  error: z.string(),
+});
+
+const sseStepSchema = z.discriminatedUnion("status", [
+  sseStepRunningSchema,
+  sseStepCompletedSchema,
+  sseStepErroredSchema,
+]);
+
+const sseResultSucceededSchema = z.object({
+  type: z.literal("inngest.result"),
+  status: z.literal("succeeded"),
+  data: z.unknown().optional(),
+});
+
+const sseResultFailedSchema = z.object({
+  type: z.literal("inngest.result"),
+  status: z.literal("failed"),
+  error: z.string(),
+});
+
+const sseResultSchema = z.discriminatedUnion("status", [
+  sseResultSucceededSchema,
+  sseResultFailedSchema,
+]);
+
+const sseRedirectSchema = z.object({
+  type: z.literal("inngest.redirect_info"),
+  runId: z.string(),
+  url: z.string(),
+});
+
+// ---------------------------------------------------------------------------
+// Types derived from schemas
+// ---------------------------------------------------------------------------
+
+export type SseMetadataFrame = z.infer<typeof sseMetadataSchema>;
+export type SseStreamFrame = z.infer<typeof sseStreamSchema>;
+export type SseResultSucceededFrame = z.infer<typeof sseResultSucceededSchema>;
+export type SseResultFailedFrame = z.infer<typeof sseResultFailedSchema>;
+export type SseResultFrame = z.infer<typeof sseResultSchema>;
 
 /**
  * Payload included with every `inngest.step` errored frame. Describes the
  * failure so the client can decide whether to show an error or wait for a
  * retry.
  */
-export interface StepErrorData {
-  will_retry: boolean;
-  error: string;
-}
+export type StepErrorData = z.infer<typeof stepErrorDataSchema>;
 
-export interface SseStepRunningFrame {
-  type: "inngest.step";
-  stepId: string;
-  status: "running";
-  data?: unknown;
-}
+export type SseStepRunningFrame = z.infer<typeof sseStepRunningSchema>;
+export type SseStepCompletedFrame = z.infer<typeof sseStepCompletedSchema>;
+export type SseStepErroredFrame = z.infer<typeof sseStepErroredSchema>;
+export type SseStepFrame = z.infer<typeof sseStepSchema>;
 
-export interface SseStepCompletedFrame {
-  type: "inngest.step";
-  stepId: string;
-  status: "completed";
-  data?: unknown;
-}
-
-export interface SseStepErroredFrame extends StepErrorData {
-  type: "inngest.step";
-  stepId: string;
-  status: "errored";
-}
-
-export type SseStepFrame =
-  | SseStepRunningFrame
-  | SseStepCompletedFrame
-  | SseStepErroredFrame;
-
-export interface SseRedirectFrame {
-  type: "inngest.redirect_info";
-  runId: string;
-  url: string;
-}
+export type SseRedirectFrame = z.infer<typeof sseRedirectSchema>;
 
 export type SseFrame =
   | SseMetadataFrame
@@ -84,40 +110,6 @@ export interface RawSseEvent {
   event: string;
   data: string;
 }
-
-// ---------------------------------------------------------------------------
-// Zod schemas for runtime validation of parsed SSE frames
-// ---------------------------------------------------------------------------
-
-const sseMetadataPayloadSchema = z.object({
-  runId: z.string(),
-});
-
-const sseStreamPayloadSchema = z.object({
-  data: z.unknown(),
-  stepId: z.string().optional(),
-});
-
-const stepErrorDataSchema = z.object({
-  will_retry: z.boolean(),
-  error: z.string(),
-});
-
-const sseStepPayloadSchema = z.object({
-  stepId: z.string(),
-  status: z.enum(["running", "completed", "errored"]),
-  data: z.unknown().optional(),
-});
-
-const sseResultPayloadSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("succeeded"), data: z.unknown().optional() }),
-  z.object({ status: z.literal("failed"), error: z.string() }),
-]);
-
-const sseRedirectPayloadSchema = z.object({
-  runId: z.string(),
-  url: z.string(),
-});
 
 // ---------------------------------------------------------------------------
 // Frame builders
@@ -397,72 +389,45 @@ export async function* iterSse(
 // Raw SSE event -> typed SSE frame
 // ---------------------------------------------------------------------------
 
+const sseSchemasByEvent: Record<string, z.ZodType<SseFrame>> = {
+  "inngest.metadata": sseMetadataSchema,
+  stream: sseStreamSchema,
+  "inngest.result": sseResultSchema,
+  "inngest.step": sseStepSchema,
+  "inngest.redirect_info": sseRedirectSchema,
+};
+
 /**
  * Converts a `RawSseEvent` into a typed `SseFrame`, or returns `undefined`
- * if the event type is unrecognised.
+ * if the event type is unrecognised or fails validation.
  */
 export function parseSseFrame(raw: RawSseEvent): SseFrame | undefined {
+  const schema = sseSchemasByEvent[raw.event];
+  if (!schema) {
+    return undefined;
+  }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw.data);
   } catch {
-    parsed = raw.data;
+    throw new UnreachableError("SSE data is not a valid JSON string");
+  }
+  if (!isRecord(parsed)) {
+    return undefined;
   }
 
-  switch (raw.event) {
-    case "inngest.metadata": {
-      const result = sseMetadataPayloadSchema.safeParse(parsed);
-      if (!result.success) return undefined;
-      return { type: "inngest.metadata", runId: result.data.runId };
-    }
-    case "stream": {
-      const result = sseStreamPayloadSchema.safeParse(parsed);
-      if (!result.success) return undefined;
-      return {
-        type: "stream",
-        data: result.data.data,
-        ...(result.data.stepId ? { stepId: result.data.stepId } : {}),
-      };
-    }
-    case "inngest.result": {
-      const result = sseResultPayloadSchema.safeParse(parsed);
-      if (!result.success) return undefined;
-      return { type: "inngest.result", ...result.data };
-    }
-    case "inngest.step": {
-      const result = sseStepPayloadSchema.safeParse(parsed);
-      if (!result.success) return undefined;
+  const result = schema.safeParse({ ...parsed, type: raw.event });
+  if (!result.success) {
+    throw new Error("Unknown SSE event", { cause: result.error });
+  }
 
-      const { stepId, status, data } = result.data;
+  return result.data;
+}
 
-      if (status === "errored") {
-        const errResult = stepErrorDataSchema.safeParse(data ?? {});
-        return {
-          type: "inngest.step",
-          stepId,
-          status: "errored",
-          will_retry: errResult.success ? errResult.data.will_retry : false,
-          error: errResult.success ? errResult.data.error : "unknown",
-        };
-      }
-
-      return {
-        type: "inngest.step" as const,
-        stepId,
-        status,
-        data,
-      };
-    }
-    case "inngest.redirect_info": {
-      const result = sseRedirectPayloadSchema.safeParse(parsed);
-      if (!result.success) return undefined;
-      return {
-        type: "inngest.redirect_info",
-        runId: result.data.runId,
-        url: result.data.url,
-      };
-    }
-    default:
-      return undefined;
+class UnreachableError extends Error {
+  constructor(...args: Parameters<typeof Error>) {
+    super(...args);
+    this.name = "UnreachableError";
   }
 }
