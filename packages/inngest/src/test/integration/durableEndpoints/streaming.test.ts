@@ -113,8 +113,8 @@ test(
     );
     expect(metadataEvents.length).toBe(1);
     const metadata = JSON.parse(metadataEvents[0]!.data);
-    expect(metadata).toHaveProperty("run_id");
-    state.runId = metadata.run_id;
+    expect(metadata).toHaveProperty("runId");
+    state.runId = metadata.runId;
 
     // Redirect since async mode necessitates streaming via Dev Server
     const redirectUrl = sse.getRedirectUrl();
@@ -181,7 +181,7 @@ describe("header negotiation", () => {
 
           const metadata = events.filter((e) => e.event === "inngest.metadata");
           expect(metadata.length).toBe(1);
-          expect(JSON.parse(metadata[0]!.data)).toHaveProperty("run_id");
+          expect(JSON.parse(metadata[0]!.data)).toHaveProperty("runId");
 
           const streamData = getStreamData(events);
           expect(streamData).toContain("hello");
@@ -661,7 +661,7 @@ describe("error and rollback", () => {
       );
       expect(metadataEvents.length).toBe(1);
       const metadata = JSON.parse(metadataEvents[0]!.data);
-      state.runId = metadata.run_id;
+      state.runId = metadata.runId;
 
       const redirectUrl = sse.getRedirectUrl();
       expect(redirectUrl).toBeTruthy();

@@ -9,7 +9,7 @@ import { createTimeoutPromise } from "../../helpers/promises.ts";
 
 export interface SSEMetadataFrame {
   type: "inngest.metadata";
-  run_id: string;
+  runId: string;
 }
 
 export interface SSEStreamFrame {
@@ -69,7 +69,7 @@ export type SSEStepFrame =
 
 export interface SSERedirectFrame {
   type: "inngest.redirect_info";
-  run_id: string;
+  runId: string;
   url: string;
 }
 
@@ -90,7 +90,7 @@ export interface RawSSEEvent {
 // ---------------------------------------------------------------------------
 
 const sseMetadataPayloadSchema = z.object({
-  run_id: z.string(),
+  runId: z.string(),
 });
 
 const sseStreamPayloadSchema = z.object({
@@ -115,7 +115,7 @@ const sseResultPayloadSchema = z.discriminatedUnion("status", [
 ]);
 
 const sseRedirectPayloadSchema = z.object({
-  run_id: z.string(),
+  runId: z.string(),
   url: z.string(),
 });
 
@@ -141,7 +141,7 @@ function buildSSEFrame(event: string, data: unknown): string {
  * (run ID) to consumers of the stream.
  */
 export function buildSSEMetadataFrame(runId: string): string {
-  return buildSSEFrame("inngest.metadata", { run_id: runId });
+  return buildSSEFrame("inngest.metadata", { runId });
 }
 
 /**
@@ -180,7 +180,7 @@ export function buildSSEFailedFrame(error: string): string {
  * separate token field is needed.
  */
 export function buildSSERedirectFrame(data: {
-  run_id: string;
+  runId: string;
   url: string;
 }): string {
   return buildSSEFrame("inngest.redirect_info", data);
@@ -413,7 +413,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
     case "inngest.metadata": {
       const result = sseMetadataPayloadSchema.safeParse(parsed);
       if (!result.success) return undefined;
-      return { type: "inngest.metadata", run_id: result.data.run_id };
+      return { type: "inngest.metadata", runId: result.data.runId };
     }
     case "stream": {
       const result = sseStreamPayloadSchema.safeParse(parsed);
@@ -458,7 +458,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       if (!result.success) return undefined;
       return {
         type: "inngest.redirect_info",
-        run_id: result.data.run_id,
+        runId: result.data.runId,
         url: result.data.url,
       };
     }

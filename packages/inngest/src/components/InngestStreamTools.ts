@@ -237,10 +237,7 @@ export class InngestStream {
    * frames may follow before the durable endpoint actually switches to async
    * mode. Internal use only.
    */
-  sendRedirectInfo(data: {
-    run_id: string;
-    url: string;
-  }): void {
+  sendRedirectInfo(data: { runId: string; url: string }): void {
     this.enqueue(buildSSERedirectFrame(data));
   }
 

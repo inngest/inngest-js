@@ -191,7 +191,7 @@ describe("streamRun", () => {
       onMetadata: (runId) => metadata.push({ runId }),
     });
     rs._fromSource(
-      framesFrom([{ type: "inngest.metadata", run_id: "run-123" }]),
+      framesFrom([{ type: "inngest.metadata", runId: "run-123" }]),
     );
 
     await rs;

@@ -321,7 +321,7 @@ export class RunStream<TData = unknown> {
             }
             break outer;
           case "inngest.metadata":
-            this.opts.onMetadata?.(frame.run_id);
+            this.opts.onMetadata?.(frame.runId);
             break;
           default:
             break;

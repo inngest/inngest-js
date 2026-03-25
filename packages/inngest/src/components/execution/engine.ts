@@ -578,7 +578,7 @@ class InngestExecutionEngine
         ].getRealtimeStreamRedirect(this.fnArg.runId, realtimeToken);
 
         this.streamTools.sendRedirectInfo({
-          run_id: this.fnArg.runId,
+          runId: this.fnArg.runId,
           url: redirect.url,
         });
       } catch (err) {
