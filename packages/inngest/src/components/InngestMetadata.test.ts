@@ -95,6 +95,7 @@ describe("buildTarget", () => {
 
     expect(target).toEqual({
       run_id: "other-run",
+      step_attempt: 1,
       step_id: "custom-step",
     });
   });
