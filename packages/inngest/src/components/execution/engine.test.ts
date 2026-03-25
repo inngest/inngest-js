@@ -5,7 +5,7 @@ import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
 import { StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
-import type { FoundStep, GenericStepTools } from "../InngestStepTools.ts";
+import type { GenericStepTools } from "../InngestStepTools.ts";
 import type { ExecutionResult, ExecutionResults } from "./InngestExecution.ts";
 
 describe("Execution engine checkpoint retry behavior", () => {
@@ -850,124 +850,5 @@ describe("Sync mode function-resolved response handling", () => {
       (s: { op: string }) => s.op === StepOpCode.RunComplete,
     );
     expect(runCompleteOp).toBeDefined();
-  });
-});
-
-describe("resumeStepLocally", () => {
-  const mockEvent = { name: "test/event", data: {} };
-
-  function createEngine() {
-    const client = createClient({ id: "test" });
-
-    const mockCheckpointNewRun = vi.fn().mockResolvedValue({
-      data: { app_id: "app-123", fn_id: "fn-456", token: "token-789" },
-    });
-
-    (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
-      checkpointNewRun: mockCheckpointNewRun,
-    } as Partial<InngestApi> as InngestApi;
-
-    const fn = new InngestFunction(
-      client,
-      { id: "test-fn", triggers: [{ event: "test/event" }] },
-      async () => "result",
-    );
-
-    const execution = fn["createExecution"]({
-      partialOptions: {
-        client,
-        data: fromPartial({ event: mockEvent }),
-        runId: "test-run-id",
-        stepState: {},
-        stepCompletionOrder: [],
-        reqArgs: [],
-        headers: {},
-        stepMode: StepMode.Sync,
-        createResponse: async (data) => ({
-          status: 200,
-          body: JSON.stringify(data),
-          headers: {},
-          version: ExecutionVersion.V2,
-        }),
-      },
-    });
-
-    // Access private internals via bracket notation
-    const engine = execution as unknown as {
-      state: {
-        steps: Map<string, FoundStep>;
-        stepState: Record<string, unknown>;
-        executingStep?: unknown;
-      };
-      resumeStepLocally: (result: {
-        id: string;
-        op: string;
-        data?: unknown;
-      }) => FoundStep;
-    };
-
-    return { engine };
-  }
-
-  function createMockFoundStep(overrides: Partial<FoundStep> = {}): FoundStep {
-    return fromPartial({
-      hashedId: "step-1",
-      handled: true,
-      fulfilled: false,
-      hasStepState: false,
-      handle: vi.fn(() => true),
-      ...overrides,
-    });
-  }
-
-  test("resets handled flag to false before resuming", () => {
-    const { engine } = createEngine();
-
-    const mockStep = createMockFoundStep({ handled: true });
-    engine.state.steps.set("step-1", mockStep);
-
-    engine.resumeStepLocally({
-      id: "step-1",
-      op: StepOpCode.StepRun,
-      data: "hello",
-    });
-
-    // handle() should have been called (by resumeStepWithResult), which
-    // only works if handled was reset to false first
-    expect(mockStep.handle).toHaveBeenCalled();
-    // After resumeStepWithResult, fulfilled should be true
-    expect(mockStep.fulfilled).toBe(true);
-  });
-
-  test("clears executingStep", () => {
-    const { engine } = createEngine();
-
-    const mockStep = createMockFoundStep();
-    engine.state.steps.set("step-1", mockStep);
-    engine.state.executingStep = { op: StepOpCode.StepRun };
-
-    engine.resumeStepLocally({
-      id: "step-1",
-      op: StepOpCode.StepRun,
-      data: "hello",
-    });
-
-    expect(engine.state.executingStep).toBeUndefined();
-  });
-
-  test("returns the resumed FoundStep", () => {
-    const { engine } = createEngine();
-
-    const mockStep = createMockFoundStep();
-    engine.state.steps.set("step-1", mockStep);
-
-    const result = engine.resumeStepLocally({
-      id: "step-1",
-      op: StepOpCode.StepRun,
-      data: "hello",
-    });
-
-    expect(result).toBe(mockStep);
-    expect(result.data).toBe("hello");
   });
 });

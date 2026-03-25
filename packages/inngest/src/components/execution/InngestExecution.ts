@@ -154,13 +154,6 @@ export interface InngestExecutionOptions {
   acceptsSse?: boolean;
 
   /**
-   * When true, the execution engine will run to completion instead of
-   * returning `step-ran` after each step. Used during forced async
-   * re-execution so all stream data ends up in a single POST.
-   */
-  runToCompletion?: boolean;
-
-  /**
    * Provide the ability to transform the context passed to the function before
    * the execution starts.
    */

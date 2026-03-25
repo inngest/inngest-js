@@ -2180,7 +2180,6 @@ export class InngestCommHandler<
           reqArgs,
           headers,
           createResponse,
-          runToCompletion: forceExecution,
           requestInfo,
           middlewareInstances: mwInstances,
         },

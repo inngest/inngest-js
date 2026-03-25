@@ -1068,34 +1068,6 @@ class InngestExecutionEngine
       "steps-found": async ({ steps }) => {
         const stepResult = await this.tryExecuteStep(steps);
         if (stepResult) {
-          // When running to completion (forced execution reentry), resume
-          // the step so the function continues past it instead of returning
-          // step-ran. This keeps stream data in a single InngestStream so
-          // it can all be POSTed when the function completes.
-          if (this.options.runToCompletion) {
-            if (stepResult.error) {
-              this.closeStreamForStepError(stepResult);
-              return stepRanHandler(stepResult);
-            }
-
-            this.resumeStepLocally(stepResult);
-
-            // Execute remaining unfulfilled parallel steps in this
-            // batch so that Promise.all can resolve and the function
-            // continues. Without this, the other steps' promises stay
-            // pending forever and the core loop deadlocks.
-            const parallelError = await this.executeUnfulfilledSteps(
-              steps,
-              stepResult.id,
-            );
-            if (parallelError) {
-              this.closeStreamForStepError(parallelError);
-              return stepRanHandler(parallelError);
-            }
-
-            return;
-          }
-
           return stepRanHandler(stepResult);
         }
 
@@ -1140,11 +1112,6 @@ class InngestExecutionEngine
             i,
           );
           if (output?.type === "function-resolved") {
-            // runToCompletion: return the result directly.
-            if (this.options.runToCompletion) {
-              return output;
-            }
-
             const steps = this.state.checkpointingStepBuffer.concat({
               op: StepOpCode.RunComplete,
               id: hashId(RUN_COMPLETE_STEP_ID),
@@ -1229,66 +1196,12 @@ class InngestExecutionEngine
                   }
                 }
 
-                this.closeStreamForStepError(stepResult);
                 return stepRanHandler(stepResult);
-              }
-
-              // When running to completion (durable endpoint re-entry), resume
-              // the step locally so the core loop continues instead of
-              // blocking on a checkpoint POST to the Inngest Server.
-              if (this.options.runToCompletion) {
-                const stepToResume = this.resumeStepLocally(stepResult);
-
-                // Fire-and-forget checkpoint for observability — don't block.
-                this.state.checkpointingStepBuffer.push({
-                  ...stepToResume,
-                  data: stepResult.data,
-                });
-                try {
-                  await this.checkpoint(this.state.checkpointingStepBuffer);
-                } catch (err) {
-                  this.options.client[internalLoggerSymbol].warn(
-                    { err },
-                    "Failed to checkpoint step during runToCompletion",
-                  );
-                }
-                this.state.checkpointingStepBuffer = [];
-
-                // Execute remaining parallel steps so Promise.all resolves.
-                const parallelError = await this.executeUnfulfilledSteps(
-                  newSteps,
-                  stepResult.id,
-                );
-                if (parallelError) {
-                  this.closeStreamForStepError(parallelError);
-                  return stepRanHandler(parallelError);
-                }
-
-                return;
               }
 
               // If we're here, we successfully ran a step, so we may now need
               // to checkpoint it depending on the step buffer configured.
               return await attemptCheckpointAndResume(stepResult);
-            }
-
-            // When running to completion, execute all unfulfilled
-            // steps locally so Promise.all resolves and the function
-            // can continue. Without this the handler returns them to
-            // the Inngest Server as a 206, which causes an infinite retry loop.
-            if (this.options.runToCompletion) {
-              const parallelError =
-                await this.executeUnfulfilledSteps(newSteps);
-              if (parallelError) {
-                if (this.state.checkpointingStepBuffer.length) {
-                  await attemptCheckpointAndResume(undefined, false, true);
-                }
-
-                this.closeStreamForStepError(parallelError);
-                return stepRanHandler(parallelError);
-              }
-
-              return;
             }
 
             // Flush any buffered checkpoint steps before returning
@@ -1326,11 +1239,6 @@ class InngestExecutionEngine
           return;
         },
         "checkpointing-runtime-reached": async () => {
-          // During runToCompletion, skip — don't terminate the core loop.
-          if (this.options.runToCompletion) {
-            return;
-          }
-
           this.options.client[internalLoggerSymbol].debug(
             "Checkpointing runtime reached; sending discovery request",
           );
@@ -1353,23 +1261,6 @@ class InngestExecutionEngine
         },
 
         "checkpointing-buffer-interval-reached": () => {
-          // During runToCompletion, fire-and-forget the checkpoint for
-          // observability but don't block the core loop.
-          if (this.options.runToCompletion) {
-            if (this.state.checkpointingStepBuffer.length) {
-              void this.checkpoint(this.state.checkpointingStepBuffer).catch(
-                (err) => {
-                  this.options.client[internalLoggerSymbol].warn(
-                    { err },
-                    "Failed to checkpoint buffer during runToCompletion",
-                  );
-                },
-              );
-              this.state.checkpointingStepBuffer = [];
-            }
-            return;
-          }
-
           return attemptCheckpointAndResume(undefined, false, true);
         },
       };
@@ -1410,38 +1301,6 @@ class InngestExecutionEngine
      * find it, but also that we don't reset if we found and executed it.
      */
     return void this.timeout?.reset();
-  }
-
-  /**
-   * Execute all unfulfilled steps locally so that `Promise.all` can resolve
-   * and the function continues. Used in `runToCompletion` mode where the SDK
-   * must handle parallelism locally instead of deferring to the Inngest Server.
-   *
-   * Steps are executed sequentially — the parallelism lives in the user's
-   * `Promise.all`; the engine just needs to resolve every step's deferred
-   * promise before the function can proceed.
-   *
-   * Returns the first error result if any step fails, or `undefined` on
-   * success.
-   */
-  private async executeUnfulfilledSteps(
-    steps: FoundStep[],
-    excludeId?: string,
-  ): Promise<OutgoingOp | undefined> {
-    for (const step of steps) {
-      if (step.hashedId === excludeId || step.hasStepState || !step.fn) {
-        continue;
-      }
-
-      const result = await this.executeStep(step);
-      if (result.error) {
-        return result;
-      }
-
-      this.resumeStepLocally(result);
-    }
-
-    return undefined;
   }
 
   /**
@@ -1682,30 +1541,6 @@ class InngestExecutionEngine
         await this.middlewareManager.onRunError(err, !this.retriability(err));
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
-  }
-
-  /**
-   * Close the stream with the appropriate terminal frame for a step error
-   * during `runToCompletion` mode. Without this, the main loop exits via
-   * `stepRanHandler` before `function-rejected` can fire, leaving the
-   * stream without an `inngest.result` frame.
-   */
-  private closeStreamForStepError(stepResult: OutgoingOp): void {
-    if (!this.options.runToCompletion) {
-      return;
-    }
-
-    const isFinal = stepResult.op === StepOpCode.StepFailed;
-
-    if (isFinal) {
-      this.streamTools.closeFailed(errorMessage(stepResult.error));
-    } else {
-      this.streamTools.end();
-    }
-
-    if (!this.streamTools.activated) {
-      this.postCheckpointStream();
-    }
   }
 
   /**
@@ -2484,27 +2319,6 @@ class InngestExecutionEngine
       stepState,
       isFulfilled,
     };
-  }
-
-  /**
-   * Resets the step's `handled` flag and resumes it locally, clearing
-   * `executingStep` so the core loop can continue.
-   *
-   * The `handled` reset is necessary because `reportNextTick` already called
-   * `handle()` during step discovery (setting `handled = true`). Without the
-   * reset, `resumeStepWithResult`'s `handle()` call would be a no-op and the
-   * step's deferred promise would never resolve.
-   */
-  private resumeStepLocally(result: OutgoingOp): FoundStep {
-    const userlandStep = this.state.steps.get(result.id);
-    if (userlandStep) {
-      userlandStep.handled = false;
-    }
-
-    const step = this.resumeStepWithResult(result);
-    delete this.state.executingStep;
-
-    return step;
   }
 
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
