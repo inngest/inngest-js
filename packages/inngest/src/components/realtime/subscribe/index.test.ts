@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { subscribe } from "./index.ts";
+import { getClientSubscriptionToken, subscribe } from "./index.ts";
 import { TokenSubscription } from "./TokenSubscription.ts";
 
 class MockWebSocket {
@@ -121,5 +121,24 @@ describe("realtime subscribe helper", () => {
     ).rejects.toThrow("No getSubscriptionToken handler provided");
 
     expect(getJsonStreamSpy).not.toHaveBeenCalled();
+  });
+
+  test("getClientSubscriptionToken returns a serializable token", async () => {
+    const app = {
+      apiBaseUrl: "http://localhost:8288/",
+      inngestApi: {
+        getSubscriptionToken: vi.fn().mockResolvedValue("token-key"),
+      },
+    };
+
+    await expect(
+      getClientSubscriptionToken(app as never, {
+        channel: "test",
+        topics: ["status"],
+      }),
+    ).resolves.toEqual({
+      key: "token-key",
+      apiBaseUrl: "http://localhost:8288/",
+    });
   });
 });

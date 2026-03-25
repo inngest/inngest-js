@@ -24,6 +24,7 @@ type SubscribeBaseArgs<
   channel: InputChannel;
   topics: InputTopics;
   validate?: boolean;
+  apiBaseUrl?: string;
 };
 
 type SubscribeCallbackArgs<
@@ -75,7 +76,7 @@ export async function subscribe<
 
   const subscription = new TokenSubscription({
     token: token as Realtime.Subscribe.Token,
-    apiBaseUrl: app?.apiBaseUrl,
+    apiBaseUrl: token.apiBaseUrl ?? app?.apiBaseUrl,
     getSubscriptionToken,
     validate: token.validate,
   });
@@ -130,5 +131,28 @@ export const getSubscriptionToken = async <
     channel: args.channel,
     topics: args.topics,
     key,
+    apiBaseUrl: (app as Inngest.Any)?.apiBaseUrl,
   } as TToken;
+};
+
+export const getClientSubscriptionToken = async <
+  const InputChannel extends Realtime.ChannelInput,
+  const InputTopics extends ChannelTopicsInput<InputChannel>,
+>(
+  app: Inngest.Like,
+  args: {
+    channel: InputChannel;
+    topics: InputTopics;
+  },
+): Promise<Realtime.Subscribe.ClientToken> => {
+  const token = await getSubscriptionToken(app, args);
+
+  if (!token.key) {
+    throw new Error("No realtime subscription token key returned");
+  }
+
+  return {
+    key: token.key,
+    apiBaseUrl: token.apiBaseUrl,
+  };
 };

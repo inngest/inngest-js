@@ -13,6 +13,12 @@ export namespace Realtime {
       key?: string | undefined;
       channel: TChannel;
       topics: TTopics;
+      apiBaseUrl?: string;
+    }
+
+    export interface ClientToken {
+      key: string;
+      apiBaseUrl?: string;
     }
 
     export type InferTopicSubscribeData<TTopic> =

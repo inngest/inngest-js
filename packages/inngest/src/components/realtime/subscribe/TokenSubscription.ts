@@ -1,6 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import debug from "debug";
-import { allProcessEnv, parseAsBoolean } from "../../../helpers/env.ts";
 import { createDeferredPromise } from "../../../helpers/promises.ts";
 import { Realtime } from "../types.ts";
 import { StreamFanout } from "./StreamFanout.ts";
@@ -91,31 +90,13 @@ export class TokenSubscription {
 
   private getWsUrl(token: string): URL {
     const path = "/v1/realtime/connect";
-    const env = allProcessEnv();
-    const devEnvVar = env.INNGEST_DEV;
 
     let url: URL;
 
     if (this.#apiBaseUrl) {
       url = new URL(path, this.#apiBaseUrl);
-    } else if (devEnvVar) {
-      try {
-        const devUrl = new URL(devEnvVar);
-        url = new URL(path, devUrl);
-      } catch {
-        if (parseAsBoolean(devEnvVar)) {
-          url = new URL(path, "http://localhost:8288/");
-        } else {
-          url = new URL(path, "https://api.inngest.com/");
-        }
-      }
     } else {
-      url = new URL(
-        path,
-        env.NODE_ENV === "production"
-          ? "https://api.inngest.com/"
-          : "http://localhost:8288/",
-      );
+      url = new URL(path, "https://api.inngest.com/");
     }
 
     url.protocol = url.protocol === "http:" ? "ws:" : "wss:";

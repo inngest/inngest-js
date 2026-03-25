@@ -236,16 +236,42 @@ for await (const msg of await inngest.realtime.subscribe({
 Mint scoped tokens server-side for client subscriptions:
 
 ```ts
+import { getClientSubscriptionToken } from "inngest/react";
+
 // Server route
 export async function POST(req: Request) {
   const { threadId } = await req.json();
 
-  const token = await inngest.realtime.token({
+  const token = await getClientSubscriptionToken(inngest, {
     channel: agentChat({ threadId }),
     topics: ["status", "tokens"],
   });
 
-  return Response.json({ token });
+  return Response.json(token);
+}
+```
+
+Then pass that serializable token object back into `useRealtime()` alongside the
+channel and topics so the hook can construct the full subscription token:
+
+```ts
+import { useRealtime } from "inngest/react";
+
+function ThreadFeed({ threadId }: { threadId: string }) {
+  const realtime = useRealtime({
+    channel: agentChat({ threadId }),
+    topics: ["status", "tokens"] as const,
+    token: async () => {
+      const res = await fetch("/api/realtime-token", {
+        method: "POST",
+        body: JSON.stringify({ threadId }),
+      });
+
+      return res.json();
+    },
+  });
+
+  return <pre>{JSON.stringify(realtime.messages.all, null, 2)}</pre>;
 }
 ```
 

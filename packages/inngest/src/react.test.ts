@@ -1,6 +1,12 @@
+import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod/v3";
 import { realtime, staticSchema } from "./index.ts";
-import { type UseRealtimeResult, useRealtime } from "./react.ts";
+import {
+  type ClientSubscriptionToken,
+  getClientSubscriptionToken,
+  type UseRealtimeResult,
+  useRealtime,
+} from "./react.ts";
 
 // ---------------------------------------------------------------------------
 // Shared channel fixtures used across type tests
@@ -46,6 +52,10 @@ describe("react exports", () => {
     expect(typeof useRealtime).toBe("function");
   });
 
+  test("exports the client token helper", () => {
+    expect(typeof getClientSubscriptionToken).toBe("function");
+  });
+
   test("useRealtime return type includes message-first fields", () => {
     type HookResult = ReturnType<typeof useRealtime>;
 
@@ -63,6 +73,13 @@ describe("react exports", () => {
     expectTypeOf<HookResult["messages"]["delta"]>().toBeArray();
     expectTypeOf<HookResult["messages"]["last"]>().not.toBeAny();
     expectTypeOf<HookResult["reset"]>().toBeFunction();
+  });
+
+  test("ClientSubscriptionToken is a serializable token shape", () => {
+    expectTypeOf<ClientSubscriptionToken>().toEqualTypeOf<{
+      key: string;
+      apiBaseUrl?: string;
+    }>();
   });
 });
 
