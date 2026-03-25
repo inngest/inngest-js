@@ -13,7 +13,7 @@ async function* framesFrom(frames: SseFrame[]): AsyncGenerator<SseFrame> {
 
 describe("streamRun", () => {
   test("emits data chunks and collects them", async () => {
-    const collected: string[] = [];
+    const collected: { data: string; hashedStepId?: string }[] = [];
 
     const rs = streamRun<string>("http://test", {
       onData: (d) => collected.push(d),
@@ -27,15 +27,18 @@ describe("streamRun", () => {
 
     await rs;
 
-    expect(collected).toEqual(["hello", " world"]);
+    expect(collected).toEqual([
+      { data: "hello", hashedStepId: undefined },
+      { data: " world", hashedStepId: undefined },
+    ]);
     expect(rs.chunks).toEqual(["hello", " world"]);
   });
 
-  test("calls onFunctionSucceeded when succeeded result frame arrives", async () => {
-    const results: unknown[] = [];
+  test("calls onFunctionCompleted when succeeded result frame arrives", async () => {
+    const results: { data: unknown }[] = [];
 
     const rs = streamRun("http://test", {
-      onFunctionSucceeded: (d) => results.push(d),
+      onFunctionCompleted: (info) => results.push(info),
     });
     rs._fromSource(
       framesFrom([
@@ -46,7 +49,7 @@ describe("streamRun", () => {
 
     await rs;
 
-    expect(results).toEqual(["final"]);
+    expect(results).toEqual([{ data: "final" }]);
   });
 
   test("calls onFunctionFailed when failed result frame arrives", async () => {
@@ -99,13 +102,13 @@ describe("streamRun", () => {
   });
 
   test("emits step lifecycle hooks", async () => {
-    const running: string[] = [];
+    const running: { hashedStepId: string }[] = [];
     const completed: string[] = [];
     const errored: string[] = [];
 
     const rs = streamRun("http://test", {
-      onStepRunning: (id) => running.push(id),
-      onStepCompleted: (id) => completed.push(id),
+      onStepRunning: (info) => running.push(info),
+      onStepCompleted: (info) => completed.push(info.hashedStepId),
       onStepErrored: (id) => errored.push(id),
     });
     rs._fromSource(
@@ -125,7 +128,7 @@ describe("streamRun", () => {
 
     await rs;
 
-    expect(running).toEqual(["s1", "s2"]);
+    expect(running).toEqual([{ hashedStepId: "s1" }, { hashedStepId: "s2" }]);
     expect(completed).toEqual(["s1"]);
     expect(errored).toEqual(["s2"]);
   });
@@ -188,7 +191,7 @@ describe("streamRun", () => {
     const metadata: Array<{ runId: string }> = [];
 
     const rs = streamRun("http://test", {
-      onMetadata: (runId) => metadata.push({ runId }),
+      onMetadata: (info) => metadata.push(info),
     });
     rs._fromSource(
       framesFrom([{ type: "inngest.metadata", runId: "run-123" }]),
@@ -217,7 +220,7 @@ describe("streamRun", () => {
     }
 
     const rs = streamRun<string>("http://test", {
-      onData: (d) => collected.push(d),
+      onData: (d) => collected.push(d.data),
       onDone: done,
     });
     rs._fromSource(neverEnding());
@@ -233,7 +236,7 @@ describe("streamRun", () => {
     const done = vi.fn();
 
     const rs = streamRun<string>("http://test", {
-      onData: (d) => collected.push(d),
+      onData: (d) => collected.push(d.data),
       onDone: done,
     });
     rs._fromSource(
@@ -320,11 +323,11 @@ describe("streamRun", () => {
     expect(rs.chunks).toEqual(["a", "between"]);
   });
 
-  test("forwards data to onStepRunning", async () => {
-    const running: Array<{ id: string; data: unknown }> = [];
+  test("forwards hashedStepId to onStepRunning", async () => {
+    const running: Array<{ hashedStepId: string }> = [];
 
     const rs = streamRun("http://test", {
-      onStepRunning: (id, data) => running.push({ id, data }),
+      onStepRunning: (info) => running.push(info),
     });
     rs._fromSource(
       framesFrom([
@@ -339,7 +342,7 @@ describe("streamRun", () => {
 
     await rs;
 
-    expect(running).toEqual([{ id: "s1", data: { some: "info" } }]);
+    expect(running).toEqual([{ hashedStepId: "s1" }]);
   });
 
   test("parallel steps: only rolls back the errored step's chunks", async () => {

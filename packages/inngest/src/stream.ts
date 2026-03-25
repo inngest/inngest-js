@@ -97,14 +97,14 @@ export interface RunStreamOptions<TData = unknown> {
   /** Optional parse function to transform raw data chunks. */
   parse?: (data: unknown) => TData;
   /** Called for each parsed data chunk. */
-  onData?: (data: TData) => void;
+  onData?: (args: { data: TData; hashedStepId?: string }) => void;
   /** Called when chunks are rolled back due to a step error or disconnect. */
   onRollback?: (count: number) => void;
   /**
    * Called when the function completes successfully. The data is `unknown`
    * because SSE transport erases the original return type.
    */
-  onFunctionSucceeded?: (data: unknown) => void;
+  onFunctionCompleted?: (args: { data: unknown }) => void;
   /**
    * Called when the function fails permanently (NonRetriableError or final
    * attempt). Will not fire for retryable errors — those simply end the
@@ -112,16 +112,16 @@ export interface RunStreamOptions<TData = unknown> {
    */
   onFunctionFailed?: (error: string) => void;
   /** Called when a step begins running. */
-  onStepRunning?: (stepId: string, data?: unknown) => void;
+  onStepRunning?: (args: { hashedStepId: string }) => void;
   /**
    * Called when a step completes successfully. The data is `unknown` because
    * SSE transport erases the original step output type.
    */
-  onStepCompleted?: (stepId: string, data?: unknown) => void;
+  onStepCompleted?: (args: { hashedStepId: string }) => void;
   /** Called when a step errors. */
   onStepErrored?: (stepId: string, info: StepErrorInfo) => void;
   /** Called when run metadata is received. */
-  onMetadata?: (runId: string) => void;
+  onMetadata?: (args: { runId: string }) => void;
   /** Called when the stream is fully consumed (including on abort or error). */
   onDone?: () => void;
   /** Called when a stream-level error occurs (network failure, non-200, etc.). */
@@ -141,7 +141,7 @@ export interface RunStreamOptions<TData = unknown> {
  * await streamRun<string>("/api/demo", {
  *   parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
  *   onData: (chunk) => console.log(chunk),
- *   onFunctionSucceeded: (data) => console.log("done:", data),
+ *   onFunctionCompleted: ({ data }) => console.log("done:", data),
  *   onFunctionFailed: (error) => console.error("failed:", error),
  * });
  * ```
@@ -289,18 +289,20 @@ export class RunStream<TData = unknown> {
           case "stream": {
             const parsed = this._parseFn(frame.data);
             this._pushChunk(parsed, frame.stepId);
-            this.opts.onData?.(parsed);
+            this.opts.onData?.({ data: parsed, hashedStepId: frame.stepId });
             yield parsed;
             break;
           }
           case "inngest.step": {
             if (frame.status === "running") {
               inFlightSteps.add(frame.stepId);
-              this.opts.onStepRunning?.(frame.stepId, frame.data);
+              this.opts.onStepRunning?.({ hashedStepId: frame.stepId });
             } else if (frame.status === "completed") {
               inFlightSteps.delete(frame.stepId);
               this._commitStepId(frame.stepId);
-              this.opts.onStepCompleted?.(frame.stepId, frame.data);
+              this.opts.onStepCompleted?.({
+                hashedStepId: frame.stepId,
+              });
             } else if (frame.status === "errored") {
               inFlightSteps.delete(frame.stepId);
               const count = this._rollbackStepId(frame.stepId);
@@ -316,13 +318,13 @@ export class RunStream<TData = unknown> {
           }
           case "inngest.result":
             if (frame.status === "succeeded") {
-              this.opts.onFunctionSucceeded?.(frame.data);
+              this.opts.onFunctionCompleted?.({ data: frame.data });
             } else {
               this.opts.onFunctionFailed?.(frame.error);
             }
             break outer;
           case "inngest.metadata":
-            this.opts.onMetadata?.(frame.runId);
+            this.opts.onMetadata?.({ runId: frame.runId });
             break;
           default:
             break;
