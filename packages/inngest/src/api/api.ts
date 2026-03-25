@@ -526,13 +526,13 @@ export class InngestApi {
    */
   async checkpointStepsAsync(args: {
     runId: string;
-    fnId?: string;
+    fnId: string;
     queueItemId: string;
     steps: OutgoingOp[];
   }): Promise<void> {
     const body = JSON.stringify({
       run_id: args.runId,
-      ...(args.fnId && { fn_id: args.fnId }),
+      fn_id: args.fnId,
       qi_id: args.queueItemId,
       steps: args.steps,
       ts: new Date().valueOf(),
@@ -605,17 +605,7 @@ export class InngestApi {
    * If `existingToken` is provided (e.g. from CheckpointNewRunResponse),
    * it is used directly, skipping the round-trip to /v1/realtime/token.
    */
-  async getRealtimeStreamRedirect(
-    runId: string,
-    existingToken?: string,
-  ): Promise<{ url: string }> {
-    let token: string;
-    if (existingToken) {
-      token = existingToken;
-    } else {
-      token = await this.getSubscriptionToken(runId, ["$stream"]);
-    }
-
+  async getRealtimeStreamRedirect(token: string): Promise<{ url: string }> {
     const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
     sseUrl.searchParams.set("token", token);
 

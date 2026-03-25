@@ -397,12 +397,25 @@ class InngestExecutionEngine
         );
       }
     } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
+      const { internalFnId, queueItemId } = this.options;
+      if (!queueItemId) {
+        throw new Error(
+          "Missing queueItemId for async checkpointing. This is a bug in the Inngest SDK.",
+        );
+      }
+
+      if (!internalFnId) {
+        throw new Error(
+          "Missing internalFnId for async checkpointing. This is a bug in the Inngest SDK.",
+        );
+      }
+
       await retryWithBackoff(
         () =>
           this.options.client["inngestApi"].checkpointStepsAsync({
             runId: this.fnArg.runId,
-            fnId: this.options.internalFnId,
-            queueItemId: this.options.queueItemId ?? "",
+            fnId: internalFnId,
+            queueItemId,
             steps,
           }),
         CHECKPOINT_RETRY_OPTIONS,
@@ -573,9 +586,10 @@ class InngestExecutionEngine
 
     this.redirectPromise = (async () => {
       try {
-        const redirect = await this.options.client[
-          "inngestApi"
-        ].getRealtimeStreamRedirect(this.fnArg.runId, realtimeToken);
+        const redirect =
+          await this.options.client["inngestApi"].getRealtimeStreamRedirect(
+            realtimeToken,
+          );
 
         this.streamTools.sendRedirectInfo({
           runId: this.fnArg.runId,
