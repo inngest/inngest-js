@@ -177,6 +177,13 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
           }
 
           events.push({ event, data });
+
+          // Terminal events mean the stream is logically done, even if the
+          // server keeps the connection open (e.g. Dev Server SSE).
+          if (event === "inngest.result") {
+            reader.cancel("terminal event received").catch(() => {});
+            break;
+          }
         }
       }
     } catch (err) {

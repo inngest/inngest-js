@@ -843,9 +843,11 @@ class InngestExecutionEngine
           // Non-SSE: fall through to normal response handling.
         }
 
-        // If the client accepts SSE (but stream.push() was NOT called),
-        // build the SSE Response now. Extract the body from Response objects
-        // so they can be wrapped as SSE result frames.
+        // If the client accepts SSE (but stream.push() was NOT called), build
+        // the SSE Response now. The SSE envelope is always needed when the
+        // client requests it because it carries inngest.metadata and
+        // inngest.redirect_info. Without these the client can't reconnect if a
+        // future execution goes async.
         if (this.options.acceptsSse) {
           if (checkpoint.data instanceof Response) {
             checkpoint = {

@@ -87,7 +87,7 @@ describe("InngestStream.stepLifecycle", () => {
     s.stepLifecycle("my-step", "running");
     s.stepLifecycle("my-step", "completed");
     s.stepLifecycle("my-step", "errored", {
-      will_retry: true,
+      willRetry: true,
       error: "boom",
     });
     s.end();
@@ -98,6 +98,6 @@ describe("InngestStream.stepLifecycle", () => {
     expect(raw).toContain('"status":"running"');
     expect(raw).toContain('"status":"completed"');
     expect(raw).toContain('"status":"errored"');
-    expect(raw).toContain('"will_retry":true');
+    expect(raw).toContain('"willRetry":true');
   });
 });

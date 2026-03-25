@@ -514,7 +514,7 @@ describe("error and rollback", () => {
       expect(erroredFrames.length).toBeGreaterThanOrEqual(1);
 
       const errorData = JSON.parse(erroredFrames[0]!.data);
-      // will_retry is nested inside the data field of the step frame
+      // willRetry is nested inside the data field of the step frame
       const willRetry = errorData.data?.willRetry ?? errorData.willRetry;
       expect(willRetry).toBe(false);
     },
