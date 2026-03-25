@@ -10,9 +10,12 @@ import { stream } from "../../../experimental/durable-endpoints.ts";
 import { step } from "../../../index.ts";
 
 import {
+  createGate,
+  getStreamData,
   pollForAsyncReader,
   readSseStream,
   setupEndpoint,
+  startSseReader,
   streamingMethods,
   streamWith,
 } from "./helpers.ts";
@@ -214,6 +217,65 @@ test("mixed push and pipe in one step", async () => {
     },
   ]);
 
+  await state.waitForRunComplete();
+});
+
+test("stream data is not buffered in sync or async mode", async () => {
+  const state = createState({});
+
+  // Use gates to pause between chunks, allowing us to assert that SSE events
+  // arrive incrementally
+  const gates = {
+    syncStep: createGate(),
+    asyncStep: createGate(),
+  };
+
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      stream.push("first");
+      await gates.syncStep.promise;
+      stream.push("second");
+    });
+    await step.sleep("go-async", "1s");
+    await step.run("b", async () => {
+      stream.push("third");
+      await gates.asyncStep.promise;
+      stream.push("fourth");
+    });
+    return Response.json("done");
+  });
+
+  // Sync SSE stream
+  const res = await fetch(`http://localhost:${port}/api/demo`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  expect(res.status).toBe(200);
+
+  const sse = startSseReader(res);
+
+  // First SSE event
+  await sse.waitForStreamData("first");
+  expect(getStreamData(sse.events)).not.toContain("second");
+
+  // Open gate, allowing second SSE event
+  gates.syncStep.open();
+  await sse.waitForStreamData("second");
+
+  await sse.done;
+  state.runId = sse.getRunId();
+
+  // Async SSE stream
+  const sse2 = await pollForAsyncReader(sse.getRedirectUrl()!);
+
+  // Third SSE event
+  await sse2.waitForStreamData("third");
+  expect(getStreamData(sse2.events)).not.toContain("fourth");
+
+  // Open gate, allowing fourth SSE event
+  gates.asyncStep.open();
+  await sse2.waitForStreamData("fourth");
+
+  await sse2.done;
   await state.waitForRunComplete();
 });
 
