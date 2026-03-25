@@ -71,7 +71,7 @@ describe("streamRun", () => {
     expect(errors).toEqual(["Dog Speak is Much Too Hard to Translate"]);
   });
 
-  test("rolls back chunks on step error using step_id", async () => {
+  test("rolls back chunks on step error using stepId", async () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
@@ -79,12 +79,12 @@ describe("streamRun", () => {
     });
     rs._fromSource(
       framesFrom([
-        { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "a", step_id: "s1" },
-        { type: "stream", data: "b", step_id: "s1" },
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "stream", data: "a", stepId: "s1" },
+        { type: "stream", data: "b", stepId: "s1" },
         {
           type: "inngest.step",
-          step_id: "s1",
+          stepId: "s1",
           status: "errored",
           will_retry: true,
           error: "boom",
@@ -110,12 +110,12 @@ describe("streamRun", () => {
     });
     rs._fromSource(
       framesFrom([
-        { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "inngest.step", step_id: "s1", status: "completed" },
-        { type: "inngest.step", step_id: "s2", status: "running" },
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "inngest.step", stepId: "s1", status: "completed" },
+        { type: "inngest.step", stepId: "s2", status: "running" },
         {
           type: "inngest.step",
-          step_id: "s2",
+          stepId: "s2",
           status: "errored",
           will_retry: false,
           error: "fail",
@@ -159,8 +159,8 @@ describe("streamRun", () => {
     });
     rs._fromSource(
       framesFrom([
-        { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "partial", step_id: "s1" },
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "stream", data: "partial", stepId: "s1" },
         // Stream ends without step:completed or step:errored
       ]),
     );
@@ -304,10 +304,10 @@ describe("streamRun", () => {
     });
     rs._fromSource(
       framesFrom([
-        { type: "inngest.step", step_id: "s1", status: "running" },
-        { type: "stream", data: "a", step_id: "s1" },
-        { type: "inngest.step", step_id: "s1", status: "completed" },
-        // Chunks emitted between steps (no step_id — outside any step)
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "stream", data: "a", stepId: "s1" },
+        { type: "inngest.step", stepId: "s1", status: "completed" },
+        // Chunks emitted between steps (no stepId — outside any step)
         { type: "stream", data: "between" },
         // Stream disconnects here — no step is active, so no rollback
       ]),
@@ -330,7 +330,7 @@ describe("streamRun", () => {
       framesFrom([
         {
           type: "inngest.step",
-          step_id: "s1",
+          stepId: "s1",
           status: "running",
           data: { some: "info" },
         },
@@ -350,19 +350,19 @@ describe("streamRun", () => {
     });
     rs._fromSource(
       framesFrom([
-        { type: "inngest.step", step_id: "A", status: "running" },
-        { type: "inngest.step", step_id: "B", status: "running" },
-        { type: "stream", data: "A1", step_id: "A" },
-        { type: "stream", data: "B1", step_id: "B" },
-        { type: "stream", data: "A2", step_id: "A" },
+        { type: "inngest.step", stepId: "A", status: "running" },
+        { type: "inngest.step", stepId: "B", status: "running" },
+        { type: "stream", data: "A1", stepId: "A" },
+        { type: "stream", data: "B1", stepId: "B" },
+        { type: "stream", data: "A2", stepId: "A" },
         {
           type: "inngest.step",
-          step_id: "B",
+          stepId: "B",
           status: "errored",
           will_retry: true,
           error: "fail",
         },
-        { type: "inngest.step", step_id: "A", status: "completed" },
+        { type: "inngest.step", stepId: "A", status: "completed" },
       ]),
     );
 
@@ -381,10 +381,10 @@ describe("streamRun", () => {
     });
     rs._fromSource(
       framesFrom([
-        { type: "inngest.step", step_id: "s1", status: "running" },
+        { type: "inngest.step", stepId: "s1", status: "running" },
         {
           type: "inngest.step",
-          step_id: "s1",
+          stepId: "s1",
           status: "errored",
           will_retry: true,
           error: "boom",
@@ -407,15 +407,15 @@ describe("streamRun", () => {
     rs._fromSource(
       framesFrom([
         // Step "A" runs and completes — its chunks are committed
-        { type: "inngest.step", step_id: "A", status: "running" },
-        { type: "stream", data: "first-A", step_id: "A" },
-        { type: "inngest.step", step_id: "A", status: "completed" },
+        { type: "inngest.step", stepId: "A", status: "running" },
+        { type: "stream", data: "first-A", stepId: "A" },
+        { type: "inngest.step", stepId: "A", status: "completed" },
         // Same step ID runs again (retry) and errors
-        { type: "inngest.step", step_id: "A", status: "running" },
-        { type: "stream", data: "retry-A", step_id: "A" },
+        { type: "inngest.step", stepId: "A", status: "running" },
+        { type: "stream", data: "retry-A", stepId: "A" },
         {
           type: "inngest.step",
-          step_id: "A",
+          stepId: "A",
           status: "errored",
           will_retry: true,
           error: "retry fail",

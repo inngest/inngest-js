@@ -553,7 +553,7 @@ describe("error and rollback", () => {
     },
   );
 
-  test("push outside step.run has no step_id", { timeout: 60000 }, async () => {
+  test("push outside step.run has no stepId", { timeout: 60000 }, async () => {
     const { port } = await setupEndpoint(async () => {
       await step.run("first", async () => {
         stream.push("inside-step");
@@ -575,7 +575,7 @@ describe("error and rollback", () => {
 
     const { events } = await readSSEStream(res, 15_000);
 
-    // Find the "between" stream frame and verify it has no step_id
+    // Find the "between" stream frame and verify it has no stepId
     const streamEvents = events.filter((e) => e.event === "stream");
     const betweenFrame = streamEvents.find((e) => {
       try {
@@ -588,13 +588,13 @@ describe("error and rollback", () => {
 
     expect(betweenFrame).toBeDefined();
 
-    // Parse the frame data and check for absence of step_id
+    // Parse the frame data and check for absence of stepId
     const parsedBetween = JSON.parse(betweenFrame!.data);
     if (typeof parsedBetween === "object" && parsedBetween !== null) {
-      expect(parsedBetween.step_id).toBeUndefined();
+      expect(parsedBetween.stepId).toBeUndefined();
     }
 
-    // The inside-step frame should have a step_id
+    // The inside-step frame should have a stepId
     const insideFrame = streamEvents.find((e) => {
       try {
         const parsed = JSON.parse(e.data);
@@ -606,7 +606,7 @@ describe("error and rollback", () => {
     expect(insideFrame).toBeDefined();
     const parsedInside = JSON.parse(insideFrame!.data);
     if (typeof parsedInside === "object" && parsedInside !== null) {
-      expect(parsedInside.step_id).toBeDefined();
+      expect(parsedInside.stepId).toBeDefined();
     }
   });
 

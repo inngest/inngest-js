@@ -166,7 +166,7 @@ export function streamRun<TData = unknown>(
  * @internal
  */
 export class RunStream<TData = unknown> {
-  private _tagged: Array<{ data: TData; step_id?: string }> = [];
+  private _tagged: Array<{ data: TData; stepId?: string }> = [];
   private _chunks: TData[] = [];
   private _consumed = false;
   private _source: AsyncIterable<SSEFrame> | undefined;
@@ -183,7 +183,7 @@ export class RunStream<TData = unknown> {
   }
 
   private _pushChunk(data: TData, stepId?: string): void {
-    this._tagged.push({ data, step_id: stepId });
+    this._tagged.push({ data, stepId });
     this._chunks.push(data);
   }
 
@@ -193,21 +193,21 @@ export class RunStream<TData = unknown> {
    */
   private _rollbackStepId(stepId: string): number {
     const before = this._tagged.length;
-    this._tagged = this._tagged.filter((c) => c.step_id !== stepId);
+    this._tagged = this._tagged.filter((c) => c.stepId !== stepId);
     this._chunks = this._tagged.map((c) => c.data);
     return before - this._tagged.length;
   }
 
   /**
    * Mark all chunks belonging to `stepId` as committed by clearing their
-   * step_id tag. Committed chunks can never be rolled back — even if a
+   * stepId tag. Committed chunks can never be rolled back — even if a
    * same-named step retries and errors later, only uncommitted chunks from
    * that retry will be removed.
    */
   private _commitStepId(stepId: string): void {
     for (const entry of this._tagged) {
-      if (entry.step_id === stepId) {
-        entry.step_id = undefined;
+      if (entry.stepId === stepId) {
+        entry.stepId = undefined;
       }
     }
   }
@@ -287,26 +287,26 @@ export class RunStream<TData = unknown> {
         switch (frame.type) {
           case "stream": {
             const parsed = this._parseFn(frame.data);
-            this._pushChunk(parsed, frame.step_id);
+            this._pushChunk(parsed, frame.stepId);
             this.opts.onData?.(parsed);
             yield parsed;
             break;
           }
           case "inngest.step": {
             if (frame.status === "running") {
-              inFlightSteps.add(frame.step_id);
-              this.opts.onStepRunning?.(frame.step_id, frame.data);
+              inFlightSteps.add(frame.stepId);
+              this.opts.onStepRunning?.(frame.stepId, frame.data);
             } else if (frame.status === "completed") {
-              inFlightSteps.delete(frame.step_id);
-              this._commitStepId(frame.step_id);
-              this.opts.onStepCompleted?.(frame.step_id, frame.data);
+              inFlightSteps.delete(frame.stepId);
+              this._commitStepId(frame.stepId);
+              this.opts.onStepCompleted?.(frame.stepId, frame.data);
             } else if (frame.status === "errored") {
-              inFlightSteps.delete(frame.step_id);
-              const count = this._rollbackStepId(frame.step_id);
+              inFlightSteps.delete(frame.stepId);
+              const count = this._rollbackStepId(frame.stepId);
               if (count > 0) {
                 this.opts.onRollback?.(count);
               }
-              this.opts.onStepErrored?.(frame.step_id, {
+              this.opts.onStepErrored?.(frame.stepId, {
                 willRetry: frame.will_retry,
                 error: frame.error,
               });

@@ -15,7 +15,7 @@ export interface SSEMetadataFrame {
 export interface SSEStreamFrame {
   type: "stream";
   data: unknown;
-  step_id?: string;
+  stepId?: string;
 }
 
 export interface SSEResultSucceededFrame {
@@ -44,21 +44,21 @@ export interface StepErrorData {
 
 export interface SSEStepRunningFrame {
   type: "inngest.step";
-  step_id: string;
+  stepId: string;
   status: "running";
   data?: unknown;
 }
 
 export interface SSEStepCompletedFrame {
   type: "inngest.step";
-  step_id: string;
+  stepId: string;
   status: "completed";
   data?: unknown;
 }
 
 export interface SSEStepErroredFrame extends StepErrorData {
   type: "inngest.step";
-  step_id: string;
+  stepId: string;
   status: "errored";
 }
 
@@ -95,7 +95,7 @@ const sseMetadataPayloadSchema = z.object({
 
 const sseStreamPayloadSchema = z.object({
   data: z.unknown(),
-  step_id: z.string().optional(),
+  stepId: z.string().optional(),
 });
 
 const stepErrorDataSchema = z.object({
@@ -104,7 +104,7 @@ const stepErrorDataSchema = z.object({
 });
 
 const sseStepPayloadSchema = z.object({
-  step_id: z.string(),
+  stepId: z.string(),
   status: z.enum(["running", "completed", "errored"]),
   data: z.unknown().optional(),
 });
@@ -152,7 +152,7 @@ export function buildSSEMetadataFrame(runId: string): string {
  */
 export function buildSSEStreamFrame(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
-  if (stepId) payload.step_id = stepId;
+  if (stepId) payload.stepId = stepId;
   return buildSSEFrame("stream", payload);
 }
 
@@ -335,7 +335,7 @@ export function buildSSEStepFrame(
   status: SSEStepFrame["status"],
   data?: unknown,
 ): string {
-  const payload: Record<string, unknown> = { step_id: stepId, status };
+  const payload: Record<string, unknown> = { stepId, status };
   if (data !== undefined) {
     payload.data = data;
   }
@@ -421,7 +421,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       return {
         type: "stream",
         data: result.data.data,
-        ...(result.data.step_id ? { step_id: result.data.step_id } : {}),
+        ...(result.data.stepId ? { stepId: result.data.stepId } : {}),
       };
     }
     case "inngest.result": {
@@ -433,13 +433,13 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
       const result = sseStepPayloadSchema.safeParse(parsed);
       if (!result.success) return undefined;
 
-      const { step_id, status, data } = result.data;
+      const { stepId, status, data } = result.data;
 
       if (status === "errored") {
         const errResult = stepErrorDataSchema.safeParse(data ?? {});
         return {
           type: "inngest.step",
-          step_id,
+          stepId,
           status: "errored",
           will_retry: errResult.success ? errResult.data.will_retry : false,
           error: errResult.success ? errResult.data.error : "unknown",
@@ -448,7 +448,7 @@ export function parseSSEFrame(raw: RawSSEEvent): SSEFrame | undefined {
 
       return {
         type: "inngest.step" as const,
-        step_id,
+        stepId,
         status,
         data,
       };

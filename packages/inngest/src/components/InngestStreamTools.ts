@@ -146,7 +146,7 @@ export class InngestStream {
 
   /**
    * Write a single SSE stream frame containing `data`. The current step's
-   * hashed ID is automatically included as step_id for rollback tracking.
+   * hashed ID is automatically included as stepId for rollback tracking.
    */
   push(data: unknown): void {
     this.activate();
