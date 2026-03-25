@@ -202,7 +202,7 @@ describe("MetadataBuilder.update", () => {
     expect(addMetadata).toHaveBeenCalledWith(
       "step-ctx",
       "userland.default",
-      "step_attempt",
+      "step",
       "merge",
       {
         foo: "bar",
@@ -231,7 +231,7 @@ describe("MetadataBuilder.update", () => {
     expect(addMetadata).toHaveBeenCalledWith(
       "step-ctx",
       "userland.default",
-      "step_attempt",
+      "step",
       "merge",
       {
         foo: "bar",
