@@ -49,9 +49,10 @@ for await (const frame of subscribeToRun({ url: "/api/demo" })) {
 
 ## Options
 
+`streamRun(url, opts?)` takes the endpoint URL as its first argument. The remaining options are passed as the second argument:
+
 ```ts
-interface RunStreamOptions<TData> {
-  url: string;
+interface StreamRunOptions<TData> {
   signal?: AbortSignal;
   fetch?: typeof globalThis.fetch;
   parse?: (data: unknown) => TData;
