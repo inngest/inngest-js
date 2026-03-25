@@ -1,6 +1,7 @@
 /*
- * This test file is for Durable Endpoints that do not go into async mode and do
- * not stream.
+ * This test file is for Durable Endpoints that:
+ * - Do not go into async mode
+ * - Do not stream
  */
 
 import { testNameFromFileUrl } from "@inngest/test-harness";
