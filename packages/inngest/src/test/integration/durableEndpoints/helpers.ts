@@ -2,8 +2,8 @@ import http from "node:http";
 import { randomSuffix } from "@inngest/test-harness";
 import { onTestFinished } from "vitest";
 import {
-  type RawSseEvent,
   iterSse,
+  type RawSseEvent,
 } from "../../../components/execution/streaming.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { Inngest, type Logger } from "../../../index.ts";

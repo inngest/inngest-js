@@ -14,7 +14,7 @@ export default defineConfig({
     globalSetup: ["./vitest.setup.integration.ts"],
     testTimeout: 60000,
     hookTimeout: 30000,
-    silent: false,
+    silent: "passed-only",
     hideSkippedTests: true,
     typecheck: {
       enabled: true,

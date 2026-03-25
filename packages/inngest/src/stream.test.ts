@@ -103,12 +103,10 @@ describe("streamRun", () => {
   test("emits step lifecycle hooks", async () => {
     const running: { hashedStepId: string }[] = [];
     const completed: string[] = [];
-    const errored: { hashedStepId: string }[] = [];
 
     const rs = streamRun("http://test", {
       onStepRunning: (info) => running.push(info),
       onStepCompleted: (info) => completed.push(info.hashedStepId),
-      onStepErrored: (info) => errored.push(info),
     });
     rs._fromSource(
       eventsFrom([
@@ -128,7 +126,6 @@ describe("streamRun", () => {
 
     expect(running).toEqual([{ hashedStepId: "s1" }, { hashedStepId: "s2" }]);
     expect(completed).toEqual(["s1"]);
-    expect(errored).toEqual([{ hashedStepId: "s2" }]);
   });
 
   test("yields parsed chunks via async iteration", async () => {
@@ -152,11 +149,8 @@ describe("streamRun", () => {
 
   test("synthesizes rollback on mid-step disconnect", async () => {
     const rolledBack: number[] = [];
-    const errored: { hashedStepId: string }[] = [];
-
     const rs = streamRun<string>("http://test", {
       onRollback: (count) => rolledBack.push(count),
-      onStepErrored: (info) => errored.push(info),
     });
     rs._fromSource(
       eventsFrom([
@@ -169,7 +163,7 @@ describe("streamRun", () => {
     await rs;
 
     expect(rolledBack).toEqual([1]);
-    expect(errored).toEqual([{ hashedStepId: "s1" }]);
+    expect(rs.chunks).toEqual([]);
   });
 
   test("throws if consumed twice", async () => {
@@ -246,8 +240,8 @@ describe("streamRun", () => {
     expect(done).toHaveBeenCalledOnce();
   });
 
-  test("calls onError and onDone when source throws", async () => {
-    const onError = vi.fn();
+  test("calls onStreamError and onDone when source throws", async () => {
+    const onStreamError = vi.fn();
     const onDone = vi.fn();
 
     async function* exploding(): AsyncGenerator<SseEvent> {
@@ -256,16 +250,16 @@ describe("streamRun", () => {
     }
 
     const rs = streamRun<string>("http://test", {
-      onError,
+      onStreamError,
       onDone,
     });
     rs._fromSource(exploding());
 
     await expect(rs).rejects.toThrow("network failure");
 
-    expect(onError).toHaveBeenCalledOnce();
-    expect(onError.mock.calls[0]![0]).toBeInstanceOf(Error);
-    expect((onError.mock.calls[0]![0] as Error).message).toBe(
+    expect(onStreamError).toHaveBeenCalledOnce();
+    expect(onStreamError.mock.calls[0]![0]).toBeInstanceOf(Error);
+    expect((onStreamError.mock.calls[0]![0] as Error).message).toBe(
       "network failure",
     );
     expect(onDone).toHaveBeenCalledOnce();

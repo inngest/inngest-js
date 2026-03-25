@@ -79,14 +79,6 @@ export async function* subscribeToRun(
 // streamRun — high-level hook-based API
 // ---------------------------------------------------------------------------
 
-/**
- * Information about a step error, passed to the `onStepErrored` callback.
- */
-export interface StepErrorInfo {
-  willRetry: boolean;
-  error: string;
-}
-
 export interface RunStreamOptions<TData = unknown> {
   /** The URL of the Durable Endpoint to connect to. */
   url: string;
@@ -118,14 +110,12 @@ export interface RunStreamOptions<TData = unknown> {
    * SSE transport erases the original step output type.
    */
   onStepCompleted?: (args: { hashedStepId: string }) => void;
-  /** Called when a step errors. */
-  onStepErrored?: (args: { hashedStepId: string }) => void;
   /** Called when run metadata is received. */
   onMetadata?: (args: { runId: string }) => void;
   /** Called when the stream is fully consumed (including on abort or error). */
   onDone?: () => void;
   /** Called when a stream-level error occurs (network failure, non-200, etc.). */
-  onError?: (error: unknown) => void;
+  onStreamError?: (error: unknown) => void;
 }
 
 /**
@@ -308,9 +298,6 @@ export class RunStream<TData = unknown> {
               if (count > 0) {
                 this.opts.onRollback?.(count);
               }
-              this.opts.onStepErrored?.({
-                hashedStepId: sseEvent.stepId,
-              });
             }
             break;
           }
@@ -335,12 +322,9 @@ export class RunStream<TData = unknown> {
         if (count > 0) {
           this.opts.onRollback?.(count);
         }
-        this.opts.onStepErrored?.({
-          hashedStepId: stepId,
-        });
       }
     } catch (error) {
-      this.opts.onError?.(error);
+      this.opts.onStreamError?.(error);
       throw error;
     } finally {
       this.opts.onDone?.();

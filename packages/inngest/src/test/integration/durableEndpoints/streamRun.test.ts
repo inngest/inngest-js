@@ -40,7 +40,7 @@ test("async mode", async () => {
       },
     ],
     onDone: [undefined],
-    onError: [],
+    onStreamError: [],
 
     // FIXME: Should we parse this as JSON?
     onFunctionCompleted: [{ data: '"fn output"' }],
@@ -56,7 +56,6 @@ test("async mode", async () => {
       { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
       { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
     ],
-    onStepErrored: [],
     onStepRunning: [
       { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
       { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
@@ -121,7 +120,7 @@ test("retries", async () => {
       },
     ],
     onDone: [undefined],
-    onError: [],
+    onStreamError: [],
 
     // FIXME: Should we parse this as JSON?
     onFunctionCompleted: [{ data: '"fn output"' }],
@@ -136,10 +135,6 @@ test("retries", async () => {
     ],
     onRollback: [undefined, undefined],
     onStepCompleted: [
-      { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
-      { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
-    ],
-    onStepErrored: [
       { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
       { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
     ],
@@ -209,13 +204,12 @@ async function collectCalls(url: string) {
   const calls = {
     onData: [] as { data: unknown; hashedStepId?: string }[],
     onDone: [] as undefined[],
-    onError: [] as undefined[],
+    onStreamError: [] as undefined[],
     onFunctionCompleted: [] as { data: unknown }[],
     onFunctionFailed: [] as undefined[],
     onMetadata: [] as { runId: string }[],
     onRollback: [] as undefined[],
     onStepCompleted: [] as { hashedStepId: string }[],
-    onStepErrored: [] as { hashedStepId: string }[],
     onStepRunning: [] as { hashedStepId: string }[],
   };
   let runId = "";
@@ -227,8 +221,8 @@ async function collectCalls(url: string) {
     onDone: () => {
       calls.onDone.push(undefined);
     },
-    onError: () => {
-      calls.onError.push(undefined);
+    onStreamError: () => {
+      calls.onStreamError.push(undefined);
     },
     onFunctionCompleted: (args) => {
       calls.onFunctionCompleted.push(args);
@@ -245,9 +239,6 @@ async function collectCalls(url: string) {
     },
     onStepCompleted: (args) => {
       calls.onStepCompleted.push(args);
-    },
-    onStepErrored: (args) => {
-      calls.onStepErrored.push(args);
     },
     onStepRunning: (args) => {
       calls.onStepRunning.push(args);
@@ -281,7 +272,7 @@ async function rollbacker(
       committed.push(...inProgress);
       inProgress = [];
     },
-    onStepErrored: () => {
+    onRollback: () => {
       inProgress = [];
     },
   });
