@@ -2150,7 +2150,7 @@ export class InngestCommHandler<
 
       const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
         requestedRunStep,
-        Boolean(ctx?.fn_id) || forceExecution,
+        ctx?.fn_id,
         Boolean(ctx?.disable_immediate_execution),
       );
 
