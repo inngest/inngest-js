@@ -2,10 +2,10 @@ import { Context, EventPayload, InngestFunction } from "inngest";
 import {
   errors,
   InngestExecution,
-  InngestExecutionV1,
+  InngestExecutionEngine,
   ServerTiming,
 } from "inngest/internals";
-import { StepOpCode } from "inngest/types";
+import { StepMode, StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
 import type { Mock } from "./spy.js";
@@ -343,7 +343,7 @@ export class InngestTestEngine {
       steps: [{ id: stepId }],
     });
 
-    const hashedStepId = InngestExecutionV1._internals.hashId(stepId);
+    const hashedStepId = InngestExecutionEngine._internals.hashId(stepId);
 
     const step = foundSteps.result.steps.find(
       (step) => step.id === hashedStepId
@@ -383,8 +383,11 @@ export class InngestTestEngine {
       [StepOpCode.WaitForEvent]: () => baseRet,
       [StepOpCode.WaitForSignal]: () => baseRet,
       [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
+      [StepOpCode.StepFailed]: () => ({ ...baseRet, error: step.error }),
       [StepOpCode.AiGateway]: () => baseRet,
       [StepOpCode.Gateway]: () => baseRet,
+      [StepOpCode.RunComplete]: () => baseRet,
+      [StepOpCode.DiscoveryRequest]: () => baseRet,
     };
 
     const result = opHandlers[step.op]();
@@ -455,7 +458,7 @@ export class InngestTestEngine {
         ...step,
         id: step.idIsHashed
           ? step.id
-          : InngestExecutionV1._internals.hashId(step.id),
+          : InngestExecutionEngine._internals.hashId(step.id),
       };
     });
 
@@ -609,7 +612,6 @@ export class InngestTestEngine {
     const execution = (options.function as InngestFunction.Any)[
       "createExecution"
     ]({
-      version: InngestExecution.ExecutionVersion.V2,
       partialOptions: {
         runId,
         client: (options.function as InngestFunction.Any)["client"],
@@ -623,9 +625,15 @@ export class InngestTestEngine {
         headers: {},
         stepCompletionOrder: steps.map((step) => step.id),
         stepState: mockStepState,
+        stepMode: StepMode.Async,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
         isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
-        timer: new ServerTiming.ServerTiming(),
+        timer: new ServerTiming.ServerTiming({
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+          debug: () => {},
+        }),
         requestedRunStep: options.targetStepId,
         transformCtx: this.options.transformCtx ?? mockCtx,
       },
