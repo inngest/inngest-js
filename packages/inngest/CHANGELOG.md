@@ -1,5 +1,11 @@
 # inngest
 
+## 4.1.0
+
+### Minor Changes
+
+- [#1342](https://github.com/inngest/inngest-js/pull/1342) [`627c0720`](https://github.com/inngest/inngest-js/commit/627c072088a19a6fa4834d219b192066cffa2f60) Thanks [@jacobheric](https://github.com/jacobheric)! - Adds first class, internal realtime support with improved DX for publishing and subscribing to typed channels and topics. See: https://www.inngest.com/docs/features/realtime
+
 ## 4.0.5
 
 ### Patch Changes
