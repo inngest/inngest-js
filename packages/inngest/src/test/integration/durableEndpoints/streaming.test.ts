@@ -1,44 +1,19 @@
-import {
-  createState,
-  randomSuffix,
-  testNameFromFileUrl,
-} from "@inngest/test-harness";
-import { describe, expect, onTestFinished, test } from "vitest";
-import { endpointAdapter } from "../../../edge.ts";
+import { createState, testNameFromFileUrl } from "@inngest/test-harness";
+import { describe, expect, test } from "vitest";
 import { stream } from "../../../experimental/durable-endpoints.ts";
-import { Inngest, NonRetriableError, step } from "../../../index.ts";
+import { NonRetriableError, step } from "../../../index.ts";
 
 import {
-  createEndpointServer,
   createGate,
   getStreamData,
   pollForAsyncReader,
   pollForAsyncStream,
   readSseStream,
+  setupEndpoint,
   startSseReader,
 } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
-
-/**
- * Helper: create an Inngest client + endpoint server, registering cleanup.
- */
-async function setupEndpoint(
-  handler: (req: Request) => Promise<Response>,
-): Promise<{ port: number; server: import("node:http").Server }> {
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    endpointAdapter,
-  });
-
-  const endpointHandler = client.endpoint(handler);
-  const { port, server } = await createEndpointServer(endpointHandler);
-  onTestFinished(
-    () => new Promise<void>((resolve) => server.close(() => resolve())),
-  );
-  return { port, server };
-}
 
 test(
   "durable endpoint streams data before and after async mode",
@@ -50,32 +25,35 @@ test(
       insideAsyncStep: createGate(),
     };
 
-    const { port } = await setupEndpoint(async (_req: Request) => {
-      await step.run("before-async-mode-1", async () => {
-        stream.push("Hello\n");
-      });
-
-      // Used to for "stream is not buffered" assertion
-      await gates.betweenSyncSteps.promise;
-
-      await step.run("before-async-mode-2", async () => {
-        stream.push("World\n");
-      });
-
-      // Force async mode
-      await step.sleep("zzz", "1s");
-
-      await step.run("after-async-mode", async () => {
-        stream.push("Hola\n");
+    const { port } = await setupEndpoint(
+      testFileName,
+      async (_req: Request) => {
+        await step.run("before-async-mode-1", async () => {
+          stream.push("Hello\n");
+        });
 
         // Used to for "stream is not buffered" assertion
-        await gates.insideAsyncStep.promise;
+        await gates.betweenSyncSteps.promise;
 
-        stream.push("mundo\n");
-      });
+        await step.run("before-async-mode-2", async () => {
+          stream.push("World\n");
+        });
 
-      return new Response("All done");
-    });
+        // Force async mode
+        await step.sleep("zzz", "1s");
+
+        await step.run("after-async-mode", async () => {
+          stream.push("Hola\n");
+
+          // Used to for "stream is not buffered" assertion
+          await gates.insideAsyncStep.promise;
+
+          stream.push("mundo\n");
+        });
+
+        return new Response("All done");
+      },
+    );
 
     // --- Phase 1: Initial sync request → SSE stream ---
     const res = await fetch(`http://localhost:${port}/api/demo`, {
@@ -152,7 +130,7 @@ describe("header negotiation", () => {
         "sync: returns SSE stream with metadata, data, and result",
         { timeout: 60000 },
         async () => {
-          const { port } = await setupEndpoint(async () => {
+          const { port } = await setupEndpoint(testFileName, async () => {
             await step.run("work", async () => {
               stream.push("hello");
             });
@@ -188,7 +166,7 @@ describe("header negotiation", () => {
         "async: returns SSE stream with redirect frame for async handoff",
         { timeout: 60000 },
         async () => {
-          const { port } = await setupEndpoint(async () => {
+          const { port } = await setupEndpoint(testFileName, async () => {
             await step.run("work", async () => {
               stream.push("sync-data");
             });
@@ -227,7 +205,7 @@ describe("header negotiation", () => {
         "sync: returns SSE envelope with metadata and result only",
         { timeout: 60000 },
         async () => {
-          const { port } = await setupEndpoint(async () => {
+          const { port } = await setupEndpoint(testFileName, async () => {
             await step.run("compute", async () => {
               return "computed";
             });
@@ -259,7 +237,7 @@ describe("header negotiation", () => {
       );
 
       test("async: returns 302 redirect", { timeout: 60000 }, async () => {
-        const { port } = await setupEndpoint(async () => {
+        const { port } = await setupEndpoint(testFileName, async () => {
           await step.run("first", async () => {
             return "a";
           });
@@ -287,7 +265,7 @@ describe("header negotiation", () => {
         "sync: returns raw Response, not SSE",
         { timeout: 60000 },
         async () => {
-          const { port } = await setupEndpoint(async () => {
+          const { port } = await setupEndpoint(testFileName, async () => {
             await step.run("work", async () => {
               stream.push("data");
             });
@@ -307,7 +285,7 @@ describe("header negotiation", () => {
       );
 
       test("async: returns 302 redirect", { timeout: 60000 }, async () => {
-        const { port } = await setupEndpoint(async () => {
+        const { port } = await setupEndpoint(testFileName, async () => {
           await step.run("work", async () => {
             stream.push("buffered-data");
           });
@@ -332,7 +310,7 @@ describe("header negotiation", () => {
         "sync: returns raw Response passthrough",
         { timeout: 60000 },
         async () => {
-          const { port } = await setupEndpoint(async () => {
+          const { port } = await setupEndpoint(testFileName, async () => {
             await step.run("compute", async () => {
               return "result";
             });
@@ -349,7 +327,7 @@ describe("header negotiation", () => {
       );
 
       test("async: returns 302 redirect", { timeout: 60000 }, async () => {
-        const { port } = await setupEndpoint(async () => {
+        const { port } = await setupEndpoint(testFileName, async () => {
           await step.run("first", async () => {
             return "a";
           });
@@ -380,7 +358,7 @@ describe("streaming functionality", () => {
     "pipe() with async generator streams tokens",
     { timeout: 60000 },
     async () => {
-      const { port } = await setupEndpoint(async () => {
+      const { port } = await setupEndpoint(testFileName, async () => {
         const result = await step.run("llm", async () => {
           return await stream.pipe(async function* () {
             yield "token1";
@@ -414,7 +392,7 @@ describe("streaming functionality", () => {
   );
 
   test("mixed push and pipe in one step", { timeout: 60000 }, async () => {
-    const { port } = await setupEndpoint(async () => {
+    const { port } = await setupEndpoint(testFileName, async () => {
       await step.run("mixed", async () => {
         stream.push("Starting...");
 
@@ -450,7 +428,7 @@ describe("streaming functionality", () => {
     "sync-only: streams across steps without async transition",
     { timeout: 60000 },
     async () => {
-      const { port } = await setupEndpoint(async () => {
+      const { port } = await setupEndpoint(testFileName, async () => {
         await step.run("step-1", async () => {
           stream.push("from-step-1");
         });
@@ -503,7 +481,7 @@ describe("error and rollback", () => {
     "step error emits errored frame with streamed data",
     { timeout: 60000 },
     async () => {
-      const { port } = await setupEndpoint(async () => {
+      const { port } = await setupEndpoint(testFileName, async () => {
         await step.run("failing", async () => {
           stream.push("partial");
           throw new NonRetriableError("boom");
@@ -543,7 +521,7 @@ describe("error and rollback", () => {
   );
 
   test("push outside step.run has no stepId", { timeout: 60000 }, async () => {
-    const { port } = await setupEndpoint(async () => {
+    const { port } = await setupEndpoint(testFileName, async () => {
       await step.run("first", async () => {
         stream.push("inside-step");
       });
@@ -606,7 +584,7 @@ describe("error and rollback", () => {
     async () => {
       const state = createState({});
 
-      const { port } = await setupEndpoint(async () => {
+      const { port } = await setupEndpoint(testFileName, async () => {
         await step.run("setup", async () => {
           stream.push("setting up\n");
         });

@@ -1,4 +1,12 @@
 import http from "node:http";
+import { randomSuffix, testNameFromFileUrl } from "@inngest/test-harness";
+import { onTestFinished } from "vitest";
+import { Inngest } from "../../../index.ts";
+import type { EndpointHandler } from "../../../node.ts";
+import {
+  createEndpointServer as createNodeEndpointServer,
+  endpointAdapter,
+} from "../../../node.ts";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -21,71 +29,15 @@ export async function readSseStream(
 }
 
 /**
- * Create an HTTP server that bridges Node.js req/res to Web API
- * Request/Response for the given edge endpoint handler.
+ * Create an HTTP server for a durable endpoint handler, bound to a random port.
  *
- * Important: uses `value != null` (not `value`) when forwarding headers so
- * that empty-string headers (like `X-Inngest-Signature: ""` in dev mode)
- * are preserved. Dropping them breaks `isInngestReq()` detection.
+ * Uses the production Node.js bridge from `inngest/node` so test infra stays
+ * in sync with the real implementation.
  */
 export async function createEndpointServer(
-  handler: (req: Request) => Promise<Response>,
+  handler: EndpointHandler,
 ): Promise<{ port: number; server: http.Server }> {
-  const server = http.createServer(async (req, res) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) {
-      chunks.push(chunk as Buffer);
-    }
-    const bodyBuf = Buffer.concat(chunks);
-
-    const headers = new Headers();
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (value != null) {
-        if (Array.isArray(value)) {
-          for (const v of value) {
-            headers.append(key, v);
-          }
-        } else {
-          headers.set(key, value);
-        }
-      }
-    }
-
-    const addr = server.address() as { port: number };
-    const webRequest = new Request(`http://localhost:${addr.port}${req.url}`, {
-      method: req.method,
-      headers,
-      body: bodyBuf.length > 0 ? bodyBuf : undefined,
-    });
-
-    try {
-      const webResponse = await handler(webRequest);
-
-      const resHeaders: Record<string, string> = {};
-      webResponse.headers.forEach((v, k) => {
-        resHeaders[k] = v;
-      });
-      res.writeHead(webResponse.status, resHeaders);
-
-      if (webResponse.body) {
-        const reader = webResponse.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-          res.write(value);
-        }
-      }
-      res.end();
-    } catch (err) {
-      console.error("[server] Endpoint error:", err);
-      if (!res.headersSent) {
-        res.writeHead(500);
-      }
-      res.end(String(err));
-    }
-  });
+  const server = createNodeEndpointServer(handler);
 
   const port = await new Promise<number>((resolve, reject) => {
     server.on("error", reject);
@@ -96,6 +48,28 @@ export async function createEndpointServer(
     });
   });
 
+  return { port, server };
+}
+
+/**
+ * Create an Inngest client + endpoint server, registering cleanup via
+ * `onTestFinished`. Call from inside a Vitest `test()` block.
+ */
+export async function setupEndpoint(
+  testFileName: string,
+  handler: (req: Request) => Promise<Response>,
+): Promise<{ port: number; server: http.Server }> {
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    endpointAdapter,
+  });
+
+  const endpointHandler = client.endpoint(handler);
+  const { port, server } = await createEndpointServer(endpointHandler);
+  onTestFinished(
+    () => new Promise<void>((resolve) => server.close(() => resolve())),
+  );
   return { port, server };
 }
 
