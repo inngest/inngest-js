@@ -79,32 +79,32 @@ const sseRedirectSchema = z.object({
 // Types derived from schemas
 // ---------------------------------------------------------------------------
 
-export type SseMetadataFrame = z.infer<typeof sseMetadataSchema>;
-export type SseStreamFrame = z.infer<typeof sseStreamSchema>;
-export type SseResultSucceededFrame = z.infer<typeof sseResultSucceededSchema>;
-export type SseResultFailedFrame = z.infer<typeof sseResultFailedSchema>;
-export type SseResultFrame = z.infer<typeof sseResultSchema>;
+export type SseMetadataEvent = z.infer<typeof sseMetadataSchema>;
+export type SseStreamEvent = z.infer<typeof sseStreamSchema>;
+export type SseResultSucceededEvent = z.infer<typeof sseResultSucceededSchema>;
+export type SseResultFailedEvent = z.infer<typeof sseResultFailedSchema>;
+export type SseResultEvent = z.infer<typeof sseResultSchema>;
 
 /**
- * Payload included with every `inngest.step` errored frame. Describes the
+ * Payload included with every `inngest.step` errored event. Describes the
  * failure so the client can decide whether to show an error or wait for a
  * retry.
  */
 export type StepErrorData = z.infer<typeof stepErrorDataSchema>;
 
-export type SseStepRunningFrame = z.infer<typeof sseStepRunningSchema>;
-export type SseStepCompletedFrame = z.infer<typeof sseStepCompletedSchema>;
-export type SseStepErroredFrame = z.infer<typeof sseStepErroredSchema>;
-export type SseStepFrame = z.infer<typeof sseStepSchema>;
+export type SseStepRunningEvent = z.infer<typeof sseStepRunningSchema>;
+export type SseStepCompletedEvent = z.infer<typeof sseStepCompletedSchema>;
+export type SseStepErroredEvent = z.infer<typeof sseStepErroredSchema>;
+export type SseStepEvent = z.infer<typeof sseStepSchema>;
 
-export type SseRedirectFrame = z.infer<typeof sseRedirectSchema>;
+export type SseRedirectEvent = z.infer<typeof sseRedirectSchema>;
 
-export type SseFrame =
-  | SseMetadataFrame
-  | SseStreamFrame
-  | SseResultFrame
-  | SseStepFrame
-  | SseRedirectFrame;
+export type SseEvent =
+  | SseMetadataEvent
+  | SseStreamEvent
+  | SseResultEvent
+  | SseStepEvent
+  | SseRedirectEvent;
 
 export interface RawSseEvent {
   event: string;
@@ -112,70 +112,70 @@ export interface RawSseEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Frame builders
+// SSE event builders
 // ---------------------------------------------------------------------------
 
 /**
- * Builds a single SSE frame with the given event name and JSON-serialized data.
+ * Builds a single SSE event with the given event name and JSON-serialized data.
  *
  * `undefined` is normalized to `null` so that the `data:` field is always valid
  * JSON (since `JSON.stringify(undefined)` returns the JS primitive `undefined`,
  * not the string `"null"`).
  */
-function buildSseFrame(event: string, data: unknown): string {
+function buildSseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`;
 }
 
 /**
- * Builds an SSE metadata frame string for a streaming response.
+ * Builds an SSE metadata event string for a streaming response.
  *
- * The frame follows the Server-Sent Events format and provides run context
+ * The event follows the Server-Sent Events format and provides run context
  * (run ID) to consumers of the stream.
  */
-export function buildSseMetadataFrame(runId: string): string {
-  return buildSseFrame("inngest.metadata", { runId });
+export function buildSseMetadataEvent(runId: string): string {
+  return buildSseEvent("inngest.metadata", { runId });
 }
 
 /**
- * Builds an SSE stream frame string for user-pushed data.
+ * Builds an SSE stream event string for user-pushed data.
  *
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSseStreamFrame(data: unknown, stepId?: string): string {
+export function buildSseStreamEvent(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
   if (stepId) payload.stepId = stepId;
-  return buildSseFrame("stream", payload);
+  return buildSseEvent("stream", payload);
 }
 
 /**
- * Builds an SSE result frame for a successfully completed function.
- * This is the last frame sent before the stream closes.
+ * Builds an SSE result event for a successfully completed function.
+ * This is the last event sent before the stream closes.
  */
-export function buildSseSucceededFrame(data: unknown): string {
-  return buildSseFrame("inngest.result", { status: "succeeded", data });
+export function buildSseSucceededEvent(data: unknown): string {
+  return buildSseEvent("inngest.result", { status: "succeeded", data });
 }
 
 /**
- * Builds an SSE result frame for a permanently failed function.
- * This is the last frame sent before the stream closes.
+ * Builds an SSE result event for a permanently failed function.
+ * This is the last event sent before the stream closes.
  */
-export function buildSseFailedFrame(error: string): string {
-  return buildSseFrame("inngest.result", { status: "failed", error });
+export function buildSseFailedEvent(error: string): string {
+  return buildSseEvent("inngest.result", { status: "failed", error });
 }
 
 /**
- * Builds an SSE redirect frame telling the client that execution has switched
+ * Builds an SSE redirect event telling the client that execution has switched
  * to async mode and it should reconnect elsewhere to get remaining output.
  *
  * The `url` already contains the realtime JWT as a query parameter, so no
  * separate token field is needed.
  */
-export function buildSseRedirectFrame(data: {
+export function buildSseRedirectEvent(data: {
   runId: string;
   url: string;
 }): string {
-  return buildSseFrame("inngest.redirect_info", data);
+  return buildSseEvent("inngest.redirect_info", data);
 }
 
 /**
@@ -316,22 +316,22 @@ export async function drainStreamWithTimeout(
 }
 
 // ---------------------------------------------------------------------------
-// Step frame builder
+// Step event builder
 // ---------------------------------------------------------------------------
 
 /**
- * Builds an SSE step lifecycle frame.
+ * Builds an SSE step lifecycle event.
  */
-export function buildSseStepFrame(
+export function buildSseStepEvent(
   stepId: string,
-  status: SseStepFrame["status"],
+  status: SseStepEvent["status"],
   data?: unknown,
 ): string {
   const payload: Record<string, unknown> = { stepId, status };
   if (data !== undefined) {
     payload.data = data;
   }
-  return buildSseFrame("inngest.step", payload);
+  return buildSseEvent("inngest.step", payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -386,10 +386,10 @@ export async function* iterSse(
 }
 
 // ---------------------------------------------------------------------------
-// Raw SSE event -> typed SSE frame
+// Raw SSE event -> typed SseEvent
 // ---------------------------------------------------------------------------
 
-const sseSchemasByEvent: Record<string, z.ZodType<SseFrame>> = {
+const sseSchemasByEvent: Record<string, z.ZodType<SseEvent>> = {
   "inngest.metadata": sseMetadataSchema,
   stream: sseStreamSchema,
   "inngest.result": sseResultSchema,
@@ -398,10 +398,10 @@ const sseSchemasByEvent: Record<string, z.ZodType<SseFrame>> = {
 };
 
 /**
- * Converts a `RawSseEvent` into a typed `SseFrame`, or returns `undefined`
+ * Converts a `RawSseEvent` into a typed `SseEvent`, or returns `undefined`
  * if the event type is unrecognised or fails validation.
  */
-export function parseSseFrame(raw: RawSseEvent): SseFrame | undefined {
+export function parseSseEvent(raw: RawSseEvent): SseEvent | undefined {
   const schema = sseSchemasByEvent[raw.event];
   if (!schema) {
     return undefined;

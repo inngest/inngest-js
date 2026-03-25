@@ -1,13 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
-import type { SseFrame } from "./components/execution/streaming.ts";
+import type { SseEvent } from "./components/execution/streaming.ts";
 import { streamRun } from "./stream.ts";
 
 /**
- * Helper: create an async iterable from an array of SseFrames.
+ * Helper: create an async iterable from an array of SseEvents.
  */
-async function* framesFrom(frames: SseFrame[]): AsyncGenerator<SseFrame> {
-  for (const frame of frames) {
-    yield frame;
+async function* eventsFrom(events: SseEvent[]): AsyncGenerator<SseEvent> {
+  for (const sseEvent of events) {
+    yield sseEvent;
   }
 }
 
@@ -19,7 +19,7 @@ describe("streamRun", () => {
       onData: (d) => collected.push(d),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "stream", data: "hello" },
         { type: "stream", data: " world" },
       ]),
@@ -34,14 +34,14 @@ describe("streamRun", () => {
     expect(rs.chunks).toEqual(["hello", " world"]);
   });
 
-  test("calls onFunctionCompleted when succeeded result frame arrives", async () => {
+  test("calls onFunctionCompleted when succeeded result event arrives", async () => {
     const results: { data: unknown }[] = [];
 
     const rs = streamRun("http://test", {
       onFunctionCompleted: (info) => results.push(info),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "stream", data: "chunk" },
         { type: "inngest.result", status: "succeeded", data: "final" },
       ]),
@@ -52,14 +52,14 @@ describe("streamRun", () => {
     expect(results).toEqual([{ data: "final" }]);
   });
 
-  test("calls onFunctionFailed when failed result frame arrives", async () => {
+  test("calls onFunctionFailed when failed result event arrives", async () => {
     const errors: string[] = [];
 
     const rs = streamRun("http://test", {
       onFunctionFailed: (e) => errors.push(e),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "stream", data: "chunk" },
         {
           type: "inngest.result",
@@ -81,7 +81,7 @@ describe("streamRun", () => {
       onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "inngest.step", stepId: "s1", status: "running" },
         { type: "stream", data: "a", stepId: "s1" },
         { type: "stream", data: "b", stepId: "s1" },
@@ -112,7 +112,7 @@ describe("streamRun", () => {
       onStepErrored: (id) => errored.push(id),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "inngest.step", stepId: "s1", status: "running" },
         { type: "inngest.step", stepId: "s1", status: "completed" },
         { type: "inngest.step", stepId: "s2", status: "running" },
@@ -138,7 +138,7 @@ describe("streamRun", () => {
       parse: (d) => Number(d),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "stream", data: "42" },
         { type: "stream", data: "7" },
       ]),
@@ -161,7 +161,7 @@ describe("streamRun", () => {
       onStepErrored: (id, info) => errored.push({ id, info }),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "inngest.step", stepId: "s1", status: "running" },
         { type: "stream", data: "partial", stepId: "s1" },
         // Stream ends without step:completed or step:errored
@@ -180,21 +180,21 @@ describe("streamRun", () => {
 
   test("throws if consumed twice", async () => {
     const rs = streamRun("http://test");
-    rs._fromSource(framesFrom([]));
+    rs._fromSource(eventsFrom([]));
 
     await rs;
 
     await expect(rs).rejects.toThrow("already been consumed");
   });
 
-  test("calls onMetadata when metadata frame arrives", async () => {
+  test("calls onMetadata when metadata event arrives", async () => {
     const metadata: Array<{ runId: string }> = [];
 
     const rs = streamRun("http://test", {
       onMetadata: (info) => metadata.push(info),
     });
     rs._fromSource(
-      framesFrom([{ type: "inngest.metadata", runId: "run-123" }]),
+      eventsFrom([{ type: "inngest.metadata", runId: "run-123" }]),
     );
 
     await rs;
@@ -202,21 +202,21 @@ describe("streamRun", () => {
     expect(metadata).toEqual([{ runId: "run-123" }]);
   });
 
-  test("stops consuming after inngest.result frame", async () => {
+  test("stops consuming after inngest.result event", async () => {
     const collected: string[] = [];
     const done = vi.fn();
 
     // Simulate a source that sends a result then keeps sending (server
     // didn't close the connection). The stream should stop after result.
-    async function* neverEnding(): AsyncGenerator<SseFrame> {
-      yield { type: "stream", data: "a" } as SseFrame;
+    async function* neverEnding(): AsyncGenerator<SseEvent> {
+      yield { type: "stream", data: "a" } as SseEvent;
       yield {
         type: "inngest.result",
         status: "succeeded",
         data: "done",
-      } as SseFrame;
+      } as SseEvent;
       // These should never be reached:
-      yield { type: "stream", data: "SHOULD NOT APPEAR" } as SseFrame;
+      yield { type: "stream", data: "SHOULD NOT APPEAR" } as SseEvent;
     }
 
     const rs = streamRun<string>("http://test", {
@@ -240,7 +240,7 @@ describe("streamRun", () => {
       onDone: done,
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "stream", data: "x" },
         { type: "stream", data: "y" },
       ]),
@@ -256,8 +256,8 @@ describe("streamRun", () => {
     const onError = vi.fn();
     const onDone = vi.fn();
 
-    async function* exploding(): AsyncGenerator<SseFrame> {
-      yield { type: "stream", data: "ok" } as SseFrame;
+    async function* exploding(): AsyncGenerator<SseEvent> {
+      yield { type: "stream", data: "ok" } as SseEvent;
       throw new Error("network failure");
     }
 
@@ -281,8 +281,8 @@ describe("streamRun", () => {
     const onDone = vi.fn();
     const controller = new AbortController();
 
-    async function* abortable(): AsyncGenerator<SseFrame> {
-      yield { type: "stream", data: "a" } as SseFrame;
+    async function* abortable(): AsyncGenerator<SseEvent> {
+      yield { type: "stream", data: "a" } as SseEvent;
       controller.abort();
       // Simulate abort by throwing AbortError
       throw new DOMException("The operation was aborted.", "AbortError");
@@ -306,7 +306,7 @@ describe("streamRun", () => {
       onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "inngest.step", stepId: "s1", status: "running" },
         { type: "stream", data: "a", stepId: "s1" },
         { type: "inngest.step", stepId: "s1", status: "completed" },
@@ -330,7 +330,7 @@ describe("streamRun", () => {
       onStepRunning: (info) => running.push(info),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         {
           type: "inngest.step",
           stepId: "s1",
@@ -352,7 +352,7 @@ describe("streamRun", () => {
       onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "inngest.step", stepId: "A", status: "running" },
         { type: "inngest.step", stepId: "B", status: "running" },
         { type: "stream", data: "A1", stepId: "A" },
@@ -383,7 +383,7 @@ describe("streamRun", () => {
       onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         { type: "inngest.step", stepId: "s1", status: "running" },
         {
           type: "inngest.step",
@@ -408,7 +408,7 @@ describe("streamRun", () => {
       onRollback: (count) => rolledBack.push(count),
     });
     rs._fromSource(
-      framesFrom([
+      eventsFrom([
         // Step "A" runs and completes — its chunks are committed
         { type: "inngest.step", stepId: "A", status: "running" },
         { type: "stream", data: "first-A", stepId: "A" },

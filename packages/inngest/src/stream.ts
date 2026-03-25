@@ -8,8 +8,8 @@
 
 import {
   iterSse,
-  parseSseFrame,
-  type SseFrame,
+  parseSseEvent,
+  type SseEvent,
 } from "./components/execution/streaming.ts";
 
 // ---------------------------------------------------------------------------
@@ -26,12 +26,12 @@ export interface SubscribeToRunOptions {
 }
 
 /**
- * Low-level async generator that fetches an SSE endpoint, parses frames,
- * and follows `inngest.redirect_info` frames transparently.
+ * Low-level async generator that fetches an SSE endpoint, parses SSE events,
+ * and follows `inngest.redirect_info` events transparently.
  */
 export async function* subscribeToRun(
   opts: SubscribeToRunOptions,
-): AsyncGenerator<SseFrame> {
+): AsyncGenerator<SseEvent> {
   const fetchFn = opts.fetch ?? globalThis.fetch;
   let currentUrl: string | undefined = opts.url;
 
@@ -52,17 +52,17 @@ export async function* subscribeToRun(
     let redirectUrl: string | undefined;
 
     for await (const raw of iterSse(res.body)) {
-      const frame = parseSseFrame(raw);
-      if (!frame) continue;
+      const sseEvent = parseSseEvent(raw);
+      if (!sseEvent) continue;
 
-      if (frame.type === "inngest.redirect_info") {
-        redirectUrl = frame.url;
-        yield frame;
-        // Don't break — keep consuming remaining frames from this response
+      if (sseEvent.type === "inngest.redirect_info") {
+        redirectUrl = sseEvent.url;
+        yield sseEvent;
+        // Don't break — keep consuming remaining events from this response
         continue;
       }
 
-      yield frame;
+      yield sseEvent;
     }
 
     // Follow redirect if we got one; otherwise we're done
@@ -108,7 +108,7 @@ export interface RunStreamOptions<TData = unknown> {
   /**
    * Called when the function fails permanently (NonRetriableError or final
    * attempt). Will not fire for retryable errors — those simply end the
-   * stream without a result frame.
+   * stream without a result event.
    */
   onFunctionFailed?: (error: string) => void;
   /** Called when a step begins running. */
@@ -169,7 +169,7 @@ export class RunStream<TData = unknown> {
   private _tagged: Array<{ data: TData; stepId?: string }> = [];
   private _chunks: TData[] = [];
   private _consumed = false;
-  private _source: AsyncIterable<SseFrame> | undefined;
+  private _source: AsyncIterable<SseEvent> | undefined;
 
   private _parseFn: (data: unknown) => TData;
 
@@ -217,7 +217,7 @@ export class RunStream<TData = unknown> {
    * Inject a pre-built source for testing. Skips the real fetch.
    * @internal
    */
-  _fromSource(source: AsyncIterable<SseFrame>): this {
+  _fromSource(source: AsyncIterable<SseEvent>): this {
     this._source = source;
     return this;
   }
@@ -252,7 +252,7 @@ export class RunStream<TData = unknown> {
     yield* this._consume();
   }
 
-  private _resolveSource(): AsyncIterable<SseFrame> {
+  private _resolveSource(): AsyncIterable<SseEvent> {
     return (
       this._source ??
       subscribeToRun({
@@ -264,7 +264,7 @@ export class RunStream<TData = unknown> {
   }
 
   /**
-   * Core processing loop. Processes SSE frames, fires hooks, yields parsed
+   * Core processing loop. Processes SSE events, fires hooks, yields parsed
    * data chunks, and handles rollback on step errors / disconnects.
    */
   private async *_consume(): AsyncGenerator<TData> {
@@ -284,47 +284,47 @@ export class RunStream<TData = unknown> {
       // switch, and after receiving `inngest.result` the underlying SSE
       // connection may stay open — meaning `source.next()` would block forever
       // if we relied on the loop's next iteration to check a flag.
-      outer: for await (const frame of source) {
-        switch (frame.type) {
+      outer: for await (const sseEvent of source) {
+        switch (sseEvent.type) {
           case "stream": {
-            const parsed = this._parseFn(frame.data);
-            this._pushChunk(parsed, frame.stepId);
-            this.opts.onData?.({ data: parsed, hashedStepId: frame.stepId });
+            const parsed = this._parseFn(sseEvent.data);
+            this._pushChunk(parsed, sseEvent.stepId);
+            this.opts.onData?.({ data: parsed, hashedStepId: sseEvent.stepId });
             yield parsed;
             break;
           }
           case "inngest.step": {
-            if (frame.status === "running") {
-              inFlightSteps.add(frame.stepId);
-              this.opts.onStepRunning?.({ hashedStepId: frame.stepId });
-            } else if (frame.status === "completed") {
-              inFlightSteps.delete(frame.stepId);
-              this._commitStepId(frame.stepId);
+            if (sseEvent.status === "running") {
+              inFlightSteps.add(sseEvent.stepId);
+              this.opts.onStepRunning?.({ hashedStepId: sseEvent.stepId });
+            } else if (sseEvent.status === "completed") {
+              inFlightSteps.delete(sseEvent.stepId);
+              this._commitStepId(sseEvent.stepId);
               this.opts.onStepCompleted?.({
-                hashedStepId: frame.stepId,
+                hashedStepId: sseEvent.stepId,
               });
-            } else if (frame.status === "errored") {
-              inFlightSteps.delete(frame.stepId);
-              const count = this._rollbackStepId(frame.stepId);
+            } else if (sseEvent.status === "errored") {
+              inFlightSteps.delete(sseEvent.stepId);
+              const count = this._rollbackStepId(sseEvent.stepId);
               if (count > 0) {
                 this.opts.onRollback?.(count);
               }
-              this.opts.onStepErrored?.(frame.stepId, {
-                willRetry: frame.willRetry,
-                error: frame.error,
+              this.opts.onStepErrored?.(sseEvent.stepId, {
+                willRetry: sseEvent.willRetry,
+                error: sseEvent.error,
               });
             }
             break;
           }
           case "inngest.result":
-            if (frame.status === "succeeded") {
-              this.opts.onFunctionCompleted?.({ data: frame.data });
+            if (sseEvent.status === "succeeded") {
+              this.opts.onFunctionCompleted?.({ data: sseEvent.data });
             } else {
-              this.opts.onFunctionFailed?.(frame.error);
+              this.opts.onFunctionFailed?.(sseEvent.error);
             }
             break outer;
           case "inngest.metadata":
-            this.opts.onMetadata?.({ runId: frame.runId });
+            this.opts.onMetadata?.({ runId: sseEvent.runId });
             break;
           default:
             break;

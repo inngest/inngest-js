@@ -784,7 +784,7 @@ describe("Sync mode function-resolved response handling", () => {
     expect(resolved.data).toBeInstanceOf(Response);
 
     // When acceptsSse is true, the Response body is extracted and wrapped
-    // in SSE format (metadata + result frames)
+    // in SSE format (metadata + result events)
     const body = await (resolved.data as Response).text();
     expect(body).toContain("event: inngest.metadata");
     expect(body).toContain("event: inngest.result");
@@ -804,7 +804,7 @@ describe("Sync mode function-resolved response handling", () => {
     const resolved = result as ExecutionResult & { data: unknown };
     expect(resolved.data).toBeInstanceOf(Response);
 
-    // Should be an SSE response with event frames
+    // Should be an SSE response with events
     const res = resolved.data as Response;
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
     const body = await res.text();

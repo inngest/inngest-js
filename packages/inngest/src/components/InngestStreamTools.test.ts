@@ -81,7 +81,7 @@ describe("InngestStream.pipe", () => {
 });
 
 describe("InngestStream.stepLifecycle", () => {
-  test("emits step lifecycle frames", async () => {
+  test("emits step lifecycle events", async () => {
     const s = new InngestStream();
 
     s.stepLifecycle("my-step", "running");
