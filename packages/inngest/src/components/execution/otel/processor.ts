@@ -127,7 +127,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    */
   #activeStepContext = new Map<
     string,
-    { hashedStepId: string; attempt: number }
+    { hashedStepId: string; attempt: number; id: string; index: number }
   >();
 
   /**
@@ -236,6 +236,8 @@ export class InngestSpanProcessor implements SpanProcessor {
    */
   public declareStepExecution(
     rootSpanId: string,
+    id: string,
+    index: number,
     hashedStepId: string,
     attempt: number,
   ): void {
@@ -246,7 +248,12 @@ export class InngestSpanProcessor implements SpanProcessor {
       attempt,
     );
     this.#checkpointingRoots.add(rootSpanId);
-    this.#activeStepContext.set(rootSpanId, { hashedStepId, attempt });
+    this.#activeStepContext.set(rootSpanId, {
+      hashedStepId,
+      attempt,
+      id,
+      index,
+    });
   }
 
   /**
@@ -359,12 +366,19 @@ export class InngestSpanProcessor implements SpanProcessor {
           const seed = stepCtx.hashedStepId + ":" + String(stepCtx.attempt);
           const newSpanId = deterministicSpanID(seed);
           trackDebug(
-            "setting inngest.step.parentSpanId=%s (seed=%s) on span %s",
+            "setting inngest.step.parentSpanId=%s (seed=%s) on span %s step %s index %d attempt %d",
             newSpanId,
             seed,
             spanId,
+            stepCtx.id,
+            stepCtx.index,
+            stepCtx.attempt,
           );
           span.setAttribute(Attribute.InngestStepParentSpanId, newSpanId);
+          span.setAttribute(Attribute.InngestStepId, stepCtx.id);
+          span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
+          span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
+          span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
         }
       }
     }
