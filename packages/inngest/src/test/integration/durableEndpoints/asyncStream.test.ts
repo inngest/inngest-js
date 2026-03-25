@@ -72,8 +72,6 @@ test.each(streamingMethods)("success (%s)", async (method) => {
   const asyncReader = await pollForAsyncReader(redirectUrl!);
   await asyncReader.done;
   expect(asyncReader.events).toEqual([
-    // FIXME: What is this?
-    { event: "message", data: "" },
     {
       event: "inngest.metadata",
       data: expect.any(String),
@@ -177,9 +175,6 @@ test("mixed push and pipe in one step", async () => {
   await asyncReader.done;
   console.log(asyncReader.events);
   expect(asyncReader.events).toEqual([
-    // FIXME: Why is this sent?
-    { event: "message", data: "" },
-
     {
       event: "inngest.metadata",
       data: expect.any(String),
@@ -344,9 +339,6 @@ test("retries", async () => {
   const asyncReader = await pollForAsyncReader(redirectUrl!);
   await asyncReader.done;
   expect(asyncReader.events).toEqual([
-    // FIXME: Why is this sent?
-    { event: "message", data: "" },
-
     {
       event: "inngest.metadata",
       data: expect.any(String),
