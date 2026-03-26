@@ -1,18 +1,18 @@
-import { channel, topic } from "@inngest/realtime";
 import { getInngestApp } from "..";
+import { helloChannel } from "../channels";
 
 const inngest = getInngestApp();
 
-export const helloChannel = channel("hello-world").addTopic(
-  topic("logs").type<string>()
-);
-
 export const helloWorld = inngest.createFunction(
   { id: "hello-world", triggers: [{ event: "test/hello.world" }] },
-  async ({ event, step, publish, runId }) => {
-    publish(helloChannel().logs(`Hello from ${runId}`));
+  async ({ event, step, runId }) => {
+    const ch = helloChannel;
 
-    // wait 2 seconds before next iteration while waiting for a potential cancel signal
+    await inngest.realtime.publish(ch.logs, { message: `Hello from ${runId}` });
+
+    //
+    // Wait 2 seconds for a cancel signal before re-triggering
+    //
     const result = await step.waitForEvent("cancel-signal", {
       event: "test/cancel.signal",
       timeout: 2000,
@@ -25,6 +25,6 @@ export const helloWorld = inngest.createFunction(
       });
     }
 
-    return { message: `Hello!`, runId };
-  }
+    return { message: "Hello!", runId };
+  },
 );

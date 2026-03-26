@@ -1,5 +1,14 @@
 # @inngest/realtime
 
+## 0.4.7
+
+### Patch Changes
+
+- [#1342](https://github.com/inngest/inngest-js/pull/1342) [`627c0720`](https://github.com/inngest/inngest-js/commit/627c072088a19a6fa4834d219b192066cffa2f60) Thanks [@jacobheric](https://github.com/jacobheric)! - **Deprecated:** This package is deprecated. Realtime functionality is now built into the `inngest` package. Use `inngest/realtime` and `inngest/react` instead.
+
+- Updated dependencies [[`627c0720`](https://github.com/inngest/inngest-js/commit/627c072088a19a6fa4834d219b192066cffa2f60)]:
+  - inngest@4.1.0
+
 ## 0.4.6
 
 ### Patch Changes

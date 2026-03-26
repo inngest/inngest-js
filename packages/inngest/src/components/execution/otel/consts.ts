@@ -14,4 +14,8 @@ export enum Attribute {
   InngestAppId2 = "sys.app.id",
   InngestFunctionId = "sys.function.id",
   InngestStepParentSpanId = "inngest.step.parentSpanId",
+  InngestStepId = "inngest.step.id",
+  InngestStepIndex = "inngest.step.index",
+  InngestStepHash = "inngest.step.hash",
+  InngestStepAttempt = "inngest.step.attempt",
 }
