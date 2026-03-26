@@ -445,8 +445,8 @@ class InngestExecutionEngine
 
     if (this.streamTools.activated) {
       if (stepError && !this.retriability(stepError)) {
-        // Permanent failure — close with a failed event so the client
-        // gets onFunctionFailed instead of silence.
+        // Permanent failure — close with a failed result event so the
+        // client knows the function is done.
         this.streamTools.closeFailed(errorMessage(stepError));
       } else {
         // End stream without a result event — client uses redirect_info

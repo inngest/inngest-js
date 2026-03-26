@@ -173,7 +173,6 @@ test("mixed push and pipe in one step", async () => {
   expect(redirectUrl).toBeTruthy();
   const asyncReader = await pollForAsyncReader(redirectUrl!);
   await asyncReader.done;
-  console.log(asyncReader.events);
   expect(asyncReader.events).toEqual([
     {
       event: "inngest.metadata",

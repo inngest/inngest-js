@@ -91,18 +91,12 @@ export interface RunStreamOptions<TData = unknown> {
   /** Called for each parsed data chunk. */
   onData?: (args: { data: TData; hashedStepId?: string }) => void;
   /** Called when chunks are rolled back due to a step error or disconnect. */
-  onRollback?: (count: number) => void;
+  onRollback?: (args: { count: number }) => void;
   /**
    * Called when the function completes successfully. The data is `unknown`
    * because SSE transport erases the original return type.
    */
   onFunctionCompleted?: (args: { data: unknown }) => void;
-  /**
-   * Called when the function fails permanently (NonRetriableError or final
-   * attempt). Will not fire for retryable errors — those simply end the
-   * stream without a result event.
-   */
-  onFunctionFailed?: (error: string) => void;
   /** Called when a step begins running. */
   onStepRunning?: (args: { hashedStepId: string }) => void;
   /**
@@ -115,7 +109,7 @@ export interface RunStreamOptions<TData = unknown> {
   /** Called when the stream is fully consumed (including on abort or error). */
   onDone?: () => void;
   /** Called when a stream-level error occurs (network failure, non-200, etc.). */
-  onStreamError?: (error: unknown) => void;
+  onStreamError?: (args: { error: unknown }) => void;
 }
 
 /**
@@ -132,7 +126,6 @@ export interface RunStreamOptions<TData = unknown> {
  *   parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
  *   onData: (chunk) => console.log(chunk),
  *   onFunctionCompleted: ({ data }) => console.log("done:", data),
- *   onFunctionFailed: (error) => console.error("failed:", error),
  * });
  * ```
  *
@@ -296,16 +289,17 @@ export class RunStream<TData = unknown> {
               inFlightSteps.delete(sseEvent.stepId);
               const count = this._rollbackStepId(sseEvent.stepId);
               if (count > 0) {
-                this.opts.onRollback?.(count);
+                this.opts.onRollback?.({ count });
               }
             }
             break;
           }
           case "inngest.result":
+            // Only "succeeded" fires a hook. Failed results are an
+            // implementation detail — endpoint authors handle errors
+            // server-side and control the response they return.
             if (sseEvent.status === "succeeded") {
               this.opts.onFunctionCompleted?.({ data: sseEvent.data });
-            } else {
-              this.opts.onFunctionFailed?.(sseEvent.error);
             }
             break outer;
           case "inngest.metadata":
@@ -320,11 +314,11 @@ export class RunStream<TData = unknown> {
       for (const stepId of inFlightSteps) {
         const count = this._rollbackStepId(stepId);
         if (count > 0) {
-          this.opts.onRollback?.(count);
+          this.opts.onRollback?.({ count });
         }
       }
     } catch (error) {
-      this.opts.onStreamError?.(error);
+      this.opts.onStreamError?.({ error });
       throw error;
     } finally {
       this.opts.onDone?.();

@@ -52,11 +52,13 @@ describe("streamRun", () => {
     expect(results).toEqual([{ data: "final" }]);
   });
 
-  test("calls onFunctionFailed when failed result event arrives", async () => {
-    const errors: string[] = [];
+  test("failed result event terminates stream without onFunctionCompleted", async () => {
+    const completed = vi.fn();
+    const done = vi.fn();
 
     const rs = streamRun("http://test", {
-      onFunctionFailed: (e) => errors.push(e),
+      onFunctionCompleted: completed,
+      onDone: done,
     });
     rs._fromSource(
       eventsFrom([
@@ -64,21 +66,25 @@ describe("streamRun", () => {
         {
           type: "inngest.result",
           status: "failed",
-          error: "Dog Speak is Much Too Hard to Translate",
+          error: "permanent failure",
         },
       ]),
     );
 
     await rs;
 
-    expect(errors).toEqual(["Dog Speak is Much Too Hard to Translate"]);
+    // Failed results are an implementation detail — the server-side endpoint
+    // should catch step errors and return a Response. The client stream just
+    // terminates cleanly.
+    expect(completed).not.toHaveBeenCalled();
+    expect(done).toHaveBeenCalledOnce();
   });
 
   test("rolls back chunks on step error using stepId", async () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (count) => rolledBack.push(count),
+      onRollback: ({ count }) => rolledBack.push(count),
     });
     rs._fromSource(
       eventsFrom([
@@ -150,7 +156,7 @@ describe("streamRun", () => {
   test("synthesizes rollback on mid-step disconnect", async () => {
     const rolledBack: number[] = [];
     const rs = streamRun<string>("http://test", {
-      onRollback: (count) => rolledBack.push(count),
+      onRollback: ({ count }) => rolledBack.push(count),
     });
     rs._fromSource(
       eventsFrom([
@@ -257,11 +263,9 @@ describe("streamRun", () => {
 
     await expect(rs).rejects.toThrow("network failure");
 
-    expect(onStreamError).toHaveBeenCalledOnce();
-    expect(onStreamError.mock.calls[0]![0]).toBeInstanceOf(Error);
-    expect((onStreamError.mock.calls[0]![0] as Error).message).toBe(
-      "network failure",
-    );
+    expect(onStreamError).toHaveBeenCalledWith({
+      error: expect.objectContaining({ message: "network failure" }),
+    });
     expect(onDone).toHaveBeenCalledOnce();
   });
 
@@ -291,7 +295,7 @@ describe("streamRun", () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (count) => rolledBack.push(count),
+      onRollback: ({ count }) => rolledBack.push(count),
     });
     rs._fromSource(
       eventsFrom([
@@ -337,7 +341,7 @@ describe("streamRun", () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (count) => rolledBack.push(count),
+      onRollback: ({ count }) => rolledBack.push(count),
     });
     rs._fromSource(
       eventsFrom([
@@ -367,7 +371,7 @@ describe("streamRun", () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (count) => rolledBack.push(count),
+      onRollback: ({ count }) => rolledBack.push(count),
     });
     rs._fromSource(
       eventsFrom([
@@ -391,7 +395,7 @@ describe("streamRun", () => {
     const rolledBack: number[] = [];
 
     const rs = streamRun<string>("http://test", {
-      onRollback: (count) => rolledBack.push(count),
+      onRollback: ({ count }) => rolledBack.push(count),
     });
     rs._fromSource(
       eventsFrom([
