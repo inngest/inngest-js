@@ -398,3 +398,107 @@ test("retries", async () => {
 
   await state.waitForRunFailed();
 });
+
+test("primary streaming in async phase", async () => {
+  // Sync phase: minimal step with no meaningful stream data.
+  // Async phase: all the real streaming happens after step.sleep.
+  // This verifies async-phase streaming works independently of sync-phase data.
+  const state = createState({});
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      // Establish SSE connection but don't push meaningful data
+      stream.push("sync-marker");
+    });
+    await step.sleep("go-async", "1s");
+    await step.run("b", async () => {
+      stream.push("async-data-1");
+      stream.push("async-data-2");
+    });
+    return Response.json("done");
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/demo`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+  const { events, redirectUrl, runId } = await readSseStream(res);
+  state.runId = runId;
+
+  // Sync phase only has the marker
+  expect(getStreamData(events)).toEqual(["sync-marker"]);
+
+  // Async SSE stream — all the real data arrives here
+  const asyncReader = await pollForAsyncReader(redirectUrl!);
+  await asyncReader.done;
+
+  expect(getStreamData(asyncReader.events)).toEqual([
+    "async-data-1",
+    "async-data-2",
+  ]);
+
+  const resultEvent = asyncReader.events.find(
+    (e) => e.event === "inngest.result",
+  );
+  expect(resultEvent).toBeTruthy();
+  expect(JSON.parse(resultEvent!.data)).toEqual({
+    status: "succeeded",
+    data: "done",
+  });
+
+  await state.waitForRunComplete();
+});
+
+test("retriable error in first step triggers async retry", async () => {
+  // A retriable error in the first step during sync mode should exercise
+  // checkpointAndSwitchToAsync with a stepError. The client sees the error
+  // in the sync SSE stream, then retries happen via the async stream.
+  const state = createState({});
+  let attempt = 0;
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      attempt++;
+      stream.push(`attempt-${attempt}`);
+      if (attempt === 1) {
+        throw new Error("first try fails");
+      }
+      return "recovered";
+    });
+    return Response.json("done");
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/demo`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  expect(res.status).toBe(200);
+
+  // Sync SSE stream: should see the first attempt's stream data and error
+  const { events, redirectUrl, runId } = await readSseStream(res);
+  state.runId = runId;
+
+  // First attempt's data should be present
+  expect(getStreamData(events)).toContain("attempt-1");
+
+  // Should have a step error event indicating retry
+  const stepErrorEvent = events.find(
+    (e) => e.event === "inngest.step" && e.data.includes('"status":"errored"'),
+  );
+  expect(stepErrorEvent).toBeTruthy();
+  expect(stepErrorEvent!.data).toContain('"willRetry":true');
+
+  // Should have redirect info for async continuation
+  expect(redirectUrl).toBeTruthy();
+
+  // Async SSE stream: should see the retry succeed
+  const asyncReader = await pollForAsyncReader(redirectUrl!);
+  await asyncReader.done;
+
+  // The async phase should eventually produce a successful result
+  const resultEvent = asyncReader.events.find(
+    (e) => e.event === "inngest.result",
+  );
+  expect(resultEvent).toBeTruthy();
+
+  await state.waitForRunComplete();
+});

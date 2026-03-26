@@ -120,8 +120,7 @@ test("retries", async () => {
     onDone: [undefined],
     onStreamError: [],
 
-    // FIXME: Should we parse this as JSON?
-    onFunctionCompleted: [{ data: '"fn output"' }],
+    onFunctionCompleted: [{ data: "fn output" }],
 
     onMetadata: [
       { runId: expect.any(String) },
@@ -225,7 +224,7 @@ test("endpoint error response via onFunctionCompleted", async () => {
   await rs;
 
   expect(completed).toHaveLength(1);
-  expect(JSON.parse(completed[0]!.data as string)).toEqual({
+  expect(completed[0]!.data).toEqual({
     error: "something went wrong",
   });
   expect(done).toHaveBeenCalledOnce();

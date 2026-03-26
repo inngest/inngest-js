@@ -391,6 +391,184 @@ describe("streamRun", () => {
     expect(rolledBack).toEqual([]);
   });
 
+  test("exhausted retries then permanent failure", async () => {
+    const rolledBack: number[] = [];
+    const done = vi.fn();
+    const completed = vi.fn();
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: ({ count }) => rolledBack.push(count),
+      onDone: done,
+      onFunctionCompleted: completed,
+    });
+    rs._fromSource(
+      eventsFrom([
+        // Attempt 1: step runs, streams, then errors with willRetry
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "stream", data: "attempt-1-a", stepId: "s1" },
+        { type: "stream", data: "attempt-1-b", stepId: "s1" },
+        {
+          type: "inngest.step",
+          stepId: "s1",
+          status: "errored",
+          data: { willRetry: true, error: "transient" },
+        },
+        // Attempt 2: same step retries, streams, errors again
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "stream", data: "attempt-2-a", stepId: "s1" },
+        {
+          type: "inngest.step",
+          stepId: "s1",
+          status: "errored",
+          data: { willRetry: true, error: "transient again" },
+        },
+        // Attempt 3: same step retries, streams, errors again
+        { type: "inngest.step", stepId: "s1", status: "running" },
+        { type: "stream", data: "attempt-3-a", stepId: "s1" },
+        { type: "stream", data: "attempt-3-b", stepId: "s1" },
+        { type: "stream", data: "attempt-3-c", stepId: "s1" },
+        {
+          type: "inngest.step",
+          stepId: "s1",
+          status: "errored",
+          data: { willRetry: true, error: "transient yet again" },
+        },
+        // Permanent failure — retries exhausted
+        { type: "inngest.result", status: "failed", error: "gave up" },
+      ]),
+    );
+
+    await rs;
+
+    // Each error rolled back that attempt's chunks
+    expect(rolledBack).toEqual([2, 1, 3]);
+    expect(rs.chunks).toEqual([]);
+    expect(completed).not.toHaveBeenCalled();
+    expect(done).toHaveBeenCalledOnce();
+  });
+
+  test("rollback with pipe-style data (stream events with stepId)", async () => {
+    const rolledBack: number[] = [];
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: ({ count }) => rolledBack.push(count),
+    });
+    rs._fromSource(
+      eventsFrom([
+        { type: "inngest.step", stepId: "pipe-step", status: "running" },
+        // Pipe-style chunks still arrive as stream events with stepId
+        { type: "stream", data: "piped-chunk-1", stepId: "pipe-step" },
+        { type: "stream", data: "piped-chunk-2", stepId: "pipe-step" },
+        { type: "stream", data: "piped-chunk-3", stepId: "pipe-step" },
+        {
+          type: "inngest.step",
+          stepId: "pipe-step",
+          status: "errored",
+          data: { willRetry: true, error: "pipe failure" },
+        },
+      ]),
+    );
+
+    await rs;
+
+    expect(rolledBack).toEqual([3]);
+    expect(rs.chunks).toEqual([]);
+  });
+
+  test("step that streams nothing among streaming steps", async () => {
+    const rolledBack: number[] = [];
+    const running: string[] = [];
+    const completed: string[] = [];
+
+    const rs = streamRun<string>("http://test", {
+      onRollback: ({ count }) => rolledBack.push(count),
+      onStepRunning: ({ hashedStepId }) => running.push(hashedStepId),
+      onStepCompleted: ({ hashedStepId }) => completed.push(hashedStepId),
+    });
+    rs._fromSource(
+      eventsFrom([
+        // Step A: streams data
+        { type: "inngest.step", stepId: "A", status: "running" },
+        { type: "stream", data: "from-A-1", stepId: "A" },
+        { type: "stream", data: "from-A-2", stepId: "A" },
+        { type: "inngest.step", stepId: "A", status: "completed" },
+        // Step B: only lifecycle events, no stream data
+        { type: "inngest.step", stepId: "B", status: "running" },
+        { type: "inngest.step", stepId: "B", status: "completed" },
+        // Step C: streams data
+        { type: "inngest.step", stepId: "C", status: "running" },
+        { type: "stream", data: "from-C-1", stepId: "C" },
+        { type: "inngest.step", stepId: "C", status: "completed" },
+        { type: "inngest.result", status: "succeeded", data: "all done" },
+      ]),
+    );
+
+    await rs;
+
+    // All chunks survive — no spurious rollbacks
+    expect(rolledBack).toEqual([]);
+    expect(rs.chunks).toEqual(["from-A-1", "from-A-2", "from-C-1"]);
+    // Step B's lifecycle events were still delivered
+    expect(running).toEqual(["A", "B", "C"]);
+    expect(completed).toEqual(["A", "B", "C"]);
+  });
+
+  test("stepless streaming (no step lifecycle events)", async () => {
+    const collected: { data: string; hashedStepId?: string }[] = [];
+    const rolledBack: number[] = [];
+    const completed = vi.fn();
+
+    const rs = streamRun<string>("http://test", {
+      onData: (d) => collected.push(d),
+      onRollback: ({ count }) => rolledBack.push(count),
+      onFunctionCompleted: completed,
+    });
+    rs._fromSource(
+      eventsFrom([
+        // Only stream events — no stepId, no step lifecycle
+        { type: "stream", data: "no-step-1" },
+        { type: "stream", data: "no-step-2" },
+        { type: "stream", data: "no-step-3" },
+        { type: "inngest.result", status: "succeeded", data: "done" },
+      ]),
+    );
+
+    await rs;
+
+    expect(collected).toEqual([
+      { data: "no-step-1", hashedStepId: undefined },
+      { data: "no-step-2", hashedStepId: undefined },
+      { data: "no-step-3", hashedStepId: undefined },
+    ]);
+    expect(rs.chunks).toEqual(["no-step-1", "no-step-2", "no-step-3"]);
+    // No rollback since there are no steps
+    expect(rolledBack).toEqual([]);
+    expect(completed).toHaveBeenCalledWith({ data: "done" });
+  });
+
+  test("multiple metadata events (re-entry)", async () => {
+    const metadata: Array<{ runId: string }> = [];
+
+    const rs = streamRun<string>("http://test", {
+      onMetadata: (info) => metadata.push(info),
+    });
+    rs._fromSource(
+      eventsFrom([
+        { type: "inngest.metadata", runId: "run-first" },
+        { type: "stream", data: "chunk-1" },
+        // Second metadata on re-entry
+        { type: "inngest.metadata", runId: "run-second" },
+        { type: "stream", data: "chunk-2" },
+        { type: "inngest.result", status: "succeeded", data: "ok" },
+      ]),
+    );
+
+    await rs;
+
+    expect(metadata).toEqual([{ runId: "run-first" }, { runId: "run-second" }]);
+    expect(rs.chunks).toEqual(["chunk-1", "chunk-2"]);
+  });
+
   test("committed chunks survive rollback when same step ID retries", async () => {
     const rolledBack: number[] = [];
 
