@@ -2,7 +2,7 @@ import http from "node:http";
 import { randomSuffix } from "@inngest/test-harness";
 import { onTestFinished } from "vitest";
 import { stream } from "../../../experimental/durable-endpoints.ts";
-import { Inngest } from "../../../index.ts";
+import { Inngest, type Logger } from "../../../index.ts";
 import type { EndpointHandler } from "../../../node.ts";
 import {
   createEndpointServer as createNodeEndpointServer,
@@ -67,11 +67,15 @@ export async function createEndpointServer(
 export async function setupEndpoint(
   testFileName: string,
   handler: (req: Request) => Promise<Response>,
+  opts?: {
+    logger?: Logger;
+  },
 ): Promise<{ port: number; server: http.Server }> {
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
     endpointAdapter,
+    logger: opts?.logger,
   });
 
   const endpointHandler = client.endpoint(handler);

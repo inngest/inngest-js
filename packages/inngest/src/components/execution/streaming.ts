@@ -42,8 +42,10 @@ const sseStepErroredSchema = z.object({
   type: z.literal("inngest.step"),
   stepId: z.string(),
   status: z.literal("errored"),
-  willRetry: z.boolean(),
-  error: z.string(),
+  data: z.object({
+    willRetry: z.boolean(),
+    error: z.string(),
+  }),
 });
 
 const sseStepSchema = z.discriminatedUnion("status", [
@@ -419,6 +421,7 @@ export function parseSseEvent(raw: RawSseEvent): SseEvent | undefined {
 
   const result = schema.safeParse({ ...parsed, type: raw.event });
   if (!result.success) {
+    console.log(raw);
     throw new Error("Unknown SSE event", { cause: result.error });
   }
 

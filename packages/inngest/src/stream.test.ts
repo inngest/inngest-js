@@ -89,8 +89,7 @@ describe("streamRun", () => {
           type: "inngest.step",
           stepId: "s1",
           status: "errored",
-          willRetry: true,
-          error: "boom",
+          data: { willRetry: true, error: "boom" },
         },
       ]),
     );
@@ -104,12 +103,12 @@ describe("streamRun", () => {
   test("emits step lifecycle hooks", async () => {
     const running: { hashedStepId: string }[] = [];
     const completed: string[] = [];
-    const errored: string[] = [];
+    const errored: { hashedStepId: string }[] = [];
 
     const rs = streamRun("http://test", {
       onStepRunning: (info) => running.push(info),
       onStepCompleted: (info) => completed.push(info.hashedStepId),
-      onStepErrored: (id) => errored.push(id),
+      onStepErrored: (info) => errored.push(info),
     });
     rs._fromSource(
       eventsFrom([
@@ -120,8 +119,7 @@ describe("streamRun", () => {
           type: "inngest.step",
           stepId: "s2",
           status: "errored",
-          willRetry: false,
-          error: "fail",
+          data: { willRetry: false, error: "fail" },
         },
       ]),
     );
@@ -130,7 +128,7 @@ describe("streamRun", () => {
 
     expect(running).toEqual([{ hashedStepId: "s1" }, { hashedStepId: "s2" }]);
     expect(completed).toEqual(["s1"]);
-    expect(errored).toEqual(["s2"]);
+    expect(errored).toEqual([{ hashedStepId: "s2" }]);
   });
 
   test("yields parsed chunks via async iteration", async () => {
@@ -154,11 +152,11 @@ describe("streamRun", () => {
 
   test("synthesizes rollback on mid-step disconnect", async () => {
     const rolledBack: number[] = [];
-    const errored: Array<{ id: string; info: unknown }> = [];
+    const errored: { hashedStepId: string }[] = [];
 
     const rs = streamRun<string>("http://test", {
       onRollback: (count) => rolledBack.push(count),
-      onStepErrored: (id, info) => errored.push({ id, info }),
+      onStepErrored: (info) => errored.push(info),
     });
     rs._fromSource(
       eventsFrom([
@@ -171,11 +169,7 @@ describe("streamRun", () => {
     await rs;
 
     expect(rolledBack).toEqual([1]);
-    expect(errored[0]?.id).toBe("s1");
-    expect(errored[0]?.info).toMatchObject({
-      willRetry: false,
-      error: "stream disconnected",
-    });
+    expect(errored).toEqual([{ hashedStepId: "s1" }]);
   });
 
   test("throws if consumed twice", async () => {
@@ -362,8 +356,7 @@ describe("streamRun", () => {
           type: "inngest.step",
           stepId: "B",
           status: "errored",
-          willRetry: true,
-          error: "fail",
+          data: { willRetry: true, error: "fail" },
         },
         { type: "inngest.step", stepId: "A", status: "completed" },
       ]),
@@ -389,8 +382,7 @@ describe("streamRun", () => {
           type: "inngest.step",
           stepId: "s1",
           status: "errored",
-          willRetry: true,
-          error: "boom",
+          data: { willRetry: true, error: "boom" },
         },
       ]),
     );
@@ -420,8 +412,7 @@ describe("streamRun", () => {
           type: "inngest.step",
           stepId: "A",
           status: "errored",
-          willRetry: true,
-          error: "retry fail",
+          data: { willRetry: true, error: "retry fail" },
         },
       ]),
     );
