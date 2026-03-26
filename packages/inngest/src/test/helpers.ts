@@ -2232,3 +2232,5 @@ export const nodeVersion = process.version
       return { major, minor, patch };
     })()
   : undefined;
+
+export const silencedLogger = new ConsoleLogger({ level: "silent" });

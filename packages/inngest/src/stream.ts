@@ -119,7 +119,7 @@ export interface RunStreamOptions<TData = unknown> {
    */
   onStepCompleted?: (args: { hashedStepId: string }) => void;
   /** Called when a step errors. */
-  onStepErrored?: (stepId: string, info: StepErrorInfo) => void;
+  onStepErrored?: (args: { hashedStepId: string }) => void;
   /** Called when run metadata is received. */
   onMetadata?: (args: { runId: string }) => void;
   /** Called when the stream is fully consumed (including on abort or error). */
@@ -174,7 +174,6 @@ export class RunStream<TData = unknown> {
   private _parseFn: (data: unknown) => TData;
 
   constructor(private opts: RunStreamOptions<TData>) {
-    console.log("RunStream constructor");
     this._parseFn = opts.parse ?? ((d: unknown) => d as TData);
   }
 
@@ -309,9 +308,8 @@ export class RunStream<TData = unknown> {
               if (count > 0) {
                 this.opts.onRollback?.(count);
               }
-              this.opts.onStepErrored?.(sseEvent.stepId, {
-                willRetry: sseEvent.willRetry,
-                error: sseEvent.error,
+              this.opts.onStepErrored?.({
+                hashedStepId: sseEvent.stepId,
               });
             }
             break;
@@ -337,9 +335,8 @@ export class RunStream<TData = unknown> {
         if (count > 0) {
           this.opts.onRollback?.(count);
         }
-        this.opts.onStepErrored?.(stepId, {
-          willRetry: false,
-          error: "stream disconnected",
+        this.opts.onStepErrored?.({
+          hashedStepId: stepId,
         });
       }
     } catch (error) {

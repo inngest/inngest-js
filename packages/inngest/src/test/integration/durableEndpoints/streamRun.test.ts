@@ -3,12 +3,12 @@ import { expect, test } from "vitest";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { step } from "../../../index.ts";
 import { streamRun } from "../../../stream.ts";
-
+import { silencedLogger } from "../../helpers.ts";
 import { setupEndpoint } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("async mode", async (method) => {
+test("async mode", async () => {
   const state = createState({});
   const { port } = await setupEndpoint(testFileName, async () => {
     await step.run("a", async () => {
@@ -23,53 +23,10 @@ test("async mode", async (method) => {
     return Response.json("fn output");
   });
 
-  const calls = {
-    onData: [] as { data: unknown; hashedStepId?: string }[],
-    onDone: [] as undefined[],
-    onError: [] as undefined[],
-    onFunctionCompleted: [] as { data: unknown }[],
-    onFunctionFailed: [] as undefined[],
-    onMetadata: [] as { runId: string }[],
-    onRollback: [] as undefined[],
-    onStepCompleted: [] as { hashedStepId: string }[],
-    onStepErrored: [] as undefined[],
-    onStepRunning: [] as { hashedStepId: string }[],
-  };
-
-  const rs = streamRun(`http://localhost:${port}/api/demo`, {
-    onData: (args) => {
-      calls.onData.push(args);
-    },
-    onDone: () => {
-      calls.onDone.push(undefined);
-    },
-    onError: () => {
-      calls.onError.push(undefined);
-    },
-    onFunctionCompleted: (args) => {
-      calls.onFunctionCompleted.push(args);
-    },
-    onFunctionFailed: () => {
-      calls.onFunctionFailed.push(undefined);
-    },
-    onMetadata: (args) => {
-      calls.onMetadata.push(args);
-      state.runId = args.runId;
-    },
-    onRollback: () => {
-      calls.onRollback.push(undefined);
-    },
-    onStepCompleted: (args) => {
-      calls.onStepCompleted.push(args);
-    },
-    onStepErrored: () => {
-      calls.onStepErrored.push(undefined);
-    },
-    onStepRunning: (args) => {
-      calls.onStepRunning.push(args);
-    },
-  });
-  await rs;
+  const { calls, runId } = await collectCalls(
+    `http://localhost:${port}/api/demo`,
+  );
+  state.runId = runId;
 
   expect(calls).toEqual({
     onData: [
@@ -108,3 +65,227 @@ test("async mode", async (method) => {
 
   await state.waitForRunComplete();
 });
+
+test("retries", async () => {
+  const state = createState({});
+  let shouldError = true;
+  const { port } = await setupEndpoint(
+    testFileName,
+    async () => {
+      await step.run("a", async () => {
+        stream.push("sync-data");
+        if (shouldError) {
+          shouldError = false;
+          throw new Error("oh no");
+        }
+        shouldError = true;
+        return "a output";
+      });
+      await step.sleep("go-async", "1s");
+      await step.run("b", async () => {
+        stream.push("async-data");
+        if (shouldError) {
+          shouldError = false;
+          throw new Error("oh no");
+        }
+        shouldError = true;
+        return "b output";
+      });
+      return Response.json("fn output");
+    },
+    { logger: silencedLogger },
+  );
+
+  const { calls, runId } = await collectCalls(
+    `http://localhost:${port}/api/demo`,
+  );
+  state.runId = runId;
+
+  expect(calls).toEqual({
+    onData: [
+      {
+        data: "sync-data",
+        hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8",
+      },
+      {
+        data: "sync-data",
+        hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8",
+      },
+      {
+        data: "async-data",
+        hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98",
+      },
+      {
+        data: "async-data",
+        hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98",
+      },
+    ],
+    onDone: [undefined],
+    onError: [],
+
+    // FIXME: Should we parse this as JSON?
+    onFunctionCompleted: [{ data: '"fn output"' }],
+
+    onFunctionFailed: [],
+    onMetadata: [
+      { runId: expect.any(String) },
+      { runId: expect.any(String) },
+      { runId: expect.any(String) },
+      { runId: expect.any(String) },
+      { runId: expect.any(String) },
+    ],
+    onRollback: [undefined, undefined],
+    onStepCompleted: [
+      { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
+      { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
+    ],
+    onStepErrored: [
+      { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
+      { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
+    ],
+    onStepRunning: [
+      { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
+      { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
+      { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
+      { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
+    ],
+  });
+
+  await state.waitForRunComplete();
+});
+
+test("rollback", async () => {
+  // Test an abstraction that automatically rolls back retried stream items
+
+  const state = createState({});
+  let shouldError = true;
+  const { port } = await setupEndpoint(
+    testFileName,
+    async () => {
+      await step.run("a", async () => {
+        stream.push("sync-data");
+        if (shouldError) {
+          shouldError = false;
+          throw new Error("oh no");
+        }
+        shouldError = true;
+        return "a output";
+      });
+      await step.sleep("go-async", "1s");
+      await step.run("b", async () => {
+        stream.push("async-data");
+        if (shouldError) {
+          shouldError = false;
+          throw new Error("oh no");
+        }
+        shouldError = true;
+        return "b output";
+      });
+      return Response.json("fn output");
+    },
+    { logger: silencedLogger },
+  );
+
+  const { chunks, rawChunks, runId } = await rollbacker(
+    `http://localhost:${port}/api/demo`,
+  );
+  state.runId = runId;
+
+  // After rollback: errored attempts' chunks are removed
+  expect(chunks).toEqual(["sync-data", "async-data"]);
+
+  // Raw: every chunk received, including ones later rolled back
+  expect(rawChunks).toEqual([
+    "sync-data",
+    "sync-data",
+    "async-data",
+    "async-data",
+  ]);
+
+  await state.waitForRunComplete();
+});
+
+async function collectCalls(url: string) {
+  const calls = {
+    onData: [] as { data: unknown; hashedStepId?: string }[],
+    onDone: [] as undefined[],
+    onError: [] as undefined[],
+    onFunctionCompleted: [] as { data: unknown }[],
+    onFunctionFailed: [] as undefined[],
+    onMetadata: [] as { runId: string }[],
+    onRollback: [] as undefined[],
+    onStepCompleted: [] as { hashedStepId: string }[],
+    onStepErrored: [] as { hashedStepId: string }[],
+    onStepRunning: [] as { hashedStepId: string }[],
+  };
+  let runId = "";
+
+  const rs = streamRun(url, {
+    onData: (args) => {
+      calls.onData.push(args);
+    },
+    onDone: () => {
+      calls.onDone.push(undefined);
+    },
+    onError: () => {
+      calls.onError.push(undefined);
+    },
+    onFunctionCompleted: (args) => {
+      calls.onFunctionCompleted.push(args);
+    },
+    onFunctionFailed: () => {
+      calls.onFunctionFailed.push(undefined);
+    },
+    onMetadata: (args) => {
+      calls.onMetadata.push(args);
+      runId = args.runId;
+    },
+    onRollback: () => {
+      calls.onRollback.push(undefined);
+    },
+    onStepCompleted: (args) => {
+      calls.onStepCompleted.push(args);
+    },
+    onStepErrored: (args) => {
+      calls.onStepErrored.push(args);
+    },
+    onStepRunning: (args) => {
+      calls.onStepRunning.push(args);
+    },
+  });
+  await rs;
+
+  return { calls, runId };
+}
+
+/**
+ * Handle rollbacks due to step retries
+ */
+async function rollbacker(
+  url: string,
+): Promise<{ chunks: string[]; rawChunks: string[]; runId: string }> {
+  const rawChunks: string[] = [];
+  const committed: string[] = [];
+  let inProgress: string[] = [];
+  let runId = "";
+
+  const rs = streamRun<string>(url, {
+    onMetadata: (args) => {
+      runId = args.runId;
+    },
+    onData: ({ data }) => {
+      rawChunks.push(data);
+      inProgress.push(data);
+    },
+    onStepCompleted: () => {
+      committed.push(...inProgress);
+      inProgress = [];
+    },
+    onStepErrored: () => {
+      inProgress = [];
+    },
+  });
+  await rs;
+
+  return { chunks: committed, rawChunks, runId };
+}
