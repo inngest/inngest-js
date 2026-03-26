@@ -48,11 +48,6 @@ export default function Home() {
           setLines((prev) => [...prev, data]);
           scrollToBottom();
         },
-        onFunctionCompleted: ({ data }) => {
-          console.log("OnFunctionCompleted: ", data);
-          setLines((prev) => [...prev, data]);
-          scrollToBottom();
-        },
         onRollback: ({ count }) => {
           setLines((prev) => prev.slice(0, prev.length - count));
           console.log("Rolling back the streamed data!");

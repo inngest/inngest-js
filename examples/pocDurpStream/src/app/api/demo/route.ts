@@ -59,30 +59,39 @@ export const GET = inngest.endpoint(async () => {
   const choice = await step.waitForEvent("wait-for-language", {
     event: "language-chosen",
     if: `async.data.correlationId == "${correlationId}"`,
-    timeout: "60s",
+    timeout: "15s",
   });
 
-  if (!choice) {
-    return "\n⌛ Timed out waiting for language choice.\n";
+  const language = choice
+    ? (choice.data.language as string)
+    : await step.run("stream-default-message", () => {
+        stream.push("\nUsing the default language...\n");
+        return "portuguese";
+      });
+
+  try {
+    await step.run("second-llm", async () => {
+      stream.push(`\n📚 Translating to ${language}:\n`);
+      await sleep(300);
+
+      if (language.toLowerCase() === "sindarin" && Math.random() < 2) {
+        stream.push("🧙 ye shall not pass!\n");
+        throw new Error("Ye shall not pass!");
+      } else if (language.toLowerCase() === "dog") {
+        throw new NonRetriableError("Dog Speak is Much Too Hard to Translate");
+      }
+
+      return streamAndCollect(
+        `Translate the following text to ${language}. Output only the translation, no commentary.\n\n${sentences}`,
+      );
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await step.run("stream-error-message", async () => {
+      stream.push(`\nFailed due to "${message}"\n`);
+    });
+    return new Response(null, { status: 400 });
   }
-
-  const language = choice.data.language as string;
-
-  await step.run("second-llm", async () => {
-    stream.push(`\n📚 Translating to ${language}:\n`);
-    await sleep(300);
-
-    if (language.toLowerCase() === "sindarin" && Math.random() < 0.1) {
-      stream.push("🧙 ye shall not pass!\n");
-      throw new Error("Ye shall not pass!");
-    } else if (language.toLowerCase() === "dog") {
-      throw new NonRetriableError("Dog Speak is Much Too Hard to Translate");
-    }
-
-    return streamAndCollect(
-      `Translate the following text to ${language}. Output only the translation, no commentary.\n\n${sentences}`,
-    );
-  });
 
   if (language.toLowerCase() === "sindarin") {
     await Promise.all([
@@ -98,5 +107,9 @@ export const GET = inngest.endpoint(async () => {
     ]);
   }
 
-  return "\n🎉 We're all done here! Bye bye!";
+  await step.run("wrap-up", () => {
+    stream.push("\n🎉 We're all done here! Bye!\n");
+  });
+
+  return Response.json({ status: "great success" });
 });
