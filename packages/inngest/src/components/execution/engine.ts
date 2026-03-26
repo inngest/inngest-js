@@ -13,6 +13,7 @@ import {
 import {
   deserializeError,
   ErrCode,
+  getErrorMessage,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
@@ -92,10 +93,6 @@ const { sha1 } = hashjs;
  * 500 error, for AsyncCheckpointing the caller handles fallback.
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Placeholder step ID used when completing a checkpointed run.
@@ -445,9 +442,11 @@ class InngestExecutionEngine
 
     if (this.streamTools.activated) {
       if (stepError && !this.retriability(stepError)) {
-        // Permanent failure — close with a failed result event so the
-        // client knows the function is done.
-        this.streamTools.closeFailed(errorMessage(stepError));
+        // Permanent failure — close with a failed event so the client
+        // gets onFunctionFailed instead of silence.
+        this.streamTools.closeFailed(
+          getErrorMessage(stepError, "Unknown step error"),
+        );
       } else {
         // End stream without a result event — client uses redirect_info
         // to reconnect.
@@ -890,7 +889,9 @@ class InngestExecutionEngine
 
         if (this.streamTools.activated) {
           if (isFinal) {
-            this.streamTools.closeFailed(errorMessage(checkpoint.error));
+            this.streamTools.closeFailed(
+              getErrorMessage(checkpoint.error, "Unknown error"),
+            );
           } else {
             // Retryable error — suppress the result event; the run will retry.
             this.streamTools.end();
@@ -1064,7 +1065,9 @@ class InngestExecutionEngine
         const isFinal = !this.retriability(checkpoint.error);
 
         if (isFinal) {
-          this.streamTools.closeFailed(errorMessage(checkpoint.error));
+          this.streamTools.closeFailed(
+            getErrorMessage(checkpoint.error, "Unknown error"),
+          );
         } else {
           // Retryable error — suppress the result event; the run will retry.
           this.streamTools.end();

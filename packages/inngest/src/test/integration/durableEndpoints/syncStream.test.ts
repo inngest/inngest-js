@@ -172,8 +172,7 @@ test("NonRetriableError", async () => {
     {
       event: "inngest.result",
 
-      // FIXME: This shouldn't be "[object Object]"
-      data: JSON.stringify({ status: "failed", error: "[object Object]" }),
+      data: JSON.stringify({ status: "failed", error: "boom" }),
     },
   ]);
 });
