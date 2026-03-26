@@ -87,7 +87,7 @@ export interface RunStreamOptions<TData = unknown> {
   /** Optional fetch implementation. */
   fetch?: typeof globalThis.fetch;
   /** Optional parse function to transform raw data chunks. */
-  parse?: (data: unknown) => TData;
+  parse?: (data: unknown) => TData; // TODO: is this needed?
   /** Called for each parsed data chunk. */
   onData?: (args: { data: TData; hashedStepId?: string }) => void;
   /** Called when chunks are rolled back due to a step error or disconnect. */
