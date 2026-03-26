@@ -42,8 +42,7 @@ test("async mode", async () => {
     onDone: [undefined],
     onStreamError: [],
 
-    // FIXME: Should we parse this as JSON?
-    onFunctionCompleted: [{ data: '"fn output"' }],
+    onFunctionCompleted: [{ data: "fn output" }],
 
     onMetadata: [
       { runId: expect.any(String) },

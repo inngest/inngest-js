@@ -824,9 +824,14 @@ class InngestExecutionEngine
           let resultData: unknown = checkpoint.data;
           if (checkpoint.data instanceof Response) {
             // Clone when not SSE so the Response body stays intact for passthrough.
-            resultData = await (sseDeliveredToClient
+            const text = await (sseDeliveredToClient
               ? checkpoint.data.text()
               : checkpoint.data.clone().text());
+            try {
+              resultData = JSON.parse(text);
+            } catch {
+              resultData = text;
+            }
           }
 
           // Always close the stream — either the SSE client or the
@@ -849,9 +854,16 @@ class InngestExecutionEngine
         // future execution goes async.
         if (this.options.acceptsSse) {
           if (checkpoint.data instanceof Response) {
+            const text = await checkpoint.data.text();
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              parsed = text;
+            }
             checkpoint = {
               ...checkpoint,
-              data: await checkpoint.data.text(),
+              data: parsed,
             };
           }
           return this.wrapResultAsSse(checkpoint);
@@ -1025,7 +1037,12 @@ class InngestExecutionEngine
       "function-resolved": async ({ data }) => {
         let resultData: unknown = data;
         if (data instanceof Response) {
-          resultData = await data.text();
+          const text = await data.text();
+          try {
+            resultData = JSON.parse(text);
+          } catch {
+            resultData = text;
+          }
         }
 
         // Check for unreported new steps (e.g. from `Promise.race` where

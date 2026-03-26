@@ -73,7 +73,7 @@ test.each(streamingMethods)(
       },
       {
         event: "inngest.result",
-        data: JSON.stringify({ status: "succeeded", data: '"done"' }),
+        data: JSON.stringify({ status: "succeeded", data: "done" }),
       },
     ]);
   },
@@ -125,7 +125,7 @@ test("no explicit streaming", async () => {
     },
     {
       event: "inngest.result",
-      data: JSON.stringify({ status: "succeeded", data: '"done"' }),
+      data: JSON.stringify({ status: "succeeded", data: "done" }),
     },
   ]);
 });

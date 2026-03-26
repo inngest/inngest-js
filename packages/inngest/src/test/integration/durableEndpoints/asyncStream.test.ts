@@ -97,7 +97,7 @@ test.each(streamingMethods)("success (%s)", async (method) => {
 
     {
       event: "inngest.result",
-      data: JSON.stringify({ status: "succeeded", data: '"done"' }),
+      data: JSON.stringify({ status: "succeeded", data: "done" }),
     },
   ]);
 
@@ -207,7 +207,7 @@ test("mixed push and pipe in one step", async () => {
 
     {
       event: "inngest.result",
-      data: JSON.stringify({ status: "succeeded", data: '"done"' }),
+      data: JSON.stringify({ status: "succeeded", data: "done" }),
     },
   ]);
 
