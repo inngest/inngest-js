@@ -223,19 +223,26 @@ export class ConnectionCore {
    * Clean up the current connection.
    */
   async cleanup(): Promise<void> {
-    const conn = this.currentConnection;
-    if (conn) {
+    let conn = this.currentConnection;
+    if (!conn) {
+      return;
+    }
+
+    // Each cleanup may trigger a drain reconnect that replaces
+    // currentConnection, so loop until no more replacements occur.
+    while (conn) {
       await conn.cleanup();
 
-      // If a drain reconnect replaced the connection during cleanup (e.g.
-      // GATEWAY_CLOSING arrived while we were waiting for in-flight), clean
-      // up the new connection too since we're shutting down.
-      if (this.currentConnection && this.currentConnection !== conn) {
-        await this.currentConnection.cleanup();
+      // If no replacement was created during cleanup, we're done.
+      if (!this.currentConnection || this.currentConnection === conn) {
+        break;
       }
 
-      this.currentConnection = undefined;
+      // A drain reconnect created a replacement — clean it up too.
+      conn = this.currentConnection;
     }
+
+    this.currentConnection = undefined;
   }
 
   private async sendStartRequest(
@@ -982,10 +989,12 @@ export class ConnectionCore {
       }, heartbeatIntervalMs);
     }
 
+    let cleaningUp = false;
     conn.cleanup = async () => {
-      if (closed) {
+      if (closed || cleaningUp) {
         return;
       }
+      cleaningUp = true;
 
       this.callbacks.logger.debug({ connectionId }, "Cleaning up connection");
       if (ws.readyState === WebSocket.OPEN) {
