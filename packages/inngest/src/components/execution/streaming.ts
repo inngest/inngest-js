@@ -370,12 +370,18 @@ export async function* iterSse(
         const dataLines: string[] = [];
 
         for (const line of part.split("\n")) {
+          if (line.startsWith(":")) continue; // SSE comment, ignore
+
           if (line.startsWith("event: ")) {
             event = line.slice(7);
           } else if (line.startsWith("data: ")) {
             dataLines.push(line.slice(6));
           }
         }
+
+        // If the part was entirely comments (or otherwise had no recognised
+        // fields), skip it — there's nothing to emit.
+        if (event === "message" && dataLines.length === 0) continue;
 
         const data = dataLines.join("\n");
 

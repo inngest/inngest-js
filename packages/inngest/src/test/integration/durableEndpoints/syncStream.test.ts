@@ -10,6 +10,7 @@ import { stream } from "../../../experimental/durable-endpoints.ts";
 import { NonRetriableError, step } from "../../../index.ts";
 
 import {
+  getStreamData,
   readSseStream,
   setupEndpoint,
   streamingMethods,
@@ -73,7 +74,7 @@ test.each(streamingMethods)(
       },
       {
         event: "inngest.result",
-        data: JSON.stringify({ status: "succeeded", data: '"done"' }),
+        data: JSON.stringify({ status: "succeeded", data: "done" }),
       },
     ]);
   },
@@ -125,12 +126,12 @@ test("no explicit streaming", async () => {
     },
     {
       event: "inngest.result",
-      data: JSON.stringify({ status: "succeeded", data: '"done"' }),
+      data: JSON.stringify({ status: "succeeded", data: "done" }),
     },
   ]);
 });
 
-test("NonRetriableError", async () => {
+test("NonRetriableError in first step", async () => {
   // Test `NonRetriableError` instead of a regular error because retries puts us
   // into async mode.
 
@@ -171,9 +172,111 @@ test("NonRetriableError", async () => {
     },
     {
       event: "inngest.result",
-
-      // FIXME: This shouldn't be "[object Object]"
-      data: JSON.stringify({ status: "failed", error: "[object Object]" }),
+      data: JSON.stringify({ status: "failed", error: "boom" }),
     },
   ]);
+});
+
+test("stepless endpoint with streaming", async () => {
+  const { port } = await setupEndpoint(testFileName, async () => {
+    stream.push("no-steps-data");
+    return Response.json("stepless done");
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/demo`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("text/event-stream");
+
+  const { events } = await readSseStream(res);
+  expect(getStreamData(events)).toContain("no-steps-data");
+
+  const resultEvent = events.find((e) => e.event === "inngest.result");
+  expect(resultEvent).toBeTruthy();
+  expect(JSON.parse(resultEvent!.data)).toEqual({
+    status: "succeeded",
+    data: "stepless done",
+  });
+});
+
+test("non-streaming step among streaming steps", async () => {
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      stream.push("from a");
+    });
+    // Step b does not stream anything
+    await step.run("b", async () => {
+      return "silent";
+    });
+    await step.run("c", async () => {
+      stream.push("from c");
+    });
+    return Response.json("done");
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/demo`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  expect(res.status).toBe(200);
+
+  const { events } = await readSseStream(res);
+
+  // Only steps a and c should have stream events
+  const streamData = getStreamData(events);
+  expect(streamData).toEqual(["from a", "from c"]);
+
+  const resultEvent = events.find((e) => e.event === "inngest.result");
+  expect(resultEvent).toBeTruthy();
+  expect(JSON.parse(resultEvent!.data)).toEqual({
+    status: "succeeded",
+    data: "done",
+  });
+});
+
+test("NonRetriableError in later step preserves earlier stream data", async () => {
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      stream.push("survived-data");
+    });
+    await step.run("b", async () => {
+      stream.push("doomed-data");
+      throw new NonRetriableError("later boom");
+    });
+    return Response.json("unreachable");
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/demo`, {
+    headers: { Accept: "text/event-stream" },
+  });
+  expect(res.status).toBe(200);
+
+  const { events } = await readSseStream(res);
+
+  // Both stream events should be present — the earlier step's data survives
+  const streamData = getStreamData(events);
+  expect(streamData).toContain("survived-data");
+  expect(streamData).toContain("doomed-data");
+
+  // Step a should have completed successfully
+  const stepEvents = events.filter((e) => e.event === "inngest.step");
+  const completedSteps = stepEvents.filter((e) =>
+    e.data.includes('"status":"completed"'),
+  );
+  expect(completedSteps.length).toBeGreaterThanOrEqual(1);
+
+  // Step b should have errored
+  const erroredSteps = stepEvents.filter((e) =>
+    e.data.includes('"status":"errored"'),
+  );
+  expect(erroredSteps.length).toBe(1);
+  expect(erroredSteps[0]!.data).toContain("later boom");
+
+  // Result should indicate failure
+  const resultEvent = events.find((e) => e.event === "inngest.result");
+  expect(resultEvent).toBeTruthy();
+  expect(JSON.parse(resultEvent!.data)).toEqual({
+    status: "failed",
+    error: "later boom",
+  });
 });

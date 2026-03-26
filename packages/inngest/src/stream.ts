@@ -79,14 +79,6 @@ export async function* subscribeToRun(
 // streamRun — high-level hook-based API
 // ---------------------------------------------------------------------------
 
-/**
- * Information about a step error, passed to the `onStepErrored` callback.
- */
-export interface StepErrorInfo {
-  willRetry: boolean;
-  error: string;
-}
-
 export interface RunStreamOptions<TData = unknown> {
   /** The URL of the Durable Endpoint to connect to. */
   url: string;
@@ -95,22 +87,16 @@ export interface RunStreamOptions<TData = unknown> {
   /** Optional fetch implementation. */
   fetch?: typeof globalThis.fetch;
   /** Optional parse function to transform raw data chunks. */
-  parse?: (data: unknown) => TData;
+  parse?: (data: unknown) => TData; // TODO: is this needed?
   /** Called for each parsed data chunk. */
   onData?: (args: { data: TData; hashedStepId?: string }) => void;
   /** Called when chunks are rolled back due to a step error or disconnect. */
-  onRollback?: (count: number) => void;
+  onRollback?: (args: { count: number }) => void;
   /**
    * Called when the function completes successfully. The data is `unknown`
    * because SSE transport erases the original return type.
    */
   onFunctionCompleted?: (args: { data: unknown }) => void;
-  /**
-   * Called when the function fails permanently (NonRetriableError or final
-   * attempt). Will not fire for retryable errors — those simply end the
-   * stream without a result event.
-   */
-  onFunctionFailed?: (error: string) => void;
   /** Called when a step begins running. */
   onStepRunning?: (args: { hashedStepId: string }) => void;
   /**
@@ -118,14 +104,12 @@ export interface RunStreamOptions<TData = unknown> {
    * SSE transport erases the original step output type.
    */
   onStepCompleted?: (args: { hashedStepId: string }) => void;
-  /** Called when a step errors. */
-  onStepErrored?: (args: { hashedStepId: string }) => void;
   /** Called when run metadata is received. */
   onMetadata?: (args: { runId: string }) => void;
   /** Called when the stream is fully consumed (including on abort or error). */
   onDone?: () => void;
   /** Called when a stream-level error occurs (network failure, non-200, etc.). */
-  onError?: (error: unknown) => void;
+  onStreamError?: (args: { error: unknown }) => void;
 }
 
 /**
@@ -142,7 +126,6 @@ export interface RunStreamOptions<TData = unknown> {
  *   parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
  *   onData: (chunk) => console.log(chunk),
  *   onFunctionCompleted: ({ data }) => console.log("done:", data),
- *   onFunctionFailed: (error) => console.error("failed:", error),
  * });
  * ```
  *
@@ -306,19 +289,17 @@ export class RunStream<TData = unknown> {
               inFlightSteps.delete(sseEvent.stepId);
               const count = this._rollbackStepId(sseEvent.stepId);
               if (count > 0) {
-                this.opts.onRollback?.(count);
+                this.opts.onRollback?.({ count });
               }
-              this.opts.onStepErrored?.({
-                hashedStepId: sseEvent.stepId,
-              });
             }
             break;
           }
           case "inngest.result":
+            // Only "succeeded" fires a hook. Failed results are an
+            // implementation detail — endpoint authors handle errors
+            // server-side and control the response they return.
             if (sseEvent.status === "succeeded") {
               this.opts.onFunctionCompleted?.({ data: sseEvent.data });
-            } else {
-              this.opts.onFunctionFailed?.(sseEvent.error);
             }
             break outer;
           case "inngest.metadata":
@@ -333,14 +314,11 @@ export class RunStream<TData = unknown> {
       for (const stepId of inFlightSteps) {
         const count = this._rollbackStepId(stepId);
         if (count > 0) {
-          this.opts.onRollback?.(count);
+          this.opts.onRollback?.({ count });
         }
-        this.opts.onStepErrored?.({
-          hashedStepId: stepId,
-        });
       }
     } catch (error) {
-      this.opts.onError?.(error);
+      this.opts.onStreamError?.({ error });
       throw error;
     } finally {
       this.opts.onDone?.();

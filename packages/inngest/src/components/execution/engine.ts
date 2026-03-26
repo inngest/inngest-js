@@ -13,6 +13,7 @@ import {
 import {
   deserializeError,
   ErrCode,
+  getErrorMessage,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
@@ -92,10 +93,6 @@ const { sha1 } = hashjs;
  * 500 error, for AsyncCheckpointing the caller handles fallback.
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Placeholder step ID used when completing a checkpointed run.
@@ -447,7 +444,9 @@ class InngestExecutionEngine
       if (stepError && !this.retriability(stepError)) {
         // Permanent failure — close with a failed event so the client
         // gets onFunctionFailed instead of silence.
-        this.streamTools.closeFailed(errorMessage(stepError));
+        this.streamTools.closeFailed(
+          getErrorMessage(stepError, "Unknown step error"),
+        );
       } else {
         // End stream without a result event — client uses redirect_info
         // to reconnect.
@@ -825,9 +824,14 @@ class InngestExecutionEngine
           let resultData: unknown = checkpoint.data;
           if (checkpoint.data instanceof Response) {
             // Clone when not SSE so the Response body stays intact for passthrough.
-            resultData = await (sseDeliveredToClient
+            const text = await (sseDeliveredToClient
               ? checkpoint.data.text()
               : checkpoint.data.clone().text());
+            try {
+              resultData = JSON.parse(text);
+            } catch {
+              resultData = text;
+            }
           }
 
           // Always close the stream — either the SSE client or the
@@ -850,9 +854,16 @@ class InngestExecutionEngine
         // future execution goes async.
         if (this.options.acceptsSse) {
           if (checkpoint.data instanceof Response) {
+            const text = await checkpoint.data.text();
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              parsed = text;
+            }
             checkpoint = {
               ...checkpoint,
-              data: await checkpoint.data.text(),
+              data: parsed,
             };
           }
           return this.wrapResultAsSse(checkpoint);
@@ -890,7 +901,9 @@ class InngestExecutionEngine
 
         if (this.streamTools.activated) {
           if (isFinal) {
-            this.streamTools.closeFailed(errorMessage(checkpoint.error));
+            this.streamTools.closeFailed(
+              getErrorMessage(checkpoint.error, "Unknown error"),
+            );
           } else {
             // Retryable error — suppress the result event; the run will retry.
             this.streamTools.end();
@@ -1024,7 +1037,12 @@ class InngestExecutionEngine
       "function-resolved": async ({ data }) => {
         let resultData: unknown = data;
         if (data instanceof Response) {
-          resultData = await data.text();
+          const text = await data.text();
+          try {
+            resultData = JSON.parse(text);
+          } catch {
+            resultData = text;
+          }
         }
 
         // Check for unreported new steps (e.g. from `Promise.race` where
@@ -1064,7 +1082,9 @@ class InngestExecutionEngine
         const isFinal = !this.retriability(checkpoint.error);
 
         if (isFinal) {
-          this.streamTools.closeFailed(errorMessage(checkpoint.error));
+          this.streamTools.closeFailed(
+            getErrorMessage(checkpoint.error, "Unknown error"),
+          );
         } else {
           // Retryable error — suppress the result event; the run will retry.
           this.streamTools.end();

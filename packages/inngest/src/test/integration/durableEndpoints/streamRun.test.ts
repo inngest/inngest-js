@@ -1,5 +1,5 @@
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { step } from "../../../index.ts";
 import { streamRun } from "../../../stream.ts";
@@ -40,12 +40,10 @@ test("async mode", async () => {
       },
     ],
     onDone: [undefined],
-    onError: [],
+    onStreamError: [],
 
-    // FIXME: Should we parse this as JSON?
-    onFunctionCompleted: [{ data: '"fn output"' }],
+    onFunctionCompleted: [{ data: "fn output" }],
 
-    onFunctionFailed: [],
     onMetadata: [
       { runId: expect.any(String) },
       { runId: expect.any(String) },
@@ -56,7 +54,6 @@ test("async mode", async () => {
       { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
       { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
     ],
-    onStepErrored: [],
     onStepRunning: [
       { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
       { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
@@ -121,12 +118,10 @@ test("retries", async () => {
       },
     ],
     onDone: [undefined],
-    onError: [],
+    onStreamError: [],
 
-    // FIXME: Should we parse this as JSON?
-    onFunctionCompleted: [{ data: '"fn output"' }],
+    onFunctionCompleted: [{ data: "fn output" }],
 
-    onFunctionFailed: [],
     onMetadata: [
       { runId: expect.any(String) },
       { runId: expect.any(String) },
@@ -136,10 +131,6 @@ test("retries", async () => {
     ],
     onRollback: [undefined, undefined],
     onStepCompleted: [
-      { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
-      { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
-    ],
-    onStepErrored: [
       { hashedStepId: "86f7e437faa5a7fce15d1ddcb9eaeaea377667b8" },
       { hashedStepId: "e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98" },
     ],
@@ -205,17 +196,51 @@ test("rollback", async () => {
   await state.waitForRunComplete();
 });
 
+// Verifies the endpoint controls its response — the client sees whatever the
+// endpoint returns through onFunctionCompleted, including error-shaped data.
+test("endpoint error response via onFunctionCompleted", async () => {
+  const state = createState({});
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      stream.push("some-data");
+    });
+    await step.sleep("go-async", "1s");
+
+    // The endpoint decides to return an error based on application logic.
+    // No special failure hook needed — onFunctionCompleted carries the result.
+    return Response.json({ error: "something went wrong" });
+  });
+
+  const completed: { data: unknown }[] = [];
+  const done = vi.fn();
+
+  const rs = streamRun(`http://localhost:${port}/api/demo`, {
+    onFunctionCompleted: (args) => completed.push(args),
+    onMetadata: (args) => {
+      state.runId = args.runId;
+    },
+    onDone: done,
+  });
+  await rs;
+
+  expect(completed).toHaveLength(1);
+  expect(completed[0]!.data).toEqual({
+    error: "something went wrong",
+  });
+  expect(done).toHaveBeenCalledOnce();
+
+  await state.waitForRunComplete();
+});
+
 async function collectCalls(url: string) {
   const calls = {
     onData: [] as { data: unknown; hashedStepId?: string }[],
     onDone: [] as undefined[],
-    onError: [] as undefined[],
+    onStreamError: [] as undefined[],
     onFunctionCompleted: [] as { data: unknown }[],
-    onFunctionFailed: [] as undefined[],
     onMetadata: [] as { runId: string }[],
     onRollback: [] as undefined[],
     onStepCompleted: [] as { hashedStepId: string }[],
-    onStepErrored: [] as { hashedStepId: string }[],
     onStepRunning: [] as { hashedStepId: string }[],
   };
   let runId = "";
@@ -227,14 +252,11 @@ async function collectCalls(url: string) {
     onDone: () => {
       calls.onDone.push(undefined);
     },
-    onError: () => {
-      calls.onError.push(undefined);
+    onStreamError: () => {
+      calls.onStreamError.push(undefined);
     },
     onFunctionCompleted: (args) => {
       calls.onFunctionCompleted.push(args);
-    },
-    onFunctionFailed: () => {
-      calls.onFunctionFailed.push(undefined);
     },
     onMetadata: (args) => {
       calls.onMetadata.push(args);
@@ -245,9 +267,6 @@ async function collectCalls(url: string) {
     },
     onStepCompleted: (args) => {
       calls.onStepCompleted.push(args);
-    },
-    onStepErrored: (args) => {
-      calls.onStepErrored.push(args);
     },
     onStepRunning: (args) => {
       calls.onStepRunning.push(args);
@@ -281,7 +300,7 @@ async function rollbacker(
       committed.push(...inProgress);
       inProgress = [];
     },
-    onStepErrored: () => {
+    onRollback: () => {
       inProgress = [];
     },
   });

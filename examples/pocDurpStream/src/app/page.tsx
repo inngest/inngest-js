@@ -32,11 +32,10 @@ export default function Home() {
 
     try {
       await streamRun<string>("/api/demo", {
-        parse: (d) => (typeof d === "string" ? d : JSON.stringify(d)),
-        onData: (chunk) => {
+        onData: ({ data }) => {
           // Check for await-input signal
           try {
-            const parsed = JSON.parse(chunk);
+            const parsed = JSON.parse(data);
             if (parsed?.type === "await-input" && parsed?.correlationId) {
               setCorrelationId(parsed.correlationId);
               setWaitingForInput(true);
@@ -46,19 +45,10 @@ export default function Home() {
             // Not JSON — treat as display text
           }
 
-          setLines((prev) => [...prev, chunk]);
+          setLines((prev) => [...prev, data]);
           scrollToBottom();
         },
-        onFunctionSucceeded: (data) => {
-          const display =
-            typeof data === "string" ? data : JSON.stringify(data);
-          setLines((prev) => [...prev, display]);
-          scrollToBottom();
-        },
-        onFunctionFailed: (error) => {
-          setLines((prev) => [...prev, `\n❌ ${error}\n`]);
-        },
-        onRollback: (count) => {
+        onRollback: ({ count }) => {
           setLines((prev) => prev.slice(0, prev.length - count));
           console.log("Rolling back the streamed data!");
         },
