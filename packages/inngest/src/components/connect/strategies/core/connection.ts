@@ -223,9 +223,14 @@ export class ConnectionCore {
    * Clean up the current connection.
    */
   async cleanup(): Promise<void> {
-    if (this.currentConnection) {
-      await this.currentConnection.cleanup();
-      this.currentConnection = undefined;
+    const conn = this.currentConnection;
+    if (conn) {
+      await conn.cleanup();
+      // Only clear if the connection hasn't been replaced during cleanup
+      // (e.g. by a drain reconnect while waiting for in-flight requests).
+      if (this.currentConnection === conn) {
+        this.currentConnection = undefined;
+      }
     }
   }
 
