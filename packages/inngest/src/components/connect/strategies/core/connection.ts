@@ -6,37 +6,24 @@
  * WebSocket connection is open. Reconnection, drain, and shutdown are
  * expressed as state changes that wake the loop rather than recursive
  * calls or callback-driven control flow.
+ *
+ * Domain-specific logic is delegated to focused sub-modules:
+ * - {@link HeartbeatManager} — periodic heartbeat pings
+ * - {@link RequestProcessor} — executor requests, lease extensions, reply ACKs
+ * - {@link establishConnection} — HTTP start + WebSocket handshake
  */
 
 import { WaitGroup } from "@jpwilliams/waitgroup";
-import ms from "ms";
-import { headerKeys } from "../../../../helpers/consts.ts";
-import { allProcessEnv, getPlatformName } from "../../../../helpers/env.ts";
 import { resolveApiBaseUrl } from "../../../../helpers/url.ts";
 import type { Logger } from "../../../../middleware/logger.ts";
+import type { GatewayExecutorRequestData } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import {
   ConnectMessage,
-  GatewayConnectionReadyData,
-  type GatewayExecutorRequestData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
-  WorkerConnectRequestData,
-  WorkerDisconnectReason,
-  WorkerRequestAckData,
-  WorkerRequestExtendLeaseAckData,
-  WorkerRequestExtendLeaseData,
-  workerDisconnectReasonToJSON,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
-import { version } from "../../../../version.ts";
 import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
-import {
-  createStartRequest,
-  parseConnectMessage,
-  parseGatewayExecutorRequest,
-  parseStartResponse,
-  parseWorkerReplyAck,
-} from "../../messages.ts";
-import { getHostname, retrieveSystemAttributes } from "../../os.ts";
+import { parseConnectMessage } from "../../messages.ts";
 import { ConnectionState } from "../../types.ts";
 import {
   AuthError,
@@ -45,16 +32,10 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "../../util.ts";
+import { establishConnection } from "./handshake.ts";
+import { HeartbeatManager } from "./heartbeat.ts";
+import { RequestProcessor } from "./requestProcessor.ts";
 import type { BaseConnectionConfig } from "./types.ts";
-
-const ConnectWebSocketProtocol = "v0.connect.inngest.com";
-
-function toError(value: unknown): Error {
-  if (value instanceof Error) {
-    return value;
-  }
-  return new Error(String(value));
-}
 
 /**
  * Connection object representing an active WebSocket connection.
@@ -111,11 +92,11 @@ export class ConnectionCore {
   private config: ConnectionCoreConfig;
   private callbacks: ConnectionCoreCallbacks;
 
-  private activeConnection: Connection | undefined;
-  private drainingConnection: Connection | undefined;
-  private excludeGateways: Set<string> = new Set();
-
-  private inProgressRequests: {
+  // Exposed via ConnectionAccessor for sub-modules
+  private _activeConnection: Connection | undefined;
+  private _drainingConnection: Connection | undefined;
+  private _shutdownRequested = false;
+  private _inProgressRequests: {
     wg: WaitGroup;
     requestLeases: Record<string, string>;
   } = {
@@ -123,19 +104,14 @@ export class ConnectionCore {
     requestLeases: {},
   };
 
+  private excludeGateways: Set<string> = new Set();
+
   // Wake signal for the reconcile loop
   private wakeSignal: { promise: Promise<void>; resolve: () => void };
-
-  // Shutdown state
-  private shutdownRequested = false;
 
   // Whether we've ever successfully connected (used to distinguish
   // CONNECTING from RECONNECTING state transitions).
   private hasConnectedBefore = false;
-
-  // Heartbeat state (single interval for the active connection)
-  private heartbeatInterval: ReturnType<typeof setInterval> | undefined;
-  private heartbeatIntervalMs = 10_000;
 
   // Loop promise — resolved when the reconcile loop exits
   private loopPromise: Promise<void> | undefined;
@@ -146,6 +122,10 @@ export class ConnectionCore {
 
   // Signing key management
   private useSigningKey: string | undefined;
+
+  // Sub-modules
+  private readonly heartbeatManager: HeartbeatManager;
+  private readonly requestProcessor: RequestProcessor;
 
   constructor(
     config: ConnectionCoreConfig,
@@ -161,17 +141,53 @@ export class ConnectionCore {
       resolve = r;
     });
     this.wakeSignal = { promise, resolve: resolve! };
+
+    // Build a ConnectionAccessor view for sub-modules
+    const accessor = {
+      get activeConnection() {
+        return self._activeConnection;
+      },
+      get drainingConnection() {
+        return self._drainingConnection;
+      },
+      get shutdownRequested() {
+        return self._shutdownRequested;
+      },
+      get inProgressRequests() {
+        return self._inProgressRequests;
+      },
+      get appIds() {
+        return self.config.appIds;
+      },
+    };
+
+    const wakeSignalRef = { wake: () => this.wake() };
+
+    const self = this;
+
+    this.heartbeatManager = new HeartbeatManager(
+      accessor,
+      wakeSignalRef,
+      callbacks.logger,
+    );
+
+    this.requestProcessor = new RequestProcessor(
+      accessor,
+      wakeSignalRef,
+      callbacks,
+      callbacks.logger,
+    );
   }
 
   get connectionId(): string | undefined {
-    return this.activeConnection?.id;
+    return this._activeConnection?.id;
   }
 
   /**
    * Wait for all in-progress requests to complete.
    */
   async waitForInProgress(): Promise<void> {
-    await this.inProgressRequests.wg.wait();
+    await this._inProgressRequests.wg.wait();
   }
 
   /**
@@ -211,10 +227,10 @@ export class ConnectionCore {
    */
   async close(): Promise<void> {
     this.callbacks.logger.info("Shutting down, waiting for in-flight requests");
-    this.shutdownRequested = true;
+    this._shutdownRequested = true;
 
-    if (this.activeConnection?.ws.readyState === WebSocket.OPEN) {
-      this.activeConnection.ws.send(
+    if (this._activeConnection?.ws.readyState === WebSocket.OPEN) {
+      this._activeConnection.ws.send(
         ensureUnsharedArrayBuffer(
           ConnectMessage.encode(
             ConnectMessage.create({
@@ -259,57 +275,6 @@ export class ConnectionCore {
   }
 
   // ---------------------------------------------------------------------------
-  // Heartbeat management (single interval)
-  // ---------------------------------------------------------------------------
-
-  private startHeartbeat(): void {
-    if (this.heartbeatInterval) return;
-    this.heartbeatInterval = setInterval(
-      () => this.tick(),
-      this.heartbeatIntervalMs,
-    );
-  }
-
-  private stopHeartbeat(): void {
-    clearInterval(this.heartbeatInterval);
-    this.heartbeatInterval = undefined;
-  }
-
-  private updateHeartbeatInterval(intervalMs: number): void {
-    if (intervalMs === this.heartbeatIntervalMs && this.heartbeatInterval)
-      return;
-    this.heartbeatIntervalMs = intervalMs;
-    this.stopHeartbeat();
-    this.startHeartbeat();
-  }
-
-  private tick(): void {
-    const conn = this.activeConnection;
-    if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
-
-    if (conn.pendingHeartbeats >= 2) {
-      this.callbacks.logger.warn(
-        { connectionId: conn.id },
-        "Consecutive heartbeats missed, reconnecting",
-      );
-      conn.dead = true;
-      this.wake();
-      return;
-    }
-
-    conn.pendingHeartbeats++;
-    conn.ws.send(
-      ensureUnsharedArrayBuffer(
-        ConnectMessage.encode(
-          ConnectMessage.create({
-            kind: GatewayMessageType.WORKER_HEARTBEAT,
-          }),
-        ).finish(),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Signing key management
   // ---------------------------------------------------------------------------
 
@@ -329,7 +294,7 @@ export class ConnectionCore {
   // ---------------------------------------------------------------------------
 
   private hasInFlightRequests(): boolean {
-    return Object.keys(this.inProgressRequests.requestLeases).length > 0;
+    return Object.keys(this._inProgressRequests.requestLeases).length > 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -341,12 +306,12 @@ export class ConnectionCore {
 
     while (true) {
       // Exit condition: shutdown requested + no in-flight requests
-      if (this.shutdownRequested && !this.hasInFlightRequests()) {
+      if (this._shutdownRequested && !this.hasInFlightRequests()) {
         break;
       }
 
       // Ensure we have a live connection
-      if (!this.activeConnection || this.activeConnection.dead) {
+      if (!this._activeConnection || this._activeConnection.dead) {
         this.callbacks.onStateChange(
           this.hasConnectedBefore
             ? ConnectionState.RECONNECTING
@@ -359,26 +324,32 @@ export class ConnectionCore {
             await this.callbacks.beforeConnect(this.useSigningKey);
           }
 
-          const conn = await this.establishConnection(
+          const { conn, gatewayGroup } = await establishConnection(
+            this.config,
             this.useSigningKey,
             attempt,
+            this.excludeGateways,
+            this.callbacks.logger,
           );
 
+          // Attach post-handshake handlers
+          this.attachHandlers(conn, gatewayGroup);
+
           // Clean up draining connection after new one is ready
-          if (this.drainingConnection) {
+          if (this._drainingConnection) {
             this.callbacks.logger.info(
               {
-                oldConnectionId: this.drainingConnection.id,
+                oldConnectionId: this._drainingConnection.id,
                 newConnectionId: conn.id,
               },
               "Replaced draining connection",
             );
-            this.drainingConnection.close();
-            this.drainingConnection = undefined;
+            this._drainingConnection.close();
+            this._drainingConnection = undefined;
           }
 
-          this.activeConnection = conn;
-          this.updateHeartbeatInterval(conn.heartbeatIntervalMs);
+          this._activeConnection = conn;
+          this.heartbeatManager.updateInterval(conn.heartbeatIntervalMs);
           attempt = 0;
           this.hasConnectedBefore = true;
           this.callbacks.onStateChange(ConnectionState.ACTIVE);
@@ -401,7 +372,7 @@ export class ConnectionCore {
           );
 
           const cancelled = await waitWithCancel(delay, () => {
-            return this.shutdownRequested && !this.hasInFlightRequests();
+            return this._shutdownRequested && !this.hasInFlightRequests();
           });
           if (cancelled) break;
           continue;
@@ -413,321 +384,36 @@ export class ConnectionCore {
     }
 
     // Teardown
-    this.stopHeartbeat();
-    this.activeConnection?.close();
-    this.activeConnection = undefined;
-    this.drainingConnection?.close();
-    this.drainingConnection = undefined;
+    this.heartbeatManager.stop();
+    this._activeConnection?.close();
+    this._activeConnection = undefined;
+    this._drainingConnection?.close();
+    this._drainingConnection = undefined;
   }
 
   // ---------------------------------------------------------------------------
-  // Connection establishment
+  // Post-handshake handler attachment
   // ---------------------------------------------------------------------------
 
-  private async sendStartRequest(
-    hashedSigningKey: string | undefined,
-    attempt: number,
-  ) {
-    const msg = createStartRequest(Array.from(this.excludeGateways));
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/protobuf",
-      ...(hashedSigningKey
-        ? { Authorization: `Bearer ${hashedSigningKey}` }
-        : {}),
-    };
-
-    if (this.config.envName) {
-      headers[headerKeys.Environment] = this.config.envName;
-    }
-
-    const targetUrl = new URL("/v0/connect/start", await this.getApiBaseUrl());
-
-    let resp;
-    try {
-      resp = await fetch(targetUrl, {
-        method: "POST",
-        body: new Uint8Array(msg),
-        headers: headers,
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Unknown error";
-      throw new ReconnectError(
-        `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`,
-        attempt,
-      );
-    }
-
-    if (!resp.ok) {
-      if (resp.status === 401) {
-        throw new AuthError(
-          `Failed initial API handshake request to ${targetUrl.toString()}${
-            this.config.envName ? ` (env: ${this.config.envName})` : ""
-          }, ${await resp.text()}`,
-          attempt,
-        );
-      }
-
-      if (resp.status === 429) {
-        throw new ConnectionLimitError(attempt);
-      }
-
-      throw new ReconnectError(
-        `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`,
-        attempt,
-      );
-    }
-
-    const startResp = await parseStartResponse(resp);
-    return startResp;
-  }
-
-  private async establishConnection(
-    hashedSigningKey: string | undefined,
-    attempt: number,
-  ): Promise<Connection> {
-    this.callbacks.logger.debug({ attempt }, "Preparing connection");
-
-    const startedAt = new Date();
-    const startResp = await this.sendStartRequest(hashedSigningKey, attempt);
-
-    const connectionId = startResp.connectionId;
-
-    let resolveWsConnected: (() => void) | undefined;
-    let rejectWsConnected: ((reason?: unknown) => void) | undefined;
-    const wsConnectedPromise = new Promise<void>((resolve, reject) => {
-      resolveWsConnected = resolve;
-      rejectWsConnected = reject;
-    });
-
-    const connectTimeout = setTimeout(() => {
-      this.excludeGateways.add(startResp.gatewayGroup);
-      rejectWsConnected?.(
-        new ReconnectError(`Connection ${connectionId} timed out`, attempt),
-      );
-    }, 10_000);
-
-    const finalEndpoint = this.config.gatewayUrl || startResp.gatewayEndpoint;
-    if (finalEndpoint !== startResp.gatewayEndpoint) {
-      this.callbacks.logger.debug(
-        { original: startResp.gatewayEndpoint, override: finalEndpoint },
-        "Overriding gateway endpoint",
-      );
-    }
-
-    this.callbacks.logger.debug(
-      {
-        endpoint: finalEndpoint,
-        gatewayGroup: startResp.gatewayGroup,
-        connectionId,
-      },
-      "Connecting to gateway",
-    );
-
-    const ws = new WebSocket(finalEndpoint, [ConnectWebSocketProtocol]);
-    ws.binaryType = "arraybuffer";
-
-    // Track whether we've rejected/resolved the handshake promise so we
-    // don't double-settle from concurrent error/close events.
-    let settled = false;
-
-    const rejectHandshake = (error: unknown) => {
-      if (settled) return;
-      settled = true;
-
-      this.excludeGateways.add(startResp.gatewayGroup);
-      clearTimeout(connectTimeout);
-
-      ws.onerror = () => {};
-      ws.onclose = () => {};
-      ws.close(
-        4001,
-        workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
-      );
-
-      rejectWsConnected?.(
-        new ReconnectError(
-          `Error while connecting (${connectionId}): ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-          attempt,
-        ),
-      );
-    };
-
-    ws.onerror = (err) => rejectHandshake(err);
-    ws.onclose = (ev) => {
-      rejectHandshake(
-        new ReconnectError(
-          `Connection ${connectionId} closed: ${ev.reason}`,
-          attempt,
-        ),
-      );
-    };
-
-    const setupState = {
-      receivedGatewayHello: false,
-      sentWorkerConnect: false,
-      receivedConnectionReady: false,
-    };
-
-    let heartbeatIntervalMs: number | undefined;
-    let extendLeaseIntervalMs: number | undefined;
-
-    ws.onmessage = async (event) => {
-      const messageBytes = new Uint8Array(event.data as ArrayBuffer);
-      const connectMessage = parseConnectMessage(messageBytes);
-
-      this.callbacks.logger.debug(
-        { kind: gatewayMessageTypeToJSON(connectMessage.kind), connectionId },
-        "Received message",
-      );
-
-      if (!setupState.receivedGatewayHello) {
-        if (connectMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
-          rejectHandshake(
-            new ReconnectError(
-              `Expected hello message, got ${gatewayMessageTypeToJSON(
-                connectMessage.kind,
-              )}`,
-              attempt,
-            ),
-          );
-          return;
-        }
-        setupState.receivedGatewayHello = true;
-      }
-
-      if (!setupState.sentWorkerConnect) {
-        const workerConnectRequestMsg = WorkerConnectRequestData.create({
-          connectionId: startResp.connectionId,
-          environment: this.config.envName,
-          platform: getPlatformName({ ...allProcessEnv() }),
-          sdkVersion: `v${version}`,
-          sdkLanguage: "typescript",
-          framework: "connect",
-          workerManualReadinessAck:
-            this.config.connectionData.manualReadinessAck,
-          systemAttributes: await retrieveSystemAttributes(),
-          authData: {
-            sessionToken: startResp.sessionToken,
-            syncToken: startResp.syncToken,
-          },
-          apps: this.config.connectionData.apps,
-          capabilities: new TextEncoder().encode(
-            this.config.connectionData.marshaledCapabilities,
-          ),
-          startedAt: startedAt,
-          instanceId: this.config.instanceId || (await getHostname()),
-          maxWorkerConcurrency: this.config.maxWorkerConcurrency,
-        });
-
-        const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
-          workerConnectRequestMsg,
-        ).finish();
-
-        ws.send(
-          ensureUnsharedArrayBuffer(
-            ConnectMessage.encode(
-              ConnectMessage.create({
-                kind: GatewayMessageType.WORKER_CONNECT,
-                payload: workerConnectRequestMsgBytes,
-              }),
-            ).finish(),
-          ),
-        );
-
-        setupState.sentWorkerConnect = true;
-        return;
-      }
-
-      if (!setupState.receivedConnectionReady) {
-        if (
-          connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
-        ) {
-          rejectHandshake(
-            new ReconnectError(
-              `Expected ready message, got ${gatewayMessageTypeToJSON(
-                connectMessage.kind,
-              )}`,
-              attempt,
-            ),
-          );
-          return;
-        }
-
-        const readyPayload = GatewayConnectionReadyData.decode(
-          connectMessage.payload,
-        );
-
-        setupState.receivedConnectionReady = true;
-
-        heartbeatIntervalMs =
-          readyPayload.heartbeatInterval.length > 0
-            ? ms(readyPayload.heartbeatInterval as ms.StringValue)
-            : 10_000;
-        extendLeaseIntervalMs =
-          readyPayload.extendLeaseInterval.length > 0
-            ? ms(readyPayload.extendLeaseInterval as ms.StringValue)
-            : 5_000;
-
-        resolveWsConnected?.();
-        return;
-      }
-
-      this.callbacks.logger.warn(
-        {
-          kind: gatewayMessageTypeToJSON(connectMessage.kind),
-          rawKind: connectMessage.kind,
-          attempt,
-          setupState,
-          state: this.callbacks.getState(),
-          connectionId,
-        },
-        "Unexpected message type during setup",
-      );
-    };
-
-    await wsConnectedPromise;
-
-    clearTimeout(connectTimeout);
-    this.excludeGateways.delete(startResp.gatewayGroup);
-
-    // Build the Connection object
-    const conn: Connection = {
-      id: connectionId,
-      ws,
-      pendingHeartbeats: 0,
-      dead: false,
-      heartbeatIntervalMs: heartbeatIntervalMs ?? 10_000,
-      extendLeaseIntervalMs: extendLeaseIntervalMs ?? 5_000,
-      close: () => {
-        if (conn.dead) return;
-        conn.dead = true;
-        ws.onerror = () => {};
-        ws.onclose = () => {};
-        ws.close();
-      },
-    };
-
-    this.callbacks.logger.info(
-      { connectionId, gatewayGroup: startResp.gatewayGroup },
-      "Connection established",
-    );
-
-    // ----- Post-handshake handlers -----
+  /**
+   * Wire up error, close, and message handlers on a newly-handshaked connection.
+   */
+  private attachHandlers(conn: Connection, gatewayGroup: string): void {
+    const { ws } = conn;
+    const connectionId = conn.id;
 
     // Error/close handlers: mark connection as dead and wake the loop
     ws.onerror = () => {
       if (conn.dead) return;
       this.callbacks.logger.warn({ connectionId }, "Connection lost");
       conn.dead = true;
-      this.excludeGateways.add(startResp.gatewayGroup);
-      if (this.activeConnection?.id === connectionId) {
-        this.activeConnection = undefined;
+      this.excludeGateways.add(gatewayGroup);
+      if (this._activeConnection?.id === connectionId) {
+        this._activeConnection = undefined;
       }
       this.wake();
     };
+
     ws.onclose = (ev) => {
       if (conn.dead) return;
       this.callbacks.logger.warn(
@@ -735,9 +421,9 @@ export class ConnectionCore {
         "Connection lost",
       );
       conn.dead = true;
-      this.excludeGateways.add(startResp.gatewayGroup);
-      if (this.activeConnection?.id === connectionId) {
-        this.activeConnection = undefined;
+      this.excludeGateways.add(gatewayGroup);
+      if (this._activeConnection?.id === connectionId) {
+        this._activeConnection = undefined;
       }
       this.wake();
     };
@@ -754,8 +440,8 @@ export class ConnectionCore {
         );
         // Move current connection to draining, clear active so the loop
         // establishes a replacement.
-        this.drainingConnection = this.activeConnection;
-        this.activeConnection = undefined;
+        this._drainingConnection = this._activeConnection;
+        this._activeConnection = undefined;
         this.wake();
         return;
       }
@@ -770,223 +456,12 @@ export class ConnectionCore {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
-        const currentState = this.callbacks.getState();
-        if (currentState !== ConnectionState.ACTIVE) {
-          this.callbacks.logger.warn(
-            { connectionId },
-            "Received request while not active, skipping",
-          );
-          return;
-        }
-
-        const gatewayExecutorRequest = parseGatewayExecutorRequest(
-          connectMessage.payload,
-        );
-
-        this.callbacks.logger.debug(
-          {
-            requestId: gatewayExecutorRequest.requestId,
-            appId: gatewayExecutorRequest.appId,
-            appName: gatewayExecutorRequest.appName,
-            functionSlug: gatewayExecutorRequest.functionSlug,
-            stepId: gatewayExecutorRequest.stepId,
-            connectionId,
-          },
-          "Received gateway executor request",
-        );
-
-        if (
-          typeof gatewayExecutorRequest.appName !== "string" ||
-          gatewayExecutorRequest.appName.length === 0
-        ) {
-          this.callbacks.logger.warn(
-            {
-              requestId: gatewayExecutorRequest.requestId,
-              appId: gatewayExecutorRequest.appId,
-              functionSlug: gatewayExecutorRequest.functionSlug,
-              stepId: gatewayExecutorRequest.stepId,
-              connectionId,
-            },
-            "No app name in request, skipping",
-          );
-          return;
-        }
-
-        if (!this.config.appIds.includes(gatewayExecutorRequest.appName)) {
-          this.callbacks.logger.warn(
-            {
-              requestId: gatewayExecutorRequest.requestId,
-              appId: gatewayExecutorRequest.appId,
-              appName: gatewayExecutorRequest.appName,
-              functionSlug: gatewayExecutorRequest.functionSlug,
-              stepId: gatewayExecutorRequest.stepId,
-              connectionId,
-            },
-            "No request handler found for app, skipping",
-          );
-          return;
-        }
-
-        // Send ACK
-        ws.send(
-          ensureUnsharedArrayBuffer(
-            ConnectMessage.encode(
-              ConnectMessage.create({
-                kind: GatewayMessageType.WORKER_REQUEST_ACK,
-                payload: WorkerRequestAckData.encode(
-                  WorkerRequestAckData.create({
-                    accountId: gatewayExecutorRequest.accountId,
-                    envId: gatewayExecutorRequest.envId,
-                    appId: gatewayExecutorRequest.appId,
-                    functionSlug: gatewayExecutorRequest.functionSlug,
-                    requestId: gatewayExecutorRequest.requestId,
-                    stepId: gatewayExecutorRequest.stepId,
-                    userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                    systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                    runId: gatewayExecutorRequest.runId,
-                  }),
-                ).finish(),
-              }),
-            ).finish(),
-          ),
-        );
-
-        this.inProgressRequests.wg.add(1);
-        this.inProgressRequests.requestLeases[
-          gatewayExecutorRequest.requestId
-        ] = gatewayExecutorRequest.leaseId;
-
-        // Start lease extension interval
-        let extendLeaseInterval: ReturnType<typeof setInterval> | undefined;
-        extendLeaseInterval = setInterval(() => {
-          const currentLeaseId =
-            this.inProgressRequests.requestLeases[
-              gatewayExecutorRequest.requestId
-            ];
-          if (!currentLeaseId) {
-            clearInterval(extendLeaseInterval);
-            return;
-          }
-
-          // Use the current live connection's WebSocket for lease
-          // extensions. During a drain, the original WebSocket may be
-          // closed by the gateway while the request is still in flight.
-          const latestConn = {
-            ws: this.activeConnection?.ws ?? ws,
-            id: this.activeConnection?.id ?? connectionId,
-          };
-
-          this.callbacks.logger.debug(
-            { connectionId: latestConn.id, leaseId: currentLeaseId },
-            "Extending lease",
-          );
-
-          if (latestConn.ws.readyState !== WebSocket.OPEN) {
-            this.callbacks.logger.warn(
-              {
-                connectionId: latestConn.id,
-                requestId: gatewayExecutorRequest.requestId,
-              },
-              "Cannot extend lease, no open WebSocket available",
-            );
-            return;
-          }
-
-          latestConn.ws.send(
-            ensureUnsharedArrayBuffer(
-              ConnectMessage.encode(
-                ConnectMessage.create({
-                  kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
-                  payload: WorkerRequestExtendLeaseData.encode(
-                    WorkerRequestExtendLeaseData.create({
-                      accountId: gatewayExecutorRequest.accountId,
-                      envId: gatewayExecutorRequest.envId,
-                      appId: gatewayExecutorRequest.appId,
-                      functionSlug: gatewayExecutorRequest.functionSlug,
-                      requestId: gatewayExecutorRequest.requestId,
-                      stepId: gatewayExecutorRequest.stepId,
-                      runId: gatewayExecutorRequest.runId,
-                      userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                      systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                      leaseId: currentLeaseId,
-                    }),
-                  ).finish(),
-                }),
-              ).finish(),
-            ),
-          );
-        }, conn.extendLeaseIntervalMs);
-
-        try {
-          const responseBytes = await this.callbacks.handleExecutionRequest(
-            gatewayExecutorRequest,
-          );
-
-          if (!this.activeConnection) {
-            this.callbacks.logger.warn(
-              { requestId: gatewayExecutorRequest.requestId },
-              "No current WebSocket, buffering response",
-            );
-            if (this.callbacks.onBufferResponse) {
-              this.callbacks.onBufferResponse(
-                gatewayExecutorRequest.requestId,
-                responseBytes,
-              );
-            }
-            return;
-          }
-
-          this.callbacks.logger.debug(
-            {
-              connectionId: this.activeConnection.id,
-              requestId: gatewayExecutorRequest.requestId,
-            },
-            "Sending worker reply",
-          );
-
-          this.activeConnection.ws.send(
-            ensureUnsharedArrayBuffer(
-              ConnectMessage.encode(
-                ConnectMessage.create({
-                  kind: GatewayMessageType.WORKER_REPLY,
-                  payload: responseBytes,
-                }),
-              ).finish(),
-            ),
-          );
-        } catch (err) {
-          this.callbacks.logger.debug(
-            {
-              requestId: gatewayExecutorRequest.requestId,
-              err: toError(err),
-            },
-            "Execution error",
-          );
-        } finally {
-          this.inProgressRequests.wg.done();
-          delete this.inProgressRequests.requestLeases[
-            gatewayExecutorRequest.requestId
-          ];
-          clearInterval(extendLeaseInterval);
-
-          // Wake the loop if shutdown is pending and this was the last request
-          if (this.shutdownRequested && !this.hasInFlightRequests()) {
-            this.wake();
-          }
-        }
-
+        await this.requestProcessor.handleExecutorRequest(connectMessage, conn);
         return;
       }
 
       if (connectMessage.kind === GatewayMessageType.WORKER_REPLY_ACK) {
-        const replyAck = parseWorkerReplyAck(connectMessage.payload);
-
-        this.callbacks.logger.debug(
-          { connectionId, requestId: replyAck.requestId },
-          "Acknowledging reply ack",
-        );
-
-        this.callbacks.onReplyAck?.(replyAck.requestId);
+        this.requestProcessor.handleReplyAck(connectMessage, connectionId);
         return;
       }
 
@@ -994,28 +469,10 @@ export class ConnectionCore {
         connectMessage.kind ===
         GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK
       ) {
-        const extendLeaseAck = WorkerRequestExtendLeaseAckData.decode(
-          connectMessage.payload,
+        this.requestProcessor.handleExtendLeaseAck(
+          connectMessage,
+          connectionId,
         );
-
-        this.callbacks.logger.debug(
-          { connectionId, newLeaseId: extendLeaseAck.newLeaseId },
-          "Received extend lease ack",
-        );
-
-        if (extendLeaseAck.newLeaseId) {
-          this.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
-            extendLeaseAck.newLeaseId;
-        } else {
-          this.callbacks.logger.warn(
-            { connectionId, requestId: extendLeaseAck.requestId },
-            "Unable to extend lease",
-          );
-          delete this.inProgressRequests.requestLeases[
-            extendLeaseAck.requestId
-          ];
-        }
-
         return;
       }
 
@@ -1023,14 +480,11 @@ export class ConnectionCore {
         {
           kind: gatewayMessageTypeToJSON(connectMessage.kind),
           rawKind: connectMessage.kind,
-          attempt,
           state: this.callbacks.getState(),
           connectionId,
         },
         "Unexpected message type",
       );
     };
-
-    return conn;
   }
 }
