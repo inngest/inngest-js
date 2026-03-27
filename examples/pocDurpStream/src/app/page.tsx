@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { streamRun } from "inngest/experimental/durable-endpoints/client";
+import { fetchDurableEndpoint } from "inngest/experimental/durable-endpoints/client";
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
+  const uncommittedCountRef = useRef(0);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [waitingForInput, setWaitingForInput] = useState(false);
@@ -31,28 +32,46 @@ export default function Home() {
     setWaitingForInput(false);
 
     try {
-      await streamRun<string>("/api/demo", {
-        onData: ({ data }) => {
-          // Check for await-input signal
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed?.type === "await-input" && parsed?.correlationId) {
-              setCorrelationId(parsed.correlationId);
-              setWaitingForInput(true);
-              return;
-            }
-          } catch {
-            // Not JSON — treat as display text
+      const resp = await fetchDurableEndpoint("/api/demo", {
+        onData: ({data}) => {
+          if (isRecord(data) && data.type === "await-input" && typeof data.correlationId === "string") {
+            setCorrelationId(data.correlationId);
+            setWaitingForInput(true);
+            return;
           }
 
-          setLines((prev) => [...prev, data]);
-          scrollToBottom();
+          if (typeof data === "string") {
+            uncommittedCountRef.current++;
+            setLines((prev) => [...prev, data]);
+            scrollToBottom();
+            return;
+          }
         },
-        onRollback: ({ count }) => {
-          setLines((prev) => prev.slice(0, prev.length - count));
-          console.log("Rolling back the streamed data!");
+        onRollback: () => {
+          const rollbackCount = uncommittedCountRef.current;
+          if (rollbackCount === 0) {
+            return;
+          }
+
+          setLines((prev) => {
+            return prev.slice(0, -rollbackCount);
+          })
+          uncommittedCountRef.current = 0;
+        },
+        onCommit: () => {
+          uncommittedCountRef.current = 0;
+        },
+        onStreamError: (error) => {
+          setLines((prev) => [...prev, `\n❌ ${error}\n`]);
         },
       });
+
+      // Display the final result from the Response
+      const result = await resp.text();
+      if (result) {
+        setLines((prev) => [...prev, result]);
+        scrollToBottom();
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLines((prev) => [...prev, `[error] ${msg}`]);
@@ -214,4 +233,8 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

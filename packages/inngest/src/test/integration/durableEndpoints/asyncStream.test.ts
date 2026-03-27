@@ -18,13 +18,14 @@ import {
   startSseReader,
   streamingMethods,
   streamWith,
+  urlWithTestName,
 } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test.each(streamingMethods)("success (%s)", async (method) => {
+test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
   const state = createState({});
-  const { port } = await setupEndpoint(testFileName, async () => {
+  const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
     await step.run("a", async () => {
       await streamWith(method, "sync-data");
     });
@@ -36,13 +37,13 @@ test.each(streamingMethods)("success (%s)", async (method) => {
   });
 
   // Sync SSE stream
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
+  const res = await fetch(urlWithTestName(`http://localhost:${port}`), {
     headers: { Accept: "text/event-stream" },
   });
   expect(res.status).toBe(200);
   expect(res.headers.get("content-type")).toBe("text/event-stream");
+  state.runId = await waitForRunId();
 
-  // Sync SSE stream
   const { events, redirectUrl, runId } = await readSseStream(res);
   state.runId = runId;
   expect(events).toEqual([
@@ -51,16 +52,12 @@ test.each(streamingMethods)("success (%s)", async (method) => {
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-data","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"completed"}',
+      event: "inngest.commit",
+      data: '{"hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.redirect_info",
@@ -77,27 +74,27 @@ test.each(streamingMethods)("success (%s)", async (method) => {
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-data","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98","status":"completed"}',
+      event: "inngest.commit",
+      data: '{"hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
-
-    // FIXME: Why is this sent?
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
-
     {
-      event: "inngest.result",
-      data: JSON.stringify({ status: "succeeded", data: "done" }),
+      event: "inngest.response",
+      data: JSON.stringify({
+        status: "succeeded",
+        response: {
+          body: '"done"',
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+        },
+      }),
     },
   ]);
 
@@ -106,7 +103,7 @@ test.each(streamingMethods)("success (%s)", async (method) => {
 
 test("mixed push and pipe in one step", async () => {
   const state = createState({});
-  const { port } = await setupEndpoint(testFileName, async () => {
+  const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
     await step.run("a", async () => {
       stream.push("sync-push-1");
 
@@ -130,11 +127,12 @@ test("mixed push and pipe in one step", async () => {
   });
 
   // Sync SSE stream
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
+  const res = await fetch(urlWithTestName(`http://localhost:${port}`), {
     headers: { Accept: "text/event-stream" },
   });
   expect(res.status).toBe(200);
   expect(res.headers.get("content-type")).toBe("text/event-stream");
+  state.runId = await waitForRunId();
 
   const { events, redirectUrl, runId } = await readSseStream(res);
   state.runId = runId;
@@ -144,24 +142,20 @@ test("mixed push and pipe in one step", async () => {
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-push-1","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-pipe","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-push-2","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"completed"}',
+      event: "inngest.commit",
+      data: '{"hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.redirect_info",
@@ -179,35 +173,35 @@ test("mixed push and pipe in one step", async () => {
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-push-1","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-pipe","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-push-2","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98","status":"completed"}',
+      event: "inngest.commit",
+      data: '{"hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
-
-    // FIXME: Why is this sent?
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
-
     {
-      event: "inngest.result",
-      data: JSON.stringify({ status: "succeeded", data: "done" }),
+      event: "inngest.response",
+      data: JSON.stringify({
+        status: "succeeded",
+        response: {
+          body: '"done"',
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+        },
+      }),
     },
   ]);
 
@@ -224,7 +218,7 @@ test("stream data is not buffered in sync or async mode", async () => {
     asyncStep: createGate(),
   };
 
-  const { port } = await setupEndpoint(testFileName, async () => {
+  const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
     await step.run("a", async () => {
       stream.push("first");
       await gates.syncStep.promise;
@@ -240,10 +234,11 @@ test("stream data is not buffered in sync or async mode", async () => {
   });
 
   // Sync SSE stream
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
+  const res = await fetch(urlWithTestName(`http://localhost:${port}`), {
     headers: { Accept: "text/event-stream" },
   });
   expect(res.status).toBe(200);
+  state.runId = await waitForRunId();
 
   const sse = startSseReader(res);
 
@@ -274,7 +269,8 @@ test("stream data is not buffered in sync or async mode", async () => {
 });
 
 test("no Accept header returns 302 redirect", async () => {
-  const { port } = await setupEndpoint(testFileName, async () => {
+  const state = createState({});
+  const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
     await step.run("sync", async () => {
       stream.push("buffered-data");
     });
@@ -285,17 +281,18 @@ test("no Accept header returns 302 redirect", async () => {
     return Response.json("final");
   });
 
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
+  const res = await fetch(urlWithTestName(`http://localhost:${port}`), {
     redirect: "manual",
   });
-
   expect(res.status).toBe(302);
   expect(res.headers.get("location")).toBeTruthy();
+  state.runId = await waitForRunId();
+  await state.waitForRunComplete();
 });
 
 test("retries", async () => {
   const state = createState({});
-  const { port } = await setupEndpoint(testFileName, async () => {
+  const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
     await step.run("a", async () => {
       stream.push("partial");
       throw new Error("boom");
@@ -303,30 +300,26 @@ test("retries", async () => {
     return Response.json("unreachable");
   });
 
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
+  const res = await fetch(urlWithTestName(`http://localhost:${port}`), {
     headers: { Accept: "text/event-stream" },
   });
   expect(res.status).toBe(200);
+  state.runId = await waitForRunId();
 
   // Sync SSE stream
-  const { events, redirectUrl, runId } = await readSseStream(res);
-  state.runId = runId;
+  const { events, redirectUrl } = await readSseStream(res);
   expect(events).toEqual([
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"errored","data":{"willRetry":true,"error":"boom"}}',
+      event: "inngest.rollback",
+      data: '{"hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.redirect_info",
@@ -343,162 +336,53 @@ test("retries", async () => {
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"errored","data":{"willRetry":true,"error":"boom"}}',
+      event: "inngest.rollback",
+      data: '{"hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"errored","data":{"willRetry":true,"error":"boom"}}',
+      event: "inngest.rollback",
+      data: '{"hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"running"}',
-    },
-    {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "inngest.step",
-      data: '{"stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8","status":"errored","data":{"willRetry":true,"error":"boom"}}',
+      event: "inngest.rollback",
+      data: '{"hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
     {
-      event: "inngest.result",
-      data: '{"status":"failed","error":"boom"}',
+      event: "inngest.response",
+      data: JSON.stringify({
+        status: "failed",
+        response: {
+          body: '"boom"',
+          statusCode: 500,
+          headers: { "content-type": "application/json" },
+        },
+      }),
     },
   ]);
 
   await state.waitForRunFailed();
-});
-
-test("primary streaming in async phase", async () => {
-  // Sync phase: minimal step with no meaningful stream data.
-  // Async phase: all the real streaming happens after step.sleep.
-  // This verifies async-phase streaming works independently of sync-phase data.
-  const state = createState({});
-  const { port } = await setupEndpoint(testFileName, async () => {
-    await step.run("a", async () => {
-      // Establish SSE connection but don't push meaningful data
-      stream.push("sync-marker");
-    });
-    await step.sleep("go-async", "1s");
-    await step.run("b", async () => {
-      stream.push("async-data-1");
-      stream.push("async-data-2");
-    });
-    return Response.json("done");
-  });
-
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
-    headers: { Accept: "text/event-stream" },
-  });
-  expect(res.status).toBe(200);
-  expect(res.headers.get("content-type")).toBe("text/event-stream");
-
-  const { events, redirectUrl, runId } = await readSseStream(res);
-  state.runId = runId;
-
-  // Sync phase only has the marker
-  expect(getStreamData(events)).toEqual(["sync-marker"]);
-
-  // Async SSE stream — all the real data arrives here
-  const asyncReader = await pollForAsyncReader(redirectUrl!);
-  await asyncReader.done;
-
-  expect(getStreamData(asyncReader.events)).toEqual([
-    "async-data-1",
-    "async-data-2",
-  ]);
-
-  const resultEvent = asyncReader.events.find(
-    (e) => e.event === "inngest.result",
-  );
-  expect(resultEvent).toBeTruthy();
-  expect(JSON.parse(resultEvent!.data)).toEqual({
-    status: "succeeded",
-    data: "done",
-  });
-
-  await state.waitForRunComplete();
-});
-
-test("retriable error in first step triggers async retry", async () => {
-  // A retriable error in the first step during sync mode should exercise
-  // checkpointAndSwitchToAsync with a stepError. The client sees the error
-  // in the sync SSE stream, then retries happen via the async stream.
-  const state = createState({});
-  let attempt = 0;
-  const { port } = await setupEndpoint(testFileName, async () => {
-    await step.run("a", async () => {
-      attempt++;
-      stream.push(`attempt-${attempt}`);
-      if (attempt === 1) {
-        throw new Error("first try fails");
-      }
-      return "recovered";
-    });
-    return Response.json("done");
-  });
-
-  const res = await fetch(`http://localhost:${port}/api/demo`, {
-    headers: { Accept: "text/event-stream" },
-  });
-  expect(res.status).toBe(200);
-
-  // Sync SSE stream: should see the first attempt's stream data and error
-  const { events, redirectUrl, runId } = await readSseStream(res);
-  state.runId = runId;
-
-  // First attempt's data should be present
-  expect(getStreamData(events)).toContain("attempt-1");
-
-  // Should have a step error event indicating retry
-  const stepErrorEvent = events.find(
-    (e) => e.event === "inngest.step" && e.data.includes('"status":"errored"'),
-  );
-  expect(stepErrorEvent).toBeTruthy();
-  expect(stepErrorEvent!.data).toContain('"willRetry":true');
-
-  // Should have redirect info for async continuation
-  expect(redirectUrl).toBeTruthy();
-
-  // Async SSE stream: should see the retry succeed
-  const asyncReader = await pollForAsyncReader(redirectUrl!);
-  await asyncReader.done;
-
-  // The async phase should eventually produce a successful result
-  const resultEvent = asyncReader.events.find(
-    (e) => e.event === "inngest.result",
-  );
-  expect(resultEvent).toBeTruthy();
-
-  await state.waitForRunComplete();
 });

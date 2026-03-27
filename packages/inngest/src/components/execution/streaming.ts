@@ -14,62 +14,30 @@ const sseMetadataSchema = z.object({
 });
 
 const sseStreamSchema = z.object({
-  type: z.literal("stream"),
+  type: z.literal("inngest.stream"),
   data: z.unknown(),
   stepId: z.string().optional(),
 });
 
-const stepErrorDataSchema = z.object({
-  willRetry: z.boolean(),
-  error: z.string(),
+const sseCommitSchema = z.object({
+  type: z.literal("inngest.commit"),
+  hashedStepId: z.string().nullable(),
 });
 
-const sseStepRunningSchema = z.object({
-  type: z.literal("inngest.step"),
-  stepId: z.string(),
-  status: z.literal("running"),
-  data: z.unknown().optional(),
+const sseRollbackSchema = z.object({
+  type: z.literal("inngest.rollback"),
+  hashedStepId: z.string().nullable(),
 });
 
-const sseStepCompletedSchema = z.object({
-  type: z.literal("inngest.step"),
-  stepId: z.string(),
-  status: z.literal("completed"),
-  data: z.unknown().optional(),
-});
-
-const sseStepErroredSchema = z.object({
-  type: z.literal("inngest.step"),
-  stepId: z.string(),
-  status: z.literal("errored"),
-  data: z.object({
-    willRetry: z.boolean(),
-    error: z.string(),
+const sseResultSchema = z.object({
+  type: z.literal("inngest.response"),
+  status: z.union([z.literal("succeeded"), z.literal("failed")]),
+  response: z.object({
+    body: z.string(),
+    headers: z.record(z.string()),
+    statusCode: z.number(),
   }),
 });
-
-const sseStepSchema = z.discriminatedUnion("status", [
-  sseStepRunningSchema,
-  sseStepCompletedSchema,
-  sseStepErroredSchema,
-]);
-
-const sseResultSucceededSchema = z.object({
-  type: z.literal("inngest.result"),
-  status: z.literal("succeeded"),
-  data: z.unknown().optional(),
-});
-
-const sseResultFailedSchema = z.object({
-  type: z.literal("inngest.result"),
-  status: z.literal("failed"),
-  error: z.string(),
-});
-
-const sseResultSchema = z.discriminatedUnion("status", [
-  sseResultSucceededSchema,
-  sseResultFailedSchema,
-]);
 
 const sseRedirectSchema = z.object({
   type: z.literal("inngest.redirect_info"),
@@ -83,21 +51,10 @@ const sseRedirectSchema = z.object({
 
 export type SseMetadataEvent = z.infer<typeof sseMetadataSchema>;
 export type SseStreamEvent = z.infer<typeof sseStreamSchema>;
-export type SseResultSucceededEvent = z.infer<typeof sseResultSucceededSchema>;
-export type SseResultFailedEvent = z.infer<typeof sseResultFailedSchema>;
 export type SseResultEvent = z.infer<typeof sseResultSchema>;
 
-/**
- * Payload included with every `inngest.step` errored event. Describes the
- * failure so the client can decide whether to show an error or wait for a
- * retry.
- */
-export type StepErrorData = z.infer<typeof stepErrorDataSchema>;
-
-export type SseStepRunningEvent = z.infer<typeof sseStepRunningSchema>;
-export type SseStepCompletedEvent = z.infer<typeof sseStepCompletedSchema>;
-export type SseStepErroredEvent = z.infer<typeof sseStepErroredSchema>;
-export type SseStepEvent = z.infer<typeof sseStepSchema>;
+export type SseCommitEvent = z.infer<typeof sseCommitSchema>;
+export type SseRollbackEvent = z.infer<typeof sseRollbackSchema>;
 
 export type SseRedirectEvent = z.infer<typeof sseRedirectSchema>;
 
@@ -105,7 +62,8 @@ export type SseEvent =
   | SseMetadataEvent
   | SseStreamEvent
   | SseResultEvent
-  | SseStepEvent
+  | SseCommitEvent
+  | SseRollbackEvent
   | SseRedirectEvent;
 
 export interface RawSseEvent {
@@ -147,23 +105,37 @@ export function buildSseMetadataEvent(runId: string): string {
 export function buildSseStreamEvent(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
   if (stepId) payload.stepId = stepId;
-  return buildSseEvent("stream", payload);
+  return buildSseEvent("inngest.stream", payload);
+}
+
+export interface SseResponse {
+  body: string;
+  statusCode: number;
+  headers: Record<string, string>;
 }
 
 /**
- * Builds an SSE result event for a successfully completed function.
- * This is the last event sent before the stream closes.
+ * Builds an `inngest.response` SSE event with status `succeeded`.
  */
-export function buildSseSucceededEvent(data: unknown): string {
-  return buildSseEvent("inngest.result", { status: "succeeded", data });
+export function buildSseSucceededEvent(response: SseResponse): string {
+  return buildSseEvent("inngest.response", {
+    status: "succeeded",
+    response,
+  });
 }
 
 /**
- * Builds an SSE result event for a permanently failed function.
- * This is the last event sent before the stream closes.
+ * Builds an `inngest.response` SSE event with status `failed`.
  */
 export function buildSseFailedEvent(error: string): string {
-  return buildSseEvent("inngest.result", { status: "failed", error });
+  return buildSseEvent("inngest.response", {
+    status: "failed",
+    response: {
+      body: JSON.stringify(error),
+      statusCode: 500,
+      headers: { "content-type": "application/json" },
+    },
+  });
 }
 
 /**
@@ -318,22 +290,22 @@ export async function drainStreamWithTimeout(
 }
 
 // ---------------------------------------------------------------------------
-// Step event builder
+// Commit / Rollback event builders
 // ---------------------------------------------------------------------------
 
 /**
- * Builds an SSE step lifecycle event.
+ * Builds an `inngest.commit` SSE event indicating a step's data is committed.
  */
-export function buildSseStepEvent(
-  stepId: string,
-  status: SseStepEvent["status"],
-  data?: unknown,
-): string {
-  const payload: Record<string, unknown> = { stepId, status };
-  if (data !== undefined) {
-    payload.data = data;
-  }
-  return buildSseEvent("inngest.step", payload);
+export function buildSseCommitEvent(hashedStepId: string | null): string {
+  return buildSseEvent("inngest.commit", { hashedStepId });
+}
+
+/**
+ * Builds an `inngest.rollback` SSE event indicating a step's data should be
+ * rolled back (e.g. step errored and will retry, or disconnect mid-step).
+ */
+export function buildSseRollbackEvent(hashedStepId: string | null): string {
+  return buildSseEvent("inngest.rollback", { hashedStepId });
 }
 
 // ---------------------------------------------------------------------------
@@ -370,18 +342,12 @@ export async function* iterSse(
         const dataLines: string[] = [];
 
         for (const line of part.split("\n")) {
-          if (line.startsWith(":")) continue; // SSE comment, ignore
-
           if (line.startsWith("event: ")) {
             event = line.slice(7);
           } else if (line.startsWith("data: ")) {
             dataLines.push(line.slice(6));
           }
         }
-
-        // If the part was entirely comments (or otherwise had no recognised
-        // fields), skip it — there's nothing to emit.
-        if (event === "message" && dataLines.length === 0) continue;
 
         const data = dataLines.join("\n");
 
@@ -399,9 +365,10 @@ export async function* iterSse(
 
 const sseSchemasByEvent: Record<string, z.ZodType<SseEvent>> = {
   "inngest.metadata": sseMetadataSchema,
-  stream: sseStreamSchema,
-  "inngest.result": sseResultSchema,
-  "inngest.step": sseStepSchema,
+  "inngest.stream": sseStreamSchema,
+  "inngest.response": sseResultSchema,
+  "inngest.commit": sseCommitSchema,
+  "inngest.rollback": sseRollbackSchema,
   "inngest.redirect_info": sseRedirectSchema,
 };
 

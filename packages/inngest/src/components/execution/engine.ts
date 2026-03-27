@@ -13,7 +13,6 @@ import {
 import {
   deserializeError,
   ErrCode,
-  getErrorMessage,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
@@ -30,7 +29,11 @@ import {
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
-import type { MaybePromise, Simplify } from "../../helpers/types.ts";
+import {
+  isRecord,
+  type MaybePromise,
+  type Simplify,
+} from "../../helpers/types.ts";
 import {
   type APIStepPayload,
   type Context,
@@ -80,7 +83,11 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import { buildSseMetadataEvent, prependToStream } from "./streaming.ts";
+import {
+  buildSseMetadataEvent,
+  prependToStream,
+  type SseResponse,
+} from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -94,6 +101,16 @@ const { sha1 } = hashjs;
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error);
+}
+
 /**
  * Placeholder step ID used when completing a checkpointed run.
  */
@@ -104,6 +121,22 @@ const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
   return new InngestExecutionEngine(options);
 };
+
+function extractSseResponse(response: Response, body: string): SseResponse {
+  const headers: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+  return { body, statusCode: response.status, headers };
+}
+
+function defaultSseResponse(data: unknown): SseResponse {
+  return {
+    body: JSON.stringify(data),
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+  };
+}
 
 class InngestExecutionEngine
   extends InngestExecution
@@ -443,15 +476,24 @@ class InngestExecutionEngine
     if (this.streamTools.activated) {
       if (stepError && !this.retriability(stepError)) {
         // Permanent failure — close with a failed event so the client
-        // gets onFunctionFailed instead of silence.
-        this.streamTools.closeFailed(
-          getErrorMessage(stepError, "Unknown step error"),
-        );
+        // gets onStreamError instead of silence.
+        this.streamTools.closeFailed(errorMessage(stepError));
       } else {
         // End stream without a result event — client uses redirect_info
         // to reconnect.
         this.streamTools.end();
       }
+    } else if (this.options.acceptsSse) {
+      // Stream was never activated (no stream.push/pipe), but the client
+      // accepts SSE. Close and return the SSE response so the client gets
+      // metadata + redirect_info events and can follow the redirect.
+      this.streamTools.end();
+      return {
+        type: "function-resolved",
+        ctx: this.fnArg,
+        ops: this.ops,
+        data: this.buildSseResponse(),
+      };
     }
 
     return {
@@ -498,18 +540,19 @@ class InngestExecutionEngine
    *
    * Used when the client sent `Accept: text/event-stream` but
    * `stream.push()`/`pipe()` was NOT called during execution. The
-   * checkpointable data is the function's return value — the SSE events are
-   * just a delivery mechanism.
+   * checkpointable data is the function's return value. The SSE events are just
+   * a delivery mechanism.
    */
   private wrapResultAsSse(
     checkpoint: Simplify<
       { type: "function-resolved" } & Checkpoints["function-resolved"]
     >,
+    sseResponse: SseResponse,
   ): ExecutionResult {
     const resultData: unknown = checkpoint.data;
 
     // Close the stream with a terminal succeeded event
-    this.streamTools.closeSucceeded(resultData);
+    this.streamTools.closeSucceeded(sseResponse);
 
     const clientResponse = this.buildSseResponse();
 
@@ -550,8 +593,11 @@ class InngestExecutionEngine
       return undefined;
     }
 
-    // Async mode: start the streaming POST immediately.
-    this.postCheckpointStream();
+    // Async/AsyncCheckpointing mode: start the streaming POST immediately.
+    // In sync mode without SSE, the stream has no consumer — skip the POST.
+    if (this.options.stepMode !== StepMode.Sync) {
+      this.postCheckpointStream();
+    }
     this.sendRedirectIfReady();
     return undefined;
   }
@@ -822,21 +868,21 @@ class InngestExecutionEngine
 
         if (this.streamTools.activated) {
           let resultData: unknown = checkpoint.data;
+          let sseResponse: SseResponse;
           if (checkpoint.data instanceof Response) {
             // Clone when not SSE so the Response body stays intact for passthrough.
-            const text = await (sseDeliveredToClient
+            const body = await (sseDeliveredToClient
               ? checkpoint.data.text()
               : checkpoint.data.clone().text());
-            try {
-              resultData = JSON.parse(text);
-            } catch {
-              resultData = text;
-            }
+            sseResponse = extractSseResponse(checkpoint.data, body);
+            resultData = body;
+          } else {
+            sseResponse = defaultSseResponse(resultData);
           }
 
           // Always close the stream — either the SSE client or the
           // server-side checkpoint POST needs the terminal result event.
-          this.streamTools.closeSucceeded(resultData);
+          this.streamTools.closeSucceeded(sseResponse);
 
           if (sseDeliveredToClient) {
             // SSE path: response already sent; checkpoint in background.
@@ -853,20 +899,15 @@ class InngestExecutionEngine
         // inngest.redirect_info. Without these the client can't reconnect if a
         // future execution goes async.
         if (this.options.acceptsSse) {
+          let sseResponse: SseResponse;
           if (checkpoint.data instanceof Response) {
-            const text = await checkpoint.data.text();
-            let parsed: unknown;
-            try {
-              parsed = JSON.parse(text);
-            } catch {
-              parsed = text;
-            }
-            checkpoint = {
-              ...checkpoint,
-              data: parsed,
-            };
+            const body = await checkpoint.data.text();
+            sseResponse = extractSseResponse(checkpoint.data, body);
+            checkpoint = { ...checkpoint, data: body };
+          } else {
+            sseResponse = defaultSseResponse(checkpoint.data);
           }
-          return this.wrapResultAsSse(checkpoint);
+          return this.wrapResultAsSse(checkpoint, sseResponse);
         }
 
         // Response pass-through: deliver as-is. Checkpoint null because the
@@ -901,9 +942,7 @@ class InngestExecutionEngine
 
         if (this.streamTools.activated) {
           if (isFinal) {
-            this.streamTools.closeFailed(
-              getErrorMessage(checkpoint.error, "Unknown error"),
-            );
+            this.streamTools.closeFailed(errorMessage(checkpoint.error));
           } else {
             // Retryable error — suppress the result event; the run will retry.
             this.streamTools.end();
@@ -1036,13 +1075,13 @@ class InngestExecutionEngine
        */
       "function-resolved": async ({ data }) => {
         let resultData: unknown = data;
+        let sseResponse: SseResponse;
         if (data instanceof Response) {
-          const text = await data.text();
-          try {
-            resultData = JSON.parse(text);
-          } catch {
-            resultData = text;
-          }
+          const body = await data.text();
+          sseResponse = extractSseResponse(data, body);
+          resultData = body;
+        } else {
+          sseResponse = defaultSseResponse(resultData);
         }
 
         // Check for unreported new steps (e.g. from `Promise.race` where
@@ -1054,7 +1093,7 @@ class InngestExecutionEngine
         }
 
         // Close the stream with a terminal succeeded event.
-        this.streamTools.closeSucceeded(resultData);
+        this.streamTools.closeSucceeded(sseResponse);
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result event.
@@ -1082,9 +1121,7 @@ class InngestExecutionEngine
         const isFinal = !this.retriability(checkpoint.error);
 
         if (isFinal) {
-          this.streamTools.closeFailed(
-            getErrorMessage(checkpoint.error, "Unknown error"),
-          );
+          this.streamTools.closeFailed(errorMessage(checkpoint.error));
         } else {
           // Retryable error — suppress the result event; the run will retry.
           this.streamTools.end();
@@ -1438,9 +1475,6 @@ class InngestExecutionEngine
 
     this.devDebug(`executing step "${id}"`);
 
-    // Emit step:running lifecycle event
-    this.streamTools.stepLifecycle(hashedId, "running");
-
     if (this.rootSpanId && this.options.checkpointingConfig) {
       clientProcessorMap
         .get(this.options.client)
@@ -1504,8 +1538,8 @@ class InngestExecutionEngine
         // with confirmed data from the server). handle() resolves it.
         await this.middlewareManager.onStepComplete(stepInfo, serverData);
 
-        // Emit step:completed lifecycle event
-        this.streamTools.stepLifecycle(hashedId, "completed");
+        // Emit inngest.commit — step data is finalized.
+        this.streamTools.commit(hashedId);
 
         return {
           ...outgoingOp,
@@ -1519,7 +1553,6 @@ class InngestExecutionEngine
         return this.buildStepErrorOp({
           error,
           id,
-          hashedId,
           outgoingOp,
           stepInfo,
         });
@@ -1634,13 +1667,11 @@ class InngestExecutionEngine
   private async buildStepErrorOp({
     error,
     id,
-    hashedId,
     outgoingOp,
     stepInfo,
   }: {
     error: unknown;
     id: string;
-    hashedId: string;
     outgoingOp: OutgoingOp;
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
@@ -1653,11 +1684,8 @@ class InngestExecutionEngine
       isFinal,
     );
 
-    // Emit step:errored lifecycle event
-    this.streamTools.stepLifecycle(hashedId, "errored", {
-      willRetry: !isFinal,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // Step's stream should be rolled back
+    this.streamTools.rollback(outgoingOp.id);
 
     // Serialize the error so it survives JSON.stringify (raw Error
     // objects have non-enumerable properties that get dropped).

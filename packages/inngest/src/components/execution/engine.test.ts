@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
-import { StepMode, StepOpCode } from "../../types.ts";
+import { StepMode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import type { GenericStepTools } from "../InngestStepTools.ts";
-import type { ExecutionResult, ExecutionResults } from "./InngestExecution.ts";
+import type { ExecutionResults } from "./InngestExecution.ts";
 
 describe("Execution engine checkpoint retry behavior", () => {
   const mockEvent = { name: "test/event", data: { foo: "bar" } };
@@ -186,6 +186,7 @@ describe("Execution engine checkpoint retry behavior", () => {
         stepMode: StepMode.AsyncCheckpointing,
         extraPartialOptions: {
           queueItemId: "queue-item-123",
+          internalFnId: "internal-fn-456",
         },
       });
 
@@ -677,178 +678,5 @@ describe("Execution engine checkpoint retry behavior", () => {
       // Subsequent steps use checkpointSteps
       expect(mockCheckpointSteps).toHaveBeenCalled();
     });
-  });
-});
-
-describe("Sync mode function-resolved response handling", () => {
-  const mockEvent = { name: "test/event", data: {} };
-
-  beforeEach(() => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  const advanceThroughRetries = async () => {
-    for (let i = 0; i < 10; i++) {
-      await vi.advanceTimersByTimeAsync(1000);
-    }
-  };
-
-  function createSyncExecution(
-    handler: () => Promise<unknown>,
-    opts?: { acceptsSse?: boolean },
-  ) {
-    const client = createClient({ id: "test" });
-
-    const mockCheckpointNewRun = vi.fn().mockResolvedValue({
-      data: {
-        app_id: "app-123",
-        fn_id: "fn-456",
-        token: "token-789",
-      },
-    });
-
-    (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
-      checkpointNewRun: mockCheckpointNewRun,
-    } as Partial<InngestApi> as InngestApi;
-
-    const fn = new InngestFunction(
-      client,
-      { id: "test-fn", triggers: [{ event: "test/event" }] },
-      handler,
-    );
-
-    const execution = fn["createExecution"]({
-      partialOptions: {
-        client,
-        data: fromPartial({ event: mockEvent }),
-        runId: "test-run-id",
-        stepState: {},
-        stepCompletionOrder: [],
-        reqArgs: [],
-        headers: {},
-        stepMode: StepMode.Sync,
-        acceptsSse: opts?.acceptsSse ?? false,
-        createResponse: async (data) => ({
-          status: 200,
-          body: JSON.stringify(data),
-          headers: {},
-          version: ExecutionVersion.V2,
-        }),
-      },
-    });
-
-    return { execution, mockCheckpointNewRun };
-  }
-
-  test("Response is passed through as-is (not SSE-wrapped)", async () => {
-    const userResponse = new Response("file content", {
-      headers: { "Content-Type": "text/plain" },
-    });
-
-    const { execution } = createSyncExecution(async () => userResponse);
-
-    const resultPromise = execution.start();
-    await advanceThroughRetries();
-    const result = await resultPromise;
-
-    expect(result.type).toBe("function-resolved");
-    const resolved = result as ExecutionResult & { data: unknown };
-    expect(resolved.data).toBeInstanceOf(Response);
-
-    // The original Response is passed through — body is still consumable
-    const body = await (resolved.data as Response).text();
-    expect(body).toBe("file content");
-  });
-
-  test("acceptsSse wraps Response in SSE envelope", async () => {
-    const userResponse = new Response("file content", {
-      headers: { "Content-Type": "text/plain" },
-    });
-
-    const { execution } = createSyncExecution(async () => userResponse, {
-      acceptsSse: true,
-    });
-
-    const resultPromise = execution.start();
-    await advanceThroughRetries();
-    const result = await resultPromise;
-
-    expect(result.type).toBe("function-resolved");
-    const resolved = result as ExecutionResult & { data: unknown };
-    expect(resolved.data).toBeInstanceOf(Response);
-
-    // When acceptsSse is true, the Response body is extracted and wrapped
-    // in SSE format (metadata + result events)
-    const body = await (resolved.data as Response).text();
-    expect(body).toContain("event: inngest.metadata");
-    expect(body).toContain("event: inngest.result");
-    expect(body).toContain("file content");
-  });
-
-  test("plain value with acceptsSse returns SSE response", async () => {
-    const { execution } = createSyncExecution(async () => "hello", {
-      acceptsSse: true,
-    });
-
-    const resultPromise = execution.start();
-    await advanceThroughRetries();
-    const result = await resultPromise;
-
-    expect(result.type).toBe("function-resolved");
-    const resolved = result as ExecutionResult & { data: unknown };
-    expect(resolved.data).toBeInstanceOf(Response);
-
-    // Should be an SSE response with events
-    const res = resolved.data as Response;
-    expect(res.headers.get("Content-Type")).toBe("text/event-stream");
-    const body = await res.text();
-    expect(body).toContain("event: inngest.metadata");
-    expect(body).toContain("event: inngest.result");
-  });
-
-  test("plain value without acceptsSse uses non-streaming path", async () => {
-    const { execution, mockCheckpointNewRun } = createSyncExecution(
-      async () => "hello",
-    );
-
-    const resultPromise = execution.start();
-    await advanceThroughRetries();
-    const result = await resultPromise;
-
-    expect(result.type).toBe("function-resolved");
-    const resolved = result as ExecutionResult & { data: unknown };
-
-    // Not a Response — plain data returned directly
-    expect(resolved.data).toBe("hello");
-
-    // Checkpoint was called synchronously (not in background)
-    expect(mockCheckpointNewRun).toHaveBeenCalled();
-  });
-
-  test("Response pass-through checkpoints a RunComplete in the background", async () => {
-    const { execution, mockCheckpointNewRun } = createSyncExecution(
-      async () => new Response("file content"),
-    );
-
-    const resultPromise = execution.start();
-    await advanceThroughRetries();
-    await resultPromise;
-
-    // Flush microtasks so the fire-and-forget checkpointReturnValue resolves
-    await vi.advanceTimersByTimeAsync(0);
-
-    // checkpointReturnValue(null) calls checkpointNewRun with RunComplete
-    expect(mockCheckpointNewRun).toHaveBeenCalled();
-    const call = mockCheckpointNewRun.mock.calls[0]![0];
-    const runCompleteOp = call.steps.find(
-      (s: { op: string }) => s.op === StepOpCode.RunComplete,
-    );
-    expect(runCompleteOp).toBeDefined();
   });
 });

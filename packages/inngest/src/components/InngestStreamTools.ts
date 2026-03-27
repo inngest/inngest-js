@@ -1,12 +1,12 @@
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import {
+  buildSseCommitEvent,
   buildSseFailedEvent,
   buildSseRedirectEvent,
-  buildSseStepEvent,
+  buildSseRollbackEvent,
   buildSseStreamEvent,
   buildSseSucceededEvent,
-  type SseStepEvent,
-  type StepErrorData,
+  type SseResponse,
 } from "./execution/streaming.ts";
 
 /**
@@ -133,15 +133,19 @@ export class InngestStream {
   }
 
   /**
-   * Emit a step lifecycle SSE event (`step:running`, `step:completed`,
-   * `step:errored`). Internal use only — called by the execution engine.
+   * Emit an `inngest.commit` SSE event indicating that uncommitted streamed data
+   * should be committed (i.e. will not be rolled back). Internal use only.
    */
-  stepLifecycle(
-    stepId: string,
-    status: SseStepEvent["status"],
-    data?: StepErrorData,
-  ): void {
-    this.enqueue(buildSseStepEvent(stepId, status, data));
+  commit(hashedStepId: string | null): void {
+    this.enqueue(buildSseCommitEvent(hashedStepId));
+  }
+
+  /**
+   * Emit an `inngest.rollback` SSE event indicating the uncommitted streamed
+   * data should be discarded (e.g. step errored). Internal use only.
+   */
+  rollback(hashedStepId: string | null): void {
+    this.enqueue(buildSseRollbackEvent(hashedStepId));
   }
 
   /**
@@ -244,10 +248,10 @@ export class InngestStream {
   /**
    * Write a succeeded result event and close the writer. Internal use only.
    */
-  closeSucceeded(data?: unknown): void {
+  closeSucceeded(response: SseResponse): void {
     let sseEvent: string;
     try {
-      sseEvent = buildSseSucceededEvent(data);
+      sseEvent = buildSseSucceededEvent(response);
     } catch {
       sseEvent = buildSseFailedEvent("Failed to serialize result");
     }
