@@ -49,7 +49,13 @@ interface FetchDurableEndpointOptions {
 }
 
 /**
- * Send a
+ * Fetch a durable endpoint URL and consume its SSE stream, dispatching
+ * lifecycle callbacks (metadata, data, commit, rollback, error, done) as
+ * events arrive. Returns the final `Response` reconstructed from the
+ * terminal `inngest.response` SSE event.
+ *
+ * If the server does not respond with `text/event-stream`, the raw
+ * `Response` is returned as-is (non-streaming path).
  */
 export async function fetchWithStream(
   url: string,
@@ -74,10 +80,6 @@ export async function fetchWithStream(
     throw new Error("No response body");
   }
 
-  // let resultBody: string | undefined;
-  // let resultStatusCode: number | undefined;
-  // let resultHeaders: Record<string, string> | undefined;
-  // let hasResult = false;
   let resp: Response | undefined;
 
   const source = iterSseFollowRedirects(

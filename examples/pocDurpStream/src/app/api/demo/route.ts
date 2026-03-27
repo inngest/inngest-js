@@ -19,23 +19,8 @@ async function streamAndCollect(prompt: string): Promise<string> {
     messages: [{ role: "user", content: prompt }],
   });
 
-  // Option A: Use the Anthropic SDK's event callback + finalText().
   response.on("text", (text) => stream.push(text));
   return await response.finalText();
-
-  // Option B: Pipe an async generator. Works with any provider that
-  // exposes an async iterable of events.
-  //
-  // return stream.pipe(async function* () {
-  //   for await (const event of response) {
-  //     if (
-  //       event.type === "content_block_delta" &&
-  //       event.delta.type === "text_delta"
-  //     ) {
-  //       yield event.delta.text;
-  //     }
-  //   }
-  // });
 }
 
 export const GET = inngest.endpoint(async () => {

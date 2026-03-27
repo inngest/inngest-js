@@ -140,22 +140,6 @@ export async function setupEndpoint(
   return { port, server, waitForRunId };
 }
 
-/**
- * Simulates an upstream source that emits chunks over time (like an LLM).
- */
-export function fakeTokenStream(tokens: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-
-  return new ReadableStream({
-    async start(controller) {
-      for (const token of tokens) {
-        controller.enqueue(encoder.encode(token));
-      }
-      controller.close();
-    },
-  });
-}
-
 /** Extract the parsed data payloads from stream-type SSE events. */
 export function getStreamData(events: SseEvent[]): string[] {
   return events
@@ -304,36 +288,6 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
     waitForStreamData,
     done,
   };
-}
-
-/**
- * Poll a redirect URL until it returns stream or result events.
- * Returns the collected SSE events.
- */
-export async function pollForAsyncStream(
-  redirectUrl: string,
-  { maxAttempts = 30, intervalMs = 500, readTimeoutMs = 5_000 } = {},
-): Promise<SseEvent[]> {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const res = await fetch(redirectUrl);
-      if (res.ok && res.body) {
-        const { events } = await readSseStream(res, readTimeoutMs);
-
-        const hasContent =
-          events.some((e) => e.event === "inngest.stream") ||
-          events.some((e) => e.event === "inngest.response");
-        if (hasContent) {
-          return events;
-        }
-      }
-    } catch {
-      // Dev server may not have the data ready yet
-    }
-    await sleep(intervalMs);
-  }
-
-  return [];
 }
 
 /**

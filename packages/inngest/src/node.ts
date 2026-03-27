@@ -1,5 +1,4 @@
 import http from "node:http";
-import { PassThrough } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
 import type { Inngest } from "./components/Inngest.ts";

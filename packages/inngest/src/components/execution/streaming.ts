@@ -1,8 +1,8 @@
 // No Node.js imports — this file is shared between server and client code.
 
 import { z } from "zod/v3";
-import { createTimeoutPromise } from "../../helpers/promises.ts";
 import { isRecord } from "../../helpers/types.ts";
+import { UnreachableError } from "../middleware/utils.ts";
 
 // ---------------------------------------------------------------------------
 // Schemas — single source of truth for both runtime validation and types
@@ -183,112 +183,6 @@ export function prependToStream(
   });
 }
 
-/**
- * Reads a `ReadableStream` to completion, collecting all chunks into an array.
- */
-export async function drainStream(
-  stream: ReadableStream<Uint8Array>,
-): Promise<Uint8Array[]> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return chunks;
-}
-
-/**
- * Concatenates an array of `Uint8Array` chunks into a single `Uint8Array`.
- */
-export function mergeChunks(chunks: Uint8Array[]): Uint8Array {
-  if (chunks.length === 0) {
-    return new Uint8Array(0);
-  }
-
-  if (chunks.length === 1) {
-    return chunks[0]!;
-  }
-
-  const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
-  const merged = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return merged;
-}
-
-/**
- * Drains a stream with a timeout guard. Returns the collected chunks on
- * success, or throws if the timeout fires first.
- *
- * On timeout the reader is cancelled and its lock released so the underlying
- * stream does not stay locked.
- */
-export async function drainStreamWithTimeout(
-  stream: ReadableStream<Uint8Array>,
-  timeoutMs: number,
-): Promise<Uint8Array[]> {
-  const timeout = createTimeoutPromise(timeoutMs);
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-
-  // Read loop wrapped in a promise so we can race it against the timeout.
-  const drainPromise = (async () => {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      chunks.push(value);
-    }
-    return chunks;
-  })();
-
-  // Wrap the drain promise so that if the reader is cancelled (on timeout),
-  // the resulting rejection is suppressed rather than becoming unhandled.
-  const wrappedDrain = drainPromise.then(
-    (c) => ({ kind: "drained" as const, chunks: c }),
-    () => ({ kind: "cancelled" as const }),
-  );
-
-  try {
-    const result = await Promise.race([
-      wrappedDrain,
-      timeout.start().then(() => ({ kind: "timeout" as const })),
-    ]);
-
-    if (result.kind === "drained") {
-      reader.releaseLock();
-      return result.chunks;
-    }
-
-    // Timeout or cancelled — cancel the reader which aborts the pending
-    // read() and releases the lock on the stream. We fire-and-forget the
-    // cancel so the timeout error is thrown synchronously. The wrappedDrain
-    // error handler above ensures the drain promise rejection is suppressed.
-    reader
-      .cancel()
-      .then(() => reader.releaseLock())
-      .catch(() => {});
-    throw new Error("Stream drain timed out");
-  } finally {
-    timeout.clear();
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Commit / Rollback event builders
 // ---------------------------------------------------------------------------
@@ -394,16 +288,8 @@ export function parseSseEvent(raw: RawSseEvent): SseEvent | undefined {
 
   const result = schema.safeParse({ ...parsed, type: raw.event });
   if (!result.success) {
-    console.log(raw);
     throw new Error("Unknown SSE event", { cause: result.error });
   }
 
   return result.data;
-}
-
-class UnreachableError extends Error {
-  constructor(...args: Parameters<typeof Error>) {
-    super(...args);
-    this.name = "UnreachableError";
-  }
 }
