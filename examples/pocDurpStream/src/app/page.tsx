@@ -5,6 +5,7 @@ import { fetchDurableEndpoint } from "inngest/experimental/durable-endpoints/cli
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
+  const uncommittedCountRef = useRef(0);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [waitingForInput, setWaitingForInput] = useState(false);
@@ -40,14 +41,25 @@ export default function Home() {
           }
 
           if (typeof data === "string") {
+            uncommittedCountRef.current++;
             setLines((prev) => [...prev, data]);
             scrollToBottom();
             return;
           }
         },
         onRollback: () => {
-          // Discard uncommitted lines — a retry will re-stream them.
-          console.log("Rolling back the streamed data!");
+          const rollbackCount = uncommittedCountRef.current;
+          if (rollbackCount === 0) {
+            return;
+          }
+
+          setLines((prev) => {
+            return prev.slice(0, -rollbackCount);
+          })
+          uncommittedCountRef.current = 0;
+        },
+        onCommit: () => {
+          uncommittedCountRef.current = 0;
         },
         onStreamError: (error) => {
           setLines((prev) => [...prev, `\n❌ ${error}\n`]);
