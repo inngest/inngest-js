@@ -104,11 +104,8 @@ export interface InngestExecutionOptions {
   fn: InngestFunction.Any;
 
   /**
-   * The UUID that represents this function in Inngest.
-   *
-   * This is used to reference the function during async checkpointing, when we
-   * know the function/run already exists and just wish to reference it
-   * directly.
+   * The UUID that represents this function in Inngest. Passed through to the
+   * async checkpoint API when available.
    */
   internalFnId?: string;
   reqArgs: unknown[];
@@ -148,6 +145,13 @@ export interface InngestExecutionOptions {
    * client. This ensures `wrapRequest` and other hooks share state on `this`.
    */
   middlewareInstances?: Middleware.BaseMiddleware[];
+
+  /**
+   * Whether the client accepts SSE (`Accept: text/event-stream`). When true,
+   * the execution engine may deliver the result as an SSE stream even if
+   * `stream.push()` was not called.
+   */
+  acceptsSse?: boolean;
 
   /**
    * Provide the ability to transform the context passed to the function before
