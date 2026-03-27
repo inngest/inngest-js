@@ -1,5 +1,15 @@
 # inngest
 
+## 4.1.1
+
+### Patch Changes
+
+- [#1412](https://github.com/inngest/inngest-js/pull/1412) [`556a32eb`](https://github.com/inngest/inngest-js/commit/556a32ebff7f2139023a55dc1db9b8233d8d4c9e) Thanks [@rhino1998](https://github.com/rhino1998)! - Extended Traces: Include step attributes in userland spans
+
+- [#1414](https://github.com/inngest/inngest-js/pull/1414) [`7e699a06`](https://github.com/inngest/inngest-js/commit/7e699a067b5df51fc35a4e24b8145fe9b4bf59ae) Thanks [@rhino1998](https://github.com/rhino1998)! - Step Metadata: Collapse step/step_attempt behavior
+
+- [#1418](https://github.com/inngest/inngest-js/pull/1418) [`31300308`](https://github.com/inngest/inngest-js/commit/31300308dbb0ef7cd25259482fd33fa304f172a8) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Fix graceful shutdown cleanup in case of draining connection replacement
+
 ## 4.1.0
 
 ### Minor Changes
