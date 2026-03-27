@@ -223,15 +223,26 @@ export class ConnectionCore {
    * Clean up the current connection.
    */
   async cleanup(): Promise<void> {
-    const conn = this.currentConnection;
-    if (conn) {
-      await conn.cleanup();
-      // Only clear if the connection hasn't been replaced during cleanup
-      // (e.g. by a drain reconnect while waiting for in-flight requests).
-      if (this.currentConnection === conn) {
-        this.currentConnection = undefined;
-      }
+    let conn = this.currentConnection;
+    if (!conn) {
+      return;
     }
+
+    // Each cleanup may trigger a drain reconnect that replaces
+    // currentConnection, so loop until no more replacements occur.
+    while (conn) {
+      await conn.cleanup();
+
+      // If no replacement was created during cleanup, we're done.
+      if (!this.currentConnection || this.currentConnection === conn) {
+        break;
+      }
+
+      // A drain reconnect created a replacement — clean it up too.
+      conn = this.currentConnection;
+    }
+
+    this.currentConnection = undefined;
   }
 
   private async sendStartRequest(
@@ -554,22 +565,28 @@ export class ConnectionCore {
         }
         closed = true;
 
-        await conn.cleanup();
+        // Disable handlers and close the dead WS directly instead of
+        // calling conn.cleanup() (which checks `closed` and would no-op).
+        ws.onerror = () => {};
+        ws.onclose = () => {};
+        ws.close(
+          4001,
+          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
+        );
+        clearInterval(heartbeatInterval);
+
+        if (this.currentConnection?.id === connectionId) {
+          this.currentConnection = undefined;
+        }
 
         const currentState = this.callbacks.getState();
-        if (
-          currentState === ConnectionState.CLOSING ||
-          currentState === ConnectionState.CLOSED
-        ) {
+        if (currentState === ConnectionState.CLOSED) {
           this.callbacks.logger.debug(
             { connectionId },
-            "Connection error but already closing or closed, skipping",
+            "Connection error but already closed, skipping",
           );
           return;
         }
-
-        this.callbacks.onStateChange(ConnectionState.RECONNECTING);
-        this.excludeGateways.add(startResp.gatewayGroup);
 
         if (isDraining) {
           this.callbacks.logger.debug(
@@ -586,6 +603,11 @@ export class ConnectionCore {
           },
           "Connection error",
         );
+
+        // Reconnect even when CLOSING — heartbeats and lease extensions
+        // must continue while in-flight requests are still running.
+        this.callbacks.onStateChange(ConnectionState.RECONNECTING);
+        this.excludeGateways.add(startResp.gatewayGroup);
         this.connect(attempt + 1, [...path, "onConnectionError"]);
       };
 
@@ -967,11 +989,12 @@ export class ConnectionCore {
       }, heartbeatIntervalMs);
     }
 
+    let cleaningUp = false;
     conn.cleanup = async () => {
-      if (closed) {
+      if (closed || cleaningUp) {
         return;
       }
-      closed = true;
+      cleaningUp = true;
 
       this.callbacks.logger.debug({ connectionId }, "Cleaning up connection");
       if (ws.readyState === WebSocket.OPEN) {
@@ -987,11 +1010,20 @@ export class ConnectionCore {
         );
       }
 
-      this.callbacks.logger.debug({ connectionId }, "Closing connection");
+      // Wait for in-flight requests to complete BEFORE disabling error
+      // handlers. If the WS dies during this wait, onConnectionError will
+      // trigger a reconnect so that heartbeats and lease extensions continue
+      // working (even during graceful shutdown).
+      this.callbacks.logger.debug(
+        { connectionId },
+        "Waiting for in-flight requests before closing connection",
+      );
+      await this.inProgressRequests.wg.wait();
+
+      // All in-flight requests are done — now safe to tear down.
+      closed = true;
       ws.onerror = () => {};
       ws.onclose = () => {};
-
-      await this.inProgressRequests.wg.wait();
 
       ws.close(
         1000,

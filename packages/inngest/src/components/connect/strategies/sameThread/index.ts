@@ -1,5 +1,6 @@
 import { SDKResponse } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { MessageBuffer } from "../../buffer.ts";
+import { ConnectionState } from "../../types.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
 import { ConnectionCore } from "../core/connection.ts";
 import type { StrategyConfig } from "../core/types.ts";
@@ -38,6 +39,14 @@ export class SameThreadStrategy extends BaseStrategy {
       {
         logger: this.internalLogger,
         onStateChange: (state) => {
+          // Don't allow state to regress from CLOSING/CLOSED (e.g. if a
+          // drain reconnect triggers ACTIVE during graceful shutdown).
+          if (
+            this._state === ConnectionState.CLOSING ||
+            this._state === ConnectionState.CLOSED
+          ) {
+            return;
+          }
           this._state = state;
         },
         getState: () => this._state,

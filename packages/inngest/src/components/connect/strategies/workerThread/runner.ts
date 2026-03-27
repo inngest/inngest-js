@@ -179,6 +179,14 @@ class WorkerRunner {
       {
         logger: this.logger,
         onStateChange: (state) => {
+          // Don't allow state to regress from CLOSING/CLOSED (e.g. if a
+          // drain reconnect triggers ACTIVE during graceful shutdown).
+          if (
+            this.state === ConnectionState.CLOSING ||
+            this.state === ConnectionState.CLOSED
+          ) {
+            return;
+          }
           this.setState(state);
           if (state === ConnectionState.ACTIVE && this.core?.connectionId) {
             this.sendMessage({
