@@ -1,0 +1,36 @@
+name: Update AI model types
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Mondays 6 AM UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: node packages/ai/scripts/update-models.mjs
+      - uses: peter-evans/create-pull-request@v7
+        id: cpr
+        with:
+          commit-message: "Update `@inngest/ai` model types"
+          title: "Automated AI model type update"
+          body: |
+            ## Automated model update
+
+            This PR was created automatically by a scheduled GitHub Action that
+            fetches the latest model identifiers from the official OpenAI and
+            Anthropic SDK packages and updates the TypeScript type unions in
+            `@inngest/ai`.
+
+            Models are only added, never removed.
+          branch: "automated/update-models"
+          base: "main"
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
+          delete-branch: true
+          labels: |
+            💡 KTLO
