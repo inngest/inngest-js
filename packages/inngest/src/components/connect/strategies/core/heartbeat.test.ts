@@ -73,6 +73,26 @@ describe("ConnectionCore heartbeat", () => {
     });
   });
 
+  describe("Single heartbeat miss tolerated (blip)", () => {
+    test("does not reconnect after only 1 missed heartbeat", async () => {
+      const { ws } = await connectAndReady();
+
+      // Advance past 1 heartbeat interval without sending a response
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+
+      // pendingHeartbeats should be 1, which is < 2 threshold
+      // Should still only have 1 WebSocket (no reconnection)
+      expect(MockWebSocket.instances.length).toBe(1);
+
+      // Verify a heartbeat was sent
+      const heartbeats = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_HEARTBEAT,
+      );
+      expect(heartbeats.length).toBe(1);
+    });
+  });
+
   describe("6. Single heartbeat targets active connection", () => {
     test("heartbeat sends to current active connection only", async () => {
       const fetchMock = vi.fn();

@@ -7,6 +7,8 @@ import {
   GatewayExecutorRequestData,
   GatewayMessageType,
   StartResponse,
+  WorkerReplyAckData,
+  WorkerRequestExtendLeaseAckData,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
 import { ConnectionState } from "../../types.ts";
@@ -171,6 +173,39 @@ export class MockWebSocket {
       ConnectMessage.create({
         kind: GatewayMessageType.GATEWAY_EXECUTOR_REQUEST,
         payload: requestPayload,
+      }),
+    ).finish();
+    this.simulateMessage(ensureUnsharedArrayBuffer(msg).buffer as ArrayBuffer);
+  }
+
+  /** Send a WORKER_REPLY_ACK message */
+  sendWorkerReplyAck(requestId: string) {
+    const payload = WorkerReplyAckData.encode(
+      WorkerReplyAckData.create({ requestId }),
+    ).finish();
+
+    const msg = ConnectMessage.encode(
+      ConnectMessage.create({
+        kind: GatewayMessageType.WORKER_REPLY_ACK,
+        payload,
+      }),
+    ).finish();
+    this.simulateMessage(ensureUnsharedArrayBuffer(msg).buffer as ArrayBuffer);
+  }
+
+  /** Send a WORKER_REQUEST_EXTEND_LEASE_ACK message */
+  sendExtendLeaseAck(opts: { requestId: string; newLeaseId?: string }) {
+    const payload = WorkerRequestExtendLeaseAckData.encode(
+      WorkerRequestExtendLeaseAckData.create({
+        requestId: opts.requestId,
+        newLeaseId: opts.newLeaseId,
+      }),
+    ).finish();
+
+    const msg = ConnectMessage.encode(
+      ConnectMessage.create({
+        kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK,
+        payload,
       }),
     ).finish();
     this.simulateMessage(ensureUnsharedArrayBuffer(msg).buffer as ArrayBuffer);

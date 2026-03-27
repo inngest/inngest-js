@@ -296,6 +296,66 @@ describe("ConnectionCore reconcile loop", () => {
     });
   });
 
+  describe("GATEWAY_CLOSING during shutdown with in-flight requests", () => {
+    test("reconnects for lease extensions when gateway drains during shutdown", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const fetchMock = vi.fn();
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-1" }),
+      );
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-2" }),
+      );
+      global.fetch = fetchMock;
+
+      const helpers = createTestCore({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      const startPromise = helpers.core.start();
+      await flushMicrotasks();
+      const ws1 = MockWebSocket.instances[0]!;
+      await driveHandshake(ws1);
+      await startPromise;
+
+      // Send an executor request to create in-flight work
+      ws1.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      // Start shutdown
+      const closePromise = helpers.core.close();
+      await flushMicrotasks();
+
+      // Gateway sends CLOSING (drain) on ws1
+      ws1.sendGatewayClosing();
+      await flushMicrotasks();
+
+      // Should create a new WebSocket for reconnection
+      const ws2 = MockWebSocket.instances[1]!;
+      expect(ws2).toBeDefined();
+      await driveHandshake(ws2);
+      await flushMicrotasks();
+
+      // Verify new connection is active
+      expect(helpers.core.connectionId).toBe("conn-2");
+
+      // Complete the execution to allow close to finish
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+
+      await closePromise;
+    });
+  });
+
   describe("14. Auth key fallback", () => {
     test("switches to fallback key on 401", async () => {
       const fetchMock = vi.fn();
