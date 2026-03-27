@@ -1,5 +1,6 @@
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { expect, test, vi } from "vitest";
+import type { SseEvent } from "../../../components/execution/streaming.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { step } from "../../../index.ts";
 import { streamRun } from "../../../stream.ts";
@@ -230,6 +231,170 @@ test("endpoint error response via onFunctionCompleted", async () => {
   expect(done).toHaveBeenCalledOnce();
 
   await state.waitForRunComplete();
+});
+
+// XXX: not technically supported, but definitely works
+test("stepless with streaming", async () => {
+  const { port } = await setupEndpoint(testFileName, async () => {
+    stream.push("no-steps-data");
+    return Response.json("stepless-streaming-done");
+  });
+
+  const { calls } = await collectCalls(`http://localhost:${port}/api/demo`);
+
+  expect(calls).toEqual({
+    onData: [{ data: "no-steps-data", hashedStepId: undefined }],
+    onDone: [undefined],
+    onStreamError: [],
+    onFunctionCompleted: [{ data: "stepless-streaming-done" }],
+    onMetadata: [{ runId: expect.any(String) }],
+    onRollback: [],
+    onStepCompleted: [],
+    onStepRunning: [],
+  });
+});
+
+test("stepless without streaming", async () => {
+  const { port } = await setupEndpoint(testFileName, async () => {
+    return Response.json("stepless-no-stream");
+  });
+
+  const { calls } = await collectCalls(`http://localhost:${port}/api/demo`);
+
+  expect(calls).toEqual({
+    onData: [],
+    onDone: [undefined],
+    onStreamError: [],
+    onFunctionCompleted: [{ data: "stepless-no-stream" }],
+    onMetadata: [{ runId: expect.any(String) }],
+    onRollback: [],
+    onStepCompleted: [],
+    onStepRunning: [],
+  });
+});
+
+test("partial rollback — only erroring step's chunks are removed", async () => {
+  const state = createState({});
+  let bAttempt = 0;
+  const { port } = await setupEndpoint(
+    testFileName,
+    async () => {
+      await step.run("a", async () => {
+        stream.push("a-data");
+        return "a output";
+      });
+      await step.sleep("go-async", "1s");
+      await step.run("b", async () => {
+        bAttempt++;
+        stream.push(`b-data-attempt-${bAttempt}`);
+        if (bAttempt === 1) {
+          throw new Error("b fails first time");
+        }
+        return "b output";
+      });
+      return Response.json("fn output");
+    },
+    { logger: silencedLogger },
+  );
+
+  const { chunks, rawChunks, runId } = await rollbacker(
+    `http://localhost:${port}/api/demo`,
+  );
+  state.runId = runId;
+
+  expect(chunks).toEqual(["a-data", "b-data-attempt-2"]);
+  expect(rawChunks).toEqual(["a-data", "b-data-attempt-1", "b-data-attempt-2"]);
+
+  await state.waitForRunComplete();
+});
+
+test("async iterable consumption via for-await-of", async () => {
+  const state = createState({});
+  const { port } = await setupEndpoint(testFileName, async () => {
+    await step.run("a", async () => {
+      stream.push("sync-data");
+      return "a output";
+    });
+    await step.sleep("go-async", "1s");
+    await step.run("b", async () => {
+      stream.push("async-data");
+      return "b output";
+    });
+    return Response.json("fn output");
+  });
+
+  const collected: unknown[] = [];
+  const rs = streamRun(`http://localhost:${port}/api/demo`, {
+    onMetadata: (args) => {
+      state.runId = args.runId;
+    },
+  });
+
+  for await (const chunk of rs) {
+    collected.push(chunk);
+  }
+
+  expect(collected).toEqual(["sync-data", "async-data"]);
+  expect(rs.chunks).toEqual(["sync-data", "async-data"]);
+
+  await state.waitForRunComplete();
+});
+
+test("disconnect rollback — in-flight step rolled back on stream end", async () => {
+  const rolledBack: number[] = [];
+  const dataChunks: { data: unknown; hashedStepId?: string }[] = [];
+  const onDone = vi.fn();
+
+  async function* fakeSource(): AsyncGenerator<SseEvent> {
+    yield { type: "inngest.metadata", runId: "run-disconnect" };
+    yield { type: "inngest.step", stepId: "s1", status: "running" };
+    yield { type: "stream", data: "partial-a", stepId: "s1" };
+    yield { type: "stream", data: "partial-b", stepId: "s1" };
+  }
+
+  const rs = streamRun<string>("http://unused", {
+    onData: (d) => dataChunks.push(d),
+    onRollback: ({ count }) => rolledBack.push(count),
+    onDone,
+  });
+  rs._fromSource(fakeSource());
+  await rs;
+
+  expect(rolledBack).toEqual([2]);
+  expect(rs.chunks).toEqual([]);
+  expect(dataChunks).toEqual([
+    { data: "partial-a", hashedStepId: "s1" },
+    { data: "partial-b", hashedStepId: "s1" },
+  ]);
+  expect(onDone).toHaveBeenCalledOnce();
+});
+
+test("onStreamError fires on source error, onDone still fires", async () => {
+  const streamErrors: unknown[] = [];
+  const dataChunks: string[] = [];
+  const onDone = vi.fn();
+
+  async function* explodingSource(): AsyncGenerator<SseEvent> {
+    yield { type: "inngest.metadata", runId: "run-error" };
+    yield { type: "inngest.step", stepId: "s1", status: "running" };
+    yield { type: "stream", data: "before-error", stepId: "s1" };
+    throw new Error("connection reset");
+  }
+
+  const rs = streamRun<string>("http://unused", {
+    onData: ({ data }) => dataChunks.push(data),
+    onStreamError: ({ error }) => streamErrors.push(error),
+    onDone,
+  });
+  rs._fromSource(explodingSource());
+
+  await expect(rs).rejects.toThrow("connection reset");
+
+  expect(streamErrors).toHaveLength(1);
+  expect(streamErrors[0]).toBeInstanceOf(Error);
+  expect((streamErrors[0] as Error).message).toBe("connection reset");
+  expect(dataChunks).toEqual(["before-error"]);
+  expect(onDone).toHaveBeenCalledOnce();
 });
 
 async function collectCalls(url: string) {
