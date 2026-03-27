@@ -1,1 +1,1 @@
-export { fetchDurableEndpoint } from "../../stream.ts";
+export { fetchWithStream } from "../../stream.ts";

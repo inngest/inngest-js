@@ -1,6 +1,6 @@
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { expect, test } from "vitest";
-import { fetchDurableEndpoint } from "../../../experimental/durable-endpoints/client.ts";
+import { fetchWithStream } from "../../../experimental/durable-endpoints/client.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { NonRetriableError, step } from "../../../index.ts";
 import { silencedLogger } from "../../helpers.ts";
@@ -11,15 +11,15 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 test("sync mode with no stream", async () => {
   const state = createState({});
   const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
-    await step.run("a", async () => { });
-    await step.run("b", async () => { });
+    await step.run("a", async () => {});
+    await step.run("b", async () => {});
     return Response.json("fn output", {
       headers: { "X-My-Header": "my-value" },
       status: 202,
     });
   });
 
-  const resp = await fetchDurableEndpoint(
+  const resp = await fetchWithStream(
     urlWithTestName(`http://localhost:${port}`),
   );
   expect(resp.status).toBe(202);
@@ -46,7 +46,7 @@ test("sync mode with stream", async () => {
   });
 
   const chunks: unknown[] = [];
-  const resp = await fetchDurableEndpoint(
+  const resp = await fetchWithStream(
     urlWithTestName(`http://localhost:${port}`),
     {
       onData: (args) => {
@@ -66,16 +66,16 @@ test("sync mode with stream", async () => {
 test("async mode without stream", async () => {
   const state = createState({});
   const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
-    await step.run("a", async () => { });
+    await step.run("a", async () => {});
     await step.sleep("go-async", "1s");
-    await step.run("b", async () => { });
+    await step.run("b", async () => {});
     return Response.json("fn output", {
       headers: { "X-My-Header": "my-value" },
       status: 202,
     });
   });
 
-  const resp = await fetchDurableEndpoint(
+  const resp = await fetchWithStream(
     urlWithTestName(`http://localhost:${port}`),
   );
   expect(resp.status).toBe(202);
@@ -102,7 +102,7 @@ test("async mode with stream", async () => {
   });
 
   const chunks: unknown[] = [];
-  const resp = await fetchDurableEndpoint(
+  const resp = await fetchWithStream(
     urlWithTestName(`http://localhost:${port}`),
     {
       onData: (args) => {
@@ -180,7 +180,7 @@ describe("failed", () => {
       return Response.json("unreachable");
     });
 
-    const resp = await fetchDurableEndpoint(
+    const resp = await fetchWithStream(
       urlWithTestName(`http://localhost:${port}`),
     );
     expect(resp.status).toBe(500);
@@ -198,7 +198,7 @@ describe("failed", () => {
       return Response.json("unreachable");
     });
 
-    const resp = await fetchDurableEndpoint(
+    const resp = await fetchWithStream(
       urlWithTestName(`http://localhost:${port}`),
     );
     expect(resp.status).toBe(500);
@@ -221,7 +221,7 @@ describe("server killed mid-stream", () => {
     });
 
     expect(async () => {
-      await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
+      await fetchWithStream(urlWithTestName(`http://localhost:${port}`), {
         onData: () => {
           // Kill the server after we've received the first chunk.
           server.closeAllConnections();
@@ -251,17 +251,17 @@ describe("server killed mid-stream", () => {
     // tell the client that the endpoint died.
     const timeoutSignal = AbortSignal.timeout(5_000);
     expect(async () => {
-      await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
-      fetchOpts: {
-        signal: timeoutSignal,
-      },
-      onData: () => {
-        // Kill the server after we've received the first chunk.
-        server.closeAllConnections();
-        server.close();
-        gate.open();
-      },
-    })
+      await fetchWithStream(urlWithTestName(`http://localhost:${port}`), {
+        fetchOpts: {
+          signal: timeoutSignal,
+        },
+        onData: () => {
+          // Kill the server after we've received the first chunk.
+          server.closeAllConnections();
+          server.close();
+          gate.open();
+        },
+      });
     }).rejects.toThrow("The operation was aborted due to timeout");
   });
 });
@@ -280,7 +280,7 @@ async function rollbacker(url: string): Promise<{
   let inProgress: unknown[] = [];
   let runId = "";
 
-  const resp = await fetchDurableEndpoint(url, {
+  const resp = await fetchWithStream(url, {
     onMetadata: (args) => {
       runId = args.runId;
     },

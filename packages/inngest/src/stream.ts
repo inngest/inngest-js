@@ -51,7 +51,7 @@ interface FetchDurableEndpointOptions {
 /**
  * Send a
  */
-export async function fetchDurableEndpoint(
+export async function fetchWithStream(
   url: string,
   opts?: FetchDurableEndpointOptions,
 ): Promise<Response> {
