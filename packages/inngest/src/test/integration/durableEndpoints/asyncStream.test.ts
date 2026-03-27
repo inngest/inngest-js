@@ -81,13 +81,10 @@ test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
       event: "inngest.commit",
       data: '{"hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
-
-    // FIXME: Why is this sent?
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
-
     {
       event: "inngest.response",
       data: JSON.stringify({
@@ -191,13 +188,10 @@ test("mixed push and pipe in one step", async () => {
       event: "inngest.commit",
       data: '{"hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
-
-    // FIXME: Why is this sent?
     {
       event: "inngest.metadata",
       data: expect.any(String),
     },
-
     {
       event: "inngest.response",
       data: JSON.stringify({
