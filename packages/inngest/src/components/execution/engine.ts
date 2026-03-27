@@ -348,7 +348,10 @@ class InngestExecutionEngine
       // Suppress: if earlyStreamResponse wins the race and coreLoop later
       // rejects, the rejection must not go unhandled.
       coreLoop.catch((err) => {
-        this.devDebug("core loop rejected after early stream response:", err);
+        this.options.client[internalLoggerSymbol].error(
+          { err },
+          "Core loop rejected after early stream response was sent",
+        );
       });
 
       return Promise.race([this.earlyStreamResponse.promise, coreLoop]);
@@ -382,6 +385,7 @@ class InngestExecutionEngine
       // If earlyStreamResponse was set up, close the stream with an error event.
       if (this.earlyStreamResponse) {
         this.streamTools.closeFailed("Internal execution error");
+        this.earlyStreamResponse.reject(error);
       }
 
       return this.transformOutput({ error });
