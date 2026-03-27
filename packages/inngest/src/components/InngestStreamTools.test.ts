@@ -25,7 +25,7 @@ describe("InngestStream.push", () => {
 
     const raw = await drain(s);
 
-    expect(raw).toContain("event: stream");
+    expect(raw).toContain("event: inngest.stream");
     expect(raw).toContain('"hello"');
     expect(raw).toContain('"world"');
   });

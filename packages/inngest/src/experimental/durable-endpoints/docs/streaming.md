@@ -15,7 +15,7 @@ The client receives an `inngest.redirect_info` event containing a URL. When the 
 | Event                   | Direction       | Purpose                                                       |
 | ----------------------- | --------------- | ------------------------------------------------------------- |
 | `inngest.metadata`      | DE/IS -> client | Run ID                                                        |
-| `stream`                | DE/IS -> client | User data chunk. Includes `hashedStepId` when inside a step   |
+| `inngest.stream`        | DE/IS -> client | User data chunk. Includes `hashedStepId` when inside a step   |
 | `inngest.commit`        | DE/IS -> client | Step data is finalized, will not be rolled back               |
 | `inngest.rollback`      | DE/IS -> client | Step data should be discarded (error/retry)                   |
 | `inngest.redirect_info` | DE -> client    | URL for async reconnection                                    |

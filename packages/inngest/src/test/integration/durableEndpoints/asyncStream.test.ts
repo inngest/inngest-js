@@ -52,7 +52,7 @@ test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-data","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
@@ -74,7 +74,7 @@ test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-data","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
@@ -145,15 +145,15 @@ test("mixed push and pipe in one step", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-push-1","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-pipe","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"sync-push-2","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
@@ -176,15 +176,15 @@ test("mixed push and pipe in one step", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-push-1","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-pipe","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"async-push-2","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
@@ -320,7 +320,7 @@ test("retries", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
@@ -342,7 +342,7 @@ test("retries", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
@@ -354,7 +354,7 @@ test("retries", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
@@ -366,7 +366,7 @@ test("retries", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {

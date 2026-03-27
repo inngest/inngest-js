@@ -159,7 +159,7 @@ export function fakeTokenStream(tokens: string[]): ReadableStream<Uint8Array> {
 /** Extract the parsed data payloads from stream-type SSE events. */
 export function getStreamData(events: SseEvent[]): string[] {
   return events
-    .filter((e) => e.event === "stream")
+    .filter((e) => e.event === "inngest.stream")
     .map((e) => {
       try {
         const parsed = JSON.parse(e.data);
@@ -321,7 +321,7 @@ export async function pollForAsyncStream(
         const { events } = await readSseStream(res, readTimeoutMs);
 
         const hasContent =
-          events.some((e) => e.event === "stream") ||
+          events.some((e) => e.event === "inngest.stream") ||
           events.some((e) => e.event === "inngest.response");
         if (hasContent) {
           return events;
@@ -362,7 +362,7 @@ export async function pollForAsyncReader(redirectUrl: string) {
           reader.done.then(() => {
             return reader.events.some(
               (e) =>
-                e.event === "stream" ||
+                e.event === "inngest.stream" ||
                 e.event === "inngest.response" ||
                 e.event === "inngest.commit" ||
                 e.event === "inngest.rollback",
@@ -372,7 +372,7 @@ export async function pollForAsyncReader(redirectUrl: string) {
           sleep(2000).then(() => {
             return reader.events.some(
               (e) =>
-                e.event === "stream" ||
+                e.event === "inngest.stream" ||
                 e.event === "inngest.response" ||
                 e.event === "inngest.commit" ||
                 e.event === "inngest.rollback",

@@ -50,7 +50,7 @@ test.concurrent.each(streamingMethods)(
         data: expect.any(String),
       },
       {
-        event: "stream",
+        event: "inngest.stream",
         data: '{"data":"from a","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
       },
       {
@@ -62,7 +62,7 @@ test.concurrent.each(streamingMethods)(
         data: expect.any(String),
       },
       {
-        event: "stream",
+        event: "inngest.stream",
         data: '{"data":"from b","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
       },
       {
@@ -166,7 +166,7 @@ test("NonRetriableError", async () => {
       data: expect.any(String),
     },
     {
-      event: "stream",
+      event: "inngest.stream",
       data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {

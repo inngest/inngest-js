@@ -11,8 +11,8 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 test("sync mode with no stream", async () => {
   const state = createState({});
   const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
-    await step.run("a", async () => {});
-    await step.run("b", async () => {});
+    await step.run("a", async () => { });
+    await step.run("b", async () => { });
     return Response.json("fn output", {
       headers: { "X-My-Header": "my-value" },
       status: 202,
@@ -66,9 +66,9 @@ test("sync mode with stream", async () => {
 test("async mode without stream", async () => {
   const state = createState({});
   const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
-    await step.run("a", async () => {});
+    await step.run("a", async () => { });
     await step.sleep("go-async", "1s");
-    await step.run("b", async () => {});
+    await step.run("b", async () => { });
     return Response.json("fn output", {
       headers: { "X-My-Header": "my-value" },
       status: 202,
@@ -172,8 +172,7 @@ test("rollback", async () => {
 
 describe("failed", () => {
   test("sync mode", async () => {
-    const gate = createGate();
-    const { port, server } = await setupEndpoint(testFileName, async () => {
+    const { port } = await setupEndpoint(testFileName, async () => {
       await step.run("a", async () => {
         stream.push("chunk");
         throw new NonRetriableError("oh no");
@@ -187,15 +186,10 @@ describe("failed", () => {
     expect(resp.status).toBe(500);
     expect(resp.headers.get("content-type")).toBe("application/json");
     expect(await resp.json()).toEqual("oh no");
-
-    // expect(async () => {
-    //   await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`));
-    // }).rejects.toThrow("terminated");
   });
 
-  test.skip("async mode", async () => {
-    const gate = createGate();
-    const { port, server } = await setupEndpoint(testFileName, async () => {
+  test.only("async mode", async () => {
+    const { port } = await setupEndpoint(testFileName, async () => {
       await step.sleep("go-async", "1s");
       await step.run("a", async () => {
         stream.push("chunk");
@@ -204,16 +198,12 @@ describe("failed", () => {
       return Response.json("unreachable");
     });
 
-    expect(async () => {
-      await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
-        onData: () => {
-          // Kill the server after we've received the first chunk.
-          server.closeAllConnections();
-          server.close();
-          gate.open();
-        },
-      });
-    }).rejects.toThrow("terminated");
+    const resp = await fetchDurableEndpoint(
+      urlWithTestName(`http://localhost:${port}`),
+    );
+    expect(resp.status).toBe(500);
+    expect(resp.headers.get("content-type")).toBe("application/json");
+    expect(await resp.json()).toEqual("oh no");
   });
 });
 
@@ -242,7 +232,7 @@ describe("server killed mid-stream", () => {
     }).rejects.toThrow("terminated");
   });
 
-  test.skip("async mode", async () => {
+  test("async mode", async () => {
     const gate = createGate();
     const { port, server } = await setupEndpoint(testFileName, async () => {
       await step.sleep("go-async", "1s");
@@ -255,16 +245,24 @@ describe("server killed mid-stream", () => {
       return Response.json("unreachable");
     });
 
+    // FIXME: Times out because the server dies before sending the
+    // "inngest.response" SSE event. This is a consequence of endpoint-side
+    // orchestration for the stream. We need a way for the Inngest server to
+    // tell the client that the endpoint died.
+    const timeoutSignal = AbortSignal.timeout(5_000);
     expect(async () => {
       await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
-        onData: () => {
-          // Kill the server after we've received the first chunk.
-          server.closeAllConnections();
-          server.close();
-          gate.open();
-        },
-      });
-    }).rejects.toThrow("terminated");
+      fetchOpts: {
+        signal: timeoutSignal,
+      },
+      onData: () => {
+        // Kill the server after we've received the first chunk.
+        server.closeAllConnections();
+        server.close();
+        gate.open();
+      },
+    })
+    }).rejects.toThrow("The operation was aborted due to timeout");
   });
 });
 

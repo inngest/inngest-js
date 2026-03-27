@@ -14,7 +14,7 @@ const sseMetadataSchema = z.object({
 });
 
 const sseStreamSchema = z.object({
-  type: z.literal("stream"),
+  type: z.literal("inngest.stream"),
   data: z.unknown(),
   stepId: z.string().optional(),
 });
@@ -105,7 +105,7 @@ export function buildSseMetadataEvent(runId: string): string {
 export function buildSseStreamEvent(data: unknown, stepId?: string): string {
   const payload: Record<string, unknown> = { data };
   if (stepId) payload.stepId = stepId;
-  return buildSseEvent("stream", payload);
+  return buildSseEvent("inngest.stream", payload);
 }
 
 export interface SseResponse {
@@ -365,7 +365,7 @@ export async function* iterSse(
 
 const sseSchemasByEvent: Record<string, z.ZodType<SseEvent>> = {
   "inngest.metadata": sseMetadataSchema,
-  stream: sseStreamSchema,
+  "inngest.stream": sseStreamSchema,
   "inngest.response": sseResultSchema,
   "inngest.commit": sseCommitSchema,
   "inngest.rollback": sseRollbackSchema,

@@ -89,7 +89,7 @@ export async function fetchDurableEndpoint(
   try {
     outer: for await (const sseEvent of source) {
       switch (sseEvent.type) {
-        case "stream": {
+        case "inngest.stream": {
           opts?.onData?.({
             data: sseEvent.data,
             hashedStepId: sseEvent.stepId ?? null,
