@@ -158,6 +158,11 @@ class InngestExecutionEngine
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
   private middlewareManager: MiddlewareManager;
+  /**
+   * Close the stream via {@link streamCloseSucceeded}, {@link streamCloseFailed},
+   * or {@link streamEnd} — never call `streamTools.close*`/`end` directly, as
+   * the wrappers ensure the redirect event is flushed first.
+   */
   private streamTools: InngestStream;
 
   /**
@@ -384,7 +389,7 @@ class InngestExecutionEngine
     } catch (error) {
       // If earlyStreamResponse was set up, close the stream with an error event.
       if (this.earlyStreamResponse) {
-        this.streamTools.closeFailed("Internal execution error");
+        await this.streamCloseFailed("Internal execution error");
         this.earlyStreamResponse.reject(error);
       }
 
@@ -480,25 +485,21 @@ class InngestExecutionEngine
 
     const token = this.state.checkpointedRun.token;
 
-    // Wait for the redirect_info event to flush — sendRedirectIfReady
-    // fetches the redirect URL asynchronously.
-    await this.redirectPromise;
-
     if (this.streamTools.activated) {
       if (stepError && !this.retriability(stepError)) {
         // Permanent failure — close with a failed event so the client
         // gets onStreamError instead of silence.
-        this.streamTools.closeFailed(errorMessage(stepError));
+        await this.streamCloseFailed(errorMessage(stepError));
       } else {
         // End stream without a result event — client uses redirect_info
         // to reconnect.
-        this.streamTools.end();
+        await this.streamEnd();
       }
     } else if (this.options.acceptsSse) {
       // Stream was never activated (no stream.push/pipe), but the client
       // accepts SSE. Close and return the SSE response so the client gets
       // metadata + redirect_info events and can follow the redirect.
-      this.streamTools.end();
+      await this.streamEnd();
       return {
         type: "function-resolved",
         ctx: this.fnArg,
@@ -554,16 +555,16 @@ class InngestExecutionEngine
    * checkpointable data is the function's return value. The SSE events are just
    * a delivery mechanism.
    */
-  private wrapResultAsSse(
+  private async wrapResultAsSse(
     checkpoint: Simplify<
       { type: "function-resolved" } & Checkpoints["function-resolved"]
     >,
     sseResponse: SseResponse,
-  ): ExecutionResult {
+  ): Promise<ExecutionResult> {
     const resultData: unknown = checkpoint.data;
 
     // Close the stream with a terminal succeeded event
-    this.streamTools.closeSucceeded(sseResponse);
+    await this.streamCloseSucceeded(sseResponse);
 
     const clientResponse = this.buildSseResponse();
 
@@ -658,6 +659,34 @@ class InngestExecutionEngine
         );
       }
     })();
+  }
+
+  /**
+   * Await the pending redirect-info fetch, then close the stream with a
+   * succeeded result. Awaiting first guarantees the redirect event is
+   * enqueued on the write chain before the close event.
+   */
+  private async streamCloseSucceeded(response: SseResponse): Promise<void> {
+    await this.redirectPromise;
+    this.streamTools.closeSucceeded(response);
+  }
+
+  /**
+   * Await the pending redirect-info fetch, then close the stream with a
+   * failed result.
+   */
+  private async streamCloseFailed(error: string): Promise<void> {
+    await this.redirectPromise;
+    this.streamTools.closeFailed(error);
+  }
+
+  /**
+   * Await the pending redirect-info fetch, then close the stream without
+   * a result event.
+   */
+  private async streamEnd(): Promise<void> {
+    await this.redirectPromise;
+    this.streamTools.end();
   }
 
   /**
@@ -887,7 +916,7 @@ class InngestExecutionEngine
 
           // Always close the stream — either the SSE client or the
           // server-side checkpoint POST needs the terminal result event.
-          this.streamTools.closeSucceeded(sseResponse);
+          await this.streamCloseSucceeded(sseResponse);
 
           if (usingSseStream) {
             // SSE path: response already sent; checkpoint in background.
@@ -941,45 +970,46 @@ class InngestExecutionEngine
         const usingSseStream = !!this.earlyStreamResponse;
         const isFinal = !this.retriability(checkpoint.error);
 
-        if (this.streamTools.activated) {
-          if (isFinal) {
-            this.streamTools.closeFailed(errorMessage(checkpoint.error));
-          } else {
-            // Retryable error — suppress the result event; the run will retry.
-            this.streamTools.end();
-          }
-
-          if (usingSseStream) {
-            // SSE path: checkpoint the error so the server knows the outcome.
-            void this.checkpoint([
-              {
-                id: hashId(RUN_COMPLETE_STEP_ID),
-                op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
-                error: checkpoint.error,
-              },
-            ]).catch((err) => {
+        if (this.streamTools.activated && usingSseStream) {
+          // SSE path: checkpoint the error, then close the stream.
+          // The checkpoint triggers sendRedirectIfReady which starts
+          // the (near-instant) redirect URL resolution. Chaining the
+          // close as a continuation ensures the redirect event is
+          // written first, without blocking the handler's return on
+          // the checkpoint's retry budget.
+          void this.checkpoint([
+            {
+              id: hashId(RUN_COMPLETE_STEP_ID),
+              op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+              error: checkpoint.error,
+            },
+          ])
+            .catch((err) => {
               this.options.client[internalLoggerSymbol].warn(
                 { err },
                 "Failed to checkpoint function error",
               );
+            })
+            .then(async () => {
+              if (isFinal) {
+                await this.streamCloseFailed(errorMessage(checkpoint.error));
+              } else {
+                await this.streamEnd();
+              }
             });
 
-            return this.transformOutput({ error: checkpoint.error });
-          }
-
-          // Non-SSE: fall through to normal error handling.
+          return this.transformOutput({ error: checkpoint.error });
         }
 
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
-        if (!this.retriability(checkpoint.error)) {
+        if (isFinal) {
           return this.transformOutput({ error: checkpoint.error });
         }
 
         // Retryable — checkpoint the error and switch to async mode.
-        // stepError omitted: isFinalAttempt returned false above,
-        // so checkpointAndSwitchToAsync closes with end().
+        // checkpointAndSwitchToAsync handles closing the stream.
         return this.checkpointAndSwitchToAsync([
           {
             id: hashId(RUN_COMPLETE_STEP_ID),
@@ -1094,7 +1124,7 @@ class InngestExecutionEngine
         }
 
         // Close the stream with a terminal succeeded event.
-        this.streamTools.closeSucceeded(sseResponse);
+        await this.streamCloseSucceeded(sseResponse);
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result event.
@@ -1118,10 +1148,10 @@ class InngestExecutionEngine
         const isFinal = !this.retriability(checkpoint.error);
 
         if (isFinal) {
-          this.streamTools.closeFailed(errorMessage(checkpoint.error));
+          await this.streamCloseFailed(errorMessage(checkpoint.error));
         } else {
           // Retryable error — suppress the result event; the run will retry.
-          this.streamTools.end();
+          await this.streamEnd();
         }
 
         if (!this.streamTools.activated) {
