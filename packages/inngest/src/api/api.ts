@@ -39,6 +39,7 @@ const checkpointNewRunResponseSchema = z.object({
     app_id: z.string().min(1),
     run_id: z.string().min(1),
     token: z.string().min(1).optional(),
+    realtime_token: z.string().min(1),
   }),
 });
 
@@ -556,6 +557,54 @@ export class InngestApi {
         } - ${await res.text()}`,
       );
     }
+  }
+
+  /**
+   * POST stream data to the realtime publish/tee endpoint, forwarding raw
+   * bytes to all subscribers via the broadcaster.
+   */
+  async checkpointStream(args: {
+    runId: string;
+    body: ReadableStream;
+  }): Promise<void> {
+    const url = await this.getTargetUrl(
+      `/v1/realtime/publish/tee?channel=${encodeURIComponent(args.runId)}`,
+    );
+
+    const res = await fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this._fetch(),
+      url,
+      options: {
+        method: "POST",
+        body: args.body,
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        // Required for streaming request bodies
+        // @ts-expect-error duplex not in RequestInit types yet
+        duplex: "half",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to stream checkpoint: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
+      );
+    }
+  }
+
+  /**
+   * Build the full SSE URL for a run's stream channel using the given token.
+   */
+  async getRealtimeStreamRedirect(token: string): Promise<{ url: string }> {
+    const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
+    sseUrl.searchParams.set("token", token);
+
+    return { url: sseUrl.toString() };
   }
 
   /**

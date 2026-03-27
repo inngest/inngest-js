@@ -1,13 +1,15 @@
 import http from "node:http";
-import { PassThrough } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
+import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import type { SupportedFrameworkName } from "./types.ts";
+import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
+import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -37,42 +39,6 @@ function getURL(req: http.IncomingMessage, hostnameOption?: string): URL {
   const origin = hostnameOption || `${protocol}://${req.headers.host}`;
   return new URL(req.url || "", origin);
 }
-
-const _createResProxy = (
-  res: http.ServerResponse,
-): {
-  proxy: http.ServerResponse;
-  data: Promise<string>;
-} => {
-  // We tap the response so that we can capture data being output to convert
-  // it to the format we need for checkpointing sync responses with
-  // `checkpointResponse()`.
-  const resChunks: Uint8Array[] = [];
-
-  const tap = new PassThrough();
-  tap.on("data", (chunk) => resChunks.push(chunk));
-
-  const data = new Promise<string>((resolve, reject) => {
-    tap.on("end", () => {
-      resolve(Buffer.concat(resChunks).toString());
-    });
-
-    // TODO reject when?
-
-    tap.pipe(res);
-  });
-
-  const proxy = new Proxy(res, {
-    get(target, prop) {
-      if (prop === "write") return tap.write.bind(tap);
-      if (prop === "end") return tap.end.bind(tap);
-
-      return Reflect.get(target, prop);
-    },
-  });
-
-  return { proxy, data };
-};
 
 const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
   const handler = new InngestCommHandler({
@@ -201,3 +167,161 @@ export const createServer = (options: ServeHandlerOptions) => {
   });
   return server;
 };
+
+export type EndpointHandler = (req: Request) => Promise<Response>;
+
+/**
+ * Comm handler for durable endpoints. Uses Web API Request/Response since
+ * that's the interface users write against, regardless of the underlying
+ * runtime.
+ */
+function endpointCommHandler(
+  options: RegisterOptions & { client: Inngest.Like },
+  syncOptions?: SyncHandlerOptions,
+): InngestCommHandler {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    syncOptions,
+    handler: (req: Request) => {
+      return {
+        body: () => req.text(),
+        headers: (key: string) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
+        },
+        experimentalTransformSyncResponse: async (data) => {
+          const res = data as Response;
+
+          const headers: Record<string, string> = {};
+          res.headers.forEach((v, k) => {
+            headers[k] = v;
+          });
+
+          return {
+            headers,
+            status: res.status,
+            body: await res.clone().text(),
+          };
+        },
+      };
+    },
+  });
+
+  return handler;
+}
+
+/**
+ * Creates a durable endpoint proxy handler for Node.js environments.
+ */
+function createDurableEndpointProxyHandler(
+  options: InngestEndpointAdapter.ProxyHandlerOptions,
+): http.RequestListener {
+  return async (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> => {
+    const url = getURL(req);
+
+    const result = await handleDurableEndpointProxyRequest(
+      options.client as Inngest.Any,
+      {
+        runId: url.searchParams.get("runId"),
+        token: url.searchParams.get("token"),
+        method: req.method || "GET",
+      },
+    );
+
+    res.writeHead(result.status, result.headers);
+    res.end(result.body);
+  };
+}
+
+/**
+ * In a Node.js environment, create a function that can wrap any endpoint to be
+ * able to use steps seamlessly within that API.
+ */
+export const endpointAdapter = InngestEndpointAdapter.create((options) => {
+  return endpointCommHandler(options, options).createSyncHandler();
+}, createDurableEndpointProxyHandler);
+
+/**
+ * Bridge a Web API endpoint handler to a Node.js `http.RequestListener`.
+ *
+ * Converts an incoming `http.IncomingMessage` into a Web API `Request`,
+ * invokes the handler, then streams the resulting `Response` back through
+ * the Node.js `http.ServerResponse`.
+ *
+ * Important: uses `value != null` (not `value`) when forwarding headers so
+ * that empty-string headers (like `X-Inngest-Signature: ""` in dev mode)
+ * are preserved. Dropping them breaks `isInngestReq()` detection.
+ */
+export function serveEndpoint(handler: EndpointHandler): http.RequestListener {
+  return async (req: http.IncomingMessage, res: http.ServerResponse) => {
+    const body = await readRequestBody(req);
+
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value != null) {
+        if (Array.isArray(value)) {
+          for (const v of value) {
+            headers.append(key, v);
+          }
+        } else if (typeof value === "string") {
+          headers.set(key, value);
+        }
+      }
+    }
+
+    const url = getURL(req);
+    const webRequest = new Request(url.href, {
+      method: req.method,
+      headers,
+      body: body.length > 0 ? body : undefined,
+    });
+
+    try {
+      const webResponse = await handler(webRequest);
+
+      const resHeaders: Record<string, string> = {};
+      webResponse.headers.forEach((v, k) => {
+        resHeaders[k] = v;
+      });
+      res.writeHead(webResponse.status, resHeaders);
+
+      if (webResponse.body) {
+        const reader = webResponse.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          res.write(value);
+        }
+      }
+      res.end();
+    } catch (err) {
+      if (!res.headersSent) {
+        res.writeHead(500);
+      }
+      res.end(String(err));
+    }
+  };
+}
+
+/**
+ * Create an HTTP server that serves a durable endpoint handler.
+ *
+ * This bridges the Web API `Request`/`Response` interface that Durable
+ * Endpoints use with Node.js's `http.Server`.
+ */
+export function createEndpointServer(handler: EndpointHandler): http.Server {
+  const listener = serveEndpoint(handler);
+  const server = http.createServer(listener);
+  server.on("clientError", (_err, socket) => {
+    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  });
+  return server;
+}

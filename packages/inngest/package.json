@@ -226,6 +226,22 @@
       "import": "./internals.js",
       "require": "./internals.cjs"
     },
+    "./experimental/durable-endpoints": {
+      "types": {
+        "import": "./experimental/durable-endpoints.d.ts",
+        "require": "./experimental/durable-endpoints.d.cts"
+      },
+      "import": "./experimental/durable-endpoints.js",
+      "require": "./experimental/durable-endpoints.cjs"
+    },
+    "./experimental/durable-endpoints/client": {
+      "types": {
+        "import": "./experimental/durable-endpoints/client.d.ts",
+        "require": "./experimental/durable-endpoints/client.d.cts"
+      },
+      "import": "./experimental/durable-endpoints/client.js",
+      "require": "./experimental/durable-endpoints/client.cjs"
+    },
     "./realtime": {
       "types": {
         "import": "./realtime.d.ts",
