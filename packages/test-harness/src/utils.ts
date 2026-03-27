@@ -1,4 +1,5 @@
 import path from "path";
+import { z } from "zod/v3";
 import { DEV_SERVER_URL } from "./devServer.ts";
 
 export function randomSuffix(value: string): string {
@@ -44,48 +45,108 @@ type RunResult =
   | { data: unknown; error?: undefined }
   | { data?: undefined; error: unknown };
 
+const runTraceSchema = z.object({
+  data: z.object({
+    run: z
+      .object({
+        trace: z
+          .object({
+            status: z.string(),
+            outputID: z.string().nullable(),
+          })
+          .nullable(),
+      })
+      .nullable(),
+  }),
+});
+
+const traceOutputSchema = z.object({
+  data: z.object({
+    runTraceSpanOutputByID: z
+      .object({
+        data: z.string().nullable(),
+        error: z
+          .object({
+            message: z.string(),
+            name: z.string(),
+          })
+          .nullable(),
+      })
+      .nullable(),
+  }),
+});
+
 /**
- * Unwrap the raw run output from the dev server.
- *
- * v4 wraps the function return value in a RunComplete op array, e.g.
- * `[{ op: "RunComplete", data: 3, id: "..." }]`. This extracts the
- * inner `data` field so callers get the plain return value.
+ * Fetch the trace status and output ID for a run via the Dev Server's GQL API.
+ * Uses `run.trace.status` instead of `run.status` because the top-level status
+ * can be stale (e.g. stuck as QUEUED) for sync-mode durable endpoint runs.
  */
-function unwrapRunOutput(parsed: unknown): unknown {
-  if (Array.isArray(parsed) && parsed.length === 1) {
-    const item = parsed[0];
-    if (
-      item &&
-      typeof item === "object" &&
-      "op" in item &&
-      item.op === "RunComplete" &&
-      "data" in item
-    ) {
-      return item.data;
-    }
+async function fetchRunTrace(runId: string): Promise<{
+  status: string;
+  outputID: string | null;
+} | null> {
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `query ($runId: String!) {
+        run(runID: $runId) {
+          status
+          trace(preview: true) {
+            status
+            outputID
+          }
+        }
+      }`,
+      variables: { runId },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
   }
-  return parsed;
+  const parsed = runTraceSchema.safeParse(await res.json());
+  if (!parsed.success) {
+    return null;
+  }
+  return parsed.data.data.run?.trace ?? null;
 }
 
 /**
- * Unwrap the raw error output from a failed run.
- *
- * v4 wraps errors in a StepError/StepFailed op array, e.g.
- * `[{ op: "StepError", error: { message, name }, id: "..." }]`.
- * This extracts the inner `error` field.
+ * Fetch the output data/error for a trace span by its output ID.
  */
-function unwrapRunError(parsed: unknown): unknown {
-  if (Array.isArray(parsed) && parsed.length === 1) {
-    const item = parsed[0];
-    if (
-      item &&
-      typeof item === "object" &&
-      "error" in item
-    ) {
-      return item.error;
+async function fetchTraceOutput(outputID: string): Promise<RunResult> {
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `query ($traceID: String!) {
+        runTraceSpanOutputByID(outputID: $traceID) {
+          data
+          error {
+            message
+            name
+          }
+        }
+      }`,
+      variables: { traceID: outputID },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  const parsed = traceOutputSchema.parse(await res.json());
+  const span = parsed.data.runTraceSpanOutputByID;
+  if (span?.error) {
+    return { error: span.error };
+  }
+  if (span?.data) {
+    try {
+      return { data: JSON.parse(span.data) };
+    } catch {
+      return { data: span.data };
     }
   }
-  return parsed;
+  return { data: null };
 }
 
 async function fetchRunResult(
@@ -95,38 +156,19 @@ async function fetchRunResult(
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `query ($runId: String!) {
-          run(runID: $runId) {
-            output
-            status
-          }
-        }`,
-        variables: { runId },
-      }),
-    });
-    if (!res.ok) {
-      throw new Error(await res.text());
-    }
-    const data = (await res.json()) as {
-      data: {
-        run: { output: string | null; status: string } | null;
-      };
-    };
-    if (data.data.run?.output) {
-      const parsed = JSON.parse(data.data.run.output);
-
-      if (data.data.run.status === "COMPLETED") {
-        // The output may be wrapped in a RunComplete op array;
-        // unwrap to return just the function's return value.
-        const unwrapped = unwrapRunOutput(parsed);
-        return { data: unwrapped };
+    const trace = await fetchRunTrace(runId);
+    if (trace) {
+      if (trace.status === "COMPLETED") {
+        if (trace.outputID) {
+          return fetchTraceOutput(trace.outputID);
+        }
+        return { data: null };
       }
-      if (data.data.run.status === "FAILED") {
-        return { error: unwrapRunError(parsed) };
+      if (trace.status === "FAILED") {
+        if (trace.outputID) {
+          return fetchTraceOutput(trace.outputID);
+        }
+        return { error: { message: "Run failed (no output)" } };
       }
     }
 

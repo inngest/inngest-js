@@ -927,6 +927,12 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
+    const acceptHeader = await actions.headers(
+      "checking accept header",
+      "Accept",
+    );
+    const acceptsSse = acceptHeader?.includes("text/event-stream") ?? false;
+
     const exeVersion = ExecutionVersion.V2;
 
     const exe = fn["createExecution"]({
@@ -946,6 +952,7 @@ export class InngestCommHandler<
         stepState: {},
         disableImmediateExecution: false,
         isFailureHandler: false,
+        acceptsSse,
         timer,
         createResponse: (data: unknown) =>
           actions.experimentalTransformSyncResponse!(
@@ -992,9 +999,23 @@ export class InngestCommHandler<
         });
       },
       "function-resolved": ({ data }) => {
-        // We're done and we didn't call any step tools, so just return the
-        // response.
-        return data;
+        // If the execution returned a Response (SSE streaming from the
+        // engine, or a user-constructed Response in a durable endpoint),
+        // pass it through directly — the headers and body are already set.
+        if (data instanceof Response) {
+          return data;
+        }
+
+        // Non-streaming path: plain return values from the function are
+        // JSON-serialized and wrapped in a framework response.
+        return actions.transformResponse("creating sync success response", {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(data)),
+        });
       },
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
