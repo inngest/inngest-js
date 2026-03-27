@@ -149,23 +149,28 @@ export class InngestStream {
   }
 
   /**
+   * Serialize `data` into an SSE stream event and enqueue it. Returns `false`
+   * if serialization fails (e.g. circular reference) so callers can skip.
+   */
+  private enqueueStreamEvent(data: unknown, stepId?: string): boolean {
+    let sseEvent: string;
+    try {
+      sseEvent = buildSseStreamEvent(data, stepId);
+    } catch {
+      return false;
+    }
+
+    this.enqueue(sseEvent);
+    return true;
+  }
+
+  /**
    * Write a single SSE stream event containing `data`. The current step's
    * hashed ID is automatically included as stepId for rollback tracking.
    */
   push(data: unknown): void {
     this.activate();
-
-    const stepId = this.currentStepId();
-
-    let sseEvent: string;
-    try {
-      sseEvent = buildSseStreamEvent(data, stepId);
-    } catch {
-      // data is not JSON-serializable (e.g. circular reference) — skip
-      return;
-    }
-
-    this.enqueue(sseEvent);
+    this.enqueueStreamEvent(data, this.currentStepId());
   }
 
   /**
@@ -221,14 +226,10 @@ export class InngestStream {
     for await (const chunk of source) {
       chunks.push(chunk);
 
-      let sseEvent: string;
-      try {
-        sseEvent = buildSseStreamEvent(chunk, stepId);
-      } catch {
+      if (!this.enqueueStreamEvent(chunk, stepId)) {
         continue;
       }
 
-      this.enqueue(sseEvent);
       await this.writeChain;
     }
 

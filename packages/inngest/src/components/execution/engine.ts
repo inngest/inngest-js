@@ -138,6 +138,13 @@ function defaultSseResponse(data: unknown): SseResponse {
   };
 }
 
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 class InngestExecutionEngine
   extends InngestExecution
   implements IInngestExecution
@@ -678,16 +685,11 @@ class InngestExecutionEngine
   private async checkpointReturnValue(data: unknown): Promise<void> {
     try {
       if (this.options.createResponse) {
-        const wrappedResponse = new Response(JSON.stringify(data), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: hashId(RUN_COMPLETE_STEP_ID),
-            data: await this.options.createResponse(wrappedResponse),
+            data: await this.options.createResponse(jsonResponse(data)),
           },
         ]);
       }
@@ -863,15 +865,14 @@ class InngestExecutionEngine
       "": commonCheckpointHandler,
 
       "function-resolved": async (checkpoint) => {
-        // Was an SSE response sent to the client via earlyStreamResponse?
-        const sseDeliveredToClient = !!this.earlyStreamResponse;
+        const usingSseStream = !!this.earlyStreamResponse;
 
         if (this.streamTools.activated) {
           let resultData: unknown = checkpoint.data;
           let sseResponse: SseResponse;
           if (checkpoint.data instanceof Response) {
             // Clone when not SSE so the Response body stays intact for passthrough.
-            const body = await (sseDeliveredToClient
+            const body = await (usingSseStream
               ? checkpoint.data.text()
               : checkpoint.data.clone().text());
             sseResponse = extractSseResponse(checkpoint.data, body);
@@ -884,7 +885,7 @@ class InngestExecutionEngine
           // server-side checkpoint POST needs the terminal result event.
           this.streamTools.closeSucceeded(sseResponse);
 
-          if (sseDeliveredToClient) {
+          if (usingSseStream) {
             // SSE path: response already sent; checkpoint in background.
             void this.checkpointReturnValue(resultData);
             return this.transformOutput({ data: resultData });
@@ -918,17 +919,13 @@ class InngestExecutionEngine
         }
 
         // Non-streaming path
-        const transformedData = checkpoint.data;
-        const wrappedResponse = new Response(JSON.stringify(transformedData), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
             id: hashId(RUN_COMPLETE_STEP_ID),
-            data: await this.options.createResponse!(wrappedResponse),
+            data: await this.options.createResponse!(
+              jsonResponse(checkpoint.data),
+            ),
           },
         ]);
 
@@ -937,7 +934,7 @@ class InngestExecutionEngine
       },
 
       "function-rejected": async (checkpoint) => {
-        const sseDeliveredToClient = !!this.earlyStreamResponse;
+        const usingSseStream = !!this.earlyStreamResponse;
         const isFinal = !this.retriability(checkpoint.error);
 
         if (this.streamTools.activated) {
@@ -948,7 +945,7 @@ class InngestExecutionEngine
             this.streamTools.end();
           }
 
-          if (sseDeliveredToClient) {
+          if (usingSseStream) {
             // SSE path: checkpoint the error so the server knows the outcome.
             void this.checkpoint([
               {
@@ -1104,11 +1101,7 @@ class InngestExecutionEngine
         // We need to do this even here for async, as we could be returning
         // data from an API endpoint, even if we were triggered async.
         if (this.options.createResponse) {
-          const wrappedResponse = new Response(JSON.stringify(resultData), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-          data = await this.options.createResponse(wrappedResponse);
+          data = await this.options.createResponse(jsonResponse(resultData));
         }
 
         return this.transformOutput({ data });

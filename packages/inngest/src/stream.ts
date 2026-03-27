@@ -151,26 +151,29 @@ async function* iterSseFollowRedirects(
   fetchFn: typeof globalThis.fetch,
   signal?: AbortSignal,
 ): AsyncGenerator<SseEvent> {
-  let nextUrl: string | undefined;
+  let currentBody: ReadableStream<Uint8Array> | undefined = body;
 
-  for await (const raw of iterSse(body)) {
-    const sseEvent = parseSseEvent(raw);
-    if (!sseEvent) {
-      continue;
+  while (currentBody) {
+    let nextUrl: string | undefined;
+
+    for await (const raw of iterSse(currentBody)) {
+      const sseEvent = parseSseEvent(raw);
+      if (!sseEvent) {
+        continue;
+      }
+
+      if (sseEvent.type === "inngest.redirect_info") {
+        nextUrl = sseEvent.url;
+      }
+
+      yield sseEvent;
     }
 
-    if (sseEvent.type === "inngest.redirect_info") {
-      nextUrl = sseEvent.url;
+    if (!nextUrl) {
+      break;
     }
 
-    yield sseEvent;
-  }
-
-  while (nextUrl) {
-    const url = nextUrl;
-    nextUrl = undefined;
-
-    const res = await fetchFn(url, {
+    const res = await fetchFn(nextUrl, {
       headers: { Accept: "text/event-stream" },
       signal,
     });
@@ -183,17 +186,6 @@ async function* iterSseFollowRedirects(
       throw new Error("No response body");
     }
 
-    for await (const raw of iterSse(res.body)) {
-      const sseEvent = parseSseEvent(raw);
-      if (!sseEvent) {
-        continue;
-      }
-
-      if (sseEvent.type === "inngest.redirect_info") {
-        nextUrl = sseEvent.url;
-      }
-
-      yield sseEvent;
-    }
+    currentBody = res.body;
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { fetchDurableEndpoint } from "inngest/experimental/durable-endpoints/client";
+import { fetchWithStream } from "inngest/experimental/durable-endpoints/client";
 
 export default function Home() {
   const [lines, setLines] = useState<string[]>([]);
@@ -32,7 +32,7 @@ export default function Home() {
     setWaitingForInput(false);
 
     try {
-      const resp = await fetchDurableEndpoint("/api/demo", {
+      const resp = await fetchWithStream("/api/demo", {
         onData: ({data}) => {
           if (isRecord(data) && data.type === "await-input" && typeof data.correlationId === "string") {
             setCorrelationId(data.correlationId);

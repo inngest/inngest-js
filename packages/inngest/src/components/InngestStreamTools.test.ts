@@ -51,7 +51,7 @@ describe("InngestStream.pipe", () => {
   });
 });
 
-describe("InngestStream.commitStep / rollbackStep", () => {
+describe("InngestStream.commit / rollback", () => {
   test("emits commit and rollback events", async () => {
     const s = new InngestStream();
 
