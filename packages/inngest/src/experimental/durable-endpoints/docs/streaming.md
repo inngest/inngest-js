@@ -19,7 +19,7 @@ The client receives an `inngest.redirect_info` event containing a URL. When the 
 | `inngest.commit`        | DE/IS -> client | Step data is finalized, will not be rolled back               |
 | `inngest.rollback`      | DE/IS -> client | Step data should be discarded (error/retry)                   |
 | `inngest.redirect_info` | DE -> client    | URL for async reconnection                                    |
-| `inngest.result`        | DE/IS -> client | Terminal event with the HTTP response (status, headers, body) |
+| `inngest.response`        | DE/IS -> client | Terminal event with the HTTP response (status, headers, body) |
 
 ## Server API
 

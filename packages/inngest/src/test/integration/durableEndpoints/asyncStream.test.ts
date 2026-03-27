@@ -89,12 +89,14 @@ test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
     },
 
     {
-      event: "inngest.result",
+      event: "inngest.response",
       data: JSON.stringify({
         status: "succeeded",
-        data: '"done"',
-        statusCode: 200,
-        headers: { "content-type": "application/json" },
+        response: {
+          body: '"done"',
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+        },
       }),
     },
   ]);
@@ -197,12 +199,14 @@ test("mixed push and pipe in one step", async () => {
     },
 
     {
-      event: "inngest.result",
+      event: "inngest.response",
       data: JSON.stringify({
         status: "succeeded",
-        data: '"done"',
-        statusCode: 200,
-        headers: { "content-type": "application/json" },
+        response: {
+          body: '"done"',
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+        },
       }),
     },
   ]);
@@ -374,8 +378,15 @@ test("retries", async () => {
       data: expect.any(String),
     },
     {
-      event: "inngest.result",
-      data: '{"status":"failed","error":"boom"}',
+      event: "inngest.response",
+      data: JSON.stringify({
+        status: "failed",
+        response: {
+          body: '"boom"',
+          statusCode: 500,
+          headers: { "content-type": "application/json" },
+        },
+      }),
     },
   ]);
 

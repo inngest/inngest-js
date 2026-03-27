@@ -6,6 +6,7 @@ import {
   buildSseRollbackEvent,
   buildSseStreamEvent,
   buildSseSucceededEvent,
+  type SseResponse,
 } from "./execution/streaming.ts";
 
 /**
@@ -247,13 +248,10 @@ export class InngestStream {
   /**
    * Write a succeeded result event and close the writer. Internal use only.
    */
-  closeSucceeded(
-    data?: unknown,
-    responseInfo?: { statusCode?: number; headers?: Record<string, string> },
-  ): void {
+  closeSucceeded(response: SseResponse): void {
     let sseEvent: string;
     try {
-      sseEvent = buildSseSucceededEvent(data, responseInfo);
+      sseEvent = buildSseSucceededEvent(response);
     } catch {
       sseEvent = buildSseFailedEvent("Failed to serialize result");
     }

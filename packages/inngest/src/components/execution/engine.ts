@@ -29,7 +29,11 @@ import {
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
-import type { MaybePromise, Simplify } from "../../helpers/types.ts";
+import {
+  isRecord,
+  type MaybePromise,
+  type Simplify,
+} from "../../helpers/types.ts";
 import {
   type APIStepPayload,
   type Context,
@@ -79,7 +83,11 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import { buildSseMetadataEvent, prependToStream } from "./streaming.ts";
+import {
+  buildSseMetadataEvent,
+  prependToStream,
+  type SseResponse,
+} from "./streaming.ts";
 
 const { sha1 } = hashjs;
 
@@ -94,7 +102,13 @@ const { sha1 } = hashjs;
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error);
 }
 
 /**
@@ -108,15 +122,20 @@ export const createExecutionEngine: InngestExecutionFactory = (options) => {
   return new InngestExecutionEngine(options);
 };
 
-function extractResponseInfo(response: Response): {
-  statusCode: number;
-  headers: Record<string, string>;
-} {
+function extractSseResponse(response: Response, body: string): SseResponse {
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key] = value;
   });
-  return { statusCode: response.status, headers };
+  return { body, statusCode: response.status, headers };
+}
+
+function defaultSseResponse(data: unknown): SseResponse {
+  return {
+    body: JSON.stringify(data),
+    statusCode: 200,
+    headers: { "content-type": "application/json" },
+  };
 }
 
 class InngestExecutionEngine
@@ -528,12 +547,12 @@ class InngestExecutionEngine
     checkpoint: Simplify<
       { type: "function-resolved" } & Checkpoints["function-resolved"]
     >,
-    responseInfo?: { statusCode?: number; headers?: Record<string, string> },
+    sseResponse: SseResponse,
   ): ExecutionResult {
     const resultData: unknown = checkpoint.data;
 
     // Close the stream with a terminal succeeded event
-    this.streamTools.closeSucceeded(resultData, responseInfo);
+    this.streamTools.closeSucceeded(sseResponse);
 
     const clientResponse = this.buildSseResponse();
 
@@ -849,20 +868,21 @@ class InngestExecutionEngine
 
         if (this.streamTools.activated) {
           let resultData: unknown = checkpoint.data;
-          let responseInfo:
-            | { statusCode: number; headers: Record<string, string> }
-            | undefined;
+          let sseResponse: SseResponse;
           if (checkpoint.data instanceof Response) {
-            responseInfo = extractResponseInfo(checkpoint.data);
             // Clone when not SSE so the Response body stays intact for passthrough.
-            resultData = await (sseDeliveredToClient
+            const body = await (sseDeliveredToClient
               ? checkpoint.data.text()
               : checkpoint.data.clone().text());
+            sseResponse = extractSseResponse(checkpoint.data, body);
+            resultData = body;
+          } else {
+            sseResponse = defaultSseResponse(resultData);
           }
 
           // Always close the stream — either the SSE client or the
           // server-side checkpoint POST needs the terminal result event.
-          this.streamTools.closeSucceeded(resultData, responseInfo);
+          this.streamTools.closeSucceeded(sseResponse);
 
           if (sseDeliveredToClient) {
             // SSE path: response already sent; checkpoint in background.
@@ -879,17 +899,15 @@ class InngestExecutionEngine
         // inngest.redirect_info. Without these the client can't reconnect if a
         // future execution goes async.
         if (this.options.acceptsSse) {
-          let responseInfo:
-            | { statusCode: number; headers: Record<string, string> }
-            | undefined;
+          let sseResponse: SseResponse;
           if (checkpoint.data instanceof Response) {
-            responseInfo = extractResponseInfo(checkpoint.data);
-            checkpoint = {
-              ...checkpoint,
-              data: await checkpoint.data.text(),
-            };
+            const body = await checkpoint.data.text();
+            sseResponse = extractSseResponse(checkpoint.data, body);
+            checkpoint = { ...checkpoint, data: body };
+          } else {
+            sseResponse = defaultSseResponse(checkpoint.data);
           }
-          return this.wrapResultAsSse(checkpoint, responseInfo);
+          return this.wrapResultAsSse(checkpoint, sseResponse);
         }
 
         // Response pass-through: deliver as-is. Checkpoint null because the
@@ -1057,12 +1075,13 @@ class InngestExecutionEngine
        */
       "function-resolved": async ({ data }) => {
         let resultData: unknown = data;
-        let responseInfo:
-          | { statusCode: number; headers: Record<string, string> }
-          | undefined;
+        let sseResponse: SseResponse;
         if (data instanceof Response) {
-          responseInfo = extractResponseInfo(data);
-          resultData = await data.text();
+          const body = await data.text();
+          sseResponse = extractSseResponse(data, body);
+          resultData = body;
+        } else {
+          sseResponse = defaultSseResponse(resultData);
         }
 
         // Check for unreported new steps (e.g. from `Promise.race` where
@@ -1074,7 +1093,7 @@ class InngestExecutionEngine
         }
 
         // Close the stream with a terminal succeeded event.
-        this.streamTools.closeSucceeded(resultData, responseInfo);
+        this.streamTools.closeSucceeded(sseResponse);
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result event.

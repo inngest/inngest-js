@@ -70,12 +70,14 @@ test.concurrent.each(streamingMethods)(
         data: '{"hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
       },
       {
-        event: "inngest.result",
+        event: "inngest.response",
         data: JSON.stringify({
           status: "succeeded",
-          data: '"done"',
-          statusCode: 200,
-          headers: { "content-type": "application/json" },
+          response: {
+            body: '"done"',
+            statusCode: 200,
+            headers: { "content-type": "application/json" },
+          },
         }),
       },
     ]);
@@ -123,12 +125,14 @@ test("no explicit streaming", async () => {
       data: '{"hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
-      event: "inngest.result",
+      event: "inngest.response",
       data: JSON.stringify({
         status: "succeeded",
-        data: '"done"',
-        statusCode: 200,
-        headers: { "content-type": "application/json" },
+        response: {
+          body: '"done"',
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+        },
       }),
     },
   ]);
@@ -174,10 +178,15 @@ test("NonRetriableError", async () => {
       data: expect.any(String),
     },
     {
-      event: "inngest.result",
-
-      // FIXME: This shouldn't be "[object Object]"
-      data: JSON.stringify({ status: "failed", error: "[object Object]" }),
+      event: "inngest.response",
+      data: JSON.stringify({
+        status: "failed",
+        response: {
+          body: '"boom"',
+          statusCode: 500,
+          headers: { "content-type": "application/json" },
+        },
+      }),
     },
   ]);
   await state.waitForRunFailed();

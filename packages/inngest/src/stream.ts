@@ -74,10 +74,11 @@ export async function fetchDurableEndpoint(
     throw new Error("No response body");
   }
 
-  let resultBody: string | undefined;
-  let resultStatusCode: number | undefined;
-  let resultHeaders: Record<string, string> | undefined;
-  let hasResult = false;
+  // let resultBody: string | undefined;
+  // let resultStatusCode: number | undefined;
+  // let resultHeaders: Record<string, string> | undefined;
+  // let hasResult = false;
+  let resp: Response | undefined;
 
   const source = iterSseFollowRedirects(
     initialRes.body,
@@ -103,19 +104,16 @@ export async function fetchDurableEndpoint(
           opts?.onRollback?.({ hashedStepId: sseEvent.hashedStepId });
           break;
         }
-        case "inngest.result": {
-          if (sseEvent.status === "succeeded") {
-            resultBody =
-              typeof sseEvent.data === "string"
-                ? (sseEvent.data as string)
-                : JSON.stringify(sseEvent.data);
+        case "inngest.response": {
+          resp = new Response(sseEvent.response.body, {
+            status: sseEvent.response.statusCode,
+            headers: sseEvent.response.headers,
+          });
 
-            resultStatusCode = sseEvent.statusCode;
-            resultHeaders = sseEvent.headers;
-            hasResult = true;
-          } else {
-            opts?.onStreamError?.(sseEvent.error);
+          if (sseEvent.status === "failed") {
+            opts?.onStreamError?.(sseEvent.response.body);
           }
+
           break outer;
         }
         case "inngest.metadata": {
@@ -135,14 +133,11 @@ export async function fetchDurableEndpoint(
     opts?.onDone?.();
   }
 
-  if (hasResult) {
-    return new Response(resultBody, {
-      status: resultStatusCode ?? 200,
-      headers: resultHeaders ?? { "content-type": "application/json" },
-    });
+  if (!resp) {
+    throw new Error("No response");
   }
 
-  return new Response(null, { status: 204 });
+  return resp;
 }
 
 /**

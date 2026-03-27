@@ -2,9 +2,9 @@ import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { fetchDurableEndpoint } from "../../../experimental/durable-endpoints/client.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
-import { step } from "../../../index.ts";
+import { NonRetriableError, step } from "../../../index.ts";
 import { silencedLogger } from "../../helpers.ts";
-import { setupEndpoint, urlWithTestName } from "./helpers.ts";
+import { createGate, setupEndpoint, urlWithTestName } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -168,6 +168,104 @@ test("rollback", async () => {
   ]);
 
   await state.waitForRunComplete();
+});
+
+describe("failed", () => {
+  test("sync mode", async () => {
+    const gate = createGate();
+    const { port, server } = await setupEndpoint(testFileName, async () => {
+      await step.run("a", async () => {
+        stream.push("chunk");
+        throw new NonRetriableError("oh no");
+      });
+      return Response.json("unreachable");
+    });
+
+    const resp = await fetchDurableEndpoint(
+      urlWithTestName(`http://localhost:${port}`),
+    );
+    expect(resp.status).toBe(500);
+    expect(resp.headers.get("content-type")).toBe("application/json");
+    expect(await resp.json()).toEqual("oh no");
+
+    // expect(async () => {
+    //   await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`));
+    // }).rejects.toThrow("terminated");
+  });
+
+  test.skip("async mode", async () => {
+    const gate = createGate();
+    const { port, server } = await setupEndpoint(testFileName, async () => {
+      await step.sleep("go-async", "1s");
+      await step.run("a", async () => {
+        stream.push("chunk");
+        throw new NonRetriableError("oh no");
+      });
+      return Response.json("unreachable");
+    });
+
+    expect(async () => {
+      await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
+        onData: () => {
+          // Kill the server after we've received the first chunk.
+          server.closeAllConnections();
+          server.close();
+          gate.open();
+        },
+      });
+    }).rejects.toThrow("terminated");
+  });
+});
+
+describe("server killed mid-stream", () => {
+  test("sync mode", async () => {
+    const gate = createGate();
+    const { port, server } = await setupEndpoint(testFileName, async () => {
+      await step.run("a", async () => {
+        stream.push("before-kill");
+        // Pause here so the test can kill the server mid-execution.
+        await gate.promise;
+        stream.push("after-kill");
+      });
+      return Response.json("unreachable");
+    });
+
+    expect(async () => {
+      await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
+        onData: () => {
+          // Kill the server after we've received the first chunk.
+          server.closeAllConnections();
+          server.close();
+          gate.open();
+        },
+      });
+    }).rejects.toThrow("terminated");
+  });
+
+  test.skip("async mode", async () => {
+    const gate = createGate();
+    const { port, server } = await setupEndpoint(testFileName, async () => {
+      await step.sleep("go-async", "1s");
+      await step.run("a", async () => {
+        stream.push("before-kill");
+        // Pause here so the test can kill the server mid-execution.
+        await gate.promise;
+        stream.push("after-kill");
+      });
+      return Response.json("unreachable");
+    });
+
+    expect(async () => {
+      await fetchDurableEndpoint(urlWithTestName(`http://localhost:${port}`), {
+        onData: () => {
+          // Kill the server after we've received the first chunk.
+          server.closeAllConnections();
+          server.close();
+          gate.open();
+        },
+      });
+    }).rejects.toThrow("terminated");
+  });
 });
 
 /**

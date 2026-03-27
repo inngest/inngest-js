@@ -262,7 +262,7 @@ export function startSseReader(res: Response, timeoutMs = 30_000) {
 
           // Terminal events mean the stream is logically done, even if the
           // server keeps the connection open (e.g. Dev Server SSE).
-          if (event === "inngest.result") {
+          if (event === "inngest.response") {
             reader.cancel("terminal event received").catch(() => {});
             break;
           }
@@ -322,7 +322,7 @@ export async function pollForAsyncStream(
 
         const hasContent =
           events.some((e) => e.event === "stream") ||
-          events.some((e) => e.event === "inngest.result");
+          events.some((e) => e.event === "inngest.response");
         if (hasContent) {
           return events;
         }
@@ -363,7 +363,7 @@ export async function pollForAsyncReader(redirectUrl: string) {
             return reader.events.some(
               (e) =>
                 e.event === "stream" ||
-                e.event === "inngest.result" ||
+                e.event === "inngest.response" ||
                 e.event === "inngest.commit" ||
                 e.event === "inngest.rollback",
             );
@@ -373,7 +373,7 @@ export async function pollForAsyncReader(redirectUrl: string) {
             return reader.events.some(
               (e) =>
                 e.event === "stream" ||
-                e.event === "inngest.result" ||
+                e.event === "inngest.response" ||
                 e.event === "inngest.commit" ||
                 e.event === "inngest.rollback",
             );
