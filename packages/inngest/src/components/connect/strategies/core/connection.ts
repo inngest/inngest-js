@@ -2,8 +2,10 @@
  * Shared connection core logic used by both SameThreadStrategy and
  * WorkerThreadStrategy.
  *
- * This module extracts the common WebSocket connection management, handshake,
- * heartbeat, lease extension, and reconnection logic.
+ * This module uses a **reconcile loop** that continuously ensures a live
+ * WebSocket connection is open. Reconnection, drain, and shutdown are
+ * expressed as state changes that wake the loop rather than recursive
+ * calls or callback-driven control flow.
  */
 
 import { WaitGroup } from "@jpwilliams/waitgroup";
@@ -60,8 +62,14 @@ function toError(value: unknown): Error {
 export interface Connection {
   id: string;
   ws: WebSocket;
-  cleanup: () => void | Promise<void>;
   pendingHeartbeats: number;
+  /** When true the connection is considered unusable and the reconcile loop
+   *  will establish a replacement. */
+  dead: boolean;
+  heartbeatIntervalMs: number;
+  extendLeaseIntervalMs: number;
+  /** Disable all handlers and close the underlying WebSocket. */
+  close(): void;
 }
 
 /**
@@ -93,12 +101,18 @@ export interface ConnectionCoreCallbacks {
 /**
  * Core connection manager that handles WebSocket connection lifecycle,
  * handshake, heartbeat, lease extension, and reconnection.
+ *
+ * Uses a reconcile loop that:
+ * - Ensures a WebSocket connection is always open
+ * - Manages a single heartbeat interval targeting the active connection
+ * - Handles reconnection, drain, and shutdown as state changes
  */
 export class ConnectionCore {
   private config: ConnectionCoreConfig;
   private callbacks: ConnectionCoreCallbacks;
 
-  private currentConnection: Connection | undefined;
+  private activeConnection: Connection | undefined;
+  private drainingConnection: Connection | undefined;
   private excludeGateways: Set<string> = new Set();
 
   private inProgressRequests: {
@@ -109,20 +123,48 @@ export class ConnectionCore {
     requestLeases: {},
   };
 
+  // Wake signal for the reconcile loop
+  private wakeSignal: { promise: Promise<void>; resolve: () => void };
+
+  // Shutdown state
+  private shutdownRequested = false;
+
+  // Whether we've ever successfully connected (used to distinguish
+  // CONNECTING from RECONNECTING state transitions).
+  private hasConnectedBefore = false;
+
+  // Heartbeat state (single interval for the active connection)
+  private heartbeatInterval: ReturnType<typeof setInterval> | undefined;
+  private heartbeatIntervalMs = 10_000;
+
+  // Loop promise — resolved when the reconcile loop exits
+  private loopPromise: Promise<void> | undefined;
+
+  // First-ready resolution — resolves start() when first connection is ready
+  private resolveFirstReady: (() => void) | undefined;
+  private rejectFirstReady: ((err: unknown) => void) | undefined;
+
+  // Signing key management
+  private useSigningKey: string | undefined;
+
   constructor(
     config: ConnectionCoreConfig,
     callbacks: ConnectionCoreCallbacks,
   ) {
     this.config = config;
     this.callbacks = callbacks;
-  }
+    this.useSigningKey = config.hashedSigningKey;
 
-  get connection(): Connection | undefined {
-    return this.currentConnection;
+    // Initialize the wake signal
+    let resolve: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    this.wakeSignal = { promise, resolve: resolve! };
   }
 
   get connectionId(): string | undefined {
-    return this.currentConnection?.id;
+    return this.activeConnection?.id;
   }
 
   /**
@@ -133,9 +175,10 @@ export class ConnectionCore {
   }
 
   /**
-   * Main connection loop with reconnection logic.
+   * Start the reconcile loop. Resolves when the first connection is active.
+   * The loop continues running in the background.
    */
-  async connect(attempt = 0, path: string[] = []): Promise<void> {
+  async start(attempt = 0): Promise<void> {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
     }
@@ -145,105 +188,241 @@ export class ConnectionCore {
       throw new Error("Connection already closed");
     }
 
-    this.callbacks.logger.debug({ attempt }, "Establishing connection");
+    this.callbacks.logger.info("Establishing connection");
 
-    let useSigningKey = this.config.hashedSigningKey;
+    const firstReadyPromise = new Promise<void>((resolve, reject) => {
+      this.resolveFirstReady = resolve;
+      this.rejectFirstReady = reject;
+    });
 
-    while (true) {
-      const currentState = this.callbacks.getState();
-      if (currentState === ConnectionState.CLOSED) {
-        break;
-      }
+    this.loopPromise = this.reconcileLoop(attempt);
 
-      // NOTE: We can get here when the state is CLOSING, therefore it's
-      // possible to reconnect while the CLOSING. This is intentional so that
-      // the worker can reconnect while waiting for pending requests during a
-      // graceful shutdown. If we didn't allow reconnect in that case,
-      // heartbeats and lease extensions would stop and the Inngest Server would
-      // think the worker died.
-      //
-      // However, the state can be CLOSING during a shutdown without pending
-      // requests. The window of that happening is very small, but it's
-      // technically possible that we could mistakenly reconnect during a
-      // shutdown if the Inngest Server send a drain message.
+    // If the loop ends before firstReady resolves, propagate any error
+    this.loopPromise.catch((err) => {
+      this.rejectFirstReady?.(err);
+    });
 
-      // Flush any pending messages before attempting connection
-      if (this.callbacks.beforeConnect) {
-        await this.callbacks.beforeConnect(useSigningKey);
-      }
-
-      try {
-        await this.prepareConnection(useSigningKey, attempt, [...path]);
-        return;
-      } catch (err) {
-        this.callbacks.logger.warn({ err: toError(err) }, "Failed to connect");
-
-        if (!(err instanceof ReconnectError)) {
-          throw err;
-        }
-
-        attempt = err.attempt;
-
-        if (err instanceof AuthError) {
-          const switchToFallback =
-            useSigningKey === this.config.hashedSigningKey;
-          if (switchToFallback) {
-            this.callbacks.logger.debug("Switching to fallback signing key");
-          }
-          useSigningKey = switchToFallback
-            ? this.config.hashedFallbackKey
-            : this.config.hashedSigningKey;
-        }
-
-        if (err instanceof ConnectionLimitError) {
-          this.callbacks.logger.error(
-            "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
-          );
-        }
-
-        const delay = expBackoff(attempt);
-        this.callbacks.logger.debug({ delay }, "Reconnecting");
-
-        const cancelled = await waitWithCancel(delay, () => {
-          return this.callbacks.getState() === ConnectionState.CLOSED;
-        });
-        if (cancelled) {
-          this.callbacks.logger.debug("Reconnect backoff cancelled");
-          break;
-        }
-
-        attempt++;
-      }
-    }
-
-    this.callbacks.logger.debug("Exiting connect loop");
+    await firstReadyPromise;
   }
 
   /**
-   * Clean up the current connection.
+   * Request graceful shutdown. Resolves when fully closed (in-flight done,
+   * connection closed).
    */
-  async cleanup(): Promise<void> {
-    let conn = this.currentConnection;
-    if (!conn) {
+  async close(): Promise<void> {
+    this.callbacks.logger.info("Shutting down, waiting for in-flight requests");
+    this.shutdownRequested = true;
+
+    if (this.activeConnection?.ws.readyState === WebSocket.OPEN) {
+      this.activeConnection.ws.send(
+        ensureUnsharedArrayBuffer(
+          ConnectMessage.encode(
+            ConnectMessage.create({
+              kind: GatewayMessageType.WORKER_PAUSE,
+            }),
+          ).finish(),
+        ),
+      );
+    }
+
+    this.wake();
+
+    if (this.loopPromise) {
+      await this.loopPromise;
+    }
+
+    this.callbacks.logger.info("Connection closed");
+  }
+
+  async getApiBaseUrl(): Promise<string> {
+    return resolveApiBaseUrl({
+      apiBaseUrl: this.config.apiBaseUrl,
+      mode: this.config.mode,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wake signal
+  // ---------------------------------------------------------------------------
+
+  private resetWakeSignal(): void {
+    let resolve: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    this.wakeSignal = { promise, resolve: resolve! };
+  }
+
+  private wake(): void {
+    this.wakeSignal.resolve();
+    this.resetWakeSignal();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Heartbeat management (single interval)
+  // ---------------------------------------------------------------------------
+
+  private startHeartbeat(): void {
+    if (this.heartbeatInterval) return;
+    this.heartbeatInterval = setInterval(
+      () => this.tick(),
+      this.heartbeatIntervalMs,
+    );
+  }
+
+  private stopHeartbeat(): void {
+    clearInterval(this.heartbeatInterval);
+    this.heartbeatInterval = undefined;
+  }
+
+  private updateHeartbeatInterval(intervalMs: number): void {
+    if (intervalMs === this.heartbeatIntervalMs && this.heartbeatInterval)
+      return;
+    this.heartbeatIntervalMs = intervalMs;
+    this.stopHeartbeat();
+    this.startHeartbeat();
+  }
+
+  private tick(): void {
+    const conn = this.activeConnection;
+    if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
+
+    if (conn.pendingHeartbeats >= 2) {
+      this.callbacks.logger.warn(
+        { connectionId: conn.id },
+        "Consecutive heartbeats missed, reconnecting",
+      );
+      conn.dead = true;
+      this.wake();
       return;
     }
 
-    // Each cleanup may trigger a drain reconnect that replaces
-    // currentConnection, so loop until no more replacements occur.
-    while (conn) {
-      await conn.cleanup();
+    conn.pendingHeartbeats++;
+    conn.ws.send(
+      ensureUnsharedArrayBuffer(
+        ConnectMessage.encode(
+          ConnectMessage.create({
+            kind: GatewayMessageType.WORKER_HEARTBEAT,
+          }),
+        ).finish(),
+      ),
+    );
+  }
 
-      // If no replacement was created during cleanup, we're done.
-      if (!this.currentConnection || this.currentConnection === conn) {
+  // ---------------------------------------------------------------------------
+  // Signing key management
+  // ---------------------------------------------------------------------------
+
+  private switchAuthKey(): void {
+    const switchToFallback =
+      this.useSigningKey === this.config.hashedSigningKey;
+    if (switchToFallback) {
+      this.callbacks.logger.debug("Switching to fallback signing key");
+    }
+    this.useSigningKey = switchToFallback
+      ? this.config.hashedFallbackKey
+      : this.config.hashedSigningKey;
+  }
+
+  // ---------------------------------------------------------------------------
+  // In-flight helpers
+  // ---------------------------------------------------------------------------
+
+  private hasInFlightRequests(): boolean {
+    return Object.keys(this.inProgressRequests.requestLeases).length > 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reconcile loop
+  // ---------------------------------------------------------------------------
+
+  private async reconcileLoop(initialAttempt: number): Promise<void> {
+    let attempt = initialAttempt;
+
+    while (true) {
+      // Exit condition: shutdown requested + no in-flight requests
+      if (this.shutdownRequested && !this.hasInFlightRequests()) {
         break;
       }
 
-      // A drain reconnect created a replacement — clean it up too.
-      conn = this.currentConnection;
+      // Ensure we have a live connection
+      if (!this.activeConnection || this.activeConnection.dead) {
+        this.callbacks.onStateChange(
+          this.hasConnectedBefore
+            ? ConnectionState.RECONNECTING
+            : ConnectionState.CONNECTING,
+        );
+
+        try {
+          // Flush any pending messages before attempting connection
+          if (this.callbacks.beforeConnect) {
+            await this.callbacks.beforeConnect(this.useSigningKey);
+          }
+
+          const conn = await this.establishConnection(
+            this.useSigningKey,
+            attempt,
+          );
+
+          // Clean up draining connection after new one is ready
+          if (this.drainingConnection) {
+            this.callbacks.logger.info(
+              {
+                oldConnectionId: this.drainingConnection.id,
+                newConnectionId: conn.id,
+              },
+              "Replaced draining connection",
+            );
+            this.drainingConnection.close();
+            this.drainingConnection = undefined;
+          }
+
+          this.activeConnection = conn;
+          this.updateHeartbeatInterval(conn.heartbeatIntervalMs);
+          attempt = 0;
+          this.hasConnectedBefore = true;
+          this.callbacks.onStateChange(ConnectionState.ACTIVE);
+          this.resolveFirstReady?.();
+          this.resolveFirstReady = undefined;
+          this.rejectFirstReady = undefined;
+        } catch (err) {
+          if (!(err instanceof ReconnectError)) throw err;
+
+          attempt = err.attempt + 1;
+          if (err instanceof AuthError) this.switchAuthKey();
+          if (err instanceof ConnectionLimitError) {
+            this.callbacks.logger.error("Max concurrent connections reached");
+          }
+
+          const delay = expBackoff(attempt);
+          this.callbacks.logger.info(
+            { attempt, delay },
+            "Reconnecting after failure",
+          );
+
+          const cancelled = await waitWithCancel(delay, () => {
+            return this.shutdownRequested && !this.hasInFlightRequests();
+          });
+          if (cancelled) break;
+          continue;
+        }
+      }
+
+      // Wait for something to change
+      await this.wakeSignal.promise;
     }
 
-    this.currentConnection = undefined;
+    // Teardown
+    this.stopHeartbeat();
+    this.activeConnection?.close();
+    this.activeConnection = undefined;
+    this.drainingConnection?.close();
+    this.drainingConnection = undefined;
   }
+
+  // ---------------------------------------------------------------------------
+  // Connection establishment
+  // ---------------------------------------------------------------------------
 
   private async sendStartRequest(
     hashedSigningKey: string | undefined,
@@ -303,33 +482,27 @@ export class ConnectionCore {
     return startResp;
   }
 
-  private async prepareConnection(
+  private async establishConnection(
     hashedSigningKey: string | undefined,
     attempt: number,
-    path: string[] = [],
   ): Promise<Connection> {
-    let closed = false;
-
-    this.callbacks.logger.debug({ attempt, path }, "Preparing connection");
+    this.callbacks.logger.debug({ attempt }, "Preparing connection");
 
     const startedAt = new Date();
     const startResp = await this.sendStartRequest(hashedSigningKey, attempt);
 
     const connectionId = startResp.connectionId;
-    path.push(connectionId);
 
-    let resolveWebsocketConnected:
-      | ((value: void | PromiseLike<void>) => void)
-      | undefined;
-    let rejectWebsocketConnected: ((reason?: unknown) => void) | undefined;
-    const websocketConnectedPromise = new Promise<void>((resolve, reject) => {
-      resolveWebsocketConnected = resolve;
-      rejectWebsocketConnected = reject;
+    let resolveWsConnected: (() => void) | undefined;
+    let rejectWsConnected: ((reason?: unknown) => void) | undefined;
+    const wsConnectedPromise = new Promise<void>((resolve, reject) => {
+      resolveWsConnected = resolve;
+      rejectWsConnected = reject;
     });
 
     const connectTimeout = setTimeout(() => {
       this.excludeGateways.add(startResp.gatewayGroup);
-      rejectWebsocketConnected?.(
+      rejectWsConnected?.(
         new ReconnectError(`Connection ${connectionId} timed out`, attempt),
       );
     }, 10_000);
@@ -354,53 +527,43 @@ export class ConnectionCore {
     const ws = new WebSocket(finalEndpoint, [ConnectWebSocketProtocol]);
     ws.binaryType = "arraybuffer";
 
-    let onConnectionError: (error: unknown) => void | Promise<void>;
-    {
-      onConnectionError = (error: unknown) => {
-        if (closed) {
-          this.callbacks.logger.debug(
-            { connectionId },
-            "Connection error while initializing but already in closed state, skipping",
-          );
-          return;
-        }
-        closed = true;
+    // Track whether we've rejected/resolved the handshake promise so we
+    // don't double-settle from concurrent error/close events.
+    let settled = false;
 
-        this.callbacks.logger.debug(
-          { connectionId },
-          "Connection error in connecting state, rejecting promise",
-        );
+    const rejectHandshake = (error: unknown) => {
+      if (settled) return;
+      settled = true;
 
-        this.excludeGateways.add(startResp.gatewayGroup);
-        clearTimeout(connectTimeout);
+      this.excludeGateways.add(startResp.gatewayGroup);
+      clearTimeout(connectTimeout);
 
-        ws.onerror = () => {};
-        ws.onclose = () => {};
-        ws.close(
-          4001,
-          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
-        );
+      ws.onerror = () => {};
+      ws.onclose = () => {};
+      ws.close(
+        4001,
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
+      );
 
-        rejectWebsocketConnected?.(
-          new ReconnectError(
-            `Error while connecting (${connectionId}): ${
-              error instanceof Error ? error.message : "Unknown error"
-            }`,
-            attempt,
-          ),
-        );
-      };
+      rejectWsConnected?.(
+        new ReconnectError(
+          `Error while connecting (${connectionId}): ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+          attempt,
+        ),
+      );
+    };
 
-      ws.onerror = (err) => onConnectionError(err);
-      ws.onclose = (ev) => {
-        void onConnectionError(
-          new ReconnectError(
-            `Connection ${connectionId} closed: ${ev.reason}`,
-            attempt,
-          ),
-        );
-      };
-    }
+    ws.onerror = (err) => rejectHandshake(err);
+    ws.onclose = (ev) => {
+      rejectHandshake(
+        new ReconnectError(
+          `Connection ${connectionId} closed: ${ev.reason}`,
+          attempt,
+        ),
+      );
+    };
 
     const setupState = {
       receivedGatewayHello: false,
@@ -422,7 +585,7 @@ export class ConnectionCore {
 
       if (!setupState.receivedGatewayHello) {
         if (connectMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
-          void onConnectionError(
+          rejectHandshake(
             new ReconnectError(
               `Expected hello message, got ${gatewayMessageTypeToJSON(
                 connectMessage.kind,
@@ -482,7 +645,7 @@ export class ConnectionCore {
         if (
           connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
         ) {
-          void onConnectionError(
+          rejectHandshake(
             new ReconnectError(
               `Expected ready message, got ${gatewayMessageTypeToJSON(
                 connectMessage.kind,
@@ -508,7 +671,7 @@ export class ConnectionCore {
             ? ms(readyPayload.extendLeaseInterval as ms.StringValue)
             : 5_000;
 
-        resolveWebsocketConnected?.();
+        resolveWsConnected?.();
         return;
       }
 
@@ -525,136 +688,75 @@ export class ConnectionCore {
       );
     };
 
-    await websocketConnectedPromise;
+    await wsConnectedPromise;
 
     clearTimeout(connectTimeout);
-
     this.excludeGateways.delete(startResp.gatewayGroup);
 
-    attempt = 0;
-
+    // Build the Connection object
     const conn: Connection = {
       id: connectionId,
       ws,
-      cleanup: () => {
-        if (closed) {
-          return;
-        }
-        closed = true;
+      pendingHeartbeats: 0,
+      dead: false,
+      heartbeatIntervalMs: heartbeatIntervalMs ?? 10_000,
+      extendLeaseIntervalMs: extendLeaseIntervalMs ?? 5_000,
+      close: () => {
+        if (conn.dead) return;
+        conn.dead = true;
         ws.onerror = () => {};
         ws.onclose = () => {};
         ws.close();
       },
-      pendingHeartbeats: 0,
     };
-    this.currentConnection = conn;
 
-    // Set state to ACTIVE after currentConnection is set, so that
-    // connectionId is available in the onStateChange callback.
-    this.callbacks.onStateChange(ConnectionState.ACTIVE);
+    this.callbacks.logger.info(
+      { connectionId, gatewayGroup: startResp.gatewayGroup },
+      "Connection established",
+    );
 
-    let isDraining = false;
-    {
-      onConnectionError = async (error: unknown) => {
-        if (closed) {
-          this.callbacks.logger.debug(
-            { connectionId },
-            "Connection error but already in closed state, skipping",
-          );
-          return;
-        }
-        closed = true;
+    // ----- Post-handshake handlers -----
 
-        // Disable handlers and close the dead WS directly instead of
-        // calling conn.cleanup() (which checks `closed` and would no-op).
-        ws.onerror = () => {};
-        ws.onclose = () => {};
-        ws.close(
-          4001,
-          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
-        );
-        clearInterval(heartbeatInterval);
+    // Error/close handlers: mark connection as dead and wake the loop
+    ws.onerror = () => {
+      if (conn.dead) return;
+      this.callbacks.logger.warn({ connectionId }, "Connection lost");
+      conn.dead = true;
+      this.excludeGateways.add(startResp.gatewayGroup);
+      if (this.activeConnection?.id === connectionId) {
+        this.activeConnection = undefined;
+      }
+      this.wake();
+    };
+    ws.onclose = (ev) => {
+      if (conn.dead) return;
+      this.callbacks.logger.warn(
+        { connectionId, reason: ev.reason },
+        "Connection lost",
+      );
+      conn.dead = true;
+      this.excludeGateways.add(startResp.gatewayGroup);
+      if (this.activeConnection?.id === connectionId) {
+        this.activeConnection = undefined;
+      }
+      this.wake();
+    };
 
-        if (this.currentConnection?.id === connectionId) {
-          this.currentConnection = undefined;
-        }
-
-        const currentState = this.callbacks.getState();
-        if (currentState === ConnectionState.CLOSED) {
-          this.callbacks.logger.debug(
-            { connectionId },
-            "Connection error but already closed, skipping",
-          );
-          return;
-        }
-
-        if (isDraining) {
-          this.callbacks.logger.debug(
-            { connectionId },
-            "Connection error but already draining, skipping",
-          );
-          return;
-        }
-
-        this.callbacks.logger.warn(
-          {
-            connectionId,
-            err: toError(error),
-          },
-          "Connection error",
-        );
-
-        // Reconnect even when CLOSING — heartbeats and lease extensions
-        // must continue while in-flight requests are still running.
-        this.callbacks.onStateChange(ConnectionState.RECONNECTING);
-        this.excludeGateways.add(startResp.gatewayGroup);
-        this.connect(attempt + 1, [...path, "onConnectionError"]);
-      };
-
-      ws.onerror = (err) => onConnectionError(err);
-      ws.onclose = (ev) => {
-        void onConnectionError(
-          new ReconnectError(`Connection closed: ${ev.reason}`, attempt),
-        );
-      };
-    }
-
+    // Message handler for post-handshake messages
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
       const connectMessage = parseConnectMessage(messageBytes);
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
-        isDraining = true;
         this.callbacks.logger.info(
-          { connectionId },
-          "Received draining message",
+          { connectionId: conn.id },
+          "Gateway draining, opening new connection",
         );
-        try {
-          this.callbacks.logger.debug(
-            { connectionId },
-            "Setting up new connection while keeping previous connection open",
-          );
-
-          await this.connect(0, [...path]);
-          await conn.cleanup();
-        } catch (err) {
-          this.callbacks.logger.warn(
-            {
-              connectionId,
-              err: toError(err),
-            },
-            "Failed to reconnect after receiving draining message",
-          );
-
-          await conn.cleanup();
-
-          void onConnectionError(
-            new ReconnectError(
-              `Failed to reconnect after receiving draining message (${connectionId})`,
-              attempt,
-            ),
-          );
-        }
+        // Move current connection to draining, clear active so the loop
+        // establishes a replacement.
+        this.drainingConnection = this.activeConnection;
+        this.activeConnection = undefined;
+        this.wake();
         return;
       }
 
@@ -755,12 +857,8 @@ export class ConnectionCore {
         ] = gatewayExecutorRequest.leaseId;
 
         // Start lease extension interval
-        let extendLeaseInterval: NodeJS.Timeout | undefined;
+        let extendLeaseInterval: ReturnType<typeof setInterval> | undefined;
         extendLeaseInterval = setInterval(() => {
-          if (extendLeaseIntervalMs === undefined) {
-            return;
-          }
-
           const currentLeaseId =
             this.inProgressRequests.requestLeases[
               gatewayExecutorRequest.requestId
@@ -772,12 +870,10 @@ export class ConnectionCore {
 
           // Use the current live connection's WebSocket for lease
           // extensions. During a drain, the original WebSocket may be
-          // closed by the gateway while the request is still in flight,
-          // causing lease extension messages to silently fail and the
-          // gateway to time out the request.
+          // closed by the gateway while the request is still in flight.
           const latestConn = {
-            ws: this.currentConnection?.ws ?? ws,
-            id: this.currentConnection?.id ?? connectionId,
+            ws: this.activeConnection?.ws ?? ws,
+            id: this.activeConnection?.id ?? connectionId,
           };
 
           this.callbacks.logger.debug(
@@ -819,15 +915,14 @@ export class ConnectionCore {
               ).finish(),
             ),
           );
-        }, extendLeaseIntervalMs);
+        }, conn.extendLeaseIntervalMs);
 
         try {
-          // Handle execution via callback
           const responseBytes = await this.callbacks.handleExecutionRequest(
             gatewayExecutorRequest,
           );
 
-          if (!this.currentConnection) {
+          if (!this.activeConnection) {
             this.callbacks.logger.warn(
               { requestId: gatewayExecutorRequest.requestId },
               "No current WebSocket, buffering response",
@@ -843,13 +938,13 @@ export class ConnectionCore {
 
           this.callbacks.logger.debug(
             {
-              connectionId: this.currentConnection.id,
+              connectionId: this.activeConnection.id,
               requestId: gatewayExecutorRequest.requestId,
             },
             "Sending worker reply",
           );
 
-          this.currentConnection.ws.send(
+          this.activeConnection.ws.send(
             ensureUnsharedArrayBuffer(
               ConnectMessage.encode(
                 ConnectMessage.create({
@@ -873,6 +968,11 @@ export class ConnectionCore {
             gatewayExecutorRequest.requestId
           ];
           clearInterval(extendLeaseInterval);
+
+          // Wake the loop if shutdown is pending and this was the last request
+          if (this.shutdownRequested && !this.hasInFlightRequests()) {
+            this.wake();
+          }
         }
 
         return;
@@ -924,7 +1024,6 @@ export class ConnectionCore {
           kind: gatewayMessageTypeToJSON(connectMessage.kind),
           rawKind: connectMessage.kind,
           attempt,
-          setupState,
           state: this.callbacks.getState(),
           connectionId,
         },
@@ -932,122 +1031,6 @@ export class ConnectionCore {
       );
     };
 
-    // Heartbeat interval
-    let heartbeatInterval: NodeJS.Timeout | undefined;
-    if (heartbeatIntervalMs !== undefined) {
-      heartbeatInterval = setInterval(() => {
-        if (heartbeatIntervalMs === undefined) {
-          return;
-        }
-
-        // Skip heartbeat ticks when the WebSocket is no longer open. During
-        // drain the Gateway may close the old WS while in-flight requests are
-        // still running. Sending on a closed socket is a no-op and we must not
-        // treat the missing response as a failure.
-        //
-        // This is safe because each connection gets its own heartbeat
-        // interval. Once we reconnect, we can safely skip the old WS
-        // heartbeats because the new WS is heartbeating.
-        //
-        // TODO: We need a better way to handle this. This isn't a horrible
-        // hack, but it isn't ideal. Over the life of a worker, it'll have N-1
-        // noop heartbeat intervals, where N is the number of times it
-        // reconnected.
-        if (ws.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        if (conn.pendingHeartbeats >= 2) {
-          this.callbacks.logger.warn(
-            { connectionId },
-            "Gateway heartbeat missed",
-          );
-          void onConnectionError(
-            new ReconnectError(
-              `Consecutive gateway heartbeats missed (${connectionId})`,
-              attempt,
-            ),
-          );
-          return;
-        }
-
-        this.callbacks.logger.debug(
-          { connectionId },
-          "Sending worker heartbeat",
-        );
-
-        conn.pendingHeartbeats++;
-        ws.send(
-          ensureUnsharedArrayBuffer(
-            ConnectMessage.encode(
-              ConnectMessage.create({
-                kind: GatewayMessageType.WORKER_HEARTBEAT,
-              }),
-            ).finish(),
-          ),
-        );
-      }, heartbeatIntervalMs);
-    }
-
-    let cleaningUp = false;
-    conn.cleanup = async () => {
-      if (closed || cleaningUp) {
-        return;
-      }
-      cleaningUp = true;
-
-      this.callbacks.logger.debug({ connectionId }, "Cleaning up connection");
-      if (ws.readyState === WebSocket.OPEN) {
-        this.callbacks.logger.debug({ connectionId }, "Sending pause message");
-        ws.send(
-          ensureUnsharedArrayBuffer(
-            ConnectMessage.encode(
-              ConnectMessage.create({
-                kind: GatewayMessageType.WORKER_PAUSE,
-              }),
-            ).finish(),
-          ),
-        );
-      }
-
-      // Wait for in-flight requests to complete BEFORE disabling error
-      // handlers. If the WS dies during this wait, onConnectionError will
-      // trigger a reconnect so that heartbeats and lease extensions continue
-      // working (even during graceful shutdown).
-      this.callbacks.logger.debug(
-        { connectionId },
-        "Waiting for in-flight requests before closing connection",
-      );
-      await this.inProgressRequests.wg.wait();
-
-      // All in-flight requests are done — now safe to tear down.
-      closed = true;
-      ws.onerror = () => {};
-      ws.onclose = () => {};
-
-      ws.close(
-        1000,
-        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN),
-      );
-
-      if (this.currentConnection?.id === connectionId) {
-        this.currentConnection = undefined;
-      }
-
-      this.callbacks.logger.debug(
-        { connectionId },
-        "Cleaning up worker heartbeat",
-      );
-      clearInterval(heartbeatInterval);
-    };
-
     return conn;
-  }
-
-  async getApiBaseUrl(): Promise<string> {
-    return resolveApiBaseUrl({
-      apiBaseUrl: this.config.apiBaseUrl,
-      mode: this.config.mode,
-    });
   }
 }

@@ -131,7 +131,7 @@ class WorkerRunner {
           });
           return;
         }
-        this.core.connect(msg.attempt).catch((err) => {
+        this.core.start(msg.attempt).catch((err) => {
           this.sendMessage({
             type: "ERROR",
             error: err instanceof Error ? err.message : "Unknown error",
@@ -243,17 +243,9 @@ class WorkerRunner {
 
   async close(): Promise<void> {
     this.setState(ConnectionState.CLOSING);
-    this.logger.debug("Cleaning up connection resources");
 
     if (this.core) {
-      await this.core.cleanup();
-    }
-
-    this.logger.debug("Connection closed");
-    this.logger.debug("Waiting for in-flight requests to complete");
-
-    if (this.core) {
-      await this.core.waitForInProgress();
+      await this.core.close();
     }
 
     this.logger.debug("Flushing messages before closing");

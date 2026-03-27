@@ -90,34 +90,6 @@ export class SameThreadStrategy extends BaseStrategy {
     return this.core.connectionId;
   }
 
-  async close(): Promise<void> {
-    this.cleanupShutdown();
-    this.setClosing();
-    this.internalLogger.debug("Cleaning up connection resources");
-
-    await this.core.cleanup();
-
-    this.internalLogger.debug("Connection closed");
-    this.internalLogger.debug("Waiting for in-flight requests to complete");
-
-    await this.core.waitForInProgress();
-
-    this.internalLogger.debug("Flushing messages before closing");
-
-    try {
-      await this.messageBuffer.flush(this.config.hashedSigningKey);
-    } catch (err) {
-      this.internalLogger.debug(
-        { err },
-        "Failed to flush messages, using fallback key",
-      );
-      await this.messageBuffer.flush(this.config.hashedFallbackKey);
-    }
-
-    this.setClosed();
-    this.internalLogger.debug("Fully closed");
-  }
-
   async connect(attempt = 0): Promise<void> {
     this.throwIfClosingOrClosed();
     this.setupShutdownSignalIfConfigured(
@@ -135,6 +107,28 @@ export class SameThreadStrategy extends BaseStrategy {
       await this.messageBuffer.flush(this.config.hashedFallbackKey);
     }
 
-    await this.core.connect(attempt);
+    await this.core.start(attempt);
+  }
+
+  async close(): Promise<void> {
+    this.cleanupShutdown();
+    this.setClosing();
+
+    await this.core.close();
+
+    this.internalLogger.debug("Flushing messages before closing");
+
+    try {
+      await this.messageBuffer.flush(this.config.hashedSigningKey);
+    } catch (err) {
+      this.internalLogger.debug(
+        { err },
+        "Failed to flush messages, using fallback key",
+      );
+      await this.messageBuffer.flush(this.config.hashedFallbackKey);
+    }
+
+    this.setClosed();
+    this.internalLogger.debug("Fully closed");
   }
 }
