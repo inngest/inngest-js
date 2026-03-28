@@ -71,6 +71,7 @@ class WorkerRunner {
   private state: ConnectionState = ConnectionState.CONNECTING;
   private core: ConnectionCore | undefined;
   private messageBuffer: MessageBuffer | undefined;
+  private debugStateInterval: ReturnType<typeof setInterval> | undefined;
   private readonly logger: Logger;
 
   constructor() {
@@ -194,6 +195,7 @@ class WorkerRunner {
               connectionId: this.core.connectionId,
             });
           }
+          this.sendDebugState();
         },
         getState: () => this.state,
         handleExecutionRequest: async (request) => {
@@ -233,6 +235,9 @@ class WorkerRunner {
       },
     );
 
+    // Periodically push debug state to main thread so getDebugState() works
+    this.debugStateInterval = setInterval(() => this.sendDebugState(), 5_000);
+
     // Create message buffer for buffering responses when connection is lost
     this.messageBuffer = new MessageBuffer({
       envName: this.config.envName,
@@ -241,7 +246,13 @@ class WorkerRunner {
     });
   }
 
+  private sendDebugState(): void {
+    if (!this.core) return;
+    this.sendMessage({ type: "DEBUG_STATE", state: this.core.getDebugState() });
+  }
+
   async close(): Promise<void> {
+    clearInterval(this.debugStateInterval);
     this.setState(ConnectionState.CLOSING);
 
     if (this.core) {

@@ -40,6 +40,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
   private worker: Worker | undefined;
   private consecutiveCrashes = 0;
   private _connectionId: string | undefined;
+  private _cachedDebugState: ConnectDebugState | undefined;
 
   constructor(config: StrategyConfig) {
     const primaryApp = config.options.apps[0];
@@ -57,8 +58,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
   }
 
   getDebugState(): ConnectDebugState {
-    // Timestamps are unavailable because the core runs in a worker thread.
-    // State and connection IDs are mirrored to the main thread.
+    if (this._cachedDebugState) {
+      return this._cachedDebugState;
+    }
+
     return {
       state: this._state,
       activeConnectionId: this._connectionId,
@@ -283,6 +286,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
       case "EXECUTION_REQUEST":
         this.handleExecutionRequest(msg.requestId, msg.request);
+        break;
+
+      case "DEBUG_STATE":
+        this._cachedDebugState = msg.state;
         break;
 
       case "CLOSED":

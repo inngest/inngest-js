@@ -1,4 +1,4 @@
-import type { ConnectionState } from "../../types.ts";
+import type { ConnectDebugState, ConnectionState } from "../../types.ts";
 import type { BaseConnectionConfig } from "../core/types.ts";
 
 /**
@@ -51,6 +51,7 @@ export type WorkerToMainMessage =
   | { type: "ERROR"; error: string; fatal: boolean }
   | { type: "EXECUTION_REQUEST"; requestId: string; request: Uint8Array }
   | { type: "CLOSED" }
+  | { type: "DEBUG_STATE"; state: ConnectDebugState }
   | {
       type: "LOG";
       level: "debug" | "info" | "warn" | "error";
