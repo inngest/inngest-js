@@ -549,21 +549,25 @@ describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
       await gateway.start();
     });
 
-    it("server-side WS close triggers reconnection", { timeout: 15000 }, async () => {
-      const { core } = createIntegrationCore(gateway);
-      await core.start();
+    it(
+      "server-side WS close triggers reconnection",
+      { timeout: 15000 },
+      async () => {
+        const { core } = createIntegrationCore(gateway);
+        await core.start();
 
-      // Use close() for a graceful WebSocket close frame; terminate() drops
-      // the TCP socket without a close frame, which the native Node 22
-      // WebSocket client does not reliably surface via onclose.
-      gateway.lastClient!.close();
+        // Use close() for a graceful WebSocket close frame; terminate() drops
+        // the TCP socket without a close frame, which the native Node 22
+        // WebSocket client does not reliably surface via onclose.
+        gateway.lastClient!.close();
 
-      // Wait for reconnection
-      await waitFor(() => gateway.connectionCount >= 2, 5000);
-      expect(gateway.connectionCount).toBeGreaterThanOrEqual(2);
+        // Wait for reconnection
+        await waitFor(() => gateway.connectionCount >= 2, 5000);
+        expect(gateway.connectionCount).toBeGreaterThanOrEqual(2);
 
-      await core.close();
-    });
+        await core.close();
+      },
+    );
 
     it("401 response switches auth key", { timeout: 15000 }, async () => {
       let startCallCount = 0;
