@@ -13,6 +13,8 @@ import type { ConnectionAccessor } from "./types.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
+const hasNativeWebSocket = typeof globalThis.WebSocket !== "undefined";
+
 function createMockWs(readyState: number = WebSocket.OPEN) {
   return {
     send: vi.fn(),
@@ -79,7 +81,7 @@ function decodeSentStatus(ws: WebSocket) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("StatusReporter", () => {
+describe.skipIf(!hasNativeWebSocket)("StatusReporter", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();

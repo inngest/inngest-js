@@ -350,9 +350,7 @@ export class RequestProcessor {
         extendLeaseAck.newLeaseId;
     } else {
       const meta =
-        this.accessor.inProgressRequests.requestMeta[
-          extendLeaseAck.requestId
-        ];
+        this.accessor.inProgressRequests.requestMeta[extendLeaseAck.requestId];
 
       this.logger.error(
         {
