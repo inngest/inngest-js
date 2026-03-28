@@ -226,13 +226,13 @@ describe("ConnectionCore request processing", () => {
       await flushMicrotasks();
     });
 
-    test("lease extension ACK without newLeaseId removes lease", async () => {
+    test("lease extension ACK without newLeaseId removes lease and logs error", async () => {
       let resolveExecution: ((value: Uint8Array) => void) | undefined;
       const executionPromise = new Promise<Uint8Array>((resolve) => {
         resolveExecution = resolve;
       });
 
-      const { ws } = await connectAndReady({
+      const { ws, logger } = await connectAndReady({
         callbacks: {
           handleExecutionRequest: vi.fn(() => executionPromise),
         },
@@ -256,6 +256,12 @@ describe("ConnectionCore request processing", () => {
       ws.sendExtendLeaseAck({ requestId: "req-1" });
       await flushMicrotasks();
 
+      // Should log an error about the lost lease
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        expect.stringContaining("Lease lost"),
+      );
+
       // Advance past another interval
       await vi.advanceTimersByTimeAsync(5_000);
       await flushMicrotasks();
@@ -265,6 +271,267 @@ describe("ConnectionCore request processing", () => {
         GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
       ).length;
       expect(extensionsAfter).toBe(extensionsBefore);
+
+      // Clean up
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+    });
+
+    test("skips extension when WebSocket is not OPEN", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const { ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      const extensionsBefore = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+
+      // Close the WebSocket so readyState is no longer OPEN
+      ws.readyState = MockWebSocket.CLOSED;
+
+      // Advance past lease extension interval
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      // No new extension should have been sent
+      const extensionsAfter = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+      expect(extensionsAfter).toBe(extensionsBefore);
+
+      // Warning should have been logged
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Cannot extend lease, no open WebSocket available",
+      );
+
+      // Clean up
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+    });
+
+    test("resumes extensions after WebSocket recovers", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const { ws } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      // Close the WebSocket — extension should be skipped
+      ws.readyState = MockWebSocket.CLOSED;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const extensionsWhileClosed = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+
+      // Reopen the WebSocket — next tick should succeed
+      ws.readyState = MockWebSocket.OPEN;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const extensionsAfterRecovery = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+      expect(extensionsAfterRecovery).toBeGreaterThan(extensionsWhileClosed);
+
+      // Clean up
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+    });
+
+    test("uses new connection after drain", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const fetchMock = vi.fn();
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-1" }),
+      );
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-2" }),
+      );
+      global.fetch = fetchMock;
+
+      const helpers = createTestCore({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      const startPromise = helpers.core.start();
+      await flushMicrotasks();
+      const ws1 = MockWebSocket.instances[0]!;
+      await driveHandshake(ws1);
+      await startPromise;
+
+      // Send executor request on first connection
+      ws1.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      // Trigger drain — gateway sends GATEWAY_CLOSING
+      ws1.sendGatewayClosing();
+      await flushMicrotasks();
+
+      // Drive the new connection handshake
+      const ws2 = MockWebSocket.instances[1]!;
+      expect(ws2).toBeDefined();
+      await driveHandshake(ws2);
+      await flushMicrotasks();
+
+      // Advance past lease extension interval
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      // The extension should be sent on the new connection (ws2), not the old one (ws1)
+      const ws2Extensions = ws2.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      );
+      expect(ws2Extensions.length).toBeGreaterThanOrEqual(1);
+
+      // Clean up
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+    });
+
+    test("falls back to original WS when no active connection", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const fetchMock = vi.fn();
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-1" }),
+      );
+      // Second fetch for reconnection after error
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-2" }),
+      );
+      global.fetch = fetchMock;
+
+      const helpers = createTestCore({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      const startPromise = helpers.core.start();
+      await flushMicrotasks();
+      const ws1 = MockWebSocket.instances[0]!;
+      await driveHandshake(ws1);
+      await startPromise;
+
+      // Send executor request
+      ws1.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      // Kill the connection — activeConnection becomes undefined
+      ws1.simulateError();
+      await flushMicrotasks();
+
+      // ws1 is still OPEN in our mock (readyState not auto-changed by error),
+      // so the fallback should still use it for lease extensions
+      const extensionsBefore = ws1.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const extensionsAfter = ws1.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+      expect(extensionsAfter).toBeGreaterThan(extensionsBefore);
+
+      // Clean up
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+    });
+
+    test("continues retrying after ws.send() throws", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const { ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      // Make ws.send throw on the next call
+      const originalSend = ws.send.bind(ws);
+      let throwCount = 0;
+      ws.send = (data: Uint8Array) => {
+        if (throwCount === 0) {
+          throwCount++;
+          throw new Error("network failure");
+        }
+        originalSend(data);
+      };
+
+      // First tick — send throws
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Failed to send lease extension",
+      );
+
+      const extensionsAfterFailure = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+
+      // Second tick — send succeeds (throw was one-shot)
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const extensionsAfterRecovery = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+      expect(extensionsAfterRecovery).toBeGreaterThan(extensionsAfterFailure);
 
       // Clean up
       resolveExecution!(new Uint8Array(0));

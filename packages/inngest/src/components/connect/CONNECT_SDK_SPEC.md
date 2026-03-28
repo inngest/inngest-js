@@ -108,6 +108,14 @@ Worker-initiated, gateway responds.
 - Initial lease duration: 20s (`ConnectWorkerRequestLeaseDuration`)
 - Extension interval: 5s (`ConnectWorkerRequestExtendLeaseInterval` = duration / 4)
 
+### Lease Extension Resilience
+
+- Extensions fire every `extendLeaseIntervalMs` (default 5s) via `setInterval`
+- If the WebSocket is closed or send fails, the tick is skipped but the interval continues
+- With a 20s server-side lease duration and 5s extension interval, the worker has 4 attempts per lease period
+- No explicit retry logic is needed — the interval itself provides retry semantics
+- A single missed extension is tolerable; 4 consecutive misses will cause the server to expire the lease
+
 ---
 
 ## 4. Gateway Draining and Reconnection

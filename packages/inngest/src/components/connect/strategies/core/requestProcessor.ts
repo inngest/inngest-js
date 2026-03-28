@@ -195,29 +195,40 @@ export class RequestProcessor {
         return;
       }
 
-      latestConn.ws.send(
-        ensureUnsharedArrayBuffer(
-          ConnectMessage.encode(
-            ConnectMessage.create({
-              kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
-              payload: WorkerRequestExtendLeaseData.encode(
-                WorkerRequestExtendLeaseData.create({
-                  accountId: gatewayExecutorRequest.accountId,
-                  envId: gatewayExecutorRequest.envId,
-                  appId: gatewayExecutorRequest.appId,
-                  functionSlug: gatewayExecutorRequest.functionSlug,
-                  requestId: gatewayExecutorRequest.requestId,
-                  stepId: gatewayExecutorRequest.stepId,
-                  runId: gatewayExecutorRequest.runId,
-                  userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                  systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                  leaseId: currentLeaseId,
-                }),
-              ).finish(),
-            }),
-          ).finish(),
-        ),
-      );
+      try {
+        latestConn.ws.send(
+          ensureUnsharedArrayBuffer(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+                payload: WorkerRequestExtendLeaseData.encode(
+                  WorkerRequestExtendLeaseData.create({
+                    accountId: gatewayExecutorRequest.accountId,
+                    envId: gatewayExecutorRequest.envId,
+                    appId: gatewayExecutorRequest.appId,
+                    functionSlug: gatewayExecutorRequest.functionSlug,
+                    requestId: gatewayExecutorRequest.requestId,
+                    stepId: gatewayExecutorRequest.stepId,
+                    runId: gatewayExecutorRequest.runId,
+                    userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+                    systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+                    leaseId: currentLeaseId,
+                  }),
+                ).finish(),
+              }),
+            ).finish(),
+          ),
+        );
+      } catch (err) {
+        this.logger.warn(
+          {
+            connectionId: latestConn.id,
+            requestId: gatewayExecutorRequest.requestId,
+            err: toError(err),
+          },
+          "Failed to send lease extension",
+        );
+      }
     }, conn.extendLeaseIntervalMs);
 
     try {
@@ -338,9 +349,22 @@ export class RequestProcessor {
       this.accessor.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
         extendLeaseAck.newLeaseId;
     } else {
-      this.logger.warn(
-        { connectionId, requestId: extendLeaseAck.requestId },
-        "Unable to extend lease",
+      const meta =
+        this.accessor.inProgressRequests.requestMeta[
+          extendLeaseAck.requestId
+        ];
+
+      this.logger.error(
+        {
+          connectionId,
+          requestId: extendLeaseAck.requestId,
+          functionSlug: meta?.functionSlug,
+          runId: meta?.runId,
+          stepId: meta?.stepId,
+        },
+        "Lease lost: the server did not renew the lease for this request. " +
+          "Another worker may have claimed it. The in-progress execution " +
+          "will continue but its result may be discarded.",
       );
       delete this.accessor.inProgressRequests.requestLeases[
         extendLeaseAck.requestId
