@@ -94,7 +94,9 @@ async function waitFor(
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("ConnectionCore integration", () => {
+const hasNativeWebSocket = typeof globalThis.WebSocket !== "undefined";
+
+describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
   let gateway: MockGateway;
 
   afterEach(async () => {
