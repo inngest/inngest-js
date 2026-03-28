@@ -15,7 +15,7 @@ import type { ConnectionAccessor } from "./types.ts";
 
 const hasNativeWebSocket = typeof globalThis.WebSocket !== "undefined";
 
-function createMockWs(readyState: number = WebSocket.OPEN) {
+function createMockWs(readyState: number = 1 /* WebSocket.OPEN */) {
   return {
     send: vi.fn(),
     readyState,
@@ -150,7 +150,7 @@ describe.skipIf(!hasNativeWebSocket)("StatusReporter", () => {
   });
 
   test("skips send when WebSocket is not OPEN", () => {
-    const ws = createMockWs(WebSocket.CLOSED);
+    const ws = createMockWs(3 /* WebSocket.CLOSED */);
     const accessor = createAccessor({
       activeConnection: {
         id: "conn-1",
