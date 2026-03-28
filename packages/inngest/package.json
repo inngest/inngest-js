@@ -331,6 +331,7 @@
     "@types/react": "^19.0.0",
     "@types/react-test-renderer": "19.0.0",
     "@types/sha.js": "~2.4.4",
+    "@types/ws": "^8.18.1",
     "@vercel/node": "^2.15.9",
     "@vitest/coverage-v8": "3.0.8",
     "aws-lambda": "^1.0.7",
@@ -361,7 +362,8 @@
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.0.8",
     "vitest-fetch-mock": "^0.4.5",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "ws": "^8.20.0"
   },
   "peerDependencies": {
     "@sveltejs/kit": ">=1.27.3",

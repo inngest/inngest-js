@@ -64,6 +64,38 @@ export interface WorkerConnection {
   closed: Promise<void>;
   close: () => Promise<void>;
   state: ConnectionState;
+  getDebugState: () => ConnectDebugState;
+}
+
+export interface InFlightRequest {
+  requestId: string;
+  runId: string;
+  stepId: string | undefined;
+  appId: string;
+  envId: string;
+  functionSlug: string;
+  accountId: string;
+}
+
+export interface ConnectDebugState {
+  /** Current connection state */
+  state: ConnectionState;
+  /** Active connection ID, if any */
+  activeConnectionId: string | undefined;
+  /** Draining connection ID (during gateway drain), if any */
+  drainingConnectionId: string | undefined;
+  /** Timestamp of last heartbeat we sent */
+  lastHeartbeatSentAt: number | undefined;
+  /** Timestamp of last heartbeat response from gateway */
+  lastHeartbeatReceivedAt: number | undefined;
+  /** Timestamp of last WS message received (any type) */
+  lastMessageReceivedAt: number | undefined;
+  /** Whether shutdown has been requested (WORKER_PAUSE sent) */
+  shutdownRequested: boolean;
+  /** Number of in-flight requests */
+  inFlightRequestCount: number;
+  /** Detailed info about in-flight requests */
+  inFlightRequests: InFlightRequest[];
 }
 
 export enum ConnectionState {

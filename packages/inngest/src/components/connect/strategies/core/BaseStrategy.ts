@@ -1,6 +1,6 @@
 import type { Logger } from "../../../../middleware/logger.ts";
 import { onShutdown } from "../../os.ts";
-import { ConnectionState } from "../../types.ts";
+import { type ConnectDebugState, ConnectionState } from "../../types.ts";
 import type { ConnectionStrategy } from "./types.ts";
 
 /**
@@ -35,6 +35,7 @@ export abstract class BaseStrategy implements ConnectionStrategy {
   abstract get connectionId(): string | undefined;
   abstract connect(attempt?: number): Promise<void>;
   abstract close(): Promise<void>;
+  abstract getDebugState(): ConnectDebugState;
 
   /**
    * Set up shutdown signal handlers that will trigger close() on SIGINT/SIGTERM.

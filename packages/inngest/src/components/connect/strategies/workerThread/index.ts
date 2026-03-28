@@ -15,7 +15,7 @@ import {
   SDKResponse,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { internalLoggerSymbol } from "../../../Inngest.ts";
-import { ConnectionState } from "../../types.ts";
+import { type ConnectDebugState, ConnectionState } from "../../types.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
 import type { StrategyConfig } from "../core/types.ts";
 import type {
@@ -40,6 +40,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
   private worker: Worker | undefined;
   private consecutiveCrashes = 0;
   private _connectionId: string | undefined;
+  private _cachedDebugState: ConnectDebugState | undefined;
 
   constructor(config: StrategyConfig) {
     const primaryApp = config.options.apps[0];
@@ -54,6 +55,26 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
   get connectionId(): string | undefined {
     return this._connectionId;
+  }
+
+  getDebugState(): ConnectDebugState {
+    if (this._cachedDebugState) {
+      return this._cachedDebugState;
+    }
+
+    return {
+      state: this._state,
+      activeConnectionId: this._connectionId,
+      drainingConnectionId: undefined,
+      lastHeartbeatSentAt: undefined,
+      lastHeartbeatReceivedAt: undefined,
+      lastMessageReceivedAt: undefined,
+      shutdownRequested:
+        this._state === ConnectionState.CLOSING ||
+        this._state === ConnectionState.CLOSED,
+      inFlightRequestCount: 0,
+      inFlightRequests: [],
+    };
   }
 
   async close(): Promise<void> {
@@ -265,6 +286,10 @@ export class WorkerThreadStrategy extends BaseStrategy {
 
       case "EXECUTION_REQUEST":
         this.handleExecutionRequest(msg.requestId, msg.request);
+        break;
+
+      case "DEBUG_STATE":
+        this._cachedDebugState = msg.state;
         break;
 
       case "CLOSED":
