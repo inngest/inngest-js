@@ -39,6 +39,7 @@ import {
 import { establishConnection } from "./handshake.ts";
 import { HeartbeatManager } from "./heartbeat.ts";
 import { RequestProcessor } from "./requestProcessor.ts";
+import { StatusReporter } from "./statusReporter.ts";
 import type { BaseConnectionConfig } from "./types.ts";
 
 /**
@@ -53,6 +54,7 @@ export interface Connection {
   dead: boolean;
   heartbeatIntervalMs: number;
   extendLeaseIntervalMs: number;
+  statusIntervalMs: number;
   /** Disable all handlers and close the underlying WebSocket. */
   close(): void;
 }
@@ -135,6 +137,7 @@ export class ConnectionCore {
 
   // Sub-modules
   private readonly heartbeatManager: HeartbeatManager;
+  private readonly statusReporter: StatusReporter;
   private readonly requestProcessor: RequestProcessor;
 
   constructor(
@@ -183,6 +186,8 @@ export class ConnectionCore {
     this.heartbeatManager.onHeartbeatSent = () => {
       this._lastHeartbeatSentAt = Date.now();
     };
+
+    this.statusReporter = new StatusReporter(accessor, callbacks.logger);
 
     this.requestProcessor = new RequestProcessor(
       accessor,
@@ -405,6 +410,7 @@ export class ConnectionCore {
 
           this._activeConnection = conn;
           this.heartbeatManager.updateInterval(conn.heartbeatIntervalMs);
+          this.statusReporter.updateInterval(conn.statusIntervalMs);
           attempt = 0;
           this.hasConnectedBefore = true;
           this.callbacks.logger.info(
@@ -452,6 +458,7 @@ export class ConnectionCore {
 
     // Teardown
     this.heartbeatManager.stop();
+    this.statusReporter.stop();
     this._activeConnection?.close();
     this._activeConnection = undefined;
     this._drainingConnection?.close();

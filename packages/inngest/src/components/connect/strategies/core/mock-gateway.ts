@@ -35,6 +35,8 @@ export interface MockGatewayOptions {
   heartbeatInterval?: string;
   /** Extend lease interval string sent in CONNECTION_READY (e.g. "100ms"). */
   extendLeaseInterval?: string;
+  /** Status interval string sent in CONNECTION_READY (e.g. "200ms"). "0" or "" = disabled. */
+  statusInterval?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +66,7 @@ export class MockGateway {
   private autoHandshake: boolean;
   private heartbeatInterval: string;
   private extendLeaseInterval: string;
+  private statusInterval: string;
 
   // Hooks
   onStartRequest:
@@ -87,6 +90,7 @@ export class MockGateway {
     this.autoHandshake = opts.autoHandshake ?? true;
     this.heartbeatInterval = opts.heartbeatInterval ?? "200ms";
     this.extendLeaseInterval = opts.extendLeaseInterval ?? "100ms";
+    this.statusInterval = opts.statusInterval ?? "0";
   }
 
   // -------------------------------------------------------------------------
@@ -260,7 +264,11 @@ export class MockGateway {
 
   sendConnectionReady(
     client?: WsWebSocket,
-    opts?: { heartbeatInterval?: string; extendLeaseInterval?: string },
+    opts?: {
+      heartbeatInterval?: string;
+      extendLeaseInterval?: string;
+      statusInterval?: string;
+    },
   ): void {
     const target = client ?? this.lastClient;
     if (!target) return;
@@ -270,6 +278,7 @@ export class MockGateway {
         heartbeatInterval: opts?.heartbeatInterval ?? this.heartbeatInterval,
         extendLeaseInterval:
           opts?.extendLeaseInterval ?? this.extendLeaseInterval,
+        statusInterval: opts?.statusInterval ?? this.statusInterval,
       }),
     ).finish();
 

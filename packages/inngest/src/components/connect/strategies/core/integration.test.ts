@@ -13,6 +13,7 @@ import {
   GatewayMessageType,
   WorkerConnectRequestData,
   WorkerRequestExtendLeaseData,
+  WorkerStatusData,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { ConnectionState } from "../../types.ts";
 import {
@@ -548,19 +549,23 @@ describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
       await gateway.start();
     });
 
-    it("server-side WS close triggers reconnection", { timeout: 15000 }, async () => {
-      const { core } = createIntegrationCore(gateway);
-      await core.start();
+    it(
+      "server-side WS close triggers reconnection",
+      { timeout: 15000 },
+      async () => {
+        const { core } = createIntegrationCore(gateway);
+        await core.start();
 
-      // Terminate the client from server side
-      gateway.lastClient!.terminate();
+        // Terminate the client from server side
+        gateway.lastClient!.terminate();
 
-      // Wait for reconnection
-      await waitFor(() => gateway.connectionCount >= 2, 10000);
-      expect(gateway.connectionCount).toBeGreaterThanOrEqual(2);
+        // Wait for reconnection
+        await waitFor(() => gateway.connectionCount >= 2, 10000);
+        expect(gateway.connectionCount).toBeGreaterThanOrEqual(2);
 
-      await core.close();
-    });
+        await core.close();
+      },
+    );
 
     it("401 response switches auth key", { timeout: 15000 }, async () => {
       let startCallCount = 0;
@@ -597,7 +602,118 @@ describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
   });
 
   // =========================================================================
-  // 7. Graceful Shutdown
+  // 7. Worker Status
+  // =========================================================================
+
+  describe("Worker Status", () => {
+    it("sends WORKER_STATUS at configured interval", async () => {
+      gateway = new MockGateway({
+        heartbeatInterval: "10s",
+        statusInterval: "200ms",
+      });
+      await gateway.start();
+
+      // Respond to heartbeats to keep alive
+      gateway.onWorkerMessage = (msg, client) => {
+        if (msg.kind === GatewayMessageType.WORKER_HEARTBEAT) {
+          gateway.sendHeartbeat(client);
+        }
+      };
+
+      const { core } = createIntegrationCore(gateway);
+      await core.start();
+
+      // Wait for at least 2 status messages
+      const statusMsgs = await gateway.waitForMessageCount(
+        GatewayMessageType.WORKER_STATUS,
+        2,
+        3000,
+      );
+      expect(statusMsgs.length).toBeGreaterThanOrEqual(2);
+
+      // Verify payload structure
+      const data = WorkerStatusData.decode(statusMsgs[0]!.payload);
+      expect(data.shutdownRequested).toBe(false);
+      expect(Array.isArray(data.inFlightRequestIds)).toBe(true);
+
+      await core.close();
+    });
+
+    it("does not send WORKER_STATUS when interval is 0", async () => {
+      gateway = new MockGateway({
+        heartbeatInterval: "10s",
+        statusInterval: "0",
+      });
+      await gateway.start();
+
+      const { core } = createIntegrationCore(gateway);
+      await core.start();
+
+      // Wait and verify no status messages sent
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const statusMsgs = gateway.getMessagesOfType(
+        GatewayMessageType.WORKER_STATUS,
+      );
+      expect(statusMsgs.length).toBe(0);
+
+      await core.close();
+    });
+
+    it("includes in-flight request IDs in status", async () => {
+      gateway = new MockGateway({
+        heartbeatInterval: "10s",
+        statusInterval: "100ms",
+      });
+      await gateway.start();
+
+      let resolveExecution: (() => void) | undefined;
+      const executionPromise = new Promise<void>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const { core } = createIntegrationCore(gateway, {
+        callbacks: {
+          handleExecutionRequest: async () => {
+            await executionPromise;
+            return new Uint8Array(0);
+          },
+        },
+      });
+      await core.start();
+
+      // Respond to heartbeats
+      gateway.onWorkerMessage = (msg, client) => {
+        if (msg.kind === GatewayMessageType.WORKER_HEARTBEAT) {
+          gateway.sendHeartbeat(client);
+        }
+      };
+
+      // Send an executor request that blocks
+      gateway.sendExecutorRequest({
+        requestId: "req-status-test",
+        appName: "test-app",
+      });
+
+      // Wait for ACK confirming the request is in-flight
+      await gateway.waitForMessage(GatewayMessageType.WORKER_REQUEST_ACK, 3000);
+
+      // Wait for a status message that includes the request ID
+      const statusMsgs = await gateway.waitForMessageCount(
+        GatewayMessageType.WORKER_STATUS,
+        1,
+        3000,
+      );
+      const data = WorkerStatusData.decode(statusMsgs[0]!.payload);
+      expect(data.inFlightRequestIds).toContain("req-status-test");
+
+      // Clean up
+      resolveExecution!();
+      await core.close();
+    });
+  });
+
+  // =========================================================================
+  // 8. Graceful Shutdown
   // =========================================================================
 
   describe("Graceful Shutdown", () => {

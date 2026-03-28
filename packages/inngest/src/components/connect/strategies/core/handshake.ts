@@ -213,6 +213,7 @@ export async function establishConnection(
 
   let heartbeatIntervalMs: number | undefined;
   let extendLeaseIntervalMs: number | undefined;
+  let statusIntervalMs: number | undefined;
 
   ws.onmessage = async (event) => {
     const messageBytes = new Uint8Array(event.data as ArrayBuffer);
@@ -308,6 +309,11 @@ export async function establishConnection(
           ? ms(readyPayload.extendLeaseInterval as ms.StringValue)
           : 5_000;
 
+      statusIntervalMs =
+        readyPayload.statusInterval.length > 0
+          ? ms(readyPayload.statusInterval as ms.StringValue)
+          : 0;
+
       resolveWsConnected?.();
       return;
     }
@@ -337,6 +343,7 @@ export async function establishConnection(
     dead: false,
     heartbeatIntervalMs: heartbeatIntervalMs ?? 10_000,
     extendLeaseIntervalMs: extendLeaseIntervalMs ?? 5_000,
+    statusIntervalMs: statusIntervalMs ?? 0,
     close: () => {
       if (conn.dead) return;
       conn.dead = true;
