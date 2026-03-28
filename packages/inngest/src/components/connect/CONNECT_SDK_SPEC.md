@@ -29,7 +29,7 @@ the JS SDK implementation (`packages/inngest/src/components/connect/`).
 2. **Worker → Gateway:** `WORKER_CONNECT` (within 5s on gateway side, 10s timeout on worker side)
    - Fields: connectionId, instanceId (required), authData (sessionToken + syncToken), capabilities, apps[], systemAttributes, environment, framework ("connect"), platform, sdkVersion, sdkLanguage ("typescript"), startedAt, maxWorkerConcurrency
 3. **Gateway → Worker:** `GATEWAY_CONNECTION_READY`
-   - Payload: `heartbeatInterval` (default "10s"), `extendLeaseInterval` (default "5s" = leaseDuration/4)
+   - Payload: `heartbeatInterval` (default "10s"), `extendLeaseInterval` (default "5s" = leaseDuration/4), `statusInterval` (default "0s" = disabled)
    - Worker parses duration strings with `ms()`, falls back to 10s / 5s if empty
 
 ### Handshake Errors
@@ -167,7 +167,41 @@ RECONNECTING → (error)   → backoff → RECONNECTING
 
 ---
 
-## 5. Worker Graceful Shutdown
+## 5. Worker Status Reporting
+
+### Overview
+
+The gateway can opt the worker into periodic status reporting by sending a
+non-zero `statusInterval` in the `GATEWAY_CONNECTION_READY` payload. When
+enabled, the worker sends `WORKER_STATUS` messages at the configured cadence
+so the gateway can observe in-flight work and shutdown state.
+
+### Configuration
+
+- `statusInterval` is a duration string (e.g. "5s", "200ms")
+- "0s" or "" disables reporting (default)
+- Interval can change on reconnection (each handshake may return a different value)
+
+### Message: `WORKER_STATUS` (Worker → Gateway)
+
+Payload: `WorkerStatusData` protobuf
+- `inFlightRequestIds`: request IDs currently being processed
+- `shutdownRequested`: whether the worker has initiated graceful shutdown
+
+### Gateway-side handling
+
+- Rate-limited: at most one message per 2 seconds; faster messages silently dropped
+- Payload logged at debug level; no state mutations
+
+### Worker-side implementation (`StatusReporter`)
+
+- Timer started/restarted on each `GATEWAY_CONNECTION_READY` via `updateInterval()`
+- Stopped on `close()` or when interval set to 0
+- Skips send if WebSocket is not open or no active connection
+
+---
+
+## 6. Worker Graceful Shutdown
 
 ### Initiation
 
@@ -232,3 +266,5 @@ Worker should close WebSocket with:
 | Max apps per connection | 100 | `MaxAppsPerConnection` |
 | WS subprotocol | `v0.connect.inngest.com` | `types.GatewaySubProtocol` |
 | Backoff schedule (JS SDK) | 1s, 2s, 5s, 10s, 20s, 30s, 60s, 120s, 300s | `expBackoff()` |
+| Status interval (default) | 0s (disabled) | `ConnectWorkerStatusInterval` |
+| Status rate limit (gateway) | 2s | hardcoded in `handleIncomingWebSocketMessage` |
