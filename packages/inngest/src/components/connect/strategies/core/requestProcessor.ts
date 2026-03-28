@@ -131,6 +131,31 @@ export class RequestProcessor {
     this.accessor.inProgressRequests.requestLeases[
       gatewayExecutorRequest.requestId
     ] = gatewayExecutorRequest.leaseId;
+    this.accessor.inProgressRequests.requestMeta[
+      gatewayExecutorRequest.requestId
+    ] = {
+      requestId: gatewayExecutorRequest.requestId,
+      runId: gatewayExecutorRequest.runId,
+      stepId: gatewayExecutorRequest.stepId,
+      appId: gatewayExecutorRequest.appId,
+      envId: gatewayExecutorRequest.envId,
+      functionSlug: gatewayExecutorRequest.functionSlug,
+      accountId: gatewayExecutorRequest.accountId,
+    };
+
+    const inFlightCount = Object.keys(
+      this.accessor.inProgressRequests.requestLeases,
+    ).length;
+    this.logger.debug(
+      {
+        requestId: gatewayExecutorRequest.requestId,
+        functionSlug: gatewayExecutorRequest.functionSlug,
+        inFlightCount,
+      },
+      "Request acknowledged",
+    );
+
+    const startedAt = Date.now();
 
     // Start lease extension interval
     const originalWs = conn.ws;
@@ -200,6 +225,16 @@ export class RequestProcessor {
         gatewayExecutorRequest,
       );
 
+      const durationMs = Date.now() - startedAt;
+      this.logger.debug(
+        {
+          requestId: gatewayExecutorRequest.requestId,
+          functionSlug: gatewayExecutorRequest.functionSlug,
+          durationMs,
+        },
+        "Request execution completed",
+      );
+
       if (!this.accessor.activeConnection) {
         this.logger.warn(
           { requestId: gatewayExecutorRequest.requestId },
@@ -233,9 +268,11 @@ export class RequestProcessor {
         ),
       );
     } catch (err) {
-      this.logger.debug(
+      const durationMs = Date.now() - startedAt;
+      this.logger.warn(
         {
           requestId: gatewayExecutorRequest.requestId,
+          durationMs,
           err: toError(err),
         },
         "Execution error",
@@ -245,7 +282,21 @@ export class RequestProcessor {
       delete this.accessor.inProgressRequests.requestLeases[
         gatewayExecutorRequest.requestId
       ];
+      delete this.accessor.inProgressRequests.requestMeta[
+        gatewayExecutorRequest.requestId
+      ];
       clearInterval(extendLeaseInterval);
+
+      const remainingInFlight = Object.keys(
+        this.accessor.inProgressRequests.requestLeases,
+      ).length;
+      this.logger.debug(
+        {
+          requestId: gatewayExecutorRequest.requestId,
+          remainingInFlight,
+        },
+        "Request finished",
+      );
 
       // Wake the loop if shutdown is pending and this was the last request
       if (this.accessor.shutdownRequested && !this.hasInFlightRequests()) {

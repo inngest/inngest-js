@@ -5,9 +5,11 @@ import { prepareConnectionConfig } from "./config.ts";
 import { type ConnectionStrategy, createStrategy } from "./strategies/index.ts";
 import {
   type ConnectApp,
+  type ConnectDebugState,
   type ConnectHandlerOptions,
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
+  type InFlightRequest,
   type WorkerConnection,
 } from "./types.ts";
 
@@ -100,6 +102,23 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return this.strategy.closed;
   }
 
+  getDebugState(): ConnectDebugState {
+    if (!this.strategy) {
+      return {
+        state: ConnectionState.CONNECTING,
+        activeConnectionId: undefined,
+        drainingConnectionId: undefined,
+        lastHeartbeatSentAt: undefined,
+        lastHeartbeatReceivedAt: undefined,
+        lastMessageReceivedAt: undefined,
+        shutdownRequested: false,
+        inFlightRequestCount: 0,
+        inFlightRequests: [],
+      };
+    }
+    return this.strategy.getDebugState();
+  }
+
   async close(): Promise<void> {
     if (!this.strategy) {
       return;
@@ -149,8 +168,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
 export {
   DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectApp,
+  type ConnectDebugState,
   type ConnectHandlerOptions,
   ConnectionState,
+  type InFlightRequest,
   type WorkerConnection,
 };
 

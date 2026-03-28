@@ -6,7 +6,12 @@ import type {
   SDKResponse,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import type { Inngest } from "../../../Inngest.ts";
-import type { ConnectHandlerOptions, ConnectionState } from "../../types.ts";
+import type {
+  ConnectDebugState,
+  ConnectHandlerOptions,
+  ConnectionState,
+  InFlightRequest,
+} from "../../types.ts";
 import type { Connection } from "./connection.ts";
 
 /**
@@ -135,6 +140,11 @@ export interface ConnectionStrategy {
    * A promise that resolves when the connection is fully closed.
    */
   readonly closed: Promise<void>;
+
+  /**
+   * Return a snapshot of debug/health information for this connection.
+   */
+  getDebugState(): ConnectDebugState;
 }
 
 /**
@@ -148,6 +158,7 @@ export interface ConnectionAccessor {
   readonly inProgressRequests: {
     wg: WaitGroup;
     requestLeases: Record<string, string>;
+    requestMeta: Record<string, InFlightRequest>;
   };
   readonly appIds: string[];
 }

@@ -17,6 +17,7 @@ import type { ConnectionAccessor, WakeSignal } from "./types.ts";
 export class HeartbeatManager {
   private interval: ReturnType<typeof setInterval> | undefined;
   private intervalMs = 10_000;
+  onHeartbeatSent: (() => void) | undefined;
 
   constructor(
     private readonly accessor: ConnectionAccessor,
@@ -70,5 +71,8 @@ export class HeartbeatManager {
         ).finish(),
       ),
     );
+
+    this.logger.debug({ connectionId: conn.id }, "Heartbeat sent");
+    this.onHeartbeatSent?.();
   }
 }

@@ -1,6 +1,6 @@
 import { SDKResponse } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { MessageBuffer } from "../../buffer.ts";
-import { ConnectionState } from "../../types.ts";
+import { type ConnectDebugState, ConnectionState } from "../../types.ts";
 import { BaseStrategy } from "../core/BaseStrategy.ts";
 import { ConnectionCore } from "../core/connection.ts";
 import type { StrategyConfig } from "../core/types.ts";
@@ -88,6 +88,10 @@ export class SameThreadStrategy extends BaseStrategy {
 
   get connectionId(): string | undefined {
     return this.core.connectionId;
+  }
+
+  getDebugState(): ConnectDebugState {
+    return this.core.getDebugState();
   }
 
   async connect(attempt = 0): Promise<void> {

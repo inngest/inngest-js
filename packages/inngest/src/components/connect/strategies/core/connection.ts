@@ -24,7 +24,11 @@ import {
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
 import { parseConnectMessage } from "../../messages.ts";
-import { ConnectionState } from "../../types.ts";
+import {
+  type ConnectDebugState,
+  ConnectionState,
+  type InFlightRequest,
+} from "../../types.ts";
 import {
   AuthError,
   ConnectionLimitError,
@@ -99,10 +103,16 @@ export class ConnectionCore {
   private _inProgressRequests: {
     wg: WaitGroup;
     requestLeases: Record<string, string>;
+    requestMeta: Record<string, InFlightRequest>;
   } = {
     wg: new WaitGroup(),
     requestLeases: {},
+    requestMeta: {},
   };
+
+  private _lastHeartbeatSentAt: number | undefined;
+  private _lastHeartbeatReceivedAt: number | undefined;
+  private _lastMessageReceivedAt: number | undefined;
 
   private excludeGateways: Set<string> = new Set();
 
@@ -170,6 +180,9 @@ export class ConnectionCore {
       wakeSignalRef,
       callbacks.logger,
     );
+    this.heartbeatManager.onHeartbeatSent = () => {
+      this._lastHeartbeatSentAt = Date.now();
+    };
 
     this.requestProcessor = new RequestProcessor(
       accessor,
@@ -191,6 +204,24 @@ export class ConnectionCore {
   }
 
   /**
+   * Return a snapshot of debug/health information for this connection.
+   */
+  getDebugState(): ConnectDebugState {
+    return {
+      state: this.callbacks.getState(),
+      activeConnectionId: this._activeConnection?.id,
+      drainingConnectionId: this._drainingConnection?.id,
+      lastHeartbeatSentAt: this._lastHeartbeatSentAt,
+      lastHeartbeatReceivedAt: this._lastHeartbeatReceivedAt,
+      lastMessageReceivedAt: this._lastMessageReceivedAt,
+      shutdownRequested: this._shutdownRequested,
+      inFlightRequestCount: Object.keys(this._inProgressRequests.requestLeases)
+        .length,
+      inFlightRequests: Object.values(this._inProgressRequests.requestMeta),
+    };
+  }
+
+  /**
    * Start the reconcile loop. Resolves when the first connection is active.
    * The loop continues running in the background.
    */
@@ -203,8 +234,6 @@ export class ConnectionCore {
     if (state === ConnectionState.CLOSED) {
       throw new Error("Connection already closed");
     }
-
-    this.callbacks.logger.info("Establishing connection");
 
     const firstReadyPromise = new Promise<void>((resolve, reject) => {
       this.resolveFirstReady = resolve;
@@ -226,7 +255,13 @@ export class ConnectionCore {
    * connection closed).
    */
   async close(): Promise<void> {
-    this.callbacks.logger.info("Shutting down, waiting for in-flight requests");
+    const inFlightCount = Object.keys(
+      this._inProgressRequests.requestLeases,
+    ).length;
+    this.callbacks.logger.info(
+      { inFlightCount },
+      "Shutting down, waiting for in-flight requests",
+    );
     this._shutdownRequested = true;
 
     if (this._activeConnection?.ws.readyState === WebSocket.OPEN) {
@@ -238,6 +273,10 @@ export class ConnectionCore {
             }),
           ).finish(),
         ),
+      );
+      this.callbacks.logger.info(
+        { connectionId: this._activeConnection.id },
+        "Sent WORKER_PAUSE, draining",
       );
     }
 
@@ -312,6 +351,22 @@ export class ConnectionCore {
 
       // Ensure we have a live connection
       if (!this._activeConnection || this._activeConnection.dead) {
+        this.callbacks.logger.debug(
+          {
+            hasActiveConnection: !!this._activeConnection,
+            activeConnectionDead: this._activeConnection?.dead,
+            hasDrainingConnection: !!this._drainingConnection,
+            drainingConnectionId: this._drainingConnection?.id,
+          },
+          "No active connection",
+        );
+
+        if (this.hasConnectedBefore) {
+          this.callbacks.logger.info({ attempt }, "Reconnecting");
+        } else {
+          this.callbacks.logger.info("Connecting");
+        }
+
         this.callbacks.onStateChange(
           this.hasConnectedBefore
             ? ConnectionState.RECONNECTING
@@ -352,6 +407,10 @@ export class ConnectionCore {
           this.heartbeatManager.updateInterval(conn.heartbeatIntervalMs);
           attempt = 0;
           this.hasConnectedBefore = true;
+          this.callbacks.logger.info(
+            { connectionId: conn.id, gatewayGroup },
+            "Connection active",
+          );
           this.callbacks.onStateChange(ConnectionState.ACTIVE);
           this.resolveFirstReady?.();
           this.resolveFirstReady = undefined;
@@ -381,6 +440,14 @@ export class ConnectionCore {
 
       // Wait for something to change
       await this.wakeSignal.promise;
+      this.callbacks.logger.debug(
+        {
+          shutdownRequested: this._shutdownRequested,
+          hasActiveConnection: !!this._activeConnection,
+          activeConnectionDead: this._activeConnection?.dead,
+        },
+        "Reconcile loop woken",
+      );
     }
 
     // Teardown
@@ -430,6 +497,8 @@ export class ConnectionCore {
 
     // Message handler for post-handshake messages
     ws.onmessage = async (event) => {
+      this._lastMessageReceivedAt = Date.now();
+
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
       const connectMessage = parseConnectMessage(messageBytes);
 
@@ -447,6 +516,7 @@ export class ConnectionCore {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
+        this._lastHeartbeatReceivedAt = Date.now();
         conn.pendingHeartbeats = 0;
         this.callbacks.logger.debug(
           { connectionId },
