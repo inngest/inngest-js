@@ -1,6 +1,7 @@
 import http from "node:http";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
+import { createWebApiCommHandler } from "./components/createWebApiCommHandler.ts";
 import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
@@ -179,38 +180,7 @@ function endpointCommHandler(
   options: RegisterOptions & { client: Inngest.Like },
   syncOptions?: SyncHandlerOptions,
 ): InngestCommHandler {
-  const handler = new InngestCommHandler({
-    frameworkName,
-    ...options,
-    syncOptions,
-    handler: (req: Request) => {
-      return {
-        body: () => req.text(),
-        headers: (key: string) => req.headers.get(key),
-        method: () => req.method,
-        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
-        transformResponse: ({ body, status, headers }) => {
-          return new Response(body, { status, headers });
-        },
-        experimentalTransformSyncResponse: async (data) => {
-          const res = data as Response;
-
-          const headers: Record<string, string> = {};
-          res.headers.forEach((v, k) => {
-            headers[k] = v;
-          });
-
-          return {
-            headers,
-            status: res.status,
-            body: await res.clone().text(),
-          };
-        },
-      };
-    },
-  });
-
-  return handler;
+  return createWebApiCommHandler(frameworkName, options, syncOptions);
 }
 
 /**
