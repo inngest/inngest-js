@@ -188,7 +188,7 @@ describe("failed", () => {
     expect(await resp.json()).toEqual("oh no");
   });
 
-  test.only("async mode", async () => {
+  test("async mode", async () => {
     const { port } = await setupEndpoint(testFileName, async () => {
       await step.sleep("go-async", "1s");
       await step.run("a", async () => {
