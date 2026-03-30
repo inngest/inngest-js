@@ -16,7 +16,7 @@ const sseMetadataSchema = z.object({
 const sseStreamSchema = z.object({
   type: z.literal("inngest.stream"),
   data: z.unknown(),
-  stepId: z.string().optional(),
+  hashedStepId: z.string().optional(),
 });
 
 const sseCommitSchema = z.object({
@@ -102,9 +102,9 @@ export function buildSseMetadataEvent(runId: string): string {
  * Used by `stream.push()` and `stream.pipe()` to send arbitrary data to
  * clients as part of a streaming response.
  */
-export function buildSseStreamEvent(data: unknown, stepId?: string): string {
+export function buildSseStreamEvent(data: unknown, hashedStepId?: string): string {
   const payload: Record<string, unknown> = { data };
-  if (stepId) payload.stepId = stepId;
+  if (hashedStepId) payload.hashedStepId = hashedStepId;
   return buildSseEvent("inngest.stream", payload);
 }
 
