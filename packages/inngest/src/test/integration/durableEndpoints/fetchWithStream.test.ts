@@ -1,5 +1,5 @@
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { fetchWithStream } from "../../../experimental/durable-endpoints/client.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
 import { NonRetriableError, step } from "../../../index.ts";
@@ -191,10 +191,16 @@ describe("failed", () => {
   test("async mode", async () => {
     const { port } = await setupEndpoint(testFileName, async () => {
       await step.sleep("go-async", "1s");
-      await step.run("a", async () => {
-        stream.push("chunk");
-        throw new NonRetriableError("oh no");
-      });
+      try {
+        await step.run("a", async () => {
+          stream.push("chunk");
+          throw new NonRetriableError("oh no");
+        });
+      } catch (e) {
+        if (e instanceof Error) {
+          return Response.json(e.message, { status: 500 });
+        }
+      }
       return Response.json("unreachable");
     });
 
