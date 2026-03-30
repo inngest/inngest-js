@@ -94,7 +94,7 @@ export async function fetchWithStream(
         case "inngest.stream": {
           opts?.onData?.({
             data: sseEvent.data,
-            hashedStepId: sseEvent.stepId ?? null,
+            hashedStepId: sseEvent.hashedStepId ?? null,
           });
           break;
         }

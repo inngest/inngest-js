@@ -53,7 +53,7 @@ test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"sync-data","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"sync-data","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.commit",
@@ -75,7 +75,7 @@ test.concurrent.each(streamingMethods)("success (%s)", async (method) => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"async-data","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
+      data: '{"data":"async-data","hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
       event: "inngest.commit",
@@ -143,15 +143,15 @@ test("mixed push and pipe in one step", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"sync-push-1","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"sync-push-1","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.stream",
-      data: '{"data":"sync-pipe","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"sync-pipe","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.stream",
-      data: '{"data":"sync-push-2","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"sync-push-2","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.commit",
@@ -174,15 +174,15 @@ test("mixed push and pipe in one step", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"async-push-1","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
+      data: '{"data":"async-push-1","hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
       event: "inngest.stream",
-      data: '{"data":"async-pipe","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
+      data: '{"data":"async-pipe","hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
       event: "inngest.stream",
-      data: '{"data":"async-push-2","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
+      data: '{"data":"async-push-2","hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
     },
     {
       event: "inngest.commit",
@@ -315,7 +315,7 @@ test("retries", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"partial","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.rollback",
@@ -337,7 +337,7 @@ test("retries", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"partial","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.rollback",
@@ -349,7 +349,7 @@ test("retries", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"partial","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.rollback",
@@ -361,7 +361,7 @@ test("retries", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"partial","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.rollback",

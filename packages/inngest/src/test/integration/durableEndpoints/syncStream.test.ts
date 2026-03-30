@@ -51,7 +51,7 @@ test.concurrent.each(streamingMethods)(
       },
       {
         event: "inngest.stream",
-        data: '{"data":"from a","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+        data: '{"data":"from a","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
       },
       {
         event: "inngest.commit",
@@ -63,7 +63,7 @@ test.concurrent.each(streamingMethods)(
       },
       {
         event: "inngest.stream",
-        data: '{"data":"from b","stepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
+        data: '{"data":"from b","hashedStepId":"e9d71f5ee7c92d6dc9e92ffdad17b8bd49418f98"}',
       },
       {
         event: "inngest.commit",
@@ -167,7 +167,7 @@ test("NonRetriableError", async () => {
     },
     {
       event: "inngest.stream",
-      data: '{"data":"partial","stepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
+      data: '{"data":"partial","hashedStepId":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}',
     },
     {
       event: "inngest.rollback",

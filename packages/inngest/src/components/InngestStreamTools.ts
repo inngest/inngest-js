@@ -105,10 +105,10 @@ export class InngestStream {
   }
 
   /**
-   * Resolve the current step ID for stream events. Returns the executing
-   * step's hashed ID (read from ALS), or undefined if outside a step.
+   * Resolve the current hashed step ID for stream events. Returns the
+   * executing step's hashed ID (read from ALS), or undefined if outside a step.
    */
-  private currentStepId(): string | undefined {
+  private currentHashedStepId(): string | undefined {
     return getAsyncCtxSync()?.execution?.executingStep?.hashedId;
   }
 
@@ -152,10 +152,10 @@ export class InngestStream {
    * Serialize `data` into an SSE stream event and enqueue it. Returns `false`
    * if serialization fails (e.g. circular reference) so callers can skip.
    */
-  private enqueueStreamEvent(data: unknown, stepId?: string): boolean {
+  private enqueueStreamEvent(data: unknown, hashedStepId?: string): boolean {
     let sseEvent: string;
     try {
-      sseEvent = buildSseStreamEvent(data, stepId);
+      sseEvent = buildSseStreamEvent(data, hashedStepId);
     } catch {
       return false;
     }
@@ -170,7 +170,7 @@ export class InngestStream {
    */
   push(data: unknown): void {
     this.activate();
-    this.enqueueStreamEvent(data, this.currentStepId());
+    this.enqueueStreamEvent(data, this.currentHashedStepId());
   }
 
   /**
@@ -220,13 +220,13 @@ export class InngestStream {
    * stream event and collecting the concatenated result.
    */
   private async pipeIterable(source: AsyncIterable<string>): Promise<string> {
-    const stepId = this.currentStepId();
+    const hashedStepId = this.currentHashedStepId();
     const chunks: string[] = [];
 
     for await (const chunk of source) {
       chunks.push(chunk);
 
-      if (!this.enqueueStreamEvent(chunk, stepId)) {
+      if (!this.enqueueStreamEvent(chunk, hashedStepId)) {
         continue;
       }
 
