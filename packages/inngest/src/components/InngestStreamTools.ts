@@ -120,11 +120,18 @@ export class InngestStream {
   }
 
   /**
+   * Encode and write an SSE event string to the underlying writer.
+   */
+  private writeEncoded(sseEvent: string): Promise<void> {
+    return this.writer.write(this.encoder.encode(sseEvent));
+  }
+
+  /**
    * Enqueue a pre-built SSE event string onto the write chain.
    */
   private enqueue(sseEvent: string): void {
     this.writeChain = this.writeChain
-      .then(() => this.writer.write(this.encoder.encode(sseEvent)))
+      .then(() => this.writeEncoded(sseEvent))
       .catch((err) => {
         // Writer errored (e.g. stream closed) — swallow so the chain
         // doesn't break and subsequent writes fail gracefully.
@@ -180,10 +187,6 @@ export class InngestStream {
   async pipe(source: PipeSource): Promise<string> {
     this.activate();
 
-    // Resolve the source into an AsyncIterable<string>.
-    // Check ReadableStream first — on Node 18+ ReadableStream implements
-    // Symbol.asyncIterator, so the instanceof check must come before
-    // the async-iterable duck-type test.
     let iterable: AsyncIterable<string>;
     if (source instanceof ReadableStream) {
       iterable = this.readableToAsyncIterable(source);
@@ -197,7 +200,9 @@ export class InngestStream {
   }
 
   /**
-   * Adapt a ReadableStream into an AsyncIterable<string>.
+   * Adapt a ReadableStream into an AsyncIterable<string>. TypeScript's
+   * ReadableStream type doesn't declare Symbol.asyncIterator, so we use the
+   * reader API for type safety.
    */
   private async *readableToAsyncIterable(
     readable: ReadableStream,
@@ -256,22 +261,28 @@ export class InngestStream {
     } catch {
       sseEvent = buildSseFailedEvent("Failed to serialize result");
     }
-    this.closeWithEvent(sseEvent);
+    this.closeWriter(sseEvent);
   }
 
   /**
    * Write a failed result event and close the writer. Internal use only.
    */
   closeFailed(error: string): void {
-    this.closeWithEvent(buildSseFailedEvent(error));
+    this.closeWriter(buildSseFailedEvent(error));
   }
 
-  private closeWithEvent(sseEvent: string): void {
+  /**
+   * Optionally write a final SSE event, then close the writer.
+   */
+  private closeWriter(finalEvent?: string): void {
     this.writeChain = this.writeChain
-      .then(() => this.writer.write(this.encoder.encode(sseEvent)))
-      .then(() => this.writer.close())
+      .then(async () => {
+        if (finalEvent) {
+          await this.writeEncoded(finalEvent);
+        }
+        await this.writer.close();
+      })
       .catch((err) => {
-        // Writer already errored/closed — nothing to do.
         this.onWriteError?.(err);
       });
   }
@@ -281,12 +292,7 @@ export class InngestStream {
    * async and the real result will arrive on the redirected stream.
    */
   end(): void {
-    this.writeChain = this.writeChain
-      .then(() => this.writer.close())
-      .catch((err) => {
-        // Writer already errored/closed — nothing to do.
-        this.onWriteError?.(err);
-      });
+    this.closeWriter();
   }
 }
 
@@ -321,7 +327,10 @@ export const stream: StreamTools = {
       .then((s) => {
         s?.push(data);
       })
-      .catch(() => {});
+      .catch(() => {
+        // ALS initialization failure — already warned in als.ts.
+        // push() is best-effort, so silently degrade.
+      });
   },
   pipe: async (source) => {
     const syncStream = getStreamToolsSync();
