@@ -504,7 +504,7 @@ class InngestExecutionEngine
         type: "function-resolved",
         ctx: this.fnArg,
         ops: this.ops,
-        data: this.buildSseResponse(),
+        data: this.buildSyncSseResponse(),
       };
     }
 
@@ -522,7 +522,7 @@ class InngestExecutionEngine
    * The returned stream can be used as a fetch body or Response body.
    *
    * NOTE: `this.streamTools.readable` can only be consumed once, so only one
-   * of `buildSseResponse` or `postCheckpointStream` may be called per
+   * of `buildSyncSseResponse` or `postCheckpointStream` may be called per
    * execution.
    */
   private buildMetadataPrefixedStream(): ReadableStream<Uint8Array> {
@@ -534,10 +534,14 @@ class InngestExecutionEngine
   }
 
   /**
-   * Build a complete SSE `Response` backed by the stream's readable side,
-   * prefixed with the metadata event.
+   * Build the initial SSE `Response` that marks the start of streaming to the
+   * client. Only used in sync mode. In async mode, the stream is POSTed to the
+   * Inngest Server via {@link postCheckpointStream} instead.
+   *
+   * The response body is the stream's readable side, prefixed with the
+   * `inngest.metadata` SSE event.
    */
-  private buildSseResponse(): Response {
+  private buildSyncSseResponse(): Response {
     return new Response(this.buildMetadataPrefixedStream(), {
       status: 200,
       headers: {
@@ -566,7 +570,7 @@ class InngestExecutionEngine
     // Close the stream with a terminal succeeded event
     await this.streamCloseSucceeded(sseResponse);
 
-    const clientResponse = this.buildSseResponse();
+    const clientResponse = this.buildSyncSseResponse();
 
     // Run transformOutput to fire middleware hooks
     const result = this.transformOutput({ data: resultData });
@@ -596,7 +600,7 @@ class InngestExecutionEngine
         type: "function-resolved",
         ctx: this.fnArg,
         ops: this.ops,
-        data: this.buildSseResponse(),
+        data: this.buildSyncSseResponse(),
       });
 
       // Checkpoint may have already provided the realtime token — try redirect now.

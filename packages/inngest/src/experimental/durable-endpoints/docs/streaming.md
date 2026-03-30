@@ -6,7 +6,7 @@ A key use case is AI streaming (e.g. streaming LLM output to the browser).
 
 ## How it works
 
-Before async mode, the DE streams directly to the client. After async mode (e.g. `step.sleep`), the DE streams to the Inngest Server (IS), which relays to the client via a redirect URL.
+In sync mode, if the request includes `Accept: text/event-stream`, the DE returns an SSE response immediately while the function continues executing steps in the background. After async mode (e.g. `step.sleep`), the DE streams to the Inngest Server (IS) instead, which relays to the client via a redirect URL.
 
 The client receives an `inngest.redirect_info` event containing a URL. When the direct stream ends, the client reconnects to that URL to receive the remaining events.
 
@@ -19,7 +19,7 @@ The client receives an `inngest.redirect_info` event containing a URL. When the 
 | `inngest.commit`        | DE/IS -> client | Step data is finalized, will not be rolled back               |
 | `inngest.rollback`      | DE/IS -> client | Step data should be discarded (error/retry)                   |
 | `inngest.redirect_info` | DE -> client    | URL for async reconnection                                    |
-| `inngest.response`        | DE/IS -> client | Terminal event with the HTTP response (status, headers, body) |
+| `inngest.response`      | DE/IS -> client | Terminal event with the HTTP response (status, headers, body) |
 
 ## Server API
 
@@ -51,9 +51,9 @@ await streamRun("/api/demo", {
 
 `streamRun` handles the redirect transparently.
 
-## IS endpoints
+## Inngest server endpoints
 
-- `POST /v1/realtime/publish/tee?channel={runId}` -- DE streams data to IS (signing key auth)
+- `POST /v1/realtime/publish/tee?channel={runId}` -- DE streams data to Inngest Server (signing key auth)
 - `GET /v1/realtime/sse?token={realtimeJwt}` -- Client reads async stream
 
 ## Constraints
@@ -62,3 +62,8 @@ await streamRun("/api/demo", {
 - No streaming outside steps (except zero-step DEs)
 - Unidirectional: client is read-only
 - Realtime JWT has 15 minute expiry (unsolved for long sync phases)
+
+## Glossary
+
+- **DE**: Durable Endpoint
+- **IS**: Inngest server
