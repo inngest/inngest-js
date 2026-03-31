@@ -39,11 +39,13 @@
 
 export * from "@inngest/ai";
 export { experiment } from "./components/ExperimentStrategies.ts";
+export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
   GetFunctionInput,
   GetFunctionOutput,
+  GetFunctionOutputRaw,
   GetStepTools,
 } from "./components/Inngest";
 export { Inngest } from "./components/Inngest.ts";
@@ -52,11 +54,16 @@ export { InngestCommHandler } from "./components/InngestCommHandler.ts";
 export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
+export type {
+  GroupTools,
+  GroupToolsDeps,
+} from "./components/InngestGroupTools";
 export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { realtime } from "./components/realtime/index.ts";
+export type { Realtime } from "./components/realtime/types";
 export { StepError } from "./components/StepError.ts";
 export {
   cron,
@@ -65,6 +72,7 @@ export {
   invoke,
   staticSchema,
 } from "./components/triggers/triggers.ts";
+export type { HandlerWithTriggers } from "./components/triggers/typeHelpers";
 export {
   isInngest,
   isInngestFunction,
@@ -75,6 +83,12 @@ export { serializeError } from "./helpers/errors.ts";
 export { wrapStringFirstLogger } from "./helpers/log.ts";
 export { slugify } from "./helpers/strings.ts";
 export type {
+  DurationLike,
+  InstantLike,
+  ZonedDateTimeLike,
+} from "./helpers/temporal";
+export type {
+  ExclusiveKeys,
   IsStringLiteral,
   SendEventPayload,
   StrictUnion,
