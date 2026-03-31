@@ -57,6 +57,7 @@ export class InngestStream {
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private encoder = new TextEncoder();
   private _activated = false;
+  private _errored = false;
   private writeChain: Promise<void> = Promise.resolve();
 
   /**
@@ -130,11 +131,14 @@ export class InngestStream {
    * Enqueue a pre-built SSE event string onto the write chain.
    */
   private enqueue(sseEvent: string): void {
+    if (this._errored) return;
+
     this.writeChain = this.writeChain
       .then(() => this.writeEncoded(sseEvent))
       .catch((err) => {
         // Writer errored (e.g. stream closed) — swallow so the chain
         // doesn't break and subsequent writes fail gracefully.
+        this._errored = true;
         this.onWriteError?.(err);
       });
   }
@@ -213,8 +217,13 @@ export class InngestStream {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        yield typeof value === "string" ? value : decoder.decode(value);
+        yield typeof value === "string"
+          ? value
+          : decoder.decode(value, { stream: true });
       }
+      // flush any partially buffered multibyte characters from the decoder
+      const final = decoder.decode();
+      if (final) yield final;
     } finally {
       reader.releaseLock();
     }
@@ -229,6 +238,8 @@ export class InngestStream {
     const chunks: string[] = [];
 
     for await (const chunk of source) {
+      if (this._errored) break;
+
       chunks.push(chunk);
 
       if (!this.enqueueStreamEvent(chunk, hashedStepId)) {

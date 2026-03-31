@@ -52,10 +52,17 @@ export async function fetchWithStream(
 ): Promise<Response> {
   const fetchFn = opts?.fetch ?? globalThis.fetch;
 
+  const baseHeaders: Record<string, string> = {};
+  if (opts?.fetchOpts?.headers) {
+    new Headers(opts.fetchOpts.headers).forEach((value, key) => {
+      baseHeaders[key] = value;
+    });
+  }
+
   const initialRes = await fetchFn(url, {
     ...opts?.fetchOpts,
     headers: {
-      ...opts?.fetchOpts?.headers,
+      ...baseHeaders,
       Accept: "text/event-stream",
     },
   });
@@ -95,10 +102,6 @@ export async function fetchWithStream(
         break;
       }
       case "inngest.response": {
-        if (sseEvent.status === "failed") {
-          throw new Error(sseEvent.response.body);
-        }
-
         resp = new Response(sseEvent.response.body, {
           status: sseEvent.response.statusCode,
           headers: sseEvent.response.headers,

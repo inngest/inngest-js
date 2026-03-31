@@ -272,6 +272,83 @@ describe("server killed mid-stream", () => {
   });
 });
 
+describe("header forwarding normalizes all HeadersInit shapes", () => {
+  test("forwards headers passed as a Headers instance", async () => {
+    const state = createState({});
+    const { port, waitForRunId } = await setupEndpoint(
+      testFileName,
+      async (req) => {
+        const value = req.headers.get("X-Custom-Header");
+        return Response.json({ echoedHeader: value });
+      },
+    );
+
+    const resp = await fetchWithStream(
+      urlWithTestName(`http://localhost:${port}`),
+      {
+        fetchOpts: {
+          headers: new Headers({ "X-Custom-Header": "test-value" }),
+        },
+      },
+    );
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ echoedHeader: "test-value" });
+
+    state.runId = await waitForRunId();
+    await state.waitForRunComplete();
+  });
+
+  test("forwards headers passed as an array of tuples", async () => {
+    const state = createState({});
+    const { port, waitForRunId } = await setupEndpoint(
+      testFileName,
+      async (req) => {
+        const value = req.headers.get("X-Custom-Header");
+        return Response.json({ echoedHeader: value });
+      },
+    );
+
+    const resp = await fetchWithStream(
+      urlWithTestName(`http://localhost:${port}`),
+      {
+        fetchOpts: {
+          headers: [["X-Custom-Header", "test-value"]],
+        },
+      },
+    );
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ echoedHeader: "test-value" });
+
+    state.runId = await waitForRunId();
+    await state.waitForRunComplete();
+  });
+
+  test("forwards headers passed as a plain object", async () => {
+    const state = createState({});
+    const { port, waitForRunId } = await setupEndpoint(
+      testFileName,
+      async (req) => {
+        const value = req.headers.get("X-Custom-Header");
+        return Response.json({ echoedHeader: value });
+      },
+    );
+
+    const resp = await fetchWithStream(
+      urlWithTestName(`http://localhost:${port}`),
+      {
+        fetchOpts: {
+          headers: { "X-Custom-Header": "test-value" },
+        },
+      },
+    );
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ echoedHeader: "test-value" });
+
+    state.runId = await waitForRunId();
+    await state.waitForRunComplete();
+  });
+});
+
 /**
  * Handle rollbacks due to step retries
  */
