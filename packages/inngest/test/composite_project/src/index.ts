@@ -111,7 +111,7 @@ export const fn2 = inngest.createFunction(
   },
 );
 
-inngest.createFunction(
+export const fn3 = inngest.createFunction(
   {
     id: "my-fn-3",
     cancelOn: [{ event: "foo", match: "data.foo" }],
@@ -129,5 +129,20 @@ inngest.createFunction(
     });
 
     return { foo: "bar" };
+  },
+);
+
+export const fnRef = Inngest.referenceFunction<typeof fn>({ functionId: "my-fn" });
+
+export const fnWithStepRun = inngest.createFunction(
+  { id: "my-fn-step-run", triggers: [{ event: "foo" }] },
+  async ({ step }) => {
+    const result = await step.run("get-data", () => {
+      return { nested: { deeply: { value: 123 } } };
+    });
+
+    await step.sleep("wait", "1s");
+
+    return result;
   },
 );
