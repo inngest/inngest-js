@@ -35,7 +35,7 @@ import type {
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
 
-export type { Jsonify } from "./helpers/jsonify.ts";
+export type { Jsonify, JsonifyObject } from "./helpers/jsonify.ts";
 export type { SimplifyDeep } from "./helpers/types.ts";
 
 const baseJsonErrorSchema = z.object({
