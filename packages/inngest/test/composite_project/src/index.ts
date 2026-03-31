@@ -148,3 +148,26 @@ export const fnWithStepRun = inngest.createFunction(
     return result;
   },
 );
+
+// Exercise eventType and typed event schemas to ensure StandardSchemaV1
+// and related trigger types are portable.
+export const myEventType = Inngest.eventType("app/user.created", {
+  schema: Inngest.staticSchema<{ userId: string }>(),
+});
+
+export const fnWithTypedEvent = inngest.createFunction(
+  { id: "my-fn-typed", triggers: [myEventType] },
+  async ({ event }) => {
+    console.log(event);
+    return { ok: true };
+  },
+);
+
+// Exercise realtime channel creation to ensure Realtime namespace types
+// (TopicRef, TopicConfig, etc.) are portable.
+export const myChannel = Inngest.realtime.channel({
+  name: "my-channel",
+  topics: {
+    messages: { schema: Inngest.staticSchema<{ text: string }>() },
+  },
+});
