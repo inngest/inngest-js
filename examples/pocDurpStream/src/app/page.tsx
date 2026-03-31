@@ -61,9 +61,6 @@ export default function Home() {
         onCommit: () => {
           uncommittedCountRef.current = 0;
         },
-        onStreamError: (error) => {
-          setLines((prev) => [...prev, `\n❌ ${error}\n`]);
-        },
       });
 
       // Display the final result from the Response

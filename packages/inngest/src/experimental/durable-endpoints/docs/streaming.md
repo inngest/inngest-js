@@ -45,7 +45,6 @@ await streamRun("/api/demo", {
   onRollback: ({ hashedStepId }) => {
     /* discard uncommitted data */
   },
-  onStreamError: (error) => console.error(error),
 });
 ```
 

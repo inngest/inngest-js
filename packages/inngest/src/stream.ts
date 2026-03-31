@@ -35,22 +35,11 @@ interface FetchDurableEndpointOptions {
    * rolled back.
    */
   onCommit?: (args: { hashedStepId: string | null }) => void;
-
-  /**
-   * Called when a terminal stream error occurs (permanent function failure,
-   * network error, etc.).
-   */
-  onStreamError?: (error: string) => void;
-
-  /**
-   * Called when the stream is fully consumed (including on abort or error).
-   */
-  onDone?: () => void;
 }
 
 /**
  * Fetch a durable endpoint URL and consume its SSE stream, dispatching
- * lifecycle callbacks (metadata, data, commit, rollback, error, done) as
+ * lifecycle callbacks (metadata, data, commit, rollback) as
  * events arrive. Returns the final `Response` reconstructed from the
  * terminal `inngest.response` SSE event.
  *
@@ -88,51 +77,42 @@ export async function fetchWithStream(
     opts?.fetchOpts?.signal ?? undefined,
   );
 
-  try {
-    outer: for await (const sseEvent of source) {
-      switch (sseEvent.type) {
-        case "inngest.stream": {
-          opts?.onData?.({
-            data: sseEvent.data,
-            hashedStepId: sseEvent.hashedStepId ?? null,
-          });
-          break;
-        }
-        case "inngest.commit": {
-          opts?.onCommit?.({ hashedStepId: sseEvent.hashedStepId });
-          break;
-        }
-        case "inngest.rollback": {
-          opts?.onRollback?.({ hashedStepId: sseEvent.hashedStepId });
-          break;
-        }
-        case "inngest.response": {
-          resp = new Response(sseEvent.response.body, {
-            status: sseEvent.response.statusCode,
-            headers: sseEvent.response.headers,
-          });
-
-          if (sseEvent.status === "failed") {
-            opts?.onStreamError?.(sseEvent.response.body);
-          }
-
-          break outer;
-        }
-        case "inngest.metadata": {
-          opts?.onMetadata?.({ runId: sseEvent.runId });
-          break;
-        }
-        default:
-          break;
+  outer: for await (const sseEvent of source) {
+    switch (sseEvent.type) {
+      case "inngest.stream": {
+        opts?.onData?.({
+          data: sseEvent.data,
+          hashedStepId: sseEvent.hashedStepId ?? null,
+        });
+        break;
       }
+      case "inngest.commit": {
+        opts?.onCommit?.({ hashedStepId: sseEvent.hashedStepId });
+        break;
+      }
+      case "inngest.rollback": {
+        opts?.onRollback?.({ hashedStepId: sseEvent.hashedStepId });
+        break;
+      }
+      case "inngest.response": {
+        if (sseEvent.status === "failed") {
+          throw new Error(sseEvent.response.body);
+        }
+
+        resp = new Response(sseEvent.response.body, {
+          status: sseEvent.response.statusCode,
+          headers: sseEvent.response.headers,
+        });
+
+        break outer;
+      }
+      case "inngest.metadata": {
+        opts?.onMetadata?.({ runId: sseEvent.runId });
+        break;
+      }
+      default:
+        break;
     }
-  } catch (error) {
-    if (error instanceof Error) {
-      opts?.onStreamError?.(error.message);
-    }
-    throw error;
-  } finally {
-    opts?.onDone?.();
   }
 
   if (!resp) {
