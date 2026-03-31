@@ -302,23 +302,6 @@ export class ConnectionCore {
   }
 
   // ---------------------------------------------------------------------------
-  // Wake signal
-  // ---------------------------------------------------------------------------
-
-  private resetWakeSignal(): void {
-    let resolve: () => void;
-    const promise = new Promise<void>((r) => {
-      resolve = r;
-    });
-    this.wakeSignal = { promise, resolve: resolve! };
-  }
-
-  private wake(): void {
-    this.wakeSignal.resolve();
-    this.resetWakeSignal();
-  }
-
-  // ---------------------------------------------------------------------------
   // Signing key management
   // ---------------------------------------------------------------------------
 
@@ -339,6 +322,22 @@ export class ConnectionCore {
 
   private hasInFlightRequests(): boolean {
     return Object.keys(this._inProgressRequests.requestLeases).length > 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wake signal
+  // ---------------------------------------------------------------------------
+
+  private resetWakeSignal(): void {
+    let resolve: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    this.wakeSignal = { promise, resolve: resolve! };
+  }
+
+  private wake(): void {
+    this.wakeSignal.resolve();
   }
 
   // ---------------------------------------------------------------------------
@@ -444,8 +443,10 @@ export class ConnectionCore {
         }
       }
 
-      // Wait for something to change
+      // we must reset after awaiting, which means no signal can be lost.
       await this.wakeSignal.promise;
+      this.resetWakeSignal();
+
       this.callbacks.logger.debug(
         {
           shutdownRequested: this._shutdownRequested,
