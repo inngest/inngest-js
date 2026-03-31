@@ -95,7 +95,7 @@ void inngest.sendSignal({ signal: "foo", data: { foo: "bar" } });
 
 void inngest.setEnvVars({});
 
-const fn = inngest.createFunction(
+export const fn = inngest.createFunction(
   { id: "my-fn", triggers: [{ event: "foo" }] },
   async (ctx) => {
     console.log(ctx);
@@ -103,7 +103,7 @@ const fn = inngest.createFunction(
   },
 );
 
-const fn2 = inngest.createFunction(
+export const fn2 = inngest.createFunction(
   { id: "my-fn-2", triggers: [{ event: "foo" }, { cron: "* * * * *" }] },
   async (ctx) => {
     console.log(ctx);
