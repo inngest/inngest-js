@@ -35,9 +35,9 @@ Streaming outside of `step.run` is undefined behavior (except when the DE has ze
 ## Client API
 
 ```ts
-import { streamRun } from "inngest/experimental/durable-endpoints/client";
+import { fetchWithStream } from "inngest/experimental/durable-endpoints/client";
 
-await streamRun("/api/demo", {
+await fetchWithStream("/api/demo", {
   onData: ({ data }) => console.log(data),
   onCommit: ({ hashedStepId }) => {
     /* commit uncommitted data */
@@ -48,7 +48,7 @@ await streamRun("/api/demo", {
 });
 ```
 
-`streamRun` handles the redirect transparently.
+`fetchWithStream` handles the redirect transparently.
 
 ## Inngest server endpoints
 
