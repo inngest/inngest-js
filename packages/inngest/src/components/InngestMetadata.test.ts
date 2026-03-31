@@ -95,6 +95,7 @@ describe("buildTarget", () => {
 
     expect(target).toEqual({
       run_id: "other-run",
+      step_attempt: 1,
       step_id: "custom-step",
     });
   });
@@ -202,7 +203,7 @@ describe("MetadataBuilder.update", () => {
     expect(addMetadata).toHaveBeenCalledWith(
       "step-ctx",
       "userland.default",
-      "step_attempt",
+      "step",
       "merge",
       {
         foo: "bar",
@@ -231,7 +232,7 @@ describe("MetadataBuilder.update", () => {
     expect(addMetadata).toHaveBeenCalledWith(
       "step-ctx",
       "userland.default",
-      "step_attempt",
+      "step",
       "merge",
       {
         foo: "bar",
