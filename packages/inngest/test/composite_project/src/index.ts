@@ -132,7 +132,9 @@ export const fn3 = inngest.createFunction(
   },
 );
 
-export const fnRef = Inngest.referenceFunction<typeof fn>({ functionId: "my-fn" });
+export const fnRef = Inngest.referenceFunction<typeof fn>({
+  functionId: "my-fn",
+});
 
 export const fnWithStepRun = inngest.createFunction(
   { id: "my-fn-step-run", triggers: [{ event: "foo" }] },
