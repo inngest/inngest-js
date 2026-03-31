@@ -387,10 +387,14 @@ class InngestExecutionEngine
         }
       }
     } catch (error) {
-      // If earlyStreamResponse was set up, close the stream with an error event.
+      // If earlyStreamResponse was set up, close the stream with an error event
+      // and resolve (not reject) with a well-formed result so the caller gets a
+      // structured response instead of a raw Error.
       if (this.earlyStreamResponse) {
         await this.streamCloseFailed("Internal execution error");
-        this.earlyStreamResponse.reject(error);
+        const result = this.transformOutput({ error });
+        this.earlyStreamResponse.resolve(result);
+        return result;
       }
 
       return this.transformOutput({ error });
@@ -981,26 +985,28 @@ class InngestExecutionEngine
           // close as a continuation ensures the redirect event is
           // written first, without blocking the handler's return on
           // the checkpoint's retry budget.
-          void this.checkpoint([
-            {
-              id: hashId(RUN_COMPLETE_STEP_ID),
-              op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
-              error: checkpoint.error,
-            },
-          ])
-            .catch((err) => {
+          void (async () => {
+            try {
+              await this.checkpoint([
+                {
+                  id: hashId(RUN_COMPLETE_STEP_ID),
+                  op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+                  error: checkpoint.error,
+                },
+              ]);
+            } catch (err) {
               this.options.client[internalLoggerSymbol].warn(
                 { err },
                 "Failed to checkpoint function error",
               );
-            })
-            .then(async () => {
-              if (isFinal) {
-                await this.streamCloseFailed(errorMessage(checkpoint.error));
-              } else {
-                await this.streamEnd();
-              }
-            });
+            }
+
+            if (isFinal) {
+              await this.streamCloseFailed(errorMessage(checkpoint.error));
+            } else {
+              await this.streamEnd();
+            }
+          })();
 
           return this.transformOutput({ error: checkpoint.error });
         }
@@ -1055,7 +1061,10 @@ class InngestExecutionEngine
         }
 
         if (result.error) {
-          return this.checkpointAndSwitchToAsync([result], result.error);
+          return this.checkpointAndSwitchToAsync(
+            [transformed.step],
+            result.error,
+          );
         }
 
         // Resume the step with original data for user code
