@@ -1,7 +1,8 @@
 import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
+import type { Logger } from "../../../middleware/logger.ts";
 import { version } from "../../../version.ts";
-import { InngestMiddleware } from "../../InngestMiddleware.ts";
+import { Middleware } from "../../middleware/middleware.ts";
 import { clientProcessorMap } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
@@ -12,7 +13,7 @@ import {
   type Instrumentations,
 } from "./util.ts";
 
-const debug = Debug(`${debugPrefix}:middleware`);
+const devDebug = Debug(`${debugPrefix}:middleware`);
 
 class InngestTracesLogger implements DiagLogger {
   #logger = Debug(`${debugPrefix}:diag`);
@@ -72,7 +73,7 @@ export const extendedTracesMiddleware = ({
   instrumentations,
   logLevel = DiagLogLevel.ERROR,
 }: ExtendedTracesMiddlewareOptions = {}) => {
-  debug("behaviour:", behaviour);
+  devDebug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
 
@@ -80,14 +81,14 @@ export const extendedTracesMiddleware = ({
     case "auto": {
       const extended = extendProvider(behaviour);
       if (extended.success) {
-        debug("extended existing provider");
+        devDebug("extended existing provider");
         processor = extended.processor;
         break;
       }
 
       const created = createProvider(behaviour, instrumentations);
       if (created.success) {
-        debug("created new provider");
+        devDebug("created new provider");
         processor = created.processor;
         break;
       }
@@ -99,7 +100,7 @@ export const extendedTracesMiddleware = ({
     case "createProvider": {
       const created = createProvider(behaviour, instrumentations);
       if (created.success) {
-        debug("created new provider");
+        devDebug("created new provider");
         processor = created.processor;
         break;
       }
@@ -113,7 +114,7 @@ export const extendedTracesMiddleware = ({
     case "extendProvider": {
       const extended = extendProvider(behaviour);
       if (extended.success) {
-        debug("extended existing provider");
+        devDebug("extended existing provider");
         processor = extended.processor;
         break;
       }
@@ -135,15 +136,17 @@ export const extendedTracesMiddleware = ({
     }
   }
 
-  return new InngestMiddleware({
-    name: "Inngest: Extended Traces",
-    init({ client }) {
+  class ExtendedTracesMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:extended-traces";
+
+    /**
+     * Called by the Inngest constructor to associate the processor with the
+     * client.
+     */
+    static override onRegister({ client }: Middleware.OnRegisterArgs) {
       // Set the logger for our otel processors and exporters.
-      // If this is called multiple times (for example by the user in some other
-      // custom code), then only the first call is set, so we don't have to
-      // worry about overwriting it here accidentally.
-      //
-      debug(
+      // If this is called multiple times, only the first call is set.
+      devDebug(
         "set otel diagLogger:",
         diag.setLogger(new InngestTracesLogger(), logLevel),
       );
@@ -151,34 +154,24 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       }
+    }
 
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ) {
       return {
-        onFunctionRun() {
-          return {
-            transformInput() {
-              return {
-                ctx: {
-                  /**
-                   * A tracer that can be used to create spans within a step
-                   * that will be displayed on the Inngest dashboard (or Dev
-                   * Server).
-                   *
-                   * Note that creating spans outside of steps when the function
-                   * contains `step.*()` calls is not currently supported.
-                   */
-                  tracer: trace.getTracer("inngest", version),
-                },
-              };
-            },
-
-            async beforeResponse() {
-              // Should this be awaited? And is it fine to flush after every
-              // execution?
-              await processor?.forceFlush();
-            },
-          };
+        ...arg,
+        ctx: {
+          ...arg.ctx,
+          tracer: trace.getTracer("inngest", version),
         },
       };
-    },
-  });
+    }
+
+    override wrapRequest({ next }: Middleware.WrapRequestArgs) {
+      return next().finally(() => processor?.forceFlush());
+    }
+  }
+
+  return ExtendedTracesMiddleware;
 };

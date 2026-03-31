@@ -14,8 +14,7 @@ const inngest = new Inngest({
 });
 
 inngest.createFunction(
-  { id: "example-function" },
-  { event: "app/user.created" },
+  { id: "example-function", triggers: [{ event: "app/user.created" }] },
   async ({ event, step }) => {
     /**
      * The return value of `db.get()` - and therefore the value of `user` is now

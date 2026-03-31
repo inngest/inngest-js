@@ -1,6 +1,6 @@
 import AES from "crypto-js/aes.js";
 import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
-import { type EncryptionService } from "../middleware";
+import type { EncryptionService } from "../middleware";
 
 /**
  * The AES encryption service used by the encryption middleware.

@@ -1,8 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { id: "send-event" },
-  { event: "demo/send.event" },
+  { id: "send-event", triggers: [{ event: "demo/send.event" }] },
   async ({ step }) => {
     await Promise.all([
       // Send a single event

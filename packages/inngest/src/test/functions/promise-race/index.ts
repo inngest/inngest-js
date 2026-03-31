@@ -1,8 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { id: "promise-race" },
-  { event: "demo/promise.race" },
+  { id: "promise-race", triggers: [{ event: "demo/promise.race" }] },
   async ({ step }) => {
     const winner = await Promise.race([
       step.run("Step A", () => "A"),

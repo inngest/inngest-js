@@ -1,19 +1,22 @@
-import { type AsyncContext, getAsyncCtx } from "../experimental";
 import type { Simplify } from "../helpers/types.ts";
 import type { MetadataTarget } from "../types.ts";
-import type { Inngest } from "./Inngest.ts";
-import { InngestMiddleware } from "./InngestMiddleware.ts";
+import { type AsyncContext, getAsyncCtx } from "./execution/als.ts";
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
+import { Middleware } from "./middleware/middleware.ts";
 
 /**
  * The level at which to attach the metadata.
  */
-export type MetadataScope = "run" | "step" | "step_attempt" | "extended_trace";
+export type MetadataScope = "run" | "step" | "extended_trace";
 
 /**
  * Metadata of the same kind attached to the same item at the same scope are combined.
  */
-export type MetadataKind = "inngest.warning" | `userland.${string}`;
+export type MetadataKind =
+  | "inngest.experiment"
+  | "inngest.warnings"
+  | `userland.${string}`;
 
 /**
  * The operation use to combine multiple metadata updates of the same kind.
@@ -205,18 +208,12 @@ export function buildTarget(
       step_attempt: config.attempt ?? ctxAttempt,
       span_id: config.spanId,
     };
-  } else if (config.attempt !== undefined) {
-    return {
-      run_id: targetRunId,
-      step_id: config.stepId ?? ctxStepId,
-      step_index: config.stepIndex,
-      step_attempt: config.attempt ?? ctxAttempt,
-    };
   } else if (config.stepId !== undefined) {
     return {
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
+      step_attempt: config.attempt ?? ctxAttempt,
     };
   } else if (config.runId !== undefined) {
     return {
@@ -274,11 +271,10 @@ export async function sendMetadataViaAPI(
 
 function getBatchScope(config: BuilderConfig): MetadataScope {
   if (config.spanId !== undefined) return "extended_trace";
-  if (config.attempt !== undefined) return "step_attempt";
   if (config.stepId !== undefined) return "step";
   if (config.runId !== undefined) return "run";
 
-  return "step_attempt";
+  return "step";
 }
 
 async function performOp(
@@ -294,8 +290,8 @@ async function performOp(
   const isInsideRun = !!ctx?.execution;
   const isInsideStep = !!ctx?.execution?.executingStep;
   if (isInsideRun && !isInsideStep) {
-    console.warn(
-      "inngest: metadata.update() called outside of a step. This metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
+    client[internalLoggerSymbol].warn(
+      "metadata.update() called outside of a step; this metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
     );
   }
 
@@ -351,45 +347,54 @@ export const metadataSymbol = Symbol.for("inngest.step.metadata");
  * ```
  */
 export const metadataMiddleware = () => {
-  return new InngestMiddleware({
-    name: "Inngest: Experimental Metadata",
-    init({ client }) {
-      (client as Inngest.Any)["experimentalMetadataEnabled"] = true;
+  class MetadataMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "inngest:metadata";
+
+    static override onRegister({ client }: Middleware.OnRegisterArgs) {
+      client["experimentalMetadataEnabled"] = true;
+    }
+
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ): Middleware.TransformFunctionInputArgs & {
+      ctx: {
+        step: {
+          /**
+           * Create a durable metadata update wrapped in a step
+           *
+           * @param memoizationId - The step ID used for the step itself, ensuring the
+           *   metadata update is only performed once even on function retries.
+           *
+           * @example
+           * ```ts
+           * // Update metadata for the current run
+           * await step.metadata("update-status").update({ status: "processing" });
+           *
+           * // Update metadata for a different run
+           * await step.metadata("notify-parent")
+           *   .run(parentRunId)
+           *   .update({ childCompleted: true });
+           * ```
+           */
+          metadata: ExperimentalStepTools[typeof metadataSymbol];
+        };
+      };
+    } {
       return {
-        onFunctionRun() {
-          return {
-            transformInput(input) {
-              return {
-                ctx: {
-                  step: {
-                    ...input.ctx.step,
-                    /**
-                     * Create a durable metadata update wrapped in a step
-                     *
-                     * @param memoizationId - The step ID used for the step itself, ensuring the
-                     *   metadata update is only performed once even on function retries.
-                     *
-                     * @example
-                     * ```ts
-                     * // Update metadata for the current run
-                     * await step.metadata("update-status").update({ status: "processing" });
-                     *
-                     * // Update metadata for a different run
-                     * await step.metadata("notify-parent")
-                     *   .run(parentRunId)
-                     *   .update({ childCompleted: true });
-                     * ```
-                     */
-                    metadata: (input.ctx.step as ExperimentalStepTools)[
-                      metadataSymbol
-                    ],
-                  },
-                },
-              };
-            },
-          };
+        ...arg,
+        ctx: {
+          ...arg.ctx,
+          step: {
+            ...arg.ctx.step,
+            // Access the hidden symbol-keyed metadata tool from step tools
+            metadata: (arg.ctx.step as unknown as ExperimentalStepTools)[
+              metadataSymbol
+            ],
+          },
         },
       };
-    },
-  });
+    }
+  }
+
+  return MetadataMiddleware;
 };

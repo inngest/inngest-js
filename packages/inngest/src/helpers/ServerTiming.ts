@@ -1,3 +1,4 @@
+import type { Logger } from "../middleware/logger.ts";
 import { runAsPromise } from "./promises.ts";
 
 interface Timing {
@@ -17,6 +18,11 @@ interface Timing {
  */
 export class ServerTiming {
   private timings: Record<string, Timing> = {};
+  private readonly logger: Logger;
+
+  constructor(logger: Logger) {
+    this.logger = logger;
+  }
 
   /**
    * Start a timing. Returns a function that, when called, will stop the timing
@@ -35,13 +41,14 @@ export class ServerTiming {
     return (): void => {
       const target = this.timings[name];
       if (!target) {
-        return console.warn(`Timing "${name}" does not exist`);
+        return this.logger.warn({ timing: name }, "Timing does not exist");
       }
 
       const timer = target.timers[index];
       if (!timer) {
-        return console.warn(
-          `Timer ${index} for timing "${name}" does not exist`,
+        return this.logger.warn(
+          { timing: name, index },
+          "Timer does not exist",
         );
       }
 

@@ -1,4 +1,4 @@
-import { channel, topic } from "@inngest/realtime";
+import { realtime } from "inngest";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 
@@ -8,8 +8,7 @@ import { segmentContacts } from "@/lib/openai";
 import { sendEmail } from "@/lib/resend";
 
 export const contactImport = inngest.createFunction(
-  { id: "contact-import" },
-  { event: "app/contact.import" },
+  { id: "contact-import", triggers: [{ event: "app/contact.import" }] },
   async ({ event, step }) => {
     // 1. Parse contacts from event data
     const contactList = event.data.contacts;
@@ -78,22 +77,21 @@ export const contactImport = inngest.createFunction(
   }
 );
 
-// create a channel for each campaign, given a campaign ID. A channel is a namespace for one or more topics of streams.
-export const campaignSendChannel = channel(
-  (campaignId: string) => `campaign-send:${campaignId}`
-).addTopic(
-  topic("progress").schema(
-    z.object({
-      message: z.string(),
-      complete: z.boolean(),
-    })
-  )
-);
+export const campaignSendChannel = realtime.channel({
+  name: ({ campaignId }: { campaignId: string }) => `campaign-send:${campaignId}`,
+  topics: {
+    progress: {
+      schema: z.object({
+        message: z.string(),
+        complete: z.boolean(),
+      }),
+    },
+  },
+});
 
 export const campaignSend = inngest.createFunction(
-  { id: "campaign-send" },
-  { event: "app/campaign.send" },
-  async ({ event, step, publish }) => {
+  { id: "campaign-send", triggers: [{ event: "app/campaign.send" }] },
+  async ({ event, step }) => {
     const {
       campaignId,
       segmentId,
@@ -101,13 +99,12 @@ export const campaignSend = inngest.createFunction(
       subject: eventSubject,
       // content: eventContent,
     } = event.data;
+    const campaignChannel = campaignSendChannel({ campaignId });
 
-    await publish(
-      campaignSendChannel(campaignId).progress({
-        message: "Preparing the campaign...",
-        complete: false,
-      })
-    );
+    await inngest.realtime.publish(campaignChannel.progress, {
+      message: "Preparing the campaign...",
+      complete: false,
+    });
 
     // 1. Fetch campaign
     const [campaign] = await db
@@ -130,12 +127,10 @@ export const campaignSend = inngest.createFunction(
       .innerJoin(contactSegments, eq(contactSegments.contactId, contacts.id))
       .where(eq(contactSegments.segmentId, segmentId));
 
-    await publish(
-      campaignSendChannel(campaignId).progress({
-        message: `Sending ${campaign.name} to ${segmentContacts.length} contacts`,
-        complete: false,
-      })
-    );
+    await inngest.realtime.publish(campaignChannel.progress, {
+      message: `Sending ${campaign.name} to ${segmentContacts.length} contacts`,
+      complete: false,
+    });
 
     const emailSubject = eventSubject || campaign.subject;
     // const emailContent = eventContent || campaign.content;
@@ -160,16 +155,14 @@ export const campaignSend = inngest.createFunction(
       // Every 5 contacts, pause and publish progress
       if ((i + 1) % 5 === 0 || i === segmentContacts.length - 1) {
         await step.sleep("wait-1s", 1000);
-        await publish(
-          campaignSendChannel(campaignId).progress({
-            message: `Sent ${i + 1} of ${segmentContacts.length} contacts... (Subject: ${emailSubject})`,
-            complete: false,
-          })
-        );
+        await inngest.realtime.publish(campaignChannel.progress, {
+          message: `Sent ${i + 1} of ${segmentContacts.length} contacts... (Subject: ${emailSubject})`,
+          complete: false,
+        });
       }
     }
 
-    await campaignSendChannel(campaignId).progress({
+    await inngest.realtime.publish(campaignChannel.progress, {
       message: `The ${campaign.name} is now sent! (Subject: ${emailSubject})`,
       complete: true,
     });

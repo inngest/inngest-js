@@ -1,9 +1,18 @@
+import type { WaitGroup } from "@jpwilliams/waitgroup";
+import type { Mode } from "../../../../helpers/env.ts";
+import type { Logger } from "../../../../middleware/logger.ts";
 import type {
   GatewayExecutorRequestData,
   SDKResponse,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import type { Inngest } from "../../../Inngest.ts";
-import type { ConnectHandlerOptions, ConnectionState } from "../../types.ts";
+import type {
+  ConnectDebugState,
+  ConnectHandlerOptions,
+  ConnectionState,
+  InFlightRequest,
+} from "../../types.ts";
+import type { Connection } from "./connection.ts";
 
 /**
  * A request handler that processes executor requests and returns SDK responses.
@@ -59,7 +68,7 @@ export interface BaseConnectionConfig {
   /**
    * The mode of the Inngest client.
    */
-  mode: { isDev: boolean; isInferred: boolean };
+  mode: Mode;
 }
 
 /**
@@ -67,6 +76,11 @@ export interface BaseConnectionConfig {
  * Extends BaseConnectionConfig with strategy-specific fields.
  */
 export interface StrategyConfig extends BaseConnectionConfig {
+  /**
+   * The logger to use for internal logging.
+   */
+  internalLogger: Logger;
+
   /**
    * Request handlers mapped by app ID.
    */
@@ -126,4 +140,32 @@ export interface ConnectionStrategy {
    * A promise that resolves when the connection is fully closed.
    */
   readonly closed: Promise<void>;
+
+  /**
+   * Return a snapshot of debug/health information for this connection.
+   */
+  getDebugState(): ConnectDebugState;
+}
+
+/**
+ * Narrow view of ConnectionCore state, passed to sub-modules so they can
+ * read (but not mutate) the connection state they need.
+ */
+export interface ConnectionAccessor {
+  readonly activeConnection: Connection | undefined;
+  readonly drainingConnection: Connection | undefined;
+  readonly shutdownRequested: boolean;
+  readonly inProgressRequests: {
+    wg: WaitGroup;
+    requestLeases: Record<string, string>;
+    requestMeta: Record<string, InFlightRequest>;
+  };
+  readonly appIds: string[];
+}
+
+/**
+ * Wake signal interface for sub-modules to wake the reconcile loop.
+ */
+export interface WakeSignal {
+  wake(): void;
 }

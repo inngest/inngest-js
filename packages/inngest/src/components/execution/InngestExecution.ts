@@ -17,6 +17,7 @@ import type {
   MetadataOpcode,
   MetadataScope,
 } from "../InngestMetadata.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -93,16 +94,6 @@ export interface MemoizedOp extends IncomingOp {
  * new runs, not existing ones.
  */
 export const PREFERRED_ASYNC_EXECUTION_VERSION =
-  ExecutionVersion.V1 satisfies ExecutionVersion;
-
-/**
- * The preferred execution version that will be used by the SDK when handling
- * checkpointed runs where the Executor is allowing us to choose.
- *
- * Changing this should not ever be a breaking change, as this will only change
- * new runs, not existing ones.
- */
-export const PREFERRED_CHECKPOINTING_EXECUTION_VERSION =
   ExecutionVersion.V2 satisfies ExecutionVersion;
 
 /**
@@ -122,7 +113,7 @@ export interface InngestExecutionOptions {
   internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
-  data: Omit<Context.Any, "step">;
+  data: Omit<Context.Any, "step" | "group" | "publish">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
@@ -146,6 +137,19 @@ export interface InngestExecutionOptions {
   disableImmediateExecution?: boolean;
 
   /**
+   * Information about the incoming HTTP request that triggered this execution.
+   * Used by middleware `wrapRequest` hooks.
+   */
+  requestInfo?: Middleware.Request;
+
+  /**
+   * Pre-created middleware instances to use for this execution. When provided,
+   * the execution will use these instead of instantiating new ones from the
+   * client. This ensures `wrapRequest` and other hooks share state on `this`.
+   */
+  middlewareInstances?: Middleware.BaseMiddleware[];
+
+  /**
    * Provide the ability to transform the context passed to the function before
    * the execution starts.
    */
@@ -165,10 +169,10 @@ export type InngestExecutionFactory = (
 ) => IInngestExecution;
 
 export class InngestExecution {
-  protected debug: Debugger;
+  protected devDebug: Debugger;
 
   constructor(protected options: InngestExecutionOptions) {
-    this.debug = Debug(`${debugPrefix}:${this.options.runId}`);
+    this.devDebug = Debug(`${debugPrefix}:${this.options.runId}`);
   }
 }
 

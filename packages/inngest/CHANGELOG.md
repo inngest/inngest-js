@@ -1,5 +1,75 @@
 # inngest
 
+## 4.1.0
+
+### Minor Changes
+
+- [#1342](https://github.com/inngest/inngest-js/pull/1342) [`627c0720`](https://github.com/inngest/inngest-js/commit/627c072088a19a6fa4834d219b192066cffa2f60) Thanks [@jacobheric](https://github.com/jacobheric)! - Adds first class, internal realtime support with improved DX for publishing and subscribing to typed channels and topics. See: https://www.inngest.com/docs/features/realtime
+
+## 4.0.5
+
+### Patch Changes
+
+- [#1400](https://github.com/inngest/inngest-js/pull/1400) [`a545f98e`](https://github.com/inngest/inngest-js/commit/a545f98e42204646627188e1744826ce58693de2) Thanks [@amh4r](https://github.com/amh4r)! - Fix triggers applying to onFailure handler
+
+## 4.0.4
+
+### Patch Changes
+
+- [#1397](https://github.com/inngest/inngest-js/pull/1397) [`103a7212`](https://github.com/inngest/inngest-js/commit/103a721217ff38c7e149304b49ded17ed372347c) Thanks [@amh4r](https://github.com/amh4r)! - Fix eventType can't be combined with if expression
+
+## 4.0.3
+
+### Patch Changes
+
+- [#1395](https://github.com/inngest/inngest-js/pull/1395) [`c4861ff8`](https://github.com/inngest/inngest-js/commit/c4861ff866c3236ef0d4a1bb3aa7add7eeb71dd3) Thanks [@amh4r](https://github.com/amh4r)! - Error when function config is v3-style
+
+- [#1389](https://github.com/inngest/inngest-js/pull/1389) [`905d4b24`](https://github.com/inngest/inngest-js/commit/905d4b245c0512a4ac5d825ef1b2898f9cc3587d) Thanks [@amh4r](https://github.com/amh4r)! - Ensure we track retries when creating a new run
+
+- [#1396](https://github.com/inngest/inngest-js/pull/1396) [`9baa304f`](https://github.com/inngest/inngest-js/commit/9baa304f9cb3b776fabd9732d9f08207c9686d41) Thanks [@amh4r](https://github.com/amh4r)! - Fix onRunError hook's isFinalAttempt not true on final attempt
+
+## 4.0.2
+
+### Patch Changes
+
+- [#1387](https://github.com/inngest/inngest-js/pull/1387) [`983f527b`](https://github.com/inngest/inngest-js/commit/983f527bdc202845752d060d9429868ff80d8bb6) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing function run hang
+
+- [#1387](https://github.com/inngest/inngest-js/pull/1387) [`983f527b`](https://github.com/inngest/inngest-js/commit/983f527bdc202845752d060d9429868ff80d8bb6) Thanks [@amh4r](https://github.com/amh4r)! - Fallback to async flow on checkpoint error
+
+## 4.0.1
+
+### Patch Changes
+
+- [#1384](https://github.com/inngest/inngest-js/pull/1384) [`02759eb6`](https://github.com/inngest/inngest-js/commit/02759eb62da03407c116ed39ad2debc94a7d210b) Thanks [@Linell](https://github.com/Linell)! - fix: wrap AssertNoTransform to prevent union distribution
+
+## 4.0.0
+
+### Major Changes
+
+- [#1346](https://github.com/inngest/inngest-js/pull/1346) [`e8024132`](https://github.com/inngest/inngest-js/commit/e80241321f1735dfe512dacacbfc5791c9f5da53) Thanks [@amh4r](https://github.com/amh4r)! - See list of changes in the migration guide: https://www.inngest.com/docs/reference/typescript/v4/migrations/v3-to-v4
+
+## 3.52.7
+
+### Patch Changes
+
+- [#1359](https://github.com/inngest/inngest-js/pull/1359) [`b4d9833f`](https://github.com/inngest/inngest-js/commit/b4d9833fe632f542aad10c6faf5da3fd6a6fc9b7) Thanks [@Linell](https://github.com/Linell)! - fix: use deterministic IDs for correct checkpointed parenting
+
+- [#1370](https://github.com/inngest/inngest-js/pull/1370) [`037336dc`](https://github.com/inngest/inngest-js/commit/037336dce8731aa9fcf5d56ff3e2d8a48e5aee6f) Thanks [@amh4r](https://github.com/amh4r)! - Fix mishandling drain message (Connect only)
+
+## 3.52.6
+
+### Patch Changes
+
+- [#1350](https://github.com/inngest/inngest-js/pull/1350) [`470fdb98`](https://github.com/inngest/inngest-js/commit/470fdb9845514b6597e0bd7c6db469d3808f6dcf) Thanks [@amh4r](https://github.com/amh4r)! - Fix false NESTING_STEPS error
+
+- [#1356](https://github.com/inngest/inngest-js/pull/1356) [`2e961c21`](https://github.com/inngest/inngest-js/commit/2e961c2169a451d60c3a14e8b9cc19e19ad0dec6) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing function run hang
+
+## 3.52.5
+
+### Patch Changes
+
+- [#1340](https://github.com/inngest/inngest-js/pull/1340) [`335703d7`](https://github.com/inngest/inngest-js/commit/335703d7372d092a865def4b2cfb4730e50d5fa9) Thanks [@Linell](https://github.com/Linell)! - fix: fallback to async flow on checkpoint error
+
 ## 3.52.4
 
 ### Patch Changes

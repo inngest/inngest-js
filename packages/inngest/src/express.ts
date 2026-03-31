@@ -79,7 +79,7 @@ export const serve = (options: ServeHandlerOptions): any => {
         method: () => req.method || "GET",
         url: () => {
           // `req.hostname` can filter out port numbers; beware!
-          const hostname = req.headers["host"] || options?.serveHost;
+          const hostname = req.headers["host"] || options?.serveOrigin;
 
           const protocol = hostname?.includes("://")
             ? ""

@@ -23,8 +23,7 @@ connect({
       client: app1,
       functions: [
         app1.createFunction(
-          { id: "test-function" },
-          { event: "connect-demo/test" },
+          { id: "test-function", triggers: [{ event: "connect-demo/test" }] },
           async ({ step }) => {
             await step.run("test", async () => {
               console.log("via connect!");
@@ -35,8 +34,7 @@ connect({
           }
         ),
         app1.createFunction(
-          { id: "hello-world" },
-          { event: "connect-demo/hello-world" },
+          { id: "hello-world", triggers: [{ event: "connect-demo/hello-world" }] },
           async ({ step }) => {
             return { success: true };
           }
@@ -47,8 +45,7 @@ connect({
       client: app2,
       functions: [
         app2.createFunction(
-          { id: "hello-world" },
-          { event: "connect-demo/hello-world" },
+          { id: "hello-world", triggers: [{ event: "connect-demo/hello-world" }] },
           async ({ step }) => {
             return { success: true };
           }
@@ -57,9 +54,6 @@ connect({
     },
   ],
   instanceId: "my-worker",
-  rewriteGatewayEndpoint: (endpoint) => {
-    return endpoint.replace("connect-gateway:8080", "localhost:8100");
-  },
 }).then(async (conn) => {
   console.log("Connected!");
 

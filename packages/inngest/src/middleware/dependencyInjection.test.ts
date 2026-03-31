@@ -12,7 +12,7 @@ describe("Mutates ctx", () => {
       ],
     });
 
-    inngest.createFunction({ id: "test" }, { event: "" }, (ctx) => {
+    inngest.createFunction({ id: "test", triggers: [{ event: "" }] }, (ctx) => {
       assertType<string>(ctx.foo);
     });
   });
@@ -27,7 +27,7 @@ describe("Mutates ctx", () => {
       ],
     });
 
-    inngest.createFunction({ id: "test" }, { event: "" }, (ctx) => {
+    inngest.createFunction({ id: "test", triggers: [{ event: "" }] }, (ctx) => {
       assertType<"bar">(ctx.foo);
     });
   });

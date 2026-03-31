@@ -15,6 +15,6 @@
     // Also when using "cloud" mode during dev, you may need to also configure
     // your serve URL to tell the Inngest Dev Server to use the localhost URL
     // instead of wrangler's public URL
-    // "INNGEST_SERVE_HOST": "http://localhost:3000"
+    // "INNGEST_SERVE_ORIGIN": "http://localhost:3000"
   }
 }

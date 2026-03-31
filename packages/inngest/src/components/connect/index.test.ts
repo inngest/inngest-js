@@ -1,91 +1,63 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { envKeys } from "../../helpers/consts.ts";
+import type { Mode } from "../../helpers/env.ts";
 import { WorkerConnectRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { Inngest } from "../Inngest.ts";
+import {
+  createLogger,
+  createMockStartResponse,
+  MockWebSocket,
+  setupCoreMocks,
+  teardownCoreMocks,
+} from "./strategies/core/test-helpers.ts";
+import { createStrategy } from "./strategies/index.ts";
+import { SameThreadStrategy } from "./strategies/sameThread/index.ts";
 import type { ConnectHandlerOptions } from "./types.ts";
 
-// Mock WebSocket globally
-class MockWebSocket {
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSING = 2;
-  static CLOSED = 3;
+// ---------------------------------------------------------------------------
+// Setup / Teardown
+// ---------------------------------------------------------------------------
 
-  readyState = MockWebSocket.CONNECTING;
-  binaryType = "arraybuffer";
-  // biome-ignore lint/suspicious/noExplicitAny: Mock
-  onopen: any = null;
-  // biome-ignore lint/suspicious/noExplicitAny: Mock
-  onclose: any = null;
-  // biome-ignore lint/suspicious/noExplicitAny: Mock
-  onerror: any = null;
-  // biome-ignore lint/suspicious/noExplicitAny: Mock
-  onmessage: any = null;
+beforeEach(() => {
+  setupCoreMocks();
+});
 
-  sentMessages: Uint8Array[] = [];
+afterEach(() => {
+  teardownCoreMocks();
+});
 
-  constructor(_url: string, _protocols?: string | string[]) {
-    // Simulate async connection
-    setTimeout(() => {
-      this.readyState = MockWebSocket.OPEN;
-      this.onopen?.();
-    }, 0);
-  }
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
 
-  send(data: Uint8Array) {
-    this.sentMessages.push(data);
-  }
+const createTestOptions = (
+  opts: Partial<ConnectHandlerOptions> = {},
+): ConnectHandlerOptions => {
+  const inngest = new Inngest({ id: "test-app", isDev: true });
+  return {
+    apps: [{ client: inngest, functions: [] }],
+    ...opts,
+  };
+};
 
-  close() {
-    this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ reason: "test close" });
-  }
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 describe("connect maxWorkerConcurrency", () => {
   const originalEnv = process.env;
-  const originalWebSocket = global.WebSocket;
-  const originalFetch = global.fetch;
 
   beforeEach(() => {
-    // Reset environment
     process.env = { ...originalEnv };
-
-    // Mock WebSocket
-    // biome-ignore lint/suspicious/noExplicitAny: Mock
-    global.WebSocket = MockWebSocket as any;
-
-    // Mock fetch for the start request
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-    });
   });
 
   afterEach(() => {
     process.env = originalEnv;
-    global.WebSocket = originalWebSocket;
-    global.fetch = originalFetch;
   });
-
-  const createTestOptions = (
-    opts: Partial<ConnectHandlerOptions> = {},
-  ): ConnectHandlerOptions => {
-    const inngest = new Inngest({ id: "test-app", isDev: true });
-    return {
-      apps: [{ client: inngest, functions: [] }],
-      ...opts,
-    };
-  };
 
   describe("environment variable parsing", () => {
     test("should parse positive integer from INNGEST_CONNECT_MAX_WORKER_CONCURRENCY", () => {
       process.env[envKeys.InngestConnectMaxWorkerConcurrency] = "10";
-
-      const _options = createTestOptions();
-
-      // The applyDefaults method will be called internally during connection setup
-      // We test this by verifying the environment variable is accessible
       expect(process.env[envKeys.InngestConnectMaxWorkerConcurrency]).toBe(
         "10",
       );
@@ -104,7 +76,6 @@ describe("connect maxWorkerConcurrency", () => {
           process.env[envKeys.InngestConnectMaxWorkerConcurrency] as string,
           10,
         );
-
         expect(parsed).toBe(expected);
         expect(Number.isNaN(parsed)).toBe(false);
         expect(parsed > 0).toBe(true);
@@ -120,7 +91,6 @@ describe("connect maxWorkerConcurrency", () => {
           process.env[envKeys.InngestConnectMaxWorkerConcurrency] as string,
           10,
         );
-
         const isValid = !Number.isNaN(parsed) && parsed > 0;
         expect(isValid).toBe(false);
       }
@@ -138,7 +108,6 @@ describe("connect maxWorkerConcurrency", () => {
         workerManualReadinessAck: false,
         maxWorkerConcurrency: 15,
       });
-
       expect(msg.maxWorkerConcurrency).toBe(15);
     });
 
@@ -151,7 +120,6 @@ describe("connect maxWorkerConcurrency", () => {
         framework: "connect",
         workerManualReadinessAck: false,
       });
-
       expect(msg.maxWorkerConcurrency).toBeUndefined();
     });
   });
@@ -161,13 +129,11 @@ describe("connect maxWorkerConcurrency", () => {
       const options: ConnectHandlerOptions = createTestOptions({
         maxWorkerConcurrency: 20,
       });
-
       expect(options.maxWorkerConcurrency).toBe(20);
     });
 
     test("should allow undefined maxWorkerConcurrency", () => {
       const options: ConnectHandlerOptions = createTestOptions();
-
       expect(options.maxWorkerConcurrency).toBeUndefined();
     });
 
@@ -175,7 +141,6 @@ describe("connect maxWorkerConcurrency", () => {
       const options: ConnectHandlerOptions = createTestOptions({
         maxWorkerConcurrency: 5,
       });
-
       expect(typeof options.maxWorkerConcurrency).toBe("number");
     });
   });
@@ -183,26 +148,70 @@ describe("connect maxWorkerConcurrency", () => {
   describe("precedence and defaults", () => {
     test("explicit value takes precedence over environment variable", () => {
       process.env[envKeys.InngestConnectMaxWorkerConcurrency] = "100";
-
-      const options = createTestOptions({
-        maxWorkerConcurrency: 50,
-      });
-
-      // Explicit value should be used
+      const options = createTestOptions({ maxWorkerConcurrency: 50 });
       expect(options.maxWorkerConcurrency).toBe(50);
     });
 
     test("environment variable is used when no explicit value provided", () => {
       process.env[envKeys.InngestConnectMaxWorkerConcurrency] = "75";
-
       const options = createTestOptions();
-
-      // No explicit value, so env should be checked
       expect(options.maxWorkerConcurrency).toBeUndefined();
-      // But env var is set
       expect(process.env[envKeys.InngestConnectMaxWorkerConcurrency]).toBe(
         "75",
       );
     });
+  });
+});
+
+describe("ConnectHandlerOptions gatewayUrl", () => {
+  test("should accept gatewayUrl in options", () => {
+    const options: ConnectHandlerOptions = createTestOptions({
+      gatewayUrl: "ws://localhost:8100",
+    });
+    expect(options.gatewayUrl).toBe("ws://localhost:8100");
+  });
+
+  test("should allow undefined gatewayUrl", () => {
+    const options: ConnectHandlerOptions = createTestOptions();
+    expect(options.gatewayUrl).toBeUndefined();
+  });
+});
+
+describe("createStrategy", () => {
+  const stubConfig = {
+    hashedSigningKey: undefined,
+    hashedFallbackKey: undefined,
+    internalLogger: createLogger(),
+    envName: undefined,
+    apiBaseUrl: undefined,
+    mode: "dev" as Mode,
+    connectionData: {
+      marshaledCapabilities: "",
+      manualReadinessAck: false,
+      apps: [],
+    },
+    requestHandlers: {},
+    options: createTestOptions(),
+  };
+
+  test("defaults to WorkerThreadStrategy when isolateExecution is not set", async () => {
+    const strategy = await createStrategy(stubConfig, createTestOptions());
+    expect(strategy).not.toBeInstanceOf(SameThreadStrategy);
+  });
+
+  test("defaults to WorkerThreadStrategy when isolateExecution is true", async () => {
+    const strategy = await createStrategy(
+      stubConfig,
+      createTestOptions({ isolateExecution: true }),
+    );
+    expect(strategy).not.toBeInstanceOf(SameThreadStrategy);
+  });
+
+  test("uses SameThreadStrategy when isolateExecution is false", async () => {
+    const strategy = await createStrategy(
+      stubConfig,
+      createTestOptions({ isolateExecution: false }),
+    );
+    expect(strategy).toBeInstanceOf(SameThreadStrategy);
   });
 });

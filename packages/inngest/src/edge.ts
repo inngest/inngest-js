@@ -40,7 +40,6 @@ const commHandler = (
 ) => {
   const handler = new InngestCommHandler({
     frameworkName,
-    fetch: fetch.bind(globalThis),
     ...options,
     syncOptions,
     handler: (req: Request) => {

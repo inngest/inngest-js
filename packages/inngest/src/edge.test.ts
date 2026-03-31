@@ -67,7 +67,8 @@ describe("Edge endpointAdapter", () => {
   afterEach(teardownEdgeGlobals);
 
   // Helper to create client with endpointAdapter
-  const createProxyClient = () => createClient({ id: "test", endpointAdapter });
+  const createProxyClient = () =>
+    createClient({ id: "test", isDev: true, endpointAdapter });
 
   describe("endpointAdapter interface", () => {
     test("has createProxyHandler and withOptions", () => {
@@ -139,7 +140,11 @@ describe("Edge endpointAdapter", () => {
 
   describe("integration with Inngest client", () => {
     test("client can create endpoint and proxy handlers", () => {
-      const inngest = new Inngest({ id: "test-app", endpointAdapter });
+      const inngest = new Inngest({
+        id: "test-app",
+        isDev: true,
+        endpointAdapter,
+      });
 
       expect(typeof inngest.endpoint(async () => new Response("OK"))).toBe(
         "function",
@@ -150,6 +155,7 @@ describe("Edge endpointAdapter", () => {
     test("asyncRedirectUrl can be configured via withOptions", () => {
       const inngest = new Inngest({
         id: "test-app",
+        isDev: true,
         endpointAdapter: endpointAdapter.withOptions({
           asyncRedirectUrl: "/custom/poll/path",
         }),

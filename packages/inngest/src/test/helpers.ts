@@ -8,8 +8,8 @@ import {
   type IInngestExecution,
   type InngestExecution,
   type InngestExecutionOptions,
-  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "../components/execution/InngestExecution.ts";
+import { internalLoggerSymbol } from "../components/Inngest.ts";
 import {
   type HandlerResponse,
   InngestCommHandler,
@@ -31,7 +31,8 @@ import type { Env } from "../helpers/env.ts";
 import { signDataWithKey } from "../helpers/net.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
-import { Inngest, type InngestFunction } from "../index.ts";
+import { isRecord } from "../helpers/types.ts";
+import { ConsoleLogger, Inngest, type InngestFunction } from "../index.ts";
 import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
 
 interface HandlerStandardReturn {
@@ -83,13 +84,15 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
 export const testClientId = "__test_client__";
 
 export const getStepTools = (
-  client: Inngest.Any = createClient({ id: testClientId }),
+  client: Inngest.Any = createClient({ id: testClientId, isDev: true }),
   executionOptions: Partial<InngestExecutionOptions> = {},
 ) => {
   const execution = client
-    .createFunction({ id: "test" }, { event: "test" }, () => undefined)
+    .createFunction(
+      { id: "test", triggers: [{ event: "test" }] },
+      () => undefined,
+    )
     ["createExecution"]({
-      version: PREFERRED_ASYNC_EXECUTION_VERSION,
       partialOptions: {
         client,
         data: fromPartial({
@@ -100,7 +103,7 @@ export const getStepTools = (
         stepCompletionOrder: [],
         isFailureHandler: false,
         requestedRunStep: undefined,
-        timer: new ServerTiming(),
+        timer: new ServerTiming(client[internalLoggerSymbol]),
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
@@ -123,11 +126,14 @@ export type StepTools = ReturnType<typeof getStepTools>;
  * Given an Inngest function and the appropriate execution state, return the
  * resulting data from this execution.
  */
+/**
+ * Given an Inngest function and the appropriate execution state, return the
+ * resulting data from this execution.
+ */
 export const runFnWithStack = async (
   fn: InngestFunction.Any,
   stepState: InngestExecutionOptions["stepState"],
   opts?: {
-    executionVersion?: ExecutionVersion;
     runStep?: string;
     onFailure?: boolean;
     event?: EventPayload;
@@ -136,7 +142,6 @@ export const runFnWithStack = async (
   },
 ) => {
   const execution = fn["createExecution"]({
-    version: opts?.executionVersion ?? PREFERRED_ASYNC_EXECUTION_VERSION,
     partialOptions: {
       client: fn["client"],
       data: fromPartial({
@@ -147,7 +152,7 @@ export const runFnWithStack = async (
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
       isFailureHandler: Boolean(opts?.onFailure),
       requestedRunStep: opts?.runStep,
-      timer: new ServerTiming(),
+      timer: new ServerTiming(fn["client"][internalLoggerSymbol]),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
@@ -162,7 +167,92 @@ export const runFnWithStack = async (
   return rest;
 };
 
-const inngest = createClient({ id: "test", eventKey: "event-key-123" });
+type RunFnOpts = {
+  executionVersion?: ExecutionVersion;
+  runStep?: string;
+  onFailure?: boolean;
+  event?: EventPayload;
+  stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
+  disableImmediateExecution?: boolean;
+};
+
+/**
+ * Creates a function runner that accumulates step state across multiple calls.
+ * Returns a callable that can be invoked repeatedly for subsequent requests.
+ */
+export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
+  let stepState: InngestExecutionOptions["stepState"] = {};
+
+  return async () => {
+    const result = await runFnWithStack(fn, stepState, opts);
+
+    // Accumulate step state for subsequent requests
+    if (result.type === "step-ran" && result.step) {
+      stepState = {
+        ...stepState,
+        [result.step.id]: {
+          data: result.step.data,
+          error: result.step.error,
+          id: result.step.id,
+        },
+      };
+    }
+
+    return {
+      assertStepData: (expected: unknown) => {
+        if (result.type !== "step-ran") {
+          throw new Error(`Expected step-ran, got ${result.type}`);
+        }
+        expect(result.step.data).toEqual(expected);
+      },
+      assertStepError: (expected: {
+        cause?: unknown;
+        message: string;
+        name: string;
+      }) => {
+        if (result.type !== "step-ran") {
+          throw new Error(`Expected step-ran, got ${result.type}`);
+        }
+        if (!isRecord(result.step.error)) {
+          throw new Error(
+            `Expected step.error to be a record, got ${typeof result.step.error}`,
+          );
+        }
+        expect(result.step.error.cause).toEqual(expected.cause);
+        expect(result.step.error.message).toEqual(expected.message);
+        expect(result.step.error.name).toEqual(expected.name);
+      },
+      result,
+    };
+  };
+}
+
+/**
+ * Test signing key used for cloud mode tests.
+ */
+export const testSigningKey = "signkey-test-12345";
+
+/**
+ * Dev mode test client for most tests.
+ * Uses isDev: true so no signing key is required.
+ */
+const inngest = createClient({
+  id: "test",
+  eventKey: "event-key-123",
+  isDev: true,
+});
+
+/**
+ * Cloud mode test client for tests that need to test cloud API registration.
+ * Uses isDev: false so it registers with api.inngest.com.
+ * Requires a signing key - either on the client or via env vars.
+ */
+const inngestCloud = createClient({
+  id: "test",
+  eventKey: "event-key-123",
+  isDev: false,
+  fetch,
+});
 
 export const testFramework = (
   /**
@@ -245,15 +335,28 @@ export const testFramework = (
   ) => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
-
-      /**
-       * For testing, the fetch implementation has to be stable for us to
-       * appropriately mock out the network requests.
-       */
-      fetch,
     });
 
     return serveHandler;
+  };
+
+  /**
+   * Create a handler in a simulated edge environment where process.env is
+   * empty at construction time. This allows testing delayed env var pickup.
+   * Always creates a fresh client with no isDev, so mode comes from env at request time.
+   */
+  const createEdgeHandler = (
+    functions: InngestFunction.Any[] = [],
+  ): ReturnType<(typeof handler)["serve"]> => {
+    const originalEnv = process.env;
+    process.env = {} as NodeJS.ProcessEnv;
+
+    try {
+      const freshClient = createClient({ id: "test", fetch });
+      return getServeHandler([{ client: freshClient, functions }]);
+    } finally {
+      process.env = originalEnv;
+    }
   };
 
   /**
@@ -273,10 +376,6 @@ export const testFramework = (
      */
     actionOverrides?: Partial<HandlerResponse>,
   ): Promise<HandlerStandardReturn> => {
-    const serveHandler = Array.isArray(handlerOpts)
-      ? getServeHandler(handlerOpts)
-      : handlerOpts;
-
     const headers: Record<string, string> = {
       host: "localhost:3000",
     };
@@ -311,6 +410,10 @@ export const testFramework = (
       process.env = { ...prevProcessEnv, ...envToPass };
       envToPass = { ...process.env };
     }
+
+    const serveHandler = Array.isArray(handlerOpts)
+      ? getServeHandler(handlerOpts)
+      : handlerOpts;
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
     if (actionOverrides) {
@@ -396,6 +499,101 @@ export const testFramework = (
       describe("Serve return", opts.handlerTests);
     }
 
+    describe("Cloud mode signing key validation", () => {
+      /**
+       * Helper to run a function with specific env vars removed.
+       * Works across Node.js (process.env) and Deno (Deno.env.toObject).
+       */
+      const withoutEnvVars = async <T>(
+        keys: string[],
+        fn: () => T | Promise<T>,
+      ): Promise<Awaited<T>> => {
+        const saved: Record<string, string | undefined> = {};
+
+        // Handle process.env if it's an object
+        if (typeof process?.env === "object") {
+          for (const key of keys) {
+            saved[key] = process.env[key];
+            delete process.env[key];
+          }
+        }
+
+        // Handle Deno.env.toObject if available
+        // biome-ignore lint/suspicious/noExplicitAny: test helper
+        const denoEnv = (globalThis as any).Deno?.env;
+        const originalToObject = denoEnv?.toObject;
+        if (typeof originalToObject === "function") {
+          const originalEnv = originalToObject();
+          denoEnv.toObject = () => {
+            const env = { ...originalEnv };
+            for (const key of keys) delete env[key];
+            return env;
+          };
+        }
+
+        try {
+          return await fn();
+        } finally {
+          if (typeof process?.env === "object") {
+            for (const key of keys) {
+              if (saved[key] !== undefined) {
+                process.env[key] = saved[key];
+              }
+            }
+          }
+          if (originalToObject) {
+            denoEnv.toObject = originalToObject;
+          }
+        }
+      };
+
+      test("does not throw at construction when cloud mode lacks signing key", async () => {
+        if (typeof process?.env !== "object") {
+          return;
+        }
+
+        await withoutEnvVars(
+          [envKeys.InngestSigningKey, envKeys.InngestDevMode],
+          () => {
+            expect(() => {
+              handler.serve({
+                client: createClient({ id: "test" }),
+                functions: [],
+              });
+            }).not.toThrow();
+          },
+        );
+      });
+
+      test("returns 500 at request time without signing key", async () => {
+        await withoutEnvVars(
+          [envKeys.InngestSigningKey, envKeys.InngestDevMode],
+          async () => {
+            const serveHandler =
+              typeof process?.env === "object"
+                ? getServeHandler([
+                    {
+                      client: createClient({ id: "test", fetch }),
+                      functions: [],
+                    },
+                  ])
+                : getServeHandler([
+                    {
+                      client: createClient({ id: "test", fetch }),
+                      functions: [],
+                    },
+                  ]);
+
+            const res = await run(serveHandler, [{ method: "GET" }], {});
+            expect(res.status).toBe(500);
+            expect(JSON.parse(res.body)).toEqual({
+              code: "internal_server_error",
+            });
+          },
+        );
+      });
+    });
+
     describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
@@ -431,43 +629,48 @@ export const testFramework = (
           has_event_key: false,
           has_signing_key: false,
           mode: "dev",
-          extra: expect.objectContaining({
-            is_mode_explicit: true,
-          }),
         });
       });
 
-      test("can pick up delayed event key from environment", async () => {
-        const ret = await run(
-          [{ client: createClient({ id: "test" }), functions: [] }],
-          [{ method: "GET" }],
-          { [envKeys.InngestEventKey]: "event-key-123" },
-        );
+      describe("edge environment (delayed env vars)", () => {
+        test("can pick up delayed event key from environment", async () => {
+          // Simulate edge: handler created with empty process.env
+          const edgeHandler = createEdgeHandler();
 
-        const body = JSON.parse(ret.body);
+          // At request time, env vars become available
+          // Cloud mode (default) requires signing key at request time
+          const ret = await run(edgeHandler, [{ method: "GET" }], {
+            [envKeys.InngestEventKey]: "event-key-123",
+            [envKeys.InngestSigningKey]: "signing-key-123",
+          });
 
-        expect(body).toMatchObject({
-          has_event_key: true,
+          const body = JSON.parse(ret.body);
+
+          expect(body).toMatchObject({
+            has_event_key: true,
+          });
         });
-      });
 
-      test("can pick up delayed signing key from environment", async () => {
-        const ret = await run(
-          [{ client: createClient({ id: "test" }), functions: [] }],
-          [{ method: "GET" }],
-          { [envKeys.InngestSigningKey]: "signing-key-123" },
-        );
+        test("can pick up delayed signing key from environment", async () => {
+          // Simulate edge: handler created with empty process.env
+          const edgeHandler = createEdgeHandler();
 
-        expect(ret.status).toEqual(200);
+          const ret = await run(edgeHandler, [{ method: "GET" }], {
+            [envKeys.InngestSigningKey]: "signing-key-123",
+          });
 
-        const body = JSON.parse(ret.body);
+          expect(ret.status).toEqual(200);
 
-        expect(body).toMatchObject({
-          has_signing_key: true,
+          const body = JSON.parse(ret.body);
+
+          expect(body).toMatchObject({
+            has_signing_key: true,
+          });
         });
       });
 
       test("#690 returns 200 if signature validation fails", async () => {
+        // Pass signingKey via env for cloud mode
         const ret = await run(
           [
             {
@@ -506,7 +709,12 @@ export const testFramework = (
               });
 
             const ret = await run(
-              [{ client: inngest, functions: [] }],
+              [
+                {
+                  client: inngestCloud,
+                  functions: [],
+                },
+              ],
               [
                 {
                   method: "PUT",
@@ -516,6 +724,7 @@ export const testFramework = (
                   },
                 },
               ],
+              { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
             const retBody = JSON.parse(ret.body);
@@ -547,7 +756,12 @@ export const testFramework = (
             });
 
             const ret = await run(
-              [{ client: inngest, functions: [] }],
+              [
+                {
+                  client: inngestCloud,
+                  functions: [],
+                },
+              ],
               [
                 {
                   method: "PUT",
@@ -558,6 +772,7 @@ export const testFramework = (
               ],
               {
                 [envKeys.IsNetlify]: "true",
+                [envKeys.InngestSigningKey]: testSigningKey,
               },
             );
 
@@ -584,7 +799,12 @@ export const testFramework = (
               });
 
             const ret = await run(
-              [{ client: inngest, functions: [] }],
+              [
+                {
+                  client: inngestCloud,
+                  functions: [],
+                },
+              ],
               [
                 {
                   method: "PUT",
@@ -594,6 +814,7 @@ export const testFramework = (
                   },
                 },
               ],
+              { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
             const retBody = JSON.parse(ret.body);
@@ -619,7 +840,7 @@ export const testFramework = (
             });
           });
 
-          test("register with overwritten host when specified", async () => {
+          test("register with overwritten origin when specified", async () => {
             let reqToMock;
 
             nock("https://api.inngest.com")
@@ -632,27 +853,33 @@ export const testFramework = (
                 status: 200,
               });
 
-            const fn1 = inngest.createFunction(
-              { id: "fn1" },
-              { event: "demo/event.sent" },
+            const fn1 = inngestCloud.createFunction(
+              { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
               () => "fn1",
             );
-            const serveHost = "https://example.com";
+            const serveOrigin = "https://example.com";
             const stepId = "step";
 
             await run(
-              [{ client: inngest, functions: [fn1], serveHost }],
+              [
+                {
+                  client: inngestCloud,
+                  functions: [fn1],
+                  serveOrigin,
+                },
+              ],
               [{ method: "PUT" }],
+              { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
             expect(reqToMock).toMatchObject({
-              url: `${serveHost}/api/inngest`,
+              url: `${serveOrigin}/api/inngest`,
               functions: [
                 {
                   steps: {
                     [stepId]: {
                       runtime: {
-                        url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                        url: `${serveOrigin}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
                       },
                     },
                   },
@@ -674,17 +901,23 @@ export const testFramework = (
                 status: 200,
               });
 
-            const fn1 = inngest.createFunction(
-              { id: "fn1" },
-              { event: "demo/event.sent" },
+            const fn1 = inngestCloud.createFunction(
+              { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
               () => "fn1",
             );
             const servePath = "/foo/bar/inngest/endpoint";
             const stepId = "step";
 
             await run(
-              [{ client: inngest, functions: [fn1], servePath }],
+              [
+                {
+                  client: inngestCloud,
+                  functions: [fn1],
+                  servePath,
+                },
+              ],
               [{ method: "PUT" }],
+              { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
             expect(reqToMock).toMatchObject({
@@ -711,7 +944,12 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
+                  client: new Inngest({
+                    id: "Test",
+                    env: "FOO",
+                    isDev: false,
+                    fetch,
+                  }),
                   functions: [],
                 },
               ],
@@ -723,6 +961,7 @@ export const testFramework = (
                   },
                 },
               ],
+              { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
             expect(ret).toMatchObject({
@@ -735,7 +974,7 @@ export const testFramework = (
           });
         });
 
-        test("register with overwritten host and path when specified", async () => {
+        test("register with overwritten origin and path when specified", async () => {
           let reqToMock;
 
           nock("https://api.inngest.com")
@@ -748,28 +987,137 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = inngest.createFunction(
-            { id: "fn1" },
-            { event: "demo/event.sent" },
+          const fn1 = inngestCloud.createFunction(
+            { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
             () => "fn1",
           );
-          const serveHost = "https://example.com";
+          const serveOrigin = "https://example.com";
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
           await run(
-            [{ client: inngest, functions: [fn1], serveHost, servePath }],
+            [
+              {
+                client: inngestCloud,
+                functions: [fn1],
+                serveOrigin,
+                servePath,
+              },
+            ],
             [{ method: "PUT" }],
+            { [envKeys.InngestSigningKey]: testSigningKey },
           );
 
           expect(reqToMock).toMatchObject({
-            url: `${serveHost}${servePath}`,
+            url: `${serveOrigin}${servePath}`,
             functions: [
               {
                 steps: {
                   [stepId]: {
                     runtime: {
-                      url: `${serveHost}${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                      url: `${serveOrigin}${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+        });
+
+        test("INNGEST_SERVE_ORIGIN env var takes precedence over INNGEST_SERVE_HOST", async () => {
+          let reqToMock;
+
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const fn1 = inngestCloud.createFunction(
+            { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
+            () => "fn1",
+          );
+          const serveOrigin = "https://new-origin.com";
+          const serveHost = "https://old-host.com";
+          const stepId = "step";
+
+          await run(
+            [
+              {
+                client: inngestCloud,
+                functions: [fn1],
+              },
+            ],
+            [{ method: "PUT" }],
+            {
+              [envKeys.InngestSigningKey]: testSigningKey,
+              [envKeys.InngestServeOrigin]: serveOrigin,
+              [envKeys.InngestServeHost]: serveHost,
+            },
+          );
+
+          expect(reqToMock).toMatchObject({
+            url: `${serveOrigin}/api/inngest`,
+            functions: [
+              {
+                steps: {
+                  [stepId]: {
+                    runtime: {
+                      url: `${serveOrigin}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+        });
+
+        test("INNGEST_SERVE_HOST env var works as fallback with deprecation warning", async () => {
+          let reqToMock;
+
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const fn1 = inngestCloud.createFunction(
+            { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
+            () => "fn1",
+          );
+          const serveHost = "https://old-host.com";
+          const stepId = "step";
+
+          await run(
+            [
+              {
+                client: inngestCloud,
+                functions: [fn1],
+              },
+            ],
+            [{ method: "PUT" }],
+            {
+              [envKeys.InngestSigningKey]: testSigningKey,
+              [envKeys.InngestServeHost]: serveHost,
+            },
+          );
+
+          expect(reqToMock).toMatchObject({
+            url: `${serveHost}/api/inngest`,
+            functions: [
+              {
+                steps: {
+                  [stepId]: {
+                    runtime: {
+                      url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
                     },
                   },
                 },
@@ -783,9 +1131,21 @@ export const testFramework = (
           let makeReqWithDeployId: (deployId: string) => Promise<any>;
 
           beforeEach(() => {
+            // Set signing key in env before creating handler
+            const originalEnv = process.env;
+            process.env = {
+              ...originalEnv,
+              [envKeys.InngestSigningKey]: testSigningKey,
+            };
+
             serveHandler = getServeHandler([
-              { client: inngest, functions: [] },
+              {
+                client: inngestCloud,
+                functions: [],
+              },
             ]) as ServeHandler;
+
+            process.env = originalEnv;
 
             makeReqWithDeployId = async (deployId: string) => {
               let reqToMock;
@@ -888,18 +1248,19 @@ export const testFramework = (
           } ${expectedResponse}`;
 
           test(name, async () => {
+            const edgeHandler = createEdgeHandler();
             const signingKey = "123";
             const body = { url: "https://example.com/api/inngest" };
             const ts = Date.now().toString();
 
             const signature = validSignature
-              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts)}`
+              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts, new ConsoleLogger({ level: "silent" }))}`
               : validSignature === false
                 ? "INVALID"
                 : undefined;
 
             const ret = await run(
-              [{ client: inngest, functions: [] }],
+              edgeHandler,
               [
                 {
                   method: "PUT",
@@ -1088,11 +1449,14 @@ export const testFramework = (
     describe("POST (run function)", () => {
       describe("#789 missing body", () => {
         test("returns 500", async () => {
-          const client = createClient({ id: "test" });
+          const client = createClient({ id: "test", isDev: true });
 
           const fn = client.createFunction(
-            { name: "Test", id: "test" },
-            { event: "demo/event.sent" },
+            {
+              name: "Test",
+              id: "test",
+              triggers: [{ event: "demo/event.sent" }],
+            },
             () => "fn",
           );
 
@@ -1111,8 +1475,11 @@ export const testFramework = (
         const client = createClient({ id: "test" });
 
         const fn = client.createFunction(
-          { name: "Test", id: "test" },
-          { event: "demo/event.sent" },
+          {
+            name: "Test",
+            id: "test",
+            triggers: [{ event: "demo/event.sent" }],
+          },
           () => "fn",
         );
         const env = {
@@ -1123,10 +1490,9 @@ export const testFramework = (
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
-
+            [{ client, functions: [fn] }],
             [{ method: "POST", headers: {} }],
-            env,
+            { ...env, [envKeys.InngestSigningKey]: "test" },
           );
           expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
@@ -1137,9 +1503,9 @@ export const testFramework = (
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [{ client, functions: [fn] }],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
-            env,
+            { ...env, [envKeys.InngestSigningKey]: "test" },
           );
           expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
@@ -1152,7 +1518,7 @@ export const testFramework = (
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [{ client, functions: [fn] }],
             [
               {
                 method: "POST",
@@ -1165,7 +1531,7 @@ export const testFramework = (
                 body: { event: {}, events: [{}] },
               },
             ],
-            env,
+            { ...env, [envKeys.InngestSigningKey]: testSigningKey },
           );
           expect(ret).toMatchObject({
             status: 401,
@@ -1181,9 +1547,8 @@ export const testFramework = (
           const event = {
             data: {},
             id: "",
-            name: "inngest/scheduled.timer",
+            name: "demo/event.sent",
             ts: 1674082830001,
-            user: {},
             v: "1",
           };
 
@@ -1201,10 +1566,8 @@ export const testFramework = (
           const ret = await run(
             [
               {
-                client: inngest,
+                client,
                 functions: [fn],
-                signingKey:
-                  "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                 __testingAllowExpiredSignatures: true,
               } as any,
             ],
@@ -1213,17 +1576,27 @@ export const testFramework = (
                 method: "POST",
                 headers: {
                   [headerKeys.Signature]:
-                    "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                    "t=1687306735&s=a060f245a5d0c3c779ef65fd15b2ac06e4ab98dd8cc9860aa0722c8481ae02ab",
                 },
                 url: "/api/inngest?fnId=test-test&stepId=step",
                 body,
               },
             ],
-            env,
+            {
+              ...env,
+              [envKeys.InngestSigningKey]:
+                "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+            },
           );
           expect(ret).toMatchObject({
-            status: 200,
-            body: JSON.stringify("fn"),
+            status: 206,
+            body: JSON.stringify([
+              {
+                op: "RunComplete",
+                id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+                data: "fn",
+              },
+            ]),
           });
         });
 
@@ -1232,9 +1605,8 @@ export const testFramework = (
             const event = {
               data: {},
               id: "",
-              name: "inngest/scheduled.timer",
+              name: "demo/event.sent",
               ts: 1674082830001,
-              user: {},
               v: "1",
             };
 
@@ -1252,11 +1624,8 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: inngest,
+                  client,
                   functions: [fn],
-                  signingKey: "fake",
-                  signingKeyFallback:
-                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
                 } as any,
               ],
@@ -1265,17 +1634,28 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=a060f245a5d0c3c779ef65fd15b2ac06e4ab98dd8cc9860aa0722c8481ae02ab",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
                 },
               ],
-              env,
+              {
+                ...env,
+                [envKeys.InngestSigningKey]: "fake",
+                [envKeys.InngestSigningKeyFallback]:
+                  "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+              },
             );
             expect(ret).toMatchObject({
-              status: 200,
-              body: JSON.stringify("fn"),
+              status: 206,
+              body: JSON.stringify([
+                {
+                  op: "RunComplete",
+                  id: "0737c22d3bfae812339732d14d8c7dbd6dc4e09c",
+                  data: "fn",
+                },
+              ]),
             });
           });
 
@@ -1283,9 +1663,8 @@ export const testFramework = (
             const event = {
               data: {},
               id: "",
-              name: "inngest/scheduled.timer",
+              name: "demo/event.sent",
               ts: 1674082830001,
-              user: {},
               v: "1",
             };
 
@@ -1303,10 +1682,8 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: inngest,
+                  client,
                   functions: [fn],
-                  signingKey: "fake",
-                  signingKeyFallback: "another-fake",
                   __testingAllowExpiredSignatures: true,
                 } as any,
               ],
@@ -1315,13 +1692,17 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=eece58c8cf7cfc21a5751b1969c9aef525c96257b42b556c2782c83d26ea0d87",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
                 },
               ],
-              env,
+              {
+                ...env,
+                [envKeys.InngestSigningKey]: "fake",
+                [envKeys.InngestSigningKeyFallback]: "another-fake",
+              },
             );
             expect(ret).toMatchObject({
               status: 401,
@@ -1348,9 +1729,8 @@ export const testFramework = (
             const event = {
               data: {},
               id: "",
-              name: "inngest/scheduled.timer",
+              name: "demo/event.sent",
               ts: 1674082830001,
-              user: {},
               v: "1",
             };
 
@@ -1369,10 +1749,8 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: inngest,
+                  client,
                   functions: [fn],
-                  signingKey:
-                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
                 } as any,
               ],
@@ -1381,13 +1759,17 @@ export const testFramework = (
                   method: "POST",
                   headers: {
                     [headerKeys.Signature]:
-                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                      "t=1687306735&s=a060f245a5d0c3c779ef65fd15b2ac06e4ab98dd8cc9860aa0722c8481ae02ab",
                   },
                   url: "/api/inngest?fnId=test-test&stepId=step",
                   body,
                 },
               ],
-              env,
+              {
+                ...env,
+                [envKeys.InngestSigningKey]:
+                  "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+              },
             );
 
             expect(ret).toMatchObject({
@@ -1400,8 +1782,11 @@ export const testFramework = (
 
       describe("malformed payloads", () => {
         const fn = inngest.createFunction(
-          { name: "Test", id: "test" },
-          { event: "demo/event.sent" },
+          {
+            name: "Test",
+            id: "test",
+            triggers: [{ event: "demo/event.sent" }],
+          },
           () => "fn",
         );
         const env = {
@@ -1410,7 +1795,7 @@ export const testFramework = (
 
         test("should throw an error with an invalid JSON body", async () => {
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [{ client: inngest, functions: [fn] }],
             [
               {
                 method: "POST",
@@ -1438,14 +1823,13 @@ export const testFramework = (
 export const sendEvent = async (
   name: string,
   data?: Record<string, unknown>,
-  user?: Record<string, unknown>,
 ): Promise<string> => {
   const res = await fetch("http://localhost:8288/e/key", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ name, data: data || {}, user, ts: Date.now() }),
+    body: JSON.stringify({ name, data: data || {}, ts: Date.now() }),
   });
 
   if (!res.ok) {

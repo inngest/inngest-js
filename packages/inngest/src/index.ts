@@ -18,8 +18,7 @@
  * ```ts
  * const myFn = inngest.createFunction({
  *  id: "my-function",
- * }, {
- *   event: "user/created",
+ *  triggers: [{ event: "user/created" }],
  * }, async ({ event, step }) => {
  *   console.log("User created:", event.data);
  * });
@@ -39,23 +38,15 @@
  */
 
 export * from "@inngest/ai";
-export {
-  type AddName,
-  type AssertInternalEventPayloads,
-  type Combine,
-  EventSchemas,
-  type LiteralZodEventSchema,
-  type NormalizedEventSchemas as StandardEventSchemas,
-  type NormalizedEventSchemaToPayload as StandardEventSchemaToPayload,
-  type ZodEventSchemas,
-} from "./components/EventSchemas.ts";
+export type { StandardSchemaV1 } from "@standard-schema/spec";
+export { experiment } from "./components/ExperimentStrategies.ts";
+export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
-  EventsFromOpts,
-  GetEvents,
   GetFunctionInput,
   GetFunctionOutput,
+  GetFunctionOutputRaw,
   GetStepTools,
 } from "./components/Inngest";
 export { Inngest } from "./components/Inngest.ts";
@@ -65,35 +56,49 @@ export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
 export type {
-  MiddlewareOptions,
-  MiddlewareRegisterFn,
-  MiddlewareRegisterReturn,
-} from "./components/InngestMiddleware";
-export { InngestMiddleware } from "./components/InngestMiddleware.ts";
-export { step } from "./components/InngestStepTools.ts";
+  GroupTools,
+  GroupToolsDeps,
+} from "./components/InngestGroupTools";
+export { group, step } from "./components/InngestStepTools.ts";
+export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
+export { realtime } from "./components/realtime/index.ts";
+export type { Realtime } from "./components/realtime/types";
 export { StepError } from "./components/StepError.ts";
+export {
+  cron,
+  EventType,
+  eventType,
+  invoke,
+  staticSchema,
+} from "./components/triggers/triggers.ts";
+export type { HandlerWithTriggers } from "./components/triggers/typeHelpers";
 export {
   isInngest,
   isInngestFunction,
-  isInngestMiddleware,
   isInngestRequest,
 } from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
 export { serializeError } from "./helpers/errors.ts";
+export { wrapStringFirstLogger } from "./helpers/log.ts";
 export { slugify } from "./helpers/strings.ts";
 export type {
+  DurationLike,
+  InstantLike,
+  ZonedDateTimeLike,
+} from "./helpers/temporal";
+export type {
+  ExclusiveKeys,
   IsStringLiteral,
   SendEventPayload,
   StrictUnion,
   StrictUnionHelper,
   UnionKeys,
-  WithoutInternal,
 } from "./helpers/types";
 export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
 export type { LogArg, Logger } from "./middleware/logger";
-export { ProxyLogger } from "./middleware/logger.ts";
+export { ConsoleLogger, ProxyLogger } from "./middleware/logger.ts";
 export type {
   BaseContext,
   ClientOptions,

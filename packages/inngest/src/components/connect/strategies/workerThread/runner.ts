@@ -10,6 +10,7 @@
  */
 
 import { isMainThread, parentPort } from "node:worker_threads";
+import type { Logger } from "../../../../middleware/logger.ts";
 import { GatewayExecutorRequestData } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { MessageBuffer } from "../../buffer.ts";
 import { ConnectionState } from "../../types.ts";
@@ -35,6 +36,33 @@ if (!parentPort) {
   throw new Error("No parent port available");
 }
 
+function toError(value: unknown): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  return new Error(String(value));
+}
+
+/**
+ * Parse pino-style (object, string) or plain (string) log args into a
+ * structured { message, data } pair for sending over postMessage.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function parsePinoArgs(args: unknown[]): {
+  message: string;
+  data?: Record<string, unknown>;
+} {
+  // Pino-style: (object, string)
+  if (args.length >= 2 && isRecord(args[0]) && typeof args[1] === "string") {
+    return { data: args[0], message: args[1] };
+  }
+
+  return { message: String(args[0]) };
+}
+
 /**
  * Worker thread runner state.
  */
@@ -43,6 +71,12 @@ class WorkerRunner {
   private state: ConnectionState = ConnectionState.CONNECTING;
   private core: ConnectionCore | undefined;
   private messageBuffer: MessageBuffer | undefined;
+  private debugStateInterval: ReturnType<typeof setInterval> | undefined;
+  private readonly logger: Logger;
+
+  constructor() {
+    this.logger = this.createMessageLogger();
+  }
 
   /**
    * Pending execution responses waiting for user code to complete.
@@ -59,8 +93,21 @@ class WorkerRunner {
     parentPort?.postMessage(msg);
   }
 
-  private log(message: string, data?: unknown) {
-    this.sendMessage({ type: "LOG", level: "debug", message, data });
+  private createMessageLogger(): Logger {
+    const sendLog = (
+      level: "debug" | "info" | "warn" | "error",
+      ...args: unknown[]
+    ) => {
+      const { message, data } = parsePinoArgs(args);
+      this.sendMessage({ type: "LOG", level, message, data });
+    };
+
+    return {
+      debug: (...args) => sendLog("debug", ...args),
+      info: (...args) => sendLog("info", ...args),
+      warn: (...args) => sendLog("warn", ...args),
+      error: (...args) => sendLog("error", ...args),
+    };
   }
 
   private setState(state: ConnectionState) {
@@ -73,7 +120,7 @@ class WorkerRunner {
       case "INIT":
         this.config = msg.config;
         this.initializeCore();
-        this.log("Worker initialized with config");
+        this.logger.debug("Worker initialized with config");
         break;
 
       case "CONNECT":
@@ -85,7 +132,7 @@ class WorkerRunner {
           });
           return;
         }
-        this.core.connect(msg.attempt).catch((err) => {
+        this.core.start(msg.attempt).catch((err) => {
           this.sendMessage({
             type: "ERROR",
             error: err instanceof Error ? err.message : "Unknown error",
@@ -96,10 +143,7 @@ class WorkerRunner {
 
       case "CLOSE":
         this.close().catch((err) => {
-          this.log(
-            "Error during close",
-            err instanceof Error ? err.message : err,
-          );
+          this.logger.error({ err: toError(err) }, "Error during close");
         });
         break;
 
@@ -131,15 +175,19 @@ class WorkerRunner {
     this.core = new ConnectionCore(
       {
         ...this.config,
-
-        // TODO: Figure out how to support this. Currently, we don't support it
-        // because functions can't be passed to worker threads (since they
-        // aren't serializable)
-        rewriteGatewayEndpoint: undefined,
+        gatewayUrl: this.config.gatewayUrl,
       },
       {
-        log: (message, data) => this.log(message, data),
+        logger: this.logger,
         onStateChange: (state) => {
+          // Don't allow state to regress from CLOSING/CLOSED (e.g. if a
+          // drain reconnect triggers ACTIVE during graceful shutdown).
+          if (
+            this.state === ConnectionState.CLOSING ||
+            this.state === ConnectionState.CLOSED
+          ) {
+            return;
+          }
           this.setState(state);
           if (state === ConnectionState.ACTIVE && this.core?.connectionId) {
             this.sendMessage({
@@ -147,6 +195,7 @@ class WorkerRunner {
               connectionId: this.core.connectionId,
             });
           }
+          this.sendDebugState();
         },
         getState: () => this.state,
         handleExecutionRequest: async (request) => {
@@ -186,37 +235,39 @@ class WorkerRunner {
       },
     );
 
+    // Periodically push debug state to main thread so getDebugState() works
+    this.debugStateInterval = setInterval(() => this.sendDebugState(), 5_000);
+
     // Create message buffer for buffering responses when connection is lost
     this.messageBuffer = new MessageBuffer({
       envName: this.config.envName,
       getApiBaseUrl: () => this.core!.getApiBaseUrl(),
+      logger: this.logger,
     });
   }
 
+  private sendDebugState(): void {
+    if (!this.core) return;
+    this.sendMessage({ type: "DEBUG_STATE", state: this.core.getDebugState() });
+  }
+
   async close(): Promise<void> {
+    clearInterval(this.debugStateInterval);
     this.setState(ConnectionState.CLOSING);
-    this.log("Cleaning up connection resources");
 
     if (this.core) {
-      await this.core.cleanup();
+      await this.core.close();
     }
 
-    this.log("Connection closed");
-    this.log("Waiting for in-flight requests to complete");
-
-    if (this.core) {
-      await this.core.waitForInProgress();
-    }
-
-    this.log("Flushing messages before closing");
+    this.logger.debug("Flushing messages before closing");
 
     if (this.messageBuffer) {
       try {
         await this.messageBuffer.flush(this.config?.hashedSigningKey);
       } catch (err) {
-        this.log(
+        this.logger.debug(
+          { err: toError(err) },
           "Failed to flush messages, using fallback key",
-          err instanceof Error ? err.message : err,
         );
         await this.messageBuffer.flush(this.config?.hashedFallbackKey);
       }
@@ -225,7 +276,7 @@ class WorkerRunner {
     this.setState(ConnectionState.CLOSED);
 
     this.sendMessage({ type: "CLOSED" });
-    this.log("Fully closed");
+    this.logger.debug("Fully closed");
 
     // Exit the worker thread. Without this, the parentPort message listener
     // keeps the event loop alive and the worker never exits.

@@ -1,8 +1,7 @@
 import { inngest } from "./client";
 
 export default inngest.createFunction(
-  { id: "hello-world" },
-  { event: "demo/event.sent" },
+  { id: "hello-world", triggers: [{ event: "demo/event.sent" }] },
   async ({ event, step }) => {
     // A random call that will trigger automatic Node instrumentation and create
     // a span

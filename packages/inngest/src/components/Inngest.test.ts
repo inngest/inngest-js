@@ -1,21 +1,14 @@
 import type { Mock } from "vitest";
 import { literal } from "zod/v3";
-import {
-  dummyEventKey,
-  envKeys,
-  headerKeys,
-  internalEvents,
-} from "../helpers/consts.ts";
-import type { IsAny, IsEqual, IsNever } from "../helpers/types.ts";
+import { envKeys, headerKeys } from "../helpers/consts.ts";
+import type { IsAny, IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
-  EventSchemas,
-  type GetEvents,
   type GetFunctionInput,
   type GetFunctionOutput,
   type GetStepTools,
   Inngest,
-  InngestMiddleware,
+  Middleware,
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
@@ -65,54 +58,47 @@ describe("new Inngest()", () => {
       return inngest;
     };
 
-    test("should default to inferred dev mode", () => {
+    test("should default to cloud mode", () => {
       const inngest = createTestClient();
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(false);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`isDev: true` sets explicit dev mode", () => {
+    test("`isDev: true` sets dev mode", () => {
       const inngest = createTestClient({ opts: { isDev: true } });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "dev").toBe(true);
     });
 
-    test("`isDev: false` sets explict cloud mode", () => {
+    test("`isDev: false` sets cloud mode", () => {
       const inngest = createTestClient({ opts: { isDev: false } });
-      expect(inngest["mode"].isCloud).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`INNGEST_DEV=1 sets explicit dev mode", () => {
+    test("`INNGEST_DEV=1` sets dev mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "1" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "dev").toBe(true);
     });
 
-    test("`INNGEST_DEV=true` sets explicit dev mode", () => {
+    test("`INNGEST_DEV=true` sets dev mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "true" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "dev").toBe(true);
     });
 
-    test("`INNGEST_DEV=false` sets explicit cloud mode", () => {
+    test("`INNGEST_DEV=false` sets cloud mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "false" },
       });
-      expect(inngest["mode"].isCloud).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`INNGEST_DEV=0 sets explicit cloud mode", () => {
+    test("`INNGEST_DEV=0` sets cloud mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "0" },
       });
-      expect(inngest["mode"].isCloud).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
     test("`isDev` overwrites `INNGEST_DEV`", () => {
@@ -120,19 +106,39 @@ describe("new Inngest()", () => {
         env: { [envKeys.InngestDevMode]: "1" },
         opts: { isDev: false },
       });
-      expect(inngest["mode"].isDev).toBe(false);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`INNGEST_DEV=URL sets explicit dev mode", () => {
+    test("`INNGEST_DEV=URL` sets dev mode with custom URL", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "http://localhost:3000" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
-      expect(inngest["mode"].explicitDevUrl?.href).toBe(
-        "http://localhost:3000/",
-      );
+      expect(inngest.mode === "dev").toBe(true);
+      expect(inngest.explicitDevUrl?.href).toBe("http://localhost:3000/");
+    });
+
+    test("`INNGEST_DEV=host:port` without scheme sets dev mode and assumes http://", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "0.0.0.0:8288" },
+      });
+      expect(inngest.mode === "dev").toBe(true);
+      expect(inngest.explicitDevUrl?.href).toBe("http://0.0.0.0:8288/");
+    });
+
+    test("`INNGEST_DEV=localhost:port` without scheme sets dev mode and assumes http://", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "localhost:9000" },
+      });
+      expect(inngest.mode === "dev").toBe(true);
+      expect(inngest.explicitDevUrl?.href).toBe("http://localhost:9000/");
+    });
+
+    test("`INNGEST_DEV=host:port` uses the URL for apiBaseUrl and eventBaseUrl", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "0.0.0.0:8288" },
+      });
+      expect(inngest.apiBaseUrl).toBe("http://0.0.0.0:8288/");
+      expect(inngest.eventBaseUrl).toBe("http://0.0.0.0:8288/");
     });
   });
 });
@@ -207,6 +213,19 @@ describe("send", () => {
       );
     });
 
+    test("should succeed in dev mode without event key", async () => {
+      const inngest = createClient({
+        id: "test",
+        isDev: true,
+      });
+
+      await expect(
+        inngest.send({ name: "test", data: {} }),
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+    });
+
     test("should succeed if event key specified at instantiation", async () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
@@ -248,7 +267,7 @@ describe("send", () => {
 
     test("should succeed if event key given at runtime", async () => {
       const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      inngest.setEnvVars({ [envKeys.InngestEventKey]: testEventKey });
 
       await expect(inngest.send(testEvent)).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
@@ -267,8 +286,7 @@ describe("send", () => {
     });
 
     test("should succeed if an empty list of payloads is given", async () => {
-      const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       await expect(inngest.send([])).resolves.toMatchObject({
         ids: Array(0).fill(expect.any(String)),
@@ -415,8 +433,7 @@ describe("send", () => {
     });
 
     test("should insert `ts` timestamp ", async () => {
-      const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       const testEventWithoutTs = {
         name: "test.without.ts",
@@ -429,12 +446,12 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string,
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -447,8 +464,7 @@ describe("send", () => {
     });
 
     test("should insert blank `data` if none given", async () => {
-      const inngest = createClient({ id: "test" });
-      inngest.setEventKey(testEventKey);
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       const testEventWithoutData = {
         name: "test.without.data",
@@ -460,12 +476,12 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string,
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -478,8 +494,7 @@ describe("send", () => {
 
     if (nodeVersion?.major && nodeVersion.major >= 19) {
       test("should use seed header for idempotency ID if none given", async () => {
-        const inngest = createClient({ id: "test" });
-        inngest.setEventKey(testEventKey);
+        const inngest = createClient({ id: "test", eventKey: testEventKey });
 
         const testEventWithoutId = {
           name: "test.without.id",
@@ -492,10 +507,10 @@ describe("send", () => {
           ids: Array(1).fill(expect.any(String)),
         });
 
-        expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-        expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+        expect(mockedFetch).toHaveBeenCalledTimes(1);
+        expect(mockedFetch.mock.calls[0]).toHaveLength(2);
 
-        const reqHeaders = mockedFetch.mock.calls[1]?.[1]?.headers as Record<
+        const reqHeaders = mockedFetch.mock.calls[0]?.[1]?.headers as Record<
           string,
           string
         >;
@@ -513,29 +528,23 @@ describe("send", () => {
         id: "test",
         eventKey: testEventKey,
         middleware: [
-          new InngestMiddleware({
-            name: "Test",
-            init() {
+          class extends Middleware.BaseMiddleware {
+            readonly id = "test";
+            override transformSendEvent(
+              arg: Middleware.TransformSendEventArgs,
+            ) {
               return {
-                onSendEvent() {
-                  return {
-                    transformInput(ctx) {
-                      return {
-                        payloads: ctx.payloads.map((payload) => ({
-                          ...payload,
-
-                          data: {
-                            ...payload.data,
-                            bar: true,
-                          },
-                        })),
-                      };
-                    },
-                  };
-                },
+                ...arg,
+                events: arg.events.map((payload) => ({
+                  ...payload,
+                  data: {
+                    ...payload.data,
+                    bar: true,
+                  },
+                })),
               };
-            },
-          }),
+            }
+          },
         ],
       });
 
@@ -567,24 +576,17 @@ describe("send", () => {
         id: "test",
         eventKey: testEventKey,
         middleware: [
-          new InngestMiddleware({
-            name: "Test",
-            init() {
+          class extends Middleware.BaseMiddleware {
+            readonly id = "test";
+            override async wrapSendEvent({
+              next,
+            }: Middleware.WrapSendEventArgs) {
+              const result = await next();
               return {
-                onSendEvent() {
-                  return {
-                    transformOutput({ result }) {
-                      return {
-                        result: {
-                          ids: result.ids.map((id) => `${id}-bar`),
-                        },
-                      };
-                    },
-                  };
-                },
+                ids: result.ids.map((id) => `${id}-bar`),
               };
-            },
-          }),
+            }
+          },
         ],
       });
 
@@ -664,119 +666,27 @@ describe("send", () => {
           inngest.send({ name: "anything", data: "foo", id: "test" });
       });
     });
-
-    describe("multiple custom types", () => {
-      const inngest = createClient({
-        id: "test",
-        eventKey: testEventKey,
-        schemas: new EventSchemas().fromRecord<{
-          foo: {
-            name: "foo";
-            data: { foo: string };
-          };
-          bar: {
-            data: { bar: string };
-          };
-          baz: {};
-        }>(),
-      });
-
-      test("disallows sending a single unknown event with a string", () => {
-        // @ts-expect-error Unknown event
-        const _fn = () => inngest.send("unknown", { data: { foo: "" } });
-      });
-
-      test("disallows sending a single unknown event with an object", () => {
-        // @ts-expect-error Unknown event
-        const _fn = () => inngest.send({ name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending multiple unknown events", () => {
-        const _fn = () =>
-          inngest.send([
-            // @ts-expect-error Unknown event
-            { name: "unknown", data: { foo: "" } },
-            // @ts-expect-error Unknown event
-            { name: "unknown2", data: { foo: "" } },
-          ]);
-      });
-
-      test("disallows sending one unknown event with multiple known events", () => {
-        const _fn = () =>
-          inngest.send([
-            { name: "foo", data: { foo: "" } },
-            // @ts-expect-error Unknown event
-            { name: "unknown", data: { foo: "" } },
-          ]);
-      });
-
-      test("disallows sending a single known event with a string and invalid data", () => {
-        // @ts-expect-error Invalid data
-        const _fn = () => inngest.send("foo", { data: { foo: 1 } });
-      });
-
-      test("disallows sending a single known event with an object and invalid data", () => {
-        // @ts-expect-error Invalid data
-        const _fn = () => inngest.send({ name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending multiple known events with invalid data", () => {
-        const _fn = () =>
-          inngest.send([
-            // @ts-expect-error Invalid data
-            { name: "foo", data: { bar: "" } },
-            // @ts-expect-error Invalid data
-            { name: "bar", data: { foo: "" } },
-          ]);
-      });
-
-      test("disallows sending known data-filled event with no data", () => {
-        // @ts-expect-error No data
-        const _fn = () => inngest.send({ name: "foo" });
-      });
-
-      test("disallows sending known data-filled event with empty data object", () => {
-        // @ts-expect-error Empty data
-        const _fn = () => inngest.send({ name: "foo", data: {} });
-      });
-
-      test.todo("disallows sending invalid fields for a known event");
-
-      test("allows sending known data-empty event with no data", () => {
-        const _fn = () => inngest.send({ name: "baz" });
-      });
-
-      test("allows sending known data-empty event with empty data object", () => {
-        const _fn = () => inngest.send({ name: "baz", data: {} });
-      });
-
-      test("allows sending a single known event with an object", () => {
-        const _fn = () => inngest.send({ name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending multiple known events", () => {
-        const _fn = () =>
-          inngest.send([
-            { name: "foo", data: { foo: "" } },
-            { name: "bar", data: { bar: "" } },
-          ]);
-      });
-
-      test("allows setting an ID for a known event", () => {
-        const _fn = () =>
-          inngest.send({ name: "foo", data: { foo: "" }, id: "test" });
-      });
-
-      test("disallows sending an internal event", () => {
-        const _fn = () =>
-          // @ts-expect-error Internal event
-          inngest.send({ name: internalEvents.FunctionFinished });
-      });
-    });
   });
 });
 
 describe("createFunction", () => {
+  test("throws if handler is not a function (v3-style 3-arg call)", () => {
+    const inngest = createClient({ id: "test" });
+
+    expect(() => {
+      // Simulate v3 signature: `createFunction(config, trigger, handler)`
+      // The trigger object lands in the handler parameter.
+      inngest.createFunction(
+        { id: "fn-1" },
+        { event: "event-1" },
+        // @ts-expect-error - Intentional
+        async () => {},
+      );
+    }).toThrow(
+      `"createFunction" expected a handler function as the second argument`,
+    );
+  });
+
   describe("types", () => {
     describe("function input", () => {
       const inngest = createClient({ id: "test" });
@@ -785,11 +695,11 @@ describe("createFunction", () => {
         inngest.createFunction(
           {
             id: "test",
+            triggers: [{ event: "test" }],
             onFailure: ({ attempt }) => {
               assertType<number>(attempt);
             },
           },
-          { event: "test" },
           ({ attempt }) => {
             assertType<number>(attempt);
           },
@@ -802,11 +712,11 @@ describe("createFunction", () => {
 
       test("allows name to be an object", () => {
         inngest.createFunction(
-          { id: "test" },
-          { event: "test" },
+          { id: "test", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
+            assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
           },
         );
       });
@@ -814,265 +724,55 @@ describe("createFunction", () => {
       test("name as an object must contain a name property", () => {
         inngest.createFunction(
           // @ts-expect-error Must contain name property
-          { foo: "bar" },
-          { event: "test" },
+          { foo: "bar", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
+            assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
           },
         );
       });
 
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction(
-          { id: "test" },
-          { event: "test" },
+          { id: "test", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
+            assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
           },
         );
       });
 
       test("allows trigger to be an object with a cron property", () => {
         inngest.createFunction(
-          { id: "test" },
-          { cron: "test" },
+          { id: "test", triggers: [{ cron: "test" }] },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            // Cron triggers have empty data, and invoked events also have empty data (without schema)
+            assertType<IsEqual<typeof event.data, {} | { cron: string }>>(true);
           },
         );
       });
 
       test("disallows trigger with unknown properties", () => {
-        // @ts-expect-error Unknown property
-        inngest.createFunction({ id: "test" }, { foo: "bar" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
-
-      test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          { id: "test" },
-          // @ts-expect-error Both event and cron
-          { event: "test", cron: "test" },
+          // @ts-expect-error Unknown property
+          { id: "test", triggers: [{ foo: "bar" }] },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<IsAny<typeof event.data>>(true);
+            assertType<{}>(event.data);
           },
         );
-      });
-    });
-
-    describe("multiple custom types", () => {
-      const inngest = createClient({
-        id: "test",
-        schemas: new EventSchemas().fromRecord<{
-          foo: {
-            name: "foo";
-            data: { title: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string };
-          };
-        }>(),
-      });
-
-      test("disallows unknown event as object", () => {
-        // @ts-expect-error Unknown event
-        inngest.createFunction("test", { event: "unknown" }, () => {
-          // no-op
-        });
-      });
-
-      test("disallows unknown event as string", () => {
-        // @ts-expect-error Unknown event
-        inngest.createFunction("test", "unknown", ({ event }) => {
-          assertType<unknown>(event);
-        });
-      });
-
-      test("allows name to be an object", () => {
-        inngest.createFunction(
-          { id: "test" },
-          { event: "bar" },
-          ({ event }) => {
-            assertType<
-              IsEqual<
-                `${internalEvents.FunctionInvoked}` | "bar",
-                typeof event.name
-              >
-            >(true);
-            assertType<{ message: string }>(event.data);
-          },
-        );
-      });
-
-      test("name as an object must contain a name property", () => {
-        inngest.createFunction(
-          // @ts-expect-error Must contain name property
-          { foo: "bar" },
-          { event: "foo" },
-          ({ event }) => {
-            assertType<
-              IsEqual<
-                `${internalEvents.FunctionInvoked}` | "foo",
-                typeof event.name
-              >
-            >(true);
-            assertType<{ title: string }>(event.data);
-          },
-        );
-      });
-
-      test("allows trigger to be an object with an event property", () => {
-        inngest.createFunction(
-          { id: "test" },
-          { event: "foo" },
-          ({ event }) => {
-            assertType<
-              IsEqual<
-                `${internalEvents.FunctionInvoked}` | "foo",
-                typeof event.name
-              >
-            >(true);
-            assertType<{ title: string }>(event.data);
-          },
-        );
-      });
-
-      test("allows trigger to be an object with a cron property", () => {
-        inngest.createFunction(
-          { id: "test" },
-          { cron: "test" },
-          ({ event }) => {
-            assertType<unknown>(event);
-          },
-        );
-      });
-
-      test("disallows trigger with unknown properties", () => {
-        // @ts-expect-error Unknown property
-        inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
-          assertType<unknown>(event);
-        });
       });
 
       test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          { id: "test" },
           // @ts-expect-error Both event and cron
-          { event: "foo", cron: "test" },
+          { id: "test", triggers: [{ event: "test", cron: "test" }] },
           ({ event }) => {
-            assertType<unknown>(event);
-          },
-        );
-      });
-
-      test("allows no triggers (and no schema) with an empty array", () => {
-        inngest.createFunction({ id: "test" }, [], ({ event }) => {
-          assertType<
-            IsEqual<`${internalEvents.FunctionInvoked}`, typeof event.name>
-          >(true);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
-
-      test("allows multiple event triggers", () => {
-        inngest.createFunction(
-          { id: "test" },
-          [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
-          ({ event, events }) => {
-            // `event` should represent all possible triggers
-            assertType<
-              IsEqual<
-                | `${internalEvents.FunctionInvoked}`
-                | `${internalEvents.ScheduledTimer}`
-                | "foo"
-                | "bar",
-                typeof event.name
-              >
-            >(true);
-
-            // Without narrowing, `event.data` should be the union of all
-            // possible data
-            assertType<
-              IsEqual<
-                { cron: string } | { title: string } | { message: string },
-                typeof event.data
-              >
-            >(true);
-
-            // Type narrowing should allow for specific data access
-            switch (event.name) {
-              case "inngest/scheduled.timer":
-                assertType<
-                  IsEqual<`${internalEvents.ScheduledTimer}`, typeof event.name>
-                >(true);
-                assertType<IsEqual<{ cron: string }, typeof event.data>>(true);
-                break;
-              case "foo":
-                assertType<IsEqual<"foo", typeof event.name>>(true);
-                assertType<IsEqual<{ title: string }, typeof event.data>>(true);
-                break;
-              case "bar":
-                assertType<IsEqual<"bar", typeof event.name>>(true);
-                assertType<{ message: string }>(event.data);
-                break;
-              case "inngest/function.invoked":
-                assertType<
-                  IsEqual<"inngest/function.invoked", typeof event.name>
-                >(true);
-                assertType<
-                  IsEqual<
-                    { cron: string } | { title: string } | { message: string },
-                    typeof event.data
-                  >
-                >(true);
-                break;
-              default:
-                // Proves we have exhausted all possibilities
-                assertType<IsNever<typeof event>>(true);
-            }
-
-            // `events` should omit internal triggers, as they are not
-            // batched
-            assertType<IsEqual<"foo" | "bar", (typeof events)[number]["name"]>>(
-              true,
-            );
-
-            // Without narrowing, `event.data` should be the union of all
-            // possible data, excluding internal triggers
-            assertType<
-              IsEqual<
-                { title: string } | { message: string },
-                (typeof events)[number]["data"]
-              >
-            >(true);
-
-            // Type narrowing should allow for specific data access
-            switch (events[0].name) {
-              case "foo":
-                assertType<"foo">(events[0].name);
-                assertType<{ title: string }>(events[0].data);
-
-                // Proves that each event can be different
-                assertType<"foo" | "bar" | undefined>(events[1]?.name);
-                break;
-              case "bar":
-                assertType<"bar">(events[0].name);
-                assertType<{ message: string }>(events[0].data);
-
-                // Proves that each event can be different
-                assertType<"foo" | "bar" | undefined>(events[1]?.name);
-                break;
-              default:
-                // Proves we have exhausted all possibilities
-                assertType<never>(events[0]);
-            }
+            assertType<string>(event.name);
+            assertType<{}>(event.data);
           },
         );
       });
@@ -1081,101 +781,150 @@ describe("createFunction", () => {
 });
 
 describe("setEnvVars", () => {
-  test("overwrites existing env vars", () => {
+  test("mode is mutable after construction", () => {
     const inngest = createClient({ id: "test" });
+    expect(inngest.mode).toBe("cloud");
 
-    expect(inngest["_mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: false,
-    });
-    expect(inngest["mode"]["explicitDevUrl"]).toBeUndefined();
-    expect(inngest["_apiBaseUrl"]).toBeUndefined();
-    expect(inngest["_eventBaseUrl"]).toBeUndefined();
-    expect(inngest["eventKey"]).toBe(dummyEventKey);
-    expect(inngest["inngestApi"]["apiBaseUrl"]).toBeUndefined();
-    expect(inngest["inngestApi"]["mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: false,
-    });
-    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]).toBeUndefined();
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "1" });
 
-    const devUrl = "http://example.com:5000/";
-    const devEventKey = "dev-event-key";
+    // Mode changed by INNGEST_DEV=1
+    expect(inngest.mode).toBe("dev");
+  });
 
+  test("updates event key from env", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest["eventKey"]).toBe(undefined);
+
+    inngest.setEnvVars({ [envKeys.InngestEventKey]: "new-key" });
+    expect(inngest["eventKey"]).toBe("new-key");
+  });
+
+  test("setEnvVars without event key preserves existing key", () => {
+    const inngest = createClient({ id: "test", eventKey: "my-key" });
+    inngest.setEnvVars({ SOME_OTHER_VAR: "value" });
+    expect(inngest["eventKey"]).toBe("my-key");
+  });
+
+  test("options eventKey takes priority over env", () => {
+    const inngest = createClient({ id: "test", eventKey: "options-key" });
+    inngest.setEnvVars({ [envKeys.InngestEventKey]: "env-key" });
+    expect(inngest["eventKey"]).toBe("options-key");
+  });
+});
+
+describe("eventKeySet", () => {
+  test("returns false when no key set", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest["eventKeySet"]()).toBe(false);
+  });
+
+  test("returns true when key is set via options", () => {
+    const inngest = createClient({ id: "test", eventKey: "my-key" });
+    expect(inngest["eventKeySet"]()).toBe(true);
+  });
+
+  test("returns true when key is set via env", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({ [envKeys.InngestEventKey]: "my-key" });
+    expect(inngest["eventKeySet"]()).toBe(true);
+  });
+});
+
+describe("URL configuration", () => {
+  test("defaults to cloud URLs", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest.apiBaseUrl).toBe("https://api.inngest.com/");
+    expect(inngest.eventBaseUrl).toBe("https://inn.gs/");
+  });
+
+  test("isDev: true uses dev server URL", () => {
+    const inngest = createClient({ id: "test", isDev: true });
+    expect(inngest.apiBaseUrl).toBe("http://localhost:8288/");
+    expect(inngest.eventBaseUrl).toBe("http://localhost:8288/");
+  });
+
+  test("INNGEST_BASE_URL sets both URLs", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({ [envKeys.InngestBaseUrl]: "http://custom:8000/" });
+
+    expect(inngest.apiBaseUrl).toBe("http://custom:8000/");
+    expect(inngest.eventBaseUrl).toBe("http://custom:8000/");
+  });
+
+  test("INNGEST_API_BASE_URL sets only API URL", () => {
+    const inngest = createClient({ id: "test" });
     inngest.setEnvVars({
-      [envKeys.InngestDevMode]: devUrl,
-      [envKeys.InngestEventKey]: devEventKey,
+      [envKeys.InngestApiBaseUrl]: "http://api-only:8000/",
     });
 
-    expect(inngest["_mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: true,
+    expect(inngest.apiBaseUrl).toBe("http://api-only:8000/");
+    expect(inngest.eventBaseUrl).toBe("https://inn.gs/"); // unchanged
+  });
+
+  test("INNGEST_EVENT_API_BASE_URL sets only event URL", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({
+      [envKeys.InngestEventApiBaseUrl]: "http://event-only:8000/",
     });
-    expect(inngest["_mode"]["explicitDevUrl"]?.href).toBe(devUrl);
-    expect(inngest["_apiBaseUrl"]).toBe(devUrl);
-    expect(inngest["_eventBaseUrl"]).toBe(devUrl);
-    expect(inngest["eventKey"]).toBe(devEventKey);
-    expect(inngest["inngestApi"]["apiBaseUrl"]).toBe(devUrl);
-    expect(inngest["inngestApi"]["mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: true,
+
+    expect(inngest.apiBaseUrl).toBe("https://api.inngest.com/"); // unchanged
+    expect(inngest.eventBaseUrl).toBe("http://event-only:8000/");
+  });
+
+  test("specific URL env vars override INNGEST_BASE_URL", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({
+      [envKeys.InngestBaseUrl]: "http://base:8000/",
+      [envKeys.InngestApiBaseUrl]: "http://api-specific:9000/",
+      [envKeys.InngestEventApiBaseUrl]: "http://event-specific:9001/",
     });
-    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]?.href).toBe(devUrl);
+
+    expect(inngest.apiBaseUrl).toBe("http://api-specific:9000/");
+    expect(inngest.eventBaseUrl).toBe("http://event-specific:9001/");
+  });
+
+  test("options.baseUrl overrides all env vars", () => {
+    const inngest = createClient({
+      id: "test",
+      baseUrl: "http://option:7000/",
+    });
+    inngest.setEnvVars({
+      [envKeys.InngestBaseUrl]: "http://base:8000/",
+      [envKeys.InngestApiBaseUrl]: "http://api:9000/",
+      [envKeys.InngestEventApiBaseUrl]: "http://event:9001/",
+    });
+
+    expect(inngest.apiBaseUrl).toBe("http://option:7000/");
+    expect(inngest.eventBaseUrl).toBe("http://option:7000/");
   });
 });
 
 describe("helper types", () => {
   const inngest = new Inngest({
     id: "test",
-    schemas: new EventSchemas().fromRecord<{
-      foo: { data: { foo: string } };
-      bar: { data: { bar: string } };
-    }>(),
     middleware: [
-      new InngestMiddleware({
-        name: "",
-        init: () => ({
-          onFunctionRun: () => ({
-            transformInput: () => ({
-              ctx: {
-                foo: "bar",
-              } as const,
-            }),
-          }),
-        }),
-      }),
+      class extends Middleware.BaseMiddleware {
+        readonly id = "test";
+        override transformFunctionInput(
+          arg: Middleware.TransformFunctionInputArgs,
+        ) {
+          return {
+            ...arg,
+            ctx: {
+              ...arg.ctx,
+              foo: "bar" as const,
+            },
+          };
+        }
+      },
     ],
-  });
-
-  type GetUnionKeyValue<
-    T,
-    K extends string | number | symbol,
-  > = T extends Record<K, infer U> ? U : never;
-
-  describe("type GetEvents", () => {
-    test("can use GetEvents to send an event", () => {
-      type T0 = GetEvents<typeof inngest>;
-      type T1 = T0[keyof T0];
-
-      const _myEventSendingFn = (events: T1[]) => {
-        void inngest.send(events);
-      };
-    });
   });
 
   describe("type GetFunctionInput", () => {
     type T0 = GetFunctionInput<typeof inngest>;
 
     test("returns event typing", () => {
-      type Expected =
-        | `${internalEvents.FunctionFailed}`
-        | `${internalEvents.FunctionFinished}`
-        | `${internalEvents.FunctionInvoked}`
-        | `${internalEvents.FunctionCancelled}`
-        | `${internalEvents.ScheduledTimer}`
-        | `${internalEvents.HttpRequest}`
-        | "foo"
-        | "bar";
+      type Expected = string;
       type Actual = T0["event"]["name"];
       assertType<IsEqual<Expected, Actual>>(true);
     });
@@ -1197,22 +946,12 @@ describe("helper types", () => {
       type Actual = keyof T0["step"];
       assertType<IsEqual<Expected, Actual>>(true);
     });
-
-    test("returns step typing for sendEvent", () => {
-      type Expected = "foo" | "bar";
-      type Actual = GetUnionKeyValue<
-        Parameters<T0["step"]["sendEvent"]>[1],
-        "name"
-      >;
-      assertType<IsEqual<Expected, Actual>>(true);
-    });
   });
 
   describe("type GetFunctionOutput", () => {
     test("returns output of an async `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
 
         async () => {
           return "foo" as const;
@@ -1226,8 +965,7 @@ describe("helper types", () => {
 
     test("returns output of a sync `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
         () => {
           return "foo" as const;
         },
@@ -1240,8 +978,7 @@ describe("helper types", () => {
 
     test("returns output of an `InngestFunctionReference` to an async `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
 
         async () => {
           return "foo" as const;
@@ -1257,8 +994,7 @@ describe("helper types", () => {
 
     test("returns output of an `InngestFunctionReference` to a sync `InngestFunction`", () => {
       const fn = inngest.createFunction(
-        { id: "test" },
-        { event: "foo" },
+        { id: "test", triggers: [{ event: "foo" }] },
         () => {
           return "foo" as const;
         },
@@ -1282,6 +1018,47 @@ describe("helper types", () => {
 
       assertType<IsEqual<Expected, Actual>>(true);
     });
+
+    test("applies functionOutputTransform from client middleware", () => {
+      // A custom transform that preserves Date instead of Jsonify-ing to string
+      interface PreserveDate extends Middleware.StaticTransform {
+        Out: this["In"] extends Date ? Date : this["In"];
+      }
+
+      class DateMiddleware extends Middleware.BaseMiddleware {
+        readonly id = "test";
+        declare functionOutputTransform: PreserveDate;
+      }
+
+      const mwClient = new Inngest({
+        id: "test",
+        middleware: [DateMiddleware],
+      });
+
+      const fn = mwClient.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async () => {
+          return new Date() as Date;
+        },
+      );
+
+      // With the middleware, Date should be preserved (not turned into string)
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Actual, Date>>(true);
+    });
+
+    test("falls back to Jsonify when no middleware declares functionOutputTransform", () => {
+      const fn = inngest.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async () => {
+          return { date: new Date(), value: "hello" as const };
+        },
+      );
+
+      // Date becomes string via Jsonify, string literal preserved
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Actual, { date: string; value: "hello" }>>(true);
+    });
   });
 
   describe("type GetStepTools", () => {
@@ -1290,12 +1067,6 @@ describe("helper types", () => {
     test("has all tooling", () => {
       type Expected = keyof ReturnType<typeof createStepTools>;
       type Actual = keyof T0;
-      assertType<IsEqual<Expected, Actual>>(true);
-    });
-
-    test("returns step typing for sendEvent", () => {
-      type Expected = "foo" | "bar";
-      type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[1], "name">;
       assertType<IsEqual<Expected, Actual>>(true);
     });
   });
@@ -1354,5 +1125,130 @@ describe("endpointProxy", () => {
     inngest.endpointProxy();
 
     expect(createProxyHandler).toHaveBeenCalledWith({ client: inngest });
+  });
+});
+
+describe("inngest.realtime.publish", () => {
+  test("publishes to the realtime API", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    const publishSpy = vi
+      .spyOn(inngest["inngestApi"], "publish")
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    await inngest.realtime.publish(ch.status, { message: "hello" });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "test",
+        topics: ["status"],
+      }),
+      { message: "hello" },
+    );
+  });
+
+  test("validates data against the topic schema", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+
+    await expect(
+      // @ts-expect-error intentional invalid payload for runtime validation
+      inngest.realtime.publish(ch.status, { message: 123 }),
+    ).rejects.toThrow("Schema validation failed");
+  });
+
+  test("throws if the publish API returns an error", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
+      ok: false,
+      error: { error: "Nope", status: 500 },
+    });
+
+    await expect(
+      inngest.realtime.publish(ch.status, { message: "hello" }),
+    ).rejects.toThrow("Failed to publish to realtime: Nope");
+  });
+
+  test("staticSchema topics skip runtime validation (passthrough)", async () => {
+    const { realtime, staticSchema } = await import("../index.ts");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        tokens: { schema: staticSchema<{ token: string }>() },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    const publishSpy = vi
+      .spyOn(inngest["inngestApi"], "publish")
+      .mockResolvedValue({ ok: true, value: undefined });
+
+    //
+    // staticSchema's validate is a passthrough — it never returns issues,
+    // so invalid data at runtime is not rejected.
+    // @ts-expect-error intentional invalid payload to demonstrate passthrough
+    await inngest.realtime.publish(ch.tokens, { token: 999 });
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "test",
+        topics: ["tokens"],
+      }),
+      { token: 999 },
+    );
+  });
+
+  test("zod schema topics reject invalid data at runtime", async () => {
+    const { realtime } = await import("../index.ts");
+    const { z } = await import("zod/v3");
+
+    const ch = realtime.channel({
+      name: "test",
+      topics: {
+        status: { schema: z.object({ message: z.string() }) },
+      },
+    });
+
+    const inngest = createClient({ id: "test", isDev: true });
+    vi.spyOn(inngest["inngestApi"], "publish").mockResolvedValue({
+      ok: true,
+      value: undefined,
+    });
+
+    //
+    // Zod schema validates at runtime — invalid data throws.
+    await expect(
+      // @ts-expect-error intentional invalid payload
+      inngest.realtime.publish(ch.status, { message: 999 }),
+    ).rejects.toThrow("Schema validation failed");
   });
 });

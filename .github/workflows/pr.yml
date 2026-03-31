@@ -63,7 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-          - "latest"
+          # TODO: Bring this back when we can handle v6
+          # - "latest"
           - "~5.9.0"
           - "~5.8.0"
     steps:
@@ -142,6 +143,17 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run test:composite
 
+  itest:
+    name: "itest"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:integration
+
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
     runs-on: ubuntu-latest
@@ -156,6 +168,17 @@ jobs:
           build: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+
+  "middleware-sentry_itest":
+    name: "middleware-sentry: Integration tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-sentry
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:integration
 
   "middleware-encryption_test":
     name: "middleware-encryption: Test"

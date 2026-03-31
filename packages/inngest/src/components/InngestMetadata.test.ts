@@ -3,7 +3,8 @@ import type { u } from "vitest/dist/chunks/reporters.d.BFLkQcL6.js";
 import type { unknown } from "zod";
 import * as experimental from "../experimental";
 import type { KnownKeys } from "../helpers/types.ts";
-import { Inngest } from "./Inngest.ts";
+import * as als from "./execution/als.ts";
+import { Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import {
   buildTarget,
   type MetadataBuilder,
@@ -15,9 +16,18 @@ import type {
   GenericStepTools,
 } from "./InngestStepTools.ts";
 
+const mockLogger = () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+});
+
 const mockClient = () =>
   ({
     updateMetadata: vi.fn().mockResolvedValue(undefined),
+    logger: mockLogger(),
+    [internalLoggerSymbol]: mockLogger(),
   }) as unknown as Inngest;
 
 afterEach(() => {
@@ -55,7 +65,7 @@ describe("buildTarget", () => {
         ctx: { runId: "run-1", attempt: 2 },
         executingStep: { id: "step-1" },
       },
-    } as unknown as experimental.AsyncContext);
+    } as unknown as als.AsyncContext);
 
     expect(target).toEqual({
       run_id: "run-1",
@@ -70,7 +80,7 @@ describe("buildTarget", () => {
         ctx: { runId: "current-run", attempt: 1 },
         executingStep: { id: "step-ctx" },
       },
-    } as unknown as experimental.AsyncContext);
+    } as unknown as als.AsyncContext);
 
     expect(target).toEqual({ run_id: "other-run" });
   });
@@ -81,10 +91,11 @@ describe("buildTarget", () => {
         ctx: { runId: "current-run", attempt: 1 },
         executingStep: { id: "step-ctx" },
       },
-    } as unknown as experimental.AsyncContext);
+    } as unknown as als.AsyncContext);
 
     expect(target).toEqual({
       run_id: "other-run",
+      step_attempt: 1,
       step_id: "custom-step",
     });
   });
@@ -110,7 +121,7 @@ describe("buildTarget", () => {
             ctx: { runId: "run-1" },
             // no executingStep - we're in a function but not inside step.run()
           },
-        } as unknown as experimental.AsyncContext),
+        } as unknown as als.AsyncContext),
       ).toThrow("you are not inside a step.run() callback");
     });
 
@@ -121,7 +132,7 @@ describe("buildTarget", () => {
             ctx: { runId: "current-run" },
             executingStep: { id: "step-1" },
           },
-        } as unknown as experimental.AsyncContext),
+        } as unknown as als.AsyncContext),
       ).toThrow("you are targeting a different run");
     });
 
@@ -131,7 +142,7 @@ describe("buildTarget", () => {
           ctx: { runId: "run-1" },
           executingStep: { id: "step-1" },
         },
-      } as unknown as experimental.AsyncContext);
+      } as unknown as als.AsyncContext);
 
       expect(target).toEqual({
         run_id: "run-1",
@@ -148,7 +159,7 @@ describe("buildTarget", () => {
             ctx: { runId: "run-1", attempt: 0 },
             // no executingStep
           },
-        } as unknown as experimental.AsyncContext),
+        } as unknown as als.AsyncContext),
       ).toThrow(
         "attempt() was called without a value, but you are not inside a step.run() callback",
       );
@@ -160,7 +171,7 @@ describe("buildTarget", () => {
           ctx: { runId: "run-1", attempt: 2 },
           executingStep: { id: "step-1" },
         },
-      } as unknown as experimental.AsyncContext);
+      } as unknown as als.AsyncContext);
 
       expect(target).toEqual({
         run_id: "run-1",
@@ -182,8 +193,8 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
-      ctx as unknown as experimental.AsyncContext,
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
     );
 
     const client = mockClient();
@@ -192,7 +203,7 @@ describe("MetadataBuilder.update", () => {
     expect(addMetadata).toHaveBeenCalledWith(
       "step-ctx",
       "userland.default",
-      "step_attempt",
+      "step",
       "merge",
       {
         foo: "bar",
@@ -211,8 +222,8 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
-      ctx as unknown as experimental.AsyncContext,
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
     );
 
     const client = mockClient();
@@ -221,7 +232,7 @@ describe("MetadataBuilder.update", () => {
     expect(addMetadata).toHaveBeenCalledWith(
       "step-ctx",
       "userland.default",
-      "step_attempt",
+      "step",
       "merge",
       {
         foo: "bar",
@@ -240,8 +251,8 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
-      ctx as unknown as experimental.AsyncContext,
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as als.AsyncContext,
     );
 
     const client = mockClient();
@@ -271,8 +282,7 @@ describe("MetadataBuilder.update", () => {
     });
 
     inngestWithoutMiddleware.createFunction(
-      { id: "test" },
-      { event: "foo" },
+      { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "metadata">>(false);
       },
@@ -285,8 +295,7 @@ describe("MetadataBuilder.update", () => {
     });
 
     inngestWithMiddleware.createFunction(
-      { id: "test" },
-      { event: "foo" },
+      { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "metadata">>(true);
         assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
@@ -384,105 +393,110 @@ describe("MetadataBuilder.update", () => {
       >
     >(true);
 
-    inngest.createFunction({ id: "test" }, { event: "foo" }, ({ step }) => {
-      assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
+    inngest.createFunction(
+      { id: "test", triggers: [{ event: "foo" }] },
+      ({ step }) => {
+        assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
 
-      assertType<
-        HasProperty<
-          ReturnType<typeof step.metadata>,
-          "run" | "step" | "attempt" | "span" | "update" | "do"
-        >
-      >(true);
+        assertType<
+          HasProperty<
+            ReturnType<typeof step.metadata>,
+            "run" | "step" | "attempt" | "span" | "update" | "do"
+          >
+        >(true);
 
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["run"]>,
-          "step" | "attempt" | "span" | "update" | "do",
-          "run"
-        >
-      >(true);
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["run"]>,
+            "step" | "attempt" | "span" | "update" | "do",
+            "run"
+          >
+        >(true);
 
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["step"]>,
-          "attempt" | "span" | "update" | "do",
-          "run" | "step"
-        >
-      >(true);
-
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["step"]>,
-          "attempt" | "span" | "update" | "do",
-          "run" | "step"
-        >
-      >(true);
-
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
-          "span" | "update" | "do",
-          "run" | "step" | "attempt"
-        >
-      >(true);
-
-      assertType<
-        HasProperty<
-          ReturnType<ReturnType<typeof step.metadata>["span"]>,
-          "update" | "do",
-          "run" | "step" | "attempt" | "span"
-        >
-      >(true);
-
-      assertType<
-        Equal<
-          [
-            ReturnType<
-              ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
-            >,
+        assertType<
+          HasProperty<
             ReturnType<ReturnType<typeof step.metadata>["step"]>,
-          ]
-        >
-      >(true);
+            "attempt" | "span" | "update" | "do",
+            "run" | "step"
+          >
+        >(true);
 
-      assertType<
-        Equal<
-          [
-            ReturnType<
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["step"]>,
+            "attempt" | "span" | "update" | "do",
+            "run" | "step"
+          >
+        >(true);
+
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
+            "span" | "update" | "do",
+            "run" | "step" | "attempt"
+          >
+        >(true);
+
+        assertType<
+          HasProperty<
+            ReturnType<ReturnType<typeof step.metadata>["span"]>,
+            "update" | "do",
+            "run" | "step" | "attempt" | "span"
+          >
+        >(true);
+
+        assertType<
+          Equal<
+            [
               ReturnType<
                 ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
-              >["attempt"]
-            >,
-            ReturnType<
-              ReturnType<ReturnType<typeof step.metadata>["step"]>["attempt"]
-            >,
-            ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
-          ]
-        >
-      >(true);
+              >,
+              ReturnType<ReturnType<typeof step.metadata>["step"]>,
+            ]
+          >
+        >(true);
 
-      assertType<
-        Equal<
-          [
-            ReturnType<
+        assertType<
+          Equal<
+            [
               ReturnType<
                 ReturnType<
                   ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
                 >["attempt"]
-              >["span"]
-            >,
-            ReturnType<
+              >,
               ReturnType<
                 ReturnType<ReturnType<typeof step.metadata>["step"]>["attempt"]
-              >["span"]
-            >,
-            ReturnType<
-              ReturnType<ReturnType<typeof step.metadata>["attempt"]>["span"]
-            >,
-            ReturnType<ReturnType<typeof step.metadata>["span"]>,
-          ]
-        >
-      >(true);
-    });
+              >,
+              ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
+            ]
+          >
+        >(true);
+
+        assertType<
+          Equal<
+            [
+              ReturnType<
+                ReturnType<
+                  ReturnType<
+                    ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
+                  >["attempt"]
+                >["span"]
+              >,
+              ReturnType<
+                ReturnType<
+                  ReturnType<
+                    ReturnType<typeof step.metadata>["step"]
+                  >["attempt"]
+                >["span"]
+              >,
+              ReturnType<
+                ReturnType<ReturnType<typeof step.metadata>["attempt"]>["span"]
+              >,
+              ReturnType<ReturnType<typeof step.metadata>["span"]>,
+            ]
+          >
+        >(true);
+      },
+    );
   });
 });

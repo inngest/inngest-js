@@ -220,23 +220,6 @@ const createHandlerActions = (
       const method = reqMethod || req.method || "";
       return method;
     },
-    isProduction: () => {
-      /**
-       * Vercel Edge Functions do not allow dynamic access to environment
-       * variables, so we'll manage production checks directly here.
-       *
-       * We try/catch to avoid situations where Next.js is being used in
-       * environments where `process.env` is not accessible or polyfilled.
-       */
-      try {
-        const isProd = process.env.NODE_ENV === "production";
-        return isProd;
-      } catch (_err) {
-        // no-op
-      }
-
-      return;
-    },
     queryString: (key: string, url: URL) => {
       const qs = req.query?.[key] || url.searchParams.get(key);
       return Array.isArray(qs) ? qs[0] : qs;
@@ -260,7 +243,7 @@ const createHandlerActions = (
          * To avoid this, we'll try to parse the URL from `req.url`, but
          * also use the `host` header if it's available.
          */
-        const host = options.serveHost || getHeader("host");
+        const host = options.serveOrigin || getHeader("host");
         if (host) {
           const hostWithProtocol = new URL(
             host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`,
@@ -277,7 +260,7 @@ const createHandlerActions = (
       }
 
       let scheme: "http" | "https" = "https";
-      const host = options.serveHost || getHeader("host") || "";
+      const host = options.serveOrigin || getHeader("host") || "";
 
       try {
         if (process.env.NODE_ENV === "development") {

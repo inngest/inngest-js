@@ -1,7 +1,8 @@
 {
   "name": "@inngest/realtime",
-  "version": "0.4.6",
-  "description": "",
+  "version": "0.4.7",
+  "description": "Deprecated: Use inngest/realtime instead.",
+  "deprecated": "This package is deprecated. Realtime functionality is now built into the inngest package.",
   "main": "./index.js",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
