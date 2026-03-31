@@ -5,6 +5,8 @@
     "src/**/*.test.ts",
     "src/bench/**/*",
     "src/test/**/*",
+    "src/**/test-helpers.ts",
+    "src/**/mock-gateway.ts",
     "scripts/**/*"
   ]
 }
