@@ -529,8 +529,13 @@ describe.skipIf(!hasNativeWebSocket)("ConnectionCore integration", () => {
       // Send drain signal
       gateway.sendGatewayClosing(firstClient);
 
-      // Wait for second connection
-      await waitFor(() => gateway.connectionCount >= 2, 5000);
+      // Wait for second connection to complete handshake and become active
+      await waitFor(
+        () =>
+          core.connectionId !== undefined &&
+          core.connectionId !== firstConnectionId,
+        5000,
+      );
       expect(gateway.connectionCount).toBeGreaterThanOrEqual(2);
       expect(core.connectionId).toBeDefined();
       expect(core.connectionId).not.toBe(firstConnectionId);
