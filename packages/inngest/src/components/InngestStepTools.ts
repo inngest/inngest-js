@@ -18,6 +18,7 @@ import {
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
+  type OutgoingOp,
   type SendEventOutput,
   StepMode,
   StepOpCode,
@@ -151,6 +152,12 @@ export interface FoundStep extends HashedOp {
    * handle() reuses this promise to avoid a duplicate wrapStep call.
    */
   transformedResultPromise?: Promise<unknown>;
+
+  /**
+   * Optional metadata updates attached to this step, carried through from
+   * the OutgoingOp so that checkpoint payloads include metadata.
+   */
+  metadata?: OutgoingOp["metadata"];
 }
 
 export type MatchOpFn<
