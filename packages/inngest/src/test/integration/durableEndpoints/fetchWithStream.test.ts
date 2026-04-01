@@ -1,4 +1,4 @@
-import { createState, testNameFromFileUrl } from "@inngest/test-harness";
+import { createState, sleep, testNameFromFileUrl } from "@inngest/test-harness";
 import { describe, expect, test } from "vitest";
 import { fetchWithStream } from "../../../experimental/durable-endpoints/client.ts";
 import { stream } from "../../../experimental/durable-endpoints.ts";
@@ -198,6 +198,11 @@ describe("failed", () => {
         });
       } catch (e) {
         if (e instanceof Error) {
+          // Wait a little bit to handle the "late joining client" race
+          // condition. We should eventually fix that problem, but for now this
+          // is the best we can do.
+          await sleep(1000);
+
           return Response.json(e.message, { status: 500 });
         }
       }
