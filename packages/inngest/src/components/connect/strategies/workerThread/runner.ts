@@ -71,6 +71,7 @@ class WorkerRunner {
   private state: ConnectionState = ConnectionState.CONNECTING;
   private core: ConnectionCore | undefined;
   private messageBuffer: MessageBuffer | undefined;
+  private debugStateInterval: ReturnType<typeof setInterval> | undefined;
   private readonly logger: Logger;
 
   constructor() {
@@ -131,7 +132,7 @@ class WorkerRunner {
           });
           return;
         }
-        this.core.connect(msg.attempt).catch((err) => {
+        this.core.start(msg.attempt).catch((err) => {
           this.sendMessage({
             type: "ERROR",
             error: err instanceof Error ? err.message : "Unknown error",
@@ -179,6 +180,14 @@ class WorkerRunner {
       {
         logger: this.logger,
         onStateChange: (state) => {
+          // Don't allow state to regress from CLOSING/CLOSED (e.g. if a
+          // drain reconnect triggers ACTIVE during graceful shutdown).
+          if (
+            this.state === ConnectionState.CLOSING ||
+            this.state === ConnectionState.CLOSED
+          ) {
+            return;
+          }
           this.setState(state);
           if (state === ConnectionState.ACTIVE && this.core?.connectionId) {
             this.sendMessage({
@@ -186,6 +195,7 @@ class WorkerRunner {
               connectionId: this.core.connectionId,
             });
           }
+          this.sendDebugState();
         },
         getState: () => this.state,
         handleExecutionRequest: async (request) => {
@@ -225,6 +235,9 @@ class WorkerRunner {
       },
     );
 
+    // Periodically push debug state to main thread so getDebugState() works
+    this.debugStateInterval = setInterval(() => this.sendDebugState(), 5_000);
+
     // Create message buffer for buffering responses when connection is lost
     this.messageBuffer = new MessageBuffer({
       envName: this.config.envName,
@@ -233,19 +246,17 @@ class WorkerRunner {
     });
   }
 
+  private sendDebugState(): void {
+    if (!this.core) return;
+    this.sendMessage({ type: "DEBUG_STATE", state: this.core.getDebugState() });
+  }
+
   async close(): Promise<void> {
+    clearInterval(this.debugStateInterval);
     this.setState(ConnectionState.CLOSING);
-    this.logger.debug("Cleaning up connection resources");
 
     if (this.core) {
-      await this.core.cleanup();
-    }
-
-    this.logger.debug("Connection closed");
-    this.logger.debug("Waiting for in-flight requests to complete");
-
-    if (this.core) {
-      await this.core.waitForInProgress();
+      await this.core.close();
     }
 
     this.logger.debug("Flushing messages before closing");

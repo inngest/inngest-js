@@ -1,5 +1,25 @@
 # inngest
 
+## 4.1.1
+
+### Patch Changes
+
+- [#1420](https://github.com/inngest/inngest-js/pull/1420) [`38c6e27c`](https://github.com/inngest/inngest-js/commit/38c6e27c19681814f1e04d91398f21251ddc3e32) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Refactor internal architecture
+
+- [#1412](https://github.com/inngest/inngest-js/pull/1412) [`556a32eb`](https://github.com/inngest/inngest-js/commit/556a32ebff7f2139023a55dc1db9b8233d8d4c9e) Thanks [@rhino1998](https://github.com/rhino1998)! - Extended Traces: Include step attributes in userland spans
+
+- [#1414](https://github.com/inngest/inngest-js/pull/1414) [`7e699a06`](https://github.com/inngest/inngest-js/commit/7e699a067b5df51fc35a4e24b8145fe9b4bf59ae) Thanks [@rhino1998](https://github.com/rhino1998)! - Step Metadata: Collapse step/step_attempt behavior
+
+- [#1418](https://github.com/inngest/inngest-js/pull/1418) [`31300308`](https://github.com/inngest/inngest-js/commit/31300308dbb0ef7cd25259482fd33fa304f172a8) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Fix graceful shutdown cleanup in case of draining connection replacement
+
+- [`494364eb`](https://github.com/inngest/inngest-js/commit/494364eb72b5aef370cfe5acfde5cfe5fad3af55) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix type exports not being available for `composite: true` projects
+
+## 4.1.0
+
+### Minor Changes
+
+- [#1342](https://github.com/inngest/inngest-js/pull/1342) [`627c0720`](https://github.com/inngest/inngest-js/commit/627c072088a19a6fa4834d219b192066cffa2f60) Thanks [@jacobheric](https://github.com/jacobheric)! - Adds first class, internal realtime support with improved DX for publishing and subscribing to typed channels and topics. See: https://www.inngest.com/docs/features/realtime
+
 ## 4.0.5
 
 ### Patch Changes

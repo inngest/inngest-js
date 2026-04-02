@@ -1,5 +1,5 @@
 import { OutgoingOp } from "inngest";
-import { InngestExecution, InngestExecutionV1 } from "inngest/internals";
+import { InngestExecution, InngestExecutionEngine } from "inngest/internals";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
 import { createDeferredPromise, type DeepPartial, isDeeplyEqual } from "./util";
 
@@ -112,7 +112,7 @@ export class InngestTestRun {
         typeof subset.step.id === "string" && {
           step: {
             ...subset.step,
-            id: InngestExecutionV1._internals.hashId(subset.step.id),
+            id: InngestExecutionEngine._internals.hashId(subset.step.id),
           },
         }),
 
@@ -121,7 +121,7 @@ export class InngestTestRun {
         Array.isArray(subset.steps) && {
           steps: subset.steps.map((step) => ({
             ...step,
-            id: InngestExecutionV1._internals.hashId(step.id),
+            id: InngestExecutionEngine._internals.hashId(step.id),
           })),
         }),
     };
@@ -171,6 +171,7 @@ export class InngestTestRun {
 
           processChain();
         },
+        "change-mode": () => processChain(),
       };
 
       resultHandlers[exec.result.type]();

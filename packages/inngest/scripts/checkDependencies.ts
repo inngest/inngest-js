@@ -295,6 +295,9 @@ checkDependencies("tsconfig.build.json", [
   "src/remix.ts",
   "src/sveltekit.ts",
   "src/nitro.ts",
+  "src/react.ts",
+  "src/components/connect/strategies/core/mock-gateway.ts",
+  "src/components/connect/strategies/core/test-helpers.ts",
   "tsdown.config.ts",
   "vitest.config.ts",
 ]);

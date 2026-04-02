@@ -16,6 +16,7 @@ import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type { createGroupTools } from "./components/InngestGroupTools.ts";
+import type { MetadataUpdate } from "./components/InngestMetadata.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
 import type {
@@ -35,7 +36,7 @@ import type {
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
 
-export type { Jsonify } from "./helpers/jsonify.ts";
+export type { Jsonify, JsonifyObject } from "./helpers/jsonify.ts";
 export type { SimplifyDeep } from "./helpers/types.ts";
 
 const baseJsonErrorSchema = z.object({
@@ -433,7 +434,14 @@ export type OutgoingOp = Pick<
   | "displayName"
   | "userland"
   | "timing"
->;
+> & {
+  /**
+   * Optional metadata updates attached to this step operation.
+   * When present, these are sent to the server as part of the checkpoint
+   * payload so that metadata spans can be created for the step.
+   */
+  metadata?: MetadataUpdate[];
+};
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate
@@ -1671,17 +1679,11 @@ export type MetadataTarget =
       run_id: string;
     }
   | {
-      // step level
-      run_id: string;
-      step_id: string; // user-defined
-      step_index?: number;
-    }
-  | {
       // step attempt level
       run_id: string;
       step_id: string; // user-defined
       step_index?: number;
-      step_attempt: number; // -1 === last attempt?
+      step_attempt?: number; // -1 also === last attempt?
     }
   | {
       // span level

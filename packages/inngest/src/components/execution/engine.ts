@@ -1024,6 +1024,8 @@ class InngestExecutionEngine
         .get(this.options.client)
         ?.declareStepExecution(
           this.rootSpanId,
+          userland.id ?? "",
+          userland.index ?? 0,
           hashedId,
           this.options.data?.attempt ?? 0,
         );
@@ -1937,6 +1939,7 @@ class InngestExecutionEngine
     userlandStep.timing = resultOp.timing;
     userlandStep.op = resultOp.op;
     userlandStep.id = resultOp.id;
+    userlandStep.metadata = resultOp.metadata;
 
     if (resume) {
       userlandStep.fulfilled = true;
