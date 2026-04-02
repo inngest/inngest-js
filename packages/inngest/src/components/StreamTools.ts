@@ -52,7 +52,7 @@ export interface StreamTools {
  * Wraps a `TransformStream<Uint8Array>` to provide push/pipe SSE streaming
  * capabilities within an Inngest execution.
  */
-export class InngestStream {
+export class Stream {
   private transform: TransformStream<Uint8Array, Uint8Array>;
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private encoder = new TextEncoder();
@@ -308,13 +308,13 @@ export class InngestStream {
 }
 
 /** Synchronous ALS lookup for the stream tools (fast path). */
-const getStreamToolsSync = (): InngestStream | undefined => {
+const getStreamToolsSync = (): Stream | undefined => {
   const ctx = getAsyncCtxSync();
   return ctx?.execution?.stream;
 };
 
 const getDeferredStreamTooling = async (): Promise<
-  InngestStream | undefined
+  Stream | undefined
 > => {
   const ctx = await getAsyncCtx();
   return ctx?.execution?.stream;

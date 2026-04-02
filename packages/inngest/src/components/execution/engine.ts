@@ -64,7 +64,7 @@ import {
   STEP_INDEXING_SUFFIX,
   type StepHandler,
 } from "../InngestStepTools.ts";
-import { InngestStream } from "../InngestStreamTools.ts";
+import { Stream } from "../StreamTools.ts";
 import { MiddlewareManager } from "../middleware/index.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { UnreachableError } from "../middleware/utils.ts";
@@ -163,7 +163,7 @@ class InngestExecutionEngine
    * or {@link streamEnd} — never call `streamTools.close*`/`end` directly, as
    * the wrappers ensure the redirect event is flushed first.
    */
-  private streamTools: InngestStream;
+  private streamTools: Stream;
 
   /**
    * Resolved when `stream.push()`/`pipe()` is first called in sync mode,
@@ -234,7 +234,7 @@ class InngestExecutionEngine
     }
 
     this.userFnToRun = this.getUserFnToRun();
-    this.streamTools = new InngestStream({
+    this.streamTools = new Stream({
       onActivated: () => this.handleStreamActivated(),
       onWriteError: (err) =>
         this.devDebug(

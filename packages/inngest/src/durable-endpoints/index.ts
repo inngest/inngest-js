@@ -1,1 +1,1 @@
-export { stream } from "../components/InngestStreamTools.ts";
+export { Stream, stream } from "../components/StreamTools.ts";

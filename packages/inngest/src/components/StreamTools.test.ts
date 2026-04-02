@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { InngestStream } from "./InngestStreamTools.ts";
+import { Stream } from "./StreamTools.ts";
 
-async function drain(s: InngestStream): Promise<string> {
+async function drain(s: Stream): Promise<string> {
   const reader = s.readable.getReader();
   const decoder = new TextDecoder();
   let result = "";
@@ -15,9 +15,9 @@ async function drain(s: InngestStream): Promise<string> {
   return result;
 }
 
-describe("InngestStream.push", () => {
+describe("Stream.push", () => {
   test("writes SSE stream events", async () => {
-    const s = new InngestStream();
+    const s = new Stream();
 
     s.push("hello");
     s.push("world");
@@ -31,9 +31,9 @@ describe("InngestStream.push", () => {
   });
 });
 
-describe("InngestStream.pipe", () => {
+describe("Stream.pipe", () => {
   test("pipes async generator chunks as SSE events", async () => {
-    const s = new InngestStream();
+    const s = new Stream();
 
     const result = await s.pipe(async function* () {
       yield "a";
@@ -51,9 +51,9 @@ describe("InngestStream.pipe", () => {
   });
 });
 
-describe("InngestStream.commit / rollback", () => {
+describe("Stream.commit / rollback", () => {
   test("emits commit and rollback events", async () => {
-    const s = new InngestStream();
+    const s = new Stream();
 
     s.commit("step-a");
     s.rollback("step-b");

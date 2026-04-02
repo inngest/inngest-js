@@ -6,7 +6,7 @@
 
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { describe, expect, test } from "vitest";
-import { InngestStream } from "../../../components/InngestStreamTools.ts";
+import { Stream } from "../../../components/StreamTools.ts";
 import { stream } from "../../../durable-endpoints/index.ts";
 import { NonRetriableError, step } from "../../../index.ts";
 
@@ -266,7 +266,7 @@ describe("pipeIterable stops consuming the source when the reader cancels", () =
       }
     }
 
-    const inngestStream = new InngestStream();
+    const inngestStream = new Stream();
 
     const pipePromise = inngestStream.pipe(slowSource);
 

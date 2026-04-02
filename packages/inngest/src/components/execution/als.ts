@@ -1,6 +1,6 @@
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
-import type { InngestStream } from "../InngestStreamTools.ts";
+import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 
 /**
@@ -48,7 +48,7 @@ export interface AsyncContext {
      * The stream tools instance for this execution context. Used by the
      * `stream` singleton to push/pipe SSE data to the client.
      */
-    stream?: InngestStream;
+    stream?: Stream;
 
     /**
      * If present, indicates the variant callback is executing within an

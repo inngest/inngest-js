@@ -104,8 +104,11 @@ export interface InngestExecutionOptions {
   fn: InngestFunction.Any;
 
   /**
-   * The UUID that represents this function in Inngest. Passed through to the
-   * async checkpoint API when available.
+   * The UUID that represents this function in Inngest.
+   *
+   * This is used to reference the function during async checkpointing, when we
+   * know the function/run already exists and just wish to reference it
+   * directly.
    */
   internalFnId?: string;
   reqArgs: unknown[];
