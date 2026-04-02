@@ -1,0 +1,47 @@
+{
+  "name": "@inngest/workflow",
+  "version": "0.1.0",
+  "description": "Workflow wrapper for executing Inngest functions locally without an HTTP server.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "pnpm run build:clean && pnpm run build:tsc",
+    "build:clean": "rm -rf ./dist",
+    "build:tsc": "tsc --project tsconfig.build.json"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "inngest",
+    "workflow"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/workflow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/workflow"
+  },
+  "author": "Inngest Inc. <hello@inngest.com>",
+  "license": "Apache-2.0",
+  "peerDependencies": {
+    "inngest": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "inngest": "^4.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.0.0"
+  }
+}
