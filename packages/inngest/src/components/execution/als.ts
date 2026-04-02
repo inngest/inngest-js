@@ -36,7 +36,7 @@ export interface AsyncContext {
      * callback. Useful to understand whether we are in the context of a step
      * execution or within the main function body.
      */
-    executingStep?: StepOptions & { hashedId: string };
+    executingStep?: StepOptions & { hashedId?: string };
 
     /**
      * If present, indicates the parallel mode that should be applied to steps
