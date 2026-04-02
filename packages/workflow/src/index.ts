@@ -1,10 +1,11 @@
-export { createWorkflow, run } from "./workflow.js";
+export { run, readInput, writeOutput } from "./workflow.js";
 export { createStepToolFilter } from "./filter.js";
-export { defaultOnStep, defaultOnComplete, defaultOnError } from "./defaults.js";
 export type {
-  WorkflowCallbacks,
-  WorkflowConfig,
-  WorkflowFunction,
+  WorkflowContext,
+  WorkflowHandler,
   WorkflowInput,
   RunOptions,
 } from "./types.js";
+
+export type { OutgoingOp, EventPayload } from "inngest";
+export { StepOpCode } from "inngest/types";

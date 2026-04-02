@@ -1,63 +1,68 @@
 import fs from "node:fs/promises";
-import { type EventPayload, Inngest, InngestFunction } from "inngest";
+import { type EventPayload, type OutgoingOp, Inngest, InngestFunction } from "inngest";
 import { ServerTiming } from "inngest/internals";
-import { StepMode } from "inngest/types";
-import { defaultOnComplete, defaultOnError, defaultOnStep } from "./defaults.js";
+import { StepMode, StepOpCode } from "inngest/types";
 import { createStepToolFilter } from "./filter.js";
 import type {
   RunOptions,
-  WorkflowConfig,
-  WorkflowFunction,
+  WorkflowHandler,
   WorkflowInput,
 } from "./types.js";
 
+const DEFAULT_INPUT_PATH = "/tmp/input";
+const DEFAULT_OUTPUT_PATH = "/tmp/output";
+
 /**
- * Create a workflow function that can be executed locally via {@link run}.
+ * Read and parse a {@link WorkflowInput} from a JSON file.
  */
-export function createWorkflow(config: WorkflowConfig): WorkflowFunction {
-  const client = new Inngest({ id: "workflow" });
-
-  const fn = client.createFunction(
-    {
-      id: "workflow",
-      triggers: [{ event: "*" }],
-    },
-    config.handler
-  );
-
-  return { fn: fn as unknown as InngestFunction.Any, config };
+export async function readInput(
+  filePath: string = DEFAULT_INPUT_PATH
+): Promise<WorkflowInput> {
+  const raw = await fs.readFile(filePath, "utf-8");
+  return JSON.parse(raw) as WorkflowInput;
 }
 
 /**
- * Execute a workflow by reading input from disk, running the Inngest execution
- * engine, and dispatching results to callbacks.
- *
- * When no callbacks are provided, results are written to `/tmp/output`.
+ * Write a result object as JSON to a file.
+ */
+export async function writeOutput(
+  data: unknown,
+  filePath: string = DEFAULT_OUTPUT_PATH
+): Promise<void> {
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+}
+
+/**
+ * Execute a workflow handler and dispatch resulting opcodes to the
+ * {@link RunOptions.onResult} callback.
  */
 export async function run(
-  workflow: WorkflowFunction,
-  options?: RunOptions
+  handler: WorkflowHandler,
+  options: RunOptions
 ): Promise<void> {
-  const inputPath = options?.inputPath ?? "/tmp/input";
-  const raw = await fs.readFile(inputPath, "utf-8");
-  const input: WorkflowInput = JSON.parse(raw);
+  const { input } = options;
 
-  const { fn } = workflow;
+  const client = new Inngest({ id: "workflow" });
+
+  const fn = client.createFunction(
+    { id: "workflow", triggers: [{ event: "*" }] },
+    handler
+  ) as unknown as InngestFunction.Any;
+
   const events = (input.events ?? [input.event]) as [
     EventPayload,
-    ...EventPayload[],
+    ...EventPayload[,
   ];
 
-  const allowedTools =
-    input.allowedStepTools ?? workflow.config.allowedStepTools;
+  const allowedTools = options.allowedStepTools;
   const transformCtx = allowedTools
     ? createStepToolFilter(allowedTools)
     : undefined;
 
-  const execution = (fn as InngestFunction.Any)["createExecution"]({
+  const execution = fn["createExecution"]({
     partialOptions: {
       runId: input.runId,
-      client: (fn as InngestFunction.Any)["client"],
+      client: fn["client"],
       data: {
         runId: input.runId,
         attempt: input.attempt,
@@ -66,46 +71,65 @@ export async function run(
       },
       reqArgs: [],
       headers: {},
-      stepCompletionOrder: input.stepCompletionOrder,
-      stepState: input.stepState,
+      stepCompletionOrder: input.stack,
+      stepState: input.state,
       stepMode: StepMode.Async,
       disableImmediateExecution: false,
       isFailureHandler: false,
       timer: new ServerTiming.ServerTiming({
-        info: () => {},
-        warn: () => {},
-        error: () => {},
-        debug: () => {},
+        info: () => { },
+        warn: () => { },
+        error: () => { },
+        debug: () => { },
       }),
-      requestedRunStep: input.requestedRunStep,
+      requestedRunStep: input.plannedStep,
       transformCtx,
     },
   });
 
   const { ctx, ops, ...result } = await execution.start();
 
-  const onStep = options?.onStep ?? defaultOnStep!;
-  const onComplete = options?.onComplete ?? defaultOnComplete!;
-  const onError = options?.onError ?? defaultOnError!;
+  let resultOps: OutgoingOp[];
 
   switch (result.type) {
     case "steps-found":
-      await onStep(result.steps);
+      resultOps = result.steps;
       break;
     case "step-ran":
-      await onStep([result.step]);
+      resultOps = [result.step];
       break;
     case "function-resolved":
-      await onComplete(result.data);
+      resultOps = [{
+        id: "complete",
+        op: StepOpCode.RunComplete,
+        data: result.data,
+      }];
       break;
-    case "function-rejected":
-      await onError(result.error, result.retriable);
+    case "function-rejected": {
+      const op = result.retriable === false
+        ? StepOpCode.StepFailed
+        : StepOpCode.StepError;
+      resultOps = [{
+        id: "error",
+        op,
+        error: result.error,
+        ...(typeof result.retriable === "string"
+          ? { opts: { retryAfter: result.retriable } }
+          : {}),
+      }];
       break;
+    }
     case "step-not-found":
-      await onError(
-        new Error(`Step not found: ${result.step.id}`),
-        false
-      );
+      resultOps = [{
+        id: "error",
+        op: StepOpCode.StepFailed,
+        error: { message: `Step not found: ${result.step.id}` },
+      }];
+      break;
+    default:
+      resultOps = [];
       break;
   }
+
+  await options.onResult?.(resultOps);
 }
