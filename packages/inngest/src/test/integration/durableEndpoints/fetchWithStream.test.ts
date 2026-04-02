@@ -1,7 +1,7 @@
 import { createState, sleep, testNameFromFileUrl } from "@inngest/test-harness";
 import { describe, expect, test } from "vitest";
-import { fetchWithStream } from "../../../durable-endpoints/client.ts";
-import { stream } from "../../../durable-endpoints/index.ts";
+import { fetchWithStream } from "../../../experimental/durable-endpoints/client.ts";
+import { stream } from "../../../experimental/durable-endpoints/index.ts";
 import { NonRetriableError, step } from "../../../index.ts";
 import { silencedLogger } from "../../helpers.ts";
 import { createGate, setupEndpoint, urlWithTestName } from "./helpers.ts";

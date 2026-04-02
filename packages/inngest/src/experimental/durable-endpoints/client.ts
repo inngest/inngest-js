@@ -6,7 +6,7 @@ import {
   iterSse,
   parseSseEvent,
   type SseEvent,
-} from "../components/execution/streaming.ts";
+} from "../../components/execution/streaming.ts";
 
 interface FetchDurableEndpointOptions {
   /** Fetch function. */

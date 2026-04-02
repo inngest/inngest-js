@@ -2,7 +2,7 @@ import http from "node:http";
 import { randomSuffix, waitFor } from "@inngest/test-harness";
 import { expect, onTestFinished } from "vitest";
 import { getAsyncCtxSync } from "../../../components/execution/als.ts";
-import { stream } from "../../../durable-endpoints/index.ts";
+import { stream } from "../../../experimental/durable-endpoints/index.ts";
 import { Inngest, type Logger } from "../../../index.ts";
 import type { EndpointHandler } from "../../../node.ts";
 import {

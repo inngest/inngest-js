@@ -51,8 +51,10 @@ export interface StreamTools {
 /**
  * Wraps a `TransformStream<Uint8Array>` to provide push/pipe SSE streaming
  * capabilities within an Inngest execution.
+ *
+ * @internal
  */
-export class Stream {
+export class Stream implements StreamTools {
   private transform: TransformStream<Uint8Array, Uint8Array>;
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private encoder = new TextEncoder();
