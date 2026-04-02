@@ -28,8 +28,8 @@ export default defineConfig({
     "src/nuxt.ts",
     "src/redwood.ts",
     "src/remix.ts",
-    "src/experimental/durable-endpoints.ts",
-    "src/experimental/durable-endpoints/client.ts",
+    "src/durable-endpoints/index.ts",
+    "src/durable-endpoints/client.ts",
     "src/sveltekit.ts",
     "src/types.ts",
 

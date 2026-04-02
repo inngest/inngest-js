@@ -228,11 +228,11 @@
     },
     "./experimental/durable-endpoints": {
       "types": {
-        "import": "./experimental/durable-endpoints.d.ts",
-        "require": "./experimental/durable-endpoints.d.cts"
+        "import": "./experimental/durable-endpoints/index.d.ts",
+        "require": "./experimental/durable-endpoints/index.d.cts"
       },
-      "import": "./experimental/durable-endpoints.js",
-      "require": "./experimental/durable-endpoints.cjs"
+      "import": "./experimental/durable-endpoints/index.js",
+      "require": "./experimental/durable-endpoints/index.cjs"
     },
     "./experimental/durable-endpoints/client": {
       "types": {

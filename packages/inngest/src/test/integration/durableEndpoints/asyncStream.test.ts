@@ -6,7 +6,7 @@
 
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { expect, test } from "vitest";
-import { stream } from "../../../experimental/durable-endpoints.ts";
+import { stream } from "../../../durable-endpoints/index.ts";
 import { step } from "../../../index.ts";
 
 import {

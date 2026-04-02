@@ -7,7 +7,7 @@
 import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { describe, expect, test } from "vitest";
 import { InngestStream } from "../../../components/InngestStreamTools.ts";
-import { stream } from "../../../experimental/durable-endpoints.ts";
+import { stream } from "../../../durable-endpoints/index.ts";
 import { NonRetriableError, step } from "../../../index.ts";
 
 import {
