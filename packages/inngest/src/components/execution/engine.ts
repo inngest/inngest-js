@@ -64,13 +64,13 @@ import {
   STEP_INDEXING_SUFFIX,
   type StepHandler,
 } from "../InngestStepTools.ts";
-import { Stream } from "../StreamTools.ts";
 import { MiddlewareManager } from "../middleware/index.ts";
 import type { Middleware } from "../middleware/middleware.ts";
 import { UnreachableError } from "../middleware/utils.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
+import { Stream } from "../StreamTools.ts";
 import { validateEvents } from "../triggers/utils.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {

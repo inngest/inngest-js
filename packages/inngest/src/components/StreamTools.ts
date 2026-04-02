@@ -313,9 +313,7 @@ const getStreamToolsSync = (): Stream | undefined => {
   return ctx?.execution?.stream;
 };
 
-const getDeferredStreamTooling = async (): Promise<
-  Stream | undefined
-> => {
+const getDeferredStreamTooling = async (): Promise<Stream | undefined> => {
   const ctx = await getAsyncCtx();
   return ctx?.execution?.stream;
 };
