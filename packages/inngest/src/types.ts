@@ -1645,11 +1645,6 @@ export interface StepOptions {
   id: string;
 
   /**
-   * The hashedId of the step, for internal usage.
-   */
-  hashedId?: string;
-
-  /**
    * The display name to use for this step in the Inngest UI. This can be
    * changed at any time without affecting the step's behaviour.
    */

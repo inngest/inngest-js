@@ -1,5 +1,5 @@
 /**
- * Client-side streaming utilities for consuming Durable Endpoint SSE streams.
+ * Entrypoint file for client-side Durable Endpoint utilities.
  */
 
 import {

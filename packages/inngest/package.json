@@ -228,19 +228,19 @@
     },
     "./experimental/durable-endpoints": {
       "types": {
-        "import": "./experimental/durable-endpoints/index.d.ts",
-        "require": "./experimental/durable-endpoints/index.d.cts"
+        "import": "./durable-endpoints/index.d.ts",
+        "require": "./durable-endpoints/index.d.cts"
       },
-      "import": "./experimental/durable-endpoints/index.js",
-      "require": "./experimental/durable-endpoints/index.cjs"
+      "import": "./durable-endpoints/index.js",
+      "require": "./durable-endpoints/index.cjs"
     },
     "./experimental/durable-endpoints/client": {
       "types": {
-        "import": "./experimental/durable-endpoints/client.d.ts",
-        "require": "./experimental/durable-endpoints/client.d.cts"
+        "import": "./durable-endpoints/client.d.ts",
+        "require": "./durable-endpoints/client.d.cts"
       },
-      "import": "./experimental/durable-endpoints/client.js",
-      "require": "./experimental/durable-endpoints/client.cjs"
+      "import": "./durable-endpoints/client.js",
+      "require": "./durable-endpoints/client.cjs"
     },
     "./realtime": {
       "types": {
