@@ -105,7 +105,6 @@ test("graceful shutdown waits for in-flight request with continued heartbeats an
     countsAfter.heartbeats - countsBefore.heartbeats,
   ).toBeGreaterThanOrEqual(5);
 
-  console.log(countsAfter)
   // No lease extensions should have been sent before `close()`. The execution
   // just started and the first interval hasn't fired yet.
   expect(countsBefore.leaseExtends).toBe(0);
