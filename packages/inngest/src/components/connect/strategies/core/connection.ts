@@ -109,10 +109,10 @@ export class ConnectionCore {
     requestLeases: Record<string, string>;
     requestMeta: Record<string, InFlightRequest>;
   } = {
-      wg: new WaitGroup(),
-      requestLeases: {},
-      requestMeta: {},
-    };
+    wg: new WaitGroup(),
+    requestLeases: {},
+    requestMeta: {},
+  };
 
   private _lastHeartbeatSentAt: number | undefined;
   private _lastHeartbeatReceivedAt: number | undefined;
@@ -527,7 +527,12 @@ export class ConnectionCore {
       if (conn.dead) return;
       const uptimeMs = Date.now() - conn.connectedAt;
       this.callbacks.logger.warn(
-        { connectionId, gatewayGroup, uptimeMs, error: (ev as ErrorEvent)?.message },
+        {
+          connectionId,
+          gatewayGroup,
+          uptimeMs,
+          error: (ev as ErrorEvent)?.message,
+        },
         "Connection lost (error)",
       );
       conn.dead = true;
@@ -542,7 +547,13 @@ export class ConnectionCore {
       if (conn.dead) return;
       const uptimeMs = Date.now() - conn.connectedAt;
       this.callbacks.logger.warn(
-        { connectionId, gatewayGroup, uptimeMs, code: ev.code, reason: ev.reason },
+        {
+          connectionId,
+          gatewayGroup,
+          uptimeMs,
+          code: ev.code,
+          reason: ev.reason,
+        },
         "Connection lost (close)",
       );
       conn.dead = true;

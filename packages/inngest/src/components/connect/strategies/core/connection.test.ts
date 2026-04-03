@@ -54,7 +54,6 @@ describe("ConnectionCore reconcile loop", () => {
       const activeIdx = states.indexOf(ConnectionState.ACTIVE);
       expect(connectingIdx).toBeLessThan(activeIdx);
     });
-
   });
 
   describe("2. Reconnection on WebSocket error", () => {
