@@ -55,7 +55,6 @@ function createIntegrationCore(
     handleExecutionRequest: async () => new Uint8Array(0),
     onReplyAck: vi.fn(),
     onBufferResponse: vi.fn(),
-    beforeConnect: async () => {},
     ...overrides.callbacks,
   };
 

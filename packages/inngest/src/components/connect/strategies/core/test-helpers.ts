@@ -296,7 +296,6 @@ export function createTestCore(
     handleExecutionRequest: vi.fn(async () => new Uint8Array(0)),
     onReplyAck: vi.fn(),
     onBufferResponse: vi.fn(),
-    beforeConnect: vi.fn(async () => {}),
     ...overrides.callbacks,
   };
 

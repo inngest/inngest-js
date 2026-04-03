@@ -55,6 +55,8 @@ export interface Connection {
   heartbeatIntervalMs: number;
   extendLeaseIntervalMs: number;
   statusIntervalMs: number;
+  /** Timestamp (ms) when the connection was established. */
+  connectedAt: number;
   /** Disable all handlers and close the underlying WebSocket. */
   close(): void;
 }
@@ -82,7 +84,7 @@ export interface ConnectionCoreCallbacks {
   ) => Promise<Uint8Array>;
   onReplyAck?: (requestId: string) => void;
   onBufferResponse?: (requestId: string, responseBytes: Uint8Array) => void;
-  beforeConnect?: (signingKey: string | undefined) => Promise<void>;
+  onConnectionActive?: (signingKey: string | undefined) => void;
 }
 
 /**
@@ -379,11 +381,6 @@ export class ConnectionCore {
         );
 
         try {
-          // Flush any pending messages before attempting connection
-          if (this.callbacks.beforeConnect) {
-            await this.callbacks.beforeConnect(this.useSigningKey);
-          }
-
           const { conn, gatewayGroup } = await establishConnection(
             this.config,
             this.useSigningKey,
@@ -512,9 +509,13 @@ export class ConnectionCore {
     const connectionId = conn.id;
 
     // Error/close handlers: mark connection as dead and wake the loop
-    ws.onerror = () => {
+    ws.onerror = (ev) => {
       if (conn.dead) return;
-      this.callbacks.logger.warn({ connectionId }, "Connection lost");
+      const uptimeMs = Date.now() - conn.connectedAt;
+      this.callbacks.logger.warn(
+        { connectionId, gatewayGroup, uptimeMs, error: (ev as ErrorEvent)?.message },
+        "Connection lost (error)",
+      );
       conn.dead = true;
       this.excludeGateways.add(gatewayGroup);
       if (this._activeConnection?.id === connectionId) {
@@ -525,9 +526,10 @@ export class ConnectionCore {
 
     ws.onclose = (ev) => {
       if (conn.dead) return;
+      const uptimeMs = Date.now() - conn.connectedAt;
       this.callbacks.logger.warn(
-        { connectionId, reason: ev.reason },
-        "Connection lost",
+        { connectionId, gatewayGroup, uptimeMs, code: ev.code, reason: ev.reason },
+        "Connection lost (close)",
       );
       conn.dead = true;
       this.excludeGateways.add(gatewayGroup);
@@ -545,8 +547,9 @@ export class ConnectionCore {
       const connectMessage = parseConnectMessage(messageBytes);
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
+        const uptimeMs = Date.now() - conn.connectedAt;
         this.callbacks.logger.info(
-          { connectionId: conn.id },
+          { connectionId: conn.id, gatewayGroup, uptimeMs },
           "Gateway draining, opening new connection",
         );
         // Move current connection to draining, clear active so the loop

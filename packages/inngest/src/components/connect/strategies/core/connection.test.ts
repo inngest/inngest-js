@@ -55,10 +55,6 @@ describe("ConnectionCore reconcile loop", () => {
       expect(connectingIdx).toBeLessThan(activeIdx);
     });
 
-    test("beforeConnect is called before connection attempt", async () => {
-      const { callbacks } = await connectAndReady();
-      expect(callbacks.beforeConnect).toHaveBeenCalled();
-    });
   });
 
   describe("2. Reconnection on WebSocket error", () => {
