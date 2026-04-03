@@ -229,8 +229,8 @@ class WorkerRunner {
         onBufferResponse: (requestId, responseBytes) => {
           this.messageBuffer?.append(requestId, responseBytes);
         },
-        beforeConnect: async (signingKey) => {
-          await this.messageBuffer?.flush(signingKey);
+        onConnectionActive: (signingKey) => {
+          this.messageBuffer?.flush(signingKey);
         },
       },
     );
