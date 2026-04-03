@@ -109,10 +109,10 @@ export class ConnectionCore {
     requestLeases: Record<string, string>;
     requestMeta: Record<string, InFlightRequest>;
   } = {
-    wg: new WaitGroup(),
-    requestLeases: {},
-    requestMeta: {},
-  };
+      wg: new WaitGroup(),
+      requestLeases: {},
+      requestMeta: {},
+    };
 
   private _lastHeartbeatSentAt: number | undefined;
   private _lastHeartbeatReceivedAt: number | undefined;
@@ -460,6 +460,20 @@ export class ConnectionCore {
           if (err instanceof AuthError) this.switchAuthKey();
           if (err instanceof ConnectionLimitError) {
             this.callbacks.logger.error("Max concurrent connections reached");
+          }
+
+          // Gateway is draining, we should retry much faster
+          if (err.message?.includes("connect_gateway_closing")) {
+            const jitter = 500 + Math.random() * 1000;
+            this.callbacks.logger.info(
+              { attempt, delay: Math.round(jitter), error: err.message },
+              "Gateway draining, retrying",
+            );
+            const cancelled = await waitWithCancel(jitter, () => {
+              return this._shutdownRequested && !this.hasInFlightRequests();
+            });
+            if (cancelled) break;
+            continue;
           }
 
           const delay = expBackoff(attempt);
