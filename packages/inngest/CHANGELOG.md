@@ -1,5 +1,13 @@
 # inngest
 
+## 4.1.2
+
+### Patch Changes
+
+- [#1435](https://github.com/inngest/inngest-js/pull/1435) [`d8fc84b2`](https://github.com/inngest/inngest-js/commit/d8fc84b2f54e1b4725318593fdcc7b4004398eba) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Fix Connect worker blocking flushing & termination issues
+
+- [#1437](https://github.com/inngest/inngest-js/pull/1437) [`ad7ae27a`](https://github.com/inngest/inngest-js/commit/ad7ae27a7e20f60ed8aaf1ff80cdc98f2e405f1a) Thanks [@amh4r](https://github.com/amh4r)! - Fix worker thread strategy missing graceful shutdown
+
 ## 4.1.1
 
 ### Patch Changes
