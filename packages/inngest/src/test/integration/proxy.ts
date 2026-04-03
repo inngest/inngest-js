@@ -156,8 +156,12 @@ export class WebSocketProxy {
   }
 
   async start(): Promise<void> {
+    return this.listen(0);
+  }
+
+  async listen(port: number): Promise<void> {
     return new Promise((resolve) => {
-      this.server.listen(0, "127.0.0.1", () => {
+      this.server.listen(port, "127.0.0.1", () => {
         const addr = this.server.address();
         if (typeof addr === "string" || addr === null) {
           throw new Error("Unreachable");

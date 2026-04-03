@@ -418,6 +418,41 @@ export class ConnectionCore {
             "Connection active",
           );
           this.callbacks.onStateChange(ConnectionState.ACTIVE);
+
+          if (this._shutdownRequested) {
+            // Reconnected during shutdown to keep in-flight requests alive.
+            // Send WORKER_PAUSE instead of WORKER_READY so no new work is routed.
+            conn.ws.send(
+              ensureUnsharedArrayBuffer(
+                ConnectMessage.encode(
+                  ConnectMessage.create({
+                    kind: GatewayMessageType.WORKER_PAUSE,
+                  }),
+                ).finish(),
+              ),
+            );
+            this.callbacks.logger.info(
+              { connectionId: conn.id },
+              "Sent WORKER_PAUSE on reconnect during shutdown",
+            );
+          } else {
+            // Signal the gateway that we're ready to receive requests.
+            // This must happen after ACTIVE so the gateway doesn't route
+            // requests before handlers are fully attached.
+            conn.ws.send(
+              ensureUnsharedArrayBuffer(
+                ConnectMessage.encode(
+                  ConnectMessage.create({
+                    kind: GatewayMessageType.WORKER_READY,
+                  }),
+                ).finish(),
+              ),
+            );
+          }
+
+          // Flush any buffered responses via HTTP now that we're active.
+          this.callbacks.onConnectionActive?.(this.useSigningKey);
+
           this.resolveFirstReady?.();
           this.resolveFirstReady = undefined;
           this.rejectFirstReady = undefined;
