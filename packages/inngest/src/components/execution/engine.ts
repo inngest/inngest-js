@@ -274,6 +274,7 @@ class InngestExecutionEngine
       return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
+      this.releaseExecutionReferences();
     }
 
     /**
@@ -281,6 +282,21 @@ class InngestExecutionEngine
      * This should never happen.
      */
     throw new Error("Core loop finished without returning a value");
+  }
+
+  private releaseExecutionReferences(): void {
+    this.state.steps.clear();
+    this.state.metadata?.clear();
+    this.state.remainingStepsToBeSeen.clear();
+    this.state.stepCompletionOrder.length = 0;
+    this.state.checkpointingStepBuffer.length = 0;
+
+    for (const key of Object.keys(this.state.stepState)) {
+      delete this.state.stepState[key];
+    }
+
+    this.fnArg = {} as Context.Any;
+    this.execution = undefined;
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
