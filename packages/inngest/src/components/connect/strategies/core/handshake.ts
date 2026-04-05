@@ -344,6 +344,7 @@ export async function establishConnection(
     heartbeatIntervalMs: heartbeatIntervalMs ?? 10_000,
     extendLeaseIntervalMs: extendLeaseIntervalMs ?? 5_000,
     statusIntervalMs: statusIntervalMs ?? 0,
+    connectedAt: Date.now(),
     close: () => {
       if (conn.dead) return;
       conn.dead = true;

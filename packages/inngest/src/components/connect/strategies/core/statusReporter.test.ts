@@ -46,6 +46,7 @@ function createAccessor(
       heartbeatIntervalMs: 10_000,
       extendLeaseIntervalMs: 5_000,
       statusIntervalMs: 0,
+      connectedAt: Date.now(),
       close: () => {},
     } as Connection,
     drainingConnection: undefined,
@@ -160,6 +161,7 @@ describe.skipIf(!hasNativeWebSocket)("StatusReporter", () => {
         heartbeatIntervalMs: 10_000,
         extendLeaseIntervalMs: 5_000,
         statusIntervalMs: 0,
+        connectedAt: Date.now(),
         close: () => {},
       },
     });

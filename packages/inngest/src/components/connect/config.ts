@@ -143,7 +143,7 @@ export function prepareConnectionConfig(
 
   // Build connection establish data
   const connectionData: ConnectionEstablishData = {
-    manualReadinessAck: false,
+    manualReadinessAck: true,
     marshaledCapabilities: JSON.stringify(capabilities),
     apps: Object.entries(functionConfigs).map(
       ([appId, { client, functions: fns }]) => ({

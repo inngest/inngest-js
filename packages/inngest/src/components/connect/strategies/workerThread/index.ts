@@ -6,6 +6,7 @@
  * main thread.
  */
 
+import { createRequire } from "node:module";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -93,17 +94,7 @@ export class WorkerThreadStrategy extends BaseStrategy {
           return;
         }
 
-        const timeout = setTimeout(() => {
-          this.internalLogger.debug("Worker close timeout, terminating");
-
-          // Force terminate the worker to avoid hanging. Ideally this should
-          // never happen, since the worker thread should've exited
-          this.worker?.terminate();
-          resolve();
-        }, 30_000);
-
         this.worker.once("exit", () => {
-          clearTimeout(timeout);
           resolve();
         });
       });
@@ -176,12 +167,29 @@ export class WorkerThreadStrategy extends BaseStrategy {
     const runnerPath = join(dirname(currentFilePath), `runner${ext}`);
 
     this.internalLogger.debug({ runnerPath }, "Creating worker thread");
+    let execArgv: string[] = [];
+    if (ext === ".ts") {
+      // In dev/test (.ts), Node's native strip-only TS mode can't handle
+      // constructs like `enum` used throughout the SDK. Use tsx as a loader so
+      // the worker gets full TypeScript support. In production (.js) no loader
+      // is needed.
+      //
+      // It might be a good idea to stop using enums in our codebase for this
+      // reason.
 
-    // Create the worker with TypeScript support via tsx or ts-node
-    // In production builds, this will be JavaScript
+      const require = createRequire(import.meta.url);
+      const tsxPath = require.resolve("tsx");
+      execArgv = ["--no-experimental-strip-types", "--loader", tsxPath];
+    }
+
     this.worker = new Worker(runnerPath, {
-      // Inherit environment variables
       env: process.env as NodeJS.ProcessEnv,
+      execArgv,
+      // Capture stdout/stderr to prevent tsx loader warnings from leaking to
+      // the parent process. The worker uses postMessage for all communication
+      // so nothing meaningful is lost.
+      stdout: true,
+      stderr: true,
     });
 
     // Set up worker event handlers
