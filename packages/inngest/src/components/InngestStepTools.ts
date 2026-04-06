@@ -116,6 +116,12 @@ export interface FoundStep extends HashedOp {
   promise: Promise<unknown>;
 
   /**
+   * Rejects the userland promise for this step, used to unblock the user's
+   * handler during cleanup so runtimes that track fibers (e.g. Effect) can GC.
+   */
+  reject: (reason: unknown) => void;
+
+  /**
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
@@ -301,9 +307,21 @@ export const createStepTools = <
       return op;
     };
 
-    return (async (...args: Parameters<T>): Promise<unknown> => {
+    const fn = async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
       return stepHandler({ args: parsedArgs, matchOp: wrappedMatchOp, opts });
+    };
+
+    return ((...args: Parameters<T>): Promise<unknown> => {
+      const result = fn(...args);
+
+      // Prevent unhandled rejection warnings when the execution engine rejects
+      // pending step promises during cleanup. The user can still observe the
+      // rejection via their own `await` — this just prevents Node/browsers from
+      // flagging the intermediate promise as unhandled.
+      result.catch(() => {});
+
+      return result;
     }) as T;
   };
 

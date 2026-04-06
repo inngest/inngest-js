@@ -91,6 +91,14 @@ const { sha1 } = hashjs;
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
+/**
+ * Symbol used to mark errors thrown during execution cleanup. Pending step
+ * promises are rejected when the execution loop finishes so that runtimes
+ * tracking fibers (e.g. Effect) can GC. The built-in logger middleware checks
+ * for this symbol to avoid logging these expected rejections.
+ */
+export const executionCleanupSymbol = Symbol.for("inngest:execution-cleanup");
+
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
   return new InngestExecutionEngine(options);
 };
@@ -117,6 +125,7 @@ class InngestExecutionEngine
    * If we're not supposed to run a particular step, this will be `undefined`.
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
+  private executionComplete = false;
   private rootSpanId?: string;
 
   /**
@@ -274,6 +283,9 @@ class InngestExecutionEngine
       return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
+      this.executionComplete = true;
+      this.rejectPendingSteps();
+      this.releaseReferences();
     }
 
     /**
@@ -281,6 +293,50 @@ class InngestExecutionEngine
      * This should never happen.
      */
     throw new Error("Core loop finished without returning a value");
+  }
+
+  /**
+   * Reject all pending step promises so the user's handler can unwind. This
+   * allows runtimes that track active fibers (e.g. Effect) to GC instead of
+   * leaking on every replay invocation where never-settling promises keep
+   * fibers alive.
+   */
+  private rejectPendingSteps(): void {
+    const err = Object.assign(new Error("Execution completed"), {
+      [executionCleanupSymbol]: true,
+    });
+    for (const step of this.state.steps.values()) {
+      if (!step.fulfilled) {
+        step.reject(err);
+        step.memoizationDeferred?.reject(err);
+      }
+    }
+  }
+
+  /**
+   * Break the reference chain from any lingering closures (e.g. Effect fibers,
+   * the fire-and-forget handler promise) back to heavyweight engine data. Even
+   * if something retains a path to `this`, the maps/objects it pointed to are
+   * already empty.
+   */
+  private releaseReferences(): void {
+    this.state.steps.clear();
+    this.state.metadata?.clear();
+    this.state.remainingStepsToBeSeen.clear();
+    this.state.stepCompletionOrder.length = 0;
+    this.state.checkpointingStepBuffer.length = 0;
+
+    for (const key of Object.keys(this.state.stepState)) {
+      delete this.state.stepState[key];
+    }
+
+    this.fnArg = {} as Context.Any;
+    this.execution = undefined;
+
+    // Clear execution options to sever the reference chain from any lingering
+    // runtime closures (e.g. Effect fibers) back to HTTP-layer objects (Hono
+    // context, parsed request body, middleware instances).
+    this.options = {} as InngestExecutionOptions;
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
@@ -1140,6 +1196,12 @@ class InngestExecutionEngine
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch(async (error) => {
+        // Ignore errors from cleanup — pending step promises are rejected after
+        // the execution loop finishes to unblock the user's handler for GC.
+        if (this.executionComplete) {
+          return;
+        }
+
         // Preserve Error instances; stringify non-Error throws (e.g. `throw {}`)
         let err: Error;
         if (error instanceof Error) {
@@ -1657,6 +1719,7 @@ class InngestExecutionEngine
         opts: { ...opId.opts, ...extraOpts },
         rawArgs: fnArgs,
         hashedId,
+        reject,
         input: stepState?.input,
 
         fn: opts?.fn ? () => opts.fn?.(this.fnArg, ...fnArgs) : undefined,
