@@ -1102,14 +1102,7 @@ export function builtInMiddleware(baseLogger: Logger) {
         next,
       }: Middleware.WrapFunctionHandlerArgs) {
         return next().catch((err: unknown) => {
-          const isCleanup =
-            err != null &&
-            typeof err === "object" &&
-            Symbol.for("inngest:execution-cleanup") in err;
-
-          if (!isCleanup) {
-            this.proxyLogger.error({ err }, "Inngest function error");
-          }
+          this.proxyLogger.error({ err }, "Inngest function error");
           throw err;
         });
       }
