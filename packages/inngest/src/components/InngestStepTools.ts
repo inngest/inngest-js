@@ -301,12 +301,10 @@ export const createStepTools = <
       return op;
     };
 
-    const fn = async (...args: Parameters<T>): Promise<unknown> => {
+    return (async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
       return stepHandler({ args: parsedArgs, matchOp: wrappedMatchOp, opts });
-    };
-
-    return fn as T;
+    }) as T;
   };
 
   /**
