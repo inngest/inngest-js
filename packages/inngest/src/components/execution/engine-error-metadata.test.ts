@@ -25,13 +25,17 @@ describe("Error path metadata propagation", () => {
    */
   function createAsyncExecution(
     client: ReturnType<typeof createClient>,
-    fn: InngestFunction<any, any, any, any, any>,
+    fn: InstanceType<typeof InngestFunction>,
     overrides?: Record<string, unknown>,
   ) {
     return fn["createExecution"]({
       partialOptions: {
         client,
-        data: fromPartial({ event: mockEvent, runId: "test-run-id", ...overrides }),
+        data: fromPartial({
+          event: mockEvent,
+          runId: "test-run-id",
+          ...overrides,
+        }),
         runId: "test-run-id",
         stepState: {},
         stepCompletionOrder: [],
@@ -93,8 +97,9 @@ describe("Error path metadata propagation", () => {
 
     // Mock the updateMetadata API call
     const mockUpdateMetadata = vi.fn().mockResolvedValue(undefined);
-    (client as unknown as { updateMetadata: typeof mockUpdateMetadata })
-      .updateMetadata = mockUpdateMetadata;
+    (
+      client as unknown as { updateMetadata: typeof mockUpdateMetadata }
+    ).updateMetadata = mockUpdateMetadata;
 
     // Function throws outside of step.run — metadata set in an earlier step
     // is still in state.metadata when the function rejects
@@ -150,8 +155,9 @@ describe("Error path metadata propagation", () => {
     const client = createClient({ id: "test" });
 
     const mockUpdateMetadata = vi.fn().mockResolvedValue(undefined);
-    (client as unknown as { updateMetadata: typeof mockUpdateMetadata })
-      .updateMetadata = mockUpdateMetadata;
+    (
+      client as unknown as { updateMetadata: typeof mockUpdateMetadata }
+    ).updateMetadata = mockUpdateMetadata;
 
     const fn = new InngestFunction(
       client,
