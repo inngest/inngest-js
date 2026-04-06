@@ -50,6 +50,7 @@ import type {
   MetadataScope,
   MetadataUpdate,
 } from "../InngestMetadata.ts";
+import { sendMetadataViaAPI } from "../InngestMetadata.ts";
 import {
   createStepTools,
   type ExperimentStepTools,
@@ -248,6 +249,57 @@ class InngestExecutionEngine
     this.state.metadata.set(stepId, updates);
 
     return true;
+  }
+
+  /**
+   * Flush any pending metadata entries via the metadata REST API.
+   *
+   * This is used when the normal batching path (sending metadata alongside
+   * step opcodes) won't work — specifically when a step error propagates to
+   * the function level as a `function-rejected` result. In that case, the
+   * error response doesn't include step opcodes, so any metadata batched
+   * during the step's execution would be silently lost.
+   *
+   * Each entry is sent as a best-effort fire-and-forget call. Failures are
+   * logged but don't block the error response.
+   */
+  private async flushPendingMetadata(): Promise<void> {
+    const metadata = this.state.metadata;
+    if (!metadata || metadata.size === 0) return;
+
+    const runId = this.options.runId;
+    if (!runId) return;
+
+    const client = this.options.client;
+    const headers = this.options.headers;
+
+    const promises: Promise<void>[] = [];
+
+    for (const [stepId, updates] of metadata) {
+      for (const update of updates) {
+        promises.push(
+          sendMetadataViaAPI(
+            client,
+            { run_id: runId, step_id: stepId },
+            update.kind,
+            update.op,
+            update.values,
+            headers,
+          ).catch((err) => {
+            client[internalLoggerSymbol].warn(
+              { err, stepId, kind: update.kind },
+              "failed to flush pending metadata on function rejection",
+            );
+          }),
+        );
+      }
+    }
+
+    // Wait for all sends to complete (or fail silently)
+    await Promise.allSettled(promises);
+
+    // Clear flushed metadata so it isn't sent again
+    metadata.clear();
   }
 
   /**
@@ -555,6 +607,10 @@ class InngestExecutionEngine
       },
 
       "function-rejected": async (checkpoint) => {
+        // Flush any metadata batched during the step that threw — the error
+        // response won't include step opcodes, so batched metadata would be lost.
+        await this.flushPendingMetadata();
+
         // If the function throws during sync execution, we want to switch to
         // async mode so that we can retry. The exception is that we're already
         // at max attempts, in which case we do actually want to reject.
@@ -679,6 +735,7 @@ class InngestExecutionEngine
        * The user's function has thrown an error.
        */
       "function-rejected": async (checkpoint) => {
+        await this.flushPendingMetadata();
         return await this.transformOutput({ error: checkpoint.error });
       },
 
@@ -764,6 +821,7 @@ class InngestExecutionEngine
             }
           }
 
+          await this.flushPendingMetadata();
           return await this.transformOutput({ error: checkpoint.error });
         },
         "step-not-found": asyncHandlers["step-not-found"],
