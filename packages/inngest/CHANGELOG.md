@@ -1,5 +1,11 @@
 # inngest
 
+## 4.2.0
+
+### Minor Changes
+
+- [#1424](https://github.com/inngest/inngest-js/pull/1424) [`14fc7ef4`](https://github.com/inngest/inngest-js/commit/14fc7ef4e2c29500a6e5c91b58d74a4427f30504) Thanks [@Linell](https://github.com/Linell)! - Add streaming support to Durable Endpoints
+
 ## 4.1.2
 
 ### Patch Changes
