@@ -150,6 +150,13 @@ export interface InngestExecutionOptions {
   middlewareInstances?: Middleware.BaseMiddleware[];
 
   /**
+   * Whether the client accepts SSE (`Accept: text/event-stream`). When true,
+   * the execution engine may deliver the result as an SSE stream even if
+   * `stream.push()` was not called.
+   */
+  acceptsSse?: boolean;
+
+  /**
    * Provide the ability to transform the context passed to the function before
    * the execution starts.
    */
