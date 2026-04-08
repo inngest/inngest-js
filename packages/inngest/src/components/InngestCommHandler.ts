@@ -2224,6 +2224,13 @@ export class InngestCommHandler<
   protected reqUrl(url: URL): URL {
     let ret = new URL(url);
 
+    //
+    // Strip Inngest-specific query params so they never leak into the
+    // registered endpoint URL.
+    for (const key of Object.values(queryKeys)) {
+      ret.searchParams.delete(key);
+    }
+
     const servePath = this.servePath || this.env[envKeys.InngestServePath];
 
     if (servePath) {
