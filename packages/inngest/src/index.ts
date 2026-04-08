@@ -91,6 +91,7 @@ export type {
 export type {
   ExclusiveKeys,
   IsStringLiteral,
+  MaybePromise,
   SendEventPayload,
   StrictUnion,
   StrictUnionHelper,
