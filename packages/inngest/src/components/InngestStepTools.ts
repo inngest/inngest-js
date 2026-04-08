@@ -1120,6 +1120,8 @@ export const group: GroupTools = {
     getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
   experiment: (...args) =>
     getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
+  defer: (...args) =>
+    getDeferredGroupTooling().then((tools) => tools.defer(...args)),
 };
 
 /**

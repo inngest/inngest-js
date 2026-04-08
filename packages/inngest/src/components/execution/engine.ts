@@ -1753,6 +1753,12 @@ class InngestExecutionEngine
       return;
     }
 
+    if (this.fnArg.event?.name === "deferred.start") {
+      // Skip validation for deferred runs — the function may not declare
+      // deferred.start as a trigger, but group.defer() sends it internally.
+      return;
+    }
+
     const triggers = this.options.fn.opts.triggers;
     if (!triggers || triggers.length === 0) return;
 
@@ -1857,10 +1863,13 @@ class InngestExecutionEngine
       experimentStepRunSymbol
     ];
 
+    const fn = this.options.fn;
+    const fnSlug = fn.id(this.options.client.id);
+
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-      group: createGroupTools({ experimentStepRun }),
+      group: createGroupTools({ experimentStepRun, fnSlug }),
     } as Context.Any;
 
     /**

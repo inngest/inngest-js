@@ -1,9 +1,5 @@
 import { inngest } from "./client";
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export const fn1 = inngest.createFunction(
   {
     id: "fn-1",
@@ -11,7 +7,7 @@ export const fn1 = inngest.createFunction(
     retries: 0,
     triggers: [{ event: "event-1" }, { event: "deferred.start" }],
   },
-  async ({ event, runId, step }) => {
+  async ({ event, runId, step, group }) => {
     console.log(event.name, event.data);
     const output = await step.run("a", () => {
       console.log("step a");
@@ -19,21 +15,10 @@ export const fn1 = inngest.createFunction(
     });
     console.log(runId, output);
 
-    if (event.name === "deferred.start") {
+    await group.defer(async () => {
       await step.run("deferred-step", () => {
         console.log("deferred step");
       });
-    } else {
-      await step.sendEvent("defer", {
-        name: "deferred.start",
-        data: {
-          runId,
-          fnSlug: fn1.id(inngest.id),
-        },
-      });
-
-      // Temporary to prevent race
-      await sleep(1000);
-    }
+    });
   },
 );

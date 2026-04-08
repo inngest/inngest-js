@@ -245,6 +245,22 @@ export interface GroupTools {
    * ```
    */
   experiment: GroupExperiment;
+
+  /**
+   * Defer execution of a callback to a separate function run. When called
+   * in a normal run, sends a `deferred.start` event and skips the callback.
+   * When the function is triggered by `deferred.start`, executes the callback.
+   *
+   * @example
+   * ```ts
+   * await group.defer(async () => {
+   *   await step.run("deferred-work", () => {
+   *     // This runs in a separate function run
+   *   });
+   * });
+   * ```
+   */
+  defer: (callback: () => Promise<void>) => Promise<void>;
 }
 
 /**
@@ -257,6 +273,12 @@ export interface GroupToolsDeps {
    */
   // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
   experimentStepRun?: (...args: any[]) => Promise<any>;
+
+  /**
+   * The fully-qualified function slug (e.g. "app-id-fn-id"), used by
+   * `group.defer()` to include in the deferred event payload.
+   */
+  fnSlug?: string;
 }
 
 /**
@@ -430,5 +452,41 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     return result;
   }) as GroupExperiment;
 
-  return { parallel, experiment };
+  const defer = async (callback: () => Promise<void>): Promise<void> => {
+    const currentCtx = getAsyncCtxSync();
+
+    if (!currentCtx?.execution) {
+      throw new Error(
+        "`group.defer()` must be called within an Inngest function execution",
+      );
+    }
+
+    const ctx = currentCtx.execution.ctx;
+    const event = ctx.event;
+
+    if (event.name === "deferred.start") {
+      await callback();
+      return;
+    }
+
+    const fnSlug = deps?.fnSlug;
+    if (!fnSlug) {
+      throw new Error(
+        "`group.defer()` requires a function slug to be available.",
+      );
+    }
+
+    await ctx.step.sendEvent("defer", {
+      name: "deferred.start",
+      data: {
+        runId: ctx.runId,
+        fnSlug,
+      },
+    });
+
+    // Temporary to prevent race
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  };
+
+  return { parallel, experiment, defer };
 };
