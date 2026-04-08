@@ -64,7 +64,7 @@ export const resolveAfterPending = (count = 100): Promise<void> => {
   });
 };
 
-type DeferredPromiseReturn<T> = {
+export type DeferredPromiseReturn<T> = {
   promise: Promise<T>;
   resolve: (value: T) => DeferredPromiseReturn<T>;
   // biome-ignore lint/suspicious/noExplicitAny: intentional

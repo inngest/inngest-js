@@ -1,5 +1,6 @@
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
 
 /**
@@ -35,13 +36,19 @@ export interface AsyncContext {
      * callback. Useful to understand whether we are in the context of a step
      * execution or within the main function body.
      */
-    executingStep?: StepOptions;
+    executingStep?: StepOptions & { hashedId?: string };
 
     /**
      * If present, indicates the parallel mode that should be applied to steps
      * created within this context. Set by `group.parallel()`.
      */
     parallelMode?: "race";
+
+    /**
+     * The stream tools instance for this execution context. Used by the
+     * `stream` singleton to push/pipe SSE data to the client.
+     */
+    stream?: Stream;
 
     /**
      * If present, indicates the variant callback is executing within an

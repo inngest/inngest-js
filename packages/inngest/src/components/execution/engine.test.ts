@@ -3,10 +3,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
-import { StepMode } from "../../types.ts";
+import { StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import type { MetadataUpdate } from "../InngestMetadata.ts";
 import type { GenericStepTools } from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
 import type { ExecutionResults } from "./InngestExecution.ts";
 
 describe("Execution engine checkpoint retry behavior", () => {
@@ -762,6 +763,79 @@ describe("Execution engine checkpoint retry behavior", () => {
       expect(mockCheckpointNewRun).toHaveBeenCalledTimes(1);
       // Subsequent steps use checkpointSteps
       expect(mockCheckpointSteps).toHaveBeenCalled();
+    });
+  });
+
+  describe("StepMode.Sync (SSE streaming)", () => {
+    const makeSseApi = (
+      overrides?: Partial<InngestApi>,
+    ): Partial<InngestApi> => ({
+      checkpointNewRun: vi.fn().mockResolvedValue({
+        data: {
+          app_id: "app-123",
+          fn_id: "fn-456",
+          token: "token-789",
+          realtime_token: "rt-token",
+        },
+      }),
+      checkpointSteps: vi.fn().mockResolvedValue(undefined),
+      getRealtimeStreamRedirect: vi
+        .fn()
+        .mockResolvedValue({ url: "http://test/sse" }),
+      checkpointStream: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+
+    test("checkpoint failure resolves with function-rejected instead of throwing", async () => {
+      const setup = setupExecution({
+        mockApi: makeSseApi({
+          checkpointNewRun: vi.fn().mockRejectedValue(new Error("Server down")),
+        }),
+        handler: async ({ step }) => {
+          await step.run("a", () => "ok");
+          return "done";
+        },
+        stepMode: StepMode.Sync,
+        extraPartialOptions: { acceptsSse: true },
+      });
+
+      const resultPromise = setup.execution.start();
+      await advanceThroughRetries();
+      const result = await resultPromise;
+
+      expect(result).toHaveProperty("type", "function-rejected");
+    });
+
+    test("NonRetriableError in step checkpoints as StepFailed with serialized error data", async () => {
+      const api = makeSseApi();
+
+      await runExecution({
+        mockApi: api,
+        handler: async ({ step }) => {
+          await step.run("will-fail", () => {
+            throw new NonRetriableError("permanent");
+          });
+        },
+        stepMode: StepMode.Sync,
+        extraPartialOptions: { acceptsSse: true },
+      });
+
+      const allSteps = [
+        ...(api.checkpointNewRun as ReturnType<typeof vi.fn>).mock.calls,
+        ...(api.checkpointSteps as ReturnType<typeof vi.fn>).mock.calls,
+      ].flatMap((call) => call[0]?.steps ?? []);
+
+      const failedStep = allSteps.find(
+        (s: { op?: string }) => s.op === StepOpCode.StepFailed,
+      );
+
+      expect(failedStep).toBeDefined();
+      expect(failedStep.op).toBe(StepOpCode.StepFailed);
+      expect(failedStep.data).toMatchObject({
+        __serialized: true,
+        name: "NonRetriableError",
+        message: "permanent",
+      });
     });
   });
 });
