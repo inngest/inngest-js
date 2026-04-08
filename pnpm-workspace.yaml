@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - examples/pocDefer
 
 onlyBuiltDependencies:
   - aws-sdk

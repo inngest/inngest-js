@@ -70,6 +70,8 @@ export const serve = (options: ServeHandlerOptions): any => {
       req: Either<VercelRequest, Request>,
       res: Either<Response, VercelResponse>,
     ) => {
+      console.log("\n--- Request ---");
+      console.log(req.body);
       return {
         body: () => req.body,
         headers: (key) => {

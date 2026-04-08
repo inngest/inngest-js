@@ -1,0 +1,16 @@
+{
+  "name": "poc-defer",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "INNGEST_DEV=1 tsx --watch src/index.ts"
+  },
+  "dependencies": {
+    "express": "5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.5",
+    "tsx": "4.21.0",
+    "typescript": "5.8.2"
+  }
+}
