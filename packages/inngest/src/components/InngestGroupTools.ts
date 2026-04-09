@@ -247,9 +247,9 @@ export interface GroupTools {
   experiment: GroupExperiment;
 
   /**
-   * Defer execution of a callback to a separate function run. When called
-   * in a normal run, sends a `deferred.start` event and skips the callback.
-   * When the function is triggered by `deferred.start`, executes the callback.
+   * Defer execution of a callback to a separate function run. In the parent
+   * run, reports a `DeferGroup` opcode so the executor can schedule a deferred
+   * run after the parent completes. In the deferred run, executes the callback.
    *
    * @example
    * ```ts
@@ -261,9 +261,7 @@ export interface GroupTools {
    * });
    * ```
    */
-  defer: (
-    callback: (ctx: { runId: string }) => Promise<void>,
-  ) => Promise<void>;
+  defer: (callback: (ctx: { runId: string }) => Promise<void>) => Promise<void>;
 }
 
 /**
@@ -278,10 +276,11 @@ export interface GroupToolsDeps {
   experimentStepRun?: (...args: any[]) => Promise<any>;
 
   /**
-   * The fully-qualified function slug (e.g. "app-id-fn-id"), used by
-   * `group.defer()` to include in the deferred event payload.
+   * A step tool that reports the `DeferGroup` opcode, extracted from step tools
+   * via the defer symbol. Used by `group.defer()` in the parent run to signal
+   * the Dev Server to schedule a deferred run.
    */
-  fnSlug?: string;
+  deferStep?: (idOrOptions: string) => Promise<null>;
 }
 
 /**
@@ -477,27 +476,13 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       return;
     }
 
-    const fnSlug = deps?.fnSlug;
-    if (!fnSlug) {
+    if (!deps?.deferStep) {
       throw new Error(
-        "`group.defer()` requires a function slug to be available.",
+        "`group.defer()` requires a defer step tool to be available.",
       );
     }
 
-    const ctx = currentCtx.execution.ctx;
-
-    await ctx.step.sendEvent("defer", {
-      name: "deferred.start",
-      data: {
-        event: ctx.event,
-        events: ctx.events,
-        runId: ctx.runId,
-        fnSlug,
-      },
-    });
-
-    // Temporary to prevent race
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await deps.deferStep("defer");
   };
 
   return { parallel, experiment, defer };

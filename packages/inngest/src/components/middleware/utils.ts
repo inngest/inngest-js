@@ -111,6 +111,8 @@ export function stepTypeFromOpCode(
     if (opts?.type === "group.experiment") {
       return "group.experiment";
     }
+  } else if (op === StepOpCode.DeferGroup) {
+    return "group.defer";
   } else if (op === StepOpCode.Sleep) {
     return "sleep";
   } else if (op === StepOpCode.WaitForEvent) {

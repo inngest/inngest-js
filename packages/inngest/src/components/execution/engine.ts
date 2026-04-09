@@ -57,6 +57,8 @@ import type {
 } from "../InngestMetadata.ts";
 import {
   createStepTools,
+  type DeferGroupStepTools,
+  deferGroupSymbol,
   type ExperimentStepTools,
   experimentStepRunSymbol,
   type FoundStep,
@@ -1866,14 +1868,14 @@ class InngestExecutionEngine
     const experimentStepRun = (step as unknown as ExperimentStepTools)[
       experimentStepRunSymbol
     ];
-
-    const fn = this.options.fn;
-    const fnSlug = fn.id(this.options.client.id);
+    const deferStep = (step as unknown as DeferGroupStepTools)[
+      deferGroupSymbol
+    ];
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-      group: createGroupTools({ experimentStepRun, fnSlug }),
+      group: createGroupTools({ experimentStepRun, deferStep }),
     } as Context.Any;
 
     // Strip deprecated `user` field that the Dev Server still adds.

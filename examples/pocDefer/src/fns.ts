@@ -5,7 +5,7 @@ export const fn1 = inngest.createFunction(
     id: "fn-1",
     checkpointing: false,
     retries: 0,
-    triggers: [{ event: "event-1" }, { event: "deferred.start" }],
+    triggers: [{ event: "event-1" }],
   },
   async ({ event, runId, step, group }) => {
     console.log(event.name, event.data);

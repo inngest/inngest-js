@@ -948,6 +948,32 @@ export const createStepTools = <
   (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
     createStepRun("group.experiment");
 
+  // Attach a step tool for group.defer() that reports the DeferGroup opcode.
+  // The Dev Server handles this opcode by scheduling a deferred run after the
+  // parent completes. The symbol keeps it off the public `step` surface.
+  (tools as unknown as DeferGroupStepTools)[deferGroupSymbol] = createTool<
+    (idOrOptions: StepOptionsOrId) => Promise<null>
+  >(
+    ({ id, name }) => {
+      // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
+      const fn = (execution as any)["options"]["fn"];
+      const fnSlug = fn.id(client.id);
+
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.DeferGroup,
+        name: id,
+        displayName: name ?? id,
+        opts: { fnSlug },
+        userland: { id },
+      };
+    },
+    {
+      fn: () => null,
+    },
+  );
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -1014,6 +1040,12 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
     idOrOptions: StepOptionsOrId,
     fn: () => unknown,
   ) => Promise<unknown>;
+};
+
+export const deferGroupSymbol = Symbol.for("inngest.group.defer");
+
+export type DeferGroupStepTools = GetStepTools<Inngest.Any> & {
+  [deferGroupSymbol]: (idOrOptions: StepOptionsOrId) => Promise<null>;
 };
 
 /**

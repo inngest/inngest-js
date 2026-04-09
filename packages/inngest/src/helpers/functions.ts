@@ -100,7 +100,12 @@ export const createVersionSchema = (internalLogger: Logger) =>
 
       if (v === 0) {
         internalLogger.error("V0 execution version is no longer supported"); // TODO: improve?
-        throw new Error("V0 execution version is no longer supported");
+        // Treat v0 as unknown — let SDK decide. Deferred runs may arrive
+        // with version 0 if metadata hasn't been updated yet.
+        return {
+          sdkDecided: true,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
+        };
       }
 
       if (v === -1) {

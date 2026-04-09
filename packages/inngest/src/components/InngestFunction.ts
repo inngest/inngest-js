@@ -181,13 +181,6 @@ export class InngestFunction<
       triggers.push({ event: eventName, expression: trigger.if });
     }
 
-    // Auto-register the deferred.start trigger so the Dev Server routes
-    // deferred events to this function, filtered by fnSlug.
-    triggers.push({
-      event: "deferred.start",
-      expression: `event.data.fnSlug == "${fnId}"`,
-    });
-
     const fn: FunctionConfig = {
       id: fnId,
       name: this.name,

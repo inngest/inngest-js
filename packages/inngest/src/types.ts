@@ -264,6 +264,8 @@ export enum StepOpCode {
   AiGateway = "AIGateway",
   Gateway = "Gateway",
 
+  DeferGroup = "DeferGroup",
+
   RunComplete = "RunComplete",
   DiscoveryRequest = "DiscoveryRequest",
 }
