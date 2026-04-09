@@ -81,6 +81,14 @@ export interface AsyncContext {
      * Used by `group.defer()` to decide whether to run the callback.
      */
     isDeferredRun?: boolean;
+
+    /**
+     * The actual runId assigned to this deferred execution by the platform.
+     * Only set when `isDeferredRun` is true. The handler's `ctx.runId` is
+     * swapped to the parent's runId, so this preserves the deferred run's
+     * own identity for `group.defer()` to pass to the callback.
+     */
+    deferredRunId?: string;
   };
 }
 

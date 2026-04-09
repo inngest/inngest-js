@@ -253,14 +253,17 @@ export interface GroupTools {
    *
    * @example
    * ```ts
-   * await group.defer(async () => {
+   * await group.defer(async ({ runId }) => {
+   *   // runId is the deferred run's own run ID
    *   await step.run("deferred-work", () => {
    *     // This runs in a separate function run
    *   });
    * });
    * ```
    */
-  defer: (callback: () => Promise<void>) => Promise<void>;
+  defer: (
+    callback: (ctx: { runId: string }) => Promise<void>,
+  ) => Promise<void>;
 }
 
 /**
@@ -452,7 +455,9 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     return result;
   }) as GroupExperiment;
 
-  const defer = async (callback: () => Promise<void>): Promise<void> => {
+  const defer = async (
+    callback: (ctx: { runId: string }) => Promise<void>,
+  ): Promise<void> => {
     const currentCtx = getAsyncCtxSync();
 
     if (!currentCtx?.execution) {
@@ -462,7 +467,13 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     }
 
     if (currentCtx.execution.isDeferredRun) {
-      await callback();
+      const deferredRunId = currentCtx.execution.deferredRunId;
+      if (!deferredRunId) {
+        throw new Error(
+          "`group.defer()` deferred run is missing its own runId",
+        );
+      }
+      await callback({ runId: deferredRunId });
       return;
     }
 

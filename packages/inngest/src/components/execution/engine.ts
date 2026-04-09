@@ -157,6 +157,7 @@ class InngestExecutionEngine
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private _isDeferredRun = false;
+  private _deferredRunId: string | undefined;
   private userFnToRun: Handler.Any;
   private middlewareManager: MiddlewareManager;
   /**
@@ -292,6 +293,7 @@ class InngestExecutionEngine
               instance: this,
               stream: this.streamTools,
               isDeferredRun: this._isDeferredRun,
+              deferredRunId: this._deferredRunId,
             },
           },
           async () => {
@@ -1892,6 +1894,7 @@ class InngestExecutionEngine
       const data = fnArg.event.data as Record<string, unknown>;
 
       if (data.event && data.events && data.runId) {
+        this._deferredRunId = fnArg.runId;
         fnArg.event = data.event as EventPayload;
         // biome-ignore lint/suspicious/noExplicitAny: deferred event data
         fnArg.events = data.events as any;

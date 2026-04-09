@@ -56,7 +56,9 @@ test("group.defer() runs callback in a separate deferred run", async () => {
       });
       steps.outsideDefer.outputs.push(output);
 
-      await group.defer(async () => {
+      await group.defer(async ({ runId }) => {
+        deferredRun.runId = runId;
+        deferredRun.uniqueRunId.add(runId);
         const output = await step.run("inside-defer", () => {
           steps.insideDefer.count++;
           return "inside-defer";
@@ -70,27 +72,26 @@ test("group.defer() runs callback in a separate deferred run", async () => {
 
   await client.send({ name: eventName });
   await parentRun.waitForRunComplete();
+  await deferredRun.waitForRunComplete();
+  expect(parentRun.runId).not.toBe(deferredRun.runId);
 
-  await waitFor(() => {
-    expect(steps).toEqual({
-      insideDefer: {
-        count: 1,
-        outputs: ["inside-defer"],
-      },
-      outsideDefer: {
-        count: 1,
-        outputs: [
-          "outside-defer",
-          "outside-defer",
-          "outside-defer",
-          "outside-defer",
-        ],
-      },
-    });
-
-    expect(parentRun.uniqueEvent.size).toBe(1);
-    expect(parentRun.uniqueRunId.size).toBe(1);
+  expect(steps).toEqual({
+    insideDefer: {
+      count: 1,
+      outputs: ["inside-defer"],
+    },
+    outsideDefer: {
+      count: 1,
+      outputs: [
+        "outside-defer",
+        "outside-defer",
+        "outside-defer",
+        "outside-defer",
+      ],
+    },
   });
 
-  expect(false).toBeTruthy();
+  expect(parentRun.uniqueEvent.size).toBe(1);
+  expect(parentRun.uniqueRunId.size).toBe(1);
+  expect(deferredRun.uniqueRunId.size).toBe(1);
 });
