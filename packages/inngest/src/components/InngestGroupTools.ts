@@ -461,10 +461,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
-    const ctx = currentCtx.execution.ctx;
-    const event = ctx.event;
-
-    if (event.name === "deferred.start") {
+    if (currentCtx.execution.isDeferredRun) {
       await callback();
       return;
     }
@@ -476,9 +473,13 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
+    const ctx = currentCtx.execution.ctx;
+
     await ctx.step.sendEvent("defer", {
       name: "deferred.start",
       data: {
+        event: ctx.event,
+        events: ctx.events,
         runId: ctx.runId,
         fnSlug,
       },

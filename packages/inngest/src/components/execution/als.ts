@@ -74,6 +74,13 @@ export interface AsyncContext {
      * nested step, which is not allowed.
      */
     insideExperimentSelect?: boolean;
+
+    /**
+     * If true, this execution was triggered by a `deferred.start` event.
+     * Set by the engine when it detects the deferred event and swaps context.
+     * Used by `group.defer()` to decide whether to run the callback.
+     */
+    isDeferredRun?: boolean;
   };
 }
 

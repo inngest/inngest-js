@@ -156,6 +156,7 @@ class InngestExecutionEngine
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
+  private _isDeferredRun = false;
   private userFnToRun: Handler.Any;
   private middlewareManager: MiddlewareManager;
   /**
@@ -290,6 +291,7 @@ class InngestExecutionEngine
               ctx: this.fnArg,
               instance: this,
               stream: this.streamTools,
+              isDeferredRun: this._isDeferredRun,
             },
           },
           async () => {
@@ -1871,6 +1873,32 @@ class InngestExecutionEngine
       step,
       group: createGroupTools({ experimentStepRun, fnSlug }),
     } as Context.Any;
+
+    // Strip deprecated `user` field that the Dev Server still adds.
+    if (fnArg.event) {
+      delete (fnArg.event as Record<string, unknown>).user;
+    }
+    if (fnArg.events) {
+      for (const evt of fnArg.events) {
+        delete (evt as Record<string, unknown>).user;
+      }
+    }
+
+    /**
+     * Handle deferred runs by swapping context from the deferred.start event
+     * data so the function handler sees the original event, events, and runId.
+     */
+    if (fnArg.event?.name === "deferred.start") {
+      const data = fnArg.event.data as Record<string, unknown>;
+
+      if (data.event && data.events && data.runId) {
+        fnArg.event = data.event as EventPayload;
+        // biome-ignore lint/suspicious/noExplicitAny: deferred event data
+        fnArg.events = data.events as any;
+        fnArg.runId = data.runId as string;
+        this._isDeferredRun = true;
+      }
+    }
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.

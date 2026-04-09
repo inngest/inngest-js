@@ -12,8 +12,14 @@ import { createServer } from "../../node.ts";
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("group.defer() runs callback in a separate deferred run", async () => {
-  const deferredRun = createState({});
-  const parentRun = createState({});
+  const deferredRun = createState({
+    uniqueRunId: new Set<string>(),
+  });
+  const parentRun = createState({
+    // Sets to ensure they never change
+    uniqueEvent: new Set<string>(),
+    uniqueRunId: new Set<string>(),
+  });
 
   const steps = {
     insideDefer: {
@@ -40,17 +46,15 @@ test("group.defer() runs callback in a separate deferred run", async () => {
       triggers: { event: eventName },
     },
     async ({ event, runId, step, group }) => {
+      parentRun.runId = runId;
+      parentRun.uniqueEvent.add(JSON.stringify(event));
+      parentRun.uniqueRunId.add(runId);
+
       const output = await step.run("outside-defer", () => {
         steps.outsideDefer.count++;
         return "outside-defer";
       });
       steps.outsideDefer.outputs.push(output);
-
-      if (event.name === "deferred.start") {
-        deferredRun.runId = runId;
-      } else {
-        parentRun.runId = runId;
-      }
 
       await group.defer(async () => {
         const output = await step.run("inside-defer", () => {
@@ -67,21 +71,26 @@ test("group.defer() runs callback in a separate deferred run", async () => {
   await client.send({ name: eventName });
   await parentRun.waitForRunComplete();
 
-  await deferredRun.waitForRunComplete();
+  await waitFor(() => {
+    expect(steps).toEqual({
+      insideDefer: {
+        count: 1,
+        outputs: ["inside-defer"],
+      },
+      outsideDefer: {
+        count: 1,
+        outputs: [
+          "outside-defer",
+          "outside-defer",
+          "outside-defer",
+          "outside-defer",
+        ],
+      },
+    });
 
-  expect(steps).toEqual({
-    insideDefer: {
-      count: 1,
-      outputs: ["inside-defer"],
-    },
-    outsideDefer: {
-      count: 1,
-      outputs: [
-        "outside-defer",
-        "outside-defer",
-        "outside-defer",
-        "outside-defer",
-      ],
-    },
+    expect(parentRun.uniqueEvent.size).toBe(1);
+    expect(parentRun.uniqueRunId.size).toBe(1);
   });
+
+  expect(false).toBeTruthy();
 });
