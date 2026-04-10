@@ -1759,7 +1759,7 @@ class InngestExecutionEngine
       return;
     }
 
-    if (this.fnArg.event?.name === "deferred.start") {
+    if (this.fnArg.event?.name === "inngest/deferred.start") {
       // Skip validation for deferred runs — the function may not declare
       // deferred.start as a trigger, but group.defer() sends it internally.
       return;
@@ -1892,7 +1892,7 @@ class InngestExecutionEngine
      * Handle deferred runs by swapping context from the deferred.start event
      * data so the function handler sees the original event, events, and runId.
      */
-    if (fnArg.event?.name === "deferred.start") {
+    if (fnArg.event?.name === "inngest/deferred.start") {
       const data = fnArg.event.data as Record<string, unknown>;
 
       if (data.event && data.events && data.runId) {

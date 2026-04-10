@@ -76,7 +76,7 @@ export interface AsyncContext {
     insideExperimentSelect?: boolean;
 
     /**
-     * If true, this execution was triggered by a `deferred.start` event.
+     * If true, this execution was triggered by an `inngest/deferred.start` event.
      * Set by the engine when it detects the deferred event and swaps context.
      * Used by `group.defer()` to decide whether to run the callback.
      */
