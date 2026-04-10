@@ -1863,29 +1863,45 @@ class InngestExecutionEngine
     } as Context.Any;
 
     /**
-     * If the function has an `onDefer` handler, inject `defer` into the context.
-     * `defer` sends a `deferred.start` event to trigger the deferred function.
+     * If the function has `onDefer` handlers, inject `defer` into the context.
+     * `defer` sends a `deferred.start` event to trigger the matching deferred
+     * function, routing by `deferId`.
      */
-    if (this.options.fn["onDeferFn"]) {
+    // biome-ignore lint/suspicious/noExplicitAny: accessing private field
+    const onDeferHandlers = (this.options.fn as any).onDeferHandlers as
+      | Record<
+          string,
+          {
+            // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
+            schema?: {
+              "~standard": {
+                validate: (data: unknown) => Promise<{ issues?: unknown[] }>;
+              };
+            };
+          }
+        >
+      | undefined;
+
+    if (onDeferHandlers && Object.keys(onDeferHandlers).length > 0) {
       const fnSlug = this.options.fn.id(this.options.client.id);
       const client = this.options.client;
       const headers = this.options.headers;
       const fn = this.options.fn;
-      // biome-ignore lint/suspicious/noExplicitAny: accessing private field
-      const schema = (fn as any).onDeferSchema as
-        | {
-            "~standard": {
-              validate: (data: unknown) => Promise<{ issues?: unknown[] }>;
-            };
-          }
-        | undefined;
 
-      const defer = async (opts: { data: Record<string, unknown> }) => {
-        if (schema) {
-          const result = await schema["~standard"].validate(opts.data);
+      const defer = async (opts: {
+        deferId: string;
+        data: Record<string, unknown>;
+      }) => {
+        const handler = onDeferHandlers[opts.deferId];
+        if (!handler) {
+          throw new Error(`No onDefer handler found with id "${opts.deferId}"`);
+        }
+
+        if (handler.schema) {
+          const result = await handler.schema["~standard"].validate(opts.data);
           if (result.issues) {
             throw new Error(
-              `defer() schema validation failed: ${JSON.stringify(result.issues)}`,
+              `defer() schema validation failed for "${opts.deferId}": ${JSON.stringify(result.issues)}`,
             );
           }
         }
@@ -1896,6 +1912,7 @@ class InngestExecutionEngine
             data: {
               runId: fnArg.runId,
               fnSlug,
+              deferId: opts.deferId,
               data: opts.data,
             },
           },
@@ -2501,11 +2518,18 @@ class InngestExecutionEngine
 
   private getUserFnToRun(): Handler.Any {
     if (this.options.isDeferHandler) {
-      if (!this.options.fn["onDeferFn"]) {
-        throw new Error("Cannot find function `onDefer` handler");
+      const deferId = this.options.deferId;
+      // biome-ignore lint/suspicious/noExplicitAny: accessing private field
+      const handlers = (this.options.fn as any).onDeferHandlers as
+        | Record<string, { handler: Handler.Any }>
+        | undefined;
+
+      const match = deferId ? handlers?.[deferId] : undefined;
+      if (!match) {
+        throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
       }
 
-      return this.options.fn["onDeferFn"];
+      return match.handler;
     }
 
     if (!this.options.isFailureHandler) {

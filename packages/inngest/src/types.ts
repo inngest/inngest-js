@@ -178,6 +178,7 @@ export type DeferEventArgs<
     data: {
       runId: string;
       fnSlug: string;
+      deferId: string;
       data: TDeferData;
     };
   };

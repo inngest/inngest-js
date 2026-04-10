@@ -27,11 +27,13 @@ test("onDefer handler is triggered by defer() with schema", async () => {
     {
       id: "fn",
       onDefer: {
-        schema: z.object({ msg: z.string() }),
-        handler: async ({ event, step }) => {
-          await step.run("capture-data", () => {
-            state.deferredData = event.data.data;
-          });
+        process: {
+          schema: z.object({ msg: z.string() }),
+          handler: async ({ event, step }) => {
+            await step.run("capture-data", () => {
+              state.deferredData = event.data.data;
+            });
+          },
         },
       },
       retries: 0,
@@ -45,7 +47,7 @@ test("onDefer handler is triggered by defer() with schema", async () => {
       });
 
       await step.run("defer-1", async () => {
-        await defer({ data: { msg } });
+        await defer({ deferId: "process", data: { msg } });
       });
     },
   );
@@ -60,26 +62,98 @@ test("onDefer handler is triggered by defer() with schema", async () => {
   });
 });
 
-test("onDefer types: event.data.data is typed from schema", () => {
+test("multiple onDefer handlers are independently triggered", async () => {
+  const state = createState({
+    emailData: null as { to: string } | null,
+    paymentData: null as { amount: number } | null,
+  });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        "send-email": {
+          schema: z.object({ to: z.string() }),
+          handler: async ({ event, step }) => {
+            await step.run("capture-email", () => {
+              state.emailData = event.data.data;
+            });
+          },
+        },
+        "process-payment": {
+          schema: z.object({ amount: z.number() }),
+          handler: async ({ event, step }) => {
+            await step.run("capture-payment", () => {
+              state.paymentData = event.data.data;
+            });
+          },
+        },
+      },
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
+    async ({ defer, runId, step }) => {
+      state.runId = runId;
+
+      await step.run("send-email", async () => {
+        await defer({ deferId: "send-email", data: { to: "a@b.com" } });
+      });
+
+      await step.run("process-payment", async () => {
+        await defer({ deferId: "process-payment", data: { amount: 100 } });
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await state.waitForRunComplete();
+
+  await waitFor(() => {
+    expect(state.emailData).toEqual({ to: "a@b.com" });
+  });
+
+  await waitFor(() => {
+    expect(state.paymentData).toEqual({ amount: 100 });
+  });
+});
+
+test("onDefer types: defer() is a discriminated union over deferId", () => {
   const client = new Inngest({ id: "type-test", isDev: true });
 
   client.createFunction(
     {
       id: "typed-defer",
       onDefer: {
-        schema: z.object({ msg: z.string(), count: z.number() }),
-        handler: async ({ event }) => {
-          expectTypeOf(event.data.data.msg).toBeString();
-          expectTypeOf(event.data.data.count).toBeNumber();
+        "send-email": {
+          schema: z.object({ to: z.string() }),
+          handler: async () => {},
+        },
+        "process-payment": {
+          schema: z.object({ amount: z.number() }),
+          handler: async () => {},
         },
       },
       triggers: [{ event: "test" }],
     },
     async ({ defer }) => {
       expectTypeOf(defer).toBeFunction();
-      expectTypeOf(defer)
-        .parameter(0)
-        .toEqualTypeOf<{ data: { msg: string; count: number } }>();
+
+      expectTypeOf(defer).toBeCallableWith({
+        deferId: "send-email" as const,
+        data: { to: "a@b.com" },
+      });
+      expectTypeOf(defer).toBeCallableWith({
+        deferId: "process-payment" as const,
+        data: { amount: 100 },
+      });
     },
   );
 });

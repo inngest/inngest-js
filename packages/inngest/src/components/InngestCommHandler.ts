@@ -405,7 +405,12 @@ export class InngestCommHandler<
    */
   private readonly fns: Record<
     string,
-    { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+    {
+      fn: InngestFunction.Any;
+      onFailure: boolean;
+      onDefer: boolean;
+      deferId?: string;
+    }
   > = {};
 
   private env: Env = allProcessEnv();
@@ -465,7 +470,12 @@ export class InngestCommHandler<
     this.fns = this.rawFns.reduce<
       Record<
         string,
-        { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+        {
+          fn: InngestFunction.Any;
+          onFailure: boolean;
+          onDefer: boolean;
+          deferId?: string;
+        }
       >
     >((acc, fn) => {
       const configs = fn["getConfig"]({
@@ -473,18 +483,42 @@ export class InngestCommHandler<
         appPrefix: this.client.id,
       });
 
+      // Cross-reference config IDs against the function's registered
+      // defer handler keys instead of parsing the ID string.
+      // biome-ignore lint/suspicious/noExplicitAny: accessing private field
+      const deferHandlerKeys = Object.keys(
+        ((fn as any)["onDeferHandlers"] as
+          | Record<string, unknown>
+          | undefined) ?? {},
+      );
+      const deferSuffix = InngestFunction.deferSuffix;
+
       const fns = configs.reduce<
         Record<
           string,
-          { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+          {
+            fn: InngestFunction.Any;
+            onFailure: boolean;
+            onDefer: boolean;
+            deferId?: string;
+          }
         >
       >((acc, { id }) => {
+        let deferId: string | undefined;
+        for (const key of deferHandlerKeys) {
+          if (id.endsWith(`${deferSuffix}-${key}`)) {
+            deferId = key;
+            break;
+          }
+        }
+
         return {
           ...acc,
           [id]: {
             fn,
             onFailure: id.endsWith(InngestFunction.failureSuffix),
-            onDefer: id.endsWith(InngestFunction.deferSuffix),
+            onDefer: deferId !== undefined,
+            deferId,
           },
         };
       }, {});
@@ -1577,14 +1611,24 @@ export class InngestCommHandler<
         }
 
         let fn:
-          | { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+          | {
+              fn: InngestFunction.Any;
+              onFailure: boolean;
+              onDefer: boolean;
+              deferId?: string;
+            }
           | undefined;
         let fnId: string | undefined;
 
         if (forceExecution) {
           fn =
             fns?.length && fns[0]
-              ? { fn: fns[0], onFailure: false, onDefer: false }
+              ? {
+                  fn: fns[0],
+                  onFailure: false,
+                  onDefer: false,
+                  deferId: undefined,
+                }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
 
@@ -2095,7 +2139,12 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean };
+    fn: {
+      fn: InngestFunction.Any;
+      onFailure: boolean;
+      onDefer: boolean;
+      deferId?: string;
+    };
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
     requestInfo?: InngestExecutionOptions["requestInfo"];
@@ -2194,6 +2243,7 @@ export class InngestCommHandler<
           timer,
           isFailureHandler: fn.onFailure,
           isDeferHandler: fn.onDefer,
+          deferId: fn.deferId,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,

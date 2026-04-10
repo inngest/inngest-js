@@ -52,11 +52,17 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
-  private readonly onDeferFn?: Handler.Any;
-  // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via engine.ts
-  private readonly onDeferSchema?: StandardSchemaV1<any>;
-  private readonly onDeferConfig?: InngestFunction.OnDeferConfig;
+  private readonly onDeferHandlers: Record<
+    string,
+    {
+      handler: Handler.Any;
+      // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
+      schema?: StandardSchemaV1<any>;
+      concurrency?: InngestFunction.OnDeferConfig["concurrency"];
+      retries?: InngestFunction.OnDeferConfig["retries"];
+    }
+  > = {};
   protected readonly client: TClient;
 
   /**
@@ -81,12 +87,15 @@ export class InngestFunction<
     this.onFailureFn = this.opts.onFailure;
 
     const onDefer = this.opts.onDefer;
-    if (typeof onDefer === "function") {
-      this.onDeferFn = onDefer;
-    } else if (onDefer) {
-      this.onDeferFn = onDefer.handler;
-      this.onDeferSchema = onDefer.schema;
-      this.onDeferConfig = onDefer;
+    if (onDefer && typeof onDefer === "object") {
+      for (const [key, entry] of Object.entries(onDefer)) {
+        this.onDeferHandlers[key] = {
+          handler: entry.handler as Handler.Any,
+          schema: entry.schema,
+          concurrency: entry.concurrency,
+          retries: entry.retries,
+        };
+      }
     }
   }
 
@@ -281,17 +290,19 @@ export class InngestFunction<
       });
     }
 
-    if (this.onDeferFn) {
-      const id = `${fn.id}${InngestFunction.deferSuffix}`;
-      const name = `${fn.name ?? fn.id} (defer)`;
+    for (const [deferId, deferHandler] of Object.entries(
+      this.onDeferHandlers,
+    )) {
+      const id = `${fn.id}${InngestFunction.deferSuffix}-${deferId}`;
+      const name = `${fn.name ?? fn.id} (defer: ${deferId})`;
 
       const deferStepUrl = new URL(stepUrl.href);
       deferStepUrl.searchParams.set(queryKeys.FnId, id);
 
       const deferRetries =
-        typeof this.onDeferConfig?.retries === "undefined"
+        typeof deferHandler.retries === "undefined"
           ? undefined
-          : { attempts: this.onDeferConfig.retries };
+          : { attempts: deferHandler.retries };
 
       const deferFnConfig: FunctionConfig = {
         id,
@@ -299,7 +310,7 @@ export class InngestFunction<
         triggers: [
           {
             event: "deferred.start",
-            expression: `event.data.fnSlug == '${fnId}'`,
+            expression: `event.data.fnSlug == '${fnId}' && event.data.deferId == '${deferId}'`,
           },
         ],
         steps: {
@@ -313,7 +324,7 @@ export class InngestFunction<
             retries: deferRetries ?? { attempts: 1 },
           },
         },
-        concurrency: this.onDeferConfig?.concurrency,
+        concurrency: deferHandler.concurrency,
       };
 
       config.push(deferFnConfig);
@@ -731,18 +742,18 @@ export namespace InngestFunction {
     onFailure?: TFailureHandler;
 
     /**
-     * Provide a function to be called when `defer()` is invoked from
-     * within the main function handler.
+     * A map of named deferred handlers that can be triggered by calling
+     * `defer()` from the main function handler.
      *
-     * The deferred function is a full Inngest function with `step`
+     * Each key is a stable identifier that becomes part of the generated
+     * function ID (`{fnId}-defer-{key}`) — do not rename keys after
+     * deploy.
+     *
+     * Each value is a full Inngest function config with `step`
      * capabilities, triggered by a `deferred.start` event sent when
-     * `defer()` is called.
-     *
-     * Can be a bare handler function or a config object with `handler`,
-     * optional `schema` for type-safe data, and optional flow control
-     * fields like `concurrency`.
+     * `defer()` is called with the matching `deferId`.
      */
-    onDefer?: Handler.Any | InngestFunction.OnDeferConfig;
+    onDefer?: Record<string, InngestFunction.OnDeferConfig>;
 
     /**
      * Define a set of middleware that can be registered to hook into
@@ -805,18 +816,17 @@ export namespace InngestFunction {
   }
 
   /**
-   * Configuration object for `onDefer`. Accepts a handler, an optional
-   * `StandardSchemaV1` schema for type-safe data, and optional flow control
-   * fields that apply to the deferred function.
+   * Configuration for a single `onDefer` handler value. The key in the
+   * `onDefer` map serves as the stable identifier.
+   *
+   * `handler` is typed as `Function` at the config level; the
+   * `Inngest.DeferEntryInput` mapped type provides full contextual
+   * typing for each handler based on its sibling `schema`.
    */
-  export interface OnDeferConfig<
-    TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined =
-      | StandardSchemaV1<Record<string, unknown>>
-      | undefined,
-  > {
-    handler: Handler.Any;
+  export interface OnDeferConfig {
+    handler: Function;
 
-    schema?: TSchema;
+    schema?: StandardSchemaV1<Record<string, unknown>>;
 
     concurrency?:
       | number
