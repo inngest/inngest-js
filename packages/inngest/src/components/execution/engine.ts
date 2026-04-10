@@ -1871,15 +1871,32 @@ class InngestExecutionEngine
       const client = this.options.client;
       const headers = this.options.headers;
       const fn = this.options.fn;
+      // biome-ignore lint/suspicious/noExplicitAny: accessing private field
+      const schema = (fn as any).onDeferSchema as
+        | {
+            "~standard": {
+              validate: (data: unknown) => Promise<{ issues?: unknown[] }>;
+            };
+          }
+        | undefined;
 
-      const defer = async (opts: { data?: Record<string, unknown> }) => {
+      const defer = async (opts: { data: Record<string, unknown> }) => {
+        if (schema) {
+          const result = await schema["~standard"].validate(opts.data);
+          if (result.issues) {
+            throw new Error(
+              `defer() schema validation failed: ${JSON.stringify(result.issues)}`,
+            );
+          }
+        }
+
         await client["_send"]({
           payload: {
             name: "deferred.start",
             data: {
               runId: fnArg.runId,
               fnSlug,
-              data: opts.data ?? {},
+              data: opts.data,
             },
           },
           headers,

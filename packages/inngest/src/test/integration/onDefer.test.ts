@@ -5,15 +5,16 @@ import {
   testNameFromFileUrl,
   waitFor,
 } from "@inngest/test-harness";
-import { expect, test } from "vitest";
+import { expect, expectTypeOf, test } from "vitest";
+import { z } from "zod";
 import { Inngest } from "../../index.ts";
 import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("onDefer handler is triggered by defer()", async () => {
+test("onDefer handler is triggered by defer() with schema", async () => {
   const state = createState({
-    deferredData: null as Record<string, unknown> | null,
+    deferredData: null as { msg: string } | null,
   });
 
   const eventName = randomSuffix("evt");
@@ -25,16 +26,18 @@ test("onDefer handler is triggered by defer()", async () => {
   const fn = client.createFunction(
     {
       id: "fn",
-      onDefer: async ({ event, step }) => {
-        await step.run("capture-data", () => {
-          state.deferredData = event.data.data
-        });
+      onDefer: {
+        schema: z.object({ msg: z.string() }),
+        handler: async ({ event, step }) => {
+          await step.run("capture-data", () => {
+            state.deferredData = event.data.data;
+          });
+        },
       },
       retries: 0,
       triggers: [{ event: eventName }],
     },
-    // defer is injected at runtime but not yet typed in the context
-    async ({ defer, runId, step }: any) => {
+    async ({ defer, runId, step }) => {
       state.runId = runId;
 
       const msg = await step.run("create-msg", () => {
@@ -55,4 +58,42 @@ test("onDefer handler is triggered by defer()", async () => {
   await waitFor(() => {
     expect(state.deferredData).toEqual({ msg: "hello" });
   });
+});
+
+test("onDefer types: event.data.data is typed from schema", () => {
+  const client = new Inngest({ id: "type-test", isDev: true });
+
+  client.createFunction(
+    {
+      id: "typed-defer",
+      onDefer: {
+        schema: z.object({ msg: z.string(), count: z.number() }),
+        handler: async ({ event }) => {
+          expectTypeOf(event.data.data.msg).toBeString();
+          expectTypeOf(event.data.data.count).toBeNumber();
+        },
+      },
+      triggers: [{ event: "test" }],
+    },
+    async ({ defer }) => {
+      expectTypeOf(defer).toBeFunction();
+      expectTypeOf(defer)
+        .parameter(0)
+        .toEqualTypeOf<{ data: { msg: string; count: number } }>();
+    },
+  );
+});
+
+test("onDefer types: no defer when onDefer is absent", () => {
+  const client = new Inngest({ id: "type-test-2", isDev: true });
+
+  client.createFunction(
+    {
+      id: "no-defer",
+      triggers: [{ event: "test" }],
+    },
+    async (ctx) => {
+      expectTypeOf(ctx).not.toHaveProperty("defer");
+    },
+  );
 });

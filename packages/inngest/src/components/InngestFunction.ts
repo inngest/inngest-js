@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents, queryKeys } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
@@ -17,7 +18,6 @@ import type {
   IInngestExecution,
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
-
 import type { Inngest } from "./Inngest.ts";
 import type { Middleware } from "./middleware/middleware.ts";
 import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
@@ -53,6 +53,10 @@ export class InngestFunction<
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
   private readonly onDeferFn?: Handler.Any;
+  // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via engine.ts
+  private readonly onDeferSchema?: StandardSchemaV1<any>;
+  private readonly onDeferConfig?: InngestFunction.OnDeferConfig;
   protected readonly client: TClient;
 
   /**
@@ -75,7 +79,15 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
-    this.onDeferFn = this.opts.onDefer;
+
+    const onDefer = this.opts.onDefer;
+    if (typeof onDefer === "function") {
+      this.onDeferFn = onDefer;
+    } else if (onDefer) {
+      this.onDeferFn = onDefer.handler;
+      this.onDeferSchema = onDefer.schema;
+      this.onDeferConfig = onDefer;
+    }
   }
 
   /**
@@ -276,7 +288,12 @@ export class InngestFunction<
       const deferStepUrl = new URL(stepUrl.href);
       deferStepUrl.searchParams.set(queryKeys.FnId, id);
 
-      config.push({
+      const deferRetries =
+        typeof this.onDeferConfig?.retries === "undefined"
+          ? undefined
+          : { attempts: this.onDeferConfig.retries };
+
+      const deferFnConfig: FunctionConfig = {
         id,
         name,
         triggers: [
@@ -293,10 +310,13 @@ export class InngestFunction<
               type: isConnect ? "ws" : "http",
               url: deferStepUrl.href,
             },
-            retries: { attempts: 1 },
+            retries: deferRetries ?? { attempts: 1 },
           },
         },
-      });
+        concurrency: this.onDeferConfig?.concurrency,
+      };
+
+      config.push(deferFnConfig);
     }
 
     return config;
@@ -717,8 +737,12 @@ export namespace InngestFunction {
      * The deferred function is a full Inngest function with `step`
      * capabilities, triggered by a `deferred.start` event sent when
      * `defer()` is called.
+     *
+     * Can be a bare handler function or a config object with `handler`,
+     * optional `schema` for type-safe data, and optional flow control
+     * fields like `concurrency`.
      */
-    onDefer?: Handler.Any;
+    onDefer?: Handler.Any | InngestFunction.OnDeferConfig;
 
     /**
      * Define a set of middleware that can be registered to hook into
@@ -778,6 +802,49 @@ export namespace InngestFunction {
      * @default true
      */
     checkpointing?: CheckpointingOptions;
+  }
+
+  /**
+   * Configuration object for `onDefer`. Accepts a handler, an optional
+   * `StandardSchemaV1` schema for type-safe data, and optional flow control
+   * fields that apply to the deferred function.
+   */
+  export interface OnDeferConfig<
+    TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined =
+      | StandardSchemaV1<Record<string, unknown>>
+      | undefined,
+  > {
+    handler: Handler.Any;
+
+    schema?: TSchema;
+
+    concurrency?:
+      | number
+      | ConcurrencyOption
+      | RecursiveTuple<ConcurrencyOption, 2>;
+
+    retries?:
+      | 0
+      | 1
+      | 2
+      | 3
+      | 4
+      | 5
+      | 6
+      | 7
+      | 8
+      | 9
+      | 10
+      | 11
+      | 12
+      | 13
+      | 14
+      | 15
+      | 16
+      | 17
+      | 18
+      | 19
+      | 20;
   }
 }
 

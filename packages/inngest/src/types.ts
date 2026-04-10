@@ -165,6 +165,25 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
 };
 
 /**
+ * Context arguments specific to a deferred event. Overrides `event` to type
+ * `event.data.data` as `TDeferData`.
+ *
+ * @public
+ */
+export type DeferEventArgs<
+  TDeferData extends Record<string, unknown> = Record<string, unknown>,
+> = {
+  event: {
+    name: "deferred.start";
+    data: {
+      runId: string;
+      fnSlug: string;
+      data: TDeferData;
+    };
+  };
+};
+
+/**
  * The payload for an internal Inngest event that is sent when a function
  * finishes, either by completing successfully or failing.
  *

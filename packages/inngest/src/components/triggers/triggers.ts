@@ -69,7 +69,9 @@ type EventCreateArgs<
 /**
  * Extract the input type from a StandardSchemaV1.
  */
-type ExtractSchemaData<TData> = TData extends StandardSchemaV1<infer TData>
+export type ExtractSchemaData<TData> = TData extends StandardSchemaV1<
+  infer TData
+>
   ? TData
   : undefined;
 
@@ -199,13 +201,13 @@ export class EventType<
  * This type's only purpose is to clearly highlight static type error messages
  * in our codebase. To end users, it's exactly the same as a normal string.
  */
-type StaticTypeError<TMessage extends string> = TMessage;
+export type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
  * Ensure that users don't use transforms in their schemas, since we don't
  * support transforms.
  */
-type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
+export type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
   TSchema extends undefined
     ? // Undefined schema is OK
       undefined
