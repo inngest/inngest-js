@@ -205,7 +205,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
   });
 
   describe("group.parallel() helper", () => {
-    test("automatically sets parallelMode on steps inside callback", async () => {
+    test("automatically sets parallelMode and raceGroupId on steps inside callback", async () => {
       const client = createClient({ id: "test", isDev: true });
       const fn = client.createFunction(
         { id: "test-fn", triggers: [{ event: "test/event" }] },
@@ -229,9 +229,14 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       expect(ret.type).toBe("steps-found");
       if (ret.type === "steps-found") {
         expect(ret.steps).toHaveLength(3);
+        const groupId = ret.steps[0]?.opts?.raceGroupId;
+        expect(groupId).toEqual(expect.any(String));
         for (const op of ret.steps) {
           expect(op.op).toBe(StepOpCode.StepPlanned);
-          expect(op.opts).toMatchObject({ parallelMode: "race" });
+          expect(op.opts).toMatchObject({
+            parallelMode: "race",
+            raceGroupId: groupId,
+          });
         }
       }
     });
@@ -272,10 +277,16 @@ describe("EXE-1135: Default to optimized parallelism", () => {
 
         expect(outsideStep).toBeDefined();
         expect(outsideStep?.opts?.parallelMode).toBeUndefined();
+        expect(outsideStep?.opts?.raceGroupId).toBeUndefined();
 
         expect(insideSteps).toHaveLength(2);
+        const groupId = insideSteps[0]?.opts?.raceGroupId;
+        expect(groupId).toEqual(expect.any(String));
         for (const op of insideSteps) {
-          expect(op.opts).toMatchObject({ parallelMode: "race" });
+          expect(op.opts).toMatchObject({
+            parallelMode: "race",
+            raceGroupId: groupId,
+          });
         }
       }
     });
@@ -304,9 +315,14 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       if (ret.type === "steps-found") {
         expect(ret.steps).toHaveLength(2);
 
-        // Both steps should have parallelMode from the parallel() context
+        const groupId = ret.steps[0]?.opts?.raceGroupId;
+        expect(groupId).toEqual(expect.any(String));
+        // Both steps should have parallelMode and the same raceGroupId
         for (const op of ret.steps) {
-          expect(op.opts).toMatchObject({ parallelMode: "race" });
+          expect(op.opts).toMatchObject({
+            parallelMode: "race",
+            raceGroupId: groupId,
+          });
         }
       }
     });
@@ -338,8 +354,102 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       expect(ret.type).toBe("steps-found");
       if (ret.type === "steps-found") {
         expect(ret.steps).toHaveLength(3);
+        const groupId = ret.steps[0]?.opts?.raceGroupId;
+        expect(groupId).toEqual(expect.any(String));
         for (const op of ret.steps) {
-          expect(op.opts).toMatchObject({ parallelMode: "race" });
+          expect(op.opts).toMatchObject({
+            parallelMode: "race",
+            raceGroupId: groupId,
+          });
+        }
+      }
+    });
+
+    test("concurrent group.parallel() calls get different raceGroupIds", async () => {
+      const client = createClient({ id: "test", isDev: true });
+      const fn = client.createFunction(
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
+        async ({ step, group }) => {
+          // Two group.parallel() calls started concurrently via Promise.all.
+          // Each should get a distinct raceGroupId.
+          await Promise.all([
+            group.parallel(async () => {
+              return Promise.race([
+                step.run("first-a", () => "a"),
+                step.run("first-b", () => "b"),
+              ]);
+            }),
+            group.parallel(async () => {
+              return Promise.race([
+                step.run("second-a", () => "a"),
+                step.run("second-b", () => "b"),
+              ]);
+            }),
+          ]);
+        },
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        { disableImmediateExecution: true },
+      );
+
+      expect(ret.type).toBe("steps-found");
+      if (ret.type === "steps-found") {
+        expect(ret.steps).toHaveLength(4);
+
+        const firstSteps = ret.steps.filter((s) =>
+          s.displayName?.startsWith("first-"),
+        );
+        const secondSteps = ret.steps.filter((s) =>
+          s.displayName?.startsWith("second-"),
+        );
+
+        expect(firstSteps).toHaveLength(2);
+        expect(secondSteps).toHaveLength(2);
+
+        const firstGroupId = firstSteps[0]?.opts?.raceGroupId;
+        const secondGroupId = secondSteps[0]?.opts?.raceGroupId;
+
+        expect(firstGroupId).toEqual(expect.any(String));
+        expect(secondGroupId).toEqual(expect.any(String));
+
+        // Steps within the same group share the same raceGroupId
+        for (const op of firstSteps) {
+          expect(op.opts?.raceGroupId).toBe(firstGroupId);
+        }
+        for (const op of secondSteps) {
+          expect(op.opts?.raceGroupId).toBe(secondGroupId);
+        }
+
+        // The two groups have different raceGroupIds
+        expect(firstGroupId).not.toBe(secondGroupId);
+      }
+    });
+
+    test("steps outside group.parallel() do not get raceGroupId", async () => {
+      const client = createClient({ id: "test", isDev: true });
+      const fn = client.createFunction(
+        { id: "test-fn", triggers: [{ event: "test/event" }] },
+        async ({ step }) => {
+          await Promise.all([
+            step.run("plain-a", () => "a"),
+            step.run("plain-b", () => "b"),
+          ]);
+        },
+      );
+
+      const ret = await runFnWithStack(
+        fn,
+        {},
+        { disableImmediateExecution: true },
+      );
+
+      expect(ret.type).toBe("steps-found");
+      if (ret.type === "steps-found") {
+        for (const op of ret.steps) {
+          expect(op.opts?.raceGroupId).toBeUndefined();
         }
       }
     });

@@ -45,6 +45,14 @@ export interface AsyncContext {
     parallelMode?: "race";
 
     /**
+     * If present, identifies which race group this context belongs to.
+     * Steps within the same `group.parallel()` call share the same
+     * `raceGroupId`, allowing the server to distinguish between separate
+     * `group.parallel()` calls in the same function.
+     */
+    raceGroupId?: string;
+
+    /**
      * The stream tools instance for this execution context. Used by the
      * `stream` singleton to push/pipe SSE data to the client.
      */

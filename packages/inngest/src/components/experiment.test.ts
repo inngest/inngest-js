@@ -54,11 +54,15 @@ const fakeStepCall = () => {
 };
 
 /** Create a minimal mock `IInngestExecution` with a spied `addMetadata`. */
-const mockExecution = (): IInngestExecution & { addMetadata: Mock } => ({
-  version: 1,
-  start: vi.fn(),
-  addMetadata: vi.fn(() => true),
-});
+const mockExecution = (): IInngestExecution & { addMetadata: Mock } => {
+  let counter = 0;
+  return {
+    version: 1,
+    start: vi.fn(),
+    addMetadata: vi.fn(() => true),
+    nextRaceGroupId: () => "race:" + String(counter++),
+  };
+};
 
 /**
  * Build a fake `experimentStepRun` that:

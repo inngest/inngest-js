@@ -194,4 +194,13 @@ export interface IInngestExecution {
     op: MetadataOpcode,
     values: Record<string, unknown>,
   ): boolean;
+
+  /**
+   * Return a deterministic, unique identifier for a race group.
+   *
+   * Each call increments an internal counter, producing IDs like
+   * `"race:0"`, `"race:1"`, etc. Because the function body executes in
+   * the same order on every replay, the counter is deterministic.
+   */
+  nextRaceGroupId(): string;
 }

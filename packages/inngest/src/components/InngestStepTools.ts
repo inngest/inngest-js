@@ -286,6 +286,13 @@ export const createStepTools = <
         op.opts = { ...op.opts, parallelMode };
       }
 
+      // Explicit option takes precedence, then check ALS context
+      const raceGroupId = stepOptions.raceGroupId ?? alsCtx?.raceGroupId;
+
+      if (raceGroupId) {
+        op.opts = { ...op.opts, raceGroupId };
+      }
+
       // Propagate experiment context to variant sub-steps
       const experimentContext = alsCtx?.experimentContext;
       if (experimentContext) {

@@ -77,12 +77,16 @@ const parallel = async <T>(
     );
   }
 
-  // Create a new context with the parallelMode set
+  // Generate a deterministic race group ID from the execution instance
+  const raceGroupId = currentCtx.execution.instance.nextRaceGroupId();
+
+  // Create a new context with the parallelMode and raceGroupId set
   const nestedCtx: AsyncContext = {
     ...currentCtx,
     execution: {
       ...currentCtx.execution,
       parallelMode: options.mode ?? "race",
+      raceGroupId,
     },
   };
 

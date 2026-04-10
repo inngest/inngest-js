@@ -1661,6 +1661,16 @@ export interface StepOptions {
    * `group.parallel()`.
    */
   parallelMode?: "race";
+
+  /**
+   * An identifier linking this step to a specific race group. Steps that share
+   * the same `raceGroupId` belong to the same `group.parallel()` call, allowing
+   * the server to distinguish between separate race groups in one function.
+   *
+   * Automatically set by `group.parallel()`. Can also be set manually when not
+   * using `group.parallel()`.
+   */
+  raceGroupId?: string;
 }
 
 /**

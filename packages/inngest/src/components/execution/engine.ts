@@ -175,6 +175,13 @@ class InngestExecutionEngine
     | undefined;
 
   /**
+   * Counter used to produce deterministic race group IDs. Incremented by
+   * {@link nextRaceGroupId} each time `group.parallel()` is called.
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used by nextRaceGroupId()
+  private raceGroupCounter = 0;
+
+  /**
    * Whether the `inngest.redirect_info` SSE event has already been sent.
    * Prevents duplicate redirect events.
    */
@@ -335,6 +342,10 @@ class InngestExecutionEngine
     this.state.metadata.set(stepId, updates);
 
     return true;
+  }
+
+  public nextRaceGroupId(): string {
+    return "race:" + String(this.raceGroupCounter++);
   }
 
   /**
