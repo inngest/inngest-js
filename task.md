@@ -6,13 +6,17 @@ I want to implement a new "defer" feature. Here's a code example of the user-fac
 inngest.createFunction(
   {
     id: "fn-1",
-    onDefer: async ({ event, step }) => {
-      // Is "hello"
-      event.data.msg;
+    onDefer: {
+      schema: z.object({ msg: z.string() }),
+      concurrency: { limit: 5 },
+      handler: async ({ event, step }) => {
+        // Is "hello"
+        event.data.data.msg;
 
-      await step.run("a", () => {
-        console.log("a");
-      });
+        await step.run("a", () => {
+          console.log("a");
+        });
+      },
     },
     triggers: { event: "event-1" },
   },
@@ -49,13 +53,55 @@ A difference for `onDefer` would be that users explicitly trigger it via the `de
 - **Multiple calls allowed**: Each `defer()` call (in separate steps) sends a separate event and triggers a separate `onDefer` execution
 - **`onDefer` is a full Inngest function**: Like `onFailure`, it's synced to Inngest with full `step` capabilities
 - **Trigger expression**: Filters by `fnSlug` so the deferred function only fires for its parent function
-- **`data` is untyped**: No generic/type parameter connecting `defer()`'s data to `onDefer`'s `event.data` yet
 - **No server-side changes**: Purely SDK-side for now
+
+# Type safety
+
+`onDefer` accepts an optional `schema` field (`StandardSchemaV1`) that provides type safety between `defer()` data and `onDefer`'s `event.data.data`. The schema is the single source of truth for the data type, flowing to both sides.
+
+## API
+
+```ts
+inngest.createFunction(
+  {
+    id: "fn-1",
+    onDefer: {
+      schema: z.object({ msg: z.string() }),
+      concurrency: { limit: 5 },
+      handler: async ({ event, step }) => {
+        event.data.data.msg; // string — inferred from schema
+      },
+    },
+    triggers: [{ event: "event-1" }],
+  },
+  async ({ defer, event, step }) => {
+    await defer({ data: { msg: "hello" } }); // typed + validated at runtime
+  }
+);
+```
+
+## Type flow
+
+1. `onDefer.schema` is typed as `StandardSchemaV1<TDeferData>` (optional)
+2. `createFunction` adds a generic `TDeferSchema` inferred from `onDefer.schema`
+3. `TDeferData` extracted via `StandardSchemaV1<infer T>` (reuses existing `ExtractSchemaData`)
+4. `TDeferData` flows to:
+   - `onDefer.handler` context: `event.data.data: TDeferData`
+   - Main handler context: `defer: (opts: { data: TDeferData }) => Promise<void>`
+5. No schema → `TDeferData` defaults to `Record<string, unknown>`
+6. `AssertNoTransform` guard applies (defer input type must match event.data.data output type)
+7. `onDefer` config also accepts flow control fields: `concurrency`, `retries`, `throttle`, etc.
+
+## Reused infrastructure
+
+- `StandardSchemaV1` from `@standard-schema/spec`
+- `staticSchema<T>()` from `inngest` for type-only safety
+- `ExtractSchemaData` from `triggers.ts`
+- `AssertNoTransform` guard from `triggers.ts`
 
 # Out of scope
 
 - `inngest/` event prefix (will need eventually)
 - Routing by ID (multiple `onDefer` handlers per function)
-- Type safety between `defer()` data and `onDefer` event data
 - Server-side (Go) changes
 - `step.defer()` convenience wrapper
