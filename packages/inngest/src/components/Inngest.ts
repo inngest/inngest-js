@@ -1233,15 +1233,14 @@ export namespace Inngest {
   };
 
   /**
-   * Build a discriminated union of `defer()` argument types from the
-   * schema map. Each key contributes one union member.
+   * Map each `onDefer` key to a typed `defer` method that accepts
+   * `{ data: T }` where `T` is resolved from that key's schema.
    */
-  type BuildDeferUnion<T extends OnDeferSchemaMap> = {
-    [K in keyof T & string]: {
-      deferId: K;
+  type DeferMethods<T extends OnDeferSchemaMap> = {
+    [K in keyof T & string]: (opts: {
       data: ResolveDeferData<T[K]>;
-    };
-  }[keyof T & string];
+    }) => Promise<void>;
+  };
 
   /**
    * The type of the proxy handler returned by `endpointProxy()`.
@@ -1259,11 +1258,12 @@ export namespace Inngest {
 
   /**
    * Conditionally adds `defer` to the handler context when `onDefer`
-   * handlers are configured.
+   * handlers are configured. `defer` is an object mirroring the
+   * `onDefer` config keys, where each key is a typed function.
    */
   type MaybeDeferCtx<TOnDeferSchemas extends OnDeferSchemaMap | undefined> =
     TOnDeferSchemas extends OnDeferSchemaMap
-      ? { defer: (opts: BuildDeferUnion<TOnDeferSchemas>) => Promise<void> }
+      ? { defer: DeferMethods<TOnDeferSchemas> }
       : unknown;
 
   export type CreateFunction<TClient extends Inngest.Any> = <

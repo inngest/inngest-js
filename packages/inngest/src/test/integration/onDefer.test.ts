@@ -47,7 +47,7 @@ test("onDefer handler is triggered by defer() with schema", async () => {
       });
 
       await step.run("defer-1", async () => {
-        await defer({ deferId: "process", data: { msg } });
+        await defer.process({ data: { msg } });
       });
     },
   );
@@ -102,11 +102,11 @@ test("multiple onDefer handlers are independently triggered", async () => {
       state.runId = runId;
 
       await step.run("send-email", async () => {
-        await defer({ deferId: "send-email", data: { to: "a@b.com" } });
+        await defer["send-email"]({ data: { to: "a@b.com" } });
       });
 
       await step.run("process-payment", async () => {
-        await defer({ deferId: "process-payment", data: { amount: 100 } });
+        await defer["process-payment"]({ data: { amount: 100 } });
       });
     },
   );
@@ -125,7 +125,7 @@ test("multiple onDefer handlers are independently triggered", async () => {
   });
 });
 
-test("onDefer types: defer() is a discriminated union over deferId", () => {
+test("onDefer types: defer mirrors onDefer keys with typed methods", () => {
   const client = new Inngest({ id: "type-test", isDev: true });
 
   client.createFunction(
@@ -144,14 +144,13 @@ test("onDefer types: defer() is a discriminated union over deferId", () => {
       triggers: [{ event: "test" }],
     },
     async ({ defer }) => {
-      expectTypeOf(defer).toBeFunction();
+      expectTypeOf(defer["send-email"]).toBeFunction();
+      expectTypeOf(defer["process-payment"]).toBeFunction();
 
-      expectTypeOf(defer).toBeCallableWith({
-        deferId: "send-email" as const,
+      expectTypeOf(defer["send-email"]).toBeCallableWith({
         data: { to: "a@b.com" },
       });
-      expectTypeOf(defer).toBeCallableWith({
-        deferId: "process-payment" as const,
+      expectTypeOf(defer["process-payment"]).toBeCallableWith({
         data: { amount: 100 },
       });
     },

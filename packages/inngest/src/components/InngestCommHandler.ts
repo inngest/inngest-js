@@ -486,11 +486,10 @@ export class InngestCommHandler<
       // Cross-reference config IDs against the function's registered
       // defer handler keys instead of parsing the ID string.
       // biome-ignore lint/suspicious/noExplicitAny: accessing private field
-      const deferHandlerKeys = Object.keys(
-        ((fn as any)["onDeferHandlers"] as
-          | Record<string, unknown>
-          | undefined) ?? {},
-      );
+      const rawHandlers = (fn as any)["onDeferHandlers"] as
+        | Record<string, unknown>
+        | undefined;
+      const deferHandlerKeys = Object.keys(rawHandlers ?? {});
       const deferSuffix = InngestFunction.deferSuffix;
 
       const fns = configs.reduce<

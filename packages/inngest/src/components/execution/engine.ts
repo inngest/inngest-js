@@ -1872,7 +1872,6 @@ class InngestExecutionEngine
       | Record<
           string,
           {
-            // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
             schema?: {
               "~standard": {
                 validate: (data: unknown) => Promise<{ issues?: unknown[] }>;
@@ -1888,39 +1887,40 @@ class InngestExecutionEngine
       const headers = this.options.headers;
       const fn = this.options.fn;
 
-      const defer = async (opts: {
-        deferId: string;
-        data: Record<string, unknown>;
-      }) => {
-        const handler = onDeferHandlers[opts.deferId];
-        if (!handler) {
-          throw new Error(`No onDefer handler found with id "${opts.deferId}"`);
-        }
+      const defer: Record<
+        string,
+        (opts: { data: Record<string, unknown> }) => Promise<void>
+      > = {};
 
-        if (handler.schema) {
-          const result = await handler.schema["~standard"].validate(opts.data);
-          if (result.issues) {
-            throw new Error(
-              `defer() schema validation failed for "${opts.deferId}": ${JSON.stringify(result.issues)}`,
+      for (const [deferId, handler] of Object.entries(onDeferHandlers)) {
+        defer[deferId] = async (opts: { data: Record<string, unknown> }) => {
+          if (handler.schema) {
+            const result = await handler.schema["~standard"].validate(
+              opts.data,
             );
+            if (result.issues) {
+              throw new Error(
+                `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
+              );
+            }
           }
-        }
 
-        await client["_send"]({
-          payload: {
-            name: "deferred.start",
-            data: {
-              runId: fnArg.runId,
-              fnSlug,
-              deferId: opts.deferId,
-              data: opts.data,
+          await client["_send"]({
+            payload: {
+              name: "deferred.start",
+              data: {
+                runId: fnArg.runId,
+                fnSlug,
+                deferId,
+                data: opts.data,
+              },
             },
-          },
-          headers,
-          fnMiddleware: fn.opts.middleware ?? [],
-          fn,
-        });
-      };
+            headers,
+            fnMiddleware: fn.opts.middleware ?? [],
+            fn,
+          });
+        };
+      }
 
       fnArg = { ...fnArg, defer } as Context.Any;
     }

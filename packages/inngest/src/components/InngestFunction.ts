@@ -52,7 +52,6 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via engine.ts
   private readonly onDeferHandlers: Record<
     string,
     {
