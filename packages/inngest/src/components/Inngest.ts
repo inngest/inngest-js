@@ -1163,11 +1163,36 @@ export namespace Inngest {
     TFailureHandler extends Handler.Any,
   > = Omit<
     InngestFunction.Options<InngestFunction.Trigger<string>[], TFailureHandler>,
-    "triggers"
+    "triggers" | "onDefer"
   > & {
     triggers?: TTriggers;
     middleware?: TFnMiddleware;
+    onDefer?: DeferHandler<TFnMiddleware, TTriggers>;
   };
+
+  /**
+   * The handler type for `onDefer`, with properly typed step tools.
+   */
+  type DeferHandler<
+    TFnMiddleware extends Middleware.Class[] | undefined,
+    TTriggers extends
+      | SingleOrArray<InngestFunction.Trigger<string>>
+      | undefined,
+  > = HandlerWithTriggers<
+    ReturnType<typeof createStepTools<Inngest.Any, TFnMiddleware>>,
+    ResolveTriggers<TTriggers>,
+    ApplyAllMiddlewareCtxExtensions<
+      [...ReturnType<typeof builtInMiddleware>]
+    > &
+      ApplyAllMiddlewareCtxExtensions<
+        ClientOptionsFromInngest<Inngest.Any>["middleware"]
+      > & {
+        step: ReturnType<typeof createStepTools<Inngest.Any, TFnMiddleware>> &
+          ApplyAllMiddlewareStepExtensions<
+            ClientOptionsFromInngest<Inngest.Any>["middleware"]
+          >;
+      }
+  >;
 
   /**
    * The type of the proxy handler returned by `endpointProxy()`.

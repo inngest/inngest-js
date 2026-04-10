@@ -27,13 +27,14 @@ test("onDefer handler is triggered by defer()", async () => {
       id: "fn",
       onDefer: async ({ event, step }) => {
         await step.run("capture-data", () => {
-          state.deferredData = event.data.data as Record<string, unknown>;
+          state.deferredData = event.data.data
         });
       },
       retries: 0,
       triggers: [{ event: eventName }],
     },
-    async ({ defer, runId, step }: Record<string, any>) => {
+    // defer is injected at runtime but not yet typed in the context
+    async ({ defer, runId, step }: any) => {
       state.runId = runId;
 
       const msg = await step.run("create-msg", () => {
