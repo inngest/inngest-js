@@ -405,7 +405,7 @@ export class InngestCommHandler<
    */
   private readonly fns: Record<
     string,
-    { fn: InngestFunction.Any; onFailure: boolean }
+    { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
   > = {};
 
   private env: Env = allProcessEnv();
@@ -463,15 +463,30 @@ export class InngestCommHandler<
     }
 
     this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
+      Record<
+        string,
+        { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+      >
     >((acc, fn) => {
       const configs = fn["getConfig"]({
         baseUrl: new URL("https://example.com"),
         appPrefix: this.client.id,
       });
 
-      const fns = configs.reduce((acc, { id }, index) => {
-        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
+      const fns = configs.reduce<
+        Record<
+          string,
+          { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+        >
+      >((acc, { id }) => {
+        return {
+          ...acc,
+          [id]: {
+            fn,
+            onFailure: id.endsWith(InngestFunction.failureSuffix),
+            onDefer: id.endsWith(InngestFunction.deferSuffix),
+          },
+        };
       }, {});
 
       // biome-ignore lint/complexity/noForEach: intentional
@@ -952,6 +967,7 @@ export class InngestCommHandler<
         stepState: {},
         disableImmediateExecution: false,
         isFailureHandler: false,
+        isDeferHandler: false,
         acceptsSse,
         timer,
         createResponse: (data: unknown) =>
@@ -1560,13 +1576,15 @@ export class InngestCommHandler<
           };
         }
 
-        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
+        let fn:
+          | { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean }
+          | undefined;
         let fnId: string | undefined;
 
         if (forceExecution) {
           fn =
             fns?.length && fns[0]
-              ? { fn: fns[0], onFailure: false }
+              ? { fn: fns[0], onFailure: false, onDefer: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
 
@@ -2077,7 +2095,7 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: { fn: InngestFunction.Any; onFailure: boolean };
+    fn: { fn: InngestFunction.Any; onFailure: boolean; onDefer: boolean };
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
     requestInfo?: InngestExecutionOptions["requestInfo"];
@@ -2175,6 +2193,7 @@ export class InngestCommHandler<
           requestedRunStep,
           timer,
           isFailureHandler: fn.onFailure,
+          isDeferHandler: fn.onDefer,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,

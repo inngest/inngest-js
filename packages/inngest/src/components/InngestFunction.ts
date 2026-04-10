@@ -42,6 +42,7 @@ export class InngestFunction<
 {
   static stepId = "step";
   static failureSuffix = "-failure";
+  static deferSuffix = "-defer";
 
   get [Symbol.toStringTag](): typeof InngestFunction.Tag {
     return InngestFunction.Tag;
@@ -51,6 +52,7 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
+  private readonly onDeferFn?: Handler.Any;
   protected readonly client: TClient;
 
   /**
@@ -73,6 +75,7 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
+    this.onDeferFn = this.opts.onDefer;
   }
 
   /**
@@ -259,6 +262,36 @@ export class InngestFunction<
             runtime: {
               type: "http",
               url: failureStepUrl.href,
+            },
+            retries: { attempts: 1 },
+          },
+        },
+      });
+    }
+
+    if (this.onDeferFn) {
+      const id = `${fn.id}${InngestFunction.deferSuffix}`;
+      const name = `${fn.name ?? fn.id} (defer)`;
+
+      const deferStepUrl = new URL(stepUrl.href);
+      deferStepUrl.searchParams.set(queryKeys.FnId, id);
+
+      config.push({
+        id,
+        name,
+        triggers: [
+          {
+            event: "deferred.start",
+            expression: `event.data.fnSlug == '${fnId}'`,
+          },
+        ],
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: isConnect ? "ws" : "http",
+              url: deferStepUrl.href,
             },
             retries: { attempts: 1 },
           },
@@ -676,6 +709,16 @@ export namespace InngestFunction {
      * regular handler.
      */
     onFailure?: TFailureHandler;
+
+    /**
+     * Provide a function to be called when `defer()` is invoked from
+     * within the main function handler.
+     *
+     * The deferred function is a full Inngest function with `step`
+     * capabilities, triggered by a `deferred.start` event sent when
+     * `defer()` is called.
+     */
+    onDefer?: Handler.Any;
 
     /**
      * Define a set of middleware that can be registered to hook into

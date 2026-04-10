@@ -1745,11 +1745,10 @@ class InngestExecutionEngine
    * Validate event data against schemas defined in function triggers.
    */
   private async validateEventSchemas(): Promise<void> {
-    if (this.options.isFailureHandler) {
+    if (this.options.isFailureHandler || this.options.isDeferHandler) {
       // Skip validation because the main function's triggers don't apply to its
-      // `onFailure` handler. The `onFailure` handler is a separate Inngest
-      // function that's implicitly triggered by the "inngest/function.failed"
-      // event.
+      // `onFailure`/`onDefer` handler. These are separate Inngest functions
+      // triggered by internal events, not the parent's triggers.
       return;
     }
 
@@ -1862,6 +1861,35 @@ class InngestExecutionEngine
       step,
       group: createGroupTools({ experimentStepRun }),
     } as Context.Any;
+
+    /**
+     * If the function has an `onDefer` handler, inject `defer` into the context.
+     * `defer` sends a `deferred.start` event to trigger the deferred function.
+     */
+    if (this.options.fn["onDeferFn"]) {
+      const fnSlug = this.options.fn.id(this.options.client.id);
+      const client = this.options.client;
+      const headers = this.options.headers;
+      const fn = this.options.fn;
+
+      const defer = async (opts: { data?: Record<string, unknown> }) => {
+        await client["_send"]({
+          payload: {
+            name: "deferred.start",
+            data: {
+              runId: fnArg.runId,
+              fnSlug,
+              data: opts.data ?? {},
+            },
+          },
+          headers,
+          fnMiddleware: fn.opts.middleware ?? [],
+          fn,
+        });
+      };
+
+      fnArg = { ...fnArg, defer } as Context.Any;
+    }
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.
@@ -2455,6 +2483,14 @@ class InngestExecutionEngine
   }
 
   private getUserFnToRun(): Handler.Any {
+    if (this.options.isDeferHandler) {
+      if (!this.options.fn["onDeferFn"]) {
+        throw new Error("Cannot find function `onDefer` handler");
+      }
+
+      return this.options.fn["onDeferFn"];
+    }
+
     if (!this.options.isFailureHandler) {
       return this.options.fn["fn"];
     }

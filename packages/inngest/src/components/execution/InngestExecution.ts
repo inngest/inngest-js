@@ -134,6 +134,7 @@ export interface InngestExecutionOptions {
   requestedRunStep?: string;
   timer?: ServerTiming;
   isFailureHandler?: boolean;
+  isDeferHandler?: boolean;
   disableImmediateExecution?: boolean;
 
   /**
