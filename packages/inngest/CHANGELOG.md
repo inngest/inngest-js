@@ -1,5 +1,11 @@
 # inngest
 
+## 4.2.1
+
+### Patch Changes
+
+- [#1453](https://github.com/inngest/inngest-js/pull/1453) [`3645404f`](https://github.com/inngest/inngest-js/commit/3645404fe8b40feb598cae1d06d620453a8b9760) Thanks [@amh4r](https://github.com/amh4r)! - Add default checkpointing maxRuntime
+
 ## 4.2.0
 
 ### Minor Changes
