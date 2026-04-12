@@ -18,6 +18,7 @@ import type {
   IInngestExecution,
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
+
 import type { Inngest } from "./Inngest.ts";
 import type { Middleware } from "./middleware/middleware.ts";
 import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
@@ -85,11 +86,10 @@ export class InngestFunction<
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
 
-    const onDefer = this.opts.onDefer;
-    if (onDefer && typeof onDefer === "object") {
-      for (const [key, entry] of Object.entries(onDefer)) {
+    if (this.opts.onDefer) {
+      for (const [key, entry] of Object.entries(this.opts.onDefer)) {
         this.onDeferHandlers[key] = {
-          handler: entry.handler as Handler.Any,
+          handler: entry.handler,
           schema: entry.schema,
           concurrency: entry.concurrency,
           retries: entry.retries,
@@ -298,10 +298,10 @@ export class InngestFunction<
       const deferStepUrl = new URL(stepUrl.href);
       deferStepUrl.searchParams.set(queryKeys.FnId, id);
 
-      const deferRetries =
-        typeof deferHandler.retries === "undefined"
-          ? undefined
-          : { attempts: deferHandler.retries };
+      let deferRetries: { attempts: number } | undefined;
+      if (typeof deferHandler.retries !== "undefined") {
+        deferRetries = { attempts: deferHandler.retries };
+      }
 
       const deferFnConfig: FunctionConfig = {
         id,
@@ -745,7 +745,7 @@ export namespace InngestFunction {
      * `defer()` from the main function handler.
      *
      * Each key is a stable identifier that becomes part of the generated
-     * function ID (`{fnId}-defer-{key}`) — do not rename keys after
+     * function ID (`{fnId}-defer-{key}`). Do not rename keys after
      * deploy.
      *
      * Each value is a full Inngest function config with `step`
@@ -818,12 +818,11 @@ export namespace InngestFunction {
    * Configuration for a single `onDefer` handler value. The key in the
    * `onDefer` map serves as the stable identifier.
    *
-   * `handler` is typed as `Function` at the config level; the
-   * `Inngest.DeferEntryInput` mapped type provides full contextual
+   * The `Inngest.DeferEntryInput` mapped type provides full contextual
    * typing for each handler based on its sibling `schema`.
    */
   export interface OnDeferConfig {
-    handler: Function;
+    handler: Handler.Any;
 
     schema?: StandardSchemaV1<Record<string, unknown>>;
 

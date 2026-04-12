@@ -201,13 +201,13 @@ export class EventType<
  * This type's only purpose is to clearly highlight static type error messages
  * in our codebase. To end users, it's exactly the same as a normal string.
  */
-export type StaticTypeError<TMessage extends string> = TMessage;
+type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
  * Ensure that users don't use transforms in their schemas, since we don't
  * support transforms.
  */
-export type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
+type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
   TSchema extends undefined
     ? // Undefined schema is OK
       undefined

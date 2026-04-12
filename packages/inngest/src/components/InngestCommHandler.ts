@@ -70,6 +70,17 @@ import {
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 
+/**
+ * An entry in the function registry, tracking which config ID maps to which
+ * function and what kind of handler it is (main, failure, or defer).
+ */
+interface FnRegistryEntry {
+  fn: InngestFunction.Any;
+  onFailure: boolean;
+  onDefer: boolean;
+  deferId?: string;
+}
+
 // A response object for when an internal server error occurs. When that
 // happens, we don't to leak any internal details to the client.
 const internalServerErrorResponse = {
@@ -403,15 +414,7 @@ export class InngestCommHandler<
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<
-    string,
-    {
-      fn: InngestFunction.Any;
-      onFailure: boolean;
-      onDefer: boolean;
-      deferId?: string;
-    }
-  > = {};
+  private readonly fns: Record<string, FnRegistryEntry> = {};
 
   private env: Env = allProcessEnv();
 
@@ -467,75 +470,54 @@ export class InngestCommHandler<
       );
     }
 
-    this.fns = this.rawFns.reduce<
-      Record<
-        string,
-        {
-          fn: InngestFunction.Any;
-          onFailure: boolean;
-          onDefer: boolean;
-          deferId?: string;
-        }
-      >
-    >((acc, fn) => {
-      const configs = fn["getConfig"]({
-        baseUrl: new URL("https://example.com"),
-        appPrefix: this.client.id,
-      });
+    this.fns = this.rawFns.reduce<Record<string, FnRegistryEntry>>(
+      (acc, fn) => {
+        const configs = fn["getConfig"]({
+          baseUrl: new URL("https://example.com"),
+          appPrefix: this.client.id,
+        });
 
-      // Cross-reference config IDs against the function's registered
-      // defer handler keys instead of parsing the ID string.
-      // biome-ignore lint/suspicious/noExplicitAny: accessing private field
-      const rawHandlers = (fn as any)["onDeferHandlers"] as
-        | Record<string, unknown>
-        | undefined;
-      const deferHandlerKeys = Object.keys(rawHandlers ?? {});
-      const deferSuffix = InngestFunction.deferSuffix;
+        const fnId = fn.id(this.client.id);
+        const deferPrefix = `${fnId}${InngestFunction.deferSuffix}-`;
 
-      const fns = configs.reduce<
-        Record<
-          string,
-          {
-            fn: InngestFunction.Any;
-            onFailure: boolean;
-            onDefer: boolean;
-            deferId?: string;
+        const fns = configs.reduce<Record<string, FnRegistryEntry>>(
+          (acc, { id }) => {
+            const isDefer = id.startsWith(deferPrefix);
+
+            let deferId: string | undefined;
+            if (isDefer) {
+              deferId = id.slice(deferPrefix.length);
+            }
+
+            return {
+              ...acc,
+              [id]: {
+                fn,
+                onFailure: id.endsWith(InngestFunction.failureSuffix),
+                onDefer: isDefer,
+                deferId,
+              },
+            };
+          },
+          {},
+        );
+
+        // biome-ignore lint/complexity/noForEach: intentional
+        configs.forEach(({ id }) => {
+          if (acc[id]) {
+            throw new Error(
+              `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
+            );
           }
-        >
-      >((acc, { id }) => {
-        let deferId: string | undefined;
-        for (const key of deferHandlerKeys) {
-          if (id.endsWith(`${deferSuffix}-${key}`)) {
-            deferId = key;
-            break;
-          }
-        }
+        });
 
         return {
           ...acc,
-          [id]: {
-            fn,
-            onFailure: id.endsWith(InngestFunction.failureSuffix),
-            onDefer: deferId !== undefined,
-            deferId,
-          },
+          ...fns,
         };
-      }, {});
-
-      // biome-ignore lint/complexity/noForEach: intentional
-      configs.forEach(({ id }) => {
-        if (acc[id]) {
-          throw new Error(
-            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
-          );
-        }
-      });
-
-      return {
-        ...acc,
-        ...fns,
-      };
-    }, {});
+      },
+      {},
+    );
 
     this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
@@ -1609,14 +1591,7 @@ export class InngestCommHandler<
           };
         }
 
-        let fn:
-          | {
-              fn: InngestFunction.Any;
-              onFailure: boolean;
-              onDefer: boolean;
-              deferId?: string;
-            }
-          | undefined;
+        let fn: FnRegistryEntry | undefined;
         let fnId: string | undefined;
 
         if (forceExecution) {
@@ -2138,12 +2113,7 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: {
-      fn: InngestFunction.Any;
-      onFailure: boolean;
-      onDefer: boolean;
-      deferId?: string;
-    };
+    fn: FnRegistryEntry;
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
     requestInfo?: InngestExecutionOptions["requestInfo"];

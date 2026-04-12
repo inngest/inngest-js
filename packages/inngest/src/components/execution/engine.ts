@@ -1867,21 +1867,9 @@ class InngestExecutionEngine
      * `defer` sends a `deferred.start` event to trigger the matching deferred
      * function, routing by `deferId`.
      */
-    // biome-ignore lint/suspicious/noExplicitAny: accessing private field
-    const onDeferHandlers = (this.options.fn as any).onDeferHandlers as
-      | Record<
-          string,
-          {
-            schema?: {
-              "~standard": {
-                validate: (data: unknown) => Promise<{ issues?: unknown[] }>;
-              };
-            };
-          }
-        >
-      | undefined;
+    const onDeferHandlers = this.options.fn["onDeferHandlers"];
 
-    if (onDeferHandlers && Object.keys(onDeferHandlers).length > 0) {
+    if (Object.keys(onDeferHandlers).length > 0) {
       const fnSlug = this.options.fn.id(this.options.client.id);
       const client = this.options.client;
       const headers = this.options.headers;
@@ -1892,10 +1880,10 @@ class InngestExecutionEngine
         (data: Record<string, unknown>) => Promise<void>
       > = {};
 
-      for (const [deferId, handler] of Object.entries(onDeferHandlers)) {
+      for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
         defer[deferId] = async (data: Record<string, unknown>) => {
-          if (handler.schema) {
-            const result = await handler.schema["~standard"].validate(data);
+          if (entry.schema) {
+            const result = await entry.schema["~standard"].validate(data);
             if (result.issues) {
               throw new Error(
                 `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
@@ -2517,12 +2505,10 @@ class InngestExecutionEngine
   private getUserFnToRun(): Handler.Any {
     if (this.options.isDeferHandler) {
       const deferId = this.options.deferId;
-      // biome-ignore lint/suspicious/noExplicitAny: accessing private field
-      const handlers = (this.options.fn as any).onDeferHandlers as
-        | Record<string, { handler: Handler.Any }>
-        | undefined;
+      const match = deferId
+        ? this.options.fn["onDeferHandlers"][deferId]
+        : undefined;
 
-      const match = deferId ? handlers?.[deferId] : undefined;
       if (!match) {
         throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
       }

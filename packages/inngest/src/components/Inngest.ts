@@ -1160,10 +1160,6 @@ export namespace Inngest {
   type ResolveTriggers<T> = T extends undefined ? [] : AsArray<NonNullable<T>>;
 
   /**
-   * Input type for createFunction that accepts raw trigger input (single, array, or undefined)
-   * while keeping all other fields from InngestFunction.Options.
-   */
-  /**
    * Schema map: maps each `onDefer` key to its `StandardSchemaV1` (or
    * `undefined` when no schema is provided).
    */
@@ -1211,6 +1207,11 @@ export namespace Inngest {
     retries?: InngestFunction.OnDeferConfig["retries"];
   };
 
+  /**
+   * Input type for createFunction that accepts raw trigger input (single,
+   * array, or undefined) while keeping all other fields from
+   * InngestFunction.Options.
+   */
   export type CreateFunctionInput<
     TFnMiddleware extends Middleware.Class[] | undefined,
     TTriggers extends
