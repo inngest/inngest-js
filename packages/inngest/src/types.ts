@@ -165,8 +165,8 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
 };
 
 /**
- * Context arguments specific to a deferred event. Overrides `event` to type
- * `event.data.data` as `TDeferData`.
+ * Context arguments specific to a deferred event. User data is spread
+ * directly into `event.data` alongside system fields.
  *
  * @public
  */
@@ -179,8 +179,7 @@ export type DeferEventArgs<
       runId: string;
       fnSlug: string;
       deferId: string;
-      data: TDeferData;
-    };
+    } & TDeferData;
   };
 };
 

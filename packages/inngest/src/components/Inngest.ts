@@ -1233,13 +1233,11 @@ export namespace Inngest {
   };
 
   /**
-   * Map each `onDefer` key to a typed `defer` method that accepts
-   * `{ data: T }` where `T` is resolved from that key's schema.
+   * Map each `onDefer` key to a typed `defer` method that accepts the
+   * schema data directly.
    */
   type DeferMethods<T extends OnDeferSchemaMap> = {
-    [K in keyof T & string]: (opts: {
-      data: ResolveDeferData<T[K]>;
-    }) => Promise<void>;
+    [K in keyof T & string]: (data: ResolveDeferData<T[K]>) => Promise<void>;
   };
 
   /**

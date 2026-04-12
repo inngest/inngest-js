@@ -31,7 +31,9 @@ test("onDefer handler is triggered by defer() with schema", async () => {
           schema: z.object({ msg: z.string() }),
           handler: async ({ event, step }) => {
             await step.run("capture-data", () => {
-              state.deferredData = event.data.data;
+              state.deferredData = {
+                msg: event.data.msg,
+              };
             });
           },
         },
@@ -47,7 +49,7 @@ test("onDefer handler is triggered by defer() with schema", async () => {
       });
 
       await step.run("defer-1", async () => {
-        await defer.process({ data: { msg } });
+        await defer.process({ msg });
       });
     },
   );
@@ -78,19 +80,19 @@ test("multiple onDefer handlers are independently triggered", async () => {
     {
       id: "fn",
       onDefer: {
-        "send-email": {
+        sendEmail: {
           schema: z.object({ to: z.string() }),
           handler: async ({ event, step }) => {
             await step.run("capture-email", () => {
-              state.emailData = event.data.data;
+              state.emailData = { to: event.data.to };
             });
           },
         },
-        "process-payment": {
+        processPayment: {
           schema: z.object({ amount: z.number() }),
           handler: async ({ event, step }) => {
             await step.run("capture-payment", () => {
-              state.paymentData = event.data.data;
+              state.paymentData = { amount: event.data.amount };
             });
           },
         },
@@ -102,11 +104,11 @@ test("multiple onDefer handlers are independently triggered", async () => {
       state.runId = runId;
 
       await step.run("send-email", async () => {
-        await defer["send-email"]({ data: { to: "a@b.com" } });
+        await defer.sendEmail({ to: "a@b.com" });
       });
 
       await step.run("process-payment", async () => {
-        await defer["process-payment"]({ data: { amount: 100 } });
+        await defer.processPayment({ amount: 100 });
       });
     },
   );
@@ -132,11 +134,11 @@ test("onDefer types: defer mirrors onDefer keys with typed methods", () => {
     {
       id: "typed-defer",
       onDefer: {
-        "send-email": {
+        sendEmail: {
           schema: z.object({ to: z.string() }),
           handler: async () => {},
         },
-        "process-payment": {
+        processPayment: {
           schema: z.object({ amount: z.number() }),
           handler: async () => {},
         },
@@ -144,15 +146,11 @@ test("onDefer types: defer mirrors onDefer keys with typed methods", () => {
       triggers: [{ event: "test" }],
     },
     async ({ defer }) => {
-      expectTypeOf(defer["send-email"]).toBeFunction();
-      expectTypeOf(defer["process-payment"]).toBeFunction();
+      expectTypeOf(defer.sendEmail).toBeFunction();
+      expectTypeOf(defer.processPayment).toBeFunction();
 
-      expectTypeOf(defer["send-email"]).toBeCallableWith({
-        data: { to: "a@b.com" },
-      });
-      expectTypeOf(defer["process-payment"]).toBeCallableWith({
-        data: { amount: 100 },
-      });
+      expectTypeOf(defer.sendEmail).toBeCallableWith({ to: "a@b.com" });
+      expectTypeOf(defer.processPayment).toBeCallableWith({ amount: 100 });
     },
   );
 });

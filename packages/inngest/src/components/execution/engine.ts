@@ -1889,15 +1889,13 @@ class InngestExecutionEngine
 
       const defer: Record<
         string,
-        (opts: { data: Record<string, unknown> }) => Promise<void>
+        (data: Record<string, unknown>) => Promise<void>
       > = {};
 
       for (const [deferId, handler] of Object.entries(onDeferHandlers)) {
-        defer[deferId] = async (opts: { data: Record<string, unknown> }) => {
+        defer[deferId] = async (data: Record<string, unknown>) => {
           if (handler.schema) {
-            const result = await handler.schema["~standard"].validate(
-              opts.data,
-            );
+            const result = await handler.schema["~standard"].validate(data);
             if (result.issues) {
               throw new Error(
                 `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
@@ -1912,7 +1910,7 @@ class InngestExecutionEngine
                 runId: fnArg.runId,
                 fnSlug,
                 deferId,
-                data: opts.data,
+                ...data,
               },
             },
             headers,
