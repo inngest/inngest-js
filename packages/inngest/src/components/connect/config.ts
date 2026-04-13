@@ -15,7 +15,11 @@ import {
   SDKResponse,
   SDKResponseStatus,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
-import type { Capabilities, FunctionConfig } from "../../types.ts";
+import {
+  type Capabilities,
+  DefaultMaxRuntime,
+  type FunctionConfig,
+} from "../../types.ts";
 import { version } from "../../version.ts";
 import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
@@ -161,6 +165,7 @@ export function prepareConnectionConfig(
       client: client,
       functions: fns,
       frameworkName: "connect",
+      defaultMaxRuntime: DefaultMaxRuntime.connect,
       skipSignatureValidation: true,
       handler: (msg: GatewayExecutorRequestData) => {
         const asString = new TextDecoder().decode(msg.requestPayload);
