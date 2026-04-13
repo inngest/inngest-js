@@ -12,7 +12,7 @@ import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("onDefer handler is triggered by defer() with schema", async () => {
+test("onDefer handler is triggered by step.defer with schema", async () => {
   const state = createState({
     deferredData: null as { msg: string } | null,
   });
@@ -41,16 +41,14 @@ test("onDefer handler is triggered by defer() with schema", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ defer, runId, step }) => {
+    async ({ runId, step }) => {
       state.runId = runId;
 
       const msg = await step.run("create-msg", () => {
         return "hello";
       });
 
-      await step.run("defer-1", async () => {
-        await defer.process({ msg });
-      });
+      await step.defer.process("defer-1", { msg });
     },
   );
 
@@ -100,16 +98,11 @@ test("multiple onDefer handlers are independently triggered", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ defer, runId, step }) => {
+    async ({ runId, step }) => {
       state.runId = runId;
 
-      await step.run("send-email", async () => {
-        await defer.sendEmail({ to: "a@b.com" });
-      });
-
-      await step.run("process-payment", async () => {
-        await defer.processPayment({ amount: 100 });
-      });
+      await step.defer.sendEmail("send-email", { to: "a@b.com" });
+      await step.defer.processPayment("process-payment", { amount: 100 });
     },
   );
 
@@ -159,12 +152,10 @@ test("onDefer handler supports multiple steps", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ defer, runId, step }) => {
+    async ({ runId, step }) => {
       state.runId = runId;
 
-      await step.run("defer-it", async () => {
-        await defer.process({});
-      });
+      await step.defer.process("defer-it", {});
     },
   );
 
@@ -199,12 +190,10 @@ test("schema validation fails", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ defer, runId, step }) => {
+    async ({ runId, step }) => {
       state.runId = runId;
 
-      await step.run("bad-defer", async () => {
-        await defer.process({ msg: 123 } as never);
-      });
+      await step.defer.process("bad-defer", { msg: 123 } as never);
     },
   );
 
@@ -215,7 +204,7 @@ test("schema validation fails", async () => {
   expect(error).toBeDefined();
 });
 
-test("defer mirrors onDefer keys with typed methods", () => {
+test("step.defer mirrors onDefer keys with typed methods", () => {
   const client = new Inngest({ id: "type-test", isDev: true });
 
   client.createFunction(
@@ -233,7 +222,7 @@ test("defer mirrors onDefer keys with typed methods", () => {
       },
       triggers: { event: "test" },
     },
-    async ({ defer }) => {
+    async ({ defer, step }) => {
       expectTypeOf(defer.sendEmail).toBeFunction();
       expectTypeOf(defer.processPayment).toBeFunction();
 
@@ -242,6 +231,16 @@ test("defer mirrors onDefer keys with typed methods", () => {
         .toEqualTypeOf<{ to: string }>();
       expectTypeOf(defer.processPayment)
         .parameter(0)
+        .toEqualTypeOf<{ amount: number }>();
+
+      expectTypeOf(step.defer.sendEmail).toBeFunction();
+      expectTypeOf(step.defer.processPayment).toBeFunction();
+
+      expectTypeOf(step.defer.sendEmail)
+        .parameter(1)
+        .toEqualTypeOf<{ to: string }>();
+      expectTypeOf(step.defer.processPayment)
+        .parameter(1)
         .toEqualTypeOf<{ amount: number }>();
     },
   );
@@ -257,6 +256,7 @@ test("no defer when onDefer is absent", () => {
     },
     async (ctx) => {
       expectTypeOf(ctx).not.toHaveProperty("defer");
+      expectTypeOf(ctx.step).not.toHaveProperty("defer");
     },
   );
 });
@@ -287,14 +287,12 @@ test("onDefer without schema defaults to any", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ defer, runId, step }) => {
+    async ({ runId, step }) => {
       state.runId = runId;
 
-      expectTypeOf(defer.process).toBeFunction();
+      expectTypeOf(step.defer.process).toBeFunction();
 
-      await step.run("defer-it", async () => {
-        await defer.process({ key: "value" });
-      });
+      await step.defer.process("defer-it", { key: "value" });
     },
   );
 
@@ -328,14 +326,59 @@ test("mixed onDefer entries: with and without schema", () => {
         }),
       },
     },
-    async ({ defer }) => {
+    async ({ defer, step }) => {
       expectTypeOf(defer.withSchema).toBeFunction();
       expectTypeOf(defer.withSchema).toBeCallableWith({ msg: "hello" });
       expectTypeOf(defer.withoutSchema).toBeFunction();
       // no schema = any
       defer.withoutSchema({ anything: "goes" });
+
+      expectTypeOf(step.defer.withSchema).toBeFunction();
+      expectTypeOf(step.defer.withoutSchema).toBeFunction();
     },
   );
+});
+
+test("plain defer function", async () => {
+  const state = createState({
+    deferredData: null as { msg: string } | null,
+  });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: client.createDefer({
+          schema: z.object({ msg: z.string() }),
+          handler: async ({ event, step }) => {
+            await step.run("capture-data", () => {
+              state.deferredData = { msg: event.data.msg };
+            });
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId, step }) => {
+      state.runId = runId;
+
+      await defer.process({ msg: "from-plain-defer" });
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await state.waitForRunComplete();
+
+  await waitFor(() => {
+    expect(state.deferredData).toEqual({ msg: "from-plain-defer" });
+  });
 });
 
 test("middleware", () => {

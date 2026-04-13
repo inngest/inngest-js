@@ -49,6 +49,7 @@ import {
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
+  type StepOptionsOrId,
   sendEventResponseSchema,
 } from "../types.ts";
 
@@ -1244,6 +1245,29 @@ export namespace Inngest {
     : unknown;
 
   /**
+   * Conditionally adds `defer` to step tools when `onDefer` handlers are
+   * configured. Each method takes a step ID (for memoization) and the
+   * schema-typed data, wrapping the defer send in a step automatically.
+   */
+  type MaybeDeferStepTools<
+    TOnDefer extends Record<string, OnDeferEntryBase> | undefined,
+  > = TOnDefer extends Record<string, OnDeferEntryBase>
+    ? {
+        defer: {
+          [K in keyof TOnDefer & string]: (
+            idOrOptions: StepOptionsOrId,
+            data: TOnDefer[K] extends {
+              schema: StandardSchemaV1<infer D extends Record<string, unknown>>;
+            }
+              ? D
+              : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+                any,
+          ) => Promise<void>;
+        };
+      }
+    : unknown;
+
+  /**
    * Input type for createFunction that accepts raw trigger input (single,
    * array, or undefined) while keeping all other fields from
    * InngestFunction.Options.
@@ -1299,7 +1323,8 @@ export namespace Inngest {
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]
             > &
-            ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+            ApplyAllMiddlewareStepExtensions<TFnMiddleware> &
+            MaybeDeferStepTools<TOnDefer>;
         }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<

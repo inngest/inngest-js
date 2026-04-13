@@ -1908,6 +1908,30 @@ class InngestExecutionEngine
         };
       }
 
+      /**
+       * Also inject `step.defer` — a convenience that wraps each defer
+       * call in a `step.run` so it's memoized automatically. Users
+       * don't need to manually wrap `defer.xxx()` inside `step.run()`.
+       */
+      const stepDefer: Record<
+        string,
+        (
+          idOrOptions: string | { id: string; name?: string },
+          data: Record<string, unknown>,
+        ) => Promise<void>
+      > = {};
+
+      for (const deferId of Object.keys(defer)) {
+        stepDefer[deferId] = async (idOrOptions, data) => {
+          await step.run(idOrOptions, async () => {
+            await defer[deferId](data);
+          });
+        };
+      }
+
+      // biome-ignore lint/suspicious/noExplicitAny: attaching step.defer at runtime
+      (step as any).defer = stepDefer;
+
       fnArg = { ...fnArg, defer } as Context.Any;
     }
 
