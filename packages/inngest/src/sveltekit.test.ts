@@ -131,7 +131,7 @@ describe("SvelteKit streaming", () => {
     });
   });
 
-  test('uses a streamed response for `streaming: true`', async () => {
+  test("uses a streamed response for `streaming: true`", async () => {
     const client = createClient({ id: "test", isDev: true });
     const fn = client.createFunction(
       {
