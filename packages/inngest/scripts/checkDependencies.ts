@@ -225,7 +225,12 @@ function checkDependencies(
   });
 
   // Packages that are dynamically imported and should not be flagged as unused
-  const dynamicallyImportedPackages = ["ulid"];
+  const dynamicallyImportedPackages = [
+    "ulid",
+    "@opentelemetry/auto-instrumentations-node",
+    "@opentelemetry/context-async-hooks",
+    "@traceloop/instrumentation-anthropic",
+  ];
 
   // Check for unused packages in dependencies
   // biome-ignore lint/complexity/noForEach: intentional
