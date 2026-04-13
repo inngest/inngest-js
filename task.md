@@ -165,6 +165,19 @@ inngest.createFunction(
 - **`defer` mirrors `onDefer` shape**: Config and call-site use the same mental model — define as an object, use as an object (`defer["send-email"]({ data })`)
 - **Keys are durable IDs**: Renaming a key changes the generated function ID — document this clearly
 
+# Companion functions
+
+`onFailure` and `onDefer` are both examples of an emerging pattern tentatively called "companion functions": full Inngest functions that are colocated with a parent function in `createFunction`'s options. They execute independently with their own retries, concurrency, and step state.
+
+Companions differ from normal functions in a few ways:
+- **Triggers are implicit.** The parent determines how the companion is activated (`inngest/function.failed` for `onFailure`, `deferred.start` for `onDefer`). Users never wire triggers manually.
+- **IDs are derived from the parent.** The key name in the config becomes part of the generated function ID (`{fnId}-defer-{key}`, `{fnId}-failure`). No separate `id` option needed.
+- **Input schemas belong to the relationship.** An `onDefer` handler's schema describes the data contract between the parent's `defer()` call and the companion's `event.data`. This is different from a normal function's trigger schema.
+
+We considered making companions standalone `createFunction` calls linked together, but all three properties above push toward colocation. Standalone functions would need explicit trigger wiring, explicit IDs, and some way to attach schemas to the linkage rather than the trigger.
+
+Future companions could include `onComplete` or `onCancel`. Each would follow the same pattern: a handler defined in the parent's config, triggered by an internal event, with its own execution context. The `handlerKind` discriminated union (see TODO) would extend to cover new kinds.
+
 # Out of scope
 
 - `inngest/` event prefix (will need eventually)

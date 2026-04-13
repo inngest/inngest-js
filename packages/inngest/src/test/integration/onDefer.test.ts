@@ -7,7 +7,11 @@ import {
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { createDefer, Inngest } from "../../index.ts";
+import {
+  createDefer,
+  dependencyInjectionMiddleware,
+  Inngest,
+} from "../../index.ts";
 import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -280,6 +284,32 @@ test("mixed onDefer entries: with and without schema", () => {
       expectTypeOf(defer.withoutSchema).toBeFunction();
       // no schema = any
       defer.withoutSchema({ anything: "goes" });
+    },
+  );
+});
+
+test("middleware", () => {
+  class DB {}
+  const db = new DB();
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [dependencyInjectionMiddleware({ db })],
+  });
+
+  client.createFunction(
+    {
+      id: "mixed-defer",
+      onDefer: {
+        foo: client.createDefer({
+          handler: async ({ db }) => {
+            expectTypeOf(db).toEqualTypeOf<DB>();
+          },
+        }),
+      },
+    },
+    async ({ db }) => {
+      expectTypeOf(db).toEqualTypeOf<DB>();
     },
   );
 });

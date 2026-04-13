@@ -307,7 +307,7 @@ type DeferHandlerCtx<TSchema> = TSchema extends StandardSchemaV1<
       step: any;
     };
 
-type DeferSystemFields = {
+export type DeferSystemFields = {
   runId: string;
   fnSlug: string;
   deferId: string;
