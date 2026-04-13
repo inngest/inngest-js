@@ -257,6 +257,107 @@ export function eventType<
 }
 
 /**
+ * Define a typed `onDefer` handler entry. Follows the same pattern as
+ * {@link eventType}: when `schema` is omitted, data defaults to `any`.
+ *
+ * @example
+ * ```ts
+ * onDefer: {
+ *   process: createDefer({
+ *     handler: async ({ event, step }) => { ... }
+ *   }),
+ *   sendEmail: createDefer({
+ *     schema: z.object({ to: z.string() }),
+ *     handler: async ({ event }) => { event.data.to; }
+ *   }),
+ * }
+ * ```
+ */
+export function createDefer<
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>>
+    | undefined = undefined,
+>(opts: {
+  schema?: AssertNoTransform<TSchema>;
+  // biome-ignore lint/suspicious/noExplicitAny: handler param types are contextual from DeferEventArgs
+  handler: (ctx: DeferHandlerCtx<TSchema>) => any;
+  concurrency?: DeferHandlerConcurrency;
+  retries?: DeferHandlerRetries;
+}): DeferHandlerResult<TSchema> {
+  // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through; types are the value here
+  return opts as any;
+}
+
+/**
+ * The handler context for a defer entry, typed from the entry's schema.
+ * When `TSchema` is `undefined`, `event.data` is `any`.
+ */
+type DeferHandlerCtx<TSchema> = TSchema extends StandardSchemaV1<
+  infer D extends Record<string, unknown>
+>
+  ? {
+      event: { name: "deferred.start"; data: D & DeferSystemFields };
+      // biome-ignore lint/suspicious/noExplicitAny: step is opaque in this context
+      step: any;
+    }
+  : {
+      // biome-ignore lint/suspicious/noExplicitAny: no schema = any, mirroring eventType()
+      event: { name: "deferred.start"; data: any };
+      // biome-ignore lint/suspicious/noExplicitAny: step is opaque in this context
+      step: any;
+    };
+
+type DeferSystemFields = {
+  runId: string;
+  fnSlug: string;
+  deferId: string;
+};
+
+/**
+ * Branded result type from {@link createDefer}. The `schema` property
+ * carries `TSchema` so `MaybeDeferCtx` can extract per-entry data types.
+ */
+export type DeferHandlerResult<
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>>
+    | undefined = undefined,
+> = {
+  schema: TSchema;
+  // biome-ignore lint/suspicious/noExplicitAny: opaque handler storage
+  handler: (...args: any[]) => any;
+  concurrency?: DeferHandlerConcurrency;
+  retries?: DeferHandlerRetries;
+};
+
+type DeferHandlerConcurrency =
+  | number
+  | { limit: number; key?: string }
+  | [{ limit: number; key?: string }, { limit: number; key?: string }];
+
+type DeferHandlerRetries =
+  | 0
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | 10
+  | 11
+  | 12
+  | 13
+  | 14
+  | 15
+  | 16
+  | 17
+  | 18
+  | 19
+  | 20;
+
+/**
  * Create a type-only schema that provides TypeScript types without runtime
  * validation. Returns a hardcoded StandardSchemaV1 whose `validate` is a
  * passthrough, so invalid data will not be rejected at runtime. Use this when

@@ -7,7 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { Inngest } from "../../index.ts";
+import { createDefer, Inngest } from "../../index.ts";
 import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -27,7 +27,7 @@ test("onDefer handler is triggered by defer() with schema", async () => {
     {
       id: "fn",
       onDefer: {
-        process: {
+        process: createDefer({
           schema: z.object({ msg: z.string() }),
           handler: async ({ event, step }) => {
             await step.run("capture-data", () => {
@@ -36,10 +36,10 @@ test("onDefer handler is triggered by defer() with schema", async () => {
               };
             });
           },
-        },
+        }),
       },
       retries: 0,
-      triggers: [{ event: eventName }],
+      triggers: { event: eventName },
     },
     async ({ defer, runId, step }) => {
       state.runId = runId;
@@ -80,25 +80,25 @@ test("multiple onDefer handlers are independently triggered", async () => {
     {
       id: "fn",
       onDefer: {
-        sendEmail: {
+        sendEmail: createDefer({
           schema: z.object({ to: z.string() }),
           handler: async ({ event, step }) => {
             await step.run("capture-email", () => {
               state.emailData = { to: event.data.to };
             });
           },
-        },
-        processPayment: {
+        }),
+        processPayment: createDefer({
           schema: z.object({ amount: z.number() }),
           handler: async ({ event, step }) => {
             await step.run("capture-payment", () => {
               state.paymentData = { amount: event.data.amount };
             });
           },
-        },
+        }),
       },
       retries: 0,
-      triggers: [{ event: eventName }],
+      triggers: { event: eventName },
     },
     async ({ defer, runId, step }) => {
       state.runId = runId;
@@ -140,13 +140,13 @@ test("schema validation fails", async () => {
     {
       id: "fn",
       onDefer: {
-        process: {
+        process: createDefer({
           schema: z.object({ msg: z.string() }),
           handler: async () => {},
-        },
+        }),
       },
       retries: 0,
-      triggers: [{ event: eventName }],
+      triggers: { event: eventName },
     },
     async ({ defer, runId, step }) => {
       state.runId = runId;
@@ -172,16 +172,16 @@ test("defer mirrors onDefer keys with typed methods", () => {
     {
       id: "typed-defer",
       onDefer: {
-        sendEmail: {
+        sendEmail: createDefer({
           schema: z.object({ to: z.string() }),
           handler: async () => {},
-        },
-        processPayment: {
+        }),
+        processPayment: createDefer({
           schema: z.object({ amount: z.number() }),
           handler: async () => {},
-        },
+        }),
       },
-      triggers: [{ event: "test" }],
+      triggers: { event: "test" },
     },
     async ({ defer }) => {
       expectTypeOf(defer.sendEmail).toBeFunction();
@@ -199,10 +199,87 @@ test("no defer when onDefer is absent", () => {
   client.createFunction(
     {
       id: "no-defer",
-      triggers: [{ event: "test" }],
+      triggers: { event: "test" },
     },
     async (ctx) => {
       expectTypeOf(ctx).not.toHaveProperty("defer");
+    },
+  );
+});
+
+test("onDefer without schema defaults to any", async () => {
+  const state = createState({
+    deferredData: null as Record<string, unknown> | null,
+  });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: createDefer({
+          handler: async ({ event, step }) => {
+            await step.run("capture-data", () => {
+              state.deferredData = { key: event.data.key };
+            });
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId, step }) => {
+      state.runId = runId;
+
+      expectTypeOf(defer.process).toBeFunction();
+
+      await step.run("defer-it", async () => {
+        await defer.process({ key: "value" });
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await state.waitForRunComplete();
+
+  await waitFor(() => {
+    expect(state.deferredData).toEqual({ key: "value" });
+  });
+});
+
+test("mixed onDefer entries: with and without schema", () => {
+  const client = new Inngest({ id: "type-test-4", isDev: true });
+
+  client.createFunction(
+    {
+      id: "mixed-defer",
+      onDefer: {
+        withSchema: createDefer({
+          schema: z.object({ msg: z.string() }),
+          handler: async ({ event }) => {
+            expectTypeOf(event.data.msg).toBeString();
+          },
+        }),
+        withoutSchema: createDefer({
+          handler: async ({ event }) => {
+            expectTypeOf(event.data.anything).toBeAny();
+          },
+        }),
+      },
+    },
+    async ({ defer }) => {
+      expectTypeOf(defer.withSchema).toBeFunction();
+      expectTypeOf(defer.withSchema).toBeCallableWith({ msg: "hello" });
+      expectTypeOf(defer.withoutSchema).toBeFunction();
+      // no schema = any
+      defer.withoutSchema({ anything: "goes" });
     },
   );
 });

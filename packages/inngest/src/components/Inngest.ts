@@ -1160,52 +1160,45 @@ export namespace Inngest {
   type ResolveTriggers<T> = T extends undefined ? [] : AsArray<NonNullable<T>>;
 
   /**
-   * Schema map: maps each `onDefer` key to its `StandardSchemaV1` (or
-   * `undefined` when no schema is provided).
+   * Base shape for an `onDefer` entry. Used as the constraint for the
+   * `TOnDefer` const generic so TypeScript captures the literal config
+   * (including schema types) without reverse-mapped inference.
+   *
+   * Handlers get `any` for their parameters via this constraint —
+   * schema-based typing flows through the main handler's `defer`
+   * methods, not the onDefer handler itself (same pattern as
+   * `eventType()` defaulting to any without a schema).
    */
-  type OnDeferSchemaMap = Record<
-    string,
-    StandardSchemaV1<Record<string, unknown>> | undefined
-  >;
-
-  /**
-   * Extract `TDeferData` from a schema, defaulting to
-   * `Record<string, unknown>` when no schema is provided.
-   */
-  type ResolveDeferData<TSchema> = TSchema extends StandardSchemaV1<
-    Record<string, unknown>
-  >
-    ? ExtractSchemaData<TSchema>
-    : Record<string, unknown>;
-
-  /**
-   * Per-entry typed `onDefer` value. The handler gets contextual typing
-   * from its sibling schema via `TSchema`.
-   */
-  type DeferEntryInput<
-    TFnMiddleware extends Middleware.Class[] | undefined,
-    TSchema,
-  > = {
-    schema?: TSchema;
-    handler: HandlerWithTriggers<
-      ReturnType<typeof createStepTools<Inngest.Any, TFnMiddleware>>,
-      [],
-      ApplyAllMiddlewareCtxExtensions<
-        [...ReturnType<typeof builtInMiddleware>]
-      > &
-        DeferEventArgs<ResolveDeferData<TSchema>> &
-        ApplyAllMiddlewareCtxExtensions<
-          ClientOptionsFromInngest<Inngest.Any>["middleware"]
-        > & {
-          step: ReturnType<typeof createStepTools<Inngest.Any, TFnMiddleware>> &
-            ApplyAllMiddlewareStepExtensions<
-              ClientOptionsFromInngest<Inngest.Any>["middleware"]
-            >;
-        }
-    >;
+  type OnDeferEntryBase = {
+    // biome-ignore lint/suspicious/noExplicitAny: widest schema constraint for inference
+    schema?: StandardSchemaV1<any>;
+    // biome-ignore lint/suspicious/noExplicitAny: handler is untyped here; schema typing flows through defer()
+    handler: (ctx: any) => any;
     concurrency?: InngestFunction.OnDeferConfig["concurrency"];
     retries?: InngestFunction.OnDeferConfig["retries"];
   };
+
+  /**
+   * Conditionally adds `defer` to the handler context when `onDefer`
+   * handlers are configured. Extracts schema data per-entry from
+   * the captured config; entries without `schema` default to `any`.
+   */
+  type MaybeDeferCtx<
+    TOnDefer extends Record<string, OnDeferEntryBase> | undefined,
+  > = TOnDefer extends Record<string, OnDeferEntryBase>
+    ? {
+        defer: {
+          [K in keyof TOnDefer & string]: (
+            data: TOnDefer[K] extends {
+              schema: StandardSchemaV1<infer D extends Record<string, unknown>>;
+            }
+              ? D
+              : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+                any,
+          ) => Promise<void>;
+        };
+      }
+    : unknown;
 
   /**
    * Input type for createFunction that accepts raw trigger input (single,
@@ -1218,27 +1211,14 @@ export namespace Inngest {
       | SingleOrArray<InngestFunction.Trigger<string>>
       | undefined,
     TFailureHandler extends Handler.Any,
-    TOnDeferSchemas extends OnDeferSchemaMap | undefined = undefined,
+    TOnDefer extends Record<string, OnDeferEntryBase> | undefined = undefined,
   > = Omit<
     InngestFunction.Options<InngestFunction.Trigger<string>[], TFailureHandler>,
     "triggers" | "onDefer"
   > & {
     triggers?: TTriggers;
     middleware?: TFnMiddleware;
-    onDefer?: {
-      [K in keyof TOnDeferSchemas]: DeferEntryInput<
-        TFnMiddleware,
-        TOnDeferSchemas[K]
-      >;
-    };
-  };
-
-  /**
-   * Map each `onDefer` key to a typed `defer` method that accepts the
-   * schema data directly.
-   */
-  type DeferMethods<T extends OnDeferSchemaMap> = {
-    [K in keyof T & string]: (data: ResolveDeferData<T[K]>) => Promise<void>;
+    onDefer?: { [K in keyof TOnDefer]: TOnDefer[K] };
   };
 
   /**
@@ -1255,22 +1235,12 @@ export namespace Inngest {
     >
   >;
 
-  /**
-   * Conditionally adds `defer` to the handler context when `onDefer`
-   * handlers are configured. `defer` is an object mirroring the
-   * `onDefer` config keys, where each key is a typed function.
-   */
-  type MaybeDeferCtx<TOnDeferSchemas extends OnDeferSchemaMap | undefined> =
-    TOnDeferSchemas extends OnDeferSchemaMap
-      ? { defer: DeferMethods<TOnDeferSchemas> }
-      : unknown;
-
   export type CreateFunction<TClient extends Inngest.Any> = <
     const TTriggers extends
       | SingleOrArray<InngestFunction.Trigger<string>>
       | undefined = undefined,
     const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
-    const TOnDeferSchemas extends OnDeferSchemaMap | undefined = undefined,
+    TOnDefer extends Record<string, OnDeferEntryBase> | undefined = undefined,
     THandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
       ResolveTriggers<TTriggers>,
@@ -1280,7 +1250,7 @@ export namespace Inngest {
         ApplyAllMiddlewareCtxExtensions<
           ClientOptionsFromInngest<TClient>["middleware"]
         > &
-        MaybeDeferCtx<TOnDeferSchemas> & {
+        MaybeDeferCtx<TOnDefer> & {
           step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]
@@ -1308,7 +1278,7 @@ export namespace Inngest {
       TFnMiddleware,
       TTriggers,
       TFailureHandler,
-      TOnDeferSchemas
+      TOnDefer
     >,
     handler: THandler,
   ) => InngestFunction<
