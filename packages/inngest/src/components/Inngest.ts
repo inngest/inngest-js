@@ -40,6 +40,8 @@ import {
   type ApplyAllMiddlewareTransforms,
   type BaseContext,
   type ClientOptions,
+  type DeferConfig,
+  type DeferDataMap,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -53,6 +55,7 @@ import {
 import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
@@ -1183,44 +1186,61 @@ export namespace Inngest {
     >
   >;
 
+  /**
+   * The resolved handler context type shared across main and failure handlers
+   * in `CreateFunction`. Extracted to a single definition to prevent the
+   * middleware extension lines from being accidentally dropped in one copy.
+   */
+  type ResolvedHandlerCtx<
+    TClient extends Inngest.Any,
+    TFnMiddleware extends Middleware.Class[] | undefined,
+  > = ApplyAllMiddlewareCtxExtensions<
+    [...ReturnType<typeof builtInMiddleware>]
+  > &
+    ApplyAllMiddlewareCtxExtensions<
+      ClientOptionsFromInngest<TClient>["middleware"]
+    > &
+    ApplyAllMiddlewareCtxExtensions<TFnMiddleware> & {
+      step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
+        ApplyAllMiddlewareStepExtensions<
+          ClientOptionsFromInngest<TClient>["middleware"]
+        > &
+        ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+    };
+
   export type CreateFunction<TClient extends Inngest.Any> = <
     const TTriggers extends
       | SingleOrArray<InngestFunction.Trigger<string>>
       | undefined = undefined,
     const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
-    THandler extends Handler.Any = HandlerWithTriggers<
-      ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
-      ResolveTriggers<TTriggers>,
-      ApplyAllMiddlewareCtxExtensions<
-        [...ReturnType<typeof builtInMiddleware>]
-      > &
-        ApplyAllMiddlewareCtxExtensions<
-          ClientOptionsFromInngest<TClient>["middleware"]
-        > & {
-          step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
-            ApplyAllMiddlewareStepExtensions<
-              ClientOptionsFromInngest<TClient>["middleware"]
-            >;
-        }
+    // biome-ignore lint/suspicious/noExplicitAny: infer defers map from options
+    const TDefers extends Record<string, DeferConfig<any>> = Record<
+      never,
+      never
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
       ResolveTriggers<TTriggers>,
-      ApplyAllMiddlewareCtxExtensions<
-        [...ReturnType<typeof builtInMiddleware>]
-      > &
-        FailureEventArgs<EventPayload> &
-        ApplyAllMiddlewareCtxExtensions<
-          ClientOptionsFromInngest<TClient>["middleware"]
-        > & {
-          step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
-            ApplyAllMiddlewareStepExtensions<
-              ClientOptionsFromInngest<TClient>["middleware"]
-            >;
-        }
+      ResolvedHandlerCtx<TClient, TFnMiddleware> &
+        FailureEventArgs<EventPayload>
+    >,
+    THandler extends HandlerWithTriggers<
+      ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
+      ResolveTriggers<TTriggers>,
+      ResolvedHandlerCtx<TClient, TFnMiddleware> & {
+        group: GroupTools<DeferDataMap<TDefers>>;
+      }
+    > = HandlerWithTriggers<
+      ReturnType<typeof createStepTools<TClient, TFnMiddleware>>,
+      ResolveTriggers<TTriggers>,
+      ResolvedHandlerCtx<TClient, TFnMiddleware> & {
+        group: GroupTools<DeferDataMap<TDefers>>;
+      }
     >,
   >(
-    options: CreateFunctionInput<TFnMiddleware, TTriggers, TFailureHandler>,
+    options: CreateFunctionInput<TFnMiddleware, TTriggers, TFailureHandler> & {
+      defers?: TDefers;
+    },
     handler: THandler,
   ) => InngestFunction<
     InngestFunction.Options<ResolveTriggers<TTriggers>, TFailureHandler>,

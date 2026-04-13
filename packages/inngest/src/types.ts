@@ -15,7 +15,7 @@ import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
-import type { createGroupTools } from "./components/InngestGroupTools.ts";
+import type { GroupTools } from "./components/InngestGroupTools.ts";
 import type { MetadataUpdate } from "./components/InngestMetadata.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { Middleware } from "./components/middleware/index.ts";
@@ -162,6 +162,156 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
    * The final error that caused this function to exhaust all retries.
    */
   error: Error;
+};
+
+/**
+ * The handle returned from `group.defer.name()`. Carries a uuid, the defer name,
+ * and the user-supplied data, and exposes a `cancel()` method that emits a
+ * second step opcode to cancel the deferred dispatch.
+ *
+ * @public
+ */
+export interface DeferHandle<
+  // biome-ignore lint/suspicious/noExplicitAny: generic-friendly
+  TData = any,
+> {
+  uuid: string;
+  name: string;
+  data: TData;
+  cancel: () => Promise<void>;
+}
+
+/**
+ * The memoized step data for a `group.defer.name()` call. Stored as the step's
+ * output and used by the engine's `flushDefers` to identify pending defers.
+ *
+ * @internal
+ */
+export interface DeferStepData {
+  __type: "group.defer";
+  uuid: string;
+  name: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * The memoized step data for a `handle.cancel()` call. Stored as the step's
+ * output and used by the engine's `flushDefers` to identify cancelled defers.
+ *
+ * @internal
+ */
+export interface DeferCancelStepData {
+  __type: "group.cancelDefer";
+  uuid: string;
+}
+
+/**
+ * Context arguments specific to a deferred handler, mirroring
+ * FailureEventArgs. Generic `TData` is the user-supplied data shape.
+ *
+ * The engine unwraps `event.data.data` from the dispatched payload and
+ * exposes it as a top-level `data` field so users write `data.orderId`
+ * instead of `event.data.orderId`.
+ *
+ * Users annotate their handler signatures with this type:
+ * ```ts
+ * defers: {
+ *   analytics: async ({ data, step }: DeferCtx<{ orderId: string }>) => { ... }
+ * }
+ * ```
+ *
+ * @public
+ */
+export type DeferCtx<
+  TData extends Record<string, unknown> = Record<string, unknown>,
+> = {
+  /** The user-supplied data passed to `group.defer.name()`. */
+  data: TData;
+
+  /** Step tools, identical to those available in the main handler. */
+  step: ReturnType<typeof createStepTools>;
+
+  /** The run ID of the deferred execution. */
+  runId: string;
+
+  /** The current retry attempt for this deferred execution. */
+  attempt: number;
+
+  /** Structured logger. */
+  logger: Logger;
+
+  /** The triggering event (the raw `deferred.start` event). */
+  event: EventPayload;
+
+  /**
+   * The error that caused the parent function to fail, if this deferred
+   * handler was triggered by a terminal failure. `undefined` when the
+   * parent completed successfully.
+   */
+  error?: unknown;
+};
+
+/**
+ * Configuration for a single deferred handler. The optional `schema` field
+ * enables both compile-time type inference and runtime validation of data
+ * passed to `group.defer.name(data)`.
+ *
+ * @public
+ */
+export interface DeferConfig<
+  TData extends Record<string, unknown> = Record<string, unknown>,
+> {
+  /** Optional StandardSchema for runtime validation and type inference. */
+  schema?: StandardSchemaV1<TData>;
+
+  /**
+   * The number of retry attempts for this deferred handler. Mirrors the
+   * top-level `retries` option on `createFunction`.
+   *
+   * @default 3
+   */
+  retries?: number;
+
+  /**
+   * The deferred handler. Receives `DeferCtx<TData>` where TData is inferred
+   * from `schema`. Middleware-injected context fields (e.g. `{ db: DB }`) are
+   * available at runtime and can be accessed via a type intersection on the
+   * parameter: `({ data, db }: DeferCtx<T> & { db: DB }) => ...`.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: middleware-injected fields need any via index sig
+  handler(ctx: DeferCtx<NoInfer<TData>> & Record<string, any>): unknown;
+}
+
+/**
+ * A map of defer names to config objects, used in `createFunction`'s
+ * `defers` option. Each entry becomes a synthetic Inngest function.
+ *
+ * @public
+ */
+// biome-ignore lint/suspicious/noExplicitAny: generic-friendly constraint
+export type DeferMap = Record<string, DeferConfig<any>>;
+
+/**
+ * Extract the `data` type from a defer config entry. If the entry is a
+ * `DeferConfig<D>`, D is used. Otherwise falls back to
+ * `Record<string, unknown>`.
+ *
+ * @internal
+ */
+export type ExtractDeferData<T> = T extends DeferConfig<infer TData>
+  ? TData extends Record<string, unknown>
+    ? TData
+    : Record<string, unknown>
+  : Record<string, unknown>;
+
+/**
+ * Maps a defers handler record to a record of name -> data shape.
+ * Used to separate inference (at createFunction) from use (at group.defer).
+ *
+ * @internal
+ */
+export type DeferDataMap<TDefers extends Record<string, unknown>> = {
+  [K in keyof TDefers]: ExtractDeferData<TDefers[K]>;
 };
 
 /**
@@ -495,7 +645,10 @@ export type WithInvocation<T extends EventPayload> = Simplify<
  *
  * @public
  */
-export type BaseContext<TClient extends Inngest.Any> = {
+export type BaseContext<
+  TClient extends Inngest.Any,
+  TDeferData extends Record<string, unknown> = Record<never, never>,
+> = {
   /**
    * The event data present in the payload.
    */
@@ -512,7 +665,7 @@ export type BaseContext<TClient extends Inngest.Any> = {
   /**
    * Tools for grouping and coordinating steps.
    */
-  group: ReturnType<typeof createGroupTools>;
+  group: GroupTools<TDeferData>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -536,7 +689,8 @@ export type BaseContext<TClient extends Inngest.Any> = {
 export type Context<
   TClient extends Inngest.Any = Inngest.Any,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TClient>, keyof TOverrides> & TOverrides;
+  TDeferData extends Record<string, unknown> = Record<never, never>,
+> = Omit<BaseContext<TClient, TDeferData>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some

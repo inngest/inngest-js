@@ -1,5 +1,11 @@
-import type { IsNever } from "../helpers/types.ts";
-import type { StepOptionsOrId } from "../types.ts";
+import type { IsEmptyObject, IsNever } from "../helpers/types.ts";
+import type {
+  DeferCancelStepData,
+  DeferConfig,
+  DeferHandle,
+  DeferStepData,
+  StepOptionsOrId,
+} from "../types.ts";
 import {
   type AsyncContext,
   getAsyncCtxSync,
@@ -191,11 +197,11 @@ export interface GroupExperiment {
 }
 
 /**
- * Tools for grouping and coordinating steps.
+ * Always-present group tools: `parallel` and `experiment`.
  *
  * @public
  */
-export interface GroupTools {
+export interface GroupToolsBase {
   /**
    * Run a callback where all steps automatically receive a `parallelMode`
    * option, removing the need to tag each step individually. Defaults to
@@ -248,6 +254,39 @@ export interface GroupTools {
 }
 
 /**
+ * A mapped type that converts a defer data map into an object of named
+ * defer methods. Each key `K` becomes a method that accepts `TDeferData[K]`
+ * and returns `Promise<DeferHandle<TDeferData[K]>>`.
+ *
+ * When `TDeferData[K]` is an empty object (no required fields), the data
+ * parameter becomes optional so callers can write `group.defer.name()`
+ * instead of `group.defer.name({})`.
+ *
+ * @public
+ */
+export type DeferMethods<TDeferData extends Record<string, unknown>> = {
+  [K in keyof TDeferData & string]: IsEmptyObject<TDeferData[K]> extends true
+    ? (data?: TDeferData[K]) => Promise<DeferHandle<TDeferData[K]>>
+    : (data: TDeferData[K]) => Promise<DeferHandle<TDeferData[K]>>;
+};
+
+/**
+ * Tools for grouping and coordinating steps.
+ *
+ * When the function declares a `defers` map, `group.defer` is an object with
+ * one method per declared defer name (e.g. `group.defer.scoring({ ... })`).
+ * When no defers are declared, `group.defer` does not exist at all.
+ *
+ * @public
+ */
+export type GroupTools<
+  TDeferData extends Record<string, unknown> = Record<never, never>,
+> = GroupToolsBase &
+  (IsNever<keyof TDeferData> extends true
+    ? {}
+    : { defer: DeferMethods<TDeferData> });
+
+/**
  * Dependencies injected into `createGroupTools` from the execution engine.
  */
 export interface GroupToolsDeps {
@@ -257,6 +296,37 @@ export interface GroupToolsDeps {
    */
   // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
   experimentStepRun?: (...args: any[]) => Promise<any>;
+
+  /**
+   * The `group.defer` step tool, extracted from step tools via the defer
+   * symbol. Undefined when not available.
+   */
+  deferStep?: (
+    idOrOptions: StepOptionsOrId,
+    data: Record<string, unknown>,
+  ) => Promise<DeferStepData>;
+
+  /**
+   * The `cancel defer` step tool, extracted from step tools via the cancel
+   * defer symbol. Undefined when not available.
+   */
+  cancelDeferStep?: (
+    idOrOptions: StepOptionsOrId,
+    uuid: string,
+  ) => Promise<DeferCancelStepData>;
+
+  /**
+   * The names of defers declared on the function, used to build the
+   * property-access `defer` object. Undefined when no defers are declared.
+   */
+  deferNames?: string[];
+
+  /**
+   * The full defers config map from the function options. Used to access
+   * schemas for runtime validation at the call site.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: generic-friendly constraint
+  deferConfigs?: Record<string, DeferConfig<any>>;
 }
 
 /**
@@ -264,7 +334,7 @@ export interface GroupToolsDeps {
  *
  * @public
  */
-export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
+export const createGroupTools = (deps?: GroupToolsDeps): GroupToolsBase => {
   const experiment: GroupExperiment = (async (
     idOrOptions: StepOptionsOrId,
     // biome-ignore lint/suspicious/noExplicitAny: implementation signature for overloaded interface
@@ -430,5 +500,61 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     return result;
   }) as GroupExperiment;
 
-  return { parallel, experiment };
+  // biome-ignore lint/suspicious/noExplicitAny: runtime object, static type applied via GroupTools<TDeferData>
+  const result: any = { parallel, experiment };
+
+  if (deps?.deferNames?.length && deps.deferStep && deps.cancelDeferStep) {
+    // Build the property-access defer object: one method per declared name.
+    const deferObj: Record<
+      string,
+      // biome-ignore lint/suspicious/noExplicitAny: generic-friendly
+      (data: Record<string, unknown>) => Promise<DeferHandle<any>>
+    > = {};
+
+    for (const name of deps.deferNames) {
+      const schema = deps.deferConfigs?.[name]?.schema;
+
+      deferObj[name] = async (data?: Record<string, unknown>) => {
+        const resolvedData = data ?? {};
+
+        if (schema) {
+          const result = await schema["~standard"].validate(resolvedData);
+          if (result.issues) {
+            const message = result.issues
+              .map((issue) => {
+                const path =
+                  issue.path && issue.path.length > 0
+                    ? issue.path.map(String).join(".")
+                    : "value";
+                return `${path}: ${issue.message}`;
+              })
+              .join(", ");
+            throw new NonRetriableError(
+              `Defer "${name}" schema validation failed: ${message}`,
+            );
+          }
+        }
+
+        const stepData = await deps.deferStep!(name, resolvedData);
+
+        return {
+          uuid: stepData.uuid,
+          name: stepData.name,
+          data: stepData.data,
+          cancel: () => {
+            // Deterministic memoization key per uuid so double-cancel is
+            // idempotent via step dedup.
+            return deps.cancelDeferStep!(
+              `cancel-defer-${stepData.uuid}`,
+              stepData.uuid,
+            ).then(() => undefined);
+          },
+        };
+      };
+    }
+
+    result.defer = deferObj;
+  }
+
+  return result;
 };

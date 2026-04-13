@@ -133,7 +133,13 @@ export interface InngestExecutionOptions {
   headers: Record<string, string>;
   requestedRunStep?: string;
   timer?: ServerTiming;
-  isFailureHandler?: boolean;
+  handlerType?: "main" | "failure" | "defer";
+  /**
+   * When `handlerType` is `"defer"`, the name of the deferred handler
+   * (the key from the `defers` map). Extracted from the synthetic
+   * function ID suffix `-defer-${name}`.
+   */
+  deferName?: string;
   disableImmediateExecution?: boolean;
 
   /**

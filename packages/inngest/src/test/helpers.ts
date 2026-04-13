@@ -101,7 +101,7 @@ export const getStepTools = (
         runId: "run",
         stepState: {},
         stepCompletionOrder: [],
-        isFailureHandler: false,
+        handlerType: "main" as const,
         requestedRunStep: undefined,
         timer: new ServerTiming(client[internalLoggerSymbol]),
         disableImmediateExecution: false,
@@ -136,11 +136,20 @@ export const runFnWithStack = async (
   opts?: {
     runStep?: string;
     onFailure?: boolean;
+    handlerType?: "main" | "failure" | "defer";
+    deferName?: string;
     event?: EventPayload;
     stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
     disableImmediateExecution?: boolean;
   },
 ) => {
+  let handlerType: "main" | "failure" | "defer" = "main";
+  if (opts?.handlerType) {
+    handlerType = opts.handlerType;
+  } else if (opts?.onFailure) {
+    handlerType = "failure";
+  }
+
   const execution = fn["createExecution"]({
     partialOptions: {
       client: fn["client"],
@@ -150,7 +159,8 @@ export const runFnWithStack = async (
       runId: "run",
       stepState,
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
-      isFailureHandler: Boolean(opts?.onFailure),
+      handlerType,
+      deferName: opts?.deferName,
       requestedRunStep: opts?.runStep,
       timer: new ServerTiming(fn["client"][internalLoggerSymbol]),
       disableImmediateExecution: opts?.disableImmediateExecution,

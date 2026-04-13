@@ -627,7 +627,7 @@ export class InngestTestEngine {
         stepState: mockStepState,
         stepMode: StepMode.Async,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
-        isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
+        handlerType: "main" as const, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
         timer: new ServerTiming.ServerTiming({
           info: () => {},
           warn: () => {},

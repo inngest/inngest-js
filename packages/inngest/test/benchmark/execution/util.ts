@@ -68,7 +68,7 @@ export const createExecutionWithMemoizedSteps = ({
           runId: "run",
           stepState,
           stepCompletionOrder,
-          isFailureHandler: false,
+          handlerType: "main" as const,
           requestedRunStep: undefined,
           timer: new ServerTiming(),
           disableImmediateExecution: false,

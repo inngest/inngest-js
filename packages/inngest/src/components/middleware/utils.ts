@@ -111,6 +111,12 @@ export function stepTypeFromOpCode(
     if (opts?.type === "group.experiment") {
       return "group.experiment";
     }
+    if (opts?.type === "group.defer") {
+      return "group.defer";
+    }
+    if (opts?.type === "group.cancelDefer") {
+      return "group.cancelDefer";
+    }
   } else if (op === StepOpCode.Sleep) {
     return "sleep";
   } else if (op === StepOpCode.WaitForEvent) {

@@ -16,6 +16,8 @@ const clearConsole = () => {
 
 import { fromPartial } from "@total-typescript/shoehorn";
 import type { Mock } from "vitest";
+import { z } from "zod/v3";
+import { Inngest as InngestWithMiddleware } from "../components/Inngest.ts";
 import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
@@ -29,10 +31,12 @@ import {
   NonRetriableError,
   RetryAfterError,
 } from "../index.ts";
+import { dependencyInjectionMiddleware } from "../middleware/dependencyInjection.ts";
 import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
+  type DeferCtx,
   type FailureEventPayload,
   type OutgoingOp,
   StepMode,
@@ -1931,6 +1935,1236 @@ describe("runFn", () => {
           },
         ],
       });
+    });
+  });
+
+  describe("defers map functions", () => {
+    /**
+     * Helper: run a function across multiple requests, accumulating step
+     * state, until it reaches a terminal result (function-resolved or
+     * function-rejected). Mirrors the real multi-request flow that
+     * runFnWithStack simulates per-request.
+     */
+    const runFnToCompletion = async (
+      fn: InngestFunction.Any,
+      opts?: {
+        event?: EventPayload;
+        runStep?: string;
+        handlerType?: "main" | "failure" | "defer";
+        deferName?: string;
+      },
+    ): Promise<Awaited<ReturnType<typeof runFnWithStack>>> => {
+      let stepState: InngestExecutionOptions["stepState"] = {};
+      // Safety cap on iterations to prevent infinite loops in test bugs.
+      for (let i = 0; i < 64; i++) {
+        const result = await runFnWithStack(fn, stepState, opts);
+        if (result.type === "step-ran" && result.step) {
+          stepState = {
+            ...stepState,
+            [result.step.id]: {
+              id: result.step.id,
+              data: result.step.data,
+              error: result.step.error,
+            },
+          };
+          continue;
+        }
+        return result;
+      }
+      throw new Error("runFnToCompletion exceeded iteration cap");
+    };
+
+    /**
+     * Helper: install a fetch spy that intercepts `/e/...` sends and records
+     * the deferred.start events emitted.
+     */
+    const installFetchSpy = () => {
+      const originalFetch = global.fetch;
+      const fetchSpy = vi.fn(async (_url: string, opts: { body: string }) => {
+        const payloads = JSON.parse(opts.body) as EventPayload[];
+        return {
+          status: 200,
+          json: async () => ({
+            status: 200,
+            ids: payloads.map(() => "test-id"),
+          }),
+          text: async () => "",
+        };
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test harness
+      global.fetch = fetchSpy as any;
+      return {
+        fetchSpy,
+        restore: () => {
+          global.fetch = originalFetch;
+        },
+        getDeferredStartPayloads: (): EventPayload[] => {
+          const events: EventPayload[] = [];
+          for (const [url, opts] of fetchSpy.mock.calls) {
+            if (typeof url !== "string") continue;
+            if (!url.includes("/e/")) continue;
+            const body = (opts as { body?: string })?.body;
+            if (typeof body !== "string") continue;
+            try {
+              const payloads = JSON.parse(body) as EventPayload[];
+              for (const p of payloads) {
+                if (p?.name === internalEvents.DeferredStart) {
+                  events.push(p);
+                }
+              }
+            } catch {
+              // skip
+            }
+          }
+          return events;
+        },
+      };
+    };
+
+    test("defers map with multiple entries produces multiple synthetic functions", () => {
+      const inngest = createClient({ id: "test" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: { handler: async () => {} },
+            rollback: { handler: async () => {} },
+          },
+        },
+        async () => {
+          // no-op
+        },
+      );
+
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: "test",
+      });
+
+      // main + analytics + rollback = 3
+      expect(configs).toHaveLength(3);
+
+      const analyticsConfig = configs.find(
+        (c) => c.id === "test-testfn-defer-analytics",
+      );
+      expect(analyticsConfig).toBeDefined();
+      expect(analyticsConfig!.name).toBe("testfn (defer: analytics)");
+
+      const rollbackConfig = configs.find(
+        (c) => c.id === "test-testfn-defer-rollback",
+      );
+      expect(rollbackConfig).toBeDefined();
+      expect(rollbackConfig!.name).toBe("testfn (defer: rollback)");
+    });
+
+    test("each synthetic function trigger filters by fn_slug AND name", () => {
+      const inngest = createClient({ id: "test" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: { handler: async () => {} },
+          },
+        },
+        async () => {
+          // no-op
+        },
+      );
+
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: "test",
+      });
+
+      const deferConfig = configs.find(
+        (c) => c.id === "test-testfn-defer-analytics",
+      );
+      expect(deferConfig).toBeDefined();
+      expect(deferConfig!.triggers).toEqual([
+        {
+          event: internalEvents.DeferredStart,
+          expression:
+            "event.data.fn_slug == 'test-testfn' && event.data.name == 'analytics'",
+        },
+      ]);
+    });
+
+    test("group.defer.name() returns a handle with uuid, name, data, and cancel()", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test capture
+      let capturedHandle: any;
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          capturedHandle = await group.defer.analytics({ greeting: "hi" });
+          await capturedHandle.cancel();
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      expect(typeof capturedHandle.uuid).toBe("string");
+      expect(capturedHandle.uuid.length).toBeGreaterThan(0);
+      expect(capturedHandle.name).toBe("analytics");
+      expect(capturedHandle.data).toEqual({ greeting: "hi" });
+      expect(typeof capturedHandle.cancel).toBe("function");
+    });
+
+    test("group.defer is not present when no defers map is configured", async () => {
+      const inngest = createClient({ id: "test", isDev: true });
+      let deferValue: unknown;
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+        },
+        async ({ group }) => {
+          // @ts-expect-error - defer should not exist when no defers declared
+          deferValue = group.defer;
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      expect(deferValue).toBeUndefined();
+      expect(spy.getDeferredStartPayloads()).toHaveLength(0);
+    });
+
+    test("successful run with uncancelled defer dispatches deferred.start with name", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.d({ foo: "bar" });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        name: internalEvents.DeferredStart,
+        data: {
+          runId: "run",
+          fn_slug: "test-testfn",
+          name: "d",
+          data: { foo: "bar" },
+        },
+      });
+      expect(typeof (events[0]?.data as { uuid: string }).uuid).toBe("string");
+    });
+
+    test("cancelled defer does NOT dispatch", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          const handle = await group.defer.d({ foo: "bar" });
+          await handle.cancel();
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      expect(spy.getDeferredStartPayloads()).toHaveLength(0);
+    });
+
+    test("multiple defers, one cancelled — only uncancelled dispatches", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d1: { handler: async () => {} },
+            d2: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          const h1 = await group.defer.d1({ keep: true });
+          await group.defer.d2({ keep: false });
+          await h1.cancel();
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+      expect((events[0]?.data as { data: { keep: boolean } }).data.keep).toBe(
+        false,
+      );
+    });
+
+    test("non-retriable failure still dispatches defers", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.d({ payload: "ok" });
+          throw new NonRetriableError("boom");
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+      expect(
+        (events[0]?.data as { data: { payload: string } }).data.payload,
+      ).toBe("ok");
+    });
+
+    test("retriable failure does NOT dispatch defers", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          retries: 3,
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.d({ payload: "ok" });
+          throw new Error("transient");
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        // attempt 0 of 3 — retries still available, not terminal
+        await runFnWithStack(fn, {});
+      } finally {
+        spy.restore();
+      }
+
+      expect(spy.getDeferredStartPayloads()).toHaveLength(0);
+    });
+
+    test("handle.cancel() called multiple times is idempotent (same uuid)", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          const handle = await group.defer.d({ foo: "bar" });
+          // Double cancel — second call should be idempotent via step dedup
+          // (deterministic memoization key per uuid).
+          await handle.cancel();
+          await handle.cancel();
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      expect(spy.getDeferredStartPayloads()).toHaveLength(0);
+    });
+
+    test("flush error does NOT flip resolved to rejected or re-flush", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.d({ foo: "bar" });
+        },
+      );
+
+      // Install a fetch that rejects for event sends. Flush will throw.
+      const originalFetch = global.fetch;
+      const fetchSpy = vi.fn(async (_url: string) => {
+        throw new Error("simulated event API failure");
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test harness
+      global.fetch = fetchSpy as any;
+
+      try {
+        const result = await runFnToCompletion(fn);
+        // Flush failed but the run itself succeeded: we should see
+        // function-resolved, not function-rejected.
+        expect(result.type).toBe("function-resolved");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    test("incoming defer run with known name routes to matching handler", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      let analyticsCalled = false;
+      let rollbackCalled = false;
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: {
+              handler: async () => {
+                analyticsCalled = true;
+              },
+            },
+            rollback: {
+              handler: async () => {
+                rollbackCalled = true;
+              },
+            },
+          },
+        },
+        async () => {
+          // main handler
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn, {
+          handlerType: "defer",
+          deferName: "analytics",
+          event: {
+            name: internalEvents.DeferredStart,
+            data: {
+              fn_slug: "test-testfn",
+              name: "analytics",
+              data: { orderId: "123" },
+            },
+          },
+        });
+      } finally {
+        spy.restore();
+      }
+
+      expect(analyticsCalled).toBe(true);
+      expect(rollbackCalled).toBe(false);
+    });
+
+    test("deferred handler receives correct data payload", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      // biome-ignore lint/suspicious/noExplicitAny: test capture
+      let capturedData: any;
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: {
+              handler: async ({ data }) => {
+                capturedData = data;
+              },
+            },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.analytics({ greeting: "hello" });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        // Simulate the defer handler invocation (as if Inngest dispatched the
+        // deferred.start event and is now calling back into the synthetic fn).
+        await runFnToCompletion(fn, {
+          handlerType: "defer",
+          deferName: "analytics",
+          event: {
+            name: internalEvents.DeferredStart,
+            data: {
+              runId: "run",
+              fn_slug: "test-testfn",
+              uuid: "test-uuid",
+              name: "analytics",
+              data: { greeting: "hello" },
+            },
+          },
+        });
+      } finally {
+        spy.restore();
+      }
+
+      expect(capturedData).toEqual({ greeting: "hello" });
+    });
+
+    test("terminal NonRetriableError failure still flushes defers", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            cleanup: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.cleanup({ important: true });
+          throw new NonRetriableError("terminal");
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        name: internalEvents.DeferredStart,
+        data: {
+          fn_slug: "test-testfn",
+          name: "cleanup",
+          data: { important: true },
+        },
+      });
+    });
+
+    test("incoming defer run with unknown name throws", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: { handler: async () => {} },
+          },
+        },
+        async () => {
+          // main handler
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        // getUserFnToRun throws in the constructor, so we expect
+        // runFnWithStack itself to throw.
+        await expect(
+          runFnToCompletion(fn, {
+            handlerType: "defer",
+            deferName: "nonexistent",
+            event: {
+              name: internalEvents.DeferredStart,
+              data: {
+                fn_slug: "test-testfn",
+                name: "nonexistent",
+                data: {},
+              },
+            },
+          }),
+        ).rejects.toThrow('Cannot find deferred handler "nonexistent"');
+      } finally {
+        spy.restore();
+      }
+    });
+
+    test("same defer name called twice dispatches two events with distinct uuids", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          const h1 = await group.defer.d({ first: true });
+          const h2 = await group.defer.d({ second: true });
+          // Auto-indexed step IDs produce distinct handles.
+          expect(h1.uuid).not.toBe(h2.uuid);
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(2);
+    });
+
+    test("deferred handler can use step tools", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      // Track which step callbacks actually executed (not replayed).
+      let stepAExecuted = false;
+      let stepBExecuted = false;
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            work: {
+              handler: async ({ data, step }) => {
+                await step.run("step-a", () => {
+                  stepAExecuted = true;
+                  return `a:${data.val}`;
+                });
+                await step.run("step-b", () => {
+                  stepBExecuted = true;
+                  return `b:${data.val}`;
+                });
+              },
+            },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.work({ val: "ok" });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn, {
+          handlerType: "defer",
+          deferName: "work",
+          event: {
+            name: internalEvents.DeferredStart,
+            data: {
+              runId: "run",
+              fn_slug: "test-testfn",
+              uuid: "test-uuid",
+              name: "work",
+              data: { val: "ok" },
+            },
+          },
+        });
+      } finally {
+        spy.restore();
+      }
+
+      expect(stepAExecuted).toBe(true);
+      expect(stepBExecuted).toBe(true);
+    });
+
+    test("type: group.defer is not accessible when no defers declared", () => {
+      const inngest = createClient({ id: "test" });
+      inngest.createFunction(
+        { id: "test", triggers: [{ event: "foo" }] },
+        async ({ group }) => {
+          // @ts-expect-error - defer should not exist when no defers declared
+          group.defer;
+        },
+      );
+    });
+
+    test("type: group.defer has named methods matching defers map", () => {
+      const inngest = createClient({ id: "test" });
+      inngest.createFunction(
+        {
+          id: "test",
+          triggers: [{ event: "foo" }],
+          defers: {
+            scoring: {
+              schema: z.object({ orderId: z.string() }),
+              handler: async ({ data }) => {
+                void data.orderId;
+              },
+            },
+          },
+        },
+        async ({ group }) => {
+          // Valid call compiles
+          await group.defer.scoring({ orderId: "123" });
+          // @ts-expect-error - unknown defer name
+          group.defer.nonexistent;
+          // @ts-expect-error - wrong data shape
+          group.defer.scoring({ wrong: true });
+        },
+      );
+    });
+
+    test("schema validation failure throws NonRetriableError", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            scored: {
+              schema: z.object({ orderId: z.string() }),
+              handler: async () => {},
+            },
+          },
+        },
+        async ({ group }) => {
+          // @ts-expect-error - intentionally passing bad data
+          await group.defer.scored({ orderId: 123 });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        const result = await runFnToCompletion(fn);
+        expect(result.type).toBe("function-rejected");
+        if (result.type === "function-rejected") {
+          expect((result.error as { name: string }).name).toBe(
+            "NonRetriableError",
+          );
+          expect((result.error as { message: string }).message).toContain(
+            "schema validation failed",
+          );
+        }
+      } finally {
+        spy.restore();
+      }
+    });
+
+    test("schema validation passes with correct data", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            scored: {
+              schema: z.object({ orderId: z.string() }),
+              handler: async () => {},
+            },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.scored({ orderId: "abc" });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+      expect(
+        (events[0]?.data as { data: { orderId: string } }).data.orderId,
+      ).toBe("abc");
+    });
+
+    test("no-schema config accepts any Record<string, unknown>", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            scored: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.scored({ anything: "goes" });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      expect(spy.getDeferredStartPayloads()).toHaveLength(1);
+    });
+
+    test("type: no-schema defer data is Record<string, unknown>", () => {
+      const inngest = createClient({ id: "test" });
+      inngest.createFunction(
+        {
+          id: "test",
+          triggers: [{ event: "foo" }],
+          defers: {
+            scored: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.scored({ anyKey: "value" });
+          // @ts-expect-error - still requires Record<string, unknown>, not a number
+          await group.defer.scored(42);
+        },
+      );
+    });
+
+    test("type: middleware context available in defer handler via intersection", () => {
+      const inngest = new InngestWithMiddleware({
+        id: "test",
+        middleware: [dependencyInjectionMiddleware({ db: "test-db" })],
+      });
+      inngest.createFunction(
+        {
+          id: "test",
+          triggers: [{ event: "foo" }],
+          defers: {
+            scored: {
+              schema: z.object({ orderId: z.string() }),
+              // Middleware-injected fields available via manual intersection
+              handler: async ({
+                data,
+                db,
+              }: DeferCtx<{ orderId: string }> & { db: string }) => {
+                const _orderId: string = data.orderId;
+                const _db: string = db;
+                void _orderId;
+                void _db;
+              },
+            },
+          },
+        },
+        async ({ group, db }) => {
+          const _db: string = db;
+          void _db;
+          await group.defer.scored({ orderId: "123" });
+        },
+      );
+    });
+
+    test("terminal failure includes serialized error in deferred event payload", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            cleanup: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.cleanup({ important: true });
+          throw new NonRetriableError("something broke");
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+
+      const payload = events[0]?.data as {
+        error?: { name: string; message: string };
+      };
+      expect(payload.error).toBeDefined();
+      expect(payload.error?.name).toBe("NonRetriableError");
+      expect(payload.error?.message).toBe("something broke");
+    });
+
+    test("successful run does NOT include error in deferred event payload", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            d: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.d({ ok: true });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+
+      const payload = events[0]?.data as Record<string, unknown>;
+      expect(payload.error).toBeUndefined();
+    });
+
+    test("deferred handler receives deserialized error from terminal failure", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      // biome-ignore lint/suspicious/noExplicitAny: test capture
+      let capturedError: any;
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            cleanup: {
+              handler: async ({ error }) => {
+                capturedError = error;
+              },
+            },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.cleanup({});
+          throw new NonRetriableError("boom");
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn, {
+          handlerType: "defer",
+          deferName: "cleanup",
+          event: {
+            name: internalEvents.DeferredStart,
+            data: {
+              runId: "run",
+              fn_slug: "test-testfn",
+              uuid: "test-uuid",
+              name: "cleanup",
+              data: {},
+              error: { name: "NonRetriableError", message: "boom", stack: "" },
+            },
+          },
+        });
+      } finally {
+        spy.restore();
+      }
+
+      expect(capturedError).toBeDefined();
+      expect(capturedError).toBeInstanceOf(Error);
+      expect(capturedError.message).toBe("boom");
+    });
+
+    test("deferred handler error is undefined on successful parent", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      // biome-ignore lint/suspicious/noExplicitAny: test capture
+      let capturedError: any = "sentinel";
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: {
+              handler: async ({ error }) => {
+                capturedError = error;
+              },
+            },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.analytics({ greeting: "hello" });
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn, {
+          handlerType: "defer",
+          deferName: "analytics",
+          event: {
+            name: internalEvents.DeferredStart,
+            data: {
+              runId: "run",
+              fn_slug: "test-testfn",
+              uuid: "test-uuid",
+              name: "analytics",
+              data: { greeting: "hello" },
+            },
+          },
+        });
+      } finally {
+        spy.restore();
+      }
+
+      expect(capturedError).toBeUndefined();
+    });
+
+    test("type: no-data defer allows omitting the data argument", () => {
+      const inngest = createClient({ id: "test" });
+      inngest.createFunction(
+        {
+          id: "test",
+          triggers: [{ event: "foo" }],
+          defers: {
+            cleanup: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          // Should compile without a data argument
+          await group.defer.cleanup();
+          // Should also accept an explicit empty object
+          await group.defer.cleanup({});
+        },
+      );
+    });
+
+    test("no-data defer dispatches with empty data when called without argument", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: "ek",
+        isDev: true,
+      });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            cleanup: { handler: async () => {} },
+          },
+        },
+        async ({ group }) => {
+          await group.defer.cleanup();
+        },
+      );
+
+      const spy = installFetchSpy();
+      try {
+        await runFnToCompletion(fn);
+      } finally {
+        spy.restore();
+      }
+
+      const events = spy.getDeferredStartPayloads();
+      expect(events).toHaveLength(1);
+      expect((events[0]?.data as { data: unknown }).data).toEqual({});
+    });
+
+    test("custom retries on defer config are used in synthetic function", () => {
+      const inngest = createClient({ id: "test" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: { retries: 5, handler: async () => {} },
+          },
+        },
+        async () => {},
+      );
+
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: "test",
+      });
+
+      const deferConfig = configs.find(
+        (c) => c.id === "test-testfn-defer-analytics",
+      );
+      expect(deferConfig).toBeDefined();
+      expect(
+        deferConfig!.steps[InngestFunction.stepId]!.retries?.attempts,
+      ).toBe(5);
+    });
+
+    test("defer config without retries defaults to 3", () => {
+      const inngest = createClient({ id: "test" });
+
+      const fn = inngest.createFunction(
+        {
+          id: "testfn",
+          triggers: [{ event: "foo" }],
+          defers: {
+            analytics: { handler: async () => {} },
+          },
+        },
+        async () => {},
+      );
+
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: "test",
+      });
+
+      const deferConfig = configs.find(
+        (c) => c.id === "test-testfn-defer-analytics",
+      );
+      expect(deferConfig).toBeDefined();
+      expect(
+        deferConfig!.steps[InngestFunction.stepId]!.retries?.attempts,
+      ).toBe(3);
     });
   });
 

@@ -2,7 +2,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
-import type { createGroupTools } from "../InngestGroupTools.ts";
+import type { GroupToolsBase } from "../InngestGroupTools.ts";
 import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
 
 export type AnySchema = StandardSchemaV1<any>;
@@ -304,7 +304,7 @@ export type BaseContextWithTriggers<
   /**
    * Tools for grouping and coordinating steps.
    */
-  group: ReturnType<typeof createGroupTools>;
+  group: GroupToolsBase;
 
   /**
    * The current zero-indexed attempt number for this function execution.

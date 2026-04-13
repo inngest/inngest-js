@@ -56,7 +56,9 @@ export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
 export type {
+  DeferMethods,
   GroupTools,
+  GroupToolsBase,
   GroupToolsDeps,
 } from "./components/InngestGroupTools";
 export { group, step } from "./components/InngestStepTools.ts";
@@ -103,6 +105,10 @@ export type {
   BaseContext,
   ClientOptions,
   Context,
+  DeferConfig,
+  DeferCtx,
+  DeferHandle,
+  DeferMap,
   EventNameFromTrigger,
   EventPayload,
   FailureEventArgs,

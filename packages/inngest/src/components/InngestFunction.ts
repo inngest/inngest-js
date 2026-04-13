@@ -1,4 +1,8 @@
-import { internalEvents, queryKeys } from "../helpers/consts.ts";
+import {
+  defaultMaxRetries,
+  internalEvents,
+  queryKeys,
+} from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
 import {
@@ -6,6 +10,7 @@ import {
   type CheckpointingOptions,
   type ConcurrencyOption,
   type DefaultMaxRuntime,
+  type DeferMap,
   defaultCheckpointingOptions,
   type FunctionConfig,
   type Handler,
@@ -43,6 +48,7 @@ export class InngestFunction<
 {
   static stepId = "step";
   static failureSuffix = "-failure";
+  static deferSuffix = "-defer-";
 
   get [Symbol.toStringTag](): typeof InngestFunction.Tag {
     return InngestFunction.Tag;
@@ -265,6 +271,39 @@ export class InngestFunction<
           },
         },
       });
+    }
+
+    if (this.opts.defers) {
+      for (const [deferName, deferConfig] of Object.entries(this.opts.defers)) {
+        const id = `${fn.id}${InngestFunction.deferSuffix}${deferName}`;
+        const displayName = `${fn.name ?? fn.id} (defer: ${deferName})`;
+        const deferStepUrl = new URL(stepUrl.href);
+        deferStepUrl.searchParams.set(queryKeys.FnId, id);
+
+        config.push({
+          id,
+          name: displayName,
+          triggers: [
+            {
+              event: internalEvents.DeferredStart,
+              expression: `event.data.fn_slug == '${fnId}' && event.data.name == '${deferName}'`,
+            },
+          ],
+          steps: {
+            [InngestFunction.stepId]: {
+              id: InngestFunction.stepId,
+              name: InngestFunction.stepId,
+              runtime: {
+                type: isConnect ? "ws" : "http",
+                url: deferStepUrl.href,
+              },
+              retries: {
+                attempts: deferConfig.retries ?? defaultMaxRetries,
+              },
+            },
+          },
+        });
+      }
     }
 
     return config;
@@ -681,6 +720,29 @@ export namespace InngestFunction {
      * regular handler.
      */
     onFailure?: TFailureHandler;
+
+    /**
+     * A map of named deferred handlers. Each entry becomes a synthetic
+     * Inngest function (`${fnId}-defer-${name}`) triggered by
+     * `deferred.start` events filtered by the parent fn_slug AND by name.
+     *
+     * Inside the main handler, call `group.defer.name(data)` to
+     * schedule a deferred handler. The handler receives the data passed
+     * to `group.defer.name()` as a top-level `data` field.
+     *
+     * @example
+     * ```ts
+     * defers: {
+     *   analytics: {
+     *     schema: z.object({ orderId: z.string() }),
+     *     handler: async ({ data, step }) => {
+     *       await step.run("track", () => track(data.orderId));
+     *     },
+     *   },
+     * }
+     * ```
+     */
+    defers?: DeferMap;
 
     /**
      * Define a set of middleware that can be registered to hook into

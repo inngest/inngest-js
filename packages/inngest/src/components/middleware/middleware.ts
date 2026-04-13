@@ -241,6 +241,8 @@ export namespace Middleware {
     | "ai.infer"
     | "ai.wrap"
     | "fetch"
+    | "group.cancelDefer"
+    | "group.defer"
     | "group.experiment"
     | "invoke"
     | "realtime.publish"

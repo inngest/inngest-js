@@ -13,6 +13,8 @@ import type {
 import {
   type ApplyAllMiddlewareTransforms,
   type Context,
+  type DeferCancelStepData,
+  type DeferStepData,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
@@ -38,7 +40,7 @@ import {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
-import type { GroupTools } from "./InngestGroupTools.ts";
+import type { GroupToolsBase } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   type MetadataStepTool,
@@ -948,6 +950,72 @@ export const createStepTools = <
   (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
     createStepRun("group.experiment");
 
+  // Create the `group.defer` step tool. Returns memoized DeferStepData;
+  // the group tools layer wraps the result with a `cancel()` method.
+  const deferStep = createTool<
+    (
+      idOrOptions: StepOptionsOrId,
+      data: Record<string, unknown>,
+    ) => Promise<DeferStepData>
+  >(
+    ({ id, name }) => {
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.StepPlanned,
+        name: "group.defer",
+        displayName: name ?? id,
+        opts: {
+          type: "group.defer",
+        },
+        userland: { id },
+      };
+    },
+    {
+      fn: (_ctx, idOrOptions, data) => {
+        const stepOpts = getStepOptions(idOrOptions);
+        const uuid = crypto.randomUUID();
+        return {
+          __type: "group.defer" as const,
+          uuid,
+          name: stepOpts.id,
+          data,
+        } satisfies DeferStepData;
+      },
+    },
+  );
+  (tools as unknown as DeferStepTools)[deferStepSymbol] = deferStep;
+
+  // Create the `cancel defer` step tool. Emits a StepPlanned with type
+  // "group.cancelDefer". Memoization key is deterministic per uuid so
+  // double-cancel is idempotent via step dedup.
+  const cancelDeferStep = createTool<
+    (idOrOptions: StepOptionsOrId, uuid: string) => Promise<DeferCancelStepData>
+  >(
+    ({ id, name }) => {
+      return {
+        id,
+        mode: StepMode.Sync,
+        op: StepOpCode.StepPlanned,
+        name: "group.cancelDefer",
+        displayName: name ?? id,
+        opts: {
+          type: "group.cancelDefer",
+        },
+        userland: { id },
+      };
+    },
+    {
+      fn: (_ctx, _idOrOptions, uuid) => {
+        return {
+          __type: "group.cancelDefer" as const,
+          uuid,
+        } satisfies DeferCancelStepData;
+      },
+    },
+  );
+  (tools as unknown as DeferStepTools)[cancelDeferStepSymbol] = cancelDeferStep;
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -1008,6 +1076,20 @@ export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
 };
 
 export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
+
+export const deferStepSymbol = Symbol.for("inngest.group.defer");
+export const cancelDeferStepSymbol = Symbol.for("inngest.group.cancelDefer");
+
+export type DeferStepTools = GetStepTools<Inngest.Any> & {
+  [deferStepSymbol]: (
+    idOrOptions: StepOptionsOrId,
+    data: Record<string, unknown>,
+  ) => Promise<DeferStepData>;
+  [cancelDeferStepSymbol]: (
+    idOrOptions: StepOptionsOrId,
+    uuid: string,
+  ) => Promise<DeferCancelStepData>;
+};
 
 export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
   [experimentStepRunSymbol]: (
@@ -1093,7 +1175,7 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
   return ctx.execution.ctx.step;
 };
 
-const getDeferredGroupTooling = async (): Promise<GroupTools> => {
+const getDeferredGroupTooling = async (): Promise<GroupToolsBase> => {
   const ctx = await getAsyncCtx();
   if (!ctx) {
     throw new Error(
@@ -1112,10 +1194,11 @@ const getDeferredGroupTooling = async (): Promise<GroupTools> => {
 
 /**
  * A deferred proxy for `group` tools that delegates through ALS context.
+ * Does not include `defer` since that is dynamic per-function.
  *
  * @public
  */
-export const group: GroupTools = {
+export const group: GroupToolsBase = {
   parallel: (...args) =>
     getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
   experiment: (...args) =>

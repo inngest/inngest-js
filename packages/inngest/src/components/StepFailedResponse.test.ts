@@ -35,7 +35,7 @@ describe("StepFailed response contains minimal serialized error and retriable fa
       stepState: {},
       stepCompletionOrder: [],
       reqArgs: [],
-      isFailureHandler: false,
+      handlerType: "main" as const,
       runId: "test-run",
       headers: {},
       stepMode: StepMode.Async,
