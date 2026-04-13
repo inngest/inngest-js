@@ -127,6 +127,57 @@ test("multiple onDefer handlers are independently triggered", async () => {
   });
 });
 
+test("onDefer handler supports multiple steps", async () => {
+  const state = createState({
+    steps: [] as string[],
+  });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: client.createDefer({
+          handler: async ({ step }) => {
+            await step.run("step-a", () => {
+              state.steps.push("a");
+            });
+
+            await step.sleep("pause", "1s");
+
+            await step.run("step-b", () => {
+              state.steps.push("b");
+            });
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId, step }) => {
+      state.runId = runId;
+
+      await step.run("defer-it", async () => {
+        await defer.process({});
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await state.waitForRunComplete();
+
+  await waitFor(() => {
+    expect(state.steps).toEqual(["a", "b"]);
+  });
+});
+
 test("schema validation fails", async () => {
   const state = createState({});
 
@@ -152,8 +203,7 @@ test("schema validation fails", async () => {
       state.runId = runId;
 
       await step.run("bad-defer", async () => {
-        // @ts-expect-error intentionally passing wrong type
-        await defer.process({ msg: 123 });
+        await defer.process({ msg: 123 } as never);
       });
     },
   );
@@ -187,8 +237,12 @@ test("defer mirrors onDefer keys with typed methods", () => {
       expectTypeOf(defer.sendEmail).toBeFunction();
       expectTypeOf(defer.processPayment).toBeFunction();
 
-      expectTypeOf(defer.sendEmail).toBeCallableWith({ to: "a@b.com" });
-      expectTypeOf(defer.processPayment).toBeCallableWith({ amount: 100 });
+      expectTypeOf(defer.sendEmail)
+        .parameter(0)
+        .toEqualTypeOf<{ to: string }>();
+      expectTypeOf(defer.processPayment)
+        .parameter(0)
+        .toEqualTypeOf<{ amount: number }>();
     },
   );
 });
