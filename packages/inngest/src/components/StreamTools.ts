@@ -91,7 +91,7 @@ export class Stream implements StreamTools {
       readableStrategy = new CountQueuingStrategy({
         // Use a generous high water mark so that writes don't block due to
         // backpressure before the consumer reads.
-        highWaterMark: 1024
+        highWaterMark: 1024,
       });
     }
 
