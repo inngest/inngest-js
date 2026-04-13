@@ -135,7 +135,6 @@ export interface InngestExecutionOptions {
   timer?: ServerTiming;
   isFailureHandler?: boolean;
   isDeferHandler?: boolean;
-  deferId?: string;
   disableImmediateExecution?: boolean;
 
   /**

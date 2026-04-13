@@ -170,3 +170,11 @@ inngest.createFunction(
 - `inngest/` event prefix (will need eventually)
 - Server-side (Go) changes
 - `step.defer()` convenience wrapper
+
+# TODO
+
+- **Nest user data in event payload.** User schema data is currently spread flat into `event.data` alongside system fields (`runId`, `fnSlug`, `deferId`). A user schema with a `runId` or `deferId` field would silently collide. Nest user data under `event.data.data` to match the original spec and prevent collisions.
+- **Add `step.defer`.** Currently `defer()` is a top-level context arg that works anywhere in the handler, but calling it outside a step means it re-sends on every retry/replay. Introduce `step.defer` as a convenience wrapper that wraps the send in a step automatically (memoized, safe across retries). Keep the top-level `defer` for use inside existing `step.run` calls.
+- **Replace `isFailureHandler`/`isDeferHandler` booleans with a discriminated union.** Execution options use two independent booleans where both-true is representable but meaningless. A `handlerKind: "main" | "failure" | "defer"` union would make invalid states unrepresentable. This affects ~12 callsites across CommHandler, engine, and tests, so treat it as a separate refactor.
+- **Remove `as any` in `createFunction`.** The cast bridges `DeferEntryInput` (user-facing, per-handler schema inference) to `OnDeferConfig` (internal, `Handler.Any`). If one type changes without the other, the cast masks the mismatch. Align the types or add a narrowing helper to eliminate the cast.
+- **Fix type inference when `onDefer` entry omits `schema`.** When a handler has no `schema` field, `TOnDeferSchemas` fails to infer and `defer` doesn't appear on the handler context. Runtime works fine, only the types break. The `OnDeferSchemaMap` / `DeferEntryInput` generics need to handle the schema-less case.

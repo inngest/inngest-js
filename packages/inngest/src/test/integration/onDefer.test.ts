@@ -127,7 +127,45 @@ test("multiple onDefer handlers are independently triggered", async () => {
   });
 });
 
-test("onDefer types: defer mirrors onDefer keys with typed methods", () => {
+test("schema validation fails", async () => {
+  const state = createState({});
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: {
+          schema: z.object({ msg: z.string() }),
+          handler: async () => {},
+        },
+      },
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
+    async ({ defer, runId, step }) => {
+      state.runId = runId;
+
+      await step.run("bad-defer", async () => {
+        // @ts-expect-error intentionally passing wrong type
+        await defer.process({ msg: 123 });
+      });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  const error = await state.waitForRunFailed();
+  expect(error).toBeDefined();
+});
+
+test("defer mirrors onDefer keys with typed methods", () => {
   const client = new Inngest({ id: "type-test", isDev: true });
 
   client.createFunction(
@@ -155,7 +193,7 @@ test("onDefer types: defer mirrors onDefer keys with typed methods", () => {
   );
 });
 
-test("onDefer types: no defer when onDefer is absent", () => {
+test("no defer when onDefer is absent", () => {
   const client = new Inngest({ id: "type-test-2", isDev: true });
 
   client.createFunction(

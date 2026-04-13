@@ -78,7 +78,6 @@ interface FnRegistryEntry {
   fn: InngestFunction.Any;
   onFailure: boolean;
   onDefer: boolean;
-  deferId?: string;
 }
 
 // A response object for when an internal server error occurs. When that
@@ -482,20 +481,12 @@ export class InngestCommHandler<
 
         const fns = configs.reduce<Record<string, FnRegistryEntry>>(
           (acc, { id }) => {
-            const isDefer = id.startsWith(deferPrefix);
-
-            let deferId: string | undefined;
-            if (isDefer) {
-              deferId = id.slice(deferPrefix.length);
-            }
-
             return {
               ...acc,
               [id]: {
                 fn,
                 onFailure: id.endsWith(InngestFunction.failureSuffix),
-                onDefer: isDefer,
-                deferId,
+                onDefer: id.startsWith(deferPrefix),
               },
             };
           },
@@ -1601,7 +1592,6 @@ export class InngestCommHandler<
                   fn: fns[0],
                   onFailure: false,
                   onDefer: false,
-                  deferId: undefined,
                 }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
@@ -2212,7 +2202,6 @@ export class InngestCommHandler<
           timer,
           isFailureHandler: fn.onFailure,
           isDeferHandler: fn.onDefer,
-          deferId: fn.deferId,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,

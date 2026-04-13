@@ -2504,11 +2504,22 @@ class InngestExecutionEngine
 
   private getUserFnToRun(): Handler.Any {
     if (this.options.isDeferHandler) {
-      const deferId = this.options.deferId;
-      const match = deferId
-        ? this.options.fn["onDeferHandlers"][deferId]
-        : undefined;
+      const data = this.options.data;
+      let deferId: string | undefined;
+      if (
+        isRecord(data) &&
+        isRecord(data.event) &&
+        isRecord(data.event.data) &&
+        typeof data.event.data.deferId === "string"
+      ) {
+        deferId = data.event.data.deferId;
+      }
 
+      if (!deferId) {
+        throw new Error("Defer handler invoked without deferId in event data");
+      }
+
+      const match = this.options.fn["onDeferHandlers"][deferId];
       if (!match) {
         throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
       }
