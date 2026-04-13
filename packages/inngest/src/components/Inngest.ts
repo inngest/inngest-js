@@ -1196,11 +1196,13 @@ export namespace Inngest {
       > &
         ApplyAllMiddlewareCtxExtensions<
           ClientOptionsFromInngest<TClient>["middleware"]
-        > & {
+        > &
+        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> & {
           step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]
-            >;
+            > &
+            ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
         }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
@@ -1212,11 +1214,13 @@ export namespace Inngest {
         FailureEventArgs<EventPayload> &
         ApplyAllMiddlewareCtxExtensions<
           ClientOptionsFromInngest<TClient>["middleware"]
-        > & {
+        > &
+        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> & {
           step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]
-            >;
+            > &
+            ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
         }
     >,
   >(
