@@ -163,11 +163,15 @@ export const extendedTracesMiddleware = ({
         clientProcessorMap.set(client, processor);
       } else if (processorReady) {
         // createProvider is async; register the processor once it resolves.
-        processorReady.then(() => {
-          if (processor) {
-            clientProcessorMap.set(client, processor);
-          }
-        });
+        processorReady
+          .then(() => {
+            if (processor) {
+              clientProcessorMap.set(client, processor);
+            }
+          })
+          .catch((err) => {
+            devDebug("failed to register processor for client:", err);
+          });
       }
     }
 
@@ -184,7 +188,6 @@ export const extendedTracesMiddleware = ({
     }
 
     override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
-      await processorReady;
       return next().finally(() => processor?.forceFlush());
     }
   }
