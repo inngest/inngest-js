@@ -256,57 +256,6 @@ export function eventType<
   });
 }
 
-/**
- * Define a typed `onDefer` handler entry. Follows the same pattern as
- * {@link eventType}: when `schema` is omitted, data defaults to `any`.
- *
- * @example
- * ```ts
- * onDefer: {
- *   process: createDefer({
- *     handler: async ({ event, step }) => { ... }
- *   }),
- *   sendEmail: createDefer({
- *     schema: z.object({ to: z.string() }),
- *     handler: async ({ event }) => { event.data.to; }
- *   }),
- * }
- * ```
- */
-export function createDefer<
-  TSchema extends
-    | StandardSchemaV1<Record<string, unknown>>
-    | undefined = undefined,
->(opts: {
-  schema?: AssertNoTransform<TSchema>;
-  // biome-ignore lint/suspicious/noExplicitAny: handler param types are contextual from DeferEventArgs
-  handler: (ctx: DeferHandlerCtx<TSchema>) => any;
-  concurrency?: DeferHandlerConcurrency;
-  retries?: DeferHandlerRetries;
-}): DeferHandlerResult<TSchema> {
-  // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through; types are the value here
-  return opts as any;
-}
-
-/**
- * The handler context for a defer entry, typed from the entry's schema.
- * When `TSchema` is `undefined`, `event.data` is `any`.
- */
-type DeferHandlerCtx<TSchema> = TSchema extends StandardSchemaV1<
-  infer D extends Record<string, unknown>
->
-  ? {
-      event: { name: "deferred.start"; data: D & DeferSystemFields };
-      // biome-ignore lint/suspicious/noExplicitAny: step is opaque in this context
-      step: any;
-    }
-  : {
-      // biome-ignore lint/suspicious/noExplicitAny: no schema = any, mirroring eventType()
-      event: { name: "deferred.start"; data: any };
-      // biome-ignore lint/suspicious/noExplicitAny: step is opaque in this context
-      step: any;
-    };
-
 export type DeferSystemFields = {
   runId: string;
   fnSlug: string;
