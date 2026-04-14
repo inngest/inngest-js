@@ -1,5 +1,17 @@
 # inngest
 
+## 4.2.2
+
+### Patch Changes
+
+- [#1366](https://github.com/inngest/inngest-js/pull/1366) [`aca72f88`](https://github.com/inngest/inngest-js/commit/aca72f8826a8fbb33cca056d1e9d1f1348161da9) Thanks [@Linell](https://github.com/Linell)! - Fix `extendProvider()` for OTel SDK v2 where `addSpanProcessor()` was removed.
+
+  Move `@opentelemetry/auto-instrumentations-node` and related imports from static top-level to dynamic `await import()` inside `createProvider()`. This prevents module-level monkey-patching side effects that broke `inngest.send()` when combined with host app OTel setups (e.g. Sentry). See #1324.
+
+- [#1457](https://github.com/inngest/inngest-js/pull/1457) [`d151b404`](https://github.com/inngest/inngest-js/commit/d151b404866c09763f2f9bbae10a72e8d78e5834) Thanks [@amh4r](https://github.com/amh4r)! - Fix using CountQueuingStrategy when not available
+
+- [#1455](https://github.com/inngest/inngest-js/pull/1455) [`15495e03`](https://github.com/inngest/inngest-js/commit/15495e037e5ad0540b7dc3302f814ffbc1ad2971) Thanks [@amh4r](https://github.com/amh4r)! - Fix dependencyInjection not working statically at function level
+
 ## 4.2.1
 
 ### Patch Changes
