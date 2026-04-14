@@ -1,4 +1,5 @@
 import http from "node:http";
+import consumers from "node:stream/consumers";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
 import { createWebApiCommHandler } from "./components/createWebApiCommHandler.ts";
@@ -10,7 +11,6 @@ import {
 } from "./components/InngestCommHandler.ts";
 import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
 import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
-import { readRequestBody } from "./helpers/node.ts";
 import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
@@ -33,7 +33,7 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
     ...options,
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => {
       return {
-        body: async () => readRequestBody(req),
+        body: async () => consumers.text(req),
         headers: (key) => {
           return req.headers[key] && Array.isArray(req.headers[key])
             ? req.headers[key][0]
@@ -216,7 +216,7 @@ export const endpointAdapter = InngestEndpointAdapter.create((options) => {
  */
 export function serveEndpoint(handler: EndpointHandler): http.RequestListener {
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
-    const body = await readRequestBody(req);
+    const body = await consumers.text(req);
 
     const headers = new Headers();
     for (const [key, value] of Object.entries(req.headers)) {
