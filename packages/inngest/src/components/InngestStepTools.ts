@@ -290,6 +290,26 @@ export const createStepTools = <
       const experimentContext = alsCtx?.experimentContext;
       if (experimentContext) {
         op.opts = { ...op.opts, ...experimentContext };
+
+        // Write experiment metadata to the variant step so that ClickHouse
+        // has both the experiment identity and the step output on the same
+        // row. This enables single-query aggregation of variant output
+        // metrics grouped by experiment dimensions (e.g.
+        // AVG(output.quality_score) GROUP BY variant).
+        const execInstance = alsCtx?.instance;
+        if (execInstance && op.id) {
+          execInstance.addMetadata(
+            op.id,
+            "inngest.experiment",
+            "step",
+            "merge",
+            {
+              experiment_name: experimentContext.experimentName,
+              variant_selected: experimentContext.variant,
+              selection_strategy: experimentContext.selectionStrategy,
+            },
+          );
+        }
       }
 
       // Track that a step tool was invoked inside a variant callback

@@ -377,16 +377,13 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     }
 
     // Propagate experiment context via ALS so variant sub-steps include
-    // experiment fields in their OutgoingOp.opts. Also track whether any
-    // step tool is invoked to detect zero-step variants.
+    // experiment fields in their OutgoingOp.opts and metadata.
     //
-    // TODO: On replay, experimentStepHashedId is undefined because it's
-    // captured inside the selection step callback, which doesn't run when
-    // memoized. This means sub-steps discovered during replay won't carry
-    // experimentContext in their OutgoingOp.opts. Fixing this requires an
-    // engine-level change to expose the hashed step ID outside the callback
-    // (e.g. via ALS before the callback runs, or returned alongside the
-    // memoized result). Tracked in EXE-1330.
+    // NOTE: experimentStepHashedId may be undefined on replay because
+    // it's captured inside the selection step callback, which doesn't
+    // re-execute when memoized. We still set experimentContext without
+    // it so that variant sub-steps can attach experiment metadata to
+    // their ClickHouse rows (needed for single-row metric aggregation).
     const currentCtx = getAsyncCtxSync();
     const stepTracker = { found: false };
     let result: unknown;
@@ -397,13 +394,12 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
         ...currentCtx,
         execution: {
           ...currentCtx.execution,
-          ...(experimentStepHashedId && {
-            experimentContext: {
-              experimentStepID: experimentStepHashedId,
-              experimentName: stepOpts.id,
-              variant: selectedVariant,
-            },
-          }),
+          experimentContext: {
+            experimentStepID: experimentStepHashedId ?? "",
+            experimentName: stepOpts.id,
+            variant: selectedVariant,
+            selectionStrategy: select.__experimentConfig.strategy,
+          },
           experimentStepTracker: stepTracker,
         },
       };

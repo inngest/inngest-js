@@ -38,6 +38,7 @@ import {
   type ExperimentSelectFn,
   type GroupToolsDeps,
 } from "./InngestGroupTools.ts";
+import { createStepTools, getStepOptions } from "./InngestStepTools.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -658,6 +659,7 @@ describe("group.experiment() ALS propagation", () => {
       experimentStepID: HASHED_STEP_ID,
       experimentName: "my-exp",
       variant: "alpha",
+      selectionStrategy: "fixed",
     });
   });
 
@@ -687,6 +689,7 @@ describe("group.experiment() ALS propagation", () => {
       experimentStepID: HASHED_STEP_ID,
       experimentName: "my-exp",
       variant: "alpha",
+      selectionStrategy: "fixed",
     });
   });
 
@@ -709,6 +712,94 @@ describe("group.experiment() ALS propagation", () => {
     );
 
     expect(trackerAfterStep).toBe(true);
+  });
+
+  test("experimentContext is set even when experimentStepHashedId is empty (replay path)", async () => {
+    // Simulate the replay case: experimentStepHashedId is undefined because
+    // the selector step callback didn't re-execute (memoized). The
+    // experimentContext should still be set so variant sub-steps can attach
+    // experiment metadata to their ClickHouse rows.
+    const exec = mockExecution();
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-id-replay" } as AsyncContext["execution"] extends
+          | infer E
+          | undefined
+          ? E extends { ctx: infer C }
+            ? C
+            : never
+          : never,
+      },
+    };
+
+    // Mock experimentStepRun that does NOT set executingStep.id — simulates
+    // replay where the callback is memoized and experimentStepHashedId stays
+    // undefined.
+    const experimentStepRun = vi.fn(
+      async (
+        _idOrOptions: string | { id: string },
+        callback: () => unknown,
+      ) => {
+        return als.run(ctx, () => callback());
+      },
+    );
+
+    const group = createGroupTools({ experimentStepRun });
+    let capturedCtx: AsyncContext["execution"] | undefined;
+
+    await expect(
+      als.run(ctx, () =>
+        group.experiment("my-exp", {
+          variants: {
+            alpha: () => {
+              capturedCtx = als.getStore()?.execution;
+              return "val";
+            },
+          },
+          select: experiment.fixed("alpha"),
+        }),
+      ),
+    ).rejects.toThrow(); // zero-step
+
+    // experimentContext MUST be set even though experimentStepHashedId was
+    // never captured. experimentStepID will be empty string as a fallback.
+    expect(capturedCtx?.experimentContext).toBeDefined();
+    expect(capturedCtx?.experimentContext).toEqual({
+      experimentStepID: "",
+      experimentName: "my-exp",
+      variant: "alpha",
+      selectionStrategy: "fixed",
+    });
+  });
+
+  test("experimentContext includes selectionStrategy for weighted strategy", async () => {
+    const { group, run } = createHarness();
+    let capturedCtx: AsyncContext["execution"] | undefined;
+
+    await expect(
+      run(() =>
+        group.experiment("weighted-ctx", {
+          variants: {
+            a: () => {
+              capturedCtx = als.getStore()?.execution;
+              return 1;
+            },
+            b: () => {
+              capturedCtx = als.getStore()?.execution;
+              return 2;
+            },
+          },
+          select: experiment.weighted({ a: 70, b: 30 }),
+        }),
+      ),
+    ).rejects.toThrow(); // zero-step
+
+    expect(capturedCtx?.experimentContext).toBeDefined();
+    expect(capturedCtx?.experimentContext?.selectionStrategy).toBe("weighted");
+    expect(capturedCtx?.experimentContext?.experimentName).toBe("weighted-ctx");
+    expect(["a", "b"]).toContain(capturedCtx?.experimentContext?.variant);
   });
 
   test("variant callback has experimentStepTracker in ALS", async () => {
@@ -970,5 +1061,135 @@ describe("nested step guard inside experiment select()", () => {
         }),
       ),
     ).resolves.toBeDefined();
+  });
+});
+
+// ====================================================================
+// Variant step metadata propagation
+// ====================================================================
+
+describe("variant step emits inngest.experiment metadata via wrappedMatchOp", () => {
+  /**
+   * Creates real step tools backed by a mock execution instance, so that
+   * calling step.run() exercises the full wrappedMatchOp path including
+   * the addMetadata call for variant steps.
+   */
+  const createStepToolsWithSpy = () => {
+    const exec = mockExecution();
+
+    const step = createStepTools(
+      // Client — only used for middleware/config, not relevant here.
+      { middleware: [] } as never,
+      // Execution — wrappedMatchOp reads addMetadata from ALS, not this param,
+      // but createStepTools requires it.
+      exec as never,
+      // Step handler — calls matchOp to exercise wrappedMatchOp.
+      ({ args, matchOp }) => {
+        const stepOptions = getStepOptions(args[0]);
+        return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
+      },
+    );
+
+    return { exec, step };
+  };
+
+  test("step.run inside experiment context writes metadata to variant step", async () => {
+    const { exec, step } = createStepToolsWithSpy();
+
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-123" } as never,
+        experimentContext: {
+          experimentStepID: "selector-hashed-id",
+          experimentName: "llm-response-strategy",
+          variant: "gpt4o_mini",
+          selectionStrategy: "weighted",
+        },
+        experimentStepTracker: { found: false },
+      },
+    };
+
+    await als.run(ctx, () => step.run("gpt4o-mini-step", () => "result"));
+
+    // Find the addMetadata call for the variant step (not the selector step).
+    const variantMetadataCalls = (exec.addMetadata as Mock).mock.calls.filter(
+      (call: unknown[]) =>
+        call[1] === "inngest.experiment" && call[0] !== "selector-hashed-id",
+    );
+
+    expect(variantMetadataCalls).toHaveLength(1);
+
+    const [stepId, kind, scope, op, values] = variantMetadataCalls[0]!;
+    expect(stepId).toBe("gpt4o-mini-step");
+    expect(kind).toBe("inngest.experiment");
+    expect(scope).toBe("step");
+    expect(op).toBe("merge");
+    expect(values).toEqual({
+      experiment_name: "llm-response-strategy",
+      variant_selected: "gpt4o_mini",
+      selection_strategy: "weighted",
+    });
+  });
+
+  test("variant step metadata works on replay path (empty experimentStepID)", async () => {
+    const { exec, step } = createStepToolsWithSpy();
+
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-replay" } as never,
+        // Simulates replay: experimentStepID is empty because the selector
+        // step callback did not re-execute.
+        experimentContext: {
+          experimentStepID: "",
+          experimentName: "checkout-flow",
+          variant: "express",
+          selectionStrategy: "weighted",
+        },
+        experimentStepTracker: { found: false },
+      },
+    };
+
+    await als.run(ctx, () =>
+      step.run("express-checkout-step", () => "checkout-result"),
+    );
+
+    const variantMetadataCalls = (exec.addMetadata as Mock).mock.calls.filter(
+      (call: unknown[]) => call[1] === "inngest.experiment",
+    );
+
+    expect(variantMetadataCalls).toHaveLength(1);
+
+    const [stepId, _kind, _scope, _op, values] = variantMetadataCalls[0]!;
+    expect(stepId).toBe("express-checkout-step");
+    expect(values).toEqual({
+      experiment_name: "checkout-flow",
+      variant_selected: "express",
+      selection_strategy: "weighted",
+    });
+  });
+
+  test("no experiment metadata when step.run is outside experiment context", async () => {
+    const { exec, step } = createStepToolsWithSpy();
+
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-no-exp" } as never,
+        // No experimentContext — this is a regular step, not inside a variant.
+      },
+    };
+
+    await als.run(ctx, () => step.run("regular-step", () => "result"));
+
+    const experimentCalls = (exec.addMetadata as Mock).mock.calls.filter(
+      (call: unknown[]) => call[1] === "inngest.experiment",
+    );
+
+    expect(experimentCalls).toHaveLength(0);
   });
 });
