@@ -255,26 +255,42 @@ export interface GroupToolsBase {
 
 /**
  * A mapped type that converts a defer data map into an object of named
- * defer methods. Each key `K` becomes a method that accepts `TDeferData[K]`
- * and returns `Promise<DeferHandle<TDeferData[K]>>`.
+ * defer methods. Each key `K` becomes a method that accepts a step ID
+ * and `TDeferData[K]`, returning `Promise<DeferHandle<TDeferData[K]>>`.
+ *
+ * The explicit step ID allows calling the same defer multiple times
+ * with different memoization keys.
  *
  * When `TDeferData[K]` is an empty object (no required fields), the data
- * parameter becomes optional so callers can write `group.defer.name()`
- * instead of `group.defer.name({})`.
+ * parameter becomes optional so callers can write `group.defer.name(stepId)`
+ * instead of `group.defer.name(stepId, {})`.
  *
  * @public
  */
 export type DeferMethods<TDeferData extends Record<string, unknown>> = {
   [K in keyof TDeferData & string]: IsEmptyObject<TDeferData[K]> extends true
-    ? (data?: TDeferData[K]) => Promise<DeferHandle<TDeferData[K]>>
-    : (data: TDeferData[K]) => Promise<DeferHandle<TDeferData[K]>>;
+    ? (
+        idOrOptions: StepOptionsOrId,
+        data?: TDeferData[K],
+      ) => Promise<DeferHandle<TDeferData[K]>>
+    : (
+        idOrOptions: StepOptionsOrId,
+        data: TDeferData[K],
+      ) => Promise<DeferHandle<TDeferData[K]>>;
+} & {
+  /**
+   * Cancel a previously deferred dispatch. Pass the handle returned from
+   * a prior `group.defer.name()` call. The cancel is itself a memoized
+   * step, so it requires its own step ID.
+   */
+  cancel: (idOrOptions: StepOptionsOrId, handle: DeferHandle) => Promise<void>;
 };
 
 /**
  * Tools for grouping and coordinating steps.
  *
- * When the function declares a `defers` map, `group.defer` is an object with
- * one method per declared defer name (e.g. `group.defer.scoring({ ... })`).
+ * When the function declares an `onDefer` map, `group.defer` is an object with
+ * one method per declared defer name (e.g. `group.defer.scoring(stepId, { ... })`).
  * When no defers are declared, `group.defer` does not exist at all.
  *
  * @public
@@ -303,6 +319,7 @@ export interface GroupToolsDeps {
    */
   deferStep?: (
     idOrOptions: StepOptionsOrId,
+    deferName: string,
     data: Record<string, unknown>,
   ) => Promise<DeferStepData>;
 
@@ -504,23 +521,25 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupToolsBase => {
   const result: any = { parallel, experiment };
 
   if (deps?.deferNames?.length && deps.deferStep && deps.cancelDeferStep) {
-    // Build the property-access defer object: one method per declared name.
-    const deferObj: Record<
-      string,
-      // biome-ignore lint/suspicious/noExplicitAny: generic-friendly
-      (data: Record<string, unknown>) => Promise<DeferHandle<any>>
-    > = {};
+    // Build the property-access defer object: one method per declared name,
+    // plus a shared `cancel` method.
+    // biome-ignore lint/suspicious/noExplicitAny: generic-friendly
+    const deferObj: Record<string, any> = {};
 
     for (const name of deps.deferNames) {
       const schema = deps.deferConfigs?.[name]?.schema;
 
-      deferObj[name] = async (data?: Record<string, unknown>) => {
+      deferObj[name] = async (
+        idOrOptions: string | { id: string; name?: string },
+        data?: Record<string, unknown>,
+      ) => {
         const resolvedData = data ?? {};
 
         if (schema) {
-          const result = await schema["~standard"].validate(resolvedData);
-          if (result.issues) {
-            const message = result.issues
+          const validationResult =
+            await schema["~standard"].validate(resolvedData);
+          if (validationResult.issues) {
+            const message = validationResult.issues
               .map((issue) => {
                 const path =
                   issue.path && issue.path.length > 0
@@ -535,23 +554,22 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupToolsBase => {
           }
         }
 
-        const stepData = await deps.deferStep!(name, resolvedData);
+        const stepData = await deps.deferStep!(idOrOptions, name, resolvedData);
 
         return {
           uuid: stepData.uuid,
           name: stepData.name,
           data: stepData.data,
-          cancel: () => {
-            // Deterministic memoization key per uuid so double-cancel is
-            // idempotent via step dedup.
-            return deps.cancelDeferStep!(
-              `cancel-defer-${stepData.uuid}`,
-              stepData.uuid,
-            ).then(() => undefined);
-          },
-        };
+        } satisfies DeferHandle;
       };
     }
+
+    deferObj.cancel = async (
+      idOrOptions: string | { id: string; name?: string },
+      handle: DeferHandle,
+    ) => {
+      await deps.cancelDeferStep!(idOrOptions, handle.uuid);
+    };
 
     result.defer = deferObj;
   }

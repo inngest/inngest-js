@@ -951,10 +951,13 @@ export const createStepTools = <
     createStepRun("group.experiment");
 
   // Create the `group.defer` step tool. Returns memoized DeferStepData;
-  // the group tools layer wraps the result with a `cancel()` method.
+  // the group tools layer wraps the result in a DeferHandle.
+  // The third argument `deferName` is the key from the `onDefer` map,
+  // distinct from the user-supplied step ID.
   const deferStep = createTool<
     (
       idOrOptions: StepOptionsOrId,
+      deferName: string,
       data: Record<string, unknown>,
     ) => Promise<DeferStepData>
   >(
@@ -972,13 +975,12 @@ export const createStepTools = <
       };
     },
     {
-      fn: (_ctx, idOrOptions, data) => {
-        const stepOpts = getStepOptions(idOrOptions);
+      fn: (_ctx, _idOrOptions, deferName, data) => {
         const uuid = crypto.randomUUID();
         return {
           __type: "group.defer" as const,
           uuid,
-          name: stepOpts.id,
+          name: deferName,
           data,
         } satisfies DeferStepData;
       },
@@ -987,8 +989,8 @@ export const createStepTools = <
   (tools as unknown as DeferStepTools)[deferStepSymbol] = deferStep;
 
   // Create the `cancel defer` step tool. Emits a StepPlanned with type
-  // "group.cancelDefer". Memoization key is deterministic per uuid so
-  // double-cancel is idempotent via step dedup.
+  // "group.cancelDefer". The user supplies the step ID via
+  // `group.defer.cancel(stepId, handle)`.
   const cancelDeferStep = createTool<
     (idOrOptions: StepOptionsOrId, uuid: string) => Promise<DeferCancelStepData>
   >(
@@ -1083,6 +1085,7 @@ export const cancelDeferStepSymbol = Symbol.for("inngest.group.cancelDefer");
 export type DeferStepTools = GetStepTools<Inngest.Any> & {
   [deferStepSymbol]: (
     idOrOptions: StepOptionsOrId,
+    deferName: string,
     data: Record<string, unknown>,
   ) => Promise<DeferStepData>;
   [cancelDeferStepSymbol]: (

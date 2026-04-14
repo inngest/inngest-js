@@ -165,9 +165,9 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
 };
 
 /**
- * The handle returned from `group.defer.name()`. Carries a uuid, the defer name,
- * and the user-supplied data, and exposes a `cancel()` method that emits a
- * second step opcode to cancel the deferred dispatch.
+ * The handle returned from `group.defer.name(stepId, data)`. Carries a uuid,
+ * the defer name, and the user-supplied data. Pass this handle to
+ * `group.defer.cancel(stepId, handle)` to cancel the deferred dispatch.
  *
  * @public
  */
@@ -178,7 +178,6 @@ export interface DeferHandle<
   uuid: string;
   name: string;
   data: TData;
-  cancel: () => Promise<void>;
 }
 
 /**
@@ -195,8 +194,9 @@ export interface DeferStepData {
 }
 
 /**
- * The memoized step data for a `handle.cancel()` call. Stored as the step's
- * output and used by the engine's `flushDefers` to identify cancelled defers.
+ * The memoized step data for a `group.defer.cancel()` call. Stored as the
+ * step's output and used by the engine's `flushDefers` to identify cancelled
+ * defers.
  *
  * @internal
  */
@@ -206,21 +206,17 @@ export interface DeferCancelStepData {
 }
 
 /**
- * Context arguments specific to a deferred handler, mirroring
- * FailureEventArgs. Generic `TData` is the user-supplied data shape.
+ * Context arguments specific to a deferred handler. Generic `TData` is
+ * the user-supplied data shape.
  *
  * The engine unwraps `event.data.data` from the dispatched payload and
  * exposes it as a top-level `data` field so users write `data.orderId`
  * instead of `event.data.orderId`.
  *
- * Users annotate their handler signatures with this type:
- * ```ts
- * defers: {
- *   analytics: async ({ data, step }: DeferCtx<{ orderId: string }>) => { ... }
- * }
- * ```
+ * This type is used internally by `client.createDefer<T>()`. Users
+ * should not need to reference it directly.
  *
- * @public
+ * @internal
  */
 export type DeferCtx<
   TData extends Record<string, unknown> = Record<string, unknown>,
@@ -252,9 +248,11 @@ export type DeferCtx<
 };
 
 /**
- * Configuration for a single deferred handler. The optional `schema` field
- * enables both compile-time type inference and runtime validation of data
- * passed to `group.defer.name(data)`.
+ * Configuration for a single deferred handler. Use `client.createDefer<T>()`
+ * to create instances with typed data and automatic middleware context.
+ *
+ * The optional `schema` field enables runtime validation of data passed
+ * to `group.defer.name(stepId, data)`.
  *
  * @public
  */
@@ -273,10 +271,8 @@ export interface DeferConfig<
   retries?: number;
 
   /**
-   * The deferred handler. Receives `DeferCtx<TData>` where TData is inferred
-   * from `schema`. Middleware-injected context fields (e.g. `{ db: DB }`) are
-   * available at runtime and can be accessed via a type intersection on the
-   * parameter: `({ data, db }: DeferCtx<T> & { db: DB }) => ...`.
+   * The deferred handler. When created via `client.createDefer<T>()`,
+   * the handler receives typed `data` and middleware context automatically.
    */
   // biome-ignore lint/suspicious/noExplicitAny: middleware-injected fields need any via index sig
   handler(ctx: DeferCtx<NoInfer<TData>> & Record<string, any>): unknown;
@@ -284,7 +280,7 @@ export interface DeferConfig<
 
 /**
  * A map of defer names to config objects, used in `createFunction`'s
- * `defers` option. Each entry becomes a synthetic Inngest function.
+ * `onDefer` option. Each entry becomes a synthetic Inngest function.
  *
  * @public
  */
@@ -305,7 +301,7 @@ export type ExtractDeferData<T> = T extends DeferConfig<infer TData>
   : Record<string, unknown>;
 
 /**
- * Maps a defers handler record to a record of name -> data shape.
+ * Maps an `onDefer` config record to a record of name -> data shape.
  * Used to separate inference (at createFunction) from use (at group.defer).
  *
  * @internal

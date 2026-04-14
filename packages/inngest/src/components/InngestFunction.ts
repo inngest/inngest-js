@@ -273,8 +273,24 @@ export class InngestFunction<
       });
     }
 
-    if (this.opts.defers) {
-      for (const [deferName, deferConfig] of Object.entries(this.opts.defers)) {
+    if (this.opts.onDefer) {
+      for (const [deferName, deferConfig] of Object.entries(
+        this.opts.onDefer,
+      )) {
+        if (deferName === "cancel") {
+          throw new Error(
+            `"cancel" is a reserved onDefer name used by group.defer.cancel(). ` +
+              `Choose a different name for your onDefer handler in function "${fn.id}".`,
+          );
+        }
+
+        if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(deferName)) {
+          throw new Error(
+            `Invalid onDefer name "${deferName}" in function "${fn.id}". ` +
+              `Defer names must match /^[a-zA-Z_][a-zA-Z0-9_-]*$/.`,
+          );
+        }
+
         const id = `${fn.id}${InngestFunction.deferSuffix}${deferName}`;
         const displayName = `${fn.name ?? fn.id} (defer: ${deferName})`;
         const deferStepUrl = new URL(stepUrl.href);
@@ -726,23 +742,25 @@ export namespace InngestFunction {
      * Inngest function (`${fnId}-defer-${name}`) triggered by
      * `deferred.start` events filtered by the parent fn_slug AND by name.
      *
-     * Inside the main handler, call `group.defer.name(data)` to
+     * Inside the main handler, call `group.defer.name(stepId, data)` to
      * schedule a deferred handler. The handler receives the data passed
-     * to `group.defer.name()` as a top-level `data` field.
+     * as a top-level `data` field.
+     *
+     * Use `client.createDefer<T>({ handler })` to create each entry
+     * with typed data and automatic middleware context.
      *
      * @example
      * ```ts
-     * defers: {
-     *   analytics: {
-     *     schema: z.object({ orderId: z.string() }),
+     * onDefer: {
+     *   analytics: inngest.createDefer<{ orderId: string }>({
      *     handler: async ({ data, step }) => {
      *       await step.run("track", () => track(data.orderId));
      *     },
-     *   },
+     *   }),
      * }
      * ```
      */
-    defers?: DeferMap;
+    onDefer?: DeferMap;
 
     /**
      * Define a set of middleware that can be registered to hook into

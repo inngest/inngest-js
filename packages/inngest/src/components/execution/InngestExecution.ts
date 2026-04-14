@@ -136,7 +136,7 @@ export interface InngestExecutionOptions {
   handlerType?: "main" | "failure" | "defer";
   /**
    * When `handlerType` is `"defer"`, the name of the deferred handler
-   * (the key from the `defers` map). Extracted from the synthetic
+   * (the key from the `onDefer` map). Extracted from the synthetic
    * function ID suffix `-defer-${name}`.
    */
   deferName?: string;

@@ -1698,8 +1698,8 @@ class InngestExecutionEngine
       return;
     }
     if (
-      !this.options.fn.opts.defers ||
-      Object.keys(this.options.fn.opts.defers).length === 0
+      !this.options.fn.opts.onDefer ||
+      Object.keys(this.options.fn.opts.onDefer).length === 0
     ) {
       return;
     }
@@ -1974,11 +1974,11 @@ class InngestExecutionEngine
     ];
 
     // Extract defer step tools from the step tools object. Only wire them
-    // into group tools when the function has a defers map configured.
+    // into group tools when the function has an onDefer map configured.
     const hasDeferHandler =
       (!this.options.handlerType || this.options.handlerType === "main") &&
-      this.options.fn.opts.defers &&
-      Object.keys(this.options.fn.opts.defers).length > 0;
+      this.options.fn.opts.onDefer &&
+      Object.keys(this.options.fn.opts.onDefer).length > 0;
 
     const deferStep = hasDeferHandler
       ? (step as unknown as DeferStepTools)[deferStepSymbol]
@@ -1987,7 +1987,7 @@ class InngestExecutionEngine
       ? (step as unknown as DeferStepTools)[cancelDeferStepSymbol]
       : undefined;
     const deferNames = hasDeferHandler
-      ? Object.keys(this.options.fn.opts.defers!)
+      ? Object.keys(this.options.fn.opts.onDefer!)
       : undefined;
 
     let fnArg = {
@@ -1998,7 +1998,9 @@ class InngestExecutionEngine
         deferStep,
         cancelDeferStep,
         deferNames,
-        deferConfigs: hasDeferHandler ? this.options.fn.opts.defers : undefined,
+        deferConfigs: hasDeferHandler
+          ? this.options.fn.opts.onDefer
+          : undefined,
       }),
     } as Context.Any;
 
@@ -2017,7 +2019,7 @@ class InngestExecutionEngine
     }
 
     /**
-     * Handle use of the `defers` map by unwrapping user data from the
+     * Handle use of the `onDefer` map by unwrapping user data from the
      * dispatched payload and exposing it as a top-level `data` field.
      * Mirrors the `onFailure` ctx-unwrap above.
      */
@@ -2618,19 +2620,19 @@ class InngestExecutionEngine
   private getUserFnToRun(): Handler.Any {
     if (this.options.handlerType === "defer") {
       const deferName = this.options.deferName;
-      const defersMap = this.options.fn.opts.defers;
+      const onDeferMap = this.options.fn.opts.onDefer;
 
-      if (!deferName || !defersMap) {
+      if (!deferName || !onDeferMap) {
         throw new Error(
-          "Cannot find deferred handler: no `defers` map or `deferName` provided",
+          "Cannot find deferred handler: no `onDefer` map or `deferName` provided",
         );
       }
 
-      const entry = defersMap[deferName];
+      const entry = onDeferMap[deferName];
       if (!entry?.handler) {
         throw new Error(
           `Cannot find deferred handler "${deferName}". ` +
-            `Available defers: ${Object.keys(defersMap).join(", ")}. ` +
+            `Available onDefer entries: ${Object.keys(onDeferMap).join(", ")}. ` +
             "This may indicate a stale deploy where the defer name was removed.",
         );
       }

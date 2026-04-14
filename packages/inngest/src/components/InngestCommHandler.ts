@@ -515,11 +515,14 @@ export class InngestCommHandler<
           let handlerType: "main" | "failure" | "defer";
           let deferName: string | undefined;
 
-          if (id.endsWith(InngestFunction.failureSuffix)) {
-            handlerType = "failure";
-          } else if (deferPrefix && id.startsWith(deferPrefix)) {
+          // Check defer prefix before failure suffix — a defer named
+          // "failure" would produce an ID ending in "-failure", so the
+          // more-specific prefix match must come first.
+          if (deferPrefix && id.startsWith(deferPrefix)) {
             handlerType = "defer";
             deferName = id.slice(deferPrefix.length);
+          } else if (id.endsWith(InngestFunction.failureSuffix)) {
+            handlerType = "failure";
           } else {
             handlerType = "main";
           }

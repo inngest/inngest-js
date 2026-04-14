@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
@@ -41,6 +42,7 @@ import {
   type BaseContext,
   type ClientOptions,
   type DeferConfig,
+  type DeferCtx,
   type DeferDataMap,
   type EventPayload,
   type FailureEventArgs,
@@ -1009,6 +1011,68 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return fn;
   };
 
+  /**
+   * Create a typed `onDefer` handler entry. The generic `TData` parameter
+   * specifies the data shape passed to `group.defer.name()` and received
+   * in the handler's `data` field.
+   *
+   * Unlike inline config objects, this method automatically includes
+   * client-level middleware context extensions (e.g. dependency injection)
+   * in the handler's type. Function-level middleware (passed to
+   * `createFunction({ middleware })`) is not captured here since
+   * `createDefer` is called before `createFunction`.
+   *
+   * @example Explicit generic (compile-time types only)
+   * ```ts
+   * onDefer: {
+   *   scoring: inngest.createDefer<{ name: string }>({
+   *     handler: async ({ data, step }) => {
+   *       data.name; // string
+   *     },
+   *   }),
+   * }
+   * ```
+   *
+   * @example With schema (runtime validation + inferred types)
+   * ```ts
+   * onDefer: {
+   *   scoring: inngest.createDefer({
+   *     schema: z.object({ name: z.string() }),
+   *     handler: async ({ data, step }) => {
+   *       data.name; // string
+   *     },
+   *   }),
+   * }
+   * ```
+   */
+  createDefer<
+    TData extends Record<string, unknown> = Record<string, unknown>,
+    TSchema extends StandardSchemaV1<TData> | undefined = undefined,
+  >(opts: {
+    schema?: TSchema;
+    retries?: number;
+    handler: (
+      ctx: DeferCtx<
+        TSchema extends StandardSchemaV1<
+          infer D extends Record<string, unknown>
+        >
+          ? D
+          : TData
+      > &
+        ApplyAllMiddlewareCtxExtensions<
+          [...ReturnType<typeof builtInMiddleware>]
+        > &
+        ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]>,
+    ) => unknown;
+  }): DeferConfig<
+    TSchema extends StandardSchemaV1<infer D extends Record<string, unknown>>
+      ? D
+      : TData
+  > {
+    // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through
+    return opts as any;
+  }
+
   public get funcs() {
     return this.localFns;
   }
@@ -1239,7 +1303,7 @@ export namespace Inngest {
     >,
   >(
     options: CreateFunctionInput<TFnMiddleware, TTriggers, TFailureHandler> & {
-      defers?: TDefers;
+      onDefer?: TDefers;
     },
     handler: THandler,
   ) => InngestFunction<

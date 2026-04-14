@@ -36,7 +36,6 @@ import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
-  type DeferCtx,
   type FailureEventPayload,
   type OutgoingOp,
   StepMode,
@@ -2028,7 +2027,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: { handler: async () => {} },
             rollback: { handler: async () => {} },
           },
@@ -2066,7 +2065,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: { handler: async () => {} },
           },
         },
@@ -2093,7 +2092,7 @@ describe("runFn", () => {
       ]);
     });
 
-    test("group.defer.name() returns a handle with uuid, name, data, and cancel()", async () => {
+    test("group.defer.name() returns a handle with uuid, name, and data", async () => {
       const inngest = createClient({
         id: "test",
         eventKey: "ek",
@@ -2106,13 +2105,15 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          capturedHandle = await group.defer.analytics({ greeting: "hi" });
-          await capturedHandle.cancel();
+          capturedHandle = await group.defer.analytics("defer-analytics", {
+            greeting: "hi",
+          });
+          await group.defer.cancel("cancel-analytics", capturedHandle);
         },
       );
 
@@ -2127,7 +2128,6 @@ describe("runFn", () => {
       expect(capturedHandle.uuid.length).toBeGreaterThan(0);
       expect(capturedHandle.name).toBe("analytics");
       expect(capturedHandle.data).toEqual({ greeting: "hi" });
-      expect(typeof capturedHandle.cancel).toBe("function");
     });
 
     test("group.defer is not present when no defers map is configured", async () => {
@@ -2167,12 +2167,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.d({ foo: "bar" });
+          await group.defer.d("defer-d", { foo: "bar" });
         },
       );
 
@@ -2208,13 +2208,13 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          const handle = await group.defer.d({ foo: "bar" });
-          await handle.cancel();
+          const handle = await group.defer.d("defer-d", { foo: "bar" });
+          await group.defer.cancel("cancel-d", handle);
         },
       );
 
@@ -2239,15 +2239,15 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d1: { handler: async () => {} },
             d2: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          const h1 = await group.defer.d1({ keep: true });
-          await group.defer.d2({ keep: false });
-          await h1.cancel();
+          const h1 = await group.defer.d1("defer-d1", { keep: true });
+          await group.defer.d2("defer-d2", { keep: false });
+          await group.defer.cancel("cancel-d1", h1);
         },
       );
 
@@ -2276,12 +2276,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.d({ payload: "ok" });
+          await group.defer.d("defer-d", { payload: "ok" });
           throw new NonRetriableError("boom");
         },
       );
@@ -2312,12 +2312,12 @@ describe("runFn", () => {
           id: "testfn",
           triggers: [{ event: "foo" }],
           retries: 3,
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.d({ payload: "ok" });
+          await group.defer.d("defer-d", { payload: "ok" });
           throw new Error("transient");
         },
       );
@@ -2333,7 +2333,7 @@ describe("runFn", () => {
       expect(spy.getDeferredStartPayloads()).toHaveLength(0);
     });
 
-    test("handle.cancel() called multiple times is idempotent (same uuid)", async () => {
+    test("group.defer.cancel() called multiple times is idempotent (different step IDs)", async () => {
       const inngest = createClient({
         id: "test",
         eventKey: "ek",
@@ -2344,16 +2344,16 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          const handle = await group.defer.d({ foo: "bar" });
+          const handle = await group.defer.d("defer-d", { foo: "bar" });
           // Double cancel — second call should be idempotent via step dedup
           // (deterministic memoization key per uuid).
-          await handle.cancel();
-          await handle.cancel();
+          await group.defer.cancel("cancel-1", handle);
+          await group.defer.cancel("cancel-2", handle);
         },
       );
 
@@ -2378,12 +2378,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.d({ foo: "bar" });
+          await group.defer.d("defer-d", { foo: "bar" });
         },
       );
 
@@ -2419,7 +2419,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: {
               handler: async () => {
                 analyticsCalled = true;
@@ -2473,7 +2473,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: {
               handler: async ({ data }) => {
                 capturedData = data;
@@ -2482,7 +2482,7 @@ describe("runFn", () => {
           },
         },
         async ({ group }) => {
-          await group.defer.analytics({ greeting: "hello" });
+          await group.defer.analytics("defer-analytics", { greeting: "hello" });
         },
       );
 
@@ -2522,12 +2522,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             cleanup: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.cleanup({ important: true });
+          await group.defer.cleanup("defer-cleanup", { important: true });
           throw new NonRetriableError("terminal");
         },
       );
@@ -2562,7 +2562,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: { handler: async () => {} },
           },
         },
@@ -2605,13 +2605,13 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          const h1 = await group.defer.d({ first: true });
-          const h2 = await group.defer.d({ second: true });
+          const h1 = await group.defer.d("defer-d-first", { first: true });
+          const h2 = await group.defer.d("defer-d-second", { second: true });
           // Auto-indexed step IDs produce distinct handles.
           expect(h1.uuid).not.toBe(h2.uuid);
         },
@@ -2643,7 +2643,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             work: {
               handler: async ({ data, step }) => {
                 await step.run("step-a", () => {
@@ -2659,7 +2659,7 @@ describe("runFn", () => {
           },
         },
         async ({ group }) => {
-          await group.defer.work({ val: "ok" });
+          await group.defer.work("defer-work", { val: "ok" });
         },
       );
 
@@ -2704,7 +2704,7 @@ describe("runFn", () => {
         {
           id: "test",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             scoring: {
               schema: z.object({ orderId: z.string() }),
               handler: async ({ data }) => {
@@ -2715,11 +2715,11 @@ describe("runFn", () => {
         },
         async ({ group }) => {
           // Valid call compiles
-          await group.defer.scoring({ orderId: "123" });
+          await group.defer.scoring("defer-scoring", { orderId: "123" });
           // @ts-expect-error - unknown defer name
           group.defer.nonexistent;
           // @ts-expect-error - wrong data shape
-          group.defer.scoring({ wrong: true });
+          group.defer.scoring("defer-scoring", { wrong: true });
         },
       );
     });
@@ -2735,7 +2735,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             scored: {
               schema: z.object({ orderId: z.string() }),
               handler: async () => {},
@@ -2744,7 +2744,7 @@ describe("runFn", () => {
         },
         async ({ group }) => {
           // @ts-expect-error - intentionally passing bad data
-          await group.defer.scored({ orderId: 123 });
+          await group.defer.scored("defer-scored", { orderId: 123 });
         },
       );
 
@@ -2776,7 +2776,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             scored: {
               schema: z.object({ orderId: z.string() }),
               handler: async () => {},
@@ -2784,7 +2784,7 @@ describe("runFn", () => {
           },
         },
         async ({ group }) => {
-          await group.defer.scored({ orderId: "abc" });
+          await group.defer.scored("defer-scored", { orderId: "abc" });
         },
       );
 
@@ -2813,12 +2813,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             scored: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.scored({ anything: "goes" });
+          await group.defer.scored("defer-scored", { anything: "goes" });
         },
       );
 
@@ -2838,19 +2838,19 @@ describe("runFn", () => {
         {
           id: "test",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             scored: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.scored({ anyKey: "value" });
+          await group.defer.scored("defer-scored", { anyKey: "value" });
           // @ts-expect-error - still requires Record<string, unknown>, not a number
-          await group.defer.scored(42);
+          await group.defer.scored("defer-scored", 42);
         },
       );
     });
 
-    test("type: middleware context available in defer handler via intersection", () => {
+    test("type: middleware context available in defer handler via createDefer", () => {
       const inngest = new InngestWithMiddleware({
         id: "test",
         middleware: [dependencyInjectionMiddleware({ db: "test-db" })],
@@ -2859,26 +2859,21 @@ describe("runFn", () => {
         {
           id: "test",
           triggers: [{ event: "foo" }],
-          defers: {
-            scored: {
-              schema: z.object({ orderId: z.string() }),
-              // Middleware-injected fields available via manual intersection
-              handler: async ({
-                data,
-                db,
-              }: DeferCtx<{ orderId: string }> & { db: string }) => {
+          onDefer: {
+            scored: inngest.createDefer<{ orderId: string }>({
+              handler: async ({ data, db }) => {
                 const _orderId: string = data.orderId;
                 const _db: string = db;
                 void _orderId;
                 void _db;
               },
-            },
+            }),
           },
         },
         async ({ group, db }) => {
           const _db: string = db;
           void _db;
-          await group.defer.scored({ orderId: "123" });
+          await group.defer.scored("defer-scored", { orderId: "123" });
         },
       );
     });
@@ -2894,12 +2889,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             cleanup: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.cleanup({ important: true });
+          await group.defer.cleanup("defer-cleanup", { important: true });
           throw new NonRetriableError("something broke");
         },
       );
@@ -2933,12 +2928,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             d: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.d({ ok: true });
+          await group.defer.d("defer-d", { ok: true });
         },
       );
 
@@ -2970,7 +2965,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             cleanup: {
               handler: async ({ error }) => {
                 capturedError = error;
@@ -2979,7 +2974,7 @@ describe("runFn", () => {
           },
         },
         async ({ group }) => {
-          await group.defer.cleanup({});
+          await group.defer.cleanup("defer-cleanup", {});
           throw new NonRetriableError("boom");
         },
       );
@@ -3024,7 +3019,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: {
               handler: async ({ error }) => {
                 capturedError = error;
@@ -3033,7 +3028,7 @@ describe("runFn", () => {
           },
         },
         async ({ group }) => {
-          await group.defer.analytics({ greeting: "hello" });
+          await group.defer.analytics("defer-analytics", { greeting: "hello" });
         },
       );
 
@@ -3066,15 +3061,15 @@ describe("runFn", () => {
         {
           id: "test",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             cleanup: { handler: async () => {} },
           },
         },
         async ({ group }) => {
           // Should compile without a data argument
-          await group.defer.cleanup();
+          await group.defer.cleanup("defer-cleanup");
           // Should also accept an explicit empty object
-          await group.defer.cleanup({});
+          await group.defer.cleanup("defer-cleanup-2", {});
         },
       );
     });
@@ -3090,12 +3085,12 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             cleanup: { handler: async () => {} },
           },
         },
         async ({ group }) => {
-          await group.defer.cleanup();
+          await group.defer.cleanup("defer-cleanup");
         },
       );
 
@@ -3118,7 +3113,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: { retries: 5, handler: async () => {} },
           },
         },
@@ -3146,7 +3141,7 @@ describe("runFn", () => {
         {
           id: "testfn",
           triggers: [{ event: "foo" }],
-          defers: {
+          onDefer: {
             analytics: { handler: async () => {} },
           },
         },

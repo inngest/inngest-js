@@ -106,7 +106,6 @@ export type {
   ClientOptions,
   Context,
   DeferConfig,
-  DeferCtx,
   DeferHandle,
   DeferMap,
   EventNameFromTrigger,
