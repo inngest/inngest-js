@@ -32,3 +32,12 @@ test("multi-byte UTF-8 characters split across chunks", async () => {
   expect(body).toBe("é");
   expect(body).not.toContain("�");
 });
+
+test("stream error rejects the promise", async () => {
+  const socket = new Socket();
+  const req = new http.IncomingMessage(socket);
+  const promise = readRequestBody(req);
+  req.destroy(new Error("connection reset"));
+
+  await expect(promise).rejects.toThrow("connection reset");
+});
