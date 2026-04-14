@@ -10,6 +10,7 @@ import {
 } from "./components/InngestCommHandler.ts";
 import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
 import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
+import { readRequestBody } from "./helpers/node.ts";
 import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
@@ -17,21 +18,6 @@ import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
  * dashboards and during testing.
  */
 export const frameworkName: SupportedFrameworkName = "nodejs";
-
-/**
- * Read the incoming message request body as text
- */
-async function readRequestBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    req.on("end", () => {
-      resolve(body);
-    });
-  });
-}
 
 function getURL(req: http.IncomingMessage, hostnameOption?: string): URL {
   const protocol =
