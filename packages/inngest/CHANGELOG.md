@@ -1,5 +1,13 @@
 # inngest
 
+## 4.2.3
+
+### Patch Changes
+
+- [#1460](https://github.com/inngest/inngest-js/pull/1460) [`ce5110de`](https://github.com/inngest/inngest-js/commit/ce5110dea3fd64ed26fbf5bed86c10bbf1d85ae6) Thanks [@amh4r](https://github.com/amh4r)! - Fix multi-byte UTF-8 chars corrupted when split over chunks
+
+- [#1461](https://github.com/inngest/inngest-js/pull/1461) [`d75b59ce`](https://github.com/inngest/inngest-js/commit/d75b59ce5690d0dd7bbc7fb9a76138896bcbeca9) Thanks [@amh4r](https://github.com/amh4r)! - Fix CountQueuingStrategy erroring when stubbed in edge runtimes
+
 ## 4.2.2
 
 ### Patch Changes
