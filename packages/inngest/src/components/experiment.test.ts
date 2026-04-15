@@ -658,6 +658,7 @@ describe("group.experiment() ALS propagation", () => {
       experimentStepID: HASHED_STEP_ID,
       experimentName: "my-exp",
       variant: "alpha",
+      selectionStrategy: "fixed",
     });
   });
 
@@ -682,12 +683,97 @@ describe("group.experiment() ALS propagation", () => {
       }),
     );
 
-    // Verify the fields that wrappedMatchOp would spread into OutgoingOp.opts
+    // Verify the fields that wrappedMatchOp would spread into OutgoingOp.opts.
+    // These become GeneratorOpcode.Opts on the executor side, where an
+    // ExtractExperimentOptsMetadata extractor emits the inngest.experiment
+    // metadata span (see the companion inngest/inngest executor change).
     expect(capturedExperimentContext).toEqual({
       experimentStepID: HASHED_STEP_ID,
       experimentName: "my-exp",
       variant: "alpha",
+      selectionStrategy: "fixed",
     });
+  });
+
+  test("experimentContext is set on replay even without hashed step ID", async () => {
+    // On replay, the selection callback is memoized and never re-executes, so
+    // `experimentStepHashedId` stays undefined. Prior to this change we would
+    // skip setting `experimentContext` entirely in that case, meaning variant
+    // sub-steps discovered on replay lost their experiment fields in opts.
+    //
+    // With the executor now emitting metadata from opts (see the companion
+    // inngest/inngest executor change), we cannot afford to drop the
+    // context — so we set it with an empty experimentStepID fallback.
+    const exec = mockExecution();
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-id-replay" } as never,
+      },
+    };
+
+    // experimentStepRun that never sets executingStep.id — simulates the
+    // memoized selection step on replay.
+    const experimentStepRun = vi.fn(
+      async (
+        _idOrOptions: string | { id: string },
+        callback: () => unknown,
+      ) => {
+        return als.run(ctx, () => callback());
+      },
+    );
+
+    const group = createGroupTools({ experimentStepRun });
+    let capturedCtx: AsyncContext["execution"] | undefined;
+
+    await expect(
+      als.run(ctx, () =>
+        group.experiment("my-exp", {
+          variants: {
+            alpha: () => {
+              capturedCtx = als.getStore()?.execution;
+              return "val";
+            },
+          },
+          select: experiment.fixed("alpha"),
+        }),
+      ),
+    ).rejects.toThrow(); // zero-step detection still fires
+
+    expect(capturedCtx?.experimentContext).toEqual({
+      experimentStepID: "",
+      experimentName: "my-exp",
+      variant: "alpha",
+      selectionStrategy: "fixed",
+    });
+  });
+
+  test("experimentContext carries selectionStrategy for weighted strategy", async () => {
+    const { group, run } = createHarness();
+    let capturedCtx: AsyncContext["execution"] | undefined;
+
+    await expect(
+      run(() =>
+        group.experiment("weighted-ctx", {
+          variants: {
+            a: () => {
+              capturedCtx = als.getStore()?.execution;
+              return 1;
+            },
+            b: () => {
+              capturedCtx = als.getStore()?.execution;
+              return 2;
+            },
+          },
+          select: experiment.weighted({ a: 70, b: 30 }),
+        }),
+      ),
+    ).rejects.toThrow(); // zero-step
+
+    expect(capturedCtx?.experimentContext?.selectionStrategy).toBe("weighted");
+    expect(capturedCtx?.experimentContext?.experimentName).toBe("weighted-ctx");
+    expect(["a", "b"]).toContain(capturedCtx?.experimentContext?.variant);
   });
 
   test("step tool invocation flips experimentStepTracker via ALS", async () => {
