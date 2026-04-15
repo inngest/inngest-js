@@ -114,11 +114,14 @@ export class InngestSpanProcessor implements SpanProcessor {
    * a span is not exported, remains unended, and is left in memory before being
    * GC'd.
    */
-  #spanCleanup = new FinalizationRegistry<string>((spanId) => {
-    if (spanId) {
-      this.#traceParents.delete(spanId);
-    }
-  });
+  #spanCleanup =
+    typeof FinalizationRegistry !== "undefined"
+      ? new FinalizationRegistry<string>((spanId) => {
+          if (spanId) {
+            this.#traceParents.delete(spanId);
+          }
+        })
+      : undefined;
 
   /**
    * Tracks the currently-executing step for each execution, keyed by root span
@@ -347,7 +350,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     const trackDebug = processorDevDebug.extend("trackSpan");
     const spanId = span.spanContext().spanId;
 
-    this.#spanCleanup.register(span, spanId, span);
+    this.#spanCleanup?.register(span, spanId, span);
     this.#spansToExport.add(span);
     this.#traceParents.set(spanId, parentState);
 
@@ -414,7 +417,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     // This span is no longer in use, so we can remove it from the cleanup
     // registry.
-    this.#spanCleanup.unregister(span);
+    this.#spanCleanup?.unregister(span);
     this.#spansToExport.delete(span);
     this.#traceParents.delete(spanId);
   }

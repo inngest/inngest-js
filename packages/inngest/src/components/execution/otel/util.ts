@@ -25,39 +25,69 @@ export const createProvider = async (
       spanProcessors: [processor],
     });
 
-    // Dynamic imports to avoid loading the full auto-instrumentation suite at
-    // module evaluation time. These are only needed when creating a new provider,
-    // not when extending an existing one. Static imports here caused version
-    // conflicts with host app OTel setups (e.g. Sentry) and silently broke
-    // inngest.send(). See #1324.
-    const { getNodeAutoInstrumentations } = await import(
-      "@opentelemetry/auto-instrumentations-node"
-    );
+    // Must be set before registerInstrumentations so they resolve this
+    // provider, not the no-op default.
+    trace.setGlobalTracerProvider(p);
+
+    const instrList: Instrumentations = [...instrumentations];
+
+    // Without a context manager, user-created spans have no parent and the
+    // processor filters them out. AsyncLocalStorageContextManager works in
+    // Node.js and in runtimes with AsyncLocalStorage (e.g. Workers with
+    // nodejs_compat); AsyncHooksContextManager is deprecated and a no-op in
+    // Workers since async_hooks.createHook is stubbed.
+    try {
+      const { AsyncLocalStorageContextManager } = await import(
+        "@opentelemetry/context-async-hooks"
+      );
+      context.setGlobalContextManager(
+        new AsyncLocalStorageContextManager().enable(),
+      );
+    } catch (err) {
+      console.warn(
+        "Inngest: failed to set up OTel context manager; user-created spans will not be associated with runs.",
+        err,
+      );
+    }
+
+    // Node-only; unavailable in Workers. Inngest span collection still works
+    // without these — only third-party library auto-instrumentation is lost.
+    try {
+      const { getNodeAutoInstrumentations } = await import(
+        "@opentelemetry/auto-instrumentations-node"
+      );
+      const { AnthropicInstrumentation } = await import(
+        "@traceloop/instrumentation-anthropic"
+      );
+
+      instrList.push(
+        ...getNodeAutoInstrumentations(),
+        new AnthropicInstrumentation(),
+      );
+    } catch (err) {
+      debug("Node.js auto-instrumentations unavailable, skipping:", err);
+    }
+
+    // Dynamic import: static imports caused version conflicts with host OTel
+    // setups (e.g. Sentry) and silently broke inngest.send(). See #1324.
     const { registerInstrumentations } = await import(
       "@opentelemetry/instrumentation"
     );
-    const { AnthropicInstrumentation } = await import(
-      "@traceloop/instrumentation-anthropic"
-    );
-    const { AsyncHooksContextManager } = await import(
-      "@opentelemetry/context-async-hooks"
-    );
-
-    const instrList: Instrumentations = [
-      ...instrumentations,
-      ...getNodeAutoInstrumentations(),
-      new AnthropicInstrumentation(),
-    ];
 
     registerInstrumentations({
       instrumentations: instrList,
     });
 
-    trace.setGlobalTracerProvider(p);
-    context.setGlobalContextManager(new AsyncHooksContextManager().enable());
-
     return { success: true, processor };
   } catch (err) {
+    // Reset globals so a partial setup doesn't leak spans into an orphaned
+    // processor with no client association.
+    try {
+      trace.disable();
+      context.disable();
+    } catch (cleanupErr) {
+      debug("cleanup after failed provider setup also failed:", cleanupErr);
+    }
     debug("failed to create provider:", err);
     return { success: false, error: err };
   }
