@@ -1,5 +1,11 @@
 # inngest
 
+## 4.2.4
+
+### Patch Changes
+
+- [#1466](https://github.com/inngest/inngest-js/pull/1466) [`68de9150`](https://github.com/inngest/inngest-js/commit/68de9150dea52f33f4f53222777e47a8e618e6ec) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing duplicate execution
+
 ## 4.2.3
 
 ### Patch Changes
