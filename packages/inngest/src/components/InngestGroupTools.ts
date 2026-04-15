@@ -377,16 +377,21 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     }
 
     // Propagate experiment context via ALS so variant sub-steps include
-    // experiment fields in their OutgoingOp.opts. Also track whether any
-    // step tool is invoked to detect zero-step variants.
+    // experiment fields in their OutgoingOp.opts. The executor reads these
+    // fields from opts and emits the step-scoped `inngest.experiment`
+    // metadata span itself — the SDK does not need to call addMetadata()
+    // for variant steps. See the companion executor change in inngest/inngest
+    // for the server-side emission path.
     //
-    // TODO: On replay, experimentStepHashedId is undefined because it's
-    // captured inside the selection step callback, which doesn't run when
-    // memoized. This means sub-steps discovered during replay won't carry
-    // experimentContext in their OutgoingOp.opts. Fixing this requires an
-    // engine-level change to expose the hashed step ID outside the callback
-    // (e.g. via ALS before the callback runs, or returned alongside the
-    // memoized result). Tracked in EXE-1330.
+    // Also track whether any step tool is invoked to detect zero-step
+    // variants.
+    //
+    // NOTE: experimentStepHashedId may be undefined on replay because it
+    // is captured inside the selection step callback, which doesn't run
+    // when memoized. We still set experimentContext (with an empty string
+    // for the hashed ID fallback) so that variant sub-steps discovered on
+    // replay still carry experiment fields in their opts and the executor
+    // can attach metadata to their ClickHouse rows.
     const currentCtx = getAsyncCtxSync();
     const stepTracker = { found: false };
     let result: unknown;
@@ -397,13 +402,12 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
         ...currentCtx,
         execution: {
           ...currentCtx.execution,
-          ...(experimentStepHashedId && {
-            experimentContext: {
-              experimentStepID: experimentStepHashedId,
-              experimentName: stepOpts.id,
-              variant: selectedVariant,
-            },
-          }),
+          experimentContext: {
+            experimentStepID: experimentStepHashedId ?? "",
+            experimentName: stepOpts.id,
+            variant: selectedVariant,
+            selectionStrategy: select.__experimentConfig.strategy,
+          },
           experimentStepTracker: stepTracker,
         },
       };
