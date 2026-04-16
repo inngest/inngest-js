@@ -1096,7 +1096,8 @@ export type CheckpointingOptions =
        *
        * Set to `0` to disable maximum runtime.
        *
-       * @default 0
+       * If not set, defaults to 10 seconds for "serve" (HTTP-based) and 5
+       * minutes for "connect" (WebSocket-based).
        */
       maxRuntime?: number | string | Temporal.DurationLike;
 
@@ -1128,13 +1129,28 @@ export type InternalCheckpointingOptions = Exclude<
 >;
 
 /**
- * Default config options if `true` has been passed by a user.
+ * Default config options if `true` has been passed by a user. Does not include
+ * `maxRuntime`, which is supplied per-request by the handler via
+ * {@link DefaultMaxRuntime}.
  */
-export const defaultCheckpointingOptions: InternalCheckpointingOptions = {
+export const defaultCheckpointingOptions: Omit<
+  InternalCheckpointingOptions,
+  "maxRuntime"
+> = {
   bufferedSteps: 1,
-  maxRuntime: 0,
   maxInterval: 0,
 };
+
+/**
+ * Default `maxRuntime` values for checkpointing. A higher value is safer for
+ * Connect since it doesn't have the HTTP request timeout constraint.
+ */
+export const DefaultMaxRuntime = {
+  connect: 5 * 60 * 1000, // 5 minutes
+  serve: 10_000, // 10 seconds
+};
+export type DefaultMaxRuntime =
+  (typeof DefaultMaxRuntime)[keyof typeof DefaultMaxRuntime];
 
 /**
  * A set of log levels that can be used to control the amount of logging output

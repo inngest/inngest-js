@@ -41,6 +41,7 @@ import {
   AsyncResponseType,
   type AsyncResponseValue,
   type AuthenticatedIntrospection,
+  DefaultMaxRuntime,
   type EventPayload,
   type FunctionConfig,
   functionConfigSchema,
@@ -282,6 +283,14 @@ interface InngestCommHandlerOptions<
   skipSignatureValidation?: boolean;
 
   /**
+   * The default `maxRuntime` in milliseconds to use for checkpointing when the
+   * user hasn't explicitly configured one at the function or client level.
+   *
+   * Defaults to {@link DefaultMaxRuntime.serve} (10 seconds).
+   */
+  defaultMaxRuntime?: DefaultMaxRuntime;
+
+  /**
    * Options for when this comm handler executes a synchronous (API) function.
    */
   syncOptions?: SyncHandlerOptions;
@@ -427,6 +436,8 @@ export class InngestCommHandler<
 
   private readonly skipSignatureValidation: boolean;
 
+  private readonly defaultMaxRuntime: DefaultMaxRuntime;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
     // Set input options directly so we can reference them later
     this._options = options;
@@ -447,6 +458,8 @@ export class InngestCommHandler<
 
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
+    this.defaultMaxRuntime =
+      options.defaultMaxRuntime ?? DefaultMaxRuntime.serve;
 
     this.handler = options.handler as Handler;
 
@@ -2178,6 +2191,7 @@ export class InngestCommHandler<
         requestedRunStep,
         ctx?.fn_id,
         Boolean(ctx?.disable_immediate_execution),
+        this.defaultMaxRuntime,
       );
 
       const executionOptions: CreateExecutionOptions = {

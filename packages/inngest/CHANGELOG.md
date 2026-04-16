@@ -1,5 +1,37 @@
 # inngest
 
+## 4.2.4
+
+### Patch Changes
+
+- [#1466](https://github.com/inngest/inngest-js/pull/1466) [`68de9150`](https://github.com/inngest/inngest-js/commit/68de9150dea52f33f4f53222777e47a8e618e6ec) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing duplicate execution
+
+## 4.2.3
+
+### Patch Changes
+
+- [#1460](https://github.com/inngest/inngest-js/pull/1460) [`ce5110de`](https://github.com/inngest/inngest-js/commit/ce5110dea3fd64ed26fbf5bed86c10bbf1d85ae6) Thanks [@amh4r](https://github.com/amh4r)! - Fix multi-byte UTF-8 chars corrupted when split over chunks
+
+- [#1461](https://github.com/inngest/inngest-js/pull/1461) [`d75b59ce`](https://github.com/inngest/inngest-js/commit/d75b59ce5690d0dd7bbc7fb9a76138896bcbeca9) Thanks [@amh4r](https://github.com/amh4r)! - Fix CountQueuingStrategy erroring when stubbed in edge runtimes
+
+## 4.2.2
+
+### Patch Changes
+
+- [#1366](https://github.com/inngest/inngest-js/pull/1366) [`aca72f88`](https://github.com/inngest/inngest-js/commit/aca72f8826a8fbb33cca056d1e9d1f1348161da9) Thanks [@Linell](https://github.com/Linell)! - Fix `extendProvider()` for OTel SDK v2 where `addSpanProcessor()` was removed.
+
+  Move `@opentelemetry/auto-instrumentations-node` and related imports from static top-level to dynamic `await import()` inside `createProvider()`. This prevents module-level monkey-patching side effects that broke `inngest.send()` when combined with host app OTel setups (e.g. Sentry). See #1324.
+
+- [#1457](https://github.com/inngest/inngest-js/pull/1457) [`d151b404`](https://github.com/inngest/inngest-js/commit/d151b404866c09763f2f9bbae10a72e8d78e5834) Thanks [@amh4r](https://github.com/amh4r)! - Fix using CountQueuingStrategy when not available
+
+- [#1455](https://github.com/inngest/inngest-js/pull/1455) [`15495e03`](https://github.com/inngest/inngest-js/commit/15495e037e5ad0540b7dc3302f814ffbc1ad2971) Thanks [@amh4r](https://github.com/amh4r)! - Fix dependencyInjection not working statically at function level
+
+## 4.2.1
+
+### Patch Changes
+
+- [#1453](https://github.com/inngest/inngest-js/pull/1453) [`3645404f`](https://github.com/inngest/inngest-js/commit/3645404fe8b40feb598cae1d06d620453a8b9760) Thanks [@amh4r](https://github.com/amh4r)! - Add default checkpointing maxRuntime
+
 ## 4.2.0
 
 ### Minor Changes

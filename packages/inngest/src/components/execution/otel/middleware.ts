@@ -1,6 +1,5 @@
 import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
-import type { Logger } from "../../../middleware/logger.ts";
 import { version } from "../../../version.ts";
 import { Middleware } from "../../middleware/middleware.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -76,6 +75,7 @@ export const extendedTracesMiddleware = ({
   devDebug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
+  let processorReady: Promise<void> | undefined;
 
   switch (behaviour) {
     case "auto": {
@@ -86,27 +86,35 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      const created = createProvider(behaviour, instrumentations);
-      if (created.success) {
-        devDebug("created new provider");
-        processor = created.processor;
-        break;
-      }
-
-      console.warn("no provider found to extend and unable to create one");
+      processorReady = createProvider(behaviour, instrumentations).then(
+        (created) => {
+          if (created.success) {
+            devDebug("created new provider");
+            processor = created.processor;
+          } else {
+            console.warn(
+              "no provider found to extend and unable to create one",
+              created.error ?? "",
+            );
+          }
+        },
+      );
 
       break;
     }
     case "createProvider": {
-      const created = createProvider(behaviour, instrumentations);
-      if (created.success) {
-        devDebug("created new provider");
-        processor = created.processor;
-        break;
-      }
-
-      console.warn(
-        "unable to create provider, Extended Traces middleware will not work",
+      processorReady = createProvider(behaviour, instrumentations).then(
+        (created) => {
+          if (created.success) {
+            devDebug("created new provider");
+            processor = created.processor;
+          } else {
+            console.warn(
+              "unable to create provider, Extended Traces middleware will not work",
+              created.error ?? "",
+            );
+          }
+        },
       );
 
       break;
@@ -153,6 +161,17 @@ export const extendedTracesMiddleware = ({
 
       if (processor) {
         clientProcessorMap.set(client, processor);
+      } else if (processorReady) {
+        // createProvider is async; register the processor once it resolves.
+        processorReady
+          .then(() => {
+            if (processor) {
+              clientProcessorMap.set(client, processor);
+            }
+          })
+          .catch((err) => {
+            devDebug("failed to register processor for client:", err);
+          });
       }
     }
 
@@ -168,7 +187,7 @@ export const extendedTracesMiddleware = ({
       };
     }
 
-    override wrapRequest({ next }: Middleware.WrapRequestArgs) {
+    override async wrapRequest({ next }: Middleware.WrapRequestArgs) {
       return next().finally(() => processor?.forceFlush());
     }
   }

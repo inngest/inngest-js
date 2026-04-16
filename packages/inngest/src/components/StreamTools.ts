@@ -82,12 +82,26 @@ export class Stream implements StreamTools {
   }) {
     this.onActivated = opts?.onActivated;
     this.onWriteError = opts?.onWriteError;
+
+    let readableStrategy: QueuingStrategy<Uint8Array> | undefined;
+
+    // `CountQueuingStrategy` is not available in some runtimes (e.g. Next.js
+    // Edge), where it may exist as a stub that throws on instantiation. Fall
+    // back to a plain `TransformStream` when it's missing or broken.
+    try {
+      readableStrategy = new CountQueuingStrategy({
+        // Use a generous high water mark so that writes don't block due to
+        // backpressure before the consumer reads.
+        highWaterMark: 1024,
+      });
+    } catch {
+      // Leave `readableStrategy` undefined
+    }
+
     this.transform = new TransformStream<Uint8Array, Uint8Array>(
       undefined,
       undefined,
-      // Use a generous high water mark on the readable side so that writes
-      // don't block due to backpressure before the consumer reads.
-      new CountQueuingStrategy({ highWaterMark: 1024 }),
+      readableStrategy,
     );
     this.writer = this.transform.writable.getWriter();
   }

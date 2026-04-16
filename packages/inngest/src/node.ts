@@ -1,4 +1,5 @@
 import http from "node:http";
+import consumers from "node:stream/consumers";
 import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
 import { createWebApiCommHandler } from "./components/createWebApiCommHandler.ts";
@@ -18,21 +19,6 @@ import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
  */
 export const frameworkName: SupportedFrameworkName = "nodejs";
 
-/**
- * Read the incoming message request body as text
- */
-async function readRequestBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    req.on("end", () => {
-      resolve(body);
-    });
-  });
-}
-
 function getURL(req: http.IncomingMessage, hostnameOption?: string): URL {
   const protocol =
     (req.headers["x-forwarded-proto"] as string) ||
@@ -47,7 +33,7 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
     ...options,
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => {
       return {
-        body: async () => readRequestBody(req),
+        body: async () => consumers.text(req),
         headers: (key) => {
           return req.headers[key] && Array.isArray(req.headers[key])
             ? req.headers[key][0]
@@ -230,7 +216,7 @@ export const endpointAdapter = InngestEndpointAdapter.create((options) => {
  */
 export function serveEndpoint(handler: EndpointHandler): http.RequestListener {
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
-    const body = await readRequestBody(req);
+    const body = await consumers.text(req);
 
     const headers = new Headers();
     for (const [key, value] of Object.entries(req.headers)) {

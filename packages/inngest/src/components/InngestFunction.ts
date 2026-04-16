@@ -6,6 +6,7 @@ import {
   type Cancellation,
   type CheckpointingOptions,
   type ConcurrencyOption,
+  type DefaultMaxRuntime,
   defaultCheckpointingOptions,
   type FunctionConfig,
   type Handler,
@@ -356,6 +357,7 @@ export class InngestFunction<
     requestedRunStep: string | undefined,
     internalFnId: string | undefined,
     disableImmediateExecution: boolean,
+    defaultMaxRuntime: DefaultMaxRuntime,
   ): InternalCheckpointingOptions | undefined {
     if (requestedRunStep || !internalFnId || disableImmediateExecution) {
       return;
@@ -375,13 +377,16 @@ export class InngestFunction<
     }
 
     if (userCfg === true) {
-      return defaultCheckpointingOptions;
+      return {
+        ...defaultCheckpointingOptions,
+        maxRuntime: defaultMaxRuntime,
+      };
     }
 
     return {
       bufferedSteps:
         userCfg.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
-      maxRuntime: userCfg.maxRuntime ?? defaultCheckpointingOptions.maxRuntime,
+      maxRuntime: userCfg.maxRuntime ?? defaultMaxRuntime,
       maxInterval:
         userCfg.maxInterval ?? defaultCheckpointingOptions.maxInterval,
     };
