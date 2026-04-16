@@ -1745,11 +1745,10 @@ class InngestExecutionEngine
    * Validate event data against schemas defined in function triggers.
    */
   private async validateEventSchemas(): Promise<void> {
-    if (this.options.isFailureHandler) {
+    if (this.options.isFailureHandler || this.options.isDeferHandler) {
       // Skip validation because the main function's triggers don't apply to its
-      // `onFailure` handler. The `onFailure` handler is a separate Inngest
-      // function that's implicitly triggered by the "inngest/function.failed"
-      // event.
+      // `onFailure`/`onDefer` handler. These are separate Inngest functions
+      // triggered by internal events, not the parent's triggers.
       return;
     }
 
@@ -1862,6 +1861,79 @@ class InngestExecutionEngine
       step,
       group: createGroupTools({ experimentStepRun }),
     } as Context.Any;
+
+    /**
+     * If the function has `onDefer` handlers, inject `defer` into the context.
+     * `defer` sends a `deferred.start` event to trigger the matching deferred
+     * function, routing by `deferId`.
+     */
+    const onDeferHandlers = this.options.fn["onDeferHandlers"];
+
+    if (Object.keys(onDeferHandlers).length > 0) {
+      const fnSlug = this.options.fn.id(this.options.client.id);
+      const client = this.options.client;
+      const headers = this.options.headers;
+      const fn = this.options.fn;
+
+      const defer: Record<
+        string,
+        (data: Record<string, unknown>) => Promise<void>
+      > = {};
+
+      for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
+        defer[deferId] = async (data: Record<string, unknown>) => {
+          if (entry.schema) {
+            const result = await entry.schema["~standard"].validate(data);
+            if (result.issues) {
+              throw new Error(
+                `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
+              );
+            }
+          }
+
+          await client["_send"]({
+            payload: {
+              name: "deferred.start",
+              data: {
+                runId: fnArg.runId,
+                fnSlug,
+                deferId,
+                ...data,
+              },
+            },
+            headers,
+            fnMiddleware: fn.opts.middleware ?? [],
+            fn,
+          });
+        };
+      }
+
+      /**
+       * Also inject `step.defer` — a convenience that wraps each defer
+       * call in a `step.run` so it's memoized automatically. Users
+       * don't need to manually wrap `defer.xxx()` inside `step.run()`.
+       */
+      const stepDefer: Record<
+        string,
+        (
+          idOrOptions: string | { id: string; name?: string },
+          data: Record<string, unknown>,
+        ) => Promise<void>
+      > = {};
+
+      for (const deferId of Object.keys(defer)) {
+        stepDefer[deferId] = async (idOrOptions, data) => {
+          await step.run(idOrOptions, async () => {
+            await defer[deferId](data);
+          });
+        };
+      }
+
+      // biome-ignore lint/suspicious/noExplicitAny: attaching step.defer at runtime
+      (step as any).defer = stepDefer;
+
+      fnArg = { ...fnArg, defer } as Context.Any;
+    }
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.
@@ -2455,6 +2527,30 @@ class InngestExecutionEngine
   }
 
   private getUserFnToRun(): Handler.Any {
+    if (this.options.isDeferHandler) {
+      const data = this.options.data;
+      let deferId: string | undefined;
+      if (
+        isRecord(data) &&
+        isRecord(data.event) &&
+        isRecord(data.event.data) &&
+        typeof data.event.data.deferId === "string"
+      ) {
+        deferId = data.event.data.deferId;
+      }
+
+      if (!deferId) {
+        throw new Error("Defer handler invoked without deferId in event data");
+      }
+
+      const match = this.options.fn["onDeferHandlers"][deferId];
+      if (!match) {
+        throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
+      }
+
+      return match.handler;
+    }
+
     if (!this.options.isFailureHandler) {
       return this.options.fn["fn"];
     }

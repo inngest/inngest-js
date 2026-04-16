@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents, queryKeys } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
@@ -42,6 +43,7 @@ export class InngestFunction<
 {
   static stepId = "step";
   static failureSuffix = "-failure";
+  static deferSuffix = "-defer";
 
   get [Symbol.toStringTag](): typeof InngestFunction.Tag {
     return InngestFunction.Tag;
@@ -51,6 +53,16 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
+  private readonly onDeferHandlers: Record<
+    string,
+    {
+      handler: Handler.Any;
+      // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
+      schema?: StandardSchemaV1<any>;
+      concurrency?: InngestFunction.OnDeferConfig["concurrency"];
+      retries?: InngestFunction.OnDeferConfig["retries"];
+    }
+  > = {};
   protected readonly client: TClient;
 
   /**
@@ -73,6 +85,17 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
+
+    if (this.opts.onDefer) {
+      for (const [key, entry] of Object.entries(this.opts.onDefer)) {
+        this.onDeferHandlers[key] = {
+          handler: entry.handler,
+          schema: entry.schema,
+          concurrency: entry.concurrency,
+          retries: entry.retries,
+        };
+      }
+    }
   }
 
   /**
@@ -264,6 +287,46 @@ export class InngestFunction<
           },
         },
       });
+    }
+
+    for (const [deferId, deferHandler] of Object.entries(
+      this.onDeferHandlers,
+    )) {
+      const id = `${fn.id}${InngestFunction.deferSuffix}-${deferId}`;
+      const name = `${fn.name ?? fn.id} (defer: ${deferId})`;
+
+      const deferStepUrl = new URL(stepUrl.href);
+      deferStepUrl.searchParams.set(queryKeys.FnId, id);
+
+      let deferRetries: { attempts: number } | undefined;
+      if (typeof deferHandler.retries !== "undefined") {
+        deferRetries = { attempts: deferHandler.retries };
+      }
+
+      const deferFnConfig: FunctionConfig = {
+        id,
+        name,
+        triggers: [
+          {
+            event: "deferred.start",
+            expression: `event.data.fnSlug == '${fnId}' && event.data.deferId == '${deferId}'`,
+          },
+        ],
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: isConnect ? "ws" : "http",
+              url: deferStepUrl.href,
+            },
+            retries: deferRetries ?? { attempts: 1 },
+          },
+        },
+        concurrency: deferHandler.concurrency,
+      };
+
+      config.push(deferFnConfig);
     }
 
     return config;
@@ -678,6 +741,20 @@ export namespace InngestFunction {
     onFailure?: TFailureHandler;
 
     /**
+     * A map of named deferred handlers that can be triggered by calling
+     * `defer()` from the main function handler.
+     *
+     * Each key is a stable identifier that becomes part of the generated
+     * function ID (`{fnId}-defer-{key}`). Do not rename keys after
+     * deploy.
+     *
+     * Each value is a full Inngest function config with `step`
+     * capabilities, triggered by a `deferred.start` event sent when
+     * `defer()` is called with the matching `deferId`.
+     */
+    onDefer?: Record<string, InngestFunction.OnDeferConfig>;
+
+    /**
      * Define a set of middleware that can be registered to hook into
      * various lifecycles of the SDK and affect input and output of
      * Inngest functionality.
@@ -735,6 +812,47 @@ export namespace InngestFunction {
      * @default true
      */
     checkpointing?: CheckpointingOptions;
+  }
+
+  /**
+   * Configuration for a single `onDefer` handler value. The key in the
+   * `onDefer` map serves as the stable identifier.
+   *
+   * The `Inngest.DeferEntryInput` mapped type provides full contextual
+   * typing for each handler based on its sibling `schema`.
+   */
+  export interface OnDeferConfig {
+    handler: Handler.Any;
+
+    schema?: StandardSchemaV1<Record<string, unknown>>;
+
+    concurrency?:
+      | number
+      | ConcurrencyOption
+      | RecursiveTuple<ConcurrencyOption, 2>;
+
+    retries?:
+      | 0
+      | 1
+      | 2
+      | 3
+      | 4
+      | 5
+      | 6
+      | 7
+      | 8
+      | 9
+      | 10
+      | 11
+      | 12
+      | 13
+      | 14
+      | 15
+      | 16
+      | 17
+      | 18
+      | 19
+      | 20;
   }
 }
 

@@ -69,7 +69,9 @@ type EventCreateArgs<
 /**
  * Extract the input type from a StandardSchemaV1.
  */
-type ExtractSchemaData<TData> = TData extends StandardSchemaV1<infer TData>
+export type ExtractSchemaData<TData> = TData extends StandardSchemaV1<
+  infer TData
+>
   ? TData
   : undefined;
 
@@ -253,6 +255,56 @@ export function eventType<
     version,
   });
 }
+
+export type DeferSystemFields = {
+  runId: string;
+  fnSlug: string;
+  deferId: string;
+};
+
+/**
+ * Branded result type from {@link createDefer}. The `schema` property
+ * carries `TSchema` so `MaybeDeferCtx` can extract per-entry data types.
+ */
+export type DeferHandlerResult<
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>>
+    | undefined = undefined,
+> = {
+  schema: TSchema;
+  // biome-ignore lint/suspicious/noExplicitAny: opaque handler storage
+  handler: (...args: any[]) => any;
+  concurrency?: DeferHandlerConcurrency;
+  retries?: DeferHandlerRetries;
+};
+
+type DeferHandlerConcurrency =
+  | number
+  | { limit: number; key?: string }
+  | [{ limit: number; key?: string }, { limit: number; key?: string }];
+
+type DeferHandlerRetries =
+  | 0
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | 10
+  | 11
+  | 12
+  | 13
+  | 14
+  | 15
+  | 16
+  | 17
+  | 18
+  | 19
+  | 20;
 
 /**
  * Create a type-only schema that provides TypeScript types without runtime

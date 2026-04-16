@@ -70,6 +70,16 @@ import {
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 
+/**
+ * An entry in the function registry, tracking which config ID maps to which
+ * function and what kind of handler it is (main, failure, or defer).
+ */
+interface FnRegistryEntry {
+  fn: InngestFunction.Any;
+  onFailure: boolean;
+  onDefer: boolean;
+}
+
 // A response object for when an internal server error occurs. When that
 // happens, we don't to leak any internal details to the client.
 const internalServerErrorResponse = {
@@ -403,10 +413,7 @@ export class InngestCommHandler<
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<
-    string,
-    { fn: InngestFunction.Any; onFailure: boolean }
-  > = {};
+  private readonly fns: Record<string, FnRegistryEntry> = {};
 
   private env: Env = allProcessEnv();
 
@@ -462,32 +469,46 @@ export class InngestCommHandler<
       );
     }
 
-    this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
-    >((acc, fn) => {
-      const configs = fn["getConfig"]({
-        baseUrl: new URL("https://example.com"),
-        appPrefix: this.client.id,
-      });
+    this.fns = this.rawFns.reduce<Record<string, FnRegistryEntry>>(
+      (acc, fn) => {
+        const configs = fn["getConfig"]({
+          baseUrl: new URL("https://example.com"),
+          appPrefix: this.client.id,
+        });
 
-      const fns = configs.reduce((acc, { id }, index) => {
-        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
-      }, {});
+        const fnId = fn.id(this.client.id);
+        const deferPrefix = `${fnId}${InngestFunction.deferSuffix}-`;
 
-      // biome-ignore lint/complexity/noForEach: intentional
-      configs.forEach(({ id }) => {
-        if (acc[id]) {
-          throw new Error(
-            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
-          );
-        }
-      });
+        const fns = configs.reduce<Record<string, FnRegistryEntry>>(
+          (acc, { id }) => {
+            return {
+              ...acc,
+              [id]: {
+                fn,
+                onFailure: id.endsWith(InngestFunction.failureSuffix),
+                onDefer: id.startsWith(deferPrefix),
+              },
+            };
+          },
+          {},
+        );
 
-      return {
-        ...acc,
-        ...fns,
-      };
-    }, {});
+        // biome-ignore lint/complexity/noForEach: intentional
+        configs.forEach(({ id }) => {
+          if (acc[id]) {
+            throw new Error(
+              `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
+            );
+          }
+        });
+
+        return {
+          ...acc,
+          ...fns,
+        };
+      },
+      {},
+    );
 
     this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
@@ -952,6 +973,7 @@ export class InngestCommHandler<
         stepState: {},
         disableImmediateExecution: false,
         isFailureHandler: false,
+        isDeferHandler: false,
         acceptsSse,
         timer,
         createResponse: (data: unknown) =>
@@ -1560,13 +1582,17 @@ export class InngestCommHandler<
           };
         }
 
-        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
+        let fn: FnRegistryEntry | undefined;
         let fnId: string | undefined;
 
         if (forceExecution) {
           fn =
             fns?.length && fns[0]
-              ? { fn: fns[0], onFailure: false }
+              ? {
+                  fn: fns[0],
+                  onFailure: false,
+                  onDefer: false,
+                }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
 
@@ -2077,7 +2103,7 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: { fn: InngestFunction.Any; onFailure: boolean };
+    fn: FnRegistryEntry;
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
     requestInfo?: InngestExecutionOptions["requestInfo"];
@@ -2175,6 +2201,7 @@ export class InngestCommHandler<
           requestedRunStep,
           timer,
           isFailureHandler: fn.onFailure,
+          isDeferHandler: fn.onDefer,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,
