@@ -749,6 +749,134 @@ export const testFramework = (
             });
           });
 
+          test("strips probe query param from registered URL", async () => {
+            let reqToMock;
+
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
+
+            await run(
+              [
+                {
+                  client: inngestCloud,
+                  functions: [],
+                },
+              ],
+              [
+                {
+                  method: "PUT",
+                  url: "/api/inngest?probe=trust",
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ],
+              { [envKeys.InngestSigningKey]: testSigningKey },
+            );
+
+            expect(reqToMock).toMatchObject({
+              url: "https://localhost:3000/api/inngest",
+            });
+          });
+
+          test("strips all Inngest query params from registered URL", async () => {
+            let reqToMock;
+
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
+
+            await run(
+              [
+                {
+                  client: inngestCloud,
+                  functions: [],
+                },
+              ],
+              [
+                {
+                  method: "PUT",
+                  url: "/api/inngest?probe=trust&fnId=abc&stepId=xyz",
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ],
+              { [envKeys.InngestSigningKey]: testSigningKey },
+            );
+
+            expect(reqToMock).toMatchObject({
+              url: "https://localhost:3000/api/inngest",
+            });
+          });
+
+          test("strips Inngest query params from step URLs in function configs", async () => {
+            let reqToMock;
+
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
+
+            const fn1 = inngestCloud.createFunction(
+              { id: "fn1", triggers: [{ event: "demo/event.sent" }] },
+              () => "fn1",
+            );
+            const stepId = "step";
+
+            await run(
+              [
+                {
+                  client: inngestCloud,
+                  functions: [fn1],
+                },
+              ],
+              [
+                {
+                  method: "PUT",
+                  url: "/api/inngest?probe=trust",
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ],
+              { [envKeys.InngestSigningKey]: testSigningKey },
+            );
+
+            expect(reqToMock).toMatchObject({
+              url: "https://localhost:3000/api/inngest",
+              functions: [
+                {
+                  steps: {
+                    [stepId]: {
+                      runtime: {
+                        url: `https://localhost:3000/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                      },
+                    },
+                  },
+                },
+              ],
+            });
+          });
+
           test("return correct platform", async () => {
             nock("https://api.inngest.com").post("/fn/register").reply(200, {
               status: 200,
