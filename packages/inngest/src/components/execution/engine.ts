@@ -400,6 +400,7 @@ class InngestExecutionEngine
       return this.transformOutput({ error });
     } finally {
       void this.state.loop.return();
+      this.releaseReferences();
     }
 
     /**
@@ -407,6 +408,32 @@ class InngestExecutionEngine
      * This should never happen.
      */
     throw new Error("Core loop finished without returning a value");
+  }
+
+  /**
+   * Break the reference chain from any lingering closures (e.g. Effect fibers,
+   * the fire-and-forget handler promise) back to heavyweight engine data. Even
+   * if something retains a path to `this`, the maps/objects it pointed to are
+   * already empty.
+   */
+  private releaseReferences(): void {
+    this.state.steps.clear();
+    this.state.metadata?.clear();
+    this.state.remainingStepsToBeSeen.clear();
+    this.state.stepCompletionOrder.length = 0;
+    this.state.checkpointingStepBuffer.length = 0;
+
+    for (const key of Object.keys(this.state.stepState)) {
+      delete this.state.stepState[key];
+    }
+
+    this.fnArg = {} as Context.Any;
+    this.execution = undefined;
+
+    // Clear execution options to sever the reference chain from any lingering
+    // runtime closures (e.g. Effect fibers) back to HTTP-layer objects (Hono
+    // context, parsed request body, middleware instances).
+    this.options = {} as InngestExecutionOptions;
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
@@ -1646,6 +1673,7 @@ class InngestExecutionEngine
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch(async (error) => {
+
         // Preserve Error instances; stringify non-Error throws (e.g. `throw {}`)
         let err: Error;
         if (error instanceof Error) {
