@@ -380,6 +380,22 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@edge-runtime/vm@3.0.3)(@opentelemetry/api@1.9.0)(@types/node@22.13.10)(jiti@2.5.1)
 
+  packages/middleware-super-json:
+    dependencies:
+      superjson:
+        specifier: ^2.2.2
+        version: 2.2.6
+    devDependencies:
+      inngest:
+        specifier: ^4.0.0
+        version: 4.0.0(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.5.2)(zod@4.3.6)
+      typescript:
+        specifier: ~5.5.2
+        version: 5.5.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@edge-runtime/vm@3.0.3)(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
+
   packages/middleware-validation:
     dependencies:
       '@standard-schema/spec':
@@ -3953,6 +3969,10 @@ packages:
     resolution: {integrity: sha512-8aPsApQfebXnuI+537McwYsDtjVxGm8gTIzQI3FDW6t5t/DAhERxtnbEPN/8RX+uZthoz4eCOgloXaE5cYyNow==}
     engines: {node: '>= 0.8'}
 
+  copy-anything@4.0.5:
+    resolution: {integrity: sha512-7Vv6asjS4gMOuILabD3l739tsaxFQmC+a7pLZm02zyvs8p977bL3zEgq3yDk5rn9B0PbYgIv++jmHcuUab4RhA==}
+    engines: {node: '>=18'}
+
   core-js@3.37.1:
     resolution: {integrity: sha512-Xn6qmxrQZyB0FFY8E3bgRXei3lWDJHhvI+u0q9TKIYM49G8pAr0FgnnrFRAmsbptZL1yxRADVXn+x5AGsbBfyw==}
 
@@ -5263,6 +5283,10 @@ packages:
 
   is-weakref@1.0.2:
     resolution: {integrity: sha512-qctsuLZmIQ0+vSSMfoVvyFe2+GSEvnmZ2ezTup1SBse9+twCCeial6EEi3Nc2KFcf6+qz2FBPnjXsk8xhKSaPQ==}
+
+  is-what@5.5.0:
+    resolution: {integrity: sha512-oG7cgbmg5kLYae2N5IVd3jm2s+vldjxJzK1pcu9LfpGuQ93MQSzo0okvRna+7y5ifrD+20FE8FvjusyGaz14fw==}
+    engines: {node: '>=18'}
 
   is-windows@1.0.2:
     resolution: {integrity: sha512-eXK1UInq2bPmjyX6e3VHIzMLobc4J94i4AWn+Hpq3OU5KkrRC96OAcR3PRJ/pGu6m8TRnBHP9dkXQVsT/COVIA==}
@@ -6681,6 +6705,10 @@ packages:
         optional: true
       babel-plugin-macros:
         optional: true
+
+  superjson@2.2.6:
+    resolution: {integrity: sha512-H+ue8Zo4vJmV2nRjpx86P35lzwDT3nItnIsocgumgr0hHMQ+ZGq5vrERg9kJBo5AWGmxZDhzDo+WVIJqkB0cGA==}
+    engines: {node: '>=16'}
 
   supports-color@5.5.0:
     resolution: {integrity: sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow==}
@@ -11751,6 +11779,10 @@ snapshots:
       depd: 2.0.0
       keygrip: 1.1.0
 
+  copy-anything@4.0.5:
+    dependencies:
+      is-what: 5.5.0
+
   core-js@3.37.1: {}
 
   create-require@1.1.1: {}
@@ -13313,6 +13345,8 @@ snapshots:
   is-weakref@1.0.2:
     dependencies:
       call-bind: 1.0.2
+
+  is-what@5.5.0: {}
 
   is-windows@1.0.2: {}
 
@@ -15030,6 +15064,10 @@ snapshots:
       react: 19.0.0
     optionalDependencies:
       '@babel/core': 7.23.6
+
+  superjson@2.2.6:
+    dependencies:
+      copy-anything: 4.0.5
 
   supports-color@5.5.0:
     dependencies:

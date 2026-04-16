@@ -1,0 +1,55 @@
+{
+  "name": "@inngest/middleware-super-json",
+  "version": "0.1.0",
+  "description": "Super-JSON serialization middleware for Inngest. Preserves Date, RegExp, and custom types through Inngest's data pipeline.",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "pnpm run build:clean && pnpm run build:tsc && pnpm run build:copy",
+    "build:clean": "rm -rf ./dist",
+    "build:tsc": "tsc --project tsconfig.build.json",
+    "build:copy": "cp package.json LICENSE.md README.md dist",
+    "postversion": "pnpm run build",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
+    "pack": "pnpm run build && cd dist && pnpm pack --out ../inngest-middleware-super-json.tgz"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "import": "./index.js"
+    }
+  },
+  "keywords": [
+    "inngest-middleware",
+    "inngest",
+    "middleware",
+    "super-json",
+    "serialization",
+    "date",
+    "regexp"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/middleware-super-json#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/middleware-super-json"
+  },
+  "author": "Inngest Inc. <hello@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "inngest": "^4.0.0",
+    "typescript": "~5.5.2",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "superjson": "^2.2.2"
+  },
+  "peerDependencies": {
+    "inngest": ">=4.0.0 <5.0.0"
+  }
+}

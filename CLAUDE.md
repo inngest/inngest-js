@@ -96,6 +96,7 @@ To test examples: `pnpm dev:example` and select from the list.
 
 ## Special Notes
 
+- **Never run `pnpm install`**: Ask the user to run it for you. The sandbox cannot delete certain files in `node_modules` (e.g. IDE config files shipped by some npm packages), which causes `pnpm install` to fail when it tries to recreate `node_modules`.
 - **pnpm required**: Enforced by preinstall hook
 - **Node 20+**: Required for development
 - **TypeScript 5.8+**: Strict peer dependency requirement
