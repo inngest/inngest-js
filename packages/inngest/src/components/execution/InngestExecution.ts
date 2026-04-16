@@ -133,8 +133,14 @@ export interface InngestExecutionOptions {
   headers: Record<string, string>;
   requestedRunStep?: string;
   timer?: ServerTiming;
-  isFailureHandler?: boolean;
-  isDeferHandler?: boolean;
+  /**
+   * Which handler variant is being executed. Companion functions
+   * (`"failure"` and `"defer"`) skip trigger-schema validation and
+   * resolve a different user function than the main handler.
+   *
+   * @default "main"
+   */
+  handlerKind?: "main" | "failure" | "defer";
   disableImmediateExecution?: boolean;
 
   /**

@@ -105,5 +105,5 @@ Future companions could include `onComplete` or `onCancel`. Each would follow th
 # TODO
 
 - **Nest user data in event payload.** User schema data is currently spread flat into `event.data` alongside system fields (`runId`, `fnSlug`, `deferId`). A user schema with a `runId` or `deferId` field would silently collide. Nest user data under `event.data.data` to match the original spec and prevent collisions.
-- **Replace `isFailureHandler`/`isDeferHandler` booleans with a discriminated union.** Execution options use two independent booleans where both-true is representable but meaningless. A `handlerKind: "main" | "failure" | "defer"` union would make invalid states unrepresentable. This affects ~12 callsites across CommHandler, engine, and tests, so treat it as a separate refactor.
+- ~~**Replace `isFailureHandler`/`isDeferHandler` booleans with a discriminated union.**~~ Done. `handlerKind: "main" | "failure" | "defer"` replaces both booleans in `InngestExecutionOptions`, `FnRegistryEntry`, and all callsites.
 - **Remove `as any` in `createFunction`.** The cast bridges the user-facing `onDefer` config type to the internal `OnDeferConfig`. If one type changes without the other, the cast masks the mismatch. Align the types or add a narrowing helper to eliminate the cast.

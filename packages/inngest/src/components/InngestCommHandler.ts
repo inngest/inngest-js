@@ -77,8 +77,7 @@ import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
  */
 interface FnRegistryEntry {
   fn: InngestFunction.Any;
-  onFailure: boolean;
-  onDefer: boolean;
+  handlerKind: "main" | "failure" | "defer";
 }
 
 // A response object for when an internal server error occurs. When that
@@ -495,13 +494,16 @@ export class InngestCommHandler<
 
         const fns = configs.reduce<Record<string, FnRegistryEntry>>(
           (acc, { id }) => {
+            let handlerKind: FnRegistryEntry["handlerKind"] = "main";
+            if (id === failureId) {
+              handlerKind = "failure";
+            } else if (id.startsWith(deferPrefix)) {
+              handlerKind = "defer";
+            }
+
             return {
               ...acc,
-              [id]: {
-                fn,
-                onFailure: id === failureId,
-                onDefer: id.startsWith(deferPrefix),
-              },
+              [id]: { fn, handlerKind },
             };
           },
           {},
@@ -986,8 +988,7 @@ export class InngestCommHandler<
         stepCompletionOrder: [],
         stepState: {},
         disableImmediateExecution: false,
-        isFailureHandler: false,
-        isDeferHandler: false,
+        handlerKind: "main",
         acceptsSse,
         timer,
         createResponse: (data: unknown) =>
@@ -1604,8 +1605,7 @@ export class InngestCommHandler<
             fns?.length && fns[0]
               ? {
                   fn: fns[0],
-                  onFailure: false,
-                  onDefer: false,
+                  handlerKind: "main" as const,
                 }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
@@ -2215,8 +2215,7 @@ export class InngestCommHandler<
           stepState,
           requestedRunStep,
           timer,
-          isFailureHandler: fn.onFailure,
-          isDeferHandler: fn.onDefer,
+          handlerKind: fn.handlerKind,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,

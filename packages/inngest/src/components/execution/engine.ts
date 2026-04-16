@@ -1752,10 +1752,17 @@ class InngestExecutionEngine
    * Validate event data against schemas defined in function triggers.
    */
   private async validateEventSchemas(): Promise<void> {
-    if (this.options.isFailureHandler || this.options.isDeferHandler) {
-      // Skip validation because the main function's triggers don't apply to its
-      // `onFailure`/`onDefer` handler. These are separate Inngest functions
-      // triggered by internal events, not the parent's triggers.
+    if (this.options.handlerKind === "failure") {
+      // The failure handler is triggered by "inngest/function.failed" —
+      // the main function's trigger schemas don't apply.
+      return;
+    }
+
+    if (this.options.handlerKind === "defer") {
+      // Validate the incoming event.data against the defer handler's own
+      // schema. This catches type mismatches from serialization (e.g. a
+      // Date that becomes an ISO string over the wire).
+      await this.validateDeferEventSchema();
       return;
     }
 
@@ -1771,6 +1778,30 @@ class InngestExecutionEngine
     }));
 
     await validateEvents(events, triggers);
+  }
+
+  /**
+   * Validate the deferred event's data against the onDefer handler's schema.
+   * Extracts `deferId` from the event to find the matching handler, then runs
+   * the schema's `~standard` validate method against the full `event.data`.
+   */
+  private async validateDeferEventSchema(): Promise<void> {
+    const eventData = this.fnArg.event?.data;
+    if (!isRecord(eventData) || typeof eventData.deferId !== "string") {
+      return;
+    }
+
+    const handler = this.options.fn["onDeferHandlers"][eventData.deferId];
+    if (!handler?.schema) {
+      return;
+    }
+
+    const result = await handler.schema["~standard"].validate(eventData);
+    if (result.issues) {
+      throw new Error(
+        `onDefer handler "${eventData.deferId}" schema validation failed: ${JSON.stringify(result.issues)}`,
+      );
+    }
   }
 
   /**
@@ -1941,7 +1972,7 @@ class InngestExecutionEngine
     /**
      * Handle use of the `onFailure` option by deserializing the error.
      */
-    if (this.options.isFailureHandler) {
+    if (this.options.handlerKind === "failure") {
       const eventData = z
         .object({ error: jsonErrorSchema })
         .parse(fnArg.event?.data);
@@ -2530,43 +2561,49 @@ class InngestExecutionEngine
   }
 
   private getUserFnToRun(): Handler.Any {
-    if (this.options.isDeferHandler) {
-      const data = this.options.data;
-      let deferId: string | undefined;
-      if (
-        isRecord(data) &&
-        isRecord(data.event) &&
-        isRecord(data.event.data) &&
-        typeof data.event.data.deferId === "string"
-      ) {
-        deferId = data.event.data.deferId;
+    switch (this.options.handlerKind) {
+      case "defer": {
+        const data = this.options.data;
+        let deferId: string | undefined;
+        if (
+          isRecord(data) &&
+          isRecord(data.event) &&
+          isRecord(data.event.data) &&
+          typeof data.event.data.deferId === "string"
+        ) {
+          deferId = data.event.data.deferId;
+        }
+
+        if (!deferId) {
+          throw new Error(
+            "Defer handler invoked without deferId in event data",
+          );
+        }
+
+        const match = this.options.fn["onDeferHandlers"][deferId];
+        if (!match) {
+          throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
+        }
+
+        return match.handler;
       }
 
-      if (!deferId) {
-        throw new Error("Defer handler invoked without deferId in event data");
+      case "failure": {
+        if (!this.options.fn["onFailureFn"]) {
+          /**
+           * Somehow, we've ended up detecting that this is a failure handler
+           * but doesn't have an `onFailure` function. This should never
+           * happen.
+           */
+          throw new Error("Cannot find function `onFailure` handler");
+        }
+
+        return this.options.fn["onFailureFn"];
       }
 
-      const match = this.options.fn["onDeferHandlers"][deferId];
-      if (!match) {
-        throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
-      }
-
-      return match.handler;
+      default:
+        return this.options.fn["fn"];
     }
-
-    if (!this.options.isFailureHandler) {
-      return this.options.fn["fn"];
-    }
-
-    if (!this.options.fn["onFailureFn"]) {
-      /**
-       * Somehow, we've ended up detecting that this is a failure handler but
-       * doesn't have an `onFailure` function. This should never happen.
-       */
-      throw new Error("Cannot find function `onFailure` handler");
-    }
-
-    return this.options.fn["onFailureFn"];
   }
 
   private initializeTimer(state: ExecutionState): void {

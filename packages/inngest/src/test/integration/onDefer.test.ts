@@ -2,6 +2,7 @@ import {
   createState,
   createTestApp,
   randomSuffix,
+  sleep,
   testNameFromFileUrl,
   waitFor,
 } from "@inngest/test-harness";
@@ -169,7 +170,7 @@ test("onDefer handler supports multiple steps", async () => {
   });
 });
 
-test("schema validation fails", async () => {
+test("schema validation fails within main function", async () => {
   const state = createState({});
 
   const eventName = randomSuffix("evt");
@@ -184,7 +185,7 @@ test("schema validation fails", async () => {
       onDefer: {
         process: client.createDefer({
           schema: z.object({ msg: z.string() }),
-          handler: async () => {},
+          handler: async () => { },
         }),
       },
       retries: 0,
@@ -204,6 +205,49 @@ test("schema validation fails", async () => {
   expect(error).toBeDefined();
 });
 
+test("schema validation fails within onDefer handler", async () => {
+  // Send a date so that it passes validation in the main function, but fails
+  // when running the `onDefer` handler (since the date becomes an ISO string).
+
+  const state = createState({ deferHandlerReached: false });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: client.createDefer({
+          schema: z.object({ date: z.date() }),
+          handler: () => {
+            state.deferHandlerReached = true;
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      await step.defer.process("bad-defer", { date: new Date() });
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await state.waitForRunComplete();
+
+  // Wait long enough to give the `onDefer` handler a chance to run (it
+  // shouldn't)
+  await sleep(2000);
+  expect(state.deferHandlerReached).toBe(false);
+});
+
 test("step.defer mirrors onDefer keys with typed methods", () => {
   const client = new Inngest({ id: "type-test", isDev: true });
 
@@ -213,11 +257,11 @@ test("step.defer mirrors onDefer keys with typed methods", () => {
       onDefer: {
         sendEmail: client.createDefer({
           schema: z.object({ to: z.string() }),
-          handler: async () => {},
+          handler: async () => { },
         }),
         processPayment: client.createDefer({
           schema: z.object({ amount: z.number() }),
-          handler: async () => {},
+          handler: async () => { },
         }),
       },
       triggers: { event: "test" },
@@ -382,7 +426,7 @@ test("plain defer function", async () => {
 });
 
 test("middleware", () => {
-  class DB {}
+  class DB { }
   const db = new DB();
   const client = new Inngest({
     id: randomSuffix(testFileName),
