@@ -1,11 +1,6 @@
+import hashjs from "hash.js";
 import type { IsEmptyObject, IsNever } from "../helpers/types.ts";
-import type {
-  DeferCancelStepData,
-  DeferConfig,
-  DeferHandle,
-  DeferStepData,
-  StepOptionsOrId,
-} from "../types.ts";
+import type { DeferConfig, DeferHandle, StepOptionsOrId } from "../types.ts";
 import {
   type AsyncContext,
   getAsyncCtxSync,
@@ -14,6 +9,13 @@ import {
 } from "./execution/als.ts";
 import { getStepOptions } from "./InngestStepTools.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
+
+const { sha1 } = hashjs;
+
+// Matches the engine's `hashId` (see `execution/engine.ts`). Duplicated here
+// (rather than imported) because `engine.ts` depends on this file, so a direct
+// import would create a cycle.
+const hashStepId = (id: string): string => sha1().update(id).digest("hex");
 
 /**
  * Options for the `group.parallel()` helper.
@@ -315,22 +317,27 @@ export interface GroupToolsDeps {
 
   /**
    * The `group.defer` step tool, extracted from step tools via the defer
-   * symbol. Undefined when not available.
+   * symbol. Undefined when not available. Emits `OpcodeDeferAdd`; returns
+   * `null` once the executor has memoized the step.
    */
   deferStep?: (
     idOrOptions: StepOptionsOrId,
     deferName: string,
     data: Record<string, unknown>,
-  ) => Promise<DeferStepData>;
+  ) => Promise<null>;
 
   /**
    * The `cancel defer` step tool, extracted from step tools via the cancel
-   * defer symbol. Undefined when not available.
+   * defer symbol. Undefined when not available. Emits `OpcodeDeferCancel`;
+   * returns `null` once the executor has memoized the step. `targetHashedId`
+   * is the hashed step ID of the originating `DeferAdd` step, used by the
+   * executor to disambiguate multiple defers against the same companion.
    */
   cancelDeferStep?: (
     idOrOptions: StepOptionsOrId,
-    uuid: string,
-  ) => Promise<DeferCancelStepData>;
+    deferName: string,
+    targetHashedId: string,
+  ) => Promise<null>;
 
   /**
    * The names of defers declared on the function, used to build the
@@ -554,12 +561,18 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupToolsBase => {
           }
         }
 
-        const stepData = await deps.deferStep!(idOrOptions, name, resolvedData);
+        // Fire-and-wait: the executor saves `null` for this step via
+        // `handleGeneratorDeferAdd`. We discard the memoized value and
+        // synthesize the handle from the call-site inputs so the caller gets
+        // back a useful object on both the first run and subsequent replays.
+        await deps.deferStep!(idOrOptions, name, resolvedData);
 
+        const stepOpts = getStepOptions(idOrOptions);
         return {
-          uuid: stepData.uuid,
-          name: stepData.name,
-          data: stepData.data,
+          uuid: stepOpts.id,
+          hashedId: hashStepId(stepOpts.id),
+          name,
+          data: resolvedData,
         } satisfies DeferHandle;
       };
     }
@@ -568,7 +581,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupToolsBase => {
       idOrOptions: string | { id: string; name?: string },
       handle: DeferHandle,
     ) => {
-      await deps.cancelDeferStep!(idOrOptions, handle.uuid);
+      await deps.cancelDeferStep!(idOrOptions, handle.name, handle.hashedId);
     };
 
     result.defer = deferObj;

@@ -180,7 +180,7 @@ export enum internalEvents {
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
   HttpRequest = "inngest/http.request",
-  DeferredStart = "deferred.start",
+  DeferredStart = "inngest/deferred.start",
 }
 
 export const logPrefix: string = "[Inngest]";

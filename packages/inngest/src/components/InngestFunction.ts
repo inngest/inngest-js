@@ -302,7 +302,11 @@ export class InngestFunction<
           triggers: [
             {
               event: internalEvents.DeferredStart,
-              expression: `event.data.fn_slug == '${fnId}' && event.data.name == '${deferName}'`,
+              // Matches the payload shape emitted by `finalizeDefers` in the
+              // Go executor: `_inngest.parent_run.fn_slug` identifies the
+              // parent function and `_inngest.deferred_run.companion_id`
+              // identifies which `onDefer` entry to route to.
+              expression: `event.data._inngest.parent_run.fn_slug == '${fnId}' && event.data._inngest.deferred_run.companion_id == '${deferName}'`,
             },
           ],
           steps: {

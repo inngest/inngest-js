@@ -176,42 +176,26 @@ export interface DeferHandle<
   TData = any,
 > {
   uuid: string;
+  /**
+   * Hashed step ID of the originating `DeferAdd` step. Used by
+   * `group.defer.cancel()` to disambiguate multiple defers against the same
+   * companion — emitted as `opts.target_hashed_id` on the `DeferCancel`
+   * opcode so the executor can match the cancel to a specific defer in run
+   * state rather than by `companion_id` alone.
+   */
+  hashedId: string;
   name: string;
   data: TData;
-}
-
-/**
- * The memoized step data for a `group.defer.name()` call. Stored as the step's
- * output and used by the engine's `flushDefers` to identify pending defers.
- *
- * @internal
- */
-export interface DeferStepData {
-  __type: "group.defer";
-  uuid: string;
-  name: string;
-  data: Record<string, unknown>;
-}
-
-/**
- * The memoized step data for a `group.defer.cancel()` call. Stored as the
- * step's output and used by the engine's `flushDefers` to identify cancelled
- * defers.
- *
- * @internal
- */
-export interface DeferCancelStepData {
-  __type: "group.cancelDefer";
-  uuid: string;
 }
 
 /**
  * Context arguments specific to a deferred handler. Generic `TData` is
  * the user-supplied data shape.
  *
- * The engine unwraps `event.data.data` from the dispatched payload and
- * exposes it as a top-level `data` field so users write `data.orderId`
- * instead of `event.data.orderId`.
+ * The engine unwraps `event.data.input` from the dispatched payload (the
+ * shape emitted by `finalizeDefers` in the Go executor) and exposes it as
+ * a top-level `data` field so users write `data.orderId` instead of
+ * `event.data.input.orderId`.
  *
  * This type is used internally by `client.createDefer<T>()`. Users
  * should not need to reference it directly.
@@ -236,15 +220,8 @@ export type DeferCtx<
   /** Structured logger. */
   logger: Logger;
 
-  /** The triggering event (the raw `deferred.start` event). */
+  /** The triggering event (the raw `inngest/deferred.start` event). */
   event: EventPayload;
-
-  /**
-   * The error that caused the parent function to fail, if this deferred
-   * handler was triggered by a terminal failure. `undefined` when the
-   * parent completed successfully.
-   */
-  error?: unknown;
 };
 
 /**
@@ -412,6 +389,22 @@ export enum StepOpCode {
 
   RunComplete = "RunComplete",
   DiscoveryRequest = "DiscoveryRequest",
+
+  /**
+   * Signals to the executor that the SDK has encountered a `group.defer.NAME()`
+   * call. The executor persists a Defer record keyed by the step's hashed ID
+   * and, at end-of-run, emits an `inngest/deferred.start` event for each
+   * uncancelled defer. Opts carry the companion handler's name and the user
+   * input. Matches `enums.OpcodeDeferAdd` on the Go side.
+   */
+  DeferAdd = "DeferAdd",
+
+  /**
+   * Signals to the executor that a previously-added defer should be flipped
+   * to `ScheduleStatusCancelled` so it is not dispatched. Matches
+   * `enums.OpcodeDeferCancel` on the Go side.
+   */
+  DeferCancel = "DeferCancel",
 }
 
 /**

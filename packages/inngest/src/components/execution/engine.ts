@@ -7,7 +7,6 @@ import {
   defaultMaxRetries,
   ExecutionVersion,
   headerKeys,
-  internalEvents,
 } from "../../helpers/consts.ts";
 
 import {
@@ -37,8 +36,6 @@ import {
 import {
   type APIStepPayload,
   type Context,
-  type DeferCancelStepData,
-  type DeferStepData,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -1641,17 +1638,6 @@ class InngestExecutionEngine
     runAsPromise(runHandler)
       .then(async (data) => {
         await this.middlewareManager.onRunComplete(data);
-        // Dispatch any pending defers. Successful completion is always
-        // terminal — no more attempts for this run. Never let a flush error
-        // escape: platform dedup (via `${runId}:${uuid}` event id) already
-        // protects against duplicate execution, and letting the error
-        // propagate here would flip the run from resolved → rejected and
-        // trigger a second flush in the catch branch below.
-        try {
-          await this.flushDefers();
-        } catch (flushErr) {
-          this.devDebug("flushDefers (success path) threw:", flushErr);
-        }
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch(async (error) => {
@@ -1667,105 +1653,8 @@ class InngestExecutionEngine
 
         const isFinal = !this.retriability(err);
         await this.middlewareManager.onRunError(err, isFinal);
-        // Dispatch pending defers only on terminal failure. Intermediate
-        // retries should not flush because the run may still succeed on a
-        // later attempt. `isFinal` is true when retries are exhausted or
-        // the error is non-retriable. Swallow flush errors for the same
-        // reasons as the success path.
-        if (isFinal) {
-          try {
-            await this.flushDefers(err);
-          } catch (flushErr) {
-            this.devDebug("flushDefers (failure path) threw:", flushErr);
-          }
-        }
         this.state.setCheckpoint({ type: "function-rejected", error: err });
       });
-  }
-
-  /**
-   * Collect step outputs with `__type === "group.defer"` and
-   * `__type === "group.cancelDefer"`, compute live defers (defers minus
-   * cancels by uuid), and dispatch `deferred.start` events.
-   *
-   * Called at end-of-run in terminal states (successful completion or
-   * exhausted-retries failure). Uses `${runId}:${uuid}` as the event id so
-   * platform-level dedup makes repeated flushes under checkpointing idempotent.
-   */
-  private async flushDefers(error?: Error): Promise<void> {
-    // Only applicable to main-handler runs of functions that declared defers.
-    if (this.options.handlerType && this.options.handlerType !== "main") {
-      return;
-    }
-    if (
-      !this.options.fn.opts.onDefer ||
-      Object.keys(this.options.fn.opts.onDefer).length === 0
-    ) {
-      return;
-    }
-
-    const defers = new Map<string, DeferStepData>();
-    const cancels = new Set<string>();
-
-    const isDeferStepData = (v: unknown): v is DeferStepData =>
-      isRecord(v) && v.__type === "group.defer" && typeof v.uuid === "string";
-
-    const isCancelStepData = (v: unknown): v is DeferCancelStepData =>
-      isRecord(v) &&
-      v.__type === "group.cancelDefer" &&
-      typeof v.uuid === "string";
-
-    const collect = (value: unknown): void => {
-      if (isDeferStepData(value)) {
-        defers.set(value.uuid, value);
-      } else if (isCancelStepData(value)) {
-        cancels.add(value.uuid);
-      }
-    };
-
-    // Previously-memoized step outputs (from earlier requests).
-    for (const entry of Object.values(this.options.stepState ?? {})) {
-      collect(entry?.data);
-    }
-
-    // Freshly-resolved steps in this request.
-    for (const step of this.state.steps.values()) {
-      collect(step.data);
-    }
-
-    const runId = this.options.runId;
-    const fnSlug = this.options.fn["absoluteId"];
-    const payloads: EventPayload[] = [];
-
-    const serializedError = error ? serializeError(error) : undefined;
-
-    for (const [uuid, deferData] of defers) {
-      if (cancels.has(uuid)) continue;
-      payloads.push({
-        id: `${runId}:${uuid}`,
-        name: internalEvents.DeferredStart,
-        data: {
-          runId,
-          fn_slug: fnSlug,
-          uuid,
-          name: deferData.name,
-          data: deferData.data,
-          ...(serializedError && { error: serializedError }),
-        },
-      });
-    }
-
-    if (payloads.length === 0) {
-      return;
-    }
-
-    const client = this.options.client;
-    await client["_send"]({
-      payload: payloads,
-      headers: this.options.headers,
-      fnMiddleware: this.options.fn.opts.middleware ?? [],
-      fn: this.options.fn,
-    });
   }
 
   /**
@@ -2022,21 +1911,21 @@ class InngestExecutionEngine
      * Handle use of the `onDefer` map by unwrapping user data from the
      * dispatched payload and exposing it as a top-level `data` field.
      * Mirrors the `onFailure` ctx-unwrap above.
+     *
+     * The payload shape is what `finalizeDefers` in the Go executor emits:
+     * `event.data.input` carries the user-supplied data, and
+     * `event.data._inngest.*` carries routing metadata.
      */
     if (this.options.handlerType === "defer") {
       const deferPayload = z
         .object({
-          data: z.record(z.unknown()).optional().default({}),
-          error: jsonErrorSchema.optional(),
+          input: z.record(z.unknown()).optional().default({}),
         })
         .parse(fnArg.event?.data);
 
       fnArg = {
         ...fnArg,
-        data: deferPayload.data,
-        ...(deferPayload.error && {
-          error: deserializeError(deferPayload.error),
-        }),
+        data: deferPayload.input,
       } as Context.Any;
     }
 

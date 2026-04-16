@@ -12,6 +12,7 @@ export const helloWorld = inngest.createFunction(
             await new Promise((resolve) => setTimeout(resolve, 10_000));
           });
           console.log(`Listen up, bro! "${data.name}" is ${data.status}!!`);
+          return 0.96;
         },
       }),
       analytics: inngest.createDefer<{ name: string }>({
@@ -20,10 +21,9 @@ export const helloWorld = inngest.createFunction(
         // when using `client.createDefer()`.
         handler: async ({ data, step, appVersion }) => {
           await step.run("track", async () => {
-            console.log(
-              `[v${appVersion}] Tracking analytics for ${data.name}`,
-            );
+            console.log(`[v${appVersion}] Tracking analytics for ${data.name}`);
           });
+          return true;
         },
       }),
     },
@@ -37,9 +37,11 @@ export const helloWorld = inngest.createFunction(
     const handle = await group.defer.scoring("score-it", { name, status });
 
     await group.defer.analytics("track-it", { name });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     if (event.data?.shouldCancel) {
       console.log("Don't say it bro!!");
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       await group.defer.cancel("cancel-scoring", handle);
     }
 

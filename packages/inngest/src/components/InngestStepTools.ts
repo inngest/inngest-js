@@ -13,8 +13,6 @@ import type {
 import {
   type ApplyAllMiddlewareTransforms,
   type Context,
-  type DeferCancelStepData,
-  type DeferStepData,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
@@ -950,72 +948,65 @@ export const createStepTools = <
   (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
     createStepRun("group.experiment");
 
-  // Create the `group.defer` step tool. Returns memoized DeferStepData;
-  // the group tools layer wraps the result in a DeferHandle.
-  // The third argument `deferName` is the key from the `onDefer` map,
-  // distinct from the user-supplied step ID.
+  // Create the `group.defer` step tool. Emits `OpcodeDeferAdd` so the executor
+  // can persist a Defer record and dispatch `inngest/deferred.start` at
+  // end-of-run (see `handleGeneratorDeferAdd` / `finalizeDefers` in the Go
+  // executor). The third argument `deferName` is the key from the `onDefer`
+  // map and becomes the opcode's `companion_id`. `data` becomes `input`.
+  //
+  // No `fn` callback: the executor responds with `SaveStep(gen.ID, null)`,
+  // memoizing the step so the SDK's user-visible promise resolves (with
+  // `null`). The group tools wrapper synthesizes the `DeferHandle` from the
+  // call-site inputs so the user still gets a usable handle.
   const deferStep = createTool<
     (
       idOrOptions: StepOptionsOrId,
       deferName: string,
       data: Record<string, unknown>,
-    ) => Promise<DeferStepData>
-  >(
-    ({ id, name }) => {
-      return {
-        id,
-        mode: StepMode.Sync,
-        op: StepOpCode.StepPlanned,
-        name: "group.defer",
-        displayName: name ?? id,
-        opts: {
-          type: "group.defer",
-        },
-        userland: { id },
-      };
-    },
-    {
-      fn: (_ctx, _idOrOptions, deferName, data) => {
-        const uuid = crypto.randomUUID();
-        return {
-          __type: "group.defer" as const,
-          uuid,
-          name: deferName,
-          data,
-        } satisfies DeferStepData;
+    ) => Promise<null>
+  >(({ id, name }, deferName, data) => {
+    return {
+      id,
+      mode: StepMode.Async,
+      op: StepOpCode.DeferAdd,
+      name: "group.defer",
+      displayName: name ?? id,
+      opts: {
+        companion_id: deferName,
+        input: data,
       },
-    },
-  );
+      userland: { id },
+    };
+  });
   (tools as unknown as DeferStepTools)[deferStepSymbol] = deferStep;
 
-  // Create the `cancel defer` step tool. Emits a StepPlanned with type
-  // "group.cancelDefer". The user supplies the step ID via
-  // `group.defer.cancel(stepId, handle)`.
+  // Create the `cancel defer` step tool. Emits `OpcodeDeferCancel` so the
+  // executor can flip the defer's `ScheduleStatus` to `Cancelled`. `deferName`
+  // is passed through as `companion_id` to match `DeferCancelOpts` on the Go
+  // side. `targetHashedId` is the hashed step ID of the originating
+  // `DeferAdd`, emitted as `target_hashed_id` so the executor can match the
+  // cancel to a specific defer when a function emits multiple defers against
+  // the same companion. No `fn` callback for the same reason as `deferStep`.
   const cancelDeferStep = createTool<
-    (idOrOptions: StepOptionsOrId, uuid: string) => Promise<DeferCancelStepData>
-  >(
-    ({ id, name }) => {
-      return {
-        id,
-        mode: StepMode.Sync,
-        op: StepOpCode.StepPlanned,
-        name: "group.cancelDefer",
-        displayName: name ?? id,
-        opts: {
-          type: "group.cancelDefer",
-        },
-        userland: { id },
-      };
-    },
-    {
-      fn: (_ctx, _idOrOptions, uuid) => {
-        return {
-          __type: "group.cancelDefer" as const,
-          uuid,
-        } satisfies DeferCancelStepData;
+    (
+      idOrOptions: StepOptionsOrId,
+      deferName: string,
+      targetHashedId: string,
+    ) => Promise<null>
+  >(({ id, name }, deferName, targetHashedId) => {
+    return {
+      id,
+      mode: StepMode.Async,
+      op: StepOpCode.DeferCancel,
+      name: "group.cancelDefer",
+      displayName: name ?? id,
+      opts: {
+        companion_id: deferName,
+        target_hashed_id: targetHashedId,
       },
-    },
-  );
+      userland: { id },
+    };
+  });
   (tools as unknown as DeferStepTools)[cancelDeferStepSymbol] = cancelDeferStep;
 
   // Add an uptyped gateway
@@ -1087,11 +1078,12 @@ export type DeferStepTools = GetStepTools<Inngest.Any> & {
     idOrOptions: StepOptionsOrId,
     deferName: string,
     data: Record<string, unknown>,
-  ) => Promise<DeferStepData>;
+  ) => Promise<null>;
   [cancelDeferStepSymbol]: (
     idOrOptions: StepOptionsOrId,
-    uuid: string,
-  ) => Promise<DeferCancelStepData>;
+    deferName: string,
+    targetHashedId: string,
+  ) => Promise<null>;
 };
 
 export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
