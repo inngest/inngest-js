@@ -41,7 +41,6 @@ import {
   type ApplyAllMiddlewareTransforms,
   type BaseContext,
   type ClientOptions,
-  type DeferEventArgs,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -1025,6 +1024,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   >(opts: {
     schema?: TSchema;
     handler: (
+      // The handler receives: event shape (schema-dependent) + middleware
+      // extensions + step tools. When a schema is provided, event.data is
+      // typed as the schema output intersected with system fields; without
+      // a schema, event.data falls back to `any`.
       ctx: (TSchema extends StandardSchemaV1<
         infer D extends Record<string, unknown>
       >

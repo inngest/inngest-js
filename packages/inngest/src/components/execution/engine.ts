@@ -1870,9 +1870,12 @@ class InngestExecutionEngine
     } as Context.Any;
 
     /**
-     * If the function has `onDefer` handlers, inject `defer` into the context.
-     * `defer` sends a `deferred.start` event to trigger the matching deferred
-     * function, routing by `deferId`.
+     * If the function has `onDefer` handlers, inject two things:
+     *
+     * 1. `defer` — top-level context methods that send a `deferred.start`
+     *    event immediately (not memoized; useful inside `step.run`).
+     * 2. `step.defer` — convenience wrappers that wrap each send in a
+     *    `step.run` so it's memoized automatically.
      */
     const onDeferHandlers = this.options.fn["onDeferHandlers"];
 
@@ -1886,9 +1889,16 @@ class InngestExecutionEngine
         string,
         (data: Record<string, unknown>) => Promise<void>
       > = {};
+      const stepDefer: Record<
+        string,
+        (
+          idOrOptions: string | { id: string; name?: string },
+          data: Record<string, unknown>,
+        ) => Promise<void>
+      > = {};
 
       for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
-        defer[deferId] = async (data: Record<string, unknown>) => {
+        const sendDefer = async (data: Record<string, unknown>) => {
           if (entry.schema) {
             const result = await entry.schema["~standard"].validate(data);
             if (result.issues) {
@@ -1913,25 +1923,11 @@ class InngestExecutionEngine
             fn,
           });
         };
-      }
 
-      /**
-       * Also inject `step.defer` — a convenience that wraps each defer
-       * call in a `step.run` so it's memoized automatically. Users
-       * don't need to manually wrap `defer.xxx()` inside `step.run()`.
-       */
-      const stepDefer: Record<
-        string,
-        (
-          idOrOptions: string | { id: string; name?: string },
-          data: Record<string, unknown>,
-        ) => Promise<void>
-      > = {};
-
-      for (const deferId of Object.keys(defer)) {
+        defer[deferId] = sendDefer;
         stepDefer[deferId] = async (idOrOptions, data) => {
           await step.run(idOrOptions, async () => {
-            await defer[deferId](data);
+            await sendDefer(data);
           });
         };
       }

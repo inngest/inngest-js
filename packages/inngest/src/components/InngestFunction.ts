@@ -823,8 +823,9 @@ export namespace InngestFunction {
    * Configuration for a single `onDefer` handler value. The key in the
    * `onDefer` map serves as the stable identifier.
    *
-   * The `Inngest.DeferEntryInput` mapped type provides full contextual
-   * typing for each handler based on its sibling `schema`.
+   * Full contextual typing (schema-based event data, middleware context)
+   * is provided by `Inngest.createDefer()` at the call site; this
+   * interface is the internal storage shape.
    */
   export interface OnDeferConfig {
     handler: Handler.Any;
@@ -836,28 +837,7 @@ export namespace InngestFunction {
       | ConcurrencyOption
       | RecursiveTuple<ConcurrencyOption, 2>;
 
-    retries?:
-      | 0
-      | 1
-      | 2
-      | 3
-      | 4
-      | 5
-      | 6
-      | 7
-      | 8
-      | 9
-      | 10
-      | 11
-      | 12
-      | 13
-      | 14
-      | 15
-      | 16
-      | 17
-      | 18
-      | 19
-      | 20;
+    retries?: Options<InngestFunction.Trigger<string>[]>["retries"];
   }
 }
 

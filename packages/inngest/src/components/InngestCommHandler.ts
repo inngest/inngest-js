@@ -490,6 +490,7 @@ export class InngestCommHandler<
         });
 
         const fnId = fn.id(this.client.id);
+        const failureId = `${fnId}${InngestFunction.failureSuffix}`;
         const deferPrefix = `${fnId}${InngestFunction.deferSuffix}-`;
 
         const fns = configs.reduce<Record<string, FnRegistryEntry>>(
@@ -498,7 +499,7 @@ export class InngestCommHandler<
               ...acc,
               [id]: {
                 fn,
-                onFailure: id.endsWith(InngestFunction.failureSuffix),
+                onFailure: id === failureId,
                 onDefer: id.startsWith(deferPrefix),
               },
             };
