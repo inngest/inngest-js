@@ -768,6 +768,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
           // Got new steps? Exit early.
           if (!this.options.requestedRunStep && newSteps.length) {
+            // If the checkpointing runtime has been exceeded, don't execute new
+            // steps in-process. Flush any buffered steps and return the new
+            // steps to the executor so it can schedule them.
+            if (this.state.checkpointingRuntimeExceeded) {
+              if (this.state.checkpointingStepBuffer.length) {
+                const fallback = await attemptCheckpointAndResume(
+                  undefined,
+                  false,
+                  true,
+                );
+                if (fallback) {
+                  return fallback;
+                }
+              }
+
+              return maybeReturnNewSteps(steps);
+            }
+
             const stepResult = await this.tryExecuteStep(newSteps);
             if (stepResult) {
               this.debug(`executed step "${stepResult.id}" successfully`);
@@ -830,17 +848,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return;
         },
         "checkpointing-runtime-reached": async () => {
-          return {
-            type: "steps-found",
-            ctx: this.fnArg,
-            ops: this.ops,
-            steps: [
-              {
-                op: StepOpCode.DiscoveryRequest,
-                id: _internals.hashId(`discovery-request-${Date.now()}`),
-              },
-            ],
-          };
+          // Don't return a DiscoveryRequest immediately. Instead, set a flag so
+          // that the next "steps-found" checkpoint returns the step to the
+          // executor rather than executing it in-process. This lets user code
+          // between steps run to completion and avoids re-entering the function
+          // from scratch for stepless functions. In other words, it avoids
+          // duplicate execution requests.
+          this.state.checkpointingRuntimeExceeded = true;
+          return undefined;
         },
 
         "checkpointing-buffer-interval-reached": () => {
@@ -1983,6 +1998,14 @@ export interface V2ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * Set when the checkpointing max runtime has been reached. Rather than
+   * immediately returning a DiscoveryRequest (which re-invokes user code
+   * between steps), we defer until the next step boundary so the user's code
+   * between steps can complete.
+   */
+  checkpointingRuntimeExceeded?: boolean;
 
   /**
    * A buffer of steps that are currently queued to be checkpointed.

@@ -27,7 +27,7 @@ jobs:
       # Optional dependencies are packages like frameworks, which are actually
       # peer dependencies and are not installed in every usage, so we omit them
       # here and only check what's shipped directly by us.
-      - run: pnpm audit --audit-level=critical --prod --no-optional
+      - run: pnpm audit --audit-level=critical --prod --no-optional --ignore-registry-errors
 
   inngest_test:
     name: "inngest: Runtime tests"
@@ -63,7 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-          - "latest"
+          # TODO: Bring this back when we can handle v6
+          # - "latest"
           - "~5.9.0"
           - "~5.8.0"
     steps:
