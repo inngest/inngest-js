@@ -63,7 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-          - "latest"
+          # TODO: Bring this back when we can handle v6
+          # - "latest"
           - "~5.9.0"
           - "~5.8.0"
     steps:
