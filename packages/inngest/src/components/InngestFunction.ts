@@ -160,7 +160,11 @@ export class InngestFunction<
     const triggers: FunctionConfig["triggers"] = [];
     for (const trigger of this.opts.triggers ?? []) {
       if (trigger.cron) {
-        triggers.push({ cron: trigger.cron });
+        const cronTrigger = trigger as { cron: string; jitter?: string };
+        triggers.push({
+          cron: cronTrigger.cron,
+          ...(cronTrigger.jitter ? { jitter: cronTrigger.jitter } : {}),
+        });
         continue;
       }
 

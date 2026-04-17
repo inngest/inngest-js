@@ -14,6 +14,26 @@ describe("cron", () => {
     expectTypeOf(c.cron).toEqualTypeOf<"* * * * *">();
   });
 
+  test("cron trigger with jitter", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn", triggers: [{ cron: "* * * * *", jitter: "30s" }] },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+      },
+    );
+  });
+
+  test("cron trigger without jitter", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn", triggers: [{ cron: "* * * * *" }] },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+      },
+    );
+  });
+
   test("createFunction", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
