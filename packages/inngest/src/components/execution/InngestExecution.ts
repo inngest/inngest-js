@@ -141,6 +141,14 @@ export interface InngestExecutionOptions {
    * @default "main"
    */
   handlerKind?: "main" | "failure" | "defer";
+
+  /**
+   * For `handlerKind: "defer"`, the key into the parent function's
+   * `onDeferHandlers` map. Set at registration time from the companion
+   * function's config ID.
+   */
+  deferId?: string;
+
   disableImmediateExecution?: boolean;
 
   /**

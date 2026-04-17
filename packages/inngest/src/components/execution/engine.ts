@@ -1782,24 +1782,25 @@ class InngestExecutionEngine
 
   /**
    * Validate the deferred event's data against the onDefer handler's schema.
-   * Extracts `deferId` from the event to find the matching handler, then runs
-   * the schema's `~standard` validate method against the full `event.data`.
+   * Uses `deferId` from execution options (set at registration time) to find
+   * the matching handler, then validates `event.data` against its schema.
    */
   private async validateDeferEventSchema(): Promise<void> {
-    const eventData = this.fnArg.event?.data;
-    if (!isRecord(eventData) || typeof eventData.deferId !== "string") {
+    const { deferId } = this.options;
+    if (!deferId) {
       return;
     }
 
-    const handler = this.options.fn["onDeferHandlers"][eventData.deferId];
+    const handler = this.options.fn["onDeferHandlers"][deferId];
     if (!handler?.schema) {
       return;
     }
 
+    const eventData = this.fnArg.event?.data;
     const result = await handler.schema["~standard"].validate(eventData);
     if (result.issues) {
       throw new Error(
-        `onDefer handler "${eventData.deferId}" schema validation failed: ${JSON.stringify(result.issues)}`,
+        `onDefer handler "${deferId}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
   }
@@ -1903,7 +1904,7 @@ class InngestExecutionEngine
     /**
      * If the function has `onDefer` handlers, inject two things:
      *
-     * 1. `defer` — top-level context methods that send a `deferred.start`
+     * 1. `defer` — top-level context methods that send a `defer.start`
      *    event immediately (not memoized; useful inside `step.run`).
      * 2. `step.defer` — convenience wrappers that wrap each send in a
      *    `step.run` so it's memoized automatically.
@@ -1911,7 +1912,7 @@ class InngestExecutionEngine
     const onDeferHandlers = this.options.fn["onDeferHandlers"];
 
     if (Object.keys(onDeferHandlers).length > 0) {
-      const fnSlug = this.options.fn.id(this.options.client.id);
+      const parentFnId = this.options.fn.id(this.options.client.id);
       const client = this.options.client;
       const headers = this.options.headers;
       const fn = this.options.fn;
@@ -1929,6 +1930,8 @@ class InngestExecutionEngine
       > = {};
 
       for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
+        const companionFnId = `${parentFnId}-defer-${deferId}`;
+
         const sendDefer = async (data: Record<string, unknown>) => {
           if (entry.schema) {
             const result = await entry.schema["~standard"].validate(data);
@@ -1941,11 +1944,14 @@ class InngestExecutionEngine
 
           await client["_send"]({
             payload: {
-              name: "deferred.start",
+              name: "defer.start",
               data: {
-                runId: fnArg.runId,
-                fnSlug,
-                deferId,
+                // `fn_id` is flat for the trigger expression (the dev
+                // server doesn't support nested property access in
+                // expressions). Once the server routes `defer.start`
+                // natively, the flat field and expression go away.
+                fn_id: companionFnId,
+                _inngest: { fn_id: companionFnId },
                 ...data,
               },
             },
@@ -2563,20 +2569,10 @@ class InngestExecutionEngine
   private getUserFnToRun(): Handler.Any {
     switch (this.options.handlerKind) {
       case "defer": {
-        const data = this.options.data;
-        let deferId: string | undefined;
-        if (
-          isRecord(data) &&
-          isRecord(data.event) &&
-          isRecord(data.event.data) &&
-          typeof data.event.data.deferId === "string"
-        ) {
-          deferId = data.event.data.deferId;
-        }
-
+        const { deferId } = this.options;
         if (!deferId) {
           throw new Error(
-            "Defer handler invoked without deferId in event data",
+            "Defer handler invoked without deferId in execution options",
           );
         }
 

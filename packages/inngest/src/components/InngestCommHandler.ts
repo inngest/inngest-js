@@ -78,6 +78,8 @@ import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 interface FnRegistryEntry {
   fn: InngestFunction.Any;
   handlerKind: "main" | "failure" | "defer";
+  /** For `handlerKind: "defer"`, the key into `onDeferHandlers`. */
+  deferId?: string;
 }
 
 // A response object for when an internal server error occurs. When that
@@ -495,15 +497,18 @@ export class InngestCommHandler<
         const fns = configs.reduce<Record<string, FnRegistryEntry>>(
           (acc, { id }) => {
             let handlerKind: FnRegistryEntry["handlerKind"] = "main";
+            let deferId: string | undefined;
+
             if (id === failureId) {
               handlerKind = "failure";
             } else if (id.startsWith(deferPrefix)) {
               handlerKind = "defer";
+              deferId = id.slice(deferPrefix.length);
             }
 
             return {
               ...acc,
-              [id]: { fn, handlerKind },
+              [id]: { fn, handlerKind, deferId },
             };
           },
           {},
@@ -2216,6 +2221,7 @@ export class InngestCommHandler<
           requestedRunStep,
           timer,
           handlerKind: fn.handlerKind,
+          deferId: fn.deferId,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,

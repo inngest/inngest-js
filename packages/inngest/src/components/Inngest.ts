@@ -1033,13 +1033,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       >
         ? {
             event: {
-              name: "deferred.start";
+              name: "defer.start";
               data: D & DeferSystemFields;
             };
           }
         : {
             // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-            event: { name: "deferred.start"; data: any };
+            event: { name: "defer.start"; data: any };
           }) &
         ApplyAllMiddlewareCtxExtensions<
           [...ReturnType<typeof builtInMiddleware>]

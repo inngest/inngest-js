@@ -257,9 +257,10 @@ export function eventType<
 }
 
 export type DeferSystemFields = {
-  runId: string;
-  fnSlug: string;
-  deferId: string;
+  fn_id: string;
+  _inngest: {
+    fn_id: string;
+  };
 };
 
 /**

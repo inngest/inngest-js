@@ -185,7 +185,7 @@ test("schema validation fails within main function", async () => {
       onDefer: {
         process: client.createDefer({
           schema: z.object({ msg: z.string() }),
-          handler: async () => { },
+          handler: async () => {},
         }),
       },
       retries: 0,
@@ -257,11 +257,11 @@ test("step.defer mirrors onDefer keys with typed methods", () => {
       onDefer: {
         sendEmail: client.createDefer({
           schema: z.object({ to: z.string() }),
-          handler: async () => { },
+          handler: async () => {},
         }),
         processPayment: client.createDefer({
           schema: z.object({ amount: z.number() }),
-          handler: async () => { },
+          handler: async () => {},
         }),
       },
       triggers: { event: "test" },
@@ -426,7 +426,7 @@ test("plain defer function", async () => {
 });
 
 test("middleware", () => {
-  class DB { }
+  class DB {}
   const db = new DB();
   const client = new Inngest({
     id: randomSuffix(testFileName),

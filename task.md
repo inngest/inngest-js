@@ -44,8 +44,8 @@ Similar to the `onFailure` option. Under the hood, a full Inngest function is cr
 
 # Decisions
 
-- **Event name**: `deferred.start` (no `inngest/` prefix; uses the normal Event API)
-- **Event payload**: `{ runId, fnSlug, deferId, ...data }` where user data is spread flat alongside system fields
+- **Event name**: `defer.start` (no `inngest/` prefix; uses the normal Event API for now, will move to server-side send with `inngest/` prefix later)
+- **Event payload**: `{ fn_id, _inngest: { fn_id }, ...data }` — user data is spread flat; `fn_id` is the companion function's ID; `_inngest.fn_id` mirrors the invoke pattern for future server-side routing; the flat `fn_id` is used by the trigger expression until the server handles routing natively
 - **`step.defer` is a memoized step**: `step.defer.{key}(stepId, data)` wraps the defer send in a step, so it's safe across retries. Preferred for most use cases.
 - **`defer` is a top-level arg**: Passed alongside `event` and `step` in the main handler. Not memoized. The send happens every time the code runs, including retries. Useful when called inside an existing `step.run` or when the caller intentionally wants to send on every attempt.
 - **Fire and forget**: `await defer.process(...)` / `await step.defer.process(...)` confirms the event was sent; it does not wait for the deferred function to complete
@@ -54,7 +54,7 @@ Similar to the `onFailure` option. Under the hood, a full Inngest function is cr
 - **Keys are durable IDs**: Renaming a key changes the generated function ID
 - **`client.createDefer()`**: A helper method on the Inngest client that captures schema types and middleware context. Returns a branded result consumed by `onDefer`
 - **`onDefer` is a full Inngest function**: Like `onFailure`, each entry is synced to Inngest with full `step` capabilities
-- **Trigger expression**: Each companion filters by `fnSlug` and `deferId` so it only fires for its parent
+- **Trigger expression**: Each companion matches `event.data.fn_id` against its own function ID. This is a temporary expression until the server handles `defer.start` routing natively (like it does for `inngest/function.invoked`)
 - **No server-side changes**: Purely SDK-side for now
 
 # Type safety
@@ -104,6 +104,6 @@ Future companions could include `onComplete` or `onCancel`. Each would follow th
 
 # TODO
 
-- **Nest user data in event payload.** User schema data is currently spread flat into `event.data` alongside system fields (`runId`, `fnSlug`, `deferId`). A user schema with a `runId` or `deferId` field would silently collide. Nest user data under `event.data.data` to match the original spec and prevent collisions.
+- ~~**Nest user data in event payload.**~~ Resolved. System fields now live in `_inngest` (and a temporary flat `fn_id`), so user data no longer collides with `runId`/`fnSlug`/`deferId`. A user schema with `fn_id` would still shadow the flat routing field, but this goes away once the server handles routing natively.
 - ~~**Replace `isFailureHandler`/`isDeferHandler` booleans with a discriminated union.**~~ Done. `handlerKind: "main" | "failure" | "defer"` replaces both booleans in `InngestExecutionOptions`, `FnRegistryEntry`, and all callsites.
 - **Remove `as any` in `createFunction`.** The cast bridges the user-facing `onDefer` config type to the internal `OnDeferConfig`. If one type changes without the other, the cast masks the mismatch. Align the types or add a narrowing helper to eliminate the cast.
