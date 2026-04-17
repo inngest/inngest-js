@@ -45,6 +45,7 @@ import {
   type OutgoingOp,
   StepMode,
   StepOpCode,
+  type StepOptionsOrId,
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import { internalLoggerSymbol } from "../Inngest.ts";
@@ -1050,6 +1051,12 @@ class InngestExecutionEngine
           );
         }
 
+        // Fn-less sync opcodes (e.g. `DeferAdd`): no local handler to
+        // run, just ship the op and resume the caller.
+        if (!steps[0].fn) {
+          return void (await this.checkpointOpcodeOnlyStep(steps[0]));
+        }
+
         // Otherwise we're good to start executing things right now.
         const result = await this.executeStep(steps[0]);
 
@@ -1303,6 +1310,19 @@ class InngestExecutionEngine
               }
 
               return maybeReturnNewSteps();
+            }
+
+            // Fn-less sync opcodes (e.g. `DeferAdd`): no local handler
+            // to run, just ship the op and resume the caller.
+            const [onlyNewStep] = newSteps;
+            if (
+              newSteps.length === 1 &&
+              onlyNewStep &&
+              onlyNewStep.mode === StepMode.Sync &&
+              !onlyNewStep.fn
+            ) {
+              await this.checkpointOpcodeOnlyStep(onlyNewStep);
+              return;
             }
 
             const stepResult = await this.tryExecuteStep(newSteps);
@@ -1611,6 +1631,26 @@ class InngestExecutionEngine
   }
 
   /**
+   * Ship a fn-less sync step (e.g. `DeferAdd`) through the checkpoint
+   * stream and resume the caller. No local handler runs — the opcode
+   * itself is the payload.
+   */
+  private async checkpointOpcodeOnlyStep(step: FoundStep): Promise<void> {
+    const op: OutgoingOp = {
+      id: step.hashedId,
+      op: step.op,
+      name: step.name,
+      displayName: step.displayName,
+      opts: step.opts,
+      userland: step.userland,
+      data: null,
+    };
+
+    this.resumeStepWithResult(op);
+    await this.checkpoint([op]);
+  }
+
+  /**
    * Starts execution of the user's function, including triggering checkpoints
    * and middleware hooks where appropriate.
    */
@@ -1890,7 +1930,7 @@ class InngestExecutionEngine
   }
 
   private createFnArg(): Context.Any {
-    const step = this.createStepTools();
+    const { step, topLevelDefer } = this.createStepTools();
     const experimentStepRun = (step as unknown as ExperimentStepTools)[
       experimentStepRunSymbol
     ];
@@ -1901,78 +1941,21 @@ class InngestExecutionEngine
       group: createGroupTools({ experimentStepRun }),
     } as Context.Any;
 
+    if (topLevelDefer) {
+      fnArg = { ...fnArg, defer: topLevelDefer } as Context.Any;
+    }
+
     /**
-     * If the function has `onDefer` handlers, inject two things:
-     *
-     * 1. `defer` — top-level context methods that send a `defer.start`
-     *    event immediately (not memoized; useful inside `step.run`).
-     * 2. `step.defer` — convenience wrappers that wrap each send in a
-     *    `step.run` so it's memoized automatically.
+     * Handle companion defer invocations. The backend emits events shaped
+     * `{ _inngest: { deferred_run, parent_run }, input: userData }`. Unwrap
+     * `input` so the handler sees `event.data` as the caller's data.
      */
-    const onDeferHandlers = this.options.fn["onDeferHandlers"];
-
-    if (Object.keys(onDeferHandlers).length > 0) {
-      const parentFnId = this.options.fn.id(this.options.client.id);
-      const client = this.options.client;
-      const headers = this.options.headers;
-      const fn = this.options.fn;
-
-      const defer: Record<
-        string,
-        (data: Record<string, unknown>) => Promise<void>
-      > = {};
-      const stepDefer: Record<
-        string,
-        (
-          idOrOptions: string | { id: string; name?: string },
-          data: Record<string, unknown>,
-        ) => Promise<void>
-      > = {};
-
-      for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
-        const companionFnId = `${parentFnId}-defer-${deferId}`;
-
-        const sendDefer = async (data: Record<string, unknown>) => {
-          if (entry.schema) {
-            const result = await entry.schema["~standard"].validate(data);
-            if (result.issues) {
-              throw new Error(
-                `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
-              );
-            }
-          }
-
-          await client["_send"]({
-            payload: {
-              name: "defer.start",
-              data: {
-                // `fn_id` is flat for the trigger expression (the dev
-                // server doesn't support nested property access in
-                // expressions). Once the server routes `defer.start`
-                // natively, the flat field and expression go away.
-                fn_id: companionFnId,
-                _inngest: { fn_id: companionFnId },
-                ...data,
-              },
-            },
-            headers,
-            fnMiddleware: fn.opts.middleware ?? [],
-            fn,
-          });
-        };
-
-        defer[deferId] = sendDefer;
-        stepDefer[deferId] = async (idOrOptions, data) => {
-          await step.run(idOrOptions, async () => {
-            await sendDefer(data);
-          });
-        };
-      }
-
-      // biome-ignore lint/suspicious/noExplicitAny: attaching step.defer at runtime
-      (step as any).defer = stepDefer;
-
-      fnArg = { ...fnArg, defer } as Context.Any;
+    if (this.options.handlerKind === "defer" && fnArg.event) {
+      const rawData = fnArg.event.data as { input?: unknown } | undefined;
+      fnArg.event = {
+        ...fnArg.event,
+        data: (rawData?.input ?? {}) as Record<string, unknown>,
+      };
     }
 
     /**
@@ -2033,7 +2016,18 @@ class InngestExecutionEngine
     }
   }
 
-  private createStepTools(): ReturnType<typeof createStepTools> {
+  private createStepTools(): {
+    step: ReturnType<typeof createStepTools>;
+    topLevelDefer:
+      | Record<
+          string,
+          (
+            idOrOptions: StepOptionsOrId,
+            data: Record<string, unknown>,
+          ) => Promise<void>
+        >
+      | undefined;
+  } {
     /**
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
@@ -2429,7 +2423,65 @@ class InngestExecutionEngine
       return promise;
     };
 
-    return createStepTools(this.options.client, this, stepHandler);
+    const baseTools = createStepTools(this.options.client, this, stepHandler);
+
+    const onDeferHandlers = this.options.fn["onDeferHandlers"];
+    let topLevelDefer:
+      | Record<
+          string,
+          (
+            idOrOptions: StepOptionsOrId,
+            data: Record<string, unknown>,
+          ) => Promise<void>
+        >
+      | undefined;
+
+    if (Object.keys(onDeferHandlers).length > 0) {
+      const parentFnId = this.options.fn.id(this.options.client.id);
+      topLevelDefer = {};
+
+      for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
+        const companionFnId = `${parentFnId}-defer-${deferId}`;
+
+        const validateData = async (
+          data: Record<string, unknown>,
+        ): Promise<unknown> => {
+          if (!entry.schema) {
+            return data;
+          }
+          const result = await entry.schema["~standard"].validate(data);
+          if (result.issues) {
+            throw new Error(
+              `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
+            );
+          }
+          return result.value ?? data;
+        };
+
+        topLevelDefer[deferId] = async (idOrOptions, data) => {
+          const input = await validateData(data);
+          await stepHandler({
+            args: [idOrOptions, input],
+            matchOp: (stepOptions, inputArg) => {
+              return {
+                id: stepOptions.id,
+                mode: StepMode.Sync,
+                op: StepOpCode.DeferAdd,
+                name: stepOptions.name ?? stepOptions.id,
+                displayName: stepOptions.name ?? stepOptions.id,
+                opts: {
+                  companion_id: companionFnId,
+                  input: inputArg,
+                },
+                userland: { id: stepOptions.id },
+              };
+            },
+          });
+        };
+      }
+    }
+
+    return { step: baseTools, topLevelDefer };
   }
 
   /**

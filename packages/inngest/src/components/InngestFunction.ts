@@ -304,16 +304,16 @@ export class InngestFunction<
         deferRetries = { attempts: deferHandler.retries };
       }
 
-      // Route by `fn_id`, matching the invoke pattern. Once the server
-      // handles `defer.start` routing natively (like it does for
-      // `inngest/function.invoked`), this trigger can be removed.
+      // The backend emits `inngest/deferred.start` once the parent run
+      // finalizes, with the companion ID under
+      // `event.data._inngest.deferred_run.companion_id`.
       const deferFnConfig: FunctionConfig = {
         id,
         name,
         triggers: [
           {
-            event: "defer.start",
-            expression: `event.data.fn_id == '${id}'`,
+            event: "inngest/deferred.start",
+            expression: `event.data._inngest.deferred_run.companion_id == '${id}'`,
           },
         ],
         steps: {

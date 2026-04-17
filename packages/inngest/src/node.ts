@@ -49,6 +49,10 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
         },
         url: () => getURL(req, options.serveOrigin),
         transformResponse: ({ body, status, headers }) => {
+          console.log(
+            "transformResponse",
+            JSON.stringify(JSON.parse(body), null, 2),
+          );
           res.writeHead(status, headers);
           res.end(body);
         },

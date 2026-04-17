@@ -13,7 +13,7 @@ import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("onDefer handler is triggered by step.defer with schema", async () => {
+test("onDefer handler is triggered by defer with schema", async () => {
   const state = createState({
     deferredData: null as { msg: string } | null,
   });
@@ -42,14 +42,14 @@ test("onDefer handler is triggered by step.defer with schema", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ runId, step }) => {
+    async ({ defer, runId, step }) => {
       state.runId = runId;
 
       const msg = await step.run("create-msg", () => {
         return "hello";
       });
 
-      await step.defer.process("defer-1", { msg });
+      await defer.process("defer-1", { msg });
     },
   );
 
@@ -60,6 +60,50 @@ test("onDefer handler is triggered by step.defer with schema", async () => {
 
   await waitFor(() => {
     expect(state.deferredData).toEqual({ msg: "hello" });
+  });
+});
+
+
+test("no steps", async () => {
+  const parentState = createState({ counter: 0, });
+  const deferState = createState({ counter: 0 });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: client.createDefer({
+          handler: async () => {
+            // TODO: Run ID
+
+            deferState.counter++;
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId }) => {
+      parentState.runId = runId;
+      parentState.counter++;
+      await defer.process("defer-1", {});
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+  expect(parentState.counter).toBe(1);
+
+  await waitFor(() => {
+    expect(deferState.counter).toBe(1);
   });
 });
 
@@ -99,11 +143,11 @@ test("multiple onDefer handlers are independently triggered", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ runId, step }) => {
+    async ({ defer, runId }) => {
       state.runId = runId;
 
-      await step.defer.sendEmail("send-email", { to: "a@b.com" });
-      await step.defer.processPayment("process-payment", { amount: 100 });
+      await defer.sendEmail("send-email", { to: "a@b.com" });
+      await defer.processPayment("process-payment", { amount: 100 });
     },
   );
 
@@ -153,10 +197,10 @@ test("onDefer handler supports multiple steps", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ runId, step }) => {
+    async ({ defer, runId }) => {
       state.runId = runId;
 
-      await step.defer.process("defer-it", {});
+      await defer.process("defer-it", {});
     },
   );
 
@@ -191,10 +235,10 @@ test("schema validation fails within main function", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ runId, step }) => {
+    async ({ defer, runId }) => {
       state.runId = runId;
 
-      await step.defer.process("bad-defer", { msg: 123 } as never);
+      await defer.process("bad-defer", { msg: 123 } as never);
     },
   );
 
@@ -231,9 +275,9 @@ test("schema validation fails within onDefer handler", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ runId, step }) => {
+    async ({ defer, runId }) => {
       state.runId = runId;
-      await step.defer.process("bad-defer", { date: new Date() });
+      await defer.process("bad-defer", { date: new Date() });
     },
   );
 
@@ -248,7 +292,7 @@ test("schema validation fails within onDefer handler", async () => {
   expect(state.deferHandlerReached).toBe(false);
 });
 
-test("step.defer mirrors onDefer keys with typed methods", () => {
+test("defer mirrors onDefer keys with typed methods", () => {
   const client = new Inngest({ id: "type-test", isDev: true });
 
   client.createFunction(
@@ -266,24 +310,14 @@ test("step.defer mirrors onDefer keys with typed methods", () => {
       },
       triggers: { event: "test" },
     },
-    async ({ defer, step }) => {
+    async ({ defer }) => {
       expectTypeOf(defer.sendEmail).toBeFunction();
       expectTypeOf(defer.processPayment).toBeFunction();
 
       expectTypeOf(defer.sendEmail)
-        .parameter(0)
-        .toEqualTypeOf<{ to: string }>();
-      expectTypeOf(defer.processPayment)
-        .parameter(0)
-        .toEqualTypeOf<{ amount: number }>();
-
-      expectTypeOf(step.defer.sendEmail).toBeFunction();
-      expectTypeOf(step.defer.processPayment).toBeFunction();
-
-      expectTypeOf(step.defer.sendEmail)
         .parameter(1)
         .toEqualTypeOf<{ to: string }>();
-      expectTypeOf(step.defer.processPayment)
+      expectTypeOf(defer.processPayment)
         .parameter(1)
         .toEqualTypeOf<{ amount: number }>();
     },
@@ -300,7 +334,6 @@ test("no defer when onDefer is absent", () => {
     },
     async (ctx) => {
       expectTypeOf(ctx).not.toHaveProperty("defer");
-      expectTypeOf(ctx.step).not.toHaveProperty("defer");
     },
   );
 });
@@ -331,12 +364,12 @@ test("onDefer without schema defaults to any", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ runId, step }) => {
+    async ({ defer, runId }) => {
       state.runId = runId;
 
-      expectTypeOf(step.defer.process).toBeFunction();
+      expectTypeOf(defer.process).toBeFunction();
 
-      await step.defer.process("defer-it", { key: "value" });
+      await defer.process("defer-it", { key: "value" });
     },
   );
 
@@ -370,20 +403,17 @@ test("mixed onDefer entries: with and without schema", () => {
         }),
       },
     },
-    async ({ defer, step }) => {
+    async ({ defer }) => {
       expectTypeOf(defer.withSchema).toBeFunction();
-      expectTypeOf(defer.withSchema).toBeCallableWith({ msg: "hello" });
+      expectTypeOf(defer.withSchema).toBeCallableWith("id", { msg: "hello" });
       expectTypeOf(defer.withoutSchema).toBeFunction();
       // no schema = any
-      defer.withoutSchema({ anything: "goes" });
-
-      expectTypeOf(step.defer.withSchema).toBeFunction();
-      expectTypeOf(step.defer.withoutSchema).toBeFunction();
+      defer.withoutSchema("id", { anything: "goes" });
     },
   );
 });
 
-test("plain defer function", async () => {
+test("defer with id as first argument", async () => {
   const state = createState({
     deferredData: null as { msg: string } | null,
   });
@@ -409,10 +439,10 @@ test("plain defer function", async () => {
       retries: 0,
       triggers: { event: eventName },
     },
-    async ({ defer, runId, step }) => {
+    async ({ defer, runId }) => {
       state.runId = runId;
 
-      await defer.process({ msg: "from-plain-defer" });
+      await defer.process("defer-msg", { msg: "from-defer" });
     },
   );
   await createTestApp({ client, functions: [fn], serve: createServer });
@@ -421,7 +451,7 @@ test("plain defer function", async () => {
   await state.waitForRunComplete();
 
   await waitFor(() => {
-    expect(state.deferredData).toEqual({ msg: "from-plain-defer" });
+    expect(state.deferredData).toEqual({ msg: "from-defer" });
   });
 });
 

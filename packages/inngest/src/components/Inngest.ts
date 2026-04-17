@@ -1227,32 +1227,10 @@ export namespace Inngest {
 
   /**
    * Conditionally adds `defer` to the handler context when `onDefer`
-   * handlers are configured. Extracts schema data per-entry from
-   * the captured config; entries without `schema` default to `any`.
+   * handlers are configured. Each method takes a step ID (for memoization
+   * via the `DeferAdd` opcode) and the schema-typed data.
    */
   type MaybeDeferCtx<
-    TOnDefer extends Record<string, OnDeferEntryBase> | undefined,
-  > = TOnDefer extends Record<string, OnDeferEntryBase>
-    ? {
-        defer: {
-          [K in keyof TOnDefer & string]: (
-            data: TOnDefer[K] extends {
-              schema: StandardSchemaV1<infer D extends Record<string, unknown>>;
-            }
-              ? D
-              : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-                any,
-          ) => Promise<void>;
-        };
-      }
-    : unknown;
-
-  /**
-   * Conditionally adds `defer` to step tools when `onDefer` handlers are
-   * configured. Each method takes a step ID (for memoization) and the
-   * schema-typed data, wrapping the defer send in a step automatically.
-   */
-  type MaybeDeferStepTools<
     TOnDefer extends Record<string, OnDeferEntryBase> | undefined,
   > = TOnDefer extends Record<string, OnDeferEntryBase>
     ? {
@@ -1326,8 +1304,7 @@ export namespace Inngest {
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]
             > &
-            ApplyAllMiddlewareStepExtensions<TFnMiddleware> &
-            MaybeDeferStepTools<TOnDefer>;
+            ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
         }
     >,
     TFailureHandler extends Handler.Any = HandlerWithTriggers<
