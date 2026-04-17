@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
-import { StepMode } from "../../types.ts";
+import { StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import type { ExecutionResults } from "./InngestExecution.ts";
 
@@ -205,5 +205,149 @@ describe("V1 checkpoint retry behavior", () => {
       expect(mockCheckpointStepsAsync).not.toHaveBeenCalled();
       expect(result.type).toBe("steps-found");
     });
+  });
+});
+
+describe("V1 checkpointing maxRuntime", () => {
+  const mockEvent = { name: "test/event", data: { foo: "bar" } };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  test("hit maxRuntime in stepless function does not cause duplicate execution", async () => {
+    // Regression test: the old handler immediately returned a DiscoveryRequest,
+    // which re-invoked the function from scratch. For stepless functions this
+    // looped forever.
+    const client = createClient({ id: "test" });
+    let enterCount = 0;
+
+    const fn = new InngestFunction(
+      client,
+      {
+        id: "test-fn",
+        triggers: [{ event: "test/event" }],
+        checkpointing: {
+          maxRuntime: 1,
+        },
+      },
+      async () => {
+        enterCount++;
+        // Simulate work that exceeds maxRuntime
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return "done";
+      },
+    );
+
+    const execution = fn["createExecution"]({
+      version: ExecutionVersion.V1,
+      partialOptions: {
+        client,
+        data: fromPartial({ event: mockEvent }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.AsyncCheckpointing,
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+        checkpointingConfig: {
+          maxRuntime: 50, // 50ms - will be exceeded by the 200ms sleep
+          bufferedSteps: 1,
+          maxInterval: 0,
+        },
+      },
+    });
+
+    const resultPromise = execution.start();
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    // The function should complete normally, not re-enter
+    expect(enterCount).toBe(1);
+    expect(result.type).toBe("steps-found");
+
+    // The result should NOT contain a DiscoveryRequest op
+    if (result.type === "steps-found") {
+      const stepsFound = result as ExecutionResults["steps-found"];
+      const hasDiscoveryRequest = stepsFound.steps.some(
+        (s) => s.op === StepOpCode.DiscoveryRequest,
+      );
+      expect(hasDiscoveryRequest).toBe(false);
+    }
+  });
+
+  test("hit maxRuntime between steps returns steps to executor", async () => {
+    // When maxRuntime is hit between steps, the next step.run() should return
+    // the step to the executor instead of executing it in-process.
+    const client = createClient({ id: "test" });
+
+    const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+    (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi = {
+      checkpointStepsAsync: mockCheckpointStepsAsync,
+    } as Partial<InngestApi> as InngestApi;
+
+    const fn = new InngestFunction(
+      client,
+      {
+        id: "test-fn",
+        triggers: [{ event: "test/event" }],
+        checkpointing: {
+          maxRuntime: 1,
+        },
+      },
+      async ({ step }) => {
+        await step.run("before", async () => "step-result");
+        // Sleep that exceeds maxRuntime will happen between steps
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await step.run("after", async () => "step-2-result");
+        return "done";
+      },
+    );
+
+    const execution = fn["createExecution"]({
+      version: ExecutionVersion.V1,
+      partialOptions: {
+        client,
+        data: fromPartial({ event: mockEvent }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.AsyncCheckpointing,
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+        checkpointingConfig: {
+          maxRuntime: 50, // 50ms - will be exceeded between step "before" and "after"
+          bufferedSteps: 1,
+          maxInterval: 0,
+        },
+      },
+    });
+
+    const resultPromise = execution.start();
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    // Should return steps-found since the "after" step should be returned
+    // to the executor rather than executed in-process
+    expect(result.type).toBe("steps-found");
+
+    // The result should NOT contain a DiscoveryRequest
+    if (result.type === "steps-found") {
+      const stepsFound = result as ExecutionResults["steps-found"];
+      const hasDiscoveryRequest = stepsFound.steps.some(
+        (s) => s.op === StepOpCode.DiscoveryRequest,
+      );
+      expect(hasDiscoveryRequest).toBe(false);
+    }
   });
 });
