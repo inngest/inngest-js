@@ -1,12 +1,12 @@
 import SuperJSON from "superjson";
 import { describe, expect, expectTypeOf, test } from "vitest";
+import type { Preserved } from "./index";
 import {
   BaseSerializerMiddleware,
+  isRecord,
   SuperJsonMiddleware,
   superJsonMiddleware,
-  isRecord,
 } from "./index";
-import type { Preserved } from "./index";
 
 const stubClient = {} as ConstructorParameters<
   typeof SuperJsonMiddleware
@@ -25,7 +25,10 @@ function roundTrip(mw: any, value: unknown): any {
 
 test("Date round-trips through JSON transport", () => {
   const mw = new SuperJsonMiddleware({ client: stubClient });
-  const input = { createdAt: new Date("2024-06-15T12:00:00.000Z"), name: "test" };
+  const input = {
+    createdAt: new Date("2024-06-15T12:00:00.000Z"),
+    name: "test",
+  };
 
   const result = roundTrip(mw, input);
 
@@ -180,7 +183,10 @@ test("custom types via subclass round-trip through JSON transport", () => {
   }
 
   const mw = new CustomSuperJson({ client: stubClient });
-  const input = { custom: new CustomValue("hello"), created: new Date("2024-01-01") };
+  const input = {
+    custom: new CustomValue("hello"),
+    created: new Date("2024-01-01"),
+  };
 
   const result = roundTrip(mw, input);
 

@@ -1,5 +1,3 @@
-import { DEV_SERVER_URL, sleep, waitFor } from "@inngest/test-harness";
-import { z } from "zod/v3";
 import { Middleware } from "../../../src/index.ts";
 import { StepError } from "../../components/StepError";
 
@@ -175,59 +173,7 @@ export const anyContext = {
   step: expect.any(Object),
 };
 
-const fetchEventSchema = z.object({
-  data: z.object({
-    eventV2: z.object({
-      idempotencyKey: z.string().optional(),
-      name: z.string(),
-      raw: z.string(),
-    }),
-  }),
-});
-
-/**
- * Query the Dev Server's GraphQL API for an event with the given name.
- * Polls until the event appears, then returns its parsed payload.
- */
-export async function fetchEvent(id: string): Promise<{
-  data: Record<string, unknown>;
-  idempotencyKey: string | null;
-  name: string;
-}> {
-  return waitFor(async () => {
-    const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `query Event($id: ULID!) {
-          eventV2(id: $id) {
-            idempotencyKey
-            name
-            raw
-          }
-        }`,
-        variables: { id },
-        operationName: "Event",
-      }),
-    });
-
-    expect(res.ok).toBe(true);
-
-    const raw = await res.json();
-    const parsed = fetchEventSchema.parse(raw).data.eventV2;
-
-    const data = JSON.parse(parsed.raw).data;
-    if (!isRecord(data)) {
-      throw new Error("Event data is not a record");
-    }
-
-    return {
-      data,
-      idempotencyKey: parsed.idempotencyKey ?? null,
-      name: parsed.name,
-    };
-  });
-}
+export { fetchEvent } from "@inngest/test-harness";
 
 /**
  * Runs a test in both checkpointing modes (false and true).

@@ -26,7 +26,6 @@ export abstract class BaseSerializerMiddleware<
   protected abstract isSerialized(value: unknown): value is TSerialized;
   protected abstract needsSerialize(value: unknown): boolean;
   protected abstract serialize(value: unknown): TSerialized;
-
   protected readonly recursive: boolean = true;
 
   private _deserialize(value: unknown): unknown {
@@ -55,7 +54,6 @@ export abstract class BaseSerializerMiddleware<
   }
 
   private _serialize(value: unknown): unknown {
-    console.log("serialize", value)
     if (this.needsSerialize(value)) {
       return this.serialize(value);
     }
@@ -109,21 +107,22 @@ export abstract class BaseSerializerMiddleware<
   override transformStepInput(
     arg: Middleware.TransformStepInputArgs,
   ): Middleware.TransformStepInputArgs {
-    console.log("transformStepInput before", JSON.stringify(arg.input, null, 2))
     // For invoke steps, serialize input so it's available before the handler
-    // chain runs (invoke steps are reported to the server before execution).
+    // chain runs (invoke steps are reported to the server before execution)
     if (arg.stepInfo.stepType === "invoke") {
       arg.input = arg.input.map((i) => {
         if (!isRecord(i)) {
+          // Unreachable
           return i;
         }
+
         return {
           ...i,
+          // Only serialize the payload. The other fields are the invoke options
           payload: this._serialize(i.payload),
-        }
+        };
       });
     }
-    console.log("transformStepInput after", JSON.stringify(arg.input, null, 2))
     return arg;
   }
 

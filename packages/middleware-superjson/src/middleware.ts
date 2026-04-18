@@ -1,13 +1,13 @@
-import { Middleware } from "inngest";
-import SuperJSON from "superjson";
+import type { Middleware } from "inngest";
 import type { SuperJSONResult } from "superjson";
+import SuperJSON from "superjson";
 import {
   BaseSerializerMiddleware,
   isPlainObject,
   isRecord,
-} from "./base-serializer";
+} from "./baseSerializer";
 
-const MARKER = "__inngestSuperJson" as const;
+const MARKER = "__inngest_superjson" as const;
 
 /**
  * The envelope format wrapping a superjson-serialized value. The entire value
@@ -25,22 +25,11 @@ type NotSerializable = ((...args: any[]) => any) | symbol;
 
 /**
  * Recursively preserves types that superjson handles through Inngest's
- * serialization pipeline. superjson supports Date, RegExp, BigInt, Map, Set,
+ * serialization pipeline. Superjson supports Date, RegExp, BigInt, Map, Set,
  * URL, Error, undefined, typed arrays, NaN, Infinity, and -0 out of the box.
  *
  * Functions and symbols (unless registered) are stripped, matching superjson's
  * runtime behavior.
- *
- * @example
- * ```ts
- * type MyData = Preserved<{
- *   createdAt: Date;
- *   tags: Set<string>;
- *   config: Map<string, number>;
- *   name: string;
- * }>;
- * // { createdAt: Date; tags: Set<string>; config: Map<string, number>; name: string }
- * ```
  */
 export type Preserved<T> = T extends NotSerializable
   ? never
@@ -70,9 +59,9 @@ export interface SuperJsonTransform extends Middleware.StaticTransform {
  */
 export interface SuperJsonMiddlewareOptions {
   /**
-   * A pre-configured SuperJSON instance. Use this to register custom types
-   * via `instance.registerCustom()` or `instance.registerClass()` before
-   * passing it to the middleware.
+   * A pre-configured SuperJSON instance. Use this to register custom types via
+   * `instance.registerCustom()` or `instance.registerClass()` before passing it
+   * to the middleware.
    *
    * If not provided, a fresh SuperJSON instance is created with default
    * settings (handles Date, RegExp, BigInt, Map, Set, URL, Error, etc.).
@@ -91,40 +80,10 @@ export interface SuperJsonMiddlewareOptions {
 
 /**
  * Middleware that uses superjson to preserve non-JSON types through Inngest's
- * data pipeline. Handles Date, RegExp, BigInt, Map, Set, URL, Error,
- * undefined, typed arrays, NaN, Infinity, and -0 out of the box.
+ * data pipeline. Handles Date, RegExp, BigInt, Map, Set, URL, Error, undefined,
+ * typed arrays, NaN, Infinity, and -0 out of the box.
  *
  * Custom types can be registered via the SuperJSON instance.
- *
- * @example Direct usage with defaults:
- * ```ts
- * import { Inngest } from "inngest";
- * import { SuperJsonMiddleware } from "@inngest/middleware-superjson";
- *
- * const inngest = new Inngest({
- *   id: "my-app",
- *   middleware: [SuperJsonMiddleware],
- * });
- * ```
- *
- * @example With custom types via subclass:
- * ```ts
- * import SuperJSON from "superjson";
- *
- * const sj = new SuperJSON();
- * sj.registerCustom<Decimal, string>(
- *   {
- *     isApplicable: (v): v is Decimal => Decimal.isDecimal(v),
- *     serialize: (v) => v.toJSON(),
- *     deserialize: (v) => new Decimal(v),
- *   },
- *   "decimal.js",
- * );
- *
- * class MySuperJson extends SuperJsonMiddleware {
- *   protected override sj = sj;
- * }
- * ```
  */
 export class SuperJsonMiddleware extends BaseSerializerMiddleware<SerializedValue> {
   readonly id = "@inngest/middleware-superjson";

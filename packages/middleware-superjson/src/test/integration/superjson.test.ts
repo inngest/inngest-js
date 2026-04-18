@@ -1,20 +1,15 @@
 import {
   createState,
   createTestApp,
-  DEV_SERVER_URL,
+  fetchEvent,
   randomSuffix,
   testNameFromFileUrl,
   waitFor,
 } from "@inngest/test-harness";
-import {
-  eventType,
-  Inngest,
-  invoke,
-  staticSchema,
-} from "inngest";
+import { eventType, Inngest, invoke, staticSchema } from "inngest";
 import { createServer } from "inngest/node";
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { isRecord, SuperJsonMiddleware } from "../../index";
+import { SuperJsonMiddleware } from "../../index";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -126,12 +121,12 @@ describe("client level", () => {
       { id: "parent-fn", retries: 0, triggers: [{ event: eventName }] },
       async ({ step, runId }) => {
         state.runId = runId;
-        console.log("a")
+        console.log("a");
         const output = await step.invoke("a", {
           data: { date: new Date("2026-02-03T00:00:00.000Z"), int: 42 },
           function: childFn,
         });
-        console.log("b")
+        console.log("b");
         expectTypeOf(output).not.toBeAny();
         expectTypeOf(output).toEqualTypeOf<{ date: Date; int: number }>();
         state.stepOutputs.push(output);
@@ -144,7 +139,7 @@ describe("client level", () => {
         triggers: [invoke(staticSchema<{ date: Date; int: number }>())],
       },
       async ({ event, events }) => {
-        console.log("c")
+        console.log("c");
         expectTypeOf(event.data).not.toBeAny();
         state.eventData = event.data;
         state.eventsData = events.map((event) => {
@@ -183,6 +178,79 @@ describe("client level", () => {
         int: 42,
       },
     ]);
+  });
+
+  test("deeply nested Date in event.data", async () => {
+    // Dates buried inside nested plain objects and arrays round-trip as real
+    // Date instances. The recursive walker must descend through every plain
+    // container to find them.
+
+    type Nested = {
+      level1: {
+        level2: {
+          level3: {
+            createdAt: Date;
+            tags: { name: string; seenAt: Date }[];
+          };
+        };
+      };
+    };
+
+    const state = createState({
+      eventData: null as Nested | null,
+    });
+
+    const et = eventType(randomSuffix("evt"), {
+      schema: staticSchema<Nested>(),
+    });
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [SuperJsonMiddleware],
+    });
+    const fn = client.createFunction(
+      { id: "fn", retries: 0, triggers: [et] },
+      async ({ event, runId }) => {
+        state.runId = runId;
+        expectTypeOf(event.data).toEqualTypeOf<Nested>();
+        expectTypeOf(
+          event.data.level1.level2.level3.createdAt,
+        ).toEqualTypeOf<Date>();
+        expectTypeOf(
+          event.data.level1.level2.level3.tags[0]!.seenAt,
+        ).toEqualTypeOf<Date>();
+        state.eventData = event.data;
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
+
+    const sent: Nested = {
+      level1: {
+        level2: {
+          level3: {
+            createdAt: new Date("2026-02-03T00:00:00.000Z"),
+            tags: [
+              { name: "alpha", seenAt: new Date("2026-02-04T00:00:00.000Z") },
+              { name: "beta", seenAt: new Date("2026-02-05T00:00:00.000Z") },
+            ],
+          },
+        },
+      },
+    };
+
+    await client.send(et.create(sent));
+    await state.waitForRunComplete();
+
+    expect(state.eventData).toEqual(sent);
+    expect(state.eventData?.level1.level2.level3.createdAt).toBeInstanceOf(
+      Date,
+    );
+    expect(
+      state.eventData?.level1.level2.level3.tags[0]!.seenAt,
+    ).toBeInstanceOf(Date);
+    expect(
+      state.eventData?.level1.level2.level3.tags[1]!.seenAt,
+    ).toBeInstanceOf(Date);
   });
 });
 
@@ -384,7 +452,6 @@ describe("function level", () => {
   });
 });
 
-
 describe("outgoing event data is serialized", () => {
   test("client.send", async () => {
     // When sending an event via the client, event data is serialized into the
@@ -427,7 +494,7 @@ describe("outgoing event data is serialized", () => {
     const eventFromDevServer = await fetchEvent(ids[0]!);
     expect(eventFromDevServer.data).toEqual({
       date: {
-        __inngestSuperJson: true,
+        __inngest_superjson: true,
         json: "2026-02-03T00:00:00.000Z",
         meta: { v: 1, values: ["Date"] },
       },
@@ -496,7 +563,7 @@ describe("outgoing event data is serialized", () => {
     const eventFromDevServer = await fetchEvent(state.childEventId!);
     expect(eventFromDevServer.data).toEqual({
       date: {
-        __inngestSuperJson: true,
+        __inngest_superjson: true,
         json: "2026-02-03T00:00:00.000Z",
         meta: { v: 1, values: ["Date"] },
       },
@@ -510,39 +577,3 @@ describe("outgoing event data is serialized", () => {
     });
   });
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function fetchEvent(
-  id: string,
-): Promise<{ data: Record<string, unknown>; name: string }> {
-  return waitFor(async () => {
-    const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `query Event($id: ULID!) {
-          eventV2(id: $id) {
-            name
-            raw
-          }
-        }`,
-        variables: { id },
-        operationName: "Event",
-      }),
-    });
-    expect(res.ok).toBe(true);
-
-    const raw = (await res.json()) as {
-      data: { eventV2: { name: string; raw: string } };
-    };
-    const parsed = raw.data.eventV2;
-    const data = JSON.parse(parsed.raw).data;
-    if (!isRecord(data)) {
-      throw new Error("Event data is not a record");
-    }
-    return { data, name: parsed.name };
-  });
-}

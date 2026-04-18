@@ -1,7 +1,4 @@
-export {
-  SuperJsonMiddleware,
-  superJsonMiddleware,
-} from "./middleware";
+export { BaseSerializerMiddleware, isRecord } from "./baseSerializer";
 
 export type {
   Preserved,
@@ -9,5 +6,7 @@ export type {
   SuperJsonMiddlewareOptions,
   SuperJsonTransform,
 } from "./middleware";
-
-export { BaseSerializerMiddleware, isRecord } from "./base-serializer";
+export {
+  SuperJsonMiddleware,
+  superJsonMiddleware,
+} from "./middleware";

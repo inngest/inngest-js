@@ -22,3 +22,5 @@ export {
   BaseState,
   createState,
 } from "./utils.ts";
+
+export { fetchEvent } from "./events.ts";
