@@ -1,6 +1,6 @@
-# Task: `@inngest/middleware-super-json`
+# Task: `@inngest/middleware-superjson`
 
-New middleware package at `packages/middleware-super-json/` that uses [superjson](https://www.npmjs.com/package/superjson) to preserve non-JSON types (Date, RegExp, BigInt, Map, Set, URL, Error, undefined, etc.) through Inngest's data pipeline.
+New middleware package at `packages/middleware-superjson/` that uses [superjson](https://www.npmjs.com/package/superjson) to preserve non-JSON types (Date, RegExp, BigInt, Map, Set, URL, Error, undefined, etc.) through Inngest's data pipeline.
 
 Branch: `superjson-serializer` (1 commit ahead of `main`)
 
@@ -20,7 +20,7 @@ Branch: `superjson-serializer` (1 commit ahead of `main`)
 ## Commands
 
 ```sh
-cd packages/middleware-super-json
+cd packages/middleware-superjson
 pnpm test                              # 21 tests
 pnpm exec tsc --noEmit --project tsconfig.build.json  # type-check
 ```

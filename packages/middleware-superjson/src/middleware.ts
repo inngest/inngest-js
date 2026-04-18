@@ -95,7 +95,7 @@ export interface SuperJsonMiddlewareOptions {
  * @example Direct usage with defaults:
  * ```ts
  * import { Inngest } from "inngest";
- * import { SuperJsonMiddleware } from "@inngest/middleware-super-json";
+ * import { SuperJsonMiddleware } from "@inngest/middleware-superjson";
  *
  * const inngest = new Inngest({
  *   id: "my-app",
@@ -123,7 +123,7 @@ export interface SuperJsonMiddlewareOptions {
  * ```
  */
 export class SuperJsonMiddleware extends BaseSerializerMiddleware<SerializedValue> {
-  readonly id = "@inngest/middleware-super-json";
+  readonly id = "@inngest/middleware-superjson";
 
   declare functionOutputTransform: SuperJsonTransform;
   declare stepOutputTransform: SuperJsonTransform;
@@ -163,7 +163,7 @@ export class SuperJsonMiddleware extends BaseSerializerMiddleware<SerializedValu
  * @example
  * ```ts
  * import SuperJSON from "superjson";
- * import { superJsonMiddleware } from "@inngest/middleware-super-json";
+ * import { superJsonMiddleware } from "@inngest/middleware-superjson";
  *
  * const sj = new SuperJSON();
  * sj.registerCustom<Decimal, string>(

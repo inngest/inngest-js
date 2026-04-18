@@ -193,7 +193,7 @@ test("superJsonMiddleware factory produces working middleware", () => {
   const Cls = superJsonMiddleware();
   const mw = new Cls({ client: stubClient });
 
-  expect(mw.id).toBe("@inngest/middleware-super-json");
+  expect(mw.id).toBe("@inngest/middleware-superjson");
 
   const result = roundTrip(mw, { date: new Date("2024-01-01") });
 
