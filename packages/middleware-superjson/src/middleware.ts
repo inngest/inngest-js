@@ -1,7 +1,11 @@
 import { Middleware } from "inngest";
 import SuperJSON from "superjson";
 import type { SuperJSONResult } from "superjson";
-import { BaseSerializerMiddleware, isRecord } from "./base-serializer";
+import {
+  BaseSerializerMiddleware,
+  isPlainObject,
+  isRecord,
+} from "./base-serializer";
 
 const MARKER = "__inngestSuperJson" as const;
 
@@ -128,13 +132,22 @@ export class SuperJsonMiddleware extends BaseSerializerMiddleware<SerializedValu
   declare functionOutputTransform: SuperJsonTransform;
   declare stepOutputTransform: SuperJsonTransform;
 
-  protected override readonly recursive = false;
-
   /** The SuperJSON instance used for serialization. */
   protected sj: SuperJSON = new SuperJSON();
 
+  /**
+   * Only wrap values that JSON can't round-trip: primitives and plain
+   * containers pass through so the base serializer's recursion can walk into
+   * them. This keeps event payloads readable in the UI and lets server-side
+   * CEL expressions like `event.data.name == "Alice"` continue to work.
+   */
   protected needsSerialize(value: unknown): boolean {
-    return value !== null && value !== undefined;
+    if (value === null || value === undefined) return false;
+    const t = typeof value;
+    if (t === "string" || t === "number" || t === "boolean") return false;
+    if (Array.isArray(value)) return false;
+    if (isPlainObject(value)) return false;
+    return true;
   }
 
   protected serialize(value: unknown): SerializedValue {

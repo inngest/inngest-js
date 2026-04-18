@@ -40,6 +40,7 @@ export async function startDevServer(): Promise<void> {
       {
         stdio: ["ignore", "pipe", "pipe"],
         shell: true,
+        env: { ...process.env, DO_NOT_TRACK: "1" },
       },
     );
 

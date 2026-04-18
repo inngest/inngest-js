@@ -4,6 +4,20 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Narrower than {@link isRecord}: returns `true` only for objects whose
+ * prototype is `Object.prototype` or `null` (i.e. literal `{...}` or
+ * `Object.create(null)`). Class instances, Maps, Sets, Dates etc. return
+ * `false`.
+ */
+export function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 export abstract class BaseSerializerMiddleware<
   TSerialized,
 > extends Middleware.BaseMiddleware {
@@ -41,6 +55,7 @@ export abstract class BaseSerializerMiddleware<
   }
 
   private _serialize(value: unknown): unknown {
+    console.log("serialize", value)
     if (this.needsSerialize(value)) {
       return this.serialize(value);
     }
@@ -94,11 +109,21 @@ export abstract class BaseSerializerMiddleware<
   override transformStepInput(
     arg: Middleware.TransformStepInputArgs,
   ): Middleware.TransformStepInputArgs {
+    console.log("transformStepInput before", JSON.stringify(arg.input, null, 2))
     // For invoke steps, serialize input so it's available before the handler
     // chain runs (invoke steps are reported to the server before execution).
     if (arg.stepInfo.stepType === "invoke") {
-      arg.input = arg.input.map((i) => this._serialize(i));
+      arg.input = arg.input.map((i) => {
+        if (!isRecord(i)) {
+          return i;
+        }
+        return {
+          ...i,
+          payload: this._serialize(i.payload),
+        }
+      });
     }
+    console.log("transformStepInput after", JSON.stringify(arg.input, null, 2))
     return arg;
   }
 
