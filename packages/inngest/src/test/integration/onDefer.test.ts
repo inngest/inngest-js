@@ -63,9 +63,8 @@ test("onDefer handler is triggered by defer with schema", async () => {
   });
 });
 
-
 test("no steps", async () => {
-  const parentState = createState({ counter: 0, });
+  const parentState = createState({ counter: 0 });
   const deferState = createState({ counter: 0 });
 
   const eventName = randomSuffix("evt");

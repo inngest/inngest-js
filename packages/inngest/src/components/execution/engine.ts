@@ -1945,17 +1945,13 @@ class InngestExecutionEngine
       fnArg = { ...fnArg, defer: topLevelDefer } as Context.Any;
     }
 
-    /**
-     * Handle companion defer invocations. The backend emits events shaped
-     * `{ _inngest: { deferred_run, parent_run }, input: userData }`. Unwrap
-     * `input` so the handler sees `event.data` as the caller's data.
-     */
-    if (this.options.handlerKind === "defer" && fnArg.event) {
-      const rawData = fnArg.event.data as { input?: unknown } | undefined;
-      fnArg.event = {
-        ...fnArg.event,
-        data: (rawData?.input ?? {}) as Record<string, unknown>,
-      };
+    if (this.options.handlerKind === "defer") {
+      // Delete our internal metadata. The user's handler shouldn't see it since
+      // it's an implementation detail
+      delete fnArg.event.data._inngest;
+      for (const event of fnArg.events) {
+        delete event.data._inngest;
+      }
     }
 
     /**
@@ -2441,7 +2437,7 @@ class InngestExecutionEngine
       topLevelDefer = {};
 
       for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
-        const companionFnId = `${parentFnId}-defer-${deferId}`;
+        const companionFnSlug = `${parentFnId}-defer-${deferId}`;
 
         const validateData = async (
           data: Record<string, unknown>,
@@ -2470,7 +2466,7 @@ class InngestExecutionEngine
                 name: stepOptions.name ?? stepOptions.id,
                 displayName: stepOptions.name ?? stepOptions.id,
                 opts: {
-                  companion_id: companionFnId,
+                  fn_slug: companionFnSlug,
                   input: inputArg,
                 },
                 userland: { id: stepOptions.id },

@@ -305,15 +305,14 @@ export class InngestFunction<
       }
 
       // The backend emits `inngest/deferred.start` once the parent run
-      // finalizes, with the companion ID under
-      // `event.data._inngest.deferred_run.companion_id`.
+      // finalizes, with the companion ID under `event.data._inngest.fn_slug`.
       const deferFnConfig: FunctionConfig = {
         id,
         name,
         triggers: [
           {
             event: "inngest/deferred.start",
-            expression: `event.data._inngest.deferred_run.companion_id == '${id}'`,
+            expression: `event.data._inngest.fn_slug == '${id}'`,
           },
         ],
         steps: {
