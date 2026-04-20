@@ -7,6 +7,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
  */
 type CronTrigger = {
   cron: string;
+  jitter?: string;
 };
 
 /**
