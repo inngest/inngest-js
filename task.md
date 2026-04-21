@@ -11,20 +11,24 @@ inngest.createFunction(
   {
     id: "fn-1",
     onDefer: {
-      "send-email": createDefer(inngest, {
-        schema: z.object({ to: z.string(), body: z.string() }),
-        concurrency: { limit: 5 },
-        handler: async ({ event, step }) => {
+      "send-email": createDefer(
+        inngest,
+        {
+          schema: z.object({ to: z.string(), body: z.string() }),
+          concurrency: { limit: 5 },
+        },
+        async ({ event, step }) => {
           event.data.to; // string
           await step.run("send", () => { ... });
         },
-      }),
-      "process-payment": createDefer(inngest, {
-        schema: z.object({ amount: z.number() }),
-        handler: async ({ event, step }) => {
+      ),
+      "process-payment": createDefer(
+        inngest,
+        { schema: z.object({ amount: z.number() }) },
+        async ({ event, step }) => {
           event.data.amount; // number
         },
-      }),
+      ),
     },
     triggers: { event: "order/placed" },
   },
@@ -50,7 +54,7 @@ Similar to the `onFailure` option. Under the hood, a full Inngest function is cr
 - **Multiple named entries**: `onDefer` is an object map. Each key is a stable identifier that becomes part of the generated function ID (`{fnId}-defer-{key}`)
 - **`defer` mirrors `onDefer` shape**: Define as an object, use as an object (`defer["send-email"]("step-id", { to: "..." })`)
 - **Keys are durable IDs**: Renaming a key changes the generated function ID
-- **`createDefer(client, opts)`**: A standalone helper exported from `inngest/experimental` that takes the client as its first arg and captures schema types and middleware context. Returns a branded result consumed by `onDefer`. Kept off the client as a method while the API is experimental so we don't commit to a signature.
+- **`createDefer(client, opts, handler)`**: A standalone helper exported from `inngest/experimental`. Takes the client as first arg (inferring middleware/schema context), config as second arg, and the handler as third (mirroring `createFunction(opts, handler)`). Returns a branded result consumed by `onDefer`. Kept off the client as a method while the API is experimental so we don't commit to a signature.
 - **`onDefer` is a full Inngest function**: Like `onFailure`, each entry is synced to Inngest with full `step` capabilities
 - **Trigger expression**: Each companion matches `event.data._inngest.deferred_run.companion_id` against its own function ID on the `inngest/deferred.start` event. No flat routing field needed — the backend owns the event shape.
 - **Server-side support required**: Relies on `OpcodeDeferAdd` / `OpcodeDeferCancel` in the executor plus Finalize-time event emission. See `linell/exe-1622-add-deferred-run-opcode` in the `inngest` repo.
@@ -59,11 +63,11 @@ Similar to the `onFailure` option. Under the hood, a full Inngest function is cr
 
 Each `onDefer` entry accepts an optional `schema` field (`StandardSchemaV1`). The schema is the single source of truth, flowing to both the `defer()` call site and the handler's `event.data`.
 
-`createDefer(client, opts)` captures the schema type in a branded `DeferHandlerResult<TSchema>` with a required `schema` property. `createFunction` captures the full `onDefer` config via a `const` generic (`TOnDefer`) and extracts per-entry schemas to type the `defer` methods. This avoids reverse-mapped-type inference (which fails when `schema` is absent) by capturing the whole config directly.
+`createDefer(client, opts, handler)` captures the schema type in a branded `DeferHandlerResult<TSchema>` with a required `schema` property. `createFunction` captures the full `onDefer` config via a `const` generic (`TOnDefer`) and extracts per-entry schemas to type the `defer` methods. This avoids reverse-mapped-type inference (which fails when `schema` is absent) by capturing the whole config directly.
 
 When `schema` is omitted, `event.data` and the corresponding `defer` method both default to `any`.
 
-`createDefer(client, opts)` includes client-level middleware context extensions (e.g. `db` from dependency injection) in the handler's type by inferring `TClientOpts` from the client argument.
+`createDefer(client, opts, handler)` includes client-level middleware context extensions (e.g. `db` from dependency injection) in the handler's type by inferring `TClientOpts` from the client argument.
 
 ## Reused infrastructure
 

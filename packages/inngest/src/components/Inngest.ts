@@ -1139,38 +1139,38 @@ export function createDefer<
   client: Inngest<TClientOpts>,
   opts: {
     schema?: TSchema;
-    handler: (
-      ctx: (TSchema extends StandardSchemaV1<
-        infer D extends Record<string, unknown>
-      >
-        ? {
-            event: {
-              name: "inngest/deferred.start";
-              data: D;
-            };
-          }
-        : {
-            // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-            event: {
-              name: "inngest/deferred.start";
-              data: Record<string, any>;
-            };
-          }) &
-        ApplyAllMiddlewareCtxExtensions<
-          [...ReturnType<typeof builtInMiddleware>]
-        > &
-        ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
-          // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
-          step: any;
-        },
-    ) => unknown;
     concurrency?: InngestFunction.OnDeferConfig["concurrency"];
     retries?: InngestFunction.OnDeferConfig["retries"];
   },
+  handler: (
+    ctx: (TSchema extends StandardSchemaV1<
+      infer D extends Record<string, unknown>
+    >
+      ? {
+          event: {
+            name: "inngest/deferred.start";
+            data: D;
+          };
+        }
+      : {
+          event: {
+            name: "inngest/deferred.start";
+            // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+            data: Record<string, any>;
+          };
+        }) &
+      ApplyAllMiddlewareCtxExtensions<
+        [...ReturnType<typeof builtInMiddleware>]
+      > &
+      ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
+        // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
+        step: any;
+      },
+  ) => unknown,
 ): DeferHandlerResult<TSchema> {
   void client;
   // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through
-  return opts as any;
+  return { ...opts, handler } as any;
 }
 
 /**
