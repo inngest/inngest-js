@@ -72,7 +72,6 @@ test("no steps", async () => {
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
   const fn = client.createFunction(
     {
       id: "fn",
@@ -94,7 +93,6 @@ test("no steps", async () => {
       await defer.process("defer-1", {});
     },
   );
-
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
@@ -106,8 +104,55 @@ test("no steps", async () => {
   });
 });
 
+test("reentry", async () => {
+  const parentState = createState({});
+  const deferState = createState({ counter: 0 });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: client.createDefer({
+          handler: async () => {
+            // TODO: Run ID
+
+            deferState.counter++;
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId, step }) => {
+      parentState.runId = runId;
+      await defer.process("defer-1", {});
+
+      // Force reentry
+      await step.sleep("sleep", "1s");
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+
+  await waitFor(() => {
+    expect(deferState.counter).toBe(1);
+  });
+
+  // Wait long enough to give the 2nd defer a chance to trigger (it shouldn't)
+  await sleep(5000);
+
+  expect(deferState.counter).toBe(1);
+});
+
 test("nested in step", async () => {
-  const parentState = createState({  });
+  const parentState = createState({});
   const deferState = createState({ counter: 0 });
 
   const eventName = randomSuffix("evt");
@@ -134,7 +179,7 @@ test("nested in step", async () => {
       parentState.runId = runId;
       await step.run("a", async () => {
         await defer.process("defer-1", {});
-      })
+      });
     },
   );
   await createTestApp({ client, functions: [fn], serve: createServer });
