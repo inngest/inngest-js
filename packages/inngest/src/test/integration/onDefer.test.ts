@@ -106,6 +106,47 @@ test("no steps", async () => {
   });
 });
 
+test("nested in step", async () => {
+  const parentState = createState({  });
+  const deferState = createState({ counter: 0 });
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        process: client.createDefer({
+          handler: async () => {
+            // TODO: Run ID
+
+            deferState.counter++;
+          },
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId, step }) => {
+      parentState.runId = runId;
+      await step.run("a", async () => {
+        await defer.process("defer-1", {});
+      })
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+
+  await waitFor(() => {
+    expect(deferState.counter).toBe(1);
+  });
+});
+
 test("multiple onDefer handlers are independently triggered", async () => {
   const state = createState({
     emailData: null as { to: string } | null,

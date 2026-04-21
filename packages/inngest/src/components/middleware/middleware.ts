@@ -240,6 +240,7 @@ export namespace Middleware {
   export type StepType = OpenStringUnion<
     | "ai.infer"
     | "ai.wrap"
+    | "defer"
     | "fetch"
     | "group.experiment"
     | "invoke"

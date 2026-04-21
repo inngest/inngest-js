@@ -4,7 +4,7 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "dev": "INNGEST_DEV=1 tsx watch --include '../../**/*.ts' index.ts"
+    "dev": "INNGEST_DEV=1 tsx watch --include './**/*.ts' --include '../../packages/inngest/src/**/*.ts' index.ts"
   },
   "dependencies": {
     "express": "^4.19.2",
