@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { createDefer } from "../../../packages/inngest/src/experimental.ts";
 import { inngest } from "./client";
 
-const myDefer = inngest.createDefer({
+const myDefer = createDefer(inngest, {
   handler: async ({ step }) => {
     await step.run("do-stuff", () => {
       console.log("Running myDefer");
@@ -10,7 +11,7 @@ const myDefer = inngest.createDefer({
   },
 });
 
-const myOtherDefer = inngest.createDefer({
+const myOtherDefer = createDefer(inngest, {
   handler: async ({ step }) => {
     await step.run("do-other-stuff", () => {
       console.log("Running myOtherDefer");

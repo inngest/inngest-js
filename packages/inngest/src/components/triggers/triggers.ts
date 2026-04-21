@@ -256,13 +256,6 @@ export function eventType<
   });
 }
 
-export type DeferSystemFields = {
-  fn_id: string;
-  _inngest: {
-    fn_id: string;
-  };
-};
-
 /**
  * Branded result type from {@link createDefer}. The `schema` property
  * carries `TSchema` so `MaybeDeferCtx` can extract per-entry data types.

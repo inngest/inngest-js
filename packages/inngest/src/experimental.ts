@@ -6,5 +6,7 @@ export { getAsyncCtx } from "./components/execution/als.ts";
 export type { ExtendedTracesMiddlewareOptions } from "./components/execution/otel/middleware.ts";
 export { extendedTracesMiddleware } from "./components/execution/otel/middleware.ts";
 export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components/execution/otel/processor.ts";
+// Defer (companion functions)
+export { createDefer } from "./components/Inngest.ts";
 // Step Metadata
 export { metadataMiddleware } from "./components/InngestMetadata.ts";

@@ -67,10 +67,7 @@ import {
   subscribe as realtimeSubscribe,
 } from "./realtime/subscribe/index.ts";
 import type { Realtime } from "./realtime/types";
-import type {
-  DeferHandlerResult,
-  DeferSystemFields,
-} from "./triggers/triggers.ts";
+import type { DeferHandlerResult } from "./triggers/triggers.ts";
 import {
   type HandlerWithTriggers,
   isValidatable,
@@ -1012,50 +1009,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     return fn;
   };
 
-  /**
-   * Create a typed `onDefer` handler entry. Unlike the standalone
-   * `createDefer` function, this method includes middleware context
-   * extensions (e.g. dependency injection) in the handler's type.
-   */
-  createDefer<
-    TSchema extends
-      | StandardSchemaV1<Record<string, unknown>>
-      | undefined = undefined,
-  >(opts: {
-    schema?: TSchema;
-    handler: (
-      // The handler receives: event shape (schema-dependent) + middleware
-      // extensions + step tools. When a schema is provided, event.data is
-      // typed as the schema output intersected with system fields; without
-      // a schema, event.data falls back to `any`.
-      ctx: (TSchema extends StandardSchemaV1<
-        infer D extends Record<string, unknown>
-      >
-        ? {
-            event: {
-              name: "defer.start";
-              data: D & DeferSystemFields;
-            };
-          }
-        : {
-            // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-            event: { name: "defer.start"; data: any };
-          }) &
-        ApplyAllMiddlewareCtxExtensions<
-          [...ReturnType<typeof builtInMiddleware>]
-        > &
-        ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
-          // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
-          step: any;
-        },
-    ) => unknown;
-    concurrency?: InngestFunction.OnDeferConfig["concurrency"];
-    retries?: InngestFunction.OnDeferConfig["retries"];
-  }): DeferHandlerResult<TSchema> {
-    // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through
-    return opts as any;
-  }
-
   public get funcs() {
     return this.localFns;
   }
@@ -1167,6 +1120,57 @@ export function builtInMiddleware(baseLogger: Logger) {
       }
     },
   ] as const;
+}
+
+/**
+ * Create a typed `onDefer` handler entry. Captures schema types and the
+ * client's middleware context extensions (e.g. dependency injection) in the
+ * handler's type.
+ *
+ * Standalone rather than a client method so we don't commit to a signature on
+ * the client while the API is experimental.
+ */
+export function createDefer<
+  TClientOpts extends ClientOptions,
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>>
+    | undefined = undefined,
+>(
+  client: Inngest<TClientOpts>,
+  opts: {
+    schema?: TSchema;
+    handler: (
+      ctx: (TSchema extends StandardSchemaV1<
+        infer D extends Record<string, unknown>
+      >
+        ? {
+            event: {
+              name: "inngest/deferred.start";
+              data: D;
+            };
+          }
+        : {
+            // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+            event: {
+              name: "inngest/deferred.start";
+              data: Record<string, any>;
+            };
+          }) &
+        ApplyAllMiddlewareCtxExtensions<
+          [...ReturnType<typeof builtInMiddleware>]
+        > &
+        ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
+          // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
+          step: any;
+        },
+    ) => unknown;
+    concurrency?: InngestFunction.OnDeferConfig["concurrency"];
+    retries?: InngestFunction.OnDeferConfig["retries"];
+  },
+): DeferHandlerResult<TSchema> {
+  void client;
+  // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through
+  return opts as any;
 }
 
 /**

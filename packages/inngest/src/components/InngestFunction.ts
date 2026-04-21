@@ -826,8 +826,8 @@ export namespace InngestFunction {
    * `onDefer` map serves as the stable identifier.
    *
    * Full contextual typing (schema-based event data, middleware context)
-   * is provided by `Inngest.createDefer()` at the call site; this
-   * interface is the internal storage shape.
+   * is provided by `createDefer(client, opts)` (from `inngest/experimental`)
+   * at the call site; this interface is the internal storage shape.
    */
   export interface OnDeferConfig {
     handler: Handler.Any;
