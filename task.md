@@ -113,3 +113,13 @@ Future companions could include `onComplete` or `onCancel`. Each would follow th
 - ~~**Remove `step.defer`.**~~ Done. The only entry point is the top-level `defer.{key}(idOrOptions, data)`, which is already memoized via the opcode path.
 - **Remove `as any` in `createFunction`.** The cast bridges the user-facing `onDefer` config type to the internal `OnDeferConfig`. If one type changes without the other, the cast masks the mismatch. Align the types or add a narrowing helper to eliminate the cast.
 - **Wire `OpcodeDeferCancel`.** Backend reserves it; SDK does not yet emit it. Needs a user-facing API (e.g. `defer.cancel`) and the matching opcode emission.
+
+## Testing
+
+```sh
+// Lint and format
+pnpm -C packages/inngest exec biome check --fix
+
+// Run onDefer integration tests
+(export DEV_SERVER_ENABLED=0 && pnpm -C packages/inngest test:integration src/test/integration/onDefer.test.ts)
+```
