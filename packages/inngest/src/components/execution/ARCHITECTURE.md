@@ -10,4 +10,4 @@ Lazy ops (`StepOpCode.DeferAdd`) are fire-and-forget. User code keeps executing 
 
 The buffer drains onto whichever wire message comes next: an outbound checkpoint request (async-checkpointing mode) or the response the SDK returns to the executor (sync mode). In async-checkpointing mode, we force a dedicated checkpoint call *before* `RunComplete`, since the backend finalizes on `RunComplete` and drops anything riding in the same batch.
 
-`foundStepToOutgoingOp` builds the op. `drainPendingLazyOps` takes and clears the buffer. Drain sites: `checkpoint()`, `maybeReturnNewSteps`, the `steps-found` handler, and the async `function-resolved` / `function-rejected` handlers.
+The `LazyOps` class (`lazyOps.ts`) owns both construction and buffering: `push(step)` builds the op and buffers it, returning the op so callers can resume the user's step promise; `drain()` takes and clears, `has()` peeks. `isLazyOp(opts, opId)` detects opcode-only-sync steps. The engine owns shipping. Drain sites: `checkpoint()`, `maybeReturnNewSteps`, the `steps-found` handler, and the async `function-resolved` / `function-rejected` handlers.

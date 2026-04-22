@@ -83,6 +83,7 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
+import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
   buildSseMetadataEvent,
@@ -420,7 +421,7 @@ class InngestExecutionEngine
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
-    const lazyOps = this.drainPendingLazyOps();
+    const lazyOps = this.state.lazyOps.drain();
     if (lazyOps.length > 0) {
       steps = [...steps, ...lazyOps];
     }
@@ -825,7 +826,7 @@ class InngestExecutionEngine
 
       const allSteps: OutgoingOp[] = [
         ...(newSteps ?? []),
-        ...this.drainPendingLazyOps(),
+        ...this.state.lazyOps.drain(),
       ];
       if (allSteps.length === 0) {
         return;
@@ -1213,7 +1214,7 @@ class InngestExecutionEngine
         // If the step's handler buffered any lazy ops (e.g. `defer` calls),
         // ship them alongside the step result instead of losing them in the
         // `step-ran` → single-op response.
-        if (this.state.pendingLazyOps.length === 0) {
+        if (!this.state.lazyOps.has()) {
           return stepRanHandler(stepResult);
         }
 
@@ -1226,7 +1227,7 @@ class InngestExecutionEngine
           type: "steps-found",
           ctx: transformed.ctx,
           ops: transformed.ops,
-          steps: [transformed.step, ...this.drainPendingLazyOps()],
+          steps: [transformed.step, ...this.state.lazyOps.drain()],
         };
       },
 
@@ -1268,7 +1269,7 @@ class InngestExecutionEngine
           // `RunComplete` and emits companion-start events based on defers
           // recorded prior to that point — shipping them in the same
           // response batch as `RunComplete` loses them.
-          if (this.state.pendingLazyOps.length > 0) {
+          if (this.state.lazyOps.has()) {
             await this.checkpoint([]);
           }
 
@@ -1303,7 +1304,7 @@ class InngestExecutionEngine
           // when the function ultimately errors.
           if (
             this.state.checkpointingStepBuffer.length ||
-            this.state.pendingLazyOps.length
+            this.state.lazyOps.has()
           ) {
             const fallback = await attemptCheckpointAndResume(
               undefined,
@@ -1683,44 +1684,14 @@ class InngestExecutionEngine
   }
 
   /**
-   * Convert a FoundStep into the OutgoingOp shape for shipping opcode-only sync
-   * ops (e.g. `DeferAdd`). The opcode itself is the payload; there is no
-   * handler output.
-   */
-  private foundStepToOutgoingOp(step: FoundStep): OutgoingOp {
-    return {
-      id: step.hashedId,
-      op: step.op,
-      name: step.name,
-      displayName: step.displayName,
-      opts: step.opts,
-      userland: step.userland,
-      data: null,
-    };
-  }
-
-  /**
-   * Take ownership of any buffered lazy ops and clear the buffer. Returns an
-   * empty array when the buffer is empty.
-   */
-  private drainPendingLazyOps(): OutgoingOp[] {
-    if (this.state.pendingLazyOps.length === 0) {
-      return [];
-    }
-    const ops = this.state.pendingLazyOps;
-    this.state.pendingLazyOps = [];
-    return ops;
-  }
-
-  /**
    * Ship an opcode-only sync step (e.g. `DeferAdd`) through the checkpoint
-   * stream and resume the caller. No local handler runs — the opcode
-   * itself is the payload.
+   * stream and resume the caller. No local handler runs; the opcode itself is
+   * the payload.
    */
   private async checkpointOpcodeOnlyStep(step: FoundStep): Promise<void> {
-    const op = this.foundStepToOutgoingOp(step);
+    const op = this.state.lazyOps.push(step);
     this.resumeStepWithResult(op);
-    await this.checkpoint([op]);
+    await this.checkpoint([]);
   }
 
   /**
@@ -1986,7 +1957,7 @@ class InngestExecutionEngine
         return this.state.remainingStepsToBeSeen.size === 0;
       },
       checkpointingStepBuffer: [],
-      pendingLazyOps: [],
+      lazyOps: new LazyOps(),
       metadata: new Map(),
     };
 
@@ -2233,14 +2204,10 @@ class InngestExecutionEngine
       const stepOptions = getStepOptions(args[0]);
       const opId = matchOp(stepOptions, ...args.slice(1));
 
-      // Opcode-only sync ops (e.g. `DeferAdd`) are fire-and-forget — the
-      // opcode itself is the payload and there's no local handler to run.
-      // We resolve them eagerly and buffer the op for lazy shipment with
-      // the next response, rather than routing through the core loop. This
-      // avoids the deadlock when they're nested inside a `step.run`
-      // handler, and gives us free batching (N defers in a row = one ship)
-      // everywhere else.
-      const isOpcodeOnlySync = !opts?.fn && opId.mode === StepMode.Sync;
+      // Opcode-only sync ops (e.g. `DeferAdd`) are fire-and-forget: we
+      // resolve them eagerly and buffer the op for lazy shipment rather
+      // than routing through the core loop. See `ARCHITECTURE.md`.
+      const isOpcodeOnlySync = isLazyOp(opts, opId);
 
       if (this.state.executingStep && !isOpcodeOnlySync) {
         /**
@@ -2490,8 +2457,7 @@ class InngestExecutionEngine
         // uniformly. The nested case would otherwise deadlock (outer step
         // awaits defer; defer awaits the core loop; loop is blocked on the
         // outer step), and standalone calls get free batching.
-        const lazyOp = this.foundStepToOutgoingOp(step);
-        this.state.pendingLazyOps.push(lazyOp);
+        const lazyOp = this.state.lazyOps.push(step);
         this.resumeStepWithResult(lazyOp);
       } else {
         pushStepToReport(step);
@@ -2974,14 +2940,11 @@ export interface ExecutionState {
   checkpointingStepBuffer: OutgoingOp[];
 
   /**
-   * Opcode-only sync ops (e.g. `DeferAdd`) queued for lazy shipment with
-   * the next response. The user's promise is resolved eagerly when the op
-   * is queued; the op itself ships with the next checkpoint, step result,
-   * or function completion. Buffering this way avoids a deadlock when
-   * `defer.process` is called inside `step.run`, and gives free batching
-   * for consecutive calls.
+   * Buffer for opcode-only sync ops (e.g. `DeferAdd`) awaiting shipment
+   * on the next outbound wire message. See `ARCHITECTURE.md` and
+   * `lazyOps.ts` for the rationale.
    */
-  pendingLazyOps: OutgoingOp[];
+  lazyOps: LazyOps;
 
   /**
    * Metadata collected during execution to be sent with outgoing ops.
