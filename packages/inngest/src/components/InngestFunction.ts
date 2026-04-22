@@ -44,7 +44,6 @@ export class InngestFunction<
 {
   static stepId = "step";
   static failureSuffix = "-failure";
-  static deferSuffix = "-defer";
 
   get [Symbol.toStringTag](): typeof InngestFunction.Tag {
     return InngestFunction.Tag;
@@ -54,16 +53,6 @@ export class InngestFunction<
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
-  private readonly onDeferHandlers: Record<
-    string,
-    {
-      handler: Handler.Any;
-      // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
-      schema?: StandardSchemaV1<any>;
-      concurrency?: InngestFunction.OnDeferConfig["concurrency"];
-      retries?: InngestFunction.OnDeferConfig["retries"];
-    }
-  > = {};
   protected readonly client: TClient;
 
   /**
@@ -86,17 +75,6 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
-
-    if (this.opts.onDefer) {
-      for (const [key, entry] of Object.entries(this.opts.onDefer)) {
-        this.onDeferHandlers[key] = {
-          handler: entry.handler,
-          schema: entry.schema,
-          concurrency: entry.concurrency,
-          retries: entry.retries,
-        };
-      }
-    }
   }
 
   /**
@@ -181,28 +159,39 @@ export class InngestFunction<
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
     const triggers: FunctionConfig["triggers"] = [];
-    for (const trigger of this.opts.triggers ?? []) {
-      if (trigger.cron) {
-        triggers.push({ cron: trigger.cron });
-        continue;
-      }
 
-      if (!trigger.event) {
-        continue;
-      }
+    if (this.opts.deferMeta) {
+      // Defer functions are triggered by the backend-emitted
+      // `inngest/deferred.start` event and filtered to this function's
+      // full ID. User-supplied triggers are ignored for defer functions.
+      triggers.push({
+        event: "inngest/deferred.start",
+        expression: `event.data._inngest.fn_slug == '${fnId}'`,
+      });
+    } else {
+      for (const trigger of this.opts.triggers ?? []) {
+        if (trigger.cron) {
+          triggers.push({ cron: trigger.cron });
+          continue;
+        }
 
-      // The invoke event is in the triggers if they used the `invoke` trigger
-      // helper. But we need to remove it in the config, or else the function
-      // will be triggered by any invoke.
-      let eventName = trigger.event;
-      if (eventName instanceof EventType) {
-        eventName = eventName.name;
-      }
-      if (eventName === internalEvents.FunctionInvoked) {
-        continue;
-      }
+        if (!trigger.event) {
+          continue;
+        }
 
-      triggers.push({ event: eventName, expression: trigger.if });
+        // The invoke event is in the triggers if they used the `invoke` trigger
+        // helper. But we need to remove it in the config, or else the function
+        // will be triggered by any invoke.
+        let eventName = trigger.event;
+        if (eventName instanceof EventType) {
+          eventName = eventName.name;
+        }
+        if (eventName === internalEvents.FunctionInvoked) {
+          continue;
+        }
+
+        triggers.push({ event: eventName, expression: trigger.if });
+      }
     }
 
     const fn: FunctionConfig = {
@@ -288,48 +277,6 @@ export class InngestFunction<
           },
         },
       });
-    }
-
-    for (const [deferId, deferHandler] of Object.entries(
-      this.onDeferHandlers,
-    )) {
-      const id = `${fn.id}${InngestFunction.deferSuffix}-${deferId}`;
-      const name = `${fn.name ?? fn.id} (defer: ${deferId})`;
-
-      const deferStepUrl = new URL(stepUrl.href);
-      deferStepUrl.searchParams.set(queryKeys.FnId, id);
-
-      let deferRetries: { attempts: number } | undefined;
-      if (typeof deferHandler.retries !== "undefined") {
-        deferRetries = { attempts: deferHandler.retries };
-      }
-
-      // The backend emits `inngest/deferred.start` once the parent run
-      // finalizes, with the companion ID under `event.data._inngest.fn_slug`.
-      const deferFnConfig: FunctionConfig = {
-        id,
-        name,
-        triggers: [
-          {
-            event: "inngest/deferred.start",
-            expression: `event.data._inngest.fn_slug == '${id}'`,
-          },
-        ],
-        steps: {
-          [InngestFunction.stepId]: {
-            id: InngestFunction.stepId,
-            name: InngestFunction.stepId,
-            runtime: {
-              type: isConnect ? "ws" : "http",
-              url: deferStepUrl.href,
-            },
-            retries: deferRetries ?? { attempts: 1 },
-          },
-        },
-        concurrency: deferHandler.concurrency,
-      };
-
-      config.push(deferFnConfig);
     }
 
     return config;
@@ -748,18 +695,26 @@ export namespace InngestFunction {
     onFailure?: TFailureHandler;
 
     /**
-     * A map of named deferred handlers that can be triggered by calling
-     * `defer()` from the main function handler.
+     * A map of named defer function references that can be triggered by
+     * calling `defer.{key}()` from the main function handler. Each value
+     * is the result of `createDefer(client, opts, handler)`.
      *
-     * Each key is a stable identifier that becomes part of the generated
-     * function ID (`{fnId}-defer-{key}`). Do not rename keys after
-     * deploy.
-     *
-     * Each value is a full Inngest function config with `step`
-     * capabilities, triggered by a `defer.start` event sent when
-     * `defer()` is called.
+     * The key is a call-site alias used as the property name on `defer`.
+     * The defer function itself has its own `id` (passed to `createDefer`)
+     * which becomes the synced function's ID — keys are free to differ
+     * between parents that share the same defer.
      */
-    onDefer?: Record<string, InngestFunction.OnDeferConfig>;
+    onDefer?: Record<string, InngestFunction.Any>;
+
+    /**
+     * @internal — set by `createDefer`, not by user code. Marks this
+     * function as a defer function so `getConfig` emits a
+     * `inngest/deferred.start` trigger and execution validates incoming
+     * event data against the schema.
+     */
+    deferMeta?: {
+      schema?: StandardSchemaV1<Record<string, unknown>>;
+    };
 
     /**
      * Define a set of middleware that can be registered to hook into
@@ -822,18 +777,11 @@ export namespace InngestFunction {
   }
 
   /**
-   * Configuration for a single `onDefer` handler value. The key in the
-   * `onDefer` map serves as the stable identifier.
-   *
-   * Full contextual typing (schema-based event data, middleware context)
-   * is provided by `createDefer(client, opts)` (from `inngest/experimental`)
-   * at the call site; this interface is the internal storage shape.
+   * Shared config shape exposed to `createDefer(client, opts, handler)`.
+   * Only `concurrency` and `retries` are user-facing here — the rest
+   * (schema, handler, id) are positional args on `createDefer` itself.
    */
   export interface OnDeferConfig {
-    handler: Handler.Any;
-
-    schema?: StandardSchemaV1<Record<string, unknown>>;
-
     concurrency?:
       | number
       | ConcurrencyOption

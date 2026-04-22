@@ -78,8 +78,6 @@ import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 interface FnRegistryEntry {
   fn: InngestFunction.Any;
   handlerKind: "main" | "failure" | "defer";
-  /** For `handlerKind: "defer"`, the key into `onDeferHandlers`. */
-  deferId?: string;
 }
 
 // A response object for when an internal server error occurs. When that
@@ -416,6 +414,12 @@ export class InngestCommHandler<
    * when instantiating the class.
    */
   private readonly rawFns: InngestFunction.Any[];
+  /**
+   * All functions contributing to this handler's sync payload: user-passed
+   * functions plus the defer functions collected implicitly from their
+   * `onDefer` maps (deduped by id).
+   */
+  private readonly allFns: InngestFunction.Any[];
 
   private readonly client: Inngest.Any;
 
@@ -483,53 +487,86 @@ export class InngestCommHandler<
       );
     }
 
-    this.fns = this.rawFns.reduce<Record<string, FnRegistryEntry>>(
-      (acc, fn) => {
-        const configs = fn["getConfig"]({
-          baseUrl: new URL("https://example.com"),
-          appPrefix: this.client.id,
-        });
+    // Implicitly collect defer functions referenced by any user-supplied
+    // function's `onDefer` map. They're not passed to `serve()` directly;
+    // a single defer (shared via `createDefer`) may be attached to N
+    // parents and we dedupe by function ID.
+    const implicitDeferFns = new Map<string, InngestFunction.Any>();
+    for (const fn of this.rawFns) {
+      const onDefer = fn.opts.onDefer;
+      if (!onDefer) {
+        continue;
+      }
+      for (const deferFn of Object.values(onDefer)) {
+        const deferFullId = deferFn.id(this.client.id);
+        const existing = implicitDeferFns.get(deferFullId);
+        if (existing && existing !== deferFn) {
+          throw new Error(
+            `Two different defer functions registered with the same ID "${deferFullId}". Ensure each \`createDefer({ id })\` uses a unique id.`,
+          );
+        }
+        implicitDeferFns.set(deferFullId, deferFn);
+      }
+    }
 
-        const fnId = fn.id(this.client.id);
-        const failureId = `${fnId}${InngestFunction.failureSuffix}`;
-        const deferPrefix = `${fnId}${InngestFunction.deferSuffix}-`;
+    const buildEntries = (
+      fn: InngestFunction.Any,
+      kindHint: "main" | "defer",
+    ): Record<string, FnRegistryEntry> => {
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: this.client.id,
+      });
+      const fnId = fn.id(this.client.id);
+      const failureId = `${fnId}${InngestFunction.failureSuffix}`;
 
-        const fns = configs.reduce<Record<string, FnRegistryEntry>>(
-          (acc, { id }) => {
-            let handlerKind: FnRegistryEntry["handlerKind"] = "main";
-            let deferId: string | undefined;
-
-            if (id === failureId) {
-              handlerKind = "failure";
-            } else if (id.startsWith(deferPrefix)) {
-              handlerKind = "defer";
-              deferId = id.slice(deferPrefix.length);
-            }
-
-            return {
-              ...acc,
-              [id]: { fn, handlerKind, deferId },
-            };
-          },
-          {},
-        );
-
-        // biome-ignore lint/complexity/noForEach: intentional
-        configs.forEach(({ id }) => {
-          if (acc[id]) {
-            throw new Error(
-              `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
-            );
-          }
-        });
+      return configs.reduce<Record<string, FnRegistryEntry>>((acc, { id }) => {
+        let handlerKind: FnRegistryEntry["handlerKind"];
+        if (kindHint === "defer") {
+          handlerKind = "defer";
+        } else if (id === failureId) {
+          handlerKind = "failure";
+        } else {
+          handlerKind = "main";
+        }
 
         return {
           ...acc,
-          ...fns,
+          [id]: { fn, handlerKind },
         };
-      },
-      {},
-    );
+      }, {});
+    };
+
+    const entries: Record<string, FnRegistryEntry> = {};
+    const seenIds = new Set<string>();
+    for (const fn of this.rawFns) {
+      const built = buildEntries(fn, "main");
+      for (const id of Object.keys(built)) {
+        if (seenIds.has(id)) {
+          throw new Error(
+            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
+          );
+        }
+        seenIds.add(id);
+      }
+      Object.assign(entries, built);
+    }
+    for (const deferFn of implicitDeferFns.values()) {
+      const built = buildEntries(deferFn, "defer");
+      for (const id of Object.keys(built)) {
+        if (seenIds.has(id)) {
+          // A defer function ID must not collide with a main/failure
+          // function ID. Surface this so the user can rename one.
+          throw new Error(
+            `Duplicate function ID "${id}"; a defer function's id collides with another registered function.`,
+          );
+        }
+        seenIds.add(id);
+      }
+      Object.assign(entries, built);
+    }
+    this.fns = entries;
+    this.allFns = [...this.rawFns, ...implicitDeferFns.values()];
 
     this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
@@ -2221,7 +2258,6 @@ export class InngestCommHandler<
           requestedRunStep,
           timer,
           handlerKind: fn.handlerKind,
-          deferId: fn.deferId,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,
@@ -2239,7 +2275,7 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = this.allFns.reduce<FunctionConfig[]>(
       (acc, fn) => [
         ...acc,
         ...fn["getConfig"]({ baseUrl: url, appPrefix: this.client.id }),

@@ -134,20 +134,15 @@ export interface InngestExecutionOptions {
   requestedRunStep?: string;
   timer?: ServerTiming;
   /**
-   * Which handler variant is being executed. Companion functions
-   * (`"failure"` and `"defer"`) skip trigger-schema validation and
-   * resolve a different user function than the main handler.
+   * Which handler variant is being executed. `"failure"` skips
+   * trigger-schema validation and resolves `onFailure` instead of the
+   * main handler. `"defer"` marks the fn as a standalone defer function
+   * (created via `createDefer`); incoming event data is validated
+   * against the defer function's schema.
    *
    * @default "main"
    */
   handlerKind?: "main" | "failure" | "defer";
-
-  /**
-   * For `handlerKind: "defer"`, the key into the parent function's
-   * `onDeferHandlers` map. Set at registration time from the companion
-   * function's config ID.
-   */
-  deferId?: string;
 
   disableImmediateExecution?: boolean;
 

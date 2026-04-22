@@ -1863,26 +1863,20 @@ class InngestExecutionEngine
   }
 
   /**
-   * Validate the deferred event's data against the onDefer handler's schema.
-   * Uses `deferId` from execution options (set at registration time) to find
-   * the matching handler, then validates `event.data` against its schema.
+   * Validate the deferred event's data against the defer function's own
+   * schema (set via `createDefer`'s `opts.schema`).
    */
   private async validateDeferEventSchema(): Promise<void> {
-    const { deferId } = this.options;
-    if (!deferId) {
-      return;
-    }
-
-    const handler = this.options.fn["onDeferHandlers"][deferId];
-    if (!handler?.schema) {
+    const schema = this.options.fn.opts.deferMeta?.schema;
+    if (!schema) {
       return;
     }
 
     const eventData = this.fnArg.event?.data;
-    const result = await handler.schema["~standard"].validate(eventData);
+    const result = await schema["~standard"].validate(eventData);
     if (result.issues) {
       throw new Error(
-        `onDefer handler "${deferId}" schema validation failed: ${JSON.stringify(result.issues)}`,
+        `onDefer handler "${this.options.fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
   }
@@ -2493,7 +2487,7 @@ class InngestExecutionEngine
 
     const baseTools = createStepTools(this.options.client, this, stepHandler);
 
-    const onDeferHandlers = this.options.fn["onDeferHandlers"];
+    const onDefer = this.options.fn.opts.onDefer;
     let topLevelDefer:
       | Record<
           string,
@@ -2504,29 +2498,29 @@ class InngestExecutionEngine
         >
       | undefined;
 
-    if (Object.keys(onDeferHandlers).length > 0) {
-      const parentFnId = this.options.fn.id(this.options.client.id);
+    if (onDefer && Object.keys(onDefer).length > 0) {
       topLevelDefer = {};
 
-      for (const [deferId, entry] of Object.entries(onDeferHandlers)) {
-        const companionFnSlug = `${parentFnId}-defer-${deferId}`;
+      for (const [alias, deferFn] of Object.entries(onDefer)) {
+        const companionFnSlug = deferFn.id(this.options.client.id);
+        const schema = deferFn.opts.deferMeta?.schema;
 
         const validateData = async (
           data: Record<string, unknown>,
         ): Promise<unknown> => {
-          if (!entry.schema) {
+          if (!schema) {
             return data;
           }
-          const result = await entry.schema["~standard"].validate(data);
+          const result = await schema["~standard"].validate(data);
           if (result.issues) {
             throw new Error(
-              `defer() schema validation failed for "${deferId}": ${JSON.stringify(result.issues)}`,
+              `defer() schema validation failed for "${alias}" (${companionFnSlug}): ${JSON.stringify(result.issues)}`,
             );
           }
           return result.value ?? data;
         };
 
-        topLevelDefer[deferId] = async (idOrOptions, data) => {
+        topLevelDefer[alias] = async (idOrOptions, data) => {
           const input = await validateData(data);
           await stepHandler({
             args: [idOrOptions, input],
@@ -2688,21 +2682,10 @@ class InngestExecutionEngine
 
   private getUserFnToRun(): Handler.Any {
     switch (this.options.handlerKind) {
-      case "defer": {
-        const { deferId } = this.options;
-        if (!deferId) {
-          throw new Error(
-            "Defer handler invoked without deferId in execution options",
-          );
-        }
-
-        const match = this.options.fn["onDeferHandlers"][deferId];
-        if (!match) {
-          throw new Error(`Cannot find onDefer handler with id "${deferId}"`);
-        }
-
-        return match.handler;
-      }
+      case "defer":
+        // Defer functions are real InngestFunctions — the handler is stored
+        // in the same slot as a main function's handler.
+        return this.options.fn["fn"];
 
       case "failure": {
         if (!this.options.fn["onFailureFn"]) {

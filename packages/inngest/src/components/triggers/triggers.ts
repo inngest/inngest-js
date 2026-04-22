@@ -257,48 +257,19 @@ export function eventType<
 }
 
 /**
- * Branded result type from {@link createDefer}. The `schema` property
- * carries `TSchema` so `MaybeDeferCtx` can extract per-entry data types.
+ * Branded result type from {@link createDefer}. Carries `TSchema` at the
+ * type level so `MaybeDeferCtx` can extract per-entry data types. At
+ * runtime the value is a real `InngestFunction` instance; this shape is
+ * phantom and the schema property is never accessed at runtime.
  */
 export type DeferHandlerResult<
   TSchema extends
     | StandardSchemaV1<Record<string, unknown>>
     | undefined = undefined,
 > = {
-  schema: TSchema;
-  // biome-ignore lint/suspicious/noExplicitAny: opaque handler storage
-  handler: (...args: any[]) => any;
-  concurrency?: DeferHandlerConcurrency;
-  retries?: DeferHandlerRetries;
+  readonly __deferBrand: "DeferHandlerResult";
+  readonly schema: TSchema;
 };
-
-type DeferHandlerConcurrency =
-  | number
-  | { limit: number; key?: string }
-  | [{ limit: number; key?: string }, { limit: number; key?: string }];
-
-type DeferHandlerRetries =
-  | 0
-  | 1
-  | 2
-  | 3
-  | 4
-  | 5
-  | 6
-  | 7
-  | 8
-  | 9
-  | 10
-  | 11
-  | 12
-  | 13
-  | 14
-  | 15
-  | 16
-  | 17
-  | 18
-  | 19
-  | 20;
 
 /**
  * Create a type-only schema that provides TypeScript types without runtime

@@ -1028,11 +1028,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       triggers: this.sanitizeTriggers(rawOptions.triggers),
     };
 
-    // The mapped `onDefer` type (DeferEntryInput) is structurally
-    // compatible with OnDeferConfig at runtime; the cast bridges the
-    // type-level gap between the user-facing input type and the internal
-    // storage type.
-    // biome-ignore lint/suspicious/noExplicitAny: bridging input ↔ internal types
+    // The user-facing `onDefer` value type is the branded
+    // `DeferHandlerResult` (a phantom shape used for schema inference).
+    // At runtime each value is a real `InngestFunction` — this cast
+    // bridges the type-level gap.
+    // biome-ignore lint/suspicious/noExplicitAny: bridging phantom ↔ runtime types
     return new InngestFunction(this, options as any, handler);
   };
 
@@ -1123,12 +1123,14 @@ export function builtInMiddleware(baseLogger: Logger) {
 }
 
 /**
- * Create a typed `onDefer` handler entry. Captures schema types and the
- * client's middleware context extensions (e.g. dependency injection) in the
- * handler's type.
+ * Create a typed defer function. One `createDefer` call = one Inngest
+ * function (shared across every `onDefer` attachment that references it).
  *
- * Standalone rather than a client method so we don't commit to a signature on
- * the client while the API is experimental.
+ * The returned value is a real `InngestFunction` at runtime but is typed as
+ * a branded `DeferHandlerResult<TSchema>` so the schema flows to callers of
+ * `defer.{alias}(...)`. Not passed to `serve()` directly — the comm handler
+ * implicitly collects defer functions referenced by any registered
+ * function's `onDefer` map.
  */
 export function createDefer<
   TClientOpts extends ClientOptions,
@@ -1138,6 +1140,7 @@ export function createDefer<
 >(
   client: Inngest<TClientOpts>,
   opts: {
+    id: string;
     schema?: TSchema;
     concurrency?: InngestFunction.OnDeferConfig["concurrency"];
     retries?: InngestFunction.OnDeferConfig["retries"];
@@ -1168,9 +1171,18 @@ export function createDefer<
       },
   ) => unknown,
 ): DeferHandlerResult<TSchema> {
-  void client;
-  // biome-ignore lint/suspicious/noExplicitAny: runtime pass-through
-  return { ...opts, handler } as any;
+  const fn = new InngestFunction(
+    client,
+    {
+      id: opts.id,
+      retries: opts.retries,
+      concurrency: opts.concurrency,
+      triggers: [],
+      deferMeta: { schema: opts.schema },
+    },
+    handler as Handler.Any,
+  );
+  return fn as unknown as DeferHandlerResult<TSchema>;
 }
 
 /**
@@ -1215,18 +1227,14 @@ export namespace Inngest {
    * `TOnDefer` const generic so TypeScript captures the literal config
    * (including schema types) without reverse-mapped inference.
    *
-   * Handlers get `any` for their parameters via this constraint —
-   * schema-based typing flows through the main handler's `defer`
-   * methods, not the onDefer handler itself (same pattern as
-   * `eventType()` defaulting to any without a schema).
+   * Matches the phantom shape of `DeferHandlerResult` (the return of
+   * `createDefer`). At runtime each entry is a real `InngestFunction`
+   * instance; these properties exist only at the type level.
    */
   type OnDeferEntryBase = {
+    readonly __deferBrand: "DeferHandlerResult";
     // biome-ignore lint/suspicious/noExplicitAny: widest schema constraint for inference
-    schema?: StandardSchemaV1<any>;
-    // biome-ignore lint/suspicious/noExplicitAny: handler is untyped here; schema typing flows through defer()
-    handler: (ctx: any) => any;
-    concurrency?: InngestFunction.OnDeferConfig["concurrency"];
-    retries?: InngestFunction.OnDeferConfig["retries"];
+    readonly schema: StandardSchemaV1<any> | undefined;
   };
 
   /**
