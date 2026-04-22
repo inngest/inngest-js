@@ -7,6 +7,7 @@ import {
   dummyEventKey,
   envKeys,
   headerKeys,
+  type internalEvents,
 } from "../helpers/consts.ts";
 import { createEntropy } from "../helpers/crypto.ts";
 import {
@@ -1123,6 +1124,35 @@ export function builtInMiddleware(baseLogger: Logger) {
 }
 
 /**
+ * The `event` shape a defer handler receives. With a schema, `data`
+ * narrows to its inferred type; without one, it falls back to
+ * `Record<string, any>`.
+ */
+type DeferEvent<TSchema> = {
+  name: internalEvents.DeferredStart;
+  data: TSchema extends StandardSchemaV1<
+    infer D extends Record<string, unknown>
+  >
+    ? D
+    : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+      Record<string, any>;
+};
+
+/**
+ * The full context a defer handler receives: the typed event, any
+ * client-level middleware extensions (e.g. `db` via dependency
+ * injection), and an opaque `step`. We keep `step` opaque while the API
+ * is experimental.
+ */
+type DeferHandlerCtx<TClientOpts extends ClientOptions, TSchema> = {
+  event: DeferEvent<TSchema>;
+} & ApplyAllMiddlewareCtxExtensions<[...ReturnType<typeof builtInMiddleware>]> &
+  ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
+    // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
+    step: any;
+  };
+
+/**
  * Create a typed defer function. One `createDefer` call = one Inngest
  * function (shared across every `onDefer` attachment that references it).
  *
@@ -1145,31 +1175,7 @@ export function createDefer<
     concurrency?: InngestFunction.OnDeferConfig["concurrency"];
     retries?: InngestFunction.OnDeferConfig["retries"];
   },
-  handler: (
-    ctx: (TSchema extends StandardSchemaV1<
-      infer D extends Record<string, unknown>
-    >
-      ? {
-          event: {
-            name: "inngest/deferred.start";
-            data: D;
-          };
-        }
-      : {
-          event: {
-            name: "inngest/deferred.start";
-            // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-            data: Record<string, any>;
-          };
-        }) &
-      ApplyAllMiddlewareCtxExtensions<
-        [...ReturnType<typeof builtInMiddleware>]
-      > &
-      ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
-        // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
-        step: any;
-      },
-  ) => unknown,
+  handler: (ctx: DeferHandlerCtx<TClientOpts, TSchema>) => unknown,
 ): DeferHandlerResult<TSchema> {
   const fn = new InngestFunction(
     client,

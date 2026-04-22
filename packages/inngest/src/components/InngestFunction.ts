@@ -165,7 +165,7 @@ export class InngestFunction<
       // `inngest/deferred.start` event and filtered to this function's
       // full ID. User-supplied triggers are ignored for defer functions.
       triggers.push({
-        event: "inngest/deferred.start",
+        event: internalEvents.DeferredStart,
         expression: `event.data._inngest.fn_slug == '${fnId}'`,
       });
     } else {

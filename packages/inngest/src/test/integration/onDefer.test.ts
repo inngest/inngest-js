@@ -592,13 +592,9 @@ test("one defer shared across multiple parents", async () => {
   });
 
   // Single defer function, referenced by two parents under different aliases.
-  const shared = createDefer(
-    client,
-    { id: "shared" },
-    async () => {
-      state.counter++;
-    },
-  );
+  const shared = createDefer(client, { id: "shared" }, async () => {
+    state.counter++;
+  });
 
   const fnA = client.createFunction(
     {

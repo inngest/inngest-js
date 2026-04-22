@@ -180,6 +180,12 @@ export enum internalEvents {
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
   HttpRequest = "inngest/http.request",
+
+  /**
+   * Triggers a defer (companion) function. The backend emits this, carrying the
+   * companion's function slug and the user-supplied input.
+   */
+  DeferredStart = "inngest/deferred.start",
 }
 
 export const logPrefix: string = "[Inngest]";

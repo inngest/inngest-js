@@ -117,6 +117,15 @@ function errorMessage(error: unknown): string {
  */
 const RUN_COMPLETE_STEP_ID = "complete";
 
+/**
+ * The `defer.{alias}(id, data)` methods the handler context exposes when a
+ * function declares an `onDefer` map. One entry per alias.
+ */
+type DeferMethods = Record<
+  string,
+  (idOrOptions: StepOptionsOrId, data: Record<string, unknown>) => Promise<void>
+>;
+
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
@@ -411,9 +420,9 @@ class InngestExecutionEngine
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
-    if (this.state.pendingLazyOps.length > 0) {
-      steps = [...steps, ...this.state.pendingLazyOps];
-      this.state.pendingLazyOps = [];
+    const lazyOps = this.drainPendingLazyOps();
+    if (lazyOps.length > 0) {
+      steps = [...steps, ...lazyOps];
     }
 
     if (this.options.stepMode === StepMode.Sync) {
@@ -813,10 +822,11 @@ class InngestExecutionEngine
       const newSteps = await this.filterNewSteps(
         Array.from(this.state.steps.values()),
       );
-      const lazyOps = this.state.pendingLazyOps;
-      this.state.pendingLazyOps = [];
 
-      const allSteps: OutgoingOp[] = [...(newSteps ?? []), ...lazyOps];
+      const allSteps: OutgoingOp[] = [
+        ...(newSteps ?? []),
+        ...this.drainPendingLazyOps(),
+      ];
       if (allSteps.length === 0) {
         return;
       }
@@ -1196,28 +1206,28 @@ class InngestExecutionEngine
        */
       "steps-found": async ({ steps }) => {
         const stepResult = await this.tryExecuteStep(steps);
-        if (stepResult) {
-          // If the step's handler buffered any lazy ops (e.g. `defer`
-          // calls), ship them alongside the step result instead of losing
-          // them in the `step-ran` → single-op response.
-          if (this.state.pendingLazyOps.length > 0) {
-            const transformed = await stepRanHandler(stepResult);
-            if (transformed.type === "step-ran") {
-              const lazyOps = this.state.pendingLazyOps;
-              this.state.pendingLazyOps = [];
-              return {
-                type: "steps-found",
-                ctx: transformed.ctx,
-                ops: transformed.ops,
-                steps: [transformed.step, ...lazyOps],
-              };
-            }
-            return transformed;
-          }
+        if (!stepResult) {
+          return maybeReturnNewSteps();
+        }
+
+        // If the step's handler buffered any lazy ops (e.g. `defer` calls),
+        // ship them alongside the step result instead of losing them in the
+        // `step-ran` → single-op response.
+        if (this.state.pendingLazyOps.length === 0) {
           return stepRanHandler(stepResult);
         }
 
-        return maybeReturnNewSteps();
+        const transformed = await stepRanHandler(stepResult);
+        if (transformed.type !== "step-ran") {
+          return transformed;
+        }
+
+        return {
+          type: "steps-found",
+          ctx: transformed.ctx,
+          ops: transformed.ops,
+          steps: [transformed.step, ...this.drainPendingLazyOps()],
+        };
       },
 
       /**
@@ -1673,12 +1683,12 @@ class InngestExecutionEngine
   }
 
   /**
-   * Ship an opcode-only sync step (e.g. `DeferAdd`) through the checkpoint
-   * stream and resume the caller. No local handler runs — the opcode
-   * itself is the payload.
+   * Convert a FoundStep into the OutgoingOp shape for shipping opcode-only sync
+   * ops (e.g. `DeferAdd`). The opcode itself is the payload; there is no
+   * handler output.
    */
-  private async checkpointOpcodeOnlyStep(step: FoundStep): Promise<void> {
-    const op: OutgoingOp = {
+  private foundStepToOutgoingOp(step: FoundStep): OutgoingOp {
+    return {
       id: step.hashedId,
       op: step.op,
       name: step.name,
@@ -1687,7 +1697,28 @@ class InngestExecutionEngine
       userland: step.userland,
       data: null,
     };
+  }
 
+  /**
+   * Take ownership of any buffered lazy ops and clear the buffer. Returns an
+   * empty array when the buffer is empty.
+   */
+  private drainPendingLazyOps(): OutgoingOp[] {
+    if (this.state.pendingLazyOps.length === 0) {
+      return [];
+    }
+    const ops = this.state.pendingLazyOps;
+    this.state.pendingLazyOps = [];
+    return ops;
+  }
+
+  /**
+   * Ship an opcode-only sync step (e.g. `DeferAdd`) through the checkpoint
+   * stream and resume the caller. No local handler runs — the opcode
+   * itself is the payload.
+   */
+  private async checkpointOpcodeOnlyStep(step: FoundStep): Promise<void> {
+    const op = this.foundStepToOutgoingOp(step);
     this.resumeStepWithResult(op);
     await this.checkpoint([op]);
   }
@@ -2051,15 +2082,7 @@ class InngestExecutionEngine
 
   private createStepTools(): {
     step: ReturnType<typeof createStepTools>;
-    topLevelDefer:
-      | Record<
-          string,
-          (
-            idOrOptions: StepOptionsOrId,
-            data: Record<string, unknown>,
-          ) => Promise<void>
-        >
-      | undefined;
+    topLevelDefer: DeferMethods | undefined;
   } {
     /**
      * A list of steps that have been found and are being rolled up before being
@@ -2467,15 +2490,7 @@ class InngestExecutionEngine
         // uniformly. The nested case would otherwise deadlock (outer step
         // awaits defer; defer awaits the core loop; loop is blocked on the
         // outer step), and standalone calls get free batching.
-        const lazyOp: OutgoingOp = {
-          id: step.hashedId,
-          op: step.op,
-          name: step.name,
-          displayName: step.displayName,
-          opts: step.opts,
-          userland: step.userland,
-          data: null,
-        };
+        const lazyOp = this.foundStepToOutgoingOp(step);
         this.state.pendingLazyOps.push(lazyOp);
         this.resumeStepWithResult(lazyOp);
       } else {
@@ -2486,64 +2501,59 @@ class InngestExecutionEngine
     };
 
     const baseTools = createStepTools(this.options.client, this, stepHandler);
+    const topLevelDefer = this.buildDeferMethods(stepHandler);
 
+    return { step: baseTools, topLevelDefer };
+  }
+
+  /**
+   * Build the `defer.{alias}(id, data)` methods for a function that
+   * declares `onDefer`. Each alias validates its input against the defer
+   * function's schema (if any) and emits a `DeferAdd` opcode that routes
+   * to that defer's companion function slug.
+   */
+  private buildDeferMethods(
+    stepHandler: StepHandler,
+  ): DeferMethods | undefined {
     const onDefer = this.options.fn.opts.onDefer;
-    let topLevelDefer:
-      | Record<
-          string,
-          (
-            idOrOptions: StepOptionsOrId,
-            data: Record<string, unknown>,
-          ) => Promise<void>
-        >
-      | undefined;
+    if (!onDefer || Object.keys(onDefer).length === 0) {
+      return undefined;
+    }
 
-    if (onDefer && Object.keys(onDefer).length > 0) {
-      topLevelDefer = {};
+    const methods: DeferMethods = {};
 
-      for (const [alias, deferFn] of Object.entries(onDefer)) {
-        const companionFnSlug = deferFn.id(this.options.client.id);
-        const schema = deferFn.opts.deferMeta?.schema;
+    for (const [alias, deferFn] of Object.entries(onDefer)) {
+      const companionFnSlug = deferFn.id(this.options.client.id);
+      const schema = deferFn.opts.deferMeta?.schema;
 
-        const validateData = async (
-          data: Record<string, unknown>,
-        ): Promise<unknown> => {
-          if (!schema) {
-            return data;
-          }
+      methods[alias] = async (idOrOptions, data) => {
+        let input: unknown = data;
+        if (schema) {
           const result = await schema["~standard"].validate(data);
           if (result.issues) {
             throw new Error(
               `defer() schema validation failed for "${alias}" (${companionFnSlug}): ${JSON.stringify(result.issues)}`,
             );
           }
-          return result.value ?? data;
-        };
+          input = result.value ?? data;
+        }
 
-        topLevelDefer[alias] = async (idOrOptions, data) => {
-          const input = await validateData(data);
-          await stepHandler({
-            args: [idOrOptions, input],
-            matchOp: (stepOptions, inputArg) => {
-              return {
-                id: stepOptions.id,
-                mode: StepMode.Sync,
-                op: StepOpCode.DeferAdd,
-                name: stepOptions.name ?? stepOptions.id,
-                displayName: stepOptions.name ?? stepOptions.id,
-                opts: {
-                  fn_slug: companionFnSlug,
-                  input: inputArg,
-                },
-                userland: { id: stepOptions.id },
-              };
-            },
-          });
-        };
-      }
+        await stepHandler({
+          args: [idOrOptions, input],
+          matchOp: (stepOptions, inputArg) => ({
+            id: stepOptions.id,
+            mode: StepMode.Sync,
+            op: StepOpCode.DeferAdd,
+            name: stepOptions.name ?? stepOptions.id,
+            displayName: stepOptions.name ?? stepOptions.id,
+            opts: { fn_slug: companionFnSlug, input: inputArg },
+            userland: { id: stepOptions.id },
+          }),
+        });
+      };
     }
 
-    return { step: baseTools, topLevelDefer };
+    return methods;
   }
 
   /**
