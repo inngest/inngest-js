@@ -33,8 +33,8 @@ inngest.createFunction(
     triggers: { event: "order/placed" },
   },
   async ({ defer }) => {
-    await defer["send-email"]("send", { to: "a@b.com", body: "hi" });
-    await defer["process-payment"]("charge", { amount: 100 });
+    defer["send-email"]("send", { to: "a@b.com", body: "hi" });
+    defer["process-payment"]("charge", { amount: 100 });
   },
 );
 ```
@@ -45,46 +45,61 @@ Each `createDefer(client, { id, ... }, handler)` call creates exactly one Innges
 
 # Decisions
 
-- **Opcode-driven, backend-routed**: `defer` emits `StepOpCode.DeferAdd` with `{ companion_id, input }`. The SDK no longer sends a `defer.start` event via the Event API; the backend records the defer in run state and publishes `inngest/deferred.start` at Finalize, keyed deterministically so retries don't double-trigger.
-- **Event name (backend-emitted)**: `inngest/deferred.start`
-- **Event payload (backend-emitted)**: `{ _inngest: { deferred_run: { companion_id }, parent_run: { fn_slug, run_id } }, input: <user data> }`. The SDK unwraps `event.data.input` before the companion handler runs so user code sees `event.data` shaped per the schema.
-- **`defer` is the only entry point**: `defer.{key}(idOrOptions, data)` emits a `DeferAdd` opcode keyed by the user-provided step ID. Safe across retries via server-side step idempotency. Passed alongside `event` and `step` in the main handler; no `step.defer` equivalent.
-- **Fire and forget**: `await defer.process(...)` resolves as soon as the SDK has queued the opcode for shipment; it does not wait for the deferred function to complete. The companion event is emitted after the parent run finalizes.
-- **Lazy opcode shipment**: `DeferAdd` (and any future opcode-only sync op like `DeferCancel`) resolves the user's `await` eagerly and buffers the opcode for shipment with the next response — a checkpoint, a step result, or function completion. Consecutive defers batch into a single ship. In async-checkpointing mode, buffered ops flush via a dedicated checkpoint call before `RunComplete`, because the backend finalizes on `RunComplete` and emits companion events based on defers recorded prior to that point — same-batch shipment loses them. This shipment model is what makes `defer.process` safe to call inside `step.run` handlers: routing the opcode through the core loop would deadlock (outer step awaits defer; defer awaits the loop; loop is blocked on the outer step).
-- **Shared, not owned**: `onDefer` is an object map of call-site aliases → defer function references (results of `createDefer`). The map key is *only* a call-site alias used as the property name on `defer.{alias}(...)`. The defer function's own `id` (passed to `createDefer`) is what becomes the synced function ID, so the same defer can be attached to N parents without duplicating infra.
-- **`defer` mirrors `onDefer` shape**: Define as an object, use as an object (`defer["send-email"]("step-id", { to: "..." })`). The alias is local to each parent — two parents can attach the same defer under different aliases.
-- **Aliases are not durable**: renaming an alias is safe; renaming a defer function's `id` (the argument to `createDefer`) changes the synced function ID.
-- **Config (concurrency/retries) is shared**: `concurrency` and `retries` on a defer apply globally across every parent that attaches it. If you need per-caller tuning, create a separate defer function.
-- **`createDefer(client, opts, handler)`**: A standalone helper exported from `inngest/experimental`. Takes the client as first arg (inferring middleware/schema context), config as second arg, and the handler as third (mirroring `createFunction(opts, handler)`). Returns a branded result consumed by `onDefer`. Kept off the client as a method while the API is experimental so we don't commit to a signature.
-- **Each defer is a full Inngest function**: Synced with full `step` capabilities. Trigger is `inngest/deferred.start` with an expression matching its own function ID.
-- **Not passed to `serve()`**: The comm handler walks every registered main function's `onDefer` map and transparently includes referenced defer functions in the sync payload, deduped by id. Remove every attachment and the defer silently drops from the app — worth being aware of.
-- **Server-side support required**: Relies on `OpcodeDeferAdd` / `OpcodeDeferCancel` in the executor plus Finalize-time event emission. See `linell/exe-1622-add-deferred-run-opcode` in the `inngest` repo.
+## Execution
+
+Opcode-driven (e.g. `DeferAdd`). This requires a new pattern: opcode without a step. Because there isn't a step, we can't do things like control flow interruption. To solve this, we're introducing a new "lazy ops" pattern.
+
+Lazy ops are named after their defining behavior: they're lazily reported. We buffer them until the next time we report (HTTP response or outgoing checkpoint request).
+
+Deferred functions are triggered by a new `inngest/deferred.start` event. This event is sent from the backend. The event includes the user-specified input (passed to `defer.{alias}(id, input)`) and some metadata (in the `_inngest` field).
+
+## Call semantics
+
+`defer` methods emit a `DeferAdd` opcode. It's fire-and-forget: execution continues passed the `defer` call while the opcode is buffered.
+
+The available methods on `defer` are the same as the `onDefer` keys.
+
+Can be called inside or outside of `step.run()`.
+
+## Inngest functions
+
+A deferred function is a full Inngest function. It's created by a different function (`createDefer()` vs. `createFunction()`), but we still create an Inngest function for it.
+
+A single deferred function can be "linked" to many parent functions. The deferred function will still be 1 Inngest function in the backend, but each linked parent function can trigger it.
+
+## `createDefer`
+
+Similar call signature to `createFunction()`, but with some differences:
+- Remove `triggers`. The trigger is implicit (`inngest/deferred.start` filtered to the function's own ID).
+- Add `schema` (optional). This defines the shape (runtime and/or static) of the data passed to the deferred function. In a normal Inngest function, this happens in the `triggers` field, but that field doesn't exist for `createDefer()`.
+- Remove `onFailure`. We may add it later.
+- The `event` object in the handler always has the name `inngest/deferred.start`. Its data type is controlled by the `schema` field.
+
+`createDefer()` is a pure function instead of an `Inngest` client method for 2 reasons:
+1. We don't want to commit to a signature for `createDefer()` yet.
+2. We aren't sure if a client method would cause circular dependencies if we add an `onDefer` field to the client.
+
+## Registration
+
+The user does not pass a deferred function to their `serve()` function like they would for a normal Inngest function. Instead, deferred functions are implicitly synced if they're linked to at least 1 parent function.
+
+Note that removing all of a deferred function's links will cause it to be removed from the backend.
 
 # Type safety
 
 Each `onDefer` entry accepts an optional `schema` field (`StandardSchemaV1`). The schema is the single source of truth, flowing to both the `defer()` call site and the handler's `event.data`.
 
-`createDefer(client, opts, handler)` captures the schema type in a branded `DeferHandlerResult<TSchema>` with a required `schema` property. `createFunction` captures the full `onDefer` config via a `const` generic (`TOnDefer`) and extracts per-entry schemas to type the `defer` methods. This avoids reverse-mapped-type inference (which fails when `schema` is absent) by capturing the whole config directly.
-
-When `schema` is omitted, `event.data` and the corresponding `defer` method both default to `any`.
-
-`createDefer(client, opts, handler)` includes client-level middleware context extensions (e.g. `db` from dependency injection) in the handler's type by inferring `TClientOpts` from the client argument.
-
-## Reused infrastructure
-
-- `StandardSchemaV1` from `@standard-schema/spec`
-- `AssertNoTransform` guard from `triggers.ts`
+Client-level middleware applies to deferred functions. This is necessary for things like dependency injection.
 
 # Relationship to other features
 
 - **`step.invoke(fn, { data })`**: Calls another function and waits for its result. Use when the caller needs the output.
 - **`step.sendEvent()`**: Fires events that trigger any matching function. Generic, untyped relative to the receiver.
 - **`defer.{alias}({ ... })`**: Fire-and-forget like `sendEvent`, but typed like `invoke`. Target is a named defer function (created via `createDefer`, potentially shared across parents). Use when you need a typed data contract with independent execution and its own retries/concurrency.
-- **`onFailure`**: Still 1:1 with its parent function — fires automatically on the parent's failure and is owned by that parent. `onDefer` is now many:many (shared defer functions). Both still generate Inngest functions under the hood; only `onDefer` decouples identity from the parent.
 
 # Companion functions
 
-`onFailure` and `onDefer` both execute independently with their own retries, concurrency, and step state. `onFailure` is still parent-owned (1:1 lifecycle hook); `onDefer` is now a shared-reference pattern (many:many task spawning).
+`onFailure` and `onDefer` both execute independently with their own retries, concurrency, and step state. `onFailure` is still parent-owned (1:1 lifecycle hook); `onDefer` is a shared-reference pattern (many:many).
 
 Shared properties:
 - **Triggers are implicit.** The SDK determines how each is activated (`inngest/function.failed` for `onFailure`, `inngest/deferred.start` for `onDefer`). Users never wire triggers manually.
@@ -96,14 +111,11 @@ Where they diverge:
 
 Future companions could include `onComplete` or `onCancel`. Each would follow the same pattern: a handler defined in the parent's config, triggered by an internal event, with its own execution context. The `handlerKind` discriminated union (see TODO) would extend to cover new kinds.
 
-# Out of scope
+# Future work
 
-- `OpcodeDeferCancel` wiring on the SDK side (the opcode is reserved but the SDK does not yet emit it)
+Add way to cancel a `defer` method call.
 
-# Open questions
-
-- **Should function-level middleware flow to companions?** Client-level middleware (`new Inngest({ middleware: [...] })`) flows to `onDefer` handlers via `client.createDefer()`. But function-level middleware (the `middleware` option on `createFunction`) does not. Should it? `onFailure` has the same question. If yes, `createDefer` would need access to the function-level middleware type, which it currently doesn't have since it's called before `createFunction`.
-- **`onFailure` / `onDefer` API consistency.** `onFailure` takes an inline handler. `onDefer` requires `client.createDefer()`. The inconsistency is justified (`createDefer` solves type inference problems), but could confuse users. Should `onFailure` also get a `client.createFailureHandler()` for consistency?
+Add way to immediately start the deferred function.
 
 # TODO
 
@@ -113,6 +125,7 @@ Future companions could include `onComplete` or `onCancel`. Each would follow th
 - ~~**Remove `step.defer`.**~~ Done. The only entry point is the top-level `defer.{key}(idOrOptions, data)`, which is already memoized via the opcode path.
 - **Remove `as any` in `createFunction`.** The cast bridges the user-facing `onDefer` config type to the internal `OnDeferConfig`. If one type changes without the other, the cast masks the mismatch. Align the types or add a narrowing helper to eliminate the cast.
 - **Wire `OpcodeDeferCancel`.** Backend reserves it; SDK does not yet emit it. Needs a user-facing API (e.g. `defer.cancel`) and the matching opcode emission.
+- **Re-add `onFailure` on defer functions.** `createDefer` currently omits `onFailure` from its options surface to keep the first pass narrow. Defer handlers can still fail — we just don't yet let users attach a per-defer failure handler. Adding it back means re-introducing the `TFailureHandler` generic with a ctx default built on `FailureEventArgs<DeferEvent<TSchema>>`.
 
 ## Testing
 

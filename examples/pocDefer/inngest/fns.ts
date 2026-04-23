@@ -32,11 +32,11 @@ export const fn = inngest.createFunction(
   },
   async ({ defer, step }) => {
     const msg = await step.run("create-msg", async () => {
-      await defer.myDefer("defer-1", {});
+      defer.myDefer("defer-1", {});
       return "hello from the main run";
     });
 
-    await defer.myDefer2("defer-2", { msg });
+    defer.myDefer2("defer-2", { msg });
   },
 );
 
@@ -52,10 +52,10 @@ export const fn2 = inngest.createFunction(
   },
   async ({ defer, step }) => {
     const msg = await step.run("create-msg", async () => {
-      await defer.myDefer("defer-1", {});
+      defer.myDefer("defer-1", {});
       return "hello from the main run";
     });
 
-    await defer.myDefer2("defer-2", { msg });
+    defer.myDefer2("defer-2", { msg });
   },
 );

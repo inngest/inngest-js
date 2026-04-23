@@ -1139,22 +1139,33 @@ type DeferEvent<TSchema> = {
 };
 
 /**
- * The full context a defer handler receives: the typed event, any
- * client-level middleware extensions (e.g. `db` via dependency
- * injection), and an opaque `step`. We keep `step` opaque while the API
- * is experimental.
+ * Base ctx shape for a defer handler: the standard function context
+ * (`runId`, `attempt`, `group`, `step` with middleware step extensions)
+ * with `event`/`events` pinned to `inngest/deferred.start` and the
+ * schema-typed payload.
  */
-type DeferHandlerCtx<TClientOpts extends ClientOptions, TSchema> = {
+type BaseDeferCtx<
+  TClient extends Inngest.Any,
+  TFnMiddleware extends Middleware.Class[] | undefined,
+  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+> = Omit<BaseContext<TClient>, "event" | "events" | "step"> & {
   event: DeferEvent<TSchema>;
-} & ApplyAllMiddlewareCtxExtensions<[...ReturnType<typeof builtInMiddleware>]> &
-  ApplyAllMiddlewareCtxExtensions<TClientOpts["middleware"]> & {
-    // biome-ignore lint/suspicious/noExplicitAny: step is opaque here
-    step: any;
-  };
+  events: [DeferEvent<TSchema>];
+  step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
+    ApplyAllMiddlewareStepExtensions<
+      ClientOptionsFromInngest<TClient>["middleware"]
+    > &
+    ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+};
 
 /**
  * Create a typed defer function. One `createDefer` call = one Inngest
  * function (shared across every `onDefer` attachment that references it).
+ *
+ * Mirrors `inngest.createFunction(opts, handler)`, with three differences:
+ * the client is the first positional arg, `triggers` is not accepted (the
+ * SDK emits an implicit `inngest/deferred.start` trigger), and `schema`
+ * describes the payload that parent functions will send via `defer[alias](...)`.
  *
  * The returned value is a real `InngestFunction` at runtime but is typed as
  * a branded `DeferHandlerResult<TSchema>` so the schema flows to callers of
@@ -1163,29 +1174,43 @@ type DeferHandlerCtx<TClientOpts extends ClientOptions, TSchema> = {
  * function's `onDefer` map.
  */
 export function createDefer<
-  TClientOpts extends ClientOptions,
+  TClient extends Inngest.Any,
   TSchema extends
     | StandardSchemaV1<Record<string, unknown>>
     | undefined = undefined,
+  const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
+  TOnDefer extends
+    | Record<string, Inngest.OnDeferEntryBase>
+    | undefined = undefined,
+  THandler extends Handler.Any = (
+    ctx: BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
+      ApplyAllMiddlewareCtxExtensions<
+        [...ReturnType<typeof builtInMiddleware>]
+      > &
+      ApplyAllMiddlewareCtxExtensions<
+        ClientOptionsFromInngest<TClient>["middleware"]
+      > &
+      ApplyAllMiddlewareCtxExtensions<TFnMiddleware> &
+      Inngest.MaybeDeferCtx<TOnDefer>,
+  ) => unknown,
 >(
-  client: Inngest<TClientOpts>,
-  opts: {
-    id: string;
-    schema?: TSchema;
-    concurrency?: InngestFunction.OnDeferConfig["concurrency"];
-    retries?: InngestFunction.OnDeferConfig["retries"];
-  },
-  handler: (ctx: DeferHandlerCtx<TClientOpts, TSchema>) => unknown,
+  client: TClient,
+  options: Inngest.CreateDeferInput<TFnMiddleware, TSchema, TOnDefer>,
+  handler: THandler,
 ): DeferHandlerResult<TSchema> {
+  const { schema, ...rest } = options;
+
   const fn = new InngestFunction(
     client,
     {
-      id: opts.id,
-      retries: opts.retries,
-      concurrency: opts.concurrency,
+      ...rest,
       triggers: [],
-      deferMeta: { schema: opts.schema },
-    },
+      deferMeta: { schema },
+      // The user-facing `onDefer` value type is the branded
+      // `DeferHandlerResult`; at runtime each value is a real
+      // `InngestFunction`. This cast bridges the type-level gap.
+      // biome-ignore lint/suspicious/noExplicitAny: bridging phantom ↔ runtime types
+    } as any,
     handler as Handler.Any,
   );
   return fn as unknown as DeferHandlerResult<TSchema>;
@@ -1237,7 +1262,7 @@ export namespace Inngest {
    * `createDefer`). At runtime each entry is a real `InngestFunction`
    * instance; these properties exist only at the type level.
    */
-  type OnDeferEntryBase = {
+  export type OnDeferEntryBase = {
     readonly __deferBrand: "DeferHandlerResult";
     // biome-ignore lint/suspicious/noExplicitAny: widest schema constraint for inference
     readonly schema: StandardSchemaV1<any> | undefined;
@@ -1248,7 +1273,7 @@ export namespace Inngest {
    * handlers are configured. Each method takes a step ID (for memoization
    * via the `DeferAdd` opcode) and the schema-typed data.
    */
-  type MaybeDeferCtx<
+  export type MaybeDeferCtx<
     TOnDefer extends Record<string, OnDeferEntryBase> | undefined,
   > = TOnDefer extends Record<string, OnDeferEntryBase>
     ? {
@@ -1261,7 +1286,7 @@ export namespace Inngest {
               ? D
               : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
                 any,
-          ) => Promise<void>;
+          ) => void;
         };
       }
     : unknown;
@@ -1283,6 +1308,27 @@ export namespace Inngest {
     "triggers" | "onDefer"
   > & {
     triggers?: TTriggers;
+    middleware?: TFnMiddleware;
+    onDefer?: { [K in keyof TOnDefer]: TOnDefer[K] };
+  };
+
+  /**
+   * Input type for `createDefer`. Mirrors `CreateFunctionInput` minus
+   * `triggers` (defer functions use an implicit `inngest/deferred.start`
+   * trigger), `deferMeta` (internal, set by `createDefer`), and
+   * `onFailure` (not yet supported on defer functions). Adds `schema` —
+   * the StandardSchema describing `event.data` that flows to parent
+   * `defer[alias](...)` call sites.
+   */
+  export type CreateDeferInput<
+    TFnMiddleware extends Middleware.Class[] | undefined,
+    TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+    TOnDefer extends Record<string, OnDeferEntryBase> | undefined = undefined,
+  > = Omit<
+    InngestFunction.Options<InngestFunction.Trigger<string>[]>,
+    "triggers" | "onDefer" | "onFailure" | "deferMeta"
+  > & {
+    schema?: TSchema;
     middleware?: TFnMiddleware;
     onDefer?: { [K in keyof TOnDefer]: TOnDefer[K] };
   };

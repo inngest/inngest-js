@@ -120,11 +120,13 @@ const RUN_COMPLETE_STEP_ID = "complete";
 
 /**
  * The `defer.{alias}(id, data)` methods the handler context exposes when a
- * function declares an `onDefer` map. One entry per alias.
+ * function declares an `onDefer` map. One entry per alias. Sync: lazy ops
+ * buffer immediately and ship on the next wire message, so the caller has
+ * nothing to wait for.
  */
 type DeferMethods = Record<
   string,
-  (idOrOptions: StepOptionsOrId, data: Record<string, unknown>) => Promise<void>
+  (idOrOptions: StepOptionsOrId, data: Record<string, unknown>) => void
 >;
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
@@ -2492,10 +2494,15 @@ class InngestExecutionEngine
       const companionFnSlug = deferFn.id(this.options.client.id);
       const schema = deferFn.opts.deferMeta?.schema;
 
-      methods[alias] = async (idOrOptions, data) => {
+      methods[alias] = (idOrOptions, data) => {
         let input: unknown = data;
         if (schema) {
-          const result = await schema["~standard"].validate(data);
+          const result = schema["~standard"].validate(data);
+          if (result instanceof Promise) {
+            throw new Error(
+              `defer() requires a synchronous schema validator; "${alias}" (${companionFnSlug}) returned a Promise.`,
+            );
+          }
           if (result.issues) {
             throw new Error(
               `defer() schema validation failed for "${alias}" (${companionFnSlug}): ${JSON.stringify(result.issues)}`,
@@ -2504,7 +2511,7 @@ class InngestExecutionEngine
           input = result.value ?? data;
         }
 
-        await stepHandler({
+        void stepHandler({
           args: [idOrOptions, input],
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,

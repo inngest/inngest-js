@@ -14,33 +14,32 @@ import { createServer } from "../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-test("onDefer handler is triggered by defer with schema", async () => {
-  const state = createState({
-    deferredData: null as { msg: string } | null,
+test("schema", async () => {
+  // When a deferred function specifies a schema, both the static and runtime
+  // types conform to the schema
+
+  const parentState = createState({});
+  const deferState = createState({
+    eventData: null as { msg: string } | null,
   });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(
+        foo: createDefer(
           client,
           { id: "process", schema: z.object({ msg: z.string() }) },
-          async ({ event, step }) => {
+          async ({ event, runId }) => {
+            deferState.runId = runId;
             expectTypeOf(event.data).not.toBeAny();
             expectTypeOf(event.data).toEqualTypeOf<{ msg: string }>();
-
-            await step.run("capture-data", () => {
-              state.deferredData = {
-                msg: event.data.msg,
-              };
-            });
+            deferState.eventData = event.data;
           },
         ),
       },
@@ -48,81 +47,39 @@ test("onDefer handler is triggered by defer with schema", async () => {
       triggers: { event: eventName },
     },
     async ({ defer, runId, step }) => {
-      state.runId = runId;
-
+      parentState.runId = runId;
       const msg = await step.run("create-msg", () => {
         return "hello";
       });
-
-      await defer.process("defer-1", { msg });
-    },
-  );
-
-  await createTestApp({ client, functions: [fn], serve: createServer });
-
-  await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
-
-  await waitFor(() => {
-    expect(state.deferredData).toEqual({ msg: "hello" });
-  });
-});
-
-test("no steps", async () => {
-  const parentState = createState({ counter: 0 });
-  const deferState = createState({ counter: 0 });
-
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-  });
-  const fn = client.createFunction(
-    {
-      id: "fn",
-      onDefer: {
-        process: createDefer(client, { id: "process" }, async () => {
-          // TODO: Run ID
-
-          deferState.counter++;
-        }),
-      },
-      retries: 0,
-      triggers: { event: eventName },
-    },
-    async ({ defer, runId }) => {
-      parentState.runId = runId;
-      parentState.counter++;
-      await defer.process("defer-1", {});
+      defer.foo("foo", { msg });
     },
   );
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
   await parentState.waitForRunComplete();
-  expect(parentState.counter).toBe(1);
-
-  await waitFor(() => {
-    expect(deferState.counter).toBe(1);
-  });
+  await deferState.waitForRunComplete();
+  expect(deferState.eventData).toEqual({ msg: "hello" });
 });
 
-test("reentry", async () => {
+test("re-encountered defer does not trigger new deferred run", async () => {
+  // When a deferred function is re-encountered (e.g. function re-entry), it
+  // should not trigger a new deferred run
+
   const parentState = createState({});
   const deferState = createState({ counter: 0 });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(client, { id: "process" }, async () => {
-          // TODO: Run ID
-
+        foo: createDefer(client, { id: "foo" }, async ({ runId }) => {
+          deferState.runId = runId;
           deferState.counter++;
         }),
       },
@@ -131,9 +88,9 @@ test("reentry", async () => {
     },
     async ({ defer, runId, step }) => {
       parentState.runId = runId;
-      await defer.process("defer-1", {});
+      defer.foo("foo", {});
 
-      // Force reentry
+      // Force reentry so that the previous `defer` method runs again
       await step.sleep("sleep", "1s");
     },
   );
@@ -141,10 +98,7 @@ test("reentry", async () => {
 
   await client.send({ name: eventName, data: {} });
   await parentState.waitForRunComplete();
-
-  await waitFor(() => {
-    expect(deferState.counter).toBe(1);
-  });
+  await deferState.waitForRunComplete();
 
   // Wait long enough to give the 2nd defer a chance to trigger (it shouldn't)
   await sleep(5000);
@@ -152,23 +106,23 @@ test("reentry", async () => {
   expect(deferState.counter).toBe(1);
 });
 
-test("nested in step", async () => {
-  const parentState = createState({});
-  const deferState = createState({ counter: 0 });
+test("defer in step", async () => {
+  // Can call `defer` within a step
 
-  const eventName = randomSuffix("evt");
+  const parentState = createState({});
+  const deferState = createState({});
+
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(client, { id: "process" }, async () => {
-          // TODO: Run ID
-
-          deferState.counter++;
+        foo: createDefer(client, { id: "foo" }, async ({ runId }) => {
+          deferState.runId = runId;
         }),
       },
       retries: 0,
@@ -177,7 +131,7 @@ test("nested in step", async () => {
     async ({ defer, runId, step }) => {
       parentState.runId = runId;
       await step.run("a", async () => {
-        await defer.process("defer-1", {});
+        defer.foo("foo", {});
       });
     },
   );
@@ -185,50 +139,48 @@ test("nested in step", async () => {
 
   await client.send({ name: eventName, data: {} });
   await parentState.waitForRunComplete();
-
-  await waitFor(() => {
-    expect(deferState.counter).toBe(1);
-  });
+  await deferState.waitForRunComplete();
 });
 
 test("multiple onDefer handlers are independently triggered", async () => {
-  const state = createState({
+  const parentState = createState({
     emailData: null as { to: string } | null,
     paymentData: null as { amount: number } | null,
   });
+  const deferFooState = createState({
+    eventData: null as { to: string } | null,
+  });
+  const deferBarState = createState({
+    eventData: null as { amount: number } | null,
+  });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        sendEmail: createDefer(
+        foo: createDefer(
           client,
-          { id: "send-email", schema: z.object({ to: z.string() }) },
-          async ({ event, step }) => {
+          { id: "foo", schema: z.object({ to: z.string() }) },
+          async ({ event, runId }) => {
+            deferFooState.runId = runId;
             expectTypeOf(event.data).not.toBeAny();
             expectTypeOf(event.data).toEqualTypeOf<{ to: string }>();
-
-            await step.run("capture-email", () => {
-              state.emailData = { to: event.data.to };
-            });
+            deferFooState.eventData = event.data;
           },
         ),
-        processPayment: createDefer(
+        bar: createDefer(
           client,
-          { id: "process-payment", schema: z.object({ amount: z.number() }) },
-          async ({ event, step }) => {
+          { id: "bar", schema: z.object({ amount: z.number() }) },
+          async ({ event, runId }) => {
+            deferBarState.runId = runId;
             expectTypeOf(event.data).not.toBeAny();
             expectTypeOf(event.data).toEqualTypeOf<{ amount: number }>();
-
-            await step.run("capture-payment", () => {
-              state.paymentData = { amount: event.data.amount };
-            });
+            deferBarState.eventData = event.data;
           },
         ),
       },
@@ -236,51 +188,50 @@ test("multiple onDefer handlers are independently triggered", async () => {
       triggers: { event: eventName },
     },
     async ({ defer, runId }) => {
-      state.runId = runId;
-
-      await defer.sendEmail("send-email", { to: "a@b.com" });
-      await defer.processPayment("process-payment", { amount: 100 });
+      parentState.runId = runId;
+      defer.foo("foo", { to: "a@b.com" });
+      defer.bar("bar", { amount: 100 });
     },
   );
-
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
+  await parentState.waitForRunComplete();
 
-  await waitFor(() => {
-    expect(state.emailData).toEqual({ to: "a@b.com" });
-  });
+  await deferFooState.waitForRunComplete();
+  expect(deferFooState.eventData).toEqual({ to: "a@b.com" });
 
-  await waitFor(() => {
-    expect(state.paymentData).toEqual({ amount: 100 });
-  });
+  await deferBarState.waitForRunComplete();
+  expect(deferBarState.eventData).toEqual({ amount: 100 });
 });
 
-test("onDefer handler supports multiple steps", async () => {
-  const state = createState({
+test("multiple steps in defer handler", async () => {
+  const parentState = createState({});
+  const deferState = createState({
     steps: [] as string[],
   });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(client, { id: "process" }, async ({ step }) => {
+        foo: createDefer(client, { id: "foo" }, async ({ runId, step }) => {
+          deferState.runId = runId;
+
           await step.run("step-a", () => {
-            state.steps.push("a");
+            deferState.steps.push("a");
           });
 
+          // Force reentry
           await step.sleep("pause", "1s");
 
           await step.run("step-b", () => {
-            state.steps.push("b");
+            deferState.steps.push("b");
           });
         }),
       },
@@ -288,39 +239,38 @@ test("onDefer handler supports multiple steps", async () => {
       triggers: { event: eventName },
     },
     async ({ defer, runId }) => {
-      state.runId = runId;
-
-      await defer.process("defer-it", {});
+      parentState.runId = runId;
+      defer.foo("foo", {});
     },
   );
-
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
-
-  await waitFor(() => {
-    expect(state.steps).toEqual(["a", "b"]);
-  });
+  await parentState.waitForRunComplete();
+  await deferState.waitForRunComplete();
+  expect(deferState.steps).toEqual(["a", "b"]);
 });
 
-test("schema validation fails within main function", async () => {
-  const state = createState({});
+test("schema validation fails in parent function", async () => {
+  const state = createState({
+    deferHandlerReached: false,
+  });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(
+        foo: createDefer(
           client,
-          { id: "process", schema: z.object({ msg: z.string() }) },
-          async () => {},
+          { id: "foo", schema: z.object({ msg: z.string() }) },
+          async () => {
+            state.deferHandlerReached = true;
+          },
         ),
       },
       retries: 0,
@@ -328,16 +278,19 @@ test("schema validation fails within main function", async () => {
     },
     async ({ defer, runId }) => {
       state.runId = runId;
-
-      await defer.process("bad-defer", { msg: 123 } as never);
+      defer.foo("foo", { msg: 123 } as never);
     },
   );
-
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
   const error = await state.waitForRunFailed();
   expect(error).toBeDefined();
+
+  // Wait long enough to give the `onDefer` handler a chance to run (it
+  // shouldn't)
+  await sleep(2000);
+  expect(state.deferHandlerReached).toBe(false);
 });
 
 test("schema validation fails within onDefer handler", async () => {
@@ -346,19 +299,18 @@ test("schema validation fails within onDefer handler", async () => {
 
   const state = createState({ deferHandlerReached: false });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(
+        foo: createDefer(
           client,
-          { id: "process", schema: z.object({ date: z.date() }) },
+          { id: "foo", schema: z.object({ date: z.date() }) },
           () => {
             state.deferHandlerReached = true;
           },
@@ -369,10 +321,9 @@ test("schema validation fails within onDefer handler", async () => {
     },
     async ({ defer, runId }) => {
       state.runId = runId;
-      await defer.process("bad-defer", { date: new Date() });
+      defer.foo("foo", { date: new Date() });
     },
   );
-
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
@@ -391,36 +342,34 @@ test("defer mirrors onDefer keys with typed methods", () => {
     {
       id: "typed-defer",
       onDefer: {
-        sendEmail: createDefer(
+        foo: createDefer(
           client,
-          { id: "send-email", schema: z.object({ to: z.string() }) },
+          { id: "foo", schema: z.object({ to: z.string() }) },
           async () => {},
         ),
-        processPayment: createDefer(
+        bar: createDefer(
           client,
-          { id: "process-payment", schema: z.object({ amount: z.number() }) },
+          { id: "bar", schema: z.object({ amount: z.number() }) },
           async () => {},
         ),
       },
       triggers: { event: "test" },
     },
     async ({ defer }) => {
-      expectTypeOf(defer.sendEmail).toBeFunction();
-      expectTypeOf(defer.processPayment).toBeFunction();
+      expectTypeOf(defer.foo).toBeFunction();
+      expectTypeOf(defer.bar).toBeFunction();
 
-      expectTypeOf(defer.sendEmail)
-        .parameter(1)
-        .toEqualTypeOf<{ to: string }>();
-      expectTypeOf(defer.processPayment)
-        .parameter(1)
-        .toEqualTypeOf<{ amount: number }>();
+      expectTypeOf(defer.foo).parameter(1).toEqualTypeOf<{ to: string }>();
+      expectTypeOf(defer.bar).parameter(1).toEqualTypeOf<{ amount: number }>();
     },
   );
 });
 
-test("no defer when onDefer is absent", () => {
-  const client = new Inngest({ id: "type-test-2", isDev: true });
-
+test("no `defer` property when onDefer is absent", () => {
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
   client.createFunction(
     {
       id: "no-defer",
@@ -433,27 +382,28 @@ test("no defer when onDefer is absent", () => {
 });
 
 test("onDefer without schema defaults to any", async () => {
-  const state = createState({
+  const parentState = createState({
     deferredData: null as Record<string, unknown> | null,
   });
+  const deferState = createState({
+    eventData: null as Record<string, unknown> | null,
+  });
 
-  const eventName = randomSuffix("evt");
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
   });
-
+  const eventName = randomSuffix("evt");
   const fn = client.createFunction(
     {
       id: "fn",
       onDefer: {
-        process: createDefer(
+        foo: createDefer(
           client,
-          { id: "process" },
-          async ({ event, step }) => {
-            await step.run("capture-data", () => {
-              state.deferredData = { key: event.data.key };
-            });
+          { id: "foo" },
+          async ({ event, runId, step }) => {
+            deferState.runId = runId;
+            deferState.eventData = event.data;
           },
         ),
       },
@@ -461,22 +411,17 @@ test("onDefer without schema defaults to any", async () => {
       triggers: { event: eventName },
     },
     async ({ defer, runId }) => {
-      state.runId = runId;
-
-      expectTypeOf(defer.process).toBeFunction();
-
-      await defer.process("defer-it", { key: "value" });
+      parentState.runId = runId;
+      expectTypeOf(defer.foo).toBeFunction();
+      defer.foo("foo", { key: "value" });
     },
   );
-
   await createTestApp({ client, functions: [fn], serve: createServer });
 
   await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
-
-  await waitFor(() => {
-    expect(state.deferredData).toEqual({ key: "value" });
-  });
+  await parentState.waitForRunComplete();
+  await deferState.waitForRunComplete();
+  expect(deferState.eventData).toEqual({ key: "value" });
 });
 
 test("mixed onDefer entries: with and without schema", () => {
@@ -506,58 +451,20 @@ test("mixed onDefer entries: with and without schema", () => {
     },
     async ({ defer }) => {
       expectTypeOf(defer.withSchema).toBeFunction();
-      expectTypeOf(defer.withSchema).toBeCallableWith("id", { msg: "hello" });
+      expectTypeOf(defer.withSchema)
+        .parameter(1)
+        .toEqualTypeOf<{ msg: string }>();
+
       expectTypeOf(defer.withoutSchema).toBeFunction();
-      // no schema = any
-      defer.withoutSchema("id", { anything: "goes" });
+      expectTypeOf(defer.withoutSchema).parameter(1).toEqualTypeOf<any>();
     },
   );
 });
 
-test("defer with id as first argument", async () => {
-  const state = createState({
-    deferredData: null as { msg: string } | null,
-  });
+test("dependency injection", () => {
+  // Client-level dependency injection middleware is available in the onDefer
+  // handler
 
-  const eventName = randomSuffix("evt");
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-  });
-  const fn = client.createFunction(
-    {
-      id: "fn",
-      onDefer: {
-        process: createDefer(
-          client,
-          { id: "process", schema: z.object({ msg: z.string() }) },
-          async ({ event, step }) => {
-            await step.run("capture-data", () => {
-              state.deferredData = { msg: event.data.msg };
-            });
-          },
-        ),
-      },
-      retries: 0,
-      triggers: { event: eventName },
-    },
-    async ({ defer, runId }) => {
-      state.runId = runId;
-
-      await defer.process("defer-msg", { msg: "from-defer" });
-    },
-  );
-  await createTestApp({ client, functions: [fn], serve: createServer });
-
-  await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
-
-  await waitFor(() => {
-    expect(state.deferredData).toEqual({ msg: "from-defer" });
-  });
-});
-
-test("middleware", () => {
   class DB {}
   const db = new DB();
   const client = new Inngest({
@@ -565,7 +472,6 @@ test("middleware", () => {
     isDev: true,
     middleware: [dependencyInjectionMiddleware({ db })],
   });
-
   client.createFunction(
     {
       id: "mixed-defer",
@@ -604,10 +510,9 @@ test("one defer shared across multiple parents", async () => {
       onDefer: { task: shared },
     },
     async ({ defer }) => {
-      await defer.task("from-a", {});
+      defer.task("from-a", {});
     },
   );
-
   const fnB = client.createFunction(
     {
       id: "parent-b",
@@ -616,10 +521,9 @@ test("one defer shared across multiple parents", async () => {
       onDefer: { otherName: shared },
     },
     async ({ defer }) => {
-      await defer.otherName("from-b", {});
+      defer.otherName("from-b", {});
     },
   );
-
   await createTestApp({
     client,
     functions: [fnA, fnB],
