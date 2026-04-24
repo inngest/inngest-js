@@ -1,7 +1,7 @@
 import httpMocks from "node-mocks-http";
 import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
 import { serve } from "../next.ts";
-import { createClient } from "../test/helpers.ts";
+import { createClient, makeTestSignature } from "../test/helpers.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
 
 /**
@@ -428,5 +428,174 @@ describe("response version header", () => {
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );
+  });
+});
+
+describe("GET introspection", () => {
+  const runGet = async (
+    handler: ReturnType<typeof serve>,
+    opts?: { signature?: string; env?: Record<string, string> },
+  ) => {
+    const headers: Record<string, string> = {
+      host: "localhost:3000",
+      "content-type": "application/json",
+    };
+    if (opts?.signature !== undefined) {
+      headers[headerKeys.Signature] = opts.signature;
+    }
+
+    const req = httpMocks.createRequest({
+      method: "GET",
+      url: "/api/inngest",
+      headers,
+    });
+    const res = httpMocks.createResponse();
+
+    const prevEnv = process.env;
+    if (opts?.env) {
+      process.env = { ...prevEnv, ...opts.env };
+    }
+
+    try {
+      await (handler as (...args: unknown[]) => Promise<unknown>)(req, res);
+      return {
+        status: res.statusCode,
+        body: JSON.parse(res._getData() || "{}") as Record<string, unknown>,
+        headers: res.getHeaders() as Record<string, string>,
+      };
+    } finally {
+      process.env = prevEnv;
+    }
+  };
+
+  test("dev mode returns unauthenticated introspection body", async () => {
+    const inngest = createClient({ id: "test", isDev: true });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runGet(handler);
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      function_count: 1,
+      has_event_key: expect.any(Boolean),
+      has_signing_key: expect.any(Boolean),
+      mode: "dev",
+      schema_version: "2024-05-24",
+    });
+    expect(result.body).not.toHaveProperty("authentication_succeeded");
+  });
+
+  test("cloud mode without a signature returns 401", async () => {
+    const inngest = createClient({ id: "test", isDev: false });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runGet(handler, {
+      env: { [envKeys.InngestSigningKey]: "signkey-prod-12345" },
+    });
+
+    expect(result.status).toBe(401);
+    expect(result.body).toEqual({ code: "sig_verification_failed" });
+  });
+
+  test("cloud mode with an invalid signature returns 401", async () => {
+    const inngest = createClient({ id: "test", isDev: false });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runGet(handler, {
+      signature:
+        "t=1700000000&s=0000000000000000000000000000000000000000000000000000000000000000",
+      env: { [envKeys.InngestSigningKey]: "signkey-prod-12345" },
+    });
+
+    expect(result.status).toBe(401);
+    expect(result.body).toEqual({ code: "sig_verification_failed" });
+  });
+
+  test("cloud mode 401 body does not leak introspection fields", async () => {
+    const inngest = createClient({ id: "test", isDev: false });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runGet(handler, {
+      env: { [envKeys.InngestSigningKey]: "signkey-prod-12345" },
+    });
+
+    expect(result.body).not.toHaveProperty("function_count");
+    expect(result.body).not.toHaveProperty("has_event_key");
+    expect(result.body).not.toHaveProperty("has_signing_key");
+    expect(result.body).not.toHaveProperty("mode");
+    expect(result.body).not.toHaveProperty("schema_version");
+    expect(result.body).not.toHaveProperty("extra");
+  });
+
+  test("cloud mode 401 response does not leak SDK fingerprint headers", async () => {
+    const inngest = createClient({ id: "test", isDev: false });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runGet(handler, {
+      env: { [envKeys.InngestSigningKey]: "signkey-prod-12345" },
+    });
+
+    expect(result.headers).not.toHaveProperty(
+      headerKeys.SdkVersion.toLowerCase(),
+    );
+    expect(result.headers).not.toHaveProperty(
+      headerKeys.Framework.toLowerCase(),
+    );
+    expect(result.headers).not.toHaveProperty(
+      headerKeys.Platform.toLowerCase(),
+    );
+    expect(result.headers).not.toHaveProperty(
+      headerKeys.Environment.toLowerCase(),
+    );
+    expect(result.headers).not.toHaveProperty(
+      headerKeys.InngestExpectedServerKind.toLowerCase(),
+    );
+    expect(result.headers).not.toHaveProperty(
+      headerKeys.RequestVersion.toLowerCase(),
+    );
+    expect(result.headers).not.toHaveProperty("user-agent");
+  });
+
+  test("cloud mode with a valid signature returns authenticated body", async () => {
+    const inngest = createClient({ id: "test", isDev: false });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const signingKey = "signkey-prod-12345";
+    const result = await runGet(handler, {
+      signature: await makeTestSignature("", signingKey),
+      env: { [envKeys.InngestSigningKey]: signingKey },
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      authentication_succeeded: true,
+      mode: "cloud",
+      sdk_language: "js",
+      function_count: 1,
+    });
   });
 });
