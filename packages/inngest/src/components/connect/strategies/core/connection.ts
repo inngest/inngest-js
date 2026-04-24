@@ -473,9 +473,7 @@ export class ConnectionCore {
    */
   private armShutdownGraceTimer(): void {
     const graceMs = this.config.shutdownGraceMs;
-    if (typeof graceMs !== "number" || !Number.isFinite(graceMs) || graceMs <= 0) {
-      return;
-    }
+    if (!graceMs || !Number.isFinite(graceMs) || graceMs <= 0) return;
     if (this.shutdownGraceTimer) return;
     this.shutdownGraceTimer = setTimeout(() => {
       const meta = Object.values(this._inProgressRequests.requestMeta);
