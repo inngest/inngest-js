@@ -132,7 +132,7 @@ export class ConnectionCore {
   private shutdownDumpInterval: ReturnType<typeof setInterval> | undefined;
 
   // Cadence for the periodic "still draining" debug dump.
-  private static readonly SHUTDOWN_DUMP_INTERVAL_MS = 10_000;
+  private static readonly SHUTDOWN_DUMP_INTERVAL_MS = 60_000;
 
   // Loop promise — resolved when the reconcile loop exits
   private loopPromise: Promise<void> | undefined;

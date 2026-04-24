@@ -490,7 +490,7 @@ describe("ConnectionCore reconcile loop", () => {
       );
       expect(initialPerRequest).toHaveLength(2);
 
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       await flushMicrotasks();
 
       const periodicPerRequest = logger.debug.mock.calls.filter(
