@@ -2,6 +2,7 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
+import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
@@ -585,7 +586,10 @@ export const createStepTools = <
      * Send a Signal to Inngest.
      */
     sendSignal: createTool<
-      (idOrOptions: StepOptionsOrId, opts: SendSignalOpts) => Promise<null>
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: SendSignalOpts,
+      ) => Promise<InngestApi.SendSignalResponse>
     >(
       ({ id, name }, opts) => {
         return {
