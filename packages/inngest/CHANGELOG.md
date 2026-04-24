@@ -1,5 +1,13 @@
 # inngest
 
+## 4.2.5
+
+### Patch Changes
+
+- [#1479](https://github.com/inngest/inngest-js/pull/1479) [`6b9769ca`](https://github.com/inngest/inngest-js/commit/6b9769ca39ae00938ad75a6029718d234fd7dd98) Thanks [@scottnuma](https://github.com/scottnuma)! - Fix `step.sendSignal()` return type to match runtime: `Promise<InngestApi.SendSignalResponse>` (`{ runId: string | undefined }`) instead of `Promise<null>`
+
+- [#1472](https://github.com/inngest/inngest-js/pull/1472) [`9df36dee`](https://github.com/inngest/inngest-js/commit/9df36dee593e81e8667c0008c6f9cebccee2b961) Thanks [@Linell](https://github.com/Linell)! - Fix empty body on Vercel serverless Node handlers
+
 ## 4.2.4
 
 ### Patch Changes
