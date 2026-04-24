@@ -80,9 +80,9 @@ const internalServerErrorResponse = {
   version: undefined,
 } as const;
 
-// `version: null` suppresses the RequestVersion header, and `prepareActionRes`
-// strips fingerprint headers from the final response so we don't leak
-// SDK/framework/platform info on unauthenticated responses.
+// `version: null` suppresses the RequestVersion header. Returned directly
+// (without running through prepareActionRes) so no fingerprint headers are
+// attached on unauthenticated responses.
 const sigVerificationFailedResponse = {
   body: stringify({ code: "sig_verification_failed" }),
   headers: { "Content-Type": "application/json" },
@@ -1177,12 +1177,19 @@ export class InngestCommHandler<
 
     const signatureValidation = this.validateSignature(signature, body);
 
-    // Non-throwing view of the same memoized promise for paths that must not
-    // surface a validation error as an uncaught rejection.
-    const settledSignatureValidation = signatureValidation.then(
-      (result) => result,
-      (err: Error) => ({ success: false as const, err }),
-    );
+    // Single auth gate for the whole request. validateSignature short-circuits
+    // to success in dev mode, so local tooling is unaffected. Treat a thrown
+    // error the same as a resolved failure.
+    const validationResult = await signatureValidation.catch((err: Error) => ({
+      success: false as const,
+      err,
+    }));
+    if (!validationResult.success) {
+      return actions.transformResponse(
+        "sending back response",
+        sigVerificationFailedResponse,
+      );
+    }
 
     // Create middleware instances once; shared by wrapRequest and execution hooks.
     // Starts with client-level middleware; function-level middleware is appended
@@ -1201,35 +1208,26 @@ export class InngestCommHandler<
     const prepareActionRes = async (
       res: ActionResponse,
     ): Promise<ActionResponse> => {
-      const sigResult = await settledSignatureValidation;
+      const headers: Record<string, string> = {
+        ...(await getHeaders()),
+        ...res.headers,
+        ...(res.version === null
+          ? {}
+          : {
+              [headerKeys.RequestVersion]: (
+                res.version ?? PREFERRED_ASYNC_EXECUTION_VERSION
+              ).toString(),
+            }),
+      };
 
-      // On unauthenticated responses, strip SDK/framework/platform headers so
-      // we don't leak fingerprint info. Dev mode short-circuits
-      // validateSignature to success, so the full header set still attaches
-      // for local tooling.
-      const headers: Record<string, string> = sigResult.success
-        ? {
-            ...(await getHeaders()),
-            ...res.headers,
-            ...(res.version === null
-              ? {}
-              : {
-                  [headerKeys.RequestVersion]: (
-                    res.version ?? PREFERRED_ASYNC_EXECUTION_VERSION
-                  ).toString(),
-                }),
-          }
-        : { ...res.headers };
-
-      if (sigResult.success && sigResult.keyUsed) {
+      const validation = await signatureValidation;
+      if (validation.success && validation.keyUsed) {
         try {
-          const signature = await this.getResponseSignature(
-            sigResult.keyUsed,
+          headers[headerKeys.Signature] = await this.getResponseSignature(
+            validation.keyUsed,
             res.body,
           );
-          headers[headerKeys.Signature] = signature;
         } catch (err) {
-          // If we fail to sign, return a 500 with the error.
           return {
             ...res,
             headers,
@@ -1239,10 +1237,7 @@ export class InngestCommHandler<
         }
       }
 
-      return {
-        ...res,
-        headers,
-      };
+      return { ...res, headers };
     };
 
     // Build the inner handler that wraps handleAction + prepareActionRes.
@@ -1256,7 +1251,6 @@ export class InngestCommHandler<
           timer,
           getHeaders,
           reqArgs: args,
-          signatureValidation,
           body,
           method,
           forceExecution: Boolean(forceExecution),
@@ -1357,13 +1351,6 @@ export class InngestCommHandler<
         body: stringify(serializeError(err)),
         version: undefined,
       });
-    }
-
-    // Don't start a streaming response before confirming authentication —
-    // streaming commits headers before the body resolves, which would bypass
-    // the fingerprint-stripping in prepareActionRes.
-    if (shouldStream && !(await settledSignatureValidation).success) {
-      shouldStream = false;
     }
 
     if (shouldStream) {
@@ -1545,7 +1532,6 @@ export class InngestCommHandler<
     timer,
     getHeaders,
     reqArgs,
-    signatureValidation,
     body: rawBody,
     method,
     forceExecution,
@@ -1556,7 +1542,6 @@ export class InngestCommHandler<
     timer: ServerTiming;
     getHeaders: () => Promise<Record<string, string>>;
     reqArgs: unknown[];
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     body: unknown;
     method: string;
     forceExecution: boolean;
@@ -1596,11 +1581,6 @@ export class InngestCommHandler<
             ),
             version: undefined,
           };
-        }
-
-        const validationResult = await signatureValidation;
-        if (!validationResult.success) {
-          return sigVerificationFailedResponse;
         }
 
         let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
@@ -1927,23 +1907,12 @@ export class InngestCommHandler<
       const env = (await getHeaders())[headerKeys.Environment] ?? null;
 
       if (method === "GET") {
-        // Cloud mode must not return introspection data without a valid
-        // signature. Dev mode short-circuits validation, so local tooling
-        // still gets the full body.
-        if (this.client.mode === "cloud") {
-          const validationResult = await signatureValidation;
-          if (!validationResult.success) {
-            return sigVerificationFailedResponse;
-          }
-        }
-
         return {
           status: 200,
           body: stringify(
             await this.introspectionBody({
               actions,
               env,
-              signatureValidation,
               url,
             }),
           ),
@@ -1955,11 +1924,6 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const sigCheck = await signatureValidation;
-        if (!sigCheck.success) {
-          return sigVerificationFailedResponse;
-        }
-
         const [deployId, inBandSyncRequested] = await Promise.all([
           actions
             .queryStringWithDefaults(
@@ -2034,7 +1998,6 @@ export class InngestCommHandler<
             actions,
             deployId,
             env,
-            signatureValidation,
             url,
           });
 
@@ -2314,7 +2277,6 @@ export class InngestCommHandler<
     actions,
     deployId,
     env,
-    signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
@@ -2326,7 +2288,6 @@ export class InngestCommHandler<
     deployId: string | undefined | null;
 
     env: string | null;
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
 
     url: URL;
   }): Promise<InBandRegisterRequest> {
@@ -2334,7 +2295,6 @@ export class InngestCommHandler<
     const introspectionBody = await this.introspectionBody({
       actions,
       env,
-      signatureValidation,
       url,
     });
 
@@ -2371,12 +2331,10 @@ export class InngestCommHandler<
   protected async introspectionBody({
     actions,
     env,
-    signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
     env: string | null;
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
     const registerBody = this.registerBody({
@@ -2403,14 +2361,8 @@ export class InngestCommHandler<
 
     // Only return an authenticated body in Cloud mode. Dev mode skips
     // signature validation, so we return the unauthenticated shape for local
-    // tooling. Cloud-mode callers must have validated the signature before
-    // reaching here (see the GET handler's 401 short-circuit).
+    // tooling.
     if (this.client.mode === "cloud") {
-      const validationResult = await signatureValidation;
-      if (!validationResult.success) {
-        throw new Error("Signature validation failed");
-      }
-
       introspection = {
         ...introspection,
         authentication_succeeded: true,

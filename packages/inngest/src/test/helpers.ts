@@ -583,7 +583,7 @@ export const testFramework = (
         );
       });
 
-      test("returns 500 at request time without signing key", async () => {
+      test("returns 401 at request time without signing key", async () => {
         await withoutEnvVars(
           [envKeys.InngestSigningKey, envKeys.InngestDevMode],
           async () => {
@@ -603,9 +603,9 @@ export const testFramework = (
                   ]);
 
             const res = await run(serveHandler, [{ method: "GET" }], {});
-            expect(res.status).toBe(500);
+            expect(res.status).toBe(401);
             expect(JSON.parse(res.body)).toEqual({
-              code: "internal_server_error",
+              code: "sig_verification_failed",
             });
           },
         );
