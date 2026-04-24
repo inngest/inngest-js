@@ -381,6 +381,15 @@ export class RequestProcessor {
       delete this.accessor.inProgressRequests.requestLeases[
         extendLeaseAck.requestId
       ];
+
+      // If this was the last in-flight request and a shutdown has been
+      // requested, wake the reconcile loop so close() can observe the
+      // empty lease map and exit. Without this, the loop stays parked on
+      // wakeSignal.promise because the finally-block decrement in
+      // handleExecutorRequest never runs (user code is still hanging).
+      if (this.accessor.shutdownRequested && !this.hasInFlightRequests()) {
+        this.wakeSignal.wake();
+      }
     }
   }
 
