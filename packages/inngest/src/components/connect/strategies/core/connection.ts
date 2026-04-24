@@ -311,12 +311,15 @@ export class ConnectionCore {
       { inFlightCount },
       "Shutting down, waiting for in-flight requests",
     );
+    // Flip the shutdown flag before starting any timers so the periodic
+    // dump guard (`if (!this._shutdownRequested) return`) cannot observe a
+    // stale `false` on its first tick.
+    this._shutdownRequested = true;
     // Verbose per-request dump (debug-only) at drain start so operators can
     // immediately see which runs are holding the shutdown.
     this.dumpInFlightForShutdown("drain-start");
     this.startShutdownInFlightDumpTimer();
     this.armShutdownGraceTimer();
-    this._shutdownRequested = true;
 
     if (this._activeConnection?.ws.readyState === WebSocket.OPEN) {
       this._activeConnection.ws.send(
