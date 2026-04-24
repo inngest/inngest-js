@@ -691,5 +691,33 @@ describe("ConnectionCore request processing", () => {
       await closePromise;
       expect(core.connectionId).toBeUndefined();
     });
+
+    test("lease-lost ack also deletes requestMeta (no stale debug-state entry)", async () => {
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({ requestId: "req-meta", appName: "test-app" });
+      await flushMicrotasks();
+
+      // Sanity: meta is populated alongside the lease.
+      expect(core.getDebugState().inFlightRequests).toHaveLength(1);
+      expect(core.getDebugState().inFlightRequests[0]?.requestId).toBe(
+        "req-meta",
+      );
+
+      ws.sendExtendLeaseAck({ requestId: "req-meta" });
+      await flushMicrotasks();
+
+      // After lease-lost we should no longer report this request at all —
+      // neither as a lease nor as a meta entry.
+      const state = core.getDebugState();
+      expect(state.inFlightRequestCount).toBe(0);
+      expect(state.inFlightRequests).toHaveLength(0);
+    });
   });
 });

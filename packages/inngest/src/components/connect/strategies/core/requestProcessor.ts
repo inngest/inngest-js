@@ -11,7 +11,6 @@ import type { Logger } from "../../../../middleware/logger.ts";
 import {
   ConnectMessage,
   type ConnectMessage as ConnectMessageType,
-  type GatewayExecutorRequestData,
   GatewayMessageType,
   WorkerRequestAckData,
   WorkerRequestExtendLeaseAckData,
@@ -131,6 +130,7 @@ export class RequestProcessor {
     this.accessor.inProgressRequests.requestLeases[
       gatewayExecutorRequest.requestId
     ] = gatewayExecutorRequest.leaseId;
+    const leaseAcquiredAt = Date.now();
     this.accessor.inProgressRequests.requestMeta[
       gatewayExecutorRequest.requestId
     ] = {
@@ -141,8 +141,8 @@ export class RequestProcessor {
       envId: gatewayExecutorRequest.envId,
       functionSlug: gatewayExecutorRequest.functionSlug,
       accountId: gatewayExecutorRequest.accountId,
-      leaseAcquiredAt: Date.now(),
-      leaseLastExtendedAt: Date.now(),
+      leaseAcquiredAt,
+      leaseLastExtendedAt: leaseAcquiredAt,
     };
 
     const inFlightCount = Object.keys(
@@ -379,6 +379,11 @@ export class RequestProcessor {
           "will continue but its result may be discarded.",
       );
       delete this.accessor.inProgressRequests.requestLeases[
+        extendLeaseAck.requestId
+      ];
+      // Also drop meta so the shutdown dump helper and debug-state snapshot
+      // don't report a request we've explicitly released the lease for.
+      delete this.accessor.inProgressRequests.requestMeta[
         extendLeaseAck.requestId
       ];
 

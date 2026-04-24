@@ -70,26 +70,6 @@ export interface ConnectionCoreConfig extends BaseConnectionConfig {
   maxWorkerConcurrency?: number;
   gatewayUrl?: string;
   appIds: string[];
-  /**
-   * Max in-flight count at/below which the SDK will emit one debug line per
-   * request during shutdown. Above this, falls back to a summary. Mirrors
-   * {@link ConnectHandlerOptions.shutdownInFlightDumpMaxCount}.
-   * @default 10
-   */
-  shutdownInFlightDumpMaxCount?: number;
-  /**
-   * Cadence for the periodic shutdown debug dump. Mirrors
-   * {@link ConnectHandlerOptions.shutdownInFlightDumpIntervalMs}.
-   * @default 10000
-   */
-  shutdownInFlightDumpIntervalMs?: number;
-  /**
-   * Hard deadline for graceful shutdown. If set and exceeded while there
-   * are still in-flight requests, the SDK logs an error enumerating each
-   * stuck request and calls `process.exit(1)`. Mirrors
-   * {@link ConnectHandlerOptions.shutdownGraceMs}. No default.
-   */
-  shutdownGraceMs?: number;
 }
 
 /**
@@ -105,12 +85,6 @@ export interface ConnectionCoreCallbacks {
   onReplyAck?: (requestId: string) => void;
   onBufferResponse?: (requestId: string, responseBytes: Uint8Array) => void;
   onConnectionActive?: (signingKey: string | undefined) => void;
-  /**
-   * Invoked instead of `process.exit(code)` when the graceful-shutdown
-   * deadline (`shutdownGraceMs`) is exceeded. Provided primarily for
-   * tests. In production the default is `process.exit`.
-   */
-  onForceExit?: (code: number) => void;
 }
 
 /**
@@ -153,21 +127,12 @@ export class ConnectionCore {
   // CONNECTING from RECONNECTING state transitions).
   private hasConnectedBefore = false;
 
-  // Shutdown diagnostics: periodic "still draining" dump when a small number
-  // of requests are pending. Starts when close() is called, stops on teardown.
+  // Shutdown diagnostics: periodic "still draining" dump logged while the
+  // drain is outstanding. Started in close(), cleared in teardown.
   private shutdownDumpInterval: ReturnType<typeof setInterval> | undefined;
 
-  // Optional hard-deadline timer for graceful shutdown. When
-  // `shutdownGraceMs` is configured and the drain is still holding pending
-  // requests when it fires, the SDK enumerates stuck requests at error
-  // level and force-exits the process.
-  private shutdownGraceTimer: ReturnType<typeof setTimeout> | undefined;
-
-  // Default ceiling for per-request enumeration during shutdown; above it the
-  // dump collapses to a summary. Overridable via config.
-  private static readonly DEFAULT_INFLIGHT_DUMP_MAX_COUNT = 10;
-  // Default cadence for the periodic "still draining" debug dump.
-  private static readonly DEFAULT_SHUTDOWN_DUMP_INTERVAL_MS = 10_000;
+  // Cadence for the periodic "still draining" debug dump.
+  private static readonly SHUTDOWN_DUMP_INTERVAL_MS = 10_000;
 
   // Loop promise — resolved when the reconcile loop exits
   private loopPromise: Promise<void> | undefined;
@@ -319,7 +284,6 @@ export class ConnectionCore {
     // immediately see which runs are holding the shutdown.
     this.dumpInFlightForShutdown("drain-start");
     this.startShutdownInFlightDumpTimer();
-    this.armShutdownGraceTimer();
 
     if (this._activeConnection?.ws.readyState === WebSocket.OPEN) {
       this._activeConnection.ws.send(
@@ -394,47 +358,38 @@ export class ConnectionCore {
   }
 
   /**
-   * Verbose (debug) shutdown diagnostics. Logs a per-request entry when the
-   * number of still-in-flight requests is small enough to enumerate cheaply,
-   * or a summary otherwise. Does nothing at info level — this is opt-in via
-   * debug logging so normal operational logs stay unchanged.
+   * Debug-level "still draining" dump emitted at drain start and periodically
+   * thereafter while in-flight requests are holding the shutdown. One summary
+   * line plus one line per request carrying `requestId`, `runId`, `stepId`,
+   * `functionSlug`, `ageMs`, and `sinceLastLeaseExtendMs`. Does not affect
+   * info/warn logs.
+   *
+   * `requestLeases` drives the reconcile-loop exit gate, so use it as the
+   * single source of truth for the in-flight set; `requestMeta` carries the
+   * enrichment fields and is kept in sync alongside the lease map.
    */
-  private getShutdownDumpMaxCount(): number {
-    const v = this.config.shutdownInFlightDumpMaxCount;
-    if (typeof v === "number" && v >= 0) return v;
-    return ConnectionCore.DEFAULT_INFLIGHT_DUMP_MAX_COUNT;
-  }
-
-  private getShutdownDumpIntervalMs(): number {
-    const v = this.config.shutdownInFlightDumpIntervalMs;
-    if (typeof v === "number" && v > 0) return v;
-    return ConnectionCore.DEFAULT_SHUTDOWN_DUMP_INTERVAL_MS;
-  }
-
   private dumpInFlightForShutdown(reason: string): void {
-    const meta = Object.values(this._inProgressRequests.requestMeta);
-    if (meta.length === 0) return;
+    const leaseIds = Object.keys(this._inProgressRequests.requestLeases);
+    if (leaseIds.length === 0) return;
     const now = Date.now();
-    const maxCount = this.getShutdownDumpMaxCount();
-    const perRequestDumpEnabled = meta.length <= maxCount;
+    const ages: number[] = [];
+    for (const id of leaseIds) {
+      const m = this._inProgressRequests.requestMeta[id];
+      if (m?.leaseAcquiredAt) ages.push(now - m.leaseAcquiredAt);
+    }
 
-    // Always emit the summary line — count + oldest age is cheap and useful
-    // for every shutdown regardless of in-flight size. The per-request
-    // enumeration below is the only part gated by `maxCount`.
     this.callbacks.logger.debug(
       {
         reason,
-        inFlightCount: meta.length,
-        oldestAgeMs: Math.max(...meta.map((m) => now - m.leaseAcquiredAt)),
-        maxCountForPerRequestDump: maxCount,
-        perRequestDumpEnabled,
+        inFlightCount: leaseIds.length,
+        oldestAgeMs: ages.length > 0 ? Math.max(...ages) : undefined,
       },
       "Shutdown: still draining",
     );
 
-    if (!perRequestDumpEnabled) return;
-
-    for (const m of meta) {
+    for (const id of leaseIds) {
+      const m = this._inProgressRequests.requestMeta[id];
+      if (!m) continue;
       this.callbacks.logger.debug(
         {
           reason,
@@ -443,8 +398,10 @@ export class ConnectionCore {
           stepId: m.stepId,
           functionSlug: m.functionSlug,
           appId: m.appId,
-          ageMs: now - m.leaseAcquiredAt,
-          sinceLastLeaseExtendMs: now - m.leaseLastExtendedAt,
+          ageMs: m.leaseAcquiredAt ? now - m.leaseAcquiredAt : undefined,
+          sinceLastLeaseExtendMs: m.leaseLastExtendedAt
+            ? now - m.leaseLastExtendedAt
+            : undefined,
         },
         "Shutdown: still draining in-flight request",
       );
@@ -456,68 +413,13 @@ export class ConnectionCore {
     this.shutdownDumpInterval = setInterval(() => {
       if (!this._shutdownRequested) return;
       this.dumpInFlightForShutdown("periodic");
-    }, this.getShutdownDumpIntervalMs());
+    }, ConnectionCore.SHUTDOWN_DUMP_INTERVAL_MS);
   }
 
   private stopShutdownInFlightDumpTimer(): void {
     if (this.shutdownDumpInterval) {
       clearInterval(this.shutdownDumpInterval);
       this.shutdownDumpInterval = undefined;
-    }
-  }
-
-  /**
-   * Arm the graceful-shutdown hard-deadline timer if `shutdownGraceMs` is
-   * configured. When the deadline elapses and requests remain in-flight,
-   * log each stuck request at error level and exit the process.
-   *
-   * The force-exit path is behind a separate `onForceExit` callback so
-   * tests can observe it without tearing down the vitest process.
-   */
-  private armShutdownGraceTimer(): void {
-    const graceMs = this.config.shutdownGraceMs;
-    if (!graceMs || !Number.isFinite(graceMs) || graceMs <= 0) return;
-    if (this.shutdownGraceTimer) return;
-    this.shutdownGraceTimer = setTimeout(() => {
-      const meta = Object.values(this._inProgressRequests.requestMeta);
-      if (meta.length === 0) return;
-      const now = Date.now();
-      this.callbacks.logger.error(
-        {
-          graceMs,
-          inFlightCount: meta.length,
-          oldestAgeMs: Math.max(...meta.map((m) => now - m.leaseAcquiredAt)),
-        },
-        "Shutdown grace deadline exceeded; force-exiting",
-      );
-      for (const m of meta) {
-        this.callbacks.logger.error(
-          {
-            graceMs,
-            requestId: m.requestId,
-            runId: m.runId,
-            stepId: m.stepId,
-            functionSlug: m.functionSlug,
-            appId: m.appId,
-            ageMs: now - m.leaseAcquiredAt,
-            sinceLastLeaseExtendMs: now - m.leaseLastExtendedAt,
-          },
-          "Shutdown grace exceeded: stuck in-flight request",
-        );
-      }
-      const forceExit = this.callbacks.onForceExit;
-      if (typeof forceExit === "function") {
-        forceExit(1);
-      } else {
-        process.exit(1);
-      }
-    }, graceMs);
-  }
-
-  private disarmShutdownGraceTimer(): void {
-    if (this.shutdownGraceTimer) {
-      clearTimeout(this.shutdownGraceTimer);
-      this.shutdownGraceTimer = undefined;
     }
   }
 
@@ -684,7 +586,6 @@ export class ConnectionCore {
     this.heartbeatManager.stop();
     this.statusReporter.stop();
     this.stopShutdownInFlightDumpTimer();
-    this.disarmShutdownGraceTimer();
     this._activeConnection?.close();
     this._activeConnection = undefined;
     this._drainingConnection?.close();

@@ -396,11 +396,6 @@ export class WorkerThreadStrategy extends BaseStrategy {
       instanceId: this.config.options.instanceId,
       maxWorkerConcurrency: this.config.options.maxWorkerConcurrency,
       mode: this.config.mode,
-      shutdownInFlightDumpMaxCount:
-        this.config.options.shutdownInFlightDumpMaxCount,
-      shutdownInFlightDumpIntervalMs:
-        this.config.options.shutdownInFlightDumpIntervalMs,
-      shutdownGraceMs: this.config.options.shutdownGraceMs,
     };
   }
 }
