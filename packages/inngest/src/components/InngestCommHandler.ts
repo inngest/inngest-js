@@ -33,7 +33,12 @@ import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
+import {
+  hashEventKey,
+  hashSigningKey,
+  stringify,
+  timingSafeEqual,
+} from "../helpers/strings.ts";
 import { isRecord, type MaybePromise } from "../helpers/types.ts";
 import type { Logger } from "../middleware/logger.ts";
 import {
@@ -2595,7 +2600,7 @@ export class InngestCommHandler<
     key: string,
     body: string,
   ): Promise<string> {
-    const now = Date.now();
+    const now = Math.round(Date.now() / 1000);
     const mac = await signDataWithKey(
       body,
       key,
@@ -2607,7 +2612,10 @@ export class InngestCommHandler<
   }
 }
 
-class RequestSignature {
+/**
+ * @internal Exported for testing; not part of the public API.
+ */
+export class RequestSignature {
   public timestamp: string;
   public signature: string;
 
@@ -2626,9 +2634,15 @@ class RequestSignature {
       return false;
     }
 
-    const delta =
-      Date.now() - new Date(Number.parseInt(this.timestamp) * 1000).valueOf();
-    return delta > 1000 * 60 * 5;
+    const ts = Number.parseInt(this.timestamp, 10);
+    if (!Number.isFinite(ts)) {
+      return true;
+    }
+
+    const delta = Date.now() - ts * 1000;
+    // Clamp both ends: negative delta (future-skewed `t`) would otherwise give
+    // captured requests an unbounded replay
+    return Math.abs(delta) > 1000 * 60 * 5;
   }
 
   async #verifySignature({
@@ -2647,7 +2661,7 @@ class RequestSignature {
     }
 
     const mac = await signDataWithKey(body, signingKey, this.timestamp, logger);
-    if (mac !== this.signature) {
+    if (!timingSafeEqual(mac, this.signature)) {
       throw new Error("Invalid signature");
     }
   }

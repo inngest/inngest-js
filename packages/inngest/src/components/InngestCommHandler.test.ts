@@ -1,8 +1,11 @@
 import httpMocks from "node-mocks-http";
 import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
+import { signDataWithKey } from "../helpers/net.ts";
+import { ConsoleLogger } from "../middleware/logger.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
+import { RequestSignature } from "./InngestCommHandler.ts";
 
 /**
  * Helper to run a POST request through a Next.js serve handler and capture
@@ -428,5 +431,116 @@ describe("response version header", () => {
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );
+  });
+});
+
+describe("RequestSignature", () => {
+  const signingKey = "signkey-test-deadbeefcafef00d";
+  const body = { event: { name: "demo/event.sent", data: {} } };
+  const logger = new ConsoleLogger({ level: "silent" });
+
+  const fixedNowMs = new Date("2026-04-22T12:00:00Z").getTime();
+  const fixedNowSeconds = Math.round(fixedNowMs / 1000);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNowMs);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const verify = async (
+    ts: string,
+    { allowExpired = false }: { allowExpired?: boolean } = {},
+  ) => {
+    const mac = await signDataWithKey(body, signingKey, ts, logger);
+    return new RequestSignature(`t=${ts}&s=${mac}`).verifySignature({
+      body,
+      signingKey,
+      signingKeyFallback: undefined,
+      allowExpiredSignatures: allowExpired,
+      logger,
+    });
+  };
+
+  describe("constructor", () => {
+    test("throws when `t` is missing", () => {
+      expect(() => new RequestSignature("s=abc")).toThrow(/Invalid/);
+    });
+
+    test("throws when `s` is missing", () => {
+      expect(() => new RequestSignature("t=123")).toThrow(/Invalid/);
+    });
+  });
+
+  describe("verifySignature expiry", () => {
+    test("accepts a timestamp 60s in the future (tolerates clock skew)", async () => {
+      await expect(verify((fixedNowSeconds + 60).toString())).resolves.toBe(
+        signingKey,
+      );
+    });
+
+    test("accepts a timestamp exactly 5 minutes old (boundary)", async () => {
+      await expect(verify((fixedNowSeconds - 300).toString())).resolves.toBe(
+        signingKey,
+      );
+    });
+
+    test("rejects a timestamp older than 5 minutes", async () => {
+      await expect(verify((fixedNowSeconds - 301).toString())).rejects.toThrow(
+        "Signature has expired",
+      );
+    });
+
+    test("rejects a timestamp more than 5 minutes in the future", async () => {
+      await expect(verify((fixedNowSeconds + 301).toString())).rejects.toThrow(
+        "Signature has expired",
+      );
+    });
+
+    test("rejects an unparseable `t`", async () => {
+      await expect(verify("not-a-number")).rejects.toThrow(
+        "Signature has expired",
+      );
+    });
+
+    test("rejects a hex-prefixed `t` (parseInt radix guard)", async () => {
+      const hexTs = `0x${fixedNowSeconds.toString(16)}`;
+      await expect(verify(hexTs)).rejects.toThrow("Signature has expired");
+    });
+
+    test.each([
+      ["past", -3600],
+      ["future", 3600],
+    ])(
+      "accepts a %s expired timestamp when allowExpiredSignatures is true",
+      async (_label, offsetSeconds) => {
+        await expect(
+          verify((fixedNowSeconds + offsetSeconds).toString(), {
+            allowExpired: true,
+          }),
+        ).resolves.toBe(signingKey);
+      },
+    );
+  });
+
+  describe("verifySignature signature check", () => {
+    test("rejects a tampered signature", async () => {
+      const ts = fixedNowSeconds.toString();
+      const mac = await signDataWithKey(body, signingKey, ts, logger);
+      const tampered = (mac[0] === "0" ? "1" : "0") + mac.slice(1);
+
+      await expect(
+        new RequestSignature(`t=${ts}&s=${tampered}`).verifySignature({
+          body,
+          signingKey,
+          signingKeyFallback: undefined,
+          allowExpiredSignatures: false,
+          logger,
+        }),
+      ).rejects.toThrow("Invalid signature");
+    });
   });
 });
