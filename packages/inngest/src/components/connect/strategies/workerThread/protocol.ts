@@ -30,6 +30,25 @@ export interface SerializableConfig extends BaseConnectionConfig {
    * The app IDs that this worker supports.
    */
   appIds: string[];
+
+  /**
+   * Max in-flight count at/below which the SDK emits per-request debug
+   * lines during shutdown. Mirrors
+   * {@link ConnectHandlerOptions.shutdownInFlightDumpMaxCount}.
+   */
+  shutdownInFlightDumpMaxCount?: number;
+
+  /**
+   * Cadence for the periodic shutdown debug dump. Mirrors
+   * {@link ConnectHandlerOptions.shutdownInFlightDumpIntervalMs}.
+   */
+  shutdownInFlightDumpIntervalMs?: number;
+
+  /**
+   * Hard deadline for graceful shutdown. Mirrors
+   * {@link ConnectHandlerOptions.shutdownGraceMs}.
+   */
+  shutdownGraceMs?: number;
 }
 
 /**

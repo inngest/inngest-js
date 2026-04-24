@@ -141,6 +141,8 @@ export class RequestProcessor {
       envId: gatewayExecutorRequest.envId,
       functionSlug: gatewayExecutorRequest.functionSlug,
       accountId: gatewayExecutorRequest.accountId,
+      leaseAcquiredAt: Date.now(),
+      leaseLastExtendedAt: Date.now(),
     };
 
     const inFlightCount = Object.keys(
@@ -180,7 +182,14 @@ export class RequestProcessor {
       };
 
       this.logger.debug(
-        { connectionId: latestConn.id, leaseId: currentLeaseId },
+        {
+          connectionId: latestConn.id,
+          leaseId: currentLeaseId,
+          requestId: gatewayExecutorRequest.requestId,
+          functionSlug: gatewayExecutorRequest.functionSlug,
+          runId: gatewayExecutorRequest.runId,
+          stepId: gatewayExecutorRequest.stepId,
+        },
         "Extending lease",
       );
 
@@ -219,6 +228,11 @@ export class RequestProcessor {
             ).finish(),
           ),
         );
+        const meta =
+          this.accessor.inProgressRequests.requestMeta[
+            gatewayExecutorRequest.requestId
+          ];
+        if (meta) meta.leaseLastExtendedAt = Date.now();
       } catch (err) {
         this.logger.warn(
           {

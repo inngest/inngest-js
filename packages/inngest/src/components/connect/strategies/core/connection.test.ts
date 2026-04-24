@@ -392,4 +392,344 @@ describe("ConnectionCore reconcile loop", () => {
       );
     });
   });
+
+  describe("shutdown in-flight telemetry", () => {
+    // Drop a synthetic in-flight lease onto the core so we can exercise the
+    // dump helpers without driving a full request/response round-trip.
+    function seedInFlight(
+      core: unknown,
+      count: number,
+      opts: { ageMs?: number; sinceLastExtendMs?: number } = {},
+    ): string[] {
+      const { ageMs = 5_000, sinceLastExtendMs = 5_000 } = opts;
+      const now = Date.now();
+      // biome-ignore lint/suspicious/noExplicitAny: tests reach into private state
+      const inProgress = (core as any)._inProgressRequests as {
+        requestLeases: Record<string, string>;
+        requestMeta: Record<string, Record<string, unknown>>;
+      };
+      const ids: string[] = [];
+      for (let i = 0; i < count; i++) {
+        const requestId = `req-${i + 1}`;
+        ids.push(requestId);
+        inProgress.requestLeases[requestId] = `lease-${i + 1}`;
+        inProgress.requestMeta[requestId] = {
+          requestId,
+          runId: `run-${i + 1}`,
+          stepId: "step",
+          appId: "app-1",
+          envId: "env-1",
+          functionSlug: "app-1-fn",
+          accountId: "acct-1",
+          leaseAcquiredAt: now - ageMs,
+          leaseLastExtendedAt: now - sinceLastExtendMs,
+        };
+      }
+      return ids;
+    }
+
+    test("dumpInFlightForShutdown is a no-op when nothing is in flight", () => {
+      const { core, logger } = createTestCore();
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method for test
+      (core as any).dumpInFlightForShutdown("drain-start");
+      expect(logger.debug).not.toHaveBeenCalled();
+    });
+
+    test("emits one debug line per request when count <= threshold", () => {
+      const { core, logger } = createTestCore();
+      seedInFlight(core, 3, { ageMs: 1_234, sinceLastExtendMs: 500 });
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).dumpInFlightForShutdown("drain-start");
+
+      const perRequestCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(perRequestCalls).toHaveLength(3);
+
+      const payload = perRequestCalls[0]![0] as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        reason: "drain-start",
+        stepId: "step",
+        functionSlug: "app-1-fn",
+        appId: "app-1",
+      });
+      expect(payload.requestId).toMatch(/^req-\d+$/);
+      expect(payload.runId).toMatch(/^run-\d+$/);
+      expect(typeof payload.ageMs).toBe("number");
+      expect(typeof payload.sinceLastLeaseExtendMs).toBe("number");
+      expect(payload.ageMs as number).toBeGreaterThanOrEqual(1_234);
+      expect(payload.ageMs as number).toBeLessThan(1_234 + 1_000);
+      expect(payload.sinceLastLeaseExtendMs as number).toBeGreaterThanOrEqual(
+        500,
+      );
+    });
+
+    test("falls back to a summary line when count > threshold", () => {
+      const { core, logger } = createTestCore();
+      seedInFlight(core, 11);
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).dumpInFlightForShutdown("drain-start");
+
+      const perRequestCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining in-flight request",
+      );
+      const summaryCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining",
+      );
+      expect(perRequestCalls).toHaveLength(0);
+      expect(summaryCalls).toHaveLength(1);
+
+      const payload = summaryCalls[0]![0] as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        reason: "drain-start",
+        inFlightCount: 11,
+        maxCountForPerRequestDump: 10,
+      });
+      expect(typeof payload.oldestAgeMs).toBe("number");
+    });
+
+    test("shutdownInFlightDumpMaxCount overrides the default threshold", () => {
+      const { core, logger } = createTestCore({
+        config: { shutdownInFlightDumpMaxCount: 2 },
+      });
+      seedInFlight(core, 3);
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).dumpInFlightForShutdown("drain-start");
+
+      // 3 > 2 → summary
+      const summaryCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining",
+      );
+      expect(summaryCalls).toHaveLength(1);
+      const payload = summaryCalls[0]![0] as Record<string, unknown>;
+      expect(payload.maxCountForPerRequestDump).toBe(2);
+    });
+
+    test("shutdownInFlightDumpMaxCount=0 always uses the summary form", () => {
+      const { core, logger } = createTestCore({
+        config: { shutdownInFlightDumpMaxCount: 0 },
+      });
+      seedInFlight(core, 1);
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).dumpInFlightForShutdown("drain-start");
+
+      const perRequestCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining in-flight request",
+      );
+      const summaryCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining",
+      );
+      expect(perRequestCalls).toHaveLength(0);
+      expect(summaryCalls).toHaveLength(1);
+    });
+
+    test("close() emits a drain-start dump and starts a periodic ticker", async () => {
+      const { core, logger } = await connectAndReady();
+      seedInFlight(core, 2);
+
+      // Kick off close() without awaiting — it will hang on the seeded
+      // in-flight leases, which is exactly the scenario we want to observe.
+      void core.close();
+      await flushMicrotasks();
+
+      const initialPerRequest = logger.debug.mock.calls.filter(
+        (c) =>
+          c[0] &&
+          (c[0] as { reason?: string }).reason === "drain-start" &&
+          c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(initialPerRequest).toHaveLength(2);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+
+      const periodicPerRequest = logger.debug.mock.calls.filter(
+        (c) =>
+          c[0] &&
+          (c[0] as { reason?: string }).reason === "periodic" &&
+          c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(periodicPerRequest.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test("shutdownGraceMs undefined → never force-exits", async () => {
+      const onForceExit = vi.fn();
+      const { core } = await connectAndReady({
+        callbacks: { onForceExit },
+      });
+      seedInFlight(core, 1);
+
+      void core.close();
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flushMicrotasks();
+
+      expect(onForceExit).not.toHaveBeenCalled();
+    });
+
+    test("shutdownGraceMs fires after the deadline with in-flight requests", async () => {
+      const onForceExit = vi.fn();
+      const { core, logger } = await connectAndReady({
+        config: { shutdownGraceMs: 5_000 },
+        callbacks: { onForceExit },
+      });
+      seedInFlight(core, 2, { ageMs: 0, sinceLastExtendMs: 0 });
+
+      void core.close();
+      await flushMicrotasks();
+
+      // Before the deadline: nothing
+      await vi.advanceTimersByTimeAsync(4_000);
+      await flushMicrotasks();
+      expect(onForceExit).not.toHaveBeenCalled();
+
+      // Tip well past the deadline
+      await vi.advanceTimersByTimeAsync(1_500);
+      await flushMicrotasks();
+
+      expect(onForceExit).toHaveBeenCalledTimes(1);
+      expect(onForceExit).toHaveBeenCalledWith(1);
+
+      const headerCalls = logger.error.mock.calls.filter(
+        (c) => c[1] === "Shutdown grace deadline exceeded; force-exiting",
+      );
+      expect(headerCalls).toHaveLength(1);
+      const headerPayload = headerCalls[0]![0] as Record<string, unknown>;
+      expect(headerPayload).toMatchObject({
+        graceMs: 5_000,
+        inFlightCount: 2,
+      });
+
+      const perRequestCalls = logger.error.mock.calls.filter(
+        (c) => c[1] === "Shutdown grace exceeded: stuck in-flight request",
+      );
+      expect(perRequestCalls).toHaveLength(2);
+      const payload = perRequestCalls[0]![0] as Record<string, unknown>;
+      expect(payload.requestId).toMatch(/^req-\d+$/);
+      expect(payload).toMatchObject({
+        graceMs: 5_000,
+        stepId: "step",
+        functionSlug: "app-1-fn",
+      });
+    });
+
+    test("force-exit leaves leases intact (gateway will expire them)", async () => {
+      const onForceExit = vi.fn();
+      const { core } = await connectAndReady({
+        config: { shutdownGraceMs: 1_000 },
+        callbacks: { onForceExit },
+      });
+      const ids = seedInFlight(core, 3);
+
+      void core.close();
+      await flushMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(1_500);
+      await flushMicrotasks();
+
+      expect(onForceExit).toHaveBeenCalledWith(1);
+
+      // We did NOT clear leases in-process before force-exit. The gateway is
+      // expected to time the lease out server-side and reassign the run, so
+      // the SDK's source-of-truth for in-flight entries is still populated
+      // at the moment the process is asked to exit. This documents that
+      // contract.
+      // biome-ignore lint/suspicious/noExplicitAny: reach private state
+      const leases = (core as any)._inProgressRequests.requestLeases as Record<
+        string,
+        string
+      >;
+      expect(Object.keys(leases).sort()).toEqual(ids.sort());
+    });
+
+    test("force-exit fires at most once even if we stay alive past the deadline", async () => {
+      const onForceExit = vi.fn();
+      const { core } = await connectAndReady({
+        config: { shutdownGraceMs: 1_000 },
+        callbacks: { onForceExit },
+      });
+      seedInFlight(core, 1);
+
+      void core.close();
+      await flushMicrotasks();
+
+      // Cross the deadline → one force-exit
+      await vi.advanceTimersByTimeAsync(1_500);
+      await flushMicrotasks();
+      expect(onForceExit).toHaveBeenCalledTimes(1);
+
+      // If the mock onForceExit doesn't actually exit (production would),
+      // the grace timer must not re-fire and onForceExit must not be
+      // re-invoked.
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+      expect(onForceExit).toHaveBeenCalledTimes(1);
+    });
+
+    test("calling close() twice is idempotent and does not re-arm the grace timer", async () => {
+      const onForceExit = vi.fn();
+      const { core } = await connectAndReady({
+        config: { shutdownGraceMs: 1_000 },
+        callbacks: { onForceExit },
+      });
+      seedInFlight(core, 1);
+
+      void core.close();
+      void core.close();
+      await flushMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(1_500);
+      await flushMicrotasks();
+
+      // Still only one force-exit despite two close() calls.
+      expect(onForceExit).toHaveBeenCalledTimes(1);
+    });
+
+    test("shutdownGraceMs does not fire when drain finishes first", async () => {
+      const onForceExit = vi.fn();
+      const { core } = await connectAndReady({
+        config: { shutdownGraceMs: 5_000 },
+        callbacks: { onForceExit },
+      });
+      // No in-flight requests → close() completes immediately
+      await core.close();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+      expect(onForceExit).not.toHaveBeenCalled();
+    });
+
+    test("shutdownInFlightDumpIntervalMs overrides the periodic cadence", async () => {
+      const { core, logger } = await connectAndReady({
+        config: { shutdownInFlightDumpIntervalMs: 1_000 },
+      });
+      seedInFlight(core, 1);
+
+      void core.close();
+      await flushMicrotasks();
+
+      const startCalls = logger.debug.mock.calls.filter(
+        (c) =>
+          c[0] &&
+          (c[0] as { reason?: string }).reason === "drain-start" &&
+          c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(startCalls).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await flushMicrotasks();
+
+      const afterOneSec = logger.debug.mock.calls.filter(
+        (c) =>
+          c[0] &&
+          (c[0] as { reason?: string }).reason === "periodic" &&
+          c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(afterOneSec.length).toBeGreaterThanOrEqual(1);
+    });
+  });
 });

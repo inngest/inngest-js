@@ -35,6 +35,11 @@ export class SameThreadStrategy extends BaseStrategy {
         maxWorkerConcurrency: config.options.maxWorkerConcurrency,
         mode: config.mode,
         gatewayUrl: config.options.gatewayUrl,
+        shutdownInFlightDumpMaxCount:
+          config.options.shutdownInFlightDumpMaxCount,
+        shutdownInFlightDumpIntervalMs:
+          config.options.shutdownInFlightDumpIntervalMs,
+        shutdownGraceMs: config.options.shutdownGraceMs,
       },
       {
         logger: this.internalLogger,

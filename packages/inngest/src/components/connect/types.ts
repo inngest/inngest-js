@@ -57,6 +57,45 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    * @default true
    */
   isolateExecution?: boolean;
+
+  /**
+   * During a graceful shutdown drain the SDK emits a **debug**-level
+   * "Shutdown: still draining in-flight request" entry per pending request
+   * — both at drain start and periodically thereafter — so operators can
+   * see which requests are holding the shutdown. To avoid log spam when
+   * many requests are in flight, the per-request dump is only emitted
+   * when the in-flight count is at or below this threshold. Above it, the
+   * SDK falls back to a single summary line with `inFlightCount` and
+   * `oldestAgeMs`.
+   *
+   * Set to `0` to always use the summary. Does not affect info/warn logs.
+   *
+   * @default 10
+   */
+  shutdownInFlightDumpMaxCount?: number;
+
+  /**
+   * Cadence in milliseconds for the periodic "still draining" debug dump
+   * during shutdown. Only meaningful when the logger is at debug level.
+   *
+   * @default 10000
+   */
+  shutdownInFlightDumpIntervalMs?: number;
+
+  /**
+   * If set, a graceful-shutdown hard deadline in milliseconds. When the
+   * drain has been running for this long and there are still in-flight
+   * requests, the SDK emits an `error`-level log enumerating each stuck
+   * `{requestId, runId, functionSlug, ageMs}` and then calls
+   * `process.exit(1)` so an orchestrator does not have to SIGKILL blind.
+   *
+   * When left undefined (the default) the SDK never force-exits on its own
+   * — shutdown waits forever for in-flight requests, matching historical
+   * behavior.
+   *
+   * @default undefined
+   */
+  shutdownGraceMs?: number;
 }
 
 export interface WorkerConnection {
@@ -75,6 +114,19 @@ export interface InFlightRequest {
   envId: string;
   functionSlug: string;
   accountId: string;
+  /**
+   * Timestamp (ms since epoch) when the worker acknowledged the request and
+   * took the lease. Used to compute age for shutdown diagnostics.
+   */
+  leaseAcquiredAt: number;
+  /**
+   * Timestamp (ms since epoch) of the most recent successful lease-extend send
+   * for this request. Starts equal to `leaseAcquiredAt` and is updated each
+   * time the worker sends a WORKER_REQUEST_EXTEND_LEASE message. Useful
+   * during shutdown diagnostics to tell whether a stuck request is still
+   * being actively leased or has gone silent.
+   */
+  leaseLastExtendedAt: number;
 }
 
 export interface ConnectDebugState {
