@@ -764,6 +764,48 @@ describe("Execution engine checkpoint retry behavior", () => {
       // Subsequent steps use checkpointSteps
       expect(mockCheckpointSteps).toHaveBeenCalled();
     });
+
+    test("releases execution references after completion", async () => {
+      const mockCheckpointNewRun = vi.fn().mockResolvedValue({
+        data: { app_id: "app-123", fn_id: "fn-456", token: "token-789" },
+      });
+
+      const { execution, result } = await runExecution({
+        mockApi: {
+          checkpointNewRun: mockCheckpointNewRun,
+        },
+        handler: async () => {
+          return "done";
+        },
+        stepMode: StepMode.Sync,
+      });
+
+      expect(result.type).toBe("function-resolved");
+
+      const internal = execution as unknown as {
+        state: {
+          steps: Map<string, unknown>;
+          stepState: Record<string, unknown>;
+          metadata?: Map<string, unknown>;
+          remainingStepsToBeSeen: Set<string>;
+          stepCompletionOrder: string[];
+          checkpointingStepBuffer: unknown[];
+        };
+        fnArg: unknown;
+        execution?: Promise<unknown>;
+        options: Record<string, unknown>;
+      };
+
+      expect(internal.state.steps.size).toBe(0);
+      expect(Object.keys(internal.state.stepState)).toHaveLength(0);
+      expect(internal.state.metadata?.size ?? 0).toBe(0);
+      expect(internal.state.remainingStepsToBeSeen.size).toBe(0);
+      expect(internal.state.stepCompletionOrder).toHaveLength(0);
+      expect(internal.state.checkpointingStepBuffer).toHaveLength(0);
+      expect(internal.fnArg).toEqual({});
+      expect(internal.execution).toBeUndefined();
+      expect(Object.keys(internal.options)).toHaveLength(0);
+    });
   });
 
   describe("StepMode.Sync (SSE streaming)", () => {
