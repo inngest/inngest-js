@@ -231,11 +231,7 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
  */
 export const testSigningKey = "signkey-test-12345";
 
-/**
- * Build a valid `x-inngest-signature` header for a test request. Body
- * defaults to the empty-string form used by bodyless PUT/GET (see
- * `InngestCommHandler` body-for-signing logic).
- */
+/** Build an `x-inngest-signature` header value. Body defaults to `""`. */
 export const makeTestSignature = async (
   body: unknown = "",
   signingKey: string = testSigningKey,
@@ -248,6 +244,27 @@ export const makeTestSignature = async (
     new ConsoleLogger({ level: "silent" }),
   );
   return `t=${ts}&s=${sig}`;
+};
+
+const fingerprintHeaderKeys = [
+  headerKeys.SdkVersion,
+  headerKeys.Framework,
+  headerKeys.Platform,
+  headerKeys.Environment,
+  headerKeys.InngestExpectedServerKind,
+  headerKeys.RequestVersion,
+  "user-agent",
+] as const;
+
+/** Assert that no SDK-fingerprint headers leaked onto a response. */
+export const expectNoFingerprintHeaders = (
+  headers: Record<string, unknown> | Headers,
+): void => {
+  const get = (key: string) =>
+    headers instanceof Headers ? headers.get(key) : headers[key.toLowerCase()];
+  for (const key of fingerprintHeaderKeys) {
+    expect(get(key)).toBeFalsy();
+  }
 };
 
 /**
@@ -716,8 +733,6 @@ export const testFramework = (
       });
 
       test("returns 401 if signature validation fails", async () => {
-        // Cloud-mode GET without a valid signature must not leak
-        // introspection data.
         const ret = await run(
           [
             {
@@ -1397,15 +1412,10 @@ export const testFramework = (
           nock.cleanAll();
         });
 
-        // Cloud-mode PUT requires a valid signature; dev-mode
-        // short-circuits validation, so out-of-band sync still runs there.
-        const expectedOutOfBand = (
-          sdkMode: serverKind,
-          validSignature: boolean | undefined,
-        ): syncKind | 401 =>
-          sdkMode === serverKind.Cloud && validSignature !== true
-            ? 401
-            : syncKind.OutOfBand;
+        // Out-of-band PUT bypasses the auth gate so unsigned CI/CD callers
+        // can still sync; security comes from the outgoing register POST.
+        // Every case in this block resolves to OutOfBand regardless of
+        // signature or mode.
 
         // Always perform out-of-band syncs if the env var is falsey
         describe("env var disallow", () => {
@@ -1414,7 +1424,7 @@ export const testFramework = (
               [undefined, ...Object.values(syncKind)].forEach(
                 (requestedSyncKind) => {
                   [undefined, false, true].forEach((validSignature) => {
-                    expectResponse(expectedOutOfBand(sdkMode, validSignature), {
+                    expectResponse(syncKind.OutOfBand, {
                       serverMode,
                       sdkMode,
                       requestedSyncKind,
@@ -1433,7 +1443,7 @@ export const testFramework = (
             Object.values(serverKind).forEach((sdkMode) => {
               [undefined, false, true].forEach((validSignature) => {
                 [undefined, true].forEach((allowInBandSync) => {
-                  expectResponse(expectedOutOfBand(sdkMode, validSignature), {
+                  expectResponse(syncKind.OutOfBand, {
                     serverMode,
                     sdkMode,
                     requestedSyncKind: undefined,
@@ -1452,7 +1462,7 @@ export const testFramework = (
             Object.values(serverKind).forEach((sdkMode) => {
               [undefined, false, true].forEach((validSignature) => {
                 [undefined, true].forEach((allowInBandSync) => {
-                  expectResponse(expectedOutOfBand(sdkMode, validSignature), {
+                  expectResponse(syncKind.OutOfBand, {
                     serverMode,
                     sdkMode,
                     requestedSyncKind: syncKind.OutOfBand,
@@ -1525,10 +1535,8 @@ export const testFramework = (
             Object.values(serverKind).forEach((serverMode) => {
               Object.values(serverKind).forEach((sdkMode) => {
                 [undefined, true].forEach((allowInBandSync) => {
-                  // Cloud-mode runs signature validation before the
-                  // missing-body check, so a forced empty body fails sig (401)
-                  // before reaching the 500 missing-body path. Dev-mode
-                  // short-circuits validation, so the 500 path still fires.
+                  // Cloud auth runs before the missing-body check, so an
+                  // empty body 401s before reaching the 500. Dev skips auth.
                   expectResponse(sdkMode === serverKind.Dev ? 500 : 401, {
                     actionOverrides: { body: () => undefined },
                     serverMode,

@@ -3,6 +3,7 @@ import { randomSuffix, testNameFromFileUrl } from "@inngest/test-harness";
 import { afterEach, expect, test } from "vitest";
 import { Inngest } from "../../index.ts";
 import { createServer } from "../../node.ts";
+import { expectNoFingerprintHeaders } from "../helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -59,17 +60,18 @@ test("serve() does not throw without a signing key in cloud mode", async () => {
   expect(url).toBeDefined();
 });
 
-test("GET returns 500 without a signing key in cloud mode", async () => {
+test("GET returns 401 without a signing key in cloud mode", async () => {
   const url = await startCloudServerWithoutSigningKey();
 
   const res = await fetch(url);
 
-  expect(res.status).toBe(500);
+  expect(res.status).toBe(401);
   const body = await res.json();
-  expect(body).toEqual({ code: "internal_server_error" });
+  expect(body).toEqual({ code: "sig_verification_failed" });
+  expectNoFingerprintHeaders(res.headers);
 });
 
-test("POST returns 500 without a signing key in cloud mode", async () => {
+test("POST returns 401 without a signing key in cloud mode", async () => {
   const url = await startCloudServerWithoutSigningKey();
 
   const res = await fetch(url, {
@@ -78,12 +80,15 @@ test("POST returns 500 without a signing key in cloud mode", async () => {
     body: JSON.stringify({}),
   });
 
-  expect(res.status).toBe(500);
+  expect(res.status).toBe(401);
   const body = await res.json();
-  expect(body).toEqual({ code: "internal_server_error" });
+  expect(body).toEqual({ code: "sig_verification_failed" });
+  expectNoFingerprintHeaders(res.headers);
 });
 
 test("PUT returns 500 without a signing key in cloud mode", async () => {
+  // Out-of-band PUT bypasses auth and hits the misconfig 500. Must not
+  // leak fingerprint headers either.
   const url = await startCloudServerWithoutSigningKey();
 
   const res = await fetch(url, { method: "PUT" });
@@ -91,4 +96,5 @@ test("PUT returns 500 without a signing key in cloud mode", async () => {
   expect(res.status).toBe(500);
   const body = await res.json();
   expect(body).toEqual({ code: "internal_server_error" });
+  expectNoFingerprintHeaders(res.headers);
 });

@@ -71,18 +71,16 @@ import {
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 
-// A response object for when an internal server error occurs. When that
-// happens, we don't to leak any internal details to the client.
+// Sent directly via `actions.transformResponse`, bypassing `prepareActionRes`
+// so unauthenticated/misconfigured responses don't pick up SDK-fingerprint
+// headers.
 const internalServerErrorResponse = {
   body: stringify({ code: "internal_server_error" }),
   headers: { "Content-Type": "application/json" },
   status: 500,
-  version: undefined,
+  version: null,
 } as const;
 
-// `version: null` suppresses the RequestVersion header. Returned directly
-// (without running through prepareActionRes) so no fingerprint headers are
-// attached on unauthenticated responses.
 const sigVerificationFailedResponse = {
   body: stringify({ code: "sig_verification_failed" }),
   headers: { "Content-Type": "application/json" },
@@ -685,6 +683,26 @@ export class InngestCommHandler<
   }
 
   /**
+   * Whether a PUT is requesting in-band sync. Out-of-band PUT is unsigned by design, so PUT auth depends on this.
+   */
+  private async isInBandSyncRequested(
+    actions: HandlerResponseWithErrors,
+  ): Promise<boolean> {
+    const allowInBandSync = parseAsBoolean(
+      this.env[envKeys.InngestAllowInBandSync],
+    );
+    if (allowInBandSync !== undefined && !allowInBandSync) {
+      return false;
+    }
+
+    const kind = await actions.headers(
+      "processing deployment request",
+      headerKeys.InngestSyncKind,
+    );
+    return kind === syncKind.InBand;
+  }
+
+  /**
    * Start handling a request, setting up environments, modes, and returning
    * some helpers.
    */
@@ -1158,9 +1176,8 @@ export class InngestCommHandler<
           // pre-parsed objects (req.body).
           const parsed =
             typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
-          // For PUT, normalize `{}` to `""` so the signing contract matches
-          // what the sender signs over an empty HTTP body. POST is left alone
-          // so downstream missing-body detection still fires.
+          // PUT-only: normalize `{}` to `""` to match the empty-body signing
+          // contract. POST falls through so missing-body detection still fires.
           if (
             method === "PUT" &&
             isRecord(parsed) &&
@@ -1177,17 +1194,26 @@ export class InngestCommHandler<
 
     const signatureValidation = this.validateSignature(signature, body);
 
-    // Single auth gate for the whole request. validateSignature short-circuits
-    // to success in dev mode, so local tooling is unaffected. Treat a thrown
-    // error the same as a resolved failure.
-    const validationResult = await signatureValidation.catch((err: Error) => ({
-      success: false as const,
-      err,
-    }));
+    const inBandSyncRequested =
+      method === "PUT" ? await this.isInBandSyncRequested(actions) : false;
+
+    // Out-of-band PUT is unsigned by design, so we only gate PUT when the caller asks for in-band sync.
+    const validationResult = await signatureValidation;
     if (!validationResult.success) {
+      if (method !== "PUT" || inBandSyncRequested) {
+        return actions.transformResponse(
+          "sending back response",
+          sigVerificationFailedResponse,
+        );
+      }
+    }
+
+    // Runs after the auth gate so GET/POST without a signing key still 401
+    // first; only out-of-band PUT can reach this without a key.
+    if (!this.checkModeConfiguration()) {
       return actions.transformResponse(
         "sending back response",
-        sigVerificationFailedResponse,
+        internalServerErrorResponse,
       );
     }
 
@@ -1256,6 +1282,7 @@ export class InngestCommHandler<
           forceExecution: Boolean(forceExecution),
           fns,
           mwInstances,
+          inBandSyncRequested,
         }),
       );
       actionResponseVersion = rawRes.version;
@@ -1537,6 +1564,7 @@ export class InngestCommHandler<
     forceExecution,
     fns,
     mwInstances,
+    inBandSyncRequested,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
@@ -1547,11 +1575,8 @@ export class InngestCommHandler<
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
     mwInstances?: Middleware.BaseMiddleware[];
+    inBandSyncRequested: boolean;
   }): Promise<ActionResponse> {
-    if (!this.checkModeConfiguration()) {
-      return internalServerErrorResponse;
-    }
-
     // This is when the request body is completely missing. This commonly
     // happens when the HTTP framework doesn't have body parsing middleware,
     // or for PUT requests that don't require a body.
@@ -1924,33 +1949,14 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const [deployId, inBandSyncRequested] = await Promise.all([
-          actions
-            .queryStringWithDefaults(
-              "processing deployment request",
-              queryKeys.DeployId,
-            )
-            .then((deployId) => {
-              return deployId === "undefined" ? undefined : deployId;
-            }),
-
-          Promise.resolve(
-            parseAsBoolean(this.env[envKeys.InngestAllowInBandSync]),
+        const deployId = await actions
+          .queryStringWithDefaults(
+            "processing deployment request",
+            queryKeys.DeployId,
           )
-            .then((allowInBandSync) => {
-              if (allowInBandSync !== undefined && !allowInBandSync) {
-                return syncKind.OutOfBand;
-              }
-
-              return actions.headers(
-                "processing deployment request",
-                headerKeys.InngestSyncKind,
-              );
-            })
-            .then((kind) => {
-              return kind === syncKind.InBand;
-            }),
-        ]);
+          .then((deployId) => {
+            return deployId === "undefined" ? undefined : deployId;
+          });
 
         if (inBandSyncRequested) {
           if (isMissingBody) {
@@ -2359,9 +2365,8 @@ export class InngestCommHandler<
       schema_version: "2024-05-24",
     } satisfies UnauthenticatedIntrospection;
 
-    // Only return an authenticated body in Cloud mode. Dev mode skips
-    // signature validation, so we return the unauthenticated shape for local
-    // tooling.
+    // Only return an authenticated body in cloud mode; dev mode skips
+    // signature validation.
     if (this.client.mode === "cloud") {
       introspection = {
         ...introspection,
