@@ -23,6 +23,7 @@
 
 import type { RequestEvent } from "@sveltejs/kit";
 import {
+  type ActionResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
@@ -34,6 +35,27 @@ import type { SupportedFrameworkName } from "./types.ts";
  * dashboards and during testing.
  */
 export const frameworkName: SupportedFrameworkName = "sveltekit";
+
+const createResponse = ({
+  body,
+  headers,
+  status,
+}: ActionResponse<string | ReadableStream>): Response => {
+  /**
+   * If `Response` isn't included in this environment, it's probably a
+   * Node env that isn't already polyfilling. In this case, we can
+   * polyfill it here to be safe.
+   */
+  let Res: typeof Response;
+
+  if (typeof Response === "undefined") {
+    Res = require("cross-fetch").Response;
+  } else {
+    Res = Response;
+  }
+
+  return new Res(body, { status, headers });
+};
 
 /**
  * Using SvelteKit, serve and register any declared functions with Inngest,
@@ -79,7 +101,6 @@ export const serve = (
         url: () => {
           const protocol =
             processEnv("NODE_ENV") === "development" ? "http" : "https";
-
           return new URL(
             event.request.url,
             `${protocol}://${
@@ -87,22 +108,8 @@ export const serve = (
             }`,
           );
         },
-        transformResponse: ({ body, headers, status }) => {
-          /**
-           * If `Response` isn't included in this environment, it's probably a
-           * Node env that isn't already polyfilling. In this case, we can
-           * polyfill it here to be safe.
-           */
-          let Res: typeof Response;
-
-          if (typeof Response === "undefined") {
-            Res = require("cross-fetch").Response;
-          } else {
-            Res = Response;
-          }
-
-          return new Res(body, { status, headers });
-        },
+        transformResponse: createResponse,
+        transformStreamingResponse: createResponse,
       };
     },
   });
