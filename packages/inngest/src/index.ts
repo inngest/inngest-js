@@ -97,6 +97,7 @@ export type {
   UnionKeys,
 } from "./helpers/types";
 export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
+export { experimentScoreMiddleware } from "./middleware/experimentScore.ts";
 export type { LogArg, Logger } from "./middleware/logger";
 export { ConsoleLogger, ProxyLogger } from "./middleware/logger.ts";
 export type {
