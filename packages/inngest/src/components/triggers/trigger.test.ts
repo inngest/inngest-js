@@ -470,6 +470,56 @@ describe("eventType with schema", () => {
       },
     );
   });
+
+  test("branded object type", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", {
+            schema: z.object({
+              animal: z.object({ name: z.string() }).brand<"Cat">(),
+            }),
+          }),
+        ],
+      },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<{ animal: { name: string } }>();
+      },
+    );
+  });
+
+  test("branded primitive type", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      {
+        id: "fn",
+        triggers: [
+          eventType("event-1", {
+            schema: z.object({
+              someId: z.string().uuid().brand<"something">(),
+            }),
+          }),
+        ],
+      },
+      ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+
+        expectTypeOf(event.data).not.toBeAny();
+        expectTypeOf(event.data).toEqualTypeOf<{ someId: string }>();
+      },
+    );
+  });
 });
 
 test("eventType with version", () => {

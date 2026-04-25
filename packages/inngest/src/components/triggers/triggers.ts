@@ -203,22 +203,39 @@ export class EventType<
 type StaticTypeError<TMessage extends string> = TMessage;
 
 /**
+ * Strip symbol-keyed properties from a type. This is used to ignore type-only
+ * branding (e.g. Zod's `BRAND`) when comparing schema input/output types.
+ */
+type StripSymbolKeys<T> = {
+  [K in keyof T as K extends symbol ? never : K]: StripSymbolKeys<T[K]>;
+};
+
+/**
+ * Check if two types are structurally equal, ignoring symbol-keyed properties
+ * (e.g. Zod's `BRAND`).
+ */
+type IsEqualIgnoringBrands<A, B> = [StripSymbolKeys<A>] extends [
+  StripSymbolKeys<B>,
+]
+  ? // Wrapped in tuples to prevent distributive conditional over union types.
+    [StripSymbolKeys<B>] extends [StripSymbolKeys<A>]
+    ? true
+    : false
+  : false;
+
+/**
  * Ensure that users don't use transforms in their schemas, since we don't
- * support transforms.
+ * support transforms. Branded types (which only add symbol-keyed properties)
+ * are allowed because they don't affect runtime values.
  */
 type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
   TSchema extends undefined
-    ? // Undefined schema is OK
-      undefined
+    ? undefined
     : TSchema extends StandardSchemaV1<infer TInput, infer TOutput>
-      ? // Wrap in tuples to prevent distributive conditional over union types. This ensures that the schema can be a union.
-        [TInput] extends [TOutput]
-        ? // Input and output schemas match, so we're good
-          TSchema
-        : // Return an error message since the input and output schemas don't match
-          StaticTypeError<"Transforms not supported: schema input/output types must match">
-      : // Return an error message since the schema is not a StandardSchemaV1
-        StaticTypeError<"Transforms not supported: schema input/output types must match">;
+      ? IsEqualIgnoringBrands<TInput, TOutput> extends true
+        ? TSchema
+        : StaticTypeError<"Transforms not supported: schema input/output types must match">
+      : StaticTypeError<"Transforms not supported: schema input/output types must match">;
 
 /**
  * Create an event type definition that can be used as a trigger and for
