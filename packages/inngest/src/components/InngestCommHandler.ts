@@ -71,13 +71,21 @@ import {
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
 
-// A response object for when an internal server error occurs. When that
-// happens, we don't to leak any internal details to the client.
+// Sent directly via `actions.transformResponse`, bypassing `prepareActionRes`
+// so unauthenticated/misconfigured responses don't pick up SDK-fingerprint
+// headers.
 const internalServerErrorResponse = {
   body: stringify({ code: "internal_server_error" }),
   headers: { "Content-Type": "application/json" },
   status: 500,
-  version: undefined,
+  version: null,
+} as const;
+
+const sigVerificationFailedResponse = {
+  body: stringify({ code: "sig_verification_failed" }),
+  headers: { "Content-Type": "application/json" },
+  status: 401,
+  version: null,
 } as const;
 
 /**
@@ -675,6 +683,26 @@ export class InngestCommHandler<
   }
 
   /**
+   * Whether a PUT is requesting in-band sync. Out-of-band PUT is unsigned by design, so PUT auth depends on this.
+   */
+  private async isInBandSyncRequested(
+    actions: HandlerResponseWithErrors,
+  ): Promise<boolean> {
+    const allowInBandSync = parseAsBoolean(
+      this.env[envKeys.InngestAllowInBandSync],
+    );
+    if (allowInBandSync !== undefined && !allowInBandSync) {
+      return false;
+    }
+
+    const kind = await actions.headers(
+      "processing deployment request",
+      headerKeys.InngestSyncKind,
+    );
+    return kind === syncKind.InBand;
+  }
+
+  /**
    * Start handling a request, setting up environments, modes, and returning
    * some helpers.
    */
@@ -1135,19 +1163,29 @@ export class InngestCommHandler<
       methodP,
       methodP.then(async (method) => {
         if (method === "POST" || method === "PUT") {
-          const body = await actions.body(
+          const rawBody = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
-          if (!body) {
-            // Empty body can happen with PUT requests
+          if (
+            !rawBody ||
+            (typeof rawBody === "string" && rawBody.trim() === "")
+          ) {
             return "";
           }
           // Some adapters return strings (req.text()), others return
-          // pre-parsed objects (req.body). Handle both cases.
-          if (typeof body === "string") {
-            return JSON.parse(body);
+          // pre-parsed objects (req.body).
+          const parsed =
+            typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+          // PUT-only: normalize `{}` to `""` to match the empty-body signing
+          // contract. POST falls through so missing-body detection still fires.
+          if (
+            method === "PUT" &&
+            isRecord(parsed) &&
+            Object.keys(parsed).length === 0
+          ) {
+            return "";
           }
-          return body;
+          return parsed;
         }
 
         return "";
@@ -1155,6 +1193,29 @@ export class InngestCommHandler<
     ]);
 
     const signatureValidation = this.validateSignature(signature, body);
+
+    const inBandSyncRequested =
+      method === "PUT" ? await this.isInBandSyncRequested(actions) : false;
+
+    // Out-of-band PUT is unsigned by design, so we only gate PUT when the caller asks for in-band sync.
+    const validationResult = await signatureValidation;
+    if (!validationResult.success) {
+      if (method !== "PUT" || inBandSyncRequested) {
+        return actions.transformResponse(
+          "sending back response",
+          sigVerificationFailedResponse,
+        );
+      }
+    }
+
+    // Runs after the auth gate so GET/POST without a signing key still 401
+    // first; only out-of-band PUT can reach this without a key.
+    if (!this.checkModeConfiguration()) {
+      return actions.transformResponse(
+        "sending back response",
+        internalServerErrorResponse,
+      );
+    }
 
     // Create middleware instances once; shared by wrapRequest and execution hooks.
     // Starts with client-level middleware; function-level middleware is appended
@@ -1185,34 +1246,24 @@ export class InngestCommHandler<
             }),
       };
 
-      let signature: string | undefined;
-
-      try {
-        signature = await signatureValidation.then(async (result) => {
-          if (!result.success || !result.keyUsed) {
-            return undefined;
-          }
-
-          return await this.getResponseSignature(result.keyUsed, res.body);
-        });
-      } catch (err) {
-        // If we fail to sign, retun a 500 with the error.
-        return {
-          ...res,
-          headers,
-          body: stringify(serializeError(err)),
-          status: 500,
-        };
+      const validation = await signatureValidation;
+      if (validation.success && validation.keyUsed) {
+        try {
+          headers[headerKeys.Signature] = await this.getResponseSignature(
+            validation.keyUsed,
+            res.body,
+          );
+        } catch (err) {
+          return {
+            ...res,
+            headers,
+            body: stringify(serializeError(err)),
+            status: 500,
+          };
+        }
       }
 
-      if (signature) {
-        headers[headerKeys.Signature] = signature;
-      }
-
-      return {
-        ...res,
-        headers,
-      };
+      return { ...res, headers };
     };
 
     // Build the inner handler that wraps handleAction + prepareActionRes.
@@ -1226,12 +1277,12 @@ export class InngestCommHandler<
           timer,
           getHeaders,
           reqArgs: args,
-          signatureValidation,
           body,
           method,
           forceExecution: Boolean(forceExecution),
           fns,
           mwInstances,
+          inBandSyncRequested,
         }),
       );
       actionResponseVersion = rawRes.version;
@@ -1508,28 +1559,24 @@ export class InngestCommHandler<
     timer,
     getHeaders,
     reqArgs,
-    signatureValidation,
     body: rawBody,
     method,
     forceExecution,
     fns,
     mwInstances,
+    inBandSyncRequested,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
     getHeaders: () => Promise<Record<string, string>>;
     reqArgs: unknown[];
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     body: unknown;
     method: string;
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
     mwInstances?: Middleware.BaseMiddleware[];
+    inBandSyncRequested: boolean;
   }): Promise<ActionResponse> {
-    if (!this.checkModeConfiguration()) {
-      return internalServerErrorResponse;
-    }
-
     // This is when the request body is completely missing. This commonly
     // happens when the HTTP framework doesn't have body parsing middleware,
     // or for PUT requests that don't require a body.
@@ -1557,18 +1604,6 @@ export class InngestCommHandler<
                 ),
               ),
             ),
-            version: undefined,
-          };
-        }
-
-        const validationResult = await signatureValidation;
-        if (!validationResult.success) {
-          return {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: stringify(serializeError(validationResult.err)),
             version: undefined,
           };
         }
@@ -1903,7 +1938,6 @@ export class InngestCommHandler<
             await this.introspectionBody({
               actions,
               env,
-              signatureValidation,
               url,
             }),
           ),
@@ -1915,33 +1949,14 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const [deployId, inBandSyncRequested] = await Promise.all([
-          actions
-            .queryStringWithDefaults(
-              "processing deployment request",
-              queryKeys.DeployId,
-            )
-            .then((deployId) => {
-              return deployId === "undefined" ? undefined : deployId;
-            }),
-
-          Promise.resolve(
-            parseAsBoolean(this.env[envKeys.InngestAllowInBandSync]),
+        const deployId = await actions
+          .queryStringWithDefaults(
+            "processing deployment request",
+            queryKeys.DeployId,
           )
-            .then((allowInBandSync) => {
-              if (allowInBandSync !== undefined && !allowInBandSync) {
-                return syncKind.OutOfBand;
-              }
-
-              return actions.headers(
-                "processing deployment request",
-                headerKeys.InngestSyncKind,
-              );
-            })
-            .then((kind) => {
-              return kind === syncKind.InBand;
-            }),
-        ]);
+          .then((deployId) => {
+            return deployId === "undefined" ? undefined : deployId;
+          });
 
         if (inBandSyncRequested) {
           if (isMissingBody) {
@@ -1961,24 +1976,6 @@ export class InngestCommHandler<
                   ),
                 ),
               ),
-              version: undefined,
-            };
-          }
-
-          // Validation can be successful if we're in dev mode and did not
-          // actually validate a key. In this case, also check that we did indeed
-          // use a particular key to validate.
-          const sigCheck = await signatureValidation;
-
-          if (!sigCheck.success) {
-            return {
-              status: 401,
-              body: stringify({
-                code: "sig_verification_failed",
-              }),
-              headers: {
-                "Content-Type": "application/json",
-              },
               version: undefined,
             };
           }
@@ -2007,7 +2004,6 @@ export class InngestCommHandler<
             actions,
             deployId,
             env,
-            signatureValidation,
             url,
           });
 
@@ -2062,10 +2058,11 @@ export class InngestCommHandler<
       status: 405,
       body: JSON.stringify({
         message: `No action found; expected POST, PUT, or GET but received "${method}"`,
-        mode: this.client.mode,
       }),
-      headers: {},
-      version: undefined,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      version: null,
     };
   }
 
@@ -2286,7 +2283,6 @@ export class InngestCommHandler<
     actions,
     deployId,
     env,
-    signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
@@ -2298,7 +2294,6 @@ export class InngestCommHandler<
     deployId: string | undefined | null;
 
     env: string | null;
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
 
     url: URL;
   }): Promise<InBandRegisterRequest> {
@@ -2306,7 +2301,6 @@ export class InngestCommHandler<
     const introspectionBody = await this.introspectionBody({
       actions,
       env,
-      signatureValidation,
       url,
     });
 
@@ -2343,12 +2337,10 @@ export class InngestCommHandler<
   protected async introspectionBody({
     actions,
     env,
-    signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
     env: string | null;
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
     const registerBody = this.registerBody({
@@ -2373,47 +2365,34 @@ export class InngestCommHandler<
       schema_version: "2024-05-24",
     } satisfies UnauthenticatedIntrospection;
 
-    // Only allow authenticated introspection in Cloud mode, since Dev mode skips
-    // signature validation
+    // Only return an authenticated body in cloud mode; dev mode skips
+    // signature validation.
     if (this.client.mode === "cloud") {
-      try {
-        const validationResult = await signatureValidation;
-        if (!validationResult.success) {
-          throw new Error("Signature validation failed");
-        }
-
-        introspection = {
-          ...introspection,
-          authentication_succeeded: true,
-          api_origin: this.client.apiBaseUrl,
-          app_id: this.client.id,
-          capabilities: {
-            trust_probe: "v1",
-            connect: "v1",
-          },
-          env,
-          event_api_origin: this.client.eventBaseUrl,
-          event_key_hash: this.hashedEventKey ?? null,
-          extra: {
-            ...introspection.extra,
-            is_streaming: await this.shouldStream(actions),
-            native_crypto: globalThis.crypto?.subtle ? true : false,
-          },
-          framework: this.frameworkName,
-          sdk_language: "js",
-          sdk_version: version,
-          serve_origin: this.serveOrigin ?? null,
-          serve_path: this.servePath ?? null,
-          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-          signing_key_hash: this.hashedSigningKey ?? null,
-        } satisfies AuthenticatedIntrospection;
-      } catch {
-        // Swallow signature validation error since we'll just return the
-        // unauthenticated introspection
-        introspection = {
-          ...introspection,
-        } satisfies UnauthenticatedIntrospection;
-      }
+      introspection = {
+        ...introspection,
+        authentication_succeeded: true,
+        api_origin: this.client.apiBaseUrl,
+        app_id: this.client.id,
+        capabilities: {
+          trust_probe: "v1",
+          connect: "v1",
+        },
+        env,
+        event_api_origin: this.client.eventBaseUrl,
+        event_key_hash: this.hashedEventKey ?? null,
+        extra: {
+          ...introspection.extra,
+          is_streaming: await this.shouldStream(actions),
+          native_crypto: globalThis.crypto?.subtle ? true : false,
+        },
+        framework: this.frameworkName,
+        sdk_language: "js",
+        sdk_version: version,
+        serve_origin: this.serveOrigin ?? null,
+        serve_path: this.servePath ?? null,
+        signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
+        signing_key_hash: this.hashedSigningKey ?? null,
+      } satisfies AuthenticatedIntrospection;
     }
 
     return introspection;

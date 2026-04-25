@@ -231,6 +231,42 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
  */
 export const testSigningKey = "signkey-test-12345";
 
+/** Build an `x-inngest-signature` header value. Body defaults to `""`. */
+export const makeTestSignature = async (
+  body: unknown = "",
+  signingKey: string = testSigningKey,
+  ts: string = Date.now().toString(),
+): Promise<string> => {
+  const sig = await signDataWithKey(
+    body,
+    signingKey,
+    ts,
+    new ConsoleLogger({ level: "silent" }),
+  );
+  return `t=${ts}&s=${sig}`;
+};
+
+const fingerprintHeaderKeys = [
+  headerKeys.SdkVersion,
+  headerKeys.Framework,
+  headerKeys.Platform,
+  headerKeys.Environment,
+  headerKeys.InngestExpectedServerKind,
+  headerKeys.RequestVersion,
+  "user-agent",
+] as const;
+
+/** Assert that no SDK-fingerprint headers leaked onto a response. */
+export const expectNoFingerprintHeaders = (
+  headers: Record<string, unknown> | Headers,
+): void => {
+  const get = (key: string) =>
+    headers instanceof Headers ? headers.get(key) : headers[key.toLowerCase()];
+  for (const key of fingerprintHeaderKeys) {
+    expect(get(key)).toBeFalsy();
+  }
+};
+
 /**
  * Dev mode test client for most tests.
  * Uses isDev: true so no signing key is required.
@@ -564,7 +600,7 @@ export const testFramework = (
         );
       });
 
-      test("returns 500 at request time without signing key", async () => {
+      test("returns 401 at request time without signing key", async () => {
         await withoutEnvVars(
           [envKeys.InngestSigningKey, envKeys.InngestDevMode],
           async () => {
@@ -584,9 +620,9 @@ export const testFramework = (
                   ]);
 
             const res = await run(serveHandler, [{ method: "GET" }], {});
-            expect(res.status).toBe(500);
+            expect(res.status).toBe(401);
             expect(JSON.parse(res.body)).toEqual({
-              code: "internal_server_error",
+              code: "sig_verification_failed",
             });
           },
         );
@@ -638,10 +674,24 @@ export const testFramework = (
 
           // At request time, env vars become available
           // Cloud mode (default) requires signing key at request time
-          const ret = await run(edgeHandler, [{ method: "GET" }], {
-            [envKeys.InngestEventKey]: "event-key-123",
-            [envKeys.InngestSigningKey]: "signing-key-123",
-          });
+          const ret = await run(
+            edgeHandler,
+            [
+              {
+                method: "GET",
+                headers: {
+                  [headerKeys.Signature]: await makeTestSignature(
+                    "",
+                    "signing-key-123",
+                  ),
+                },
+              },
+            ],
+            {
+              [envKeys.InngestEventKey]: "event-key-123",
+              [envKeys.InngestSigningKey]: "signing-key-123",
+            },
+          );
 
           const body = JSON.parse(ret.body);
 
@@ -654,9 +704,23 @@ export const testFramework = (
           // Simulate edge: handler created with empty process.env
           const edgeHandler = createEdgeHandler();
 
-          const ret = await run(edgeHandler, [{ method: "GET" }], {
-            [envKeys.InngestSigningKey]: "signing-key-123",
-          });
+          const ret = await run(
+            edgeHandler,
+            [
+              {
+                method: "GET",
+                headers: {
+                  [headerKeys.Signature]: await makeTestSignature(
+                    "",
+                    "signing-key-123",
+                  ),
+                },
+              },
+            ],
+            {
+              [envKeys.InngestSigningKey]: "signing-key-123",
+            },
+          );
 
           expect(ret.status).toEqual(200);
 
@@ -668,8 +732,7 @@ export const testFramework = (
         });
       });
 
-      test("#690 returns 200 if signature validation fails", async () => {
-        // Pass signingKey via env for cloud mode
+      test("returns 401 if signature validation fails", async () => {
         const ret = await run(
           [
             {
@@ -681,12 +744,9 @@ export const testFramework = (
           { [envKeys.InngestSigningKey]: "signing-key-123" },
         );
 
-        expect(ret.status).toEqual(200);
-
-        const body = JSON.parse(ret.body);
-
-        expect(body).toMatchObject({
-          has_signing_key: true,
+        expect(ret.status).toEqual(401);
+        expect(JSON.parse(ret.body)).toEqual({
+          code: "sig_verification_failed",
         });
       });
     });
@@ -720,6 +780,7 @@ export const testFramework = (
                   url: "/api/inngest",
                   headers: {
                     [headerKeys.InngestServerKind]: serverKind.Dev,
+                    [headerKeys.Signature]: await makeTestSignature(),
                   },
                 },
               ],
@@ -766,6 +827,7 @@ export const testFramework = (
                   method: "PUT",
                   headers: {
                     [headerKeys.InngestServerKind]: serverKind.Dev,
+                    [headerKeys.Signature]: await makeTestSignature(),
                   },
                 },
               ],
@@ -810,6 +872,7 @@ export const testFramework = (
                   url: customUrl,
                   headers: {
                     [headerKeys.InngestServerKind]: serverKind.Dev,
+                    [headerKeys.Signature]: await makeTestSignature(),
                   },
                 },
               ],
@@ -867,7 +930,14 @@ export const testFramework = (
                   serveOrigin,
                 },
               ],
-              [{ method: "PUT" }],
+              [
+                {
+                  method: "PUT",
+                  headers: {
+                    [headerKeys.Signature]: await makeTestSignature(),
+                  },
+                },
+              ],
               { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
@@ -915,7 +985,14 @@ export const testFramework = (
                   servePath,
                 },
               ],
-              [{ method: "PUT" }],
+              [
+                {
+                  method: "PUT",
+                  headers: {
+                    [headerKeys.Signature]: await makeTestSignature(),
+                  },
+                },
+              ],
               { [envKeys.InngestSigningKey]: testSigningKey },
             );
 
@@ -957,6 +1034,7 @@ export const testFramework = (
                   method: "PUT",
                   headers: {
                     [headerKeys.InngestServerKind]: serverKind.Dev,
+                    [headerKeys.Signature]: await makeTestSignature(),
                   },
                 },
               ],
@@ -1003,7 +1081,14 @@ export const testFramework = (
                 servePath,
               },
             ],
-            [{ method: "PUT" }],
+            [
+              {
+                method: "PUT",
+                headers: {
+                  [headerKeys.Signature]: await makeTestSignature(),
+                },
+              },
+            ],
             { [envKeys.InngestSigningKey]: testSigningKey },
           );
 
@@ -1051,7 +1136,14 @@ export const testFramework = (
                 functions: [fn1],
               },
             ],
-            [{ method: "PUT" }],
+            [
+              {
+                method: "PUT",
+                headers: {
+                  [headerKeys.Signature]: await makeTestSignature(),
+                },
+              },
+            ],
             {
               [envKeys.InngestSigningKey]: testSigningKey,
               [envKeys.InngestServeOrigin]: serveOrigin,
@@ -1102,7 +1194,14 @@ export const testFramework = (
                 functions: [fn1],
               },
             ],
-            [{ method: "PUT" }],
+            [
+              {
+                method: "PUT",
+                headers: {
+                  [headerKeys.Signature]: await makeTestSignature(),
+                },
+              },
+            ],
             {
               [envKeys.InngestSigningKey]: testSigningKey,
               [envKeys.InngestServeHost]: serveHost,
@@ -1170,6 +1269,9 @@ export const testFramework = (
                   url: `/api/inngest${
                     deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
                   }`,
+                  headers: {
+                    [headerKeys.Signature]: await makeTestSignature(),
+                  },
                 },
               ]);
 
@@ -1250,10 +1352,9 @@ export const testFramework = (
             const edgeHandler = createEdgeHandler();
             const signingKey = "123";
             const body = { url: "https://example.com/api/inngest" };
-            const ts = Date.now().toString();
 
             const signature = validSignature
-              ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts, new ConsoleLogger({ level: "silent" }))}`
+              ? await makeTestSignature(body, signingKey)
               : validSignature === false
                 ? "INVALID"
                 : undefined;
@@ -1310,6 +1411,11 @@ export const testFramework = (
           nock.restore();
           nock.cleanAll();
         });
+
+        // Out-of-band PUT bypasses the auth gate so unsigned CI/CD callers
+        // can still sync; security comes from the outgoing register POST.
+        // Every case in this block resolves to OutOfBand regardless of
+        // signature or mode.
 
         // Always perform out-of-band syncs if the env var is falsey
         describe("env var disallow", () => {
@@ -1429,7 +1535,9 @@ export const testFramework = (
             Object.values(serverKind).forEach((serverMode) => {
               Object.values(serverKind).forEach((sdkMode) => {
                 [undefined, true].forEach((allowInBandSync) => {
-                  expectResponse(500, {
+                  // Cloud auth runs before the missing-body check, so an
+                  // empty body 401s before reaching the 500. Dev skips auth.
+                  expectResponse(sdkMode === serverKind.Dev ? 500 : 401, {
                     actionOverrides: { body: () => undefined },
                     serverMode,
                     sdkMode,
@@ -1487,33 +1595,29 @@ export const testFramework = (
           ENVIRONMENT: "production",
           INNGEST_DEV: "0",
         };
-        test("should throw an error in prod with no signature", async () => {
+        test("should return 401 in prod with no signature", async () => {
           const ret = await run(
             [{ client, functions: [fn] }],
             [{ method: "POST", headers: {} }],
             { ...env, [envKeys.InngestSigningKey]: "test" },
           );
           expect(ret.status).toEqual(401);
-          expect(JSON.parse(ret.body)).toMatchObject({
-            message: expect.stringContaining(
-              `No ${headerKeys.Signature} provided`,
-            ),
+          expect(JSON.parse(ret.body)).toEqual({
+            code: "sig_verification_failed",
           });
         });
-        test("should throw an error with an invalid signature", async () => {
+        test("should return 401 with an invalid signature", async () => {
           const ret = await run(
             [{ client, functions: [fn] }],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             { ...env, [envKeys.InngestSigningKey]: "test" },
           );
           expect(ret.status).toEqual(401);
-          expect(JSON.parse(ret.body)).toMatchObject({
-            message: expect.stringContaining(
-              `Invalid ${headerKeys.Signature} provided`,
-            ),
+          expect(JSON.parse(ret.body)).toEqual({
+            code: "sig_verification_failed",
           });
         });
-        test("should throw an error with an expired signature", async () => {
+        test("should return 401 with an expired signature", async () => {
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const ret = await run(
@@ -1532,9 +1636,9 @@ export const testFramework = (
             ],
             { ...env, [envKeys.InngestSigningKey]: testSigningKey },
           );
-          expect(ret).toMatchObject({
-            status: 401,
-            body: expect.stringContaining("Signature has expired"),
+          expect(ret.status).toEqual(401);
+          expect(JSON.parse(ret.body)).toEqual({
+            code: "sig_verification_failed",
           });
         });
         // These signatures are randomly generated within a local development environment, matching
@@ -1703,9 +1807,9 @@ export const testFramework = (
                 [envKeys.InngestSigningKeyFallback]: "another-fake",
               },
             );
-            expect(ret).toMatchObject({
-              status: 401,
-              body: expect.stringContaining("Invalid signature"),
+            expect(ret.status).toEqual(401);
+            expect(JSON.parse(ret.body)).toEqual({
+              code: "sig_verification_failed",
             });
           });
         });
