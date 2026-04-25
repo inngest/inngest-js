@@ -75,6 +75,24 @@ export interface InFlightRequest {
   envId: string;
   functionSlug: string;
   accountId: string;
+  /**
+   * Timestamp (ms since epoch) when the worker acknowledged the request and
+   * took the lease. Used to compute age for shutdown diagnostics.
+   *
+   * Optional so external callers constructing an `InFlightRequest` (e.g.
+   * from {@link ConnectDebugState}) aren't forced to provide it.
+   */
+  leaseAcquiredAt?: number;
+  /**
+   * Timestamp (ms since epoch) of the most recent successful lease-extend send
+   * for this request. Starts equal to `leaseAcquiredAt` and is updated each
+   * time the worker sends a WORKER_REQUEST_EXTEND_LEASE message. Useful
+   * during shutdown diagnostics to tell whether a stuck request is still
+   * being actively leased or has gone silent.
+   *
+   * Optional for the same reason as {@link leaseAcquiredAt}.
+   */
+  leaseLastExtendedAt?: number;
 }
 
 export interface ConnectDebugState {

@@ -127,6 +127,13 @@ export class ConnectionCore {
   // CONNECTING from RECONNECTING state transitions).
   private hasConnectedBefore = false;
 
+  // Shutdown diagnostics: periodic "still draining" dump logged while the
+  // drain is outstanding. Started in close(), cleared in teardown.
+  private shutdownDumpInterval: ReturnType<typeof setInterval> | undefined;
+
+  // Cadence for the periodic "still draining" debug dump.
+  private static readonly SHUTDOWN_DUMP_INTERVAL_MS = 60_000;
+
   // Loop promise — resolved when the reconcile loop exits
   private loopPromise: Promise<void> | undefined;
 
@@ -269,7 +276,14 @@ export class ConnectionCore {
       { inFlightCount },
       "Shutting down, waiting for in-flight requests",
     );
+    // Flip the shutdown flag before starting any timers so the periodic
+    // dump guard (`if (!this._shutdownRequested) return`) cannot observe a
+    // stale `false` on its first tick.
     this._shutdownRequested = true;
+    // Verbose per-request dump (debug-only) at drain start so operators can
+    // immediately see which runs are holding the shutdown.
+    this.dumpInFlightForShutdown("drain-start");
+    this.startShutdownInFlightDumpTimer();
 
     if (this._activeConnection?.ws.readyState === WebSocket.OPEN) {
       this._activeConnection.ws.send(
@@ -341,6 +355,72 @@ export class ConnectionCore {
 
   private hasInFlightRequests(): boolean {
     return Object.keys(this._inProgressRequests.requestLeases).length > 0;
+  }
+
+  /**
+   * Debug-level "still draining" dump emitted at drain start and periodically
+   * thereafter while in-flight requests are holding the shutdown. One summary
+   * line plus one line per request carrying `requestId`, `runId`, `stepId`,
+   * `functionSlug`, `ageMs`, and `sinceLastLeaseExtendMs`. Does not affect
+   * info/warn logs.
+   *
+   * `requestLeases` drives the reconcile-loop exit gate, so use it as the
+   * single source of truth for the in-flight set; `requestMeta` carries the
+   * enrichment fields and is kept in sync alongside the lease map.
+   */
+  private dumpInFlightForShutdown(reason: string): void {
+    const leaseIds = Object.keys(this._inProgressRequests.requestLeases);
+    if (leaseIds.length === 0) return;
+    const now = Date.now();
+    const ages: number[] = [];
+    for (const id of leaseIds) {
+      const m = this._inProgressRequests.requestMeta[id];
+      if (m?.leaseAcquiredAt) ages.push(now - m.leaseAcquiredAt);
+    }
+
+    this.callbacks.logger.debug(
+      {
+        reason,
+        inFlightCount: leaseIds.length,
+        oldestAgeMs: ages.length > 0 ? Math.max(...ages) : undefined,
+      },
+      "Shutdown: still draining",
+    );
+
+    for (const id of leaseIds) {
+      const m = this._inProgressRequests.requestMeta[id];
+      if (!m) continue;
+      this.callbacks.logger.debug(
+        {
+          reason,
+          requestId: m.requestId,
+          runId: m.runId,
+          stepId: m.stepId,
+          functionSlug: m.functionSlug,
+          appId: m.appId,
+          ageMs: m.leaseAcquiredAt ? now - m.leaseAcquiredAt : undefined,
+          sinceLastLeaseExtendMs: m.leaseLastExtendedAt
+            ? now - m.leaseLastExtendedAt
+            : undefined,
+        },
+        "Shutdown: still draining in-flight request",
+      );
+    }
+  }
+
+  private startShutdownInFlightDumpTimer(): void {
+    if (this.shutdownDumpInterval) return;
+    this.shutdownDumpInterval = setInterval(() => {
+      if (!this._shutdownRequested) return;
+      this.dumpInFlightForShutdown("periodic");
+    }, ConnectionCore.SHUTDOWN_DUMP_INTERVAL_MS);
+  }
+
+  private stopShutdownInFlightDumpTimer(): void {
+    if (this.shutdownDumpInterval) {
+      clearInterval(this.shutdownDumpInterval);
+      this.shutdownDumpInterval = undefined;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -505,6 +585,7 @@ export class ConnectionCore {
     // Teardown
     this.heartbeatManager.stop();
     this.statusReporter.stop();
+    this.stopShutdownInFlightDumpTimer();
     this._activeConnection?.close();
     this._activeConnection = undefined;
     this._drainingConnection?.close();

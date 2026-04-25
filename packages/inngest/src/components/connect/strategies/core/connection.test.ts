@@ -392,4 +392,114 @@ describe("ConnectionCore reconcile loop", () => {
       );
     });
   });
+
+  describe("shutdown in-flight telemetry", () => {
+    // Drop a synthetic in-flight lease onto the core so we can exercise the
+    // dump helpers without driving a full request/response round-trip.
+    function seedInFlight(
+      core: unknown,
+      count: number,
+      opts: { ageMs?: number; sinceLastExtendMs?: number } = {},
+    ): void {
+      const { ageMs = 5_000, sinceLastExtendMs = 5_000 } = opts;
+      const now = Date.now();
+      // biome-ignore lint/suspicious/noExplicitAny: tests reach into private state
+      const inProgress = (core as any)._inProgressRequests as {
+        requestLeases: Record<string, string>;
+        requestMeta: Record<string, Record<string, unknown>>;
+      };
+      for (let i = 0; i < count; i++) {
+        const requestId = `req-${i + 1}`;
+        inProgress.requestLeases[requestId] = `lease-${i + 1}`;
+        inProgress.requestMeta[requestId] = {
+          requestId,
+          runId: `run-${i + 1}`,
+          stepId: "step",
+          appId: "app-1",
+          envId: "env-1",
+          functionSlug: "app-1-fn",
+          accountId: "acct-1",
+          leaseAcquiredAt: now - ageMs,
+          leaseLastExtendedAt: now - sinceLastExtendMs,
+        };
+      }
+    }
+
+    test("dumpInFlightForShutdown is a no-op when nothing is in flight", () => {
+      const { core, logger } = createTestCore();
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method for test
+      (core as any).dumpInFlightForShutdown("drain-start");
+      expect(logger.debug).not.toHaveBeenCalled();
+    });
+
+    test("emits a summary line plus one debug line per in-flight request", () => {
+      const { core, logger } = createTestCore();
+      seedInFlight(core, 3, { ageMs: 1_234, sinceLastExtendMs: 500 });
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).dumpInFlightForShutdown("drain-start");
+
+      const summaryCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining",
+      );
+      expect(summaryCalls).toHaveLength(1);
+      const summary = summaryCalls[0]![0] as Record<string, unknown>;
+      expect(summary).toMatchObject({
+        reason: "drain-start",
+        inFlightCount: 3,
+      });
+      expect(typeof summary.oldestAgeMs).toBe("number");
+
+      const perRequestCalls = logger.debug.mock.calls.filter(
+        (c) => c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(perRequestCalls).toHaveLength(3);
+
+      const payload = perRequestCalls[0]![0] as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        reason: "drain-start",
+        stepId: "step",
+        functionSlug: "app-1-fn",
+        appId: "app-1",
+      });
+      expect(payload.requestId).toMatch(/^req-\d+$/);
+      expect(payload.runId).toMatch(/^run-\d+$/);
+      expect(typeof payload.ageMs).toBe("number");
+      expect(typeof payload.sinceLastLeaseExtendMs).toBe("number");
+      expect(payload.ageMs as number).toBeGreaterThanOrEqual(1_234);
+      expect(payload.ageMs as number).toBeLessThan(1_234 + 1_000);
+      expect(payload.sinceLastLeaseExtendMs as number).toBeGreaterThanOrEqual(
+        500,
+      );
+    });
+
+    test("close() emits a drain-start dump and starts a periodic ticker", async () => {
+      const { core, logger } = await connectAndReady();
+      seedInFlight(core, 2);
+
+      // Kick off close() without awaiting — it will hang on the seeded
+      // in-flight leases, which is exactly the scenario we want to observe.
+      void core.close();
+      await flushMicrotasks();
+
+      const initialPerRequest = logger.debug.mock.calls.filter(
+        (c) =>
+          c[0] &&
+          (c[0] as { reason?: string }).reason === "drain-start" &&
+          c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(initialPerRequest).toHaveLength(2);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flushMicrotasks();
+
+      const periodicPerRequest = logger.debug.mock.calls.filter(
+        (c) =>
+          c[0] &&
+          (c[0] as { reason?: string }).reason === "periodic" &&
+          c[1] === "Shutdown: still draining in-flight request",
+      );
+      expect(periodicPerRequest.length).toBeGreaterThanOrEqual(2);
+    });
+  });
 });

@@ -644,4 +644,80 @@ describe("ConnectionCore request processing", () => {
       await closePromise;
     });
   });
+
+  describe("12. Graceful shutdown wakes reconcile loop when lease is lost", () => {
+    test("close() resolves after lease-lost ack clears the last in-flight request", async () => {
+      // Userland promise that never resolves. Mirrors a function that keeps
+      // running after the gateway reassigns its lease to another worker.
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      const closePromise = core.close();
+      await flushMicrotasks();
+
+      let closed = false;
+      closePromise.then(() => {
+        closed = true;
+      });
+      await flushMicrotasks();
+      expect(closed).toBe(false);
+
+      // Sanity: one in-flight request before the lease-lost ack.
+      expect(core.getDebugState().inFlightRequestCount).toBe(1);
+
+      // Gateway sends extend-lease-ack with empty newLeaseId: lease lost.
+      ws.sendExtendLeaseAck({ requestId: "req-1" });
+      await flushMicrotasks();
+
+      // Lease has been removed: break condition is now satisfied
+      // (shutdownRequested && !hasInFlightRequests()).
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().shutdownRequested).toBe(true);
+
+      // Without wake() in the lost-lease branch of handleExtendLeaseAck,
+      // the reconcile loop stays blocked on wakeSignal.promise and
+      // close() never resolves.
+      await closePromise;
+      expect(core.connectionId).toBeUndefined();
+    });
+
+    test("lease-lost ack also deletes requestMeta (no stale debug-state entry)", async () => {
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({ requestId: "req-meta", appName: "test-app" });
+      await flushMicrotasks();
+
+      // Sanity: meta is populated alongside the lease.
+      expect(core.getDebugState().inFlightRequests).toHaveLength(1);
+      expect(core.getDebugState().inFlightRequests[0]?.requestId).toBe(
+        "req-meta",
+      );
+
+      ws.sendExtendLeaseAck({ requestId: "req-meta" });
+      await flushMicrotasks();
+
+      // After lease-lost we should no longer report this request at all —
+      // neither as a lease nor as a meta entry.
+      const state = core.getDebugState();
+      expect(state.inFlightRequestCount).toBe(0);
+      expect(state.inFlightRequests).toHaveLength(0);
+    });
+  });
 });
