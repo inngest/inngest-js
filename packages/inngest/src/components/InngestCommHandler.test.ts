@@ -5,7 +5,7 @@ import { ConsoleLogger } from "../middleware/logger.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
-import { RequestSignature } from "./InngestCommHandler.ts";
+import { InngestCommHandler, RequestSignature } from "./InngestCommHandler.ts";
 
 /**
  * Helper to run a POST request through a Next.js serve handler and capture
@@ -541,6 +541,162 @@ describe("RequestSignature", () => {
           logger,
         }),
       ).rejects.toThrow("Invalid signature");
+    });
+  });
+});
+
+describe("introspection", () => {
+  const logger = new ConsoleLogger({ level: "silent" });
+
+  test("authenticated", async () => {
+    const signingKey =
+      "signkey-test-0000000000000000000000000000000000000000000000000000000000000000";
+    const signingKeyFallback =
+      "signkey-test-1111111111111111111111111111111111111111111111111111111111111111";
+
+    const client = createClient({
+      id: "test",
+      isDev: false,
+      signingKey,
+      signingKeyFallback,
+    });
+    const commHandler = new InngestCommHandler({
+      client,
+      frameworkName: "test",
+      functions: [],
+      handler: (req: Request) => {
+        return {
+          body: () => req.text(),
+          headers: (key: string) => req.headers.get(key),
+          method: () => req.method,
+          url: () => new URL(req.url),
+          transformResponse: ({
+            body,
+            headers,
+            status,
+          }: {
+            body: string;
+            headers: Record<string, string>;
+            status: number;
+          }) => {
+            return new Response(body, { status, headers });
+          },
+        };
+      },
+    });
+    const handler = commHandler["createHandler"]();
+
+    const timestamp = Math.round(Date.now() / 1000).toString();
+    const signature = await signDataWithKey("", signingKey, timestamp, logger);
+    const req = new Request("https://localhost:3000/api/inngest", {
+      method: "GET",
+      headers: {
+        host: "localhost:3000",
+
+        // Request signature is used to authenticate the request
+        [headerKeys.Signature]: `t=${timestamp}&s=${signature}`,
+      },
+    });
+    const res = await handler(req);
+    expect(res.status).toBe(200);
+
+    // Authenticated response body (since signature is valid)
+    expect(await res.json()).toEqual({
+      api_origin: "https://api.inngest.com/",
+      app_id: "test",
+      authentication_succeeded: true,
+      capabilities: { trust_probe: "v1", connect: "v1" },
+      env: null,
+      event_api_origin: "https://inn.gs/",
+      event_key_hash: null,
+      extra: {
+        is_streaming: false,
+        native_crypto: true,
+      },
+      framework: "test",
+      function_count: 0,
+      has_event_key: false,
+      has_signing_key: true,
+      mode: "cloud",
+      schema_version: "2024-05-24",
+      sdk_language: "js",
+      sdk_version: expect.any(String),
+      serve_origin: null,
+      serve_path: null,
+
+      // IMPORTANT: Only the first 12 characters of the hash are included
+      signing_key_fallback_hash: "02d449a31fbb",
+      signing_key_hash: "66687aadf862",
+    });
+  });
+
+  test("wrong signature", async () => {
+    const signingKey =
+      "signkey-test-0000000000000000000000000000000000000000000000000000000000000000";
+    const signingKeyFallback =
+      "signkey-test-1111111111111111111111111111111111111111111111111111111111111111";
+    const wrongSigningKey =
+      "signkey-test-wrong-2222222222222222222222222222222222222222222222222222222222222222";
+
+    const client = createClient({
+      id: "test",
+      isDev: false,
+      signingKey,
+      signingKeyFallback,
+    });
+    const commHandler = new InngestCommHandler({
+      client,
+      frameworkName: "test",
+      functions: [],
+      handler: (req: Request) => {
+        return {
+          body: () => req.text(),
+          headers: (key: string) => req.headers.get(key),
+          method: () => req.method,
+          url: () => new URL(req.url),
+          transformResponse: ({
+            body,
+            headers,
+            status,
+          }: {
+            body: string;
+            headers: Record<string, string>;
+            status: number;
+          }) => {
+            return new Response(body, { status, headers });
+          },
+        };
+      },
+    });
+    const handler = commHandler["createHandler"]();
+
+    const timestamp = Math.round(Date.now() / 1000).toString();
+    const signature = await signDataWithKey(
+      "",
+      wrongSigningKey,
+      timestamp,
+      logger,
+    );
+    const req = new Request("https://localhost:3000/api/inngest", {
+      method: "GET",
+      headers: {
+        host: "localhost:3000",
+
+        // Request signature is used to authenticate the request
+        [headerKeys.Signature]: `t=${timestamp}&s=${signature}`,
+      },
+    });
+    const res = await handler(req);
+    expect(res.status).toBe(200);
+
+    // Unauthenticated response body (since signature is wrong)
+    expect(await res.json()).toEqual({
+      extra: { native_crypto: true },
+      function_count: 0,
+      has_event_key: false,
+      has_signing_key: true,
+      mode: "cloud",
+      schema_version: "2024-05-24",
     });
   });
 });

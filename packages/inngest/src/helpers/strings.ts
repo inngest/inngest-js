@@ -138,8 +138,12 @@ export const hashSigningKey = (signingKey: string | undefined): string => {
   }
 
   const prefix = signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
-  const key = signingKey.replace(/^signkey-[\w]+-/, "");
+  const key = removeSigningKeyPrefix(signingKey);
 
   // Decode the key from its hex representation into a bytestream
   return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
 };
+
+export function removeSigningKeyPrefix(signingKey: string): string {
+  return signingKey.replace(/^signkey-[\w]+-/, "");
+}

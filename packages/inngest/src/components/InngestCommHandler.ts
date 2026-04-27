@@ -37,6 +37,7 @@ import { createStream } from "../helpers/stream.ts";
 import {
   hashEventKey,
   hashSigningKey,
+  removeSigningKeyPrefix,
   stringify,
   timingSafeEqual,
 } from "../helpers/strings.ts";
@@ -2388,6 +2389,25 @@ export class InngestCommHandler<
           throw new Error("Signature validation failed");
         }
 
+        // For the signing keys, only send the first 12 characters of the hash.
+        // It's technically safe to send the full hash since the request was
+        // authenticated, but we'll play it safe and only send the first 12
+        // characters. 12 characters is enough to uniquely identify the key
+        // without revealing the full hash.
+        let signingKeyHash: string | null = null;
+        if (this.hashedSigningKey) {
+          signingKeyHash = removeSigningKeyPrefix(this.hashedSigningKey).slice(
+            0,
+            12,
+          );
+        }
+        let signingKeyFallbackHash: string | null = null;
+        if (this.hashedSigningKeyFallback) {
+          signingKeyFallbackHash = removeSigningKeyPrefix(
+            this.hashedSigningKeyFallback,
+          ).slice(0, 12);
+        }
+
         introspection = {
           ...introspection,
           authentication_succeeded: true,
@@ -2410,8 +2430,8 @@ export class InngestCommHandler<
           sdk_version: version,
           serve_origin: this.serveOrigin ?? null,
           serve_path: this.servePath ?? null,
-          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-          signing_key_hash: this.hashedSigningKey ?? null,
+          signing_key_fallback_hash: signingKeyFallbackHash,
+          signing_key_hash: signingKeyHash,
         } satisfies AuthenticatedIntrospection;
       } catch {
         // Swallow signature validation error since we'll just return the
