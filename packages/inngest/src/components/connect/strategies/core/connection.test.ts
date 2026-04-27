@@ -11,6 +11,7 @@ import {
   setupCoreMocks,
   teardownCoreMocks,
 } from "./test-helpers.ts";
+import { WAKE_REASON } from "./types.ts";
 
 beforeEach(() => {
   setupCoreMocks();
@@ -500,6 +501,81 @@ describe("ConnectionCore reconcile loop", () => {
           c[1] === "Shutdown: still draining in-flight request",
       );
       expect(periodicPerRequest.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("wake reason logging", () => {
+    function findWokenCalls(
+      logger: { debug: { mock: { calls: unknown[][] } } },
+    ): { reasons: string[] }[] {
+      return logger.debug.mock.calls
+        .filter((c) => c[1] === "Reconcile loop woken")
+        .map((c) => c[0] as { reasons: string[] });
+    }
+
+    test("wake() carries the reason through to the woken log", async () => {
+      const { core, logger } = await connectAndReady();
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).wake(WAKE_REASON.WsError);
+      await flushMicrotasks();
+
+      const woken = findWokenCalls(logger);
+      const last = woken[woken.length - 1];
+      expect(last?.reasons).toContain(WAKE_REASON.WsError);
+    });
+
+    test("wake() with no argument defaults to 'unknown'", async () => {
+      const { core, logger } = await connectAndReady();
+
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).wake();
+      await flushMicrotasks();
+
+      const woken = findWokenCalls(logger);
+      const last = woken[woken.length - 1];
+      expect(last?.reasons).toContain(WAKE_REASON.Unknown);
+    });
+
+    test("close() wakes the loop with reason 'shutdown-requested'", async () => {
+      const { core, logger } = await connectAndReady();
+
+      await core.close();
+
+      const woken = findWokenCalls(logger);
+      const reasons = woken.flatMap((w) => w.reasons);
+      expect(reasons).toContain(WAKE_REASON.ShutdownRequested);
+    });
+
+    test("periodic shutdown ticker wakes the loop with 'shutdown-still-pending'", async () => {
+      // Drop a synthetic in-flight lease so close() hangs and the ticker
+      // gets a chance to fire.
+      const { core, logger } = await connectAndReady();
+      // biome-ignore lint/suspicious/noExplicitAny: reach private state
+      const inProgress = (core as any)._inProgressRequests as {
+        requestLeases: Record<string, string>;
+        requestMeta: Record<string, Record<string, unknown>>;
+      };
+      inProgress.requestLeases["req-1"] = "lease-1";
+      inProgress.requestMeta["req-1"] = {
+        requestId: "req-1",
+        runId: "run-1",
+        appId: "app-1",
+        functionSlug: "fn",
+        leaseAcquiredAt: Date.now(),
+        leaseLastExtendedAt: Date.now(),
+      };
+
+      void core.close();
+      await flushMicrotasks();
+
+      // Advance past the 60s shutdown dump cadence (allow >1 tick to be safe)
+      await vi.advanceTimersByTimeAsync(60_001);
+      await flushMicrotasks();
+
+      const woken = findWokenCalls(logger);
+      const reasons = woken.flatMap((w) => w.reasons);
+      expect(reasons).toContain(WAKE_REASON.ShutdownStillPending);
     });
   });
 });

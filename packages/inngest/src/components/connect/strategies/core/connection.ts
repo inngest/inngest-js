@@ -417,6 +417,10 @@ export class ConnectionCore {
     this.shutdownDumpInterval = setInterval(() => {
       if (!this._shutdownRequested) return;
       this.dumpInFlightForShutdown("periodic");
+      // Wake the loop so its "Reconcile loop woken" line emits a fresh
+      // state snapshot alongside the in-flight dump. Loop will park again
+      // immediately if nothing has changed.
+      this.wake(WAKE_REASON.ShutdownStillPending);
     }, ConnectionCore.SHUTDOWN_DUMP_INTERVAL_MS);
   }
 

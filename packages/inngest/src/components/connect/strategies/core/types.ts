@@ -175,6 +175,7 @@ export const WAKE_REASON = {
   HeartbeatMissed: "heartbeat-missed",
   RequestFinishedOnShutdown: "request-finished-on-shutdown",
   LeaseLostOnShutdown: "lease-lost-on-shutdown",
+  ShutdownStillPending: "shutdown-still-pending",
   Unknown: "unknown",
 } as const;
 export type WakeReason = (typeof WAKE_REASON)[keyof typeof WAKE_REASON];
