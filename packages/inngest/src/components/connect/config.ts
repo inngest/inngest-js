@@ -7,7 +7,7 @@
  */
 
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
-import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
+import { getEnvironmentName } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import {

@@ -27,7 +27,7 @@ export type EnvValue = string | undefined;
  *
  * @example devServerHost()
  */
-export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
+export const devServerHost = (env: Env = getProcessEnv()): EnvValue => {
   // devServerKeys are the env keys we search for to discover the dev server
   // URL.  This includes the standard key first, then includes prefixed keys
   // for use within common frameworks (eg. CRA, next).
@@ -103,7 +103,7 @@ export const normalizeUrl = (
  * This could be used to determine if we're on a branch deploy or not, though it
  * should be noted that we don't know if this is the default branch or not.
  */
-export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
+export const getEnvironmentName = (env: Env = getProcessEnv()): EnvValue => {
   /**
    * Order is important; more than one of these env vars may be set, so ensure
    * that we check the most specific, most reliable env vars first.
@@ -119,8 +119,12 @@ export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
   );
 };
 
-export const processEnv = (key: string): EnvValue => {
-  return allProcessEnv()[key];
+export const processEnv = (key: envKeys): EnvValue => {
+  if (!Object.values(envKeys).includes(key)) {
+    throw new Error(`Unknown env var: ${key}`);
+  }
+
+  return getProcessEnv()[key];
 };
 
 /**
@@ -138,6 +142,45 @@ declare const Netlify: {
 };
 
 /**
+ * Get the current process env vars. Only includes env vars that we care about.
+ *
+ * Returns an empty object if they can't be read.
+ */
+export function getProcessEnv(): Env {
+  const env: Env = {};
+  const whitelist: string[] = Object.values(envKeys);
+
+  for (const [k, v] of Object.entries(allProcessEnv())) {
+    if (!whitelist.includes(k)) {
+      continue;
+    }
+    env[k] = v;
+  }
+
+  return protectEnv(env);
+}
+
+/**
+ * Install a `toJSON` that returns `{}` so env var values can't leak via
+ * `JSON.stringify`, regardless of where the object is reachable from. The
+ * property is enumerable so it survives spreads (e.g. `{...env}`) which carries
+ * the protection into the new object. But note that the enumerability also
+ * means the static type is technically incorrect.
+ *
+ * Callers still read values via normal `env[key]` access.
+ */
+export function protectEnv(env: Env): Env {
+  return {
+    ...env,
+
+    // @ts-expect-error - intentional
+    toJSON: () => {
+      return {};
+    },
+  };
+}
+
+/**
  * allProcessEnv returns the current process environment variables, or an empty
  * object if they cannot be read, making sure we support environments other than
  * Node such as Deno, too.
@@ -145,7 +188,7 @@ declare const Netlify: {
  * Using this ensures we don't dangerously access `process.env` in environments
  * where it may not be defined, such as Deno or the browser.
  */
-export const allProcessEnv = (): Env => {
+const allProcessEnv = (): Env => {
   // Node, or Node-like environments
   try {
     if (process.env) {
@@ -241,7 +284,7 @@ export const inngestHeaders = (opts?: {
   }
 
   const env = {
-    ...allProcessEnv(),
+    ...getProcessEnv(),
     ...opts?.env,
   };
 
@@ -329,7 +372,7 @@ export const getPlatformName = (env: Env) => {
  */
 export const platformSupportsStreaming = (
   framework: SupportedFrameworkName,
-  env: Env = allProcessEnv(),
+  env: Env = getProcessEnv(),
 ): boolean => {
   return (
     streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(

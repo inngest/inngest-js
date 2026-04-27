@@ -1,4 +1,41 @@
-import { parseAsBoolean } from "./env.ts";
+import { afterEach, vi } from "vitest";
+import { getProcessEnv, parseAsBoolean, processEnv } from "./env.ts";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+test("getProcessEnv", () => {
+  vi.stubEnv("FOO", "bar");
+  vi.stubEnv("INNGEST_SIGNING_KEY", "test");
+  const env = getProcessEnv();
+
+  // Included a whitelisted env var
+  expect(env.INNGEST_SIGNING_KEY).toBe("test");
+
+  // Did not include a non-whitelisted env var
+  expect(env.FOO).toBeUndefined();
+});
+
+test("getProcessEnv result does not leak values via JSON.stringify", () => {
+  vi.stubEnv("INNGEST_SIGNING_KEY", "signkey-test");
+  const env = getProcessEnv();
+
+  expect(env.INNGEST_SIGNING_KEY).toBe("signkey-test");
+  expect(JSON.stringify(env)).toBe("{}");
+  expect(JSON.stringify({ env })).toBe('{"env":{}}');
+
+  // Protection carries through spreading since the `toJSON` method is
+  // enumerable
+  expect(JSON.stringify({ ...env })).toBe("{}");
+});
+
+test("processEnv errors on unknown key", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
+  expect(() => processEnv("UNKNOWN_KEY" as any)).toThrow(
+    "Unknown env var: UNKNOWN_KEY",
+  );
+});
 
 describe("parseAsBoolean", () => {
   const specs: { input: unknown; expected: boolean | undefined }[] = [

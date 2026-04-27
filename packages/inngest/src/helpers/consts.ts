@@ -113,6 +113,35 @@ export enum envKeys {
 
   VercelEnvKey = "VERCEL_ENV",
 
+  /**
+   * Standard Node.js environment indicator (e.g. `"production"`, `"development"`,
+   * `"test"`). Read by some framework adapters to choose the request scheme,
+   * and by prod-mode inference.
+   */
+  NodeEnv = "NODE_ENV",
+
+  /**
+   * Netlify's deploy context (e.g. `"production"`, `"deploy-preview"`). Used
+   * for prod-mode inference.
+   *
+   * {@link https://docs.netlify.com/configure-builds/environment-variables/#build-metadata}
+   */
+  Context = "CONTEXT",
+
+  /**
+   * Generic environment name used by some platforms to indicate prod vs
+   * non-prod (e.g. `"production"`).
+   */
+  Environment = "ENVIRONMENT",
+
+  /**
+   * Set by Deno Deploy. Its presence indicates a Deno Deploy environment,
+   * which we treat as prod.
+   *
+   * {@link https://docs.deno.com/deploy/manual/environment-variables/}
+   */
+  DenoDeployment = "DENO_DEPLOYMENT_ID",
+
   OpenAiApiKey = "OPENAI_API_KEY",
   GeminiApiKey = "GEMINI_API_KEY",
   AnthropicApiKey = "ANTHROPIC_API_KEY",

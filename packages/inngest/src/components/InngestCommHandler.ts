@@ -13,12 +13,13 @@ import {
 } from "../helpers/consts.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
-  allProcessEnv,
   checkModeConfiguration,
   type Env,
   getPlatformName,
+  getProcessEnv,
   inngestHeaders,
   parseAsBoolean,
+  protectEnv,
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
@@ -422,7 +423,7 @@ export class InngestCommHandler<
     { fn: InngestFunction.Any; onFailure: boolean }
   > = {};
 
-  private env: Env = allProcessEnv();
+  private env: Env = getProcessEnv();
 
   private allowExpiredSignatures: boolean;
 
@@ -703,7 +704,7 @@ export class InngestCommHandler<
     // `process.env`; some platforms may not provide all the necessary
     // environment variables or may use two sources.
     // Update both handler's env and client's env to ensure consistency.
-    this.env = { ...allProcessEnv(), ...env };
+    this.env = protectEnv({ ...getProcessEnv(), ...env });
     this.client.setEnvVars(this.env);
 
     const headerPromises = forwardedHeaders.map(async (header) => {
@@ -2324,7 +2325,7 @@ export class InngestCommHandler<
       functions: registerBody.functions,
       inspection: introspectionBody,
       platform: getPlatformName({
-        ...allProcessEnv(),
+        ...getProcessEnv(),
         ...this.env,
       }),
       sdk_author: "inngest",
