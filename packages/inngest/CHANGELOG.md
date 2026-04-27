@@ -1,5 +1,17 @@
 # inngest
 
+## 3.54.1
+
+### Patch Changes
+
+- [#1470](https://github.com/inngest/inngest-js/pull/1470) [`1a5b63a8`](https://github.com/inngest/inngest-js/commit/1a5b63a89beda377b3da5cee265650ac5df2ddc2) Thanks [@amh4r](https://github.com/amh4r)! - Fix checkpointing maxRuntime causing duplicate execution
+
+- [#1488](https://github.com/inngest/inngest-js/pull/1488) [`27b434d8`](https://github.com/inngest/inngest-js/commit/27b434d8b54e2007f76a36a09db3328c3af8ca39) Thanks [@inngest-release-bot](https://github.com/inngest-release-bot)! - Ensure runIds are properly URI encoded in Durable Endpoints
+
+- [#1488](https://github.com/inngest/inngest-js/pull/1488) [`27b434d8`](https://github.com/inngest/inngest-js/commit/27b434d8b54e2007f76a36a09db3328c3af8ca39) Thanks [@inngest-release-bot](https://github.com/inngest-release-bot)! - Improves HMAC signature verification by using a constant-time comparison, which mitigates a potential timing-based signature-recovery attack against the request signature. Also improves handling of timestamps in signatures, including malformed or future-dated values.
+
+- [#1488](https://github.com/inngest/inngest-js/pull/1488) [`27b434d8`](https://github.com/inngest/inngest-js/commit/27b434d8b54e2007f76a36a09db3328c3af8ca39) Thanks [@inngest-release-bot](https://github.com/inngest-release-bot)! - Hash the signing key used when exporting OTel traces
+
 ## 3.52.7
 
 ### Patch Changes
