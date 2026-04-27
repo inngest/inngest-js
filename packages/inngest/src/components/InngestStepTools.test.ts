@@ -97,6 +97,30 @@ describe("waitForEvent", () => {
     });
   });
 
+  test("return TTL if `Temporal.Duration` `timeout` given", async () => {
+    const duration = Temporal.Duration.from({ hours: 2 });
+
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: duration }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: "2h",
+      },
+    });
+  });
+
+  test("return TTL if `Temporal.Instant` `timeout` given", async () => {
+    const instant = Temporal.Now.instant().add({ hours: 1 });
+
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: instant }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: instant.toString(),
+      },
+    });
+  });
+
   test("return simple field match if `match` string given", async () => {
     await expect(
       step.waitForEvent("id", { event: "event", match: "name", timeout: "2h" }),
@@ -1020,6 +1044,36 @@ describe("invoke", () => {
         ).resolves.toMatchObject({
           opts: {
             timeout: "1m",
+          },
+        });
+      });
+
+      test("return correct timeout if `Temporal.Duration` `timeout` given", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: Temporal.Duration.from({ minutes: 1 }),
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: "1m",
+          },
+        });
+      });
+
+      test("return correct timeout if `Temporal.Instant` `timeout` given", async () => {
+        const instant = Temporal.Now.instant().add({ hours: 1 });
+
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: instant,
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: instant.toString(),
           },
         });
       });
