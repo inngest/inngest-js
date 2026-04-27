@@ -41,6 +41,7 @@ import { HeartbeatManager } from "./heartbeat.ts";
 import { RequestProcessor } from "./requestProcessor.ts";
 import { StatusReporter } from "./statusReporter.ts";
 import type { BaseConnectionConfig } from "./types.ts";
+import { WAKE_REASON, type WakeReason } from "./types.ts";
 
 /**
  * Connection object representing an active WebSocket connection.
@@ -122,6 +123,8 @@ export class ConnectionCore {
 
   // Wake signal for the reconcile loop
   private wakeSignal: { promise: Promise<void>; resolve: () => void };
+  // Reasons accumulated since the last loop wake. Read + cleared by the loop.
+  private pendingWakeReasons: WakeReason[] = [];
 
   // Whether we've ever successfully connected (used to distinguish
   // CONNECTING from RECONNECTING state transitions).
@@ -183,7 +186,7 @@ export class ConnectionCore {
       },
     };
 
-    const wakeSignalRef = { wake: () => this.wake() };
+    const wakeSignalRef = { wake: (reason?: WakeReason) => this.wake(reason) };
 
     const self = this;
 
@@ -301,7 +304,7 @@ export class ConnectionCore {
       );
     }
 
-    this.wake();
+    this.wake(WAKE_REASON.ShutdownRequested);
 
     if (this.loopPromise) {
       await this.loopPromise;
@@ -329,7 +332,8 @@ export class ConnectionCore {
     this.wakeSignal = { promise, resolve: resolve! };
   }
 
-  private wake(): void {
+  private wake(reason: WakeReason = WAKE_REASON.Unknown): void {
+    this.pendingWakeReasons.push(reason);
     this.wakeSignal.resolve();
     this.resetWakeSignal();
   }
@@ -430,6 +434,8 @@ export class ConnectionCore {
   private async reconcileLoop(initialAttempt: number): Promise<void> {
     let attempt = initialAttempt;
 
+    this.callbacks.logger.debug({ initialAttempt }, "Reconcile loop entered");
+
     while (true) {
       // Exit condition: shutdown requested + no in-flight requests
       if (this._shutdownRequested && !this.hasInFlightRequests()) {
@@ -525,6 +531,10 @@ export class ConnectionCore {
                 ).finish(),
               ),
             );
+            this.callbacks.logger.info(
+              { connectionId: conn.id },
+              "Sent WORKER_READY",
+            );
           }
 
           // Flush any buffered responses via HTTP now that we're active.
@@ -572,8 +582,11 @@ export class ConnectionCore {
 
       // Wait for something to change
       await this.wakeSignal.promise;
+      const reasons = this.pendingWakeReasons;
+      this.pendingWakeReasons = [];
       this.callbacks.logger.debug(
         {
+          reasons,
           shutdownRequested: this._shutdownRequested,
           hasActiveConnection: !!this._activeConnection,
           activeConnectionDead: this._activeConnection?.dead,
@@ -581,6 +594,15 @@ export class ConnectionCore {
         "Reconcile loop woken",
       );
     }
+
+    this.callbacks.logger.debug(
+      {
+        shutdownRequested: this._shutdownRequested,
+        inFlightCount: Object.keys(this._inProgressRequests.requestLeases)
+          .length,
+      },
+      "Reconcile loop exiting",
+    );
 
     // Teardown
     this.heartbeatManager.stop();
@@ -621,7 +643,7 @@ export class ConnectionCore {
       if (this._activeConnection?.id === connectionId) {
         this._activeConnection = undefined;
       }
-      this.wake();
+      this.wake(WAKE_REASON.WsError);
     };
 
     ws.onclose = (ev) => {
@@ -642,7 +664,7 @@ export class ConnectionCore {
       if (this._activeConnection?.id === connectionId) {
         this._activeConnection = undefined;
       }
-      this.wake();
+      this.wake(WAKE_REASON.WsClose);
     };
 
     // Message handler for post-handshake messages
@@ -662,7 +684,7 @@ export class ConnectionCore {
         // establishes a replacement.
         this._drainingConnection = this._activeConnection;
         this._activeConnection = undefined;
-        this.wake();
+        this.wake(WAKE_REASON.GatewayClosing);
         return;
       }
 

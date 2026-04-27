@@ -23,7 +23,11 @@ import {
 } from "../../messages.ts";
 import { ConnectionState } from "../../types.ts";
 import type { Connection, ConnectionCoreCallbacks } from "./connection.ts";
-import type { ConnectionAccessor, WakeSignal } from "./types.ts";
+import {
+  type ConnectionAccessor,
+  WAKE_REASON,
+  type WakeSignal,
+} from "./types.ts";
 
 function toError(value: unknown): Error {
   if (value instanceof Error) {
@@ -325,7 +329,7 @@ export class RequestProcessor {
 
       // Wake the loop if shutdown is pending and this was the last request
       if (this.accessor.shutdownRequested && !this.hasInFlightRequests()) {
-        this.wakeSignal.wake();
+        this.wakeSignal.wake(WAKE_REASON.RequestFinishedOnShutdown);
       }
     }
   }
@@ -393,7 +397,7 @@ export class RequestProcessor {
       // wakeSignal.promise because the finally-block decrement in
       // handleExecutorRequest never runs (user code is still hanging).
       if (this.accessor.shutdownRequested && !this.hasInFlightRequests()) {
-        this.wakeSignal.wake();
+        this.wakeSignal.wake(WAKE_REASON.LeaseLostOnShutdown);
       }
     }
   }
