@@ -1318,12 +1318,19 @@ export type Cancellation = {
    * function ends.
    *
    * The time to wait can be specified using a `number` of milliseconds, an
-   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-   * a `Date` object.
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, a
+   * `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant` /
+   * `Temporal.ZonedDateTime` (absolute deadline).
    *
    * {@link https://npm.im/ms}
    */
-  timeout?: number | string | Date;
+  timeout?:
+    | number
+    | string
+    | Date
+    | Temporal.DurationLike
+    | Temporal.InstantLike
+    | Temporal.ZonedDateTimeLike;
 };
 
 /**
