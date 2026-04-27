@@ -79,9 +79,6 @@ const periods = [
 /**
  * Convert a given `Date`, `number`, or `ms`-compatible `string` to a
  * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h3010s"`).
- *
- * Can optionally provide a `now` date to use as the base for the calculation,
- * otherwise a new date will be created on invocation.
  */
 export const timeStr = (
   /**
