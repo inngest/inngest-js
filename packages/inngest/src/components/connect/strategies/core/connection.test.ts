@@ -505,9 +505,9 @@ describe("ConnectionCore reconcile loop", () => {
   });
 
   describe("wake reason logging", () => {
-    function findWokenCalls(
-      logger: { debug: { mock: { calls: unknown[][] } } },
-    ): { reasons: string[] }[] {
+    function findWokenCalls(logger: {
+      debug: { mock: { calls: unknown[][] } };
+    }): { reasons: string[] }[] {
       return logger.debug.mock.calls
         .filter((c) => c[1] === "Reconcile loop woken")
         .map((c) => c[0] as { reasons: string[] });
@@ -566,17 +566,22 @@ describe("ConnectionCore reconcile loop", () => {
         leaseLastExtendedAt: Date.now(),
       };
 
+      // Stop the heartbeat manager so it can't mark the connection dead
+      // and pull the loop into a reconnect (which would block on the new
+      // handshake and prevent it from consuming the shutdown-still-pending
+      // wake we're about to emit).
+      // biome-ignore lint/suspicious/noExplicitAny: reach private state
+      (core as any).heartbeatManager.stop();
+
       void core.close();
       await flushMicrotasks();
 
-      // Advance past the 60s shutdown dump cadence (allow >1 tick to be safe)
+      // Advance past the 60s shutdown dump cadence
       await vi.advanceTimersByTimeAsync(60_001);
       await flushMicrotasks();
 
       const woken = findWokenCalls(logger);
       const reasons = woken.flatMap((w) => w.reasons);
-      console.log("woken reasons:", JSON.stringify(reasons));
-      console.log("woken count:", woken.length);
       expect(reasons).toContain(WAKE_REASON.ShutdownStillPending);
     });
   });
