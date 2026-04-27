@@ -1,5 +1,19 @@
 # inngest
 
+## 4.2.5
+
+### Patch Changes
+
+- [#1479](https://github.com/inngest/inngest-js/pull/1479) [`6b9769ca`](https://github.com/inngest/inngest-js/commit/6b9769ca39ae00938ad75a6029718d234fd7dd98) Thanks [@scottnuma](https://github.com/scottnuma)! - Fix `step.sendSignal()` return type to match runtime: `Promise<InngestApi.SendSignalResponse>` (`{ runId: string | undefined }`) instead of `Promise<null>`
+
+- [#1483](https://github.com/inngest/inngest-js/pull/1483) [`d0a59629`](https://github.com/inngest/inngest-js/commit/d0a596291f3a0abb39d408a166ac3bebf2ab6dd1) Thanks [@Linell](https://github.com/Linell)! - Fix run IDs not URL encoded in Durable Endpoints
+
+- [#1481](https://github.com/inngest/inngest-js/pull/1481) [`970ded9b`](https://github.com/inngest/inngest-js/commit/970ded9b4eec83c69c5e7bbefef57adadf72572e) Thanks [@Linell](https://github.com/Linell)! - Improves HMAC signature verification by using a constant-time comparison, which mitigates a potential timing-based signature-recovery attack against the request signature. Also improves handling of timestamps in signatures, including malformed or future-dated values.
+
+- [#1472](https://github.com/inngest/inngest-js/pull/1472) [`9df36dee`](https://github.com/inngest/inngest-js/commit/9df36dee593e81e8667c0008c6f9cebccee2b961) Thanks [@Linell](https://github.com/Linell)! - Fix empty body on Vercel serverless Node handlers
+
+- [#1482](https://github.com/inngest/inngest-js/pull/1482) [`e34972d3`](https://github.com/inngest/inngest-js/commit/e34972d38779b44717973a82aa0c07a416362e8a) Thanks [@Linell](https://github.com/Linell)! - Hash the signing key used when exporting OTel traces
+
 ## 4.2.4
 
 ### Patch Changes
