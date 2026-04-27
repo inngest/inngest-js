@@ -9,7 +9,7 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import ms from "ms";
 import { headerKeys } from "../../../../helpers/consts.ts";
-import { allProcessEnv, getPlatformName } from "../../../../helpers/env.ts";
+import { getPlatformName, getProcessEnv } from "../../../../helpers/env.ts";
 import { resolveApiBaseUrl } from "../../../../helpers/url.ts";
 import {
   ConnectMessage,
@@ -418,7 +418,7 @@ export class ConnectionCore {
         const workerConnectRequestMsg = WorkerConnectRequestData.create({
           connectionId: startResp.connectionId,
           environment: this.config.envName,
-          platform: getPlatformName({ ...allProcessEnv() }),
+          platform: getPlatformName({ ...getProcessEnv() }),
           sdkVersion: `v${version}`,
           sdkLanguage: "typescript",
           framework: "connect",

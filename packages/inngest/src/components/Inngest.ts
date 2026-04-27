@@ -11,9 +11,9 @@ import {
 import { createEntropy } from "../helpers/crypto.ts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
-  allProcessEnv,
   getFetch,
   getMode,
+  getProcessEnv,
   inngestHeaders,
   type Mode,
   processEnv,
@@ -306,7 +306,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * update the client with those values as requests come in.
    */
   public setEnvVars(
-    env: Record<string, string | undefined> = allProcessEnv(),
+    env: Record<string, string | undefined> = getProcessEnv(),
   ): this {
     this.mode = getMode({ env, client: this });
 

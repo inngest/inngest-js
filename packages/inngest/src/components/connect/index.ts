@@ -1,6 +1,6 @@
 import debug from "debug";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
-import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
+import { getEnvironmentName, getProcessEnv } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
 import {
@@ -109,7 +109,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       options.handleShutdownSignals = DEFAULT_SHUTDOWN_SIGNALS;
     }
 
-    const env = allProcessEnv();
+    const env = getProcessEnv();
     options.signingKey = options.signingKey || env[envKeys.InngestSigningKey];
     options.signingKeyFallback =
       options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];

@@ -27,22 +27,18 @@ export type EnvValue = string | undefined;
  *
  * @example devServerHost()
  */
-export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
-  // devServerKeys are the env keys we search for to discover the dev server
-  // URL.  This includes the standard key first, then includes prefixed keys
-  // for use within common frameworks (eg. CRA, next).
-  //
-  // We have to fully write these using process.env as they're typically
-  // processed using webpack's DefinePlugin, which is dumb and does a straight
-  // text replacement instead of actually understanding the AST, despite webpack
-  // being fully capable of understanding the AST.
-  const prefixes = ["REACT_APP_", "NEXT_PUBLIC_"];
-  const keys = [envKeys.InngestBaseUrl, envKeys.InngestDevMode];
-
-  const values = keys.flatMap((key) => {
-    return prefixes.map((prefix) => {
-      return env[prefix + key];
-    });
+export const devServerHost = (env: Env = getProcessEnv()): EnvValue => {
+  // The prefixed keys we look up for common frameworks (CRA, Next). The
+  // unprefixed `INNGEST_BASE_URL` / `INNGEST_DEV` are read directly by the
+  // Inngest client elsewhere, so we only check the prefixed variants here.
+  const keys = [
+    envKeys.ReactAppInngestBaseUrl,
+    envKeys.NextPublicInngestBaseUrl,
+    envKeys.ReactAppInngestDevMode,
+    envKeys.NextPublicInngestDevMode,
+  ];
+  const values = keys.map((key) => {
+    return env[key];
   });
 
   return values.find((v) => {
@@ -78,12 +74,12 @@ const prodChecks: [
   customCheck: keyof typeof checkFns,
   value?: string,
 ][] = [
-  ["CF_PAGES", "equals", "1"],
-  ["CONTEXT", "starts with", "prod"],
-  ["ENVIRONMENT", "starts with", "prod"],
-  ["NODE_ENV", "starts with", "prod"],
-  ["VERCEL_ENV", "starts with", "prod"],
-  ["DENO_DEPLOYMENT_ID", "is truthy"],
+  [envKeys.IsCloudflarePages, "equals", "1"],
+  [envKeys.Context, "starts with", "prod"],
+  [envKeys.Environment, "starts with", "prod"],
+  [envKeys.NodeEnv, "starts with", "prod"],
+  [envKeys.VercelEnvKey, "starts with", "prod"],
+  [envKeys.DenoDeployment, "is truthy"],
   [envKeys.VercelEnvKey, "is truthy but not", "development"],
   [envKeys.IsNetlify, "is truthy"],
   [envKeys.IsRender, "is truthy"],
@@ -147,9 +143,9 @@ export class Mode {
     type,
     isExplicit,
     explicitDevUrl,
-    env = allProcessEnv(),
+    env = getProcessEnv(),
   }: ModeOptions) {
-    this.env = env;
+    this.env = protectEnv(env);
     this.type = type;
     this.isExplicit = isExplicit || Boolean(explicitDevUrl);
     this.explicitDevUrl = explicitDevUrl;
@@ -165,6 +161,12 @@ export class Mode {
 
   public get isInferred(): boolean {
     return !this.isExplicit;
+  }
+
+  public toJSON(): unknown {
+    // There's no reason to serialize a `Mode` object, so return an empty object
+    // to ensure we never leak env vars.
+    return {};
   }
 
   /**
@@ -198,7 +200,7 @@ export class Mode {
  * environment variables or `process.env`, or explicit settings.
  */
 export const getMode = ({
-  env = allProcessEnv(),
+  env = getProcessEnv(),
   client,
   explicitMode,
 }: IsProdOptions = {}): Mode => {
@@ -244,7 +246,7 @@ export const getMode = ({
  * This could be used to determine if we're on a branch deploy or not, though it
  * should be noted that we don't know if this is the default branch or not.
  */
-export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
+export const getEnvironmentName = (env: Env = getProcessEnv()): EnvValue => {
   /**
    * Order is important; more than one of these env vars may be set, so ensure
    * that we check the most specific, most reliable env vars first.
@@ -260,8 +262,11 @@ export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
   );
 };
 
-export const processEnv = (key: string): EnvValue => {
-  return allProcessEnv()[key];
+export const processEnv = (key: envKeys): EnvValue => {
+  if (!Object.values(envKeys).includes(key)) {
+    throw new Error(`Env var "${key}" is not in the whitelist`);
+  }
+  return getProcessEnv()[key];
 };
 
 /**
@@ -279,6 +284,45 @@ declare const Netlify: {
 };
 
 /**
+ * Get the current process env vars. Only includes env vars that we care about.
+ *
+ * Returns an empty object if they can't be read.
+ */
+export function getProcessEnv(): Env {
+  const env: Env = {};
+  const whitelist: string[] = Object.values(envKeys);
+
+  for (const [k, v] of Object.entries(allProcessEnv())) {
+    if (!whitelist.includes(k)) {
+      continue;
+    }
+    env[k] = v;
+  }
+
+  return protectEnv(env);
+}
+
+/**
+ * Install a `toJSON` that returns `{}` so env var values can't leak via
+ * `JSON.stringify`, regardless of where the object is reachable from. The
+ * property is enumerable so it survives spreads (e.g. `{...env}`) which carries
+ * the protection into the new object. But note that the enumerability also
+ * means the static type is technically incorrect.
+ *
+ * Callers still read values via normal `env[key]` access.
+ */
+export function protectEnv(env: Env): Env {
+  return {
+    ...env,
+
+    // @ts-expect-error - intentional
+    toJSON: () => {
+      return {};
+    },
+  };
+}
+
+/**
  * allProcessEnv returns the current process environment variables, or an empty
  * object if they cannot be read, making sure we support environments other than
  * Node such as Deno, too.
@@ -286,7 +330,7 @@ declare const Netlify: {
  * Using this ensures we don't dangerously access `process.env` in environments
  * where it may not be defined, such as Deno or the browser.
  */
-export const allProcessEnv = (): Env => {
+const allProcessEnv = (): Env => {
   // Node, or Node-like environments
   try {
     if (process.env) {
@@ -382,7 +426,7 @@ export const inngestHeaders = (opts?: {
   }
 
   const env = {
-    ...allProcessEnv(),
+    ...getProcessEnv(),
     ...opts?.env,
   };
 
@@ -470,7 +514,7 @@ export const getPlatformName = (env: Env) => {
  */
 export const platformSupportsStreaming = (
   framework: SupportedFrameworkName,
-  env: Env = allProcessEnv(),
+  env: Env = getProcessEnv(),
 ): boolean => {
   return (
     streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(

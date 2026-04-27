@@ -19,16 +19,17 @@ import {
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
-  allProcessEnv,
   devServerHost,
   type Env,
   getFetch,
   getMode,
   getPlatformName,
+  getProcessEnv,
   inngestHeaders,
   Mode,
   parseAsBoolean,
   platformSupportsStreaming,
+  protectEnv,
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
@@ -453,7 +454,7 @@ export class InngestCommHandler<
     { fn: InngestFunction.Any; onFailure: boolean }
   > = {};
 
-  private env: Env = allProcessEnv();
+  private env: Env = getProcessEnv();
 
   private allowExpiredSignatures: boolean;
 
@@ -773,10 +774,10 @@ export class InngestCommHandler<
     // Always make sure to merge whatever env we've been given with
     // `process.env`; some platforms may not provide all the necessary
     // environment variables or may use two sources.
-    this.env = {
-      ...allProcessEnv(),
+    this.env = protectEnv({
+      ...getProcessEnv(),
       ...env,
-    };
+    });
 
     const headerPromises = forwardedHeaders.map(async (header) => {
       const value = await actions.headers(
@@ -2022,7 +2023,6 @@ export class InngestCommHandler<
       status: 405,
       body: JSON.stringify({
         message: `No action found; expected POST, PUT, or GET but received "${method}"`,
-        mode: this._mode,
       }),
       headers: {},
       version: undefined,
@@ -2382,7 +2382,7 @@ export class InngestCommHandler<
       functions: registerBody.functions,
       inspection: introspectionBody,
       platform: getPlatformName({
-        ...allProcessEnv(),
+        ...getProcessEnv(),
         ...this.env,
       }),
       sdk_author: "inngest",

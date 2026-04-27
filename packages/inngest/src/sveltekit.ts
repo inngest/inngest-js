@@ -26,6 +26,7 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { envKeys } from "./helpers/consts.ts";
 import { processEnv } from "./helpers/env.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 
@@ -78,7 +79,7 @@ export const serve = (
         headers: (key) => event.request.headers.get(key),
         url: () => {
           const protocol =
-            processEnv("NODE_ENV") === "development" ? "http" : "https";
+            processEnv(envKeys.NodeEnv) === "development" ? "http" : "https";
 
           return new URL(
             event.request.url,
