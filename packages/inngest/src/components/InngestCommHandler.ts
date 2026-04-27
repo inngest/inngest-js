@@ -43,7 +43,13 @@ import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
+import {
+  hashEventKey,
+  hashSigningKey,
+  removeSigningKeyPrefix,
+  stringify,
+  timingSafeEqual,
+} from "../helpers/strings.ts";
 import type { MaybePromise } from "../helpers/types.ts";
 import {
   type APIStepPayload,
@@ -2428,7 +2434,6 @@ export class InngestCommHandler<
       | AuthenticatedIntrospection = {
       extra: {
         is_mode_explicit: this._mode.isExplicit,
-        native_crypto: globalThis.crypto?.subtle ? true : false,
       },
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
@@ -2444,6 +2449,25 @@ export class InngestCommHandler<
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
           throw new Error("Signature validation failed");
+        }
+
+        // For the signing keys, only send the first 12 characters of the hash.
+        // It's technically safe to send the full hash since the request was
+        // authenticated, but we'll play it safe and only send the first 12
+        // characters. 12 characters is enough to uniquely identify the key
+        // without revealing the full hash.
+        let signingKeyHash: string | null = null;
+        if (this.hashedSigningKey) {
+          signingKeyHash = removeSigningKeyPrefix(this.hashedSigningKey).slice(
+            0,
+            12,
+          );
+        }
+        let signingKeyFallbackHash: string | null = null;
+        if (this.hashedSigningKeyFallback) {
+          signingKeyFallbackHash = removeSigningKeyPrefix(
+            this.hashedSigningKeyFallback,
+          ).slice(0, 12);
         }
 
         introspection = {
@@ -2468,8 +2492,8 @@ export class InngestCommHandler<
           sdk_version: version,
           serve_origin: this.serveHost ?? null,
           serve_path: this.servePath ?? null,
-          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-          signing_key_hash: this.hashedSigningKey ?? null,
+          signing_key_fallback_hash: signingKeyFallbackHash,
+          signing_key_hash: signingKeyHash,
         } satisfies AuthenticatedIntrospection;
       } catch {
         // Swallow signature validation error since we'll just return the
@@ -2710,7 +2734,7 @@ export class InngestCommHandler<
     key: string,
     body: string,
   ): Promise<string> {
-    const now = Date.now();
+    const now = Math.round(Date.now() / 1000);
     const mac = await signDataWithKey(body, key, now.toString());
 
     return `t=${now}&s=${mac}`;
@@ -2749,7 +2773,10 @@ export class InngestCommHandler<
   }
 }
 
-class RequestSignature {
+/**
+ * @internal Exported for testing; not part of the public API.
+ */
+export class RequestSignature {
   public timestamp: string;
   public signature: string;
 
@@ -2769,9 +2796,15 @@ class RequestSignature {
       return false;
     }
 
-    const delta =
-      Date.now() - new Date(Number.parseInt(this.timestamp) * 1000).valueOf();
-    return delta > 1000 * 60 * 5;
+    const ts = Number.parseInt(this.timestamp, 10);
+    if (!Number.isFinite(ts)) {
+      return true;
+    }
+
+    const delta = Date.now() - ts * 1000;
+    // Clamp both ends: negative delta (future-skewed `t`) would otherwise give
+    // captured requests an unbounded replay
+    return Math.abs(delta) > 1000 * 60 * 5;
   }
 
   async #verifySignature({
@@ -2789,7 +2822,7 @@ class RequestSignature {
     }
 
     const mac = await signDataWithKey(body, signingKey, this.timestamp);
-    if (mac !== this.signature) {
+    if (!timingSafeEqual(mac, this.signature)) {
       // TODO PrettyError
       throw new Error("Invalid signature");
     }

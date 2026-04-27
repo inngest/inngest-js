@@ -890,7 +890,7 @@ export const testFramework = (
           test(name, async () => {
             const signingKey = "123";
             const body = { url: "https://example.com/api/inngest" };
-            const ts = Date.now().toString();
+            const ts = Math.round(Date.now() / 1000).toString();
 
             const signature = validSignature
               ? `t=${ts}&s=${await signDataWithKey(body, signingKey, ts)}`

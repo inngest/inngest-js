@@ -165,7 +165,9 @@ export class InngestApi {
     runId: string,
     version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const result = await this.req(`/v0/runs/${runId}/actions`);
+    const result = await this.req(
+      `/v0/runs/${encodeURIComponent(runId)}/actions`,
+    );
     if (result.ok) {
       const res = result.value;
       const data: unknown = await res.json();
@@ -189,7 +191,9 @@ export class InngestApi {
   async getRunBatch(
     runId: string,
   ): Promise<Result<BatchResponse, ErrorResponse>> {
-    const result = await this.req(`/v0/runs/${runId}/batch`);
+    const result = await this.req(
+      `/v0/runs/${encodeURIComponent(runId)}/batch`,
+    );
     if (result.ok) {
       const res = result.value;
       const data: unknown = await res.json();
@@ -408,11 +412,14 @@ export class InngestApi {
   ): Promise<Result<void, ErrorResponse>> {
     const payload = { target: args.target, metadata: args.metadata };
 
-    const result = await this.req(`/v1/runs/${args.target.run_id}/metadata`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-      headers: options?.headers,
-    });
+    const result = await this.req(
+      `/v1/runs/${encodeURIComponent(args.target.run_id)}/metadata`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: options?.headers,
+      },
+    );
 
     if (!result.ok) {
       return err({
@@ -513,10 +520,13 @@ export class InngestApi {
       ts: new Date().valueOf(),
     });
 
-    const result = await this.req(`/v1/checkpoint/${args.runId}/steps`, {
-      method: "POST",
-      body,
-    });
+    const result = await this.req(
+      `/v1/checkpoint/${encodeURIComponent(args.runId)}/steps`,
+      {
+        method: "POST",
+        body,
+      },
+    );
 
     if (!result.ok) {
       throw new Error(
@@ -551,10 +561,13 @@ export class InngestApi {
       ts: new Date().valueOf(),
     });
 
-    const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
-      method: "POST",
-      body,
-    });
+    const result = await this.req(
+      `/v1/checkpoint/${encodeURIComponent(args.runId)}/async`,
+      {
+        method: "POST",
+        body,
+      },
+    );
 
     if (!result.ok) {
       throw new Error(
@@ -583,7 +596,9 @@ export class InngestApi {
    * @returns The raw Response from the API
    */
   async getRunOutput(runId: string, token: string): Promise<Response> {
-    const url = await this.getTargetUrl(`/v1/http/runs/${runId}/output`);
+    const url = await this.getTargetUrl(
+      `/v1/http/runs/${encodeURIComponent(runId)}/output`,
+    );
     url.searchParams.set("token", token);
 
     return this.fetch(url.toString(), {

@@ -22,6 +22,7 @@ import {
 import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
 import { devServerAvailable } from "../../../helpers/devserver.ts";
 import { devServerHost } from "../../../helpers/env.ts";
+import { hashSigningKey } from "../../../helpers/strings.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -340,7 +341,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
             headers: {
               ...app["headers"],
-              Authorization: `Bearer ${app["inngestApi"]["signingKey"]}`,
+              Authorization: `Bearer ${hashSigningKey(app["inngestApi"]["signingKey"])}`,
             },
           });
 
