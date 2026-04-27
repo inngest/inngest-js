@@ -575,6 +575,8 @@ describe("ConnectionCore reconcile loop", () => {
 
       const woken = findWokenCalls(logger);
       const reasons = woken.flatMap((w) => w.reasons);
+      console.log("woken reasons:", JSON.stringify(reasons));
+      console.log("woken count:", woken.length);
       expect(reasons).toContain(WAKE_REASON.ShutdownStillPending);
     });
   });
