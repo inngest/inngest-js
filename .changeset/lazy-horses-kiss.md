@@ -1,5 +1,5 @@
 ---
-"inngest": minor
+"inngest": patch
 ---
 
-Ensure runIds are properly URI encoded across the board
+Ensure runIds are properly URI encoded in Durable Endpoints
