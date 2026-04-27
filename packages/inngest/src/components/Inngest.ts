@@ -16,6 +16,7 @@ import {
   type Mode,
   normalizeUrl,
   parseAsBoolean,
+  protectEnv,
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
@@ -324,7 +325,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     this.id = id;
-    this._env = { ...getProcessEnv() };
+    this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
     this.inngestApi = new InngestApi({
@@ -368,7 +369,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   public setEnvVars(
     env: Record<string, string | undefined> = getProcessEnv(),
   ): this {
-    this._env = { ...this._env, ...env };
+    this._env = protectEnv({ ...this._env, ...env });
 
     return this;
   }

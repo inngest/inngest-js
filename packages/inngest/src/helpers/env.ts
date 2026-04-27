@@ -28,21 +28,17 @@ export type EnvValue = string | undefined;
  * @example devServerHost()
  */
 export const devServerHost = (env: Env = getProcessEnv()): EnvValue => {
-  // devServerKeys are the env keys we search for to discover the dev server
-  // URL.  This includes the standard key first, then includes prefixed keys
-  // for use within common frameworks (eg. CRA, next).
-  //
-  // We have to fully write these using process.env as they're typically
-  // processed using webpack's DefinePlugin, which is dumb and does a straight
-  // text replacement instead of actually understanding the AST, despite webpack
-  // being fully capable of understanding the AST.
-  const prefixes = ["REACT_APP_", "NEXT_PUBLIC_"];
-  const keys = [envKeys.InngestBaseUrl, envKeys.InngestDevMode];
-
-  const values = keys.flatMap((key) => {
-    return prefixes.map((prefix) => {
-      return env[prefix + key];
-    });
+  // The prefixed keys we look up for common frameworks (CRA, Next). The
+  // unprefixed `INNGEST_BASE_URL` / `INNGEST_DEV` are read directly by the
+  // Inngest client elsewhere, so we only check the prefixed variants here.
+  const keys = [
+    envKeys.ReactAppInngestBaseUrl,
+    envKeys.NextPublicInngestBaseUrl,
+    envKeys.ReactAppInngestDevMode,
+    envKeys.NextPublicInngestDevMode,
+  ];
+  const values = keys.map((key) => {
+    return env[key];
   });
 
   return values.find((v) => {

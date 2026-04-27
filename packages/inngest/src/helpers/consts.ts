@@ -145,6 +145,16 @@ export enum envKeys {
   OpenAiApiKey = "OPENAI_API_KEY",
   GeminiApiKey = "GEMINI_API_KEY",
   AnthropicApiKey = "ANTHROPIC_API_KEY",
+
+  /**
+   * Framework-prefixed variants of Inngest env vars. CRA's `REACT_APP_` and
+   * Next's `NEXT_PUBLIC_` prefixes expose env vars to bundled client code, so
+   * we accept the prefixed forms in addition to the canonical names.
+   */
+  ReactAppInngestBaseUrl = "REACT_APP_INNGEST_BASE_URL",
+  ReactAppInngestDevMode = "REACT_APP_INNGEST_DEV",
+  NextPublicInngestBaseUrl = "NEXT_PUBLIC_INNGEST_BASE_URL",
+  NextPublicInngestDevMode = "NEXT_PUBLIC_INNGEST_DEV",
 }
 
 /**
