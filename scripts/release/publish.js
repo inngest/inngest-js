@@ -2,7 +2,7 @@ const path = require("path");
 const { exec: rawExec, getExecOutput } = require("@actions/exec");
 
 const branch = process.env.BRANCH;
-if (branch !== "main" && !branch.endsWith(".x")) {
+if (branch !== "main" && !branch.endsWith(".x") && !branch.endsWith("v3")) {
   throw new Error(
     `Stopping release from branch ${branch}; only "main" and "v*.x" branches are allowed to release`
   );
