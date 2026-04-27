@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - "v*.x"
+      - v3
 
   # Label-powered prereleases
   pull_request:
