@@ -2203,7 +2203,7 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const { event, events, steps, ctx } = anyFnData.value;
+      const { defers, event, events, steps, ctx } = anyFnData.value;
 
       const stepState = Object.entries(steps ?? {}).reduce<
         InngestExecutionOptions["stepState"]
@@ -2247,6 +2247,7 @@ export class InngestCommHandler<
           internalFnId: ctx?.fn_id,
           queueItemId: ctx?.qi_id,
           stepState,
+          priorDefers: defers,
           requestedRunStep,
           timer,
           handlerKind: fn.handlerKind,

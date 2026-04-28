@@ -1157,15 +1157,30 @@ class InngestExecutionEngine
           sseResponse = defaultSseResponse(resultData);
         }
 
-        // Check for unreported new steps (e.g. from `Promise.race` where
-        // the winning branch completed before losing branches reported)
-        // before closing the stream — once closed, no more events can be sent.
-        const newStepsResult = await maybeReturnNewSteps();
-        if (newStepsResult) {
-          return newStepsResult;
+        // Drain lazy ops up front so we can bundle them with whatever response
+        // shape we end up returning. Lazy ops are excluded from
+        // `filterNewSteps` so they only appear here.
+        const lazyOps = this.state.lazyOps.drain();
+
+        // Real new steps (e.g. from `Promise.race` where the winning branch
+        // completed before losing branches reported). The function isn't truly
+        // done: the executor needs to memoize these and call back. Don't close
+        // the stream.
+        const newSteps = await this.filterNewSteps(
+          Array.from(this.state.steps.values()),
+        );
+
+        if (newSteps?.length) {
+          return {
+            type: "steps-found",
+            ctx: this.fnArg,
+            ops: this.ops,
+            steps: [...newSteps, ...lazyOps] as [OutgoingOp, ...OutgoingOp[]],
+          };
         }
 
-        // Close the stream with a terminal succeeded event.
+        // Function is truly done. Close the stream with a terminal
+        // succeeded event.
         await this.streamCloseSucceeded(sseResponse);
 
         // If stream was never activated, start the POST now so the
@@ -1178,6 +1193,32 @@ class InngestExecutionEngine
         // data from an API endpoint, even if we were triggered async.
         if (this.options.createResponse) {
           data = await this.options.createResponse(jsonResponse(resultData));
+        }
+
+        // If lazy ops were buffered, bundle them with `RunComplete` so the
+        // executor finalizes the run in a single round-trip instead of
+        // replaying the function just to receive its terminal data.
+        if (lazyOps.length) {
+          const transformed = await this.transformOutput({ data });
+          if (transformed.type !== "function-resolved") {
+            return transformed;
+          }
+          const steps: OutgoingOp[] = [
+            ...lazyOps,
+            {
+              op: StepOpCode.RunComplete,
+              id: hashId(RUN_COMPLETE_STEP_ID),
+              data: undefinedToNull(transformed.data),
+            },
+          ];
+          if (isNonEmpty(steps)) {
+            return {
+              type: "steps-found",
+              ctx: transformed.ctx,
+              ops: transformed.ops,
+              steps,
+            };
+          }
         }
 
         return this.transformOutput({ data });
@@ -1266,25 +1307,28 @@ class InngestExecutionEngine
       {
         "": commonCheckpointHandler,
         "function-resolved": async (checkpoint, i) => {
-          // Flush any buffered lazy ops via a separate checkpoint call
-          // BEFORE shipping `RunComplete`. The backend finalizes on
-          // `RunComplete` and emits companion-start events based on defers
-          // recorded prior to that point — shipping them in the same
-          // response batch as `RunComplete` loses them.
-          if (this.state.lazyOps.has()) {
-            await this.checkpoint([]);
-          }
+          // Capture buffered lazy ops up front so the underlying handler's
+          // `maybeReturnNewSteps` doesn't ship them as a standalone
+          // `steps-found` batch — we want to bundle them with the final
+          // response (alongside `RunComplete` or any newly-discovered
+          // real steps) so the executor doesn't need an extra round-trip.
+          const lazyOps = this.state.lazyOps.drain();
 
           const output = await asyncHandlers["function-resolved"](
             checkpoint,
             i,
           );
+
           if (output?.type === "function-resolved") {
-            const steps = this.state.checkpointingStepBuffer.concat({
-              op: StepOpCode.RunComplete,
-              id: hashId(RUN_COMPLETE_STEP_ID),
-              data: output.data,
-            });
+            const steps = [
+              ...this.state.checkpointingStepBuffer,
+              ...lazyOps,
+              {
+                op: StepOpCode.RunComplete,
+                id: hashId(RUN_COMPLETE_STEP_ID),
+                data: output.data,
+              },
+            ];
 
             if (isNonEmpty(steps)) {
               return {
@@ -1296,7 +1340,17 @@ class InngestExecutionEngine
             }
           }
 
-          return;
+          if (output?.type === "steps-found" && lazyOps.length) {
+            return {
+              ...output,
+              steps: [...output.steps, ...lazyOps] as [
+                OutgoingOp,
+                ...OutgoingOp[],
+              ],
+            };
+          }
+
+          return output;
         },
         "function-rejected": async (checkpoint) => {
           // If we have buffered steps — either from step results or from
@@ -1536,10 +1590,25 @@ class InngestExecutionEngine
     }
 
     const newSteps = foundSteps.reduce((acc, step) => {
-      if (!step.hasStepState) {
-        acc.push(step);
+      if (step.hasStepState) {
+        return acc;
       }
 
+      // Defer ops live outside `stepState` — the backend tracks them in
+      // `priorDefers`. A memoized defer has no `hasStepState` but must
+      // not be re-emitted on replay.
+      if (this.state.priorDefers[step.hashedId]) {
+        return acc;
+      }
+
+      // Opcode-only sync ops (e.g. `DeferAdd`) are tracked in the lazy
+      // buffer and shipped from there. Exclude them so they aren't
+      // double-counted when callers also concat `lazyOps.drain()`.
+      if (!step.fn && step.mode === StepMode.Sync) {
+        return acc;
+      }
+
+      acc.push(step);
       return acc;
     }, [] as FoundStep[]);
 
@@ -1944,6 +2013,7 @@ class InngestExecutionEngine
 
     const state: ExecutionState = {
       stepState: this.options.stepState,
+      priorDefers: this.options.priorDefers ?? {},
       stepsToFulfill,
       steps: new Map(),
       loop,
@@ -2450,17 +2520,24 @@ class InngestExecutionEngine
         step.transformedResultPromise.catch((error) => {
           reject(error);
         });
-      } else if (isOpcodeOnlySync && !stepState) {
-        // Opcode-only sync op (e.g. `DeferAdd`). Resolve the user's promise
-        // immediately and buffer the outgoing op to be shipped with the next
-        // response — a checkpoint, a step-ran, or a function-resolved.
+      } else if (isOpcodeOnlySync) {
+        // Opcode-only sync op (e.g. `DeferAdd`). On the first encounter,
+        // resolve the user's promise immediately and buffer the outgoing op
+        // to be shipped with the next response — a checkpoint, a step-ran,
+        // or a function-resolved.
         //
         // This path handles both standalone and nested-in-`step.run` calls
         // uniformly. The nested case would otherwise deadlock (outer step
         // awaits defer; defer awaits the core loop; loop is blocked on the
         // outer step), and standalone calls get free batching.
-        const lazyOp = this.state.lazyOps.push(step);
-        this.resumeStepWithResult(lazyOp);
+        //
+        // On replay, the backend tells us which defers it already has via
+        // `priorDefers`. Skip both buffering and reporting for those — they
+        // are fire-and-forget, so there's no user promise to resolve.
+        if (!this.state.priorDefers[hashedId]) {
+          const lazyOp = this.state.lazyOps.push(step);
+          this.resumeStepWithResult(lazyOp);
+        }
       } else {
         pushStepToReport(step);
       }
@@ -2857,6 +2934,14 @@ export interface ExecutionState {
    * with state from the executor.
    */
   stepState: Record<string, MemoizedOp>;
+
+  /**
+   * Hashed defer step IDs the backend has already received. Used to skip
+   * re-emitting `DeferAdd` ops on replay. Defer ops aren't memoized like
+   * normal steps (they have no result), so this lives separately from
+   * `stepState`.
+   */
+  priorDefers: Record<string, unknown>;
 
   /**
    * The number of steps we expect to fulfil based on the state passed from the

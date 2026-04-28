@@ -11,6 +11,7 @@ import { z } from "zod";
 import { createDefer } from "../../experimental.ts";
 import { dependencyInjectionMiddleware, Inngest } from "../../index.ts";
 import { createServer } from "../../node.ts";
+import { matrixCheckpointing } from "./utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -140,6 +141,48 @@ test("defer in step", async () => {
   await client.send({ name: eventName, data: {} });
   await parentState.waitForRunComplete();
   await deferState.waitForRunComplete();
+});
+
+matrixCheckpointing("defer at end of function", async (checkpointing) => {
+  // Ensure that we respond with `[DeferAdd, RunComplete]` opcodes when
+  // encountering a defer at the end of the function. This is necessary because
+  // the Executor errors when it only receives a `[DeferAdd]` opcode response.
+  //
+  // While this test might seem like overkill, we added it because we
+  // encountered a regression.
+
+  const parentState = createState({ requestCount: 0 });
+  const deferState = createState({});
+
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    checkpointing,
+  });
+  const eventName = randomSuffix("evt");
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      onDefer: {
+        foo: createDefer(client, { id: "foo" }, async ({ runId }) => {
+          deferState.runId = runId;
+        }),
+      },
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId, step }) => {
+      parentState.runId = runId;
+      parentState.requestCount++;
+      defer.foo("foo", {});
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+  await deferState.waitForRunComplete();
+  expect(parentState.requestCount).toBe(1);
 });
 
 test("multiple onDefer handlers are independently triggered", async () => {

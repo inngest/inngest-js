@@ -115,6 +115,16 @@ export interface InngestExecutionOptions {
   runId: string;
   data: Omit<Context.Any, "step" | "group" | "publish">;
   stepState: Record<string, MemoizedOp>;
+
+  /**
+   * A map of hashed defer step IDs to their backend-side metadata
+   * (e.g. `{ cancellable: true }`). Defer ops are not steps in the
+   * memoization sense — they don't produce results — but the backend
+   * tracks which ones it has already received so the SDK can avoid
+   * re-emitting them on replay.
+   */
+  priorDefers?: Record<string, unknown>;
+
   stepCompletionOrder: string[];
   stepMode: StepMode;
   checkpointingConfig?: InternalCheckpointingOptions;
