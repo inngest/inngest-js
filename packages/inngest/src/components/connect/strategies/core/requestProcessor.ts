@@ -362,7 +362,7 @@ export class RequestProcessor {
     // both maps in the completion or lease-lost path. This handler stays
     // synchronous, so once we observe the request missing from either map we
     // can safely ignore the ACK instead of recreating a stale lease entry.
-    const hasLease = Object.prototype.hasOwnProperty.call(
+    const hasLease = Object.hasOwn(
       this.accessor.inProgressRequests.requestLeases,
       extendLeaseAck.requestId,
     );
