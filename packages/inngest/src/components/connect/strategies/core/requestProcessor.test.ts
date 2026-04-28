@@ -719,5 +719,98 @@ describe("ConnectionCore request processing", () => {
       expect(state.inFlightRequestCount).toBe(0);
       expect(state.inFlightRequests).toHaveLength(0);
     });
+
+    test("late extend-lease ack after lease loss does not resurrect a stale lease", async () => {
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-late-after-loss",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      ws.sendExtendLeaseAck({ requestId: "req-late-after-loss" });
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+
+      ws.sendExtendLeaseAck({
+        requestId: "req-late-after-loss",
+        newLeaseId: "late-lease-after-loss",
+      });
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionId: "conn-1",
+          requestId: "req-late-after-loss",
+          newLeaseId: "late-lease-after-loss",
+          hadLease: false,
+          hadMeta: false,
+        }),
+        "Ignoring extend lease ack for non-in-flight request",
+      );
+    });
+
+    test("late extend-lease ack after request completion does not resurrect a stale lease", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const { core, ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-late-ack",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const leaseExtensionMessages = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      );
+      expect(leaseExtensionMessages.length).toBeGreaterThan(0);
+
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+
+      ws.sendExtendLeaseAck({
+        requestId: "req-late-ack",
+        newLeaseId: "late-lease-id",
+      });
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionId: "conn-1",
+          requestId: "req-late-ack",
+          newLeaseId: "late-lease-id",
+          hadLease: false,
+          hadMeta: false,
+        }),
+        "Ignoring extend lease ack for non-in-flight request",
+      );
+    });
   });
 });

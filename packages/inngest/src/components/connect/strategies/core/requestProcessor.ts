@@ -358,6 +358,30 @@ export class RequestProcessor {
       connectMessage.payload,
     );
 
+    // Late lease-extend ACKs can arrive after a request has already cleaned up
+    // both maps in the completion or lease-lost path. This handler stays
+    // synchronous, so once we observe the request missing from either map we
+    // can safely ignore the ACK instead of recreating a stale lease entry.
+    const hasLease = Object.prototype.hasOwnProperty.call(
+      this.accessor.inProgressRequests.requestLeases,
+      extendLeaseAck.requestId,
+    );
+    const meta =
+      this.accessor.inProgressRequests.requestMeta[extendLeaseAck.requestId];
+    if (!hasLease || !meta) {
+      this.logger.debug(
+        {
+          connectionId,
+          requestId: extendLeaseAck.requestId,
+          newLeaseId: extendLeaseAck.newLeaseId,
+          hadLease: hasLease,
+          hadMeta: !!meta,
+        },
+        "Ignoring extend lease ack for non-in-flight request",
+      );
+      return;
+    }
+
     this.logger.debug(
       { connectionId, newLeaseId: extendLeaseAck.newLeaseId },
       "Received extend lease ack",
@@ -367,9 +391,6 @@ export class RequestProcessor {
       this.accessor.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
         extendLeaseAck.newLeaseId;
     } else {
-      const meta =
-        this.accessor.inProgressRequests.requestMeta[extendLeaseAck.requestId];
-
       this.logger.error(
         {
           connectionId,
