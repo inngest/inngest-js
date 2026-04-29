@@ -1,5 +1,11 @@
 # inngest
 
+## 3.54.2
+
+### Patch Changes
+
+- [#1493](https://github.com/inngest/inngest-js/pull/1493) [`ce0c0592`](https://github.com/inngest/inngest-js/commit/ce0c0592aa384f1d15eaecbbee83d5153039a25f) Thanks [@amh4r](https://github.com/amh4r)! - Reduce response info when unauthorized
+
 ## 3.54.1
 
 ### Patch Changes
