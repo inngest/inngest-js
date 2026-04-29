@@ -621,9 +621,16 @@ describe("RequestSignature", () => {
 });
 
 describe("introspection", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   const logger = new ConsoleLogger({ level: "silent" });
 
   test("authenticated", async () => {
+    const fakeEnv = "v10";
+    vi.stubEnv(envKeys.InngestEnvironment, fakeEnv);
+
     const signingKey =
       "signkey-test-0000000000000000000000000000000000000000000000000000000000000000";
     const signingKeyFallback =
@@ -681,7 +688,7 @@ describe("introspection", () => {
       app_id: "test",
       authentication_succeeded: true,
       capabilities: { trust_probe: "v1", connect: "v1" },
-      env: null,
+      env: fakeEnv,
       event_api_origin: "https://inn.gs/",
       event_key_hash: null,
       extra: {
