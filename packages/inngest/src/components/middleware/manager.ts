@@ -5,7 +5,7 @@ import type { MemoizedOp } from "../execution/InngestExecution.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import type { Middleware } from "./middleware.ts";
 import {
-  isTimeStrInput,
+  isSleepInput,
   optsFromStepInput,
   stepInputFromOpts,
   stepTypeFromOpCode,
@@ -146,7 +146,7 @@ export class MiddlewareManager {
     // already set the name directly.
     let opName: string | undefined;
     if (stepType === "sleep" && stepInfo.input !== undefined) {
-      if (!isTimeStrInput(stepInfo.input[0])) {
+      if (!isSleepInput(stepInfo.input[0])) {
         throw new Error(
           "Sleep time must be a string, number, Date, or Temporal.Duration",
         );

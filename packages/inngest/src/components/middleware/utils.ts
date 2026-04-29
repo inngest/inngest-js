@@ -6,7 +6,7 @@ import type { InngestFunction } from "../InngestFunction";
 import type { Middleware } from "./middleware";
 import type { ExtractLiteralStrings } from "./types";
 
-export function isTimeStrInput(
+export function isSleepInput(
   value: unknown,
 ): value is string | number | Date | DurationLike {
   return (

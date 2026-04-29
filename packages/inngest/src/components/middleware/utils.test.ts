@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { ConsoleLogger } from "../../middleware/logger.ts";
 import { StepOpCode } from "../../types.ts";
 import {
-  isTimeStrInput,
+  isSleepInput,
   optsFromStepInput,
   stepTypeFromOpCode,
 } from "./utils.ts";
@@ -147,15 +147,15 @@ describe("optsFromStepInput", () => {
   });
 });
 
-describe("isTimeStrInput", () => {
+describe("isSleepInput", () => {
   test("accepts string, number, Date, and Temporal.Duration", () => {
-    expect(isTimeStrInput("1h")).toBe(true);
-    expect(isTimeStrInput(60_000)).toBe(true);
-    expect(isTimeStrInput(new Date())).toBe(true);
-    expect(isTimeStrInput(Temporal.Duration.from({ seconds: 1 }))).toBe(true);
+    expect(isSleepInput("1h")).toBe(true);
+    expect(isSleepInput(60_000)).toBe(true);
+    expect(isSleepInput(new Date())).toBe(true);
+    expect(isSleepInput(Temporal.Duration.from({ seconds: 1 }))).toBe(true);
   });
 
   test("rejects an invalid value", () => {
-    expect(isTimeStrInput({})).toBe(false);
+    expect(isSleepInput({})).toBe(false);
   });
 });
