@@ -11,7 +11,9 @@ console.log("branch:", branch);
 
 const name = process.env.npm_package_name;
 const version = process.env.npm_package_version;
-const registry = process.env.npm_package_publishConfig_registry;
+const registry =
+  process.env.npm_package_publishConfig_registry ||
+  "https://registry.npmjs.org";
 console.log("version:", version);
 const tag = `${name}@${version}`;
 console.log("tag:", tag);
