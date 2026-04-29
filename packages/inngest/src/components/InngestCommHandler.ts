@@ -2119,7 +2119,9 @@ export class InngestCommHandler<
     return {
       status: 405,
       body: JSON.stringify({ message: "Method not allowed" }),
-      headers: {},
+      headers: {
+        "Content-Type": "application/json",
+      },
       version: undefined,
     };
   }
