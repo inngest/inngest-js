@@ -306,7 +306,7 @@ describe("error responses", () => {
     const result = await runHandler(handler, {
       actionOverrides: { body: () => undefined },
     });
-    expect(result.status).toBe(500);
+    expect(result.status).toBe(401);
     const parsed = JSON.parse(result.body) as Record<string, unknown>;
     expect(parsed).toEqual({ message: "Unauthorized" });
   });
@@ -762,16 +762,9 @@ describe("introspection", () => {
       },
     });
     const res = await handler(req);
-    expect(res.status).toBe(200);
-
-    // Unauthenticated response body (since signature is wrong)
-    expect(await res.json()).toEqual({
-      extra: { native_crypto: true },
-      function_count: 0,
-      has_event_key: false,
-      has_signing_key: true,
-      mode: "cloud",
-      schema_version: "2024-05-24",
-    });
+    // Cloud-mode GET with a wrong signature is now treated as unauthorized
+    // — we no longer fall back to the unauthenticated introspection body.
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "Unauthorized" });
   });
 });
