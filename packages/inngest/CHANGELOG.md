@@ -1,5 +1,13 @@
 # inngest
 
+## 4.2.6
+
+### Patch Changes
+
+- [#1492](https://github.com/inngest/inngest-js/pull/1492) [`68dcd8aa`](https://github.com/inngest/inngest-js/commit/68dcd8aa3810a1285dca62321d63c39476c75840) Thanks [@amh4r](https://github.com/amh4r)! - Reduce response info when unauthorized
+
+- [#1490](https://github.com/inngest/inngest-js/pull/1490) [`a8027116`](https://github.com/inngest/inngest-js/commit/a80271163fa5e28b316f218cf5fa81a5600c5048) Thanks [@amh4r](https://github.com/amh4r)! - Authed introspection returns partial signing key hash
+
 ## 4.2.5
 
 ### Patch Changes
