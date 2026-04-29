@@ -1300,6 +1300,33 @@ export class InngestCommHandler<
         headers[headerKeys.Signature] = signature;
       }
 
+      // Unauthenticated responses must not leak SDK identification headers,
+      // so we strip every `x-inngest-*` header except `x-inngest-sdk-handled`
+      // (which the Inngest backend uses to know that the SDK produced the
+      // response, useful for troubleshooting). `User-Agent` is also stripped
+      // since it advertises the SDK and version. In dev mode, signature
+      // validation short-circuits to success so this branch is a no-op.
+      const validation = await signatureValidation;
+      if (!validation.success) {
+        const filteredHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(headers)) {
+          const lower = k.toLowerCase();
+          if (
+            lower === "user-agent" ||
+            (lower.startsWith("x-inngest-") &&
+              lower !== headerKeys.SdkHandled.toLowerCase())
+          ) {
+            continue;
+          }
+          filteredHeaders[k] = v;
+        }
+
+        return {
+          ...res,
+          headers: filteredHeaders,
+        };
+      }
+
       return {
         ...res,
         headers,
@@ -1524,29 +1551,29 @@ export class InngestCommHandler<
           );
 
           return {
-            status: 500,
+            status: 401,
             headers: {
               "Content-Type": "application/json",
             },
-            body: stringify(
-              serializeError(
-                new Error(
-                  "Missing request body when executing, possibly due to missing request body middleware",
-                ),
-              ),
-            ),
+            body: stringify({ message: "Unauthorized" }),
             version: undefined,
           };
         }
 
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
+          this.log(
+            "error",
+            "Signature validation failed",
+            validationResult.err,
+          );
+
           return {
             status: 401,
             headers: {
               "Content-Type": "application/json",
             },
-            body: stringify(serializeError(validationResult.err)),
+            body: stringify({ message: "Unauthorized" }),
             version: undefined,
           };
         }
@@ -1863,6 +1890,29 @@ export class InngestCommHandler<
       const env = (await getHeaders())[headerKeys.Environment] ?? null;
 
       if (method === "GET") {
+        // In cloud mode, introspection requires a valid signature. We don't
+        // serve an unauthenticated introspection body to anonymous callers
+        // because it leaks deployment fingerprint (mode, function count,
+        // event/signing key presence). In dev mode, signature validation
+        // short-circuits to success so this branch is a no-op.
+        const validationResult = await signatureValidation;
+        if (!validationResult.success) {
+          this.log(
+            "error",
+            "Signature validation failed",
+            validationResult.err,
+          );
+
+          return {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: stringify({ message: "Unauthorized" }),
+            version: undefined,
+          };
+        }
+
         return {
           status: 200,
           body: stringify(
@@ -2027,9 +2077,7 @@ export class InngestCommHandler<
 
     return {
       status: 405,
-      body: JSON.stringify({
-        message: `No action found; expected POST, PUT, or GET but received "${method}"`,
-      }),
+      body: JSON.stringify({ message: "Method not allowed" }),
       headers: {},
       version: undefined,
     };

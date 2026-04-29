@@ -437,11 +437,28 @@ export const testFramework = (
         });
       });
 
+      const signGet = async (signingKey: string) => {
+        const ts = Math.round(Date.now() / 1000).toString();
+        return {
+          [headerKeys.Signature]: `t=${ts}&s=${await signDataWithKey(
+            "",
+            signingKey,
+            ts,
+          )}`,
+        };
+      };
+
       test("can pick up delayed event key from environment", async () => {
+        // Cloud mode (default) requires a signing key + a signed GET to
+        // return introspection.
+        const signingKey = "signing-key-123";
         const ret = await run(
           [{ client: createClient({ id: "test" }), functions: [] }],
-          [{ method: "GET" }],
-          { [envKeys.InngestEventKey]: "event-key-123" },
+          [{ method: "GET", headers: await signGet(signingKey) }],
+          {
+            [envKeys.InngestEventKey]: "event-key-123",
+            [envKeys.InngestSigningKey]: signingKey,
+          },
         );
 
         const body = JSON.parse(ret.body);
@@ -452,10 +469,11 @@ export const testFramework = (
       });
 
       test("can pick up delayed signing key from environment", async () => {
+        const signingKey = "signing-key-123";
         const ret = await run(
           [{ client: createClient({ id: "test" }), functions: [] }],
-          [{ method: "GET" }],
-          { [envKeys.InngestSigningKey]: "signing-key-123" },
+          [{ method: "GET", headers: await signGet(signingKey) }],
+          { [envKeys.InngestSigningKey]: signingKey },
         );
 
         expect(ret.status).toEqual(200);
@@ -467,7 +485,10 @@ export const testFramework = (
         });
       });
 
-      test("#690 returns 200 if signature validation fails", async () => {
+      test("returns 401 in cloud mode if signature validation fails", async () => {
+        // Counterpart of the dropped #690 test: cloud mode GET with no
+        // signature now returns 401 instead of an unauthenticated
+        // introspection body, so we don't fingerprint the deployment.
         const ret = await run(
           [
             {
@@ -479,13 +500,8 @@ export const testFramework = (
           { [envKeys.InngestSigningKey]: "signing-key-123" },
         );
 
-        expect(ret.status).toEqual(200);
-
-        const body = JSON.parse(ret.body);
-
-        expect(body).toMatchObject({
-          has_signing_key: true,
-        });
+        expect(ret.status).toEqual(401);
+        expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
       });
     });
 
@@ -1087,7 +1103,7 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("#789 missing body", () => {
-        test("returns 500", async () => {
+        test("returns 401", async () => {
           const client = createClient({ id: "test" });
 
           const fn = client.createFunction(
@@ -1103,7 +1119,7 @@ export const testFramework = (
             { body: () => undefined },
           );
 
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
         });
       });
 
@@ -1129,11 +1145,7 @@ export const testFramework = (
             env,
           );
           expect(ret.status).toEqual(401);
-          expect(JSON.parse(ret.body)).toMatchObject({
-            message: expect.stringContaining(
-              `No ${headerKeys.Signature} provided`,
-            ),
-          });
+          expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
@@ -1142,11 +1154,7 @@ export const testFramework = (
             env,
           );
           expect(ret.status).toEqual(401);
-          expect(JSON.parse(ret.body)).toMatchObject({
-            message: expect.stringContaining(
-              `Invalid ${headerKeys.Signature} provided`,
-            ),
-          });
+          expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
         });
         test("should throw an error with an expired signature", async () => {
           const yesterday = new Date();
@@ -1167,10 +1175,8 @@ export const testFramework = (
             ],
             env,
           );
-          expect(ret).toMatchObject({
-            status: 401,
-            body: expect.stringContaining("Signature has expired"),
-          });
+          expect(ret.status).toEqual(401);
+          expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
         });
         // These signatures are randomly generated within a local development environment, matching
         // what is sent from the cloud.
@@ -1323,10 +1329,8 @@ export const testFramework = (
               ],
               env,
             );
-            expect(ret).toMatchObject({
-              status: 401,
-              body: expect.stringContaining("Invalid signature"),
-            });
+            expect(ret.status).toEqual(401);
+            expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
           });
         });
 
