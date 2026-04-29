@@ -24,9 +24,9 @@ afterEach(async () => {
  */
 async function startCloudServer(): Promise<string> {
   const client = new Inngest({
+    baseUrl: "http://localhost:8288",
     id: randomSuffix(testFileName),
     isDev: false,
-    eventKey: "event-key-123",
     signingKey,
   });
 
@@ -58,6 +58,16 @@ async function startCloudServer(): Promise<string> {
   return `http://localhost:${port}${servePath}`;
 }
 
+function getInngestHeaders(headers: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  headers.forEach((v, k) => {
+    if (k.toLowerCase().startsWith("x-inngest-")) {
+      out[k] = v;
+    }
+  });
+  return out;
+}
+
 describe("GET", () => {
   test("correct signature", async () => {
     const url = await startCloudServer();
@@ -80,28 +90,28 @@ describe("GET", () => {
       mode: "cloud",
     });
     expect(getInngestHeaders(res.headers)).toEqual({
-      'x-inngest-framework': 'nodejs',
-      'x-inngest-req-version': '2',
-      'x-inngest-sdk': expect.any(String),
-      'x-inngest-sdk-handled': 'true',
-      'x-inngest-signature': expect.any(String),
+      "x-inngest-framework": "nodejs",
+      "x-inngest-req-version": "2",
+      "x-inngest-sdk": expect.any(String),
+      "x-inngest-sdk-handled": "true",
+      "x-inngest-signature": expect.any(String),
     });
   });
 
-test("no signature", async () => {
-  const url = await startCloudServer();
+  test("no signature", async () => {
+    const url = await startCloudServer();
 
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-  });
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
 
-  expect(res.status).toBe(401);
-  expect(await res.json()).toEqual({ message: "Unauthorized" });
-  expect(getInngestHeaders(res.headers)).toEqual({
-    [headerKeys.SdkHandled]: "true",
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "Unauthorized" });
+    expect(getInngestHeaders(res.headers)).toEqual({
+      [headerKeys.SdkHandled]: "true",
+    });
   });
-});
 });
 
 describe("POST", () => {
@@ -177,13 +187,22 @@ test("PATCH with no signature", async () => {
   });
 });
 
+test("PUT with no signature", async () => {
+  // This is an "out-of-band" sync. It's OK to allow the unauthenticated request
+  // because the SDK reaches out to the Inngest API on its own, and does not
+  // return any sensitive info to the unauthenticated caller. An attacker is
+  // unable to dictate anything besides telling the SDK to sync itself
 
-function getInngestHeaders(headers: Headers): Record<string, string> {
-  const out: Record<string, string> = {};
-  headers.forEach((v, k) => {
-    if (k.toLowerCase().startsWith("x-inngest-")) {
-      out[k] = v;
-    }
+  const url = await startCloudServer();
+  const res = await fetch(url, {
+    method: "PUT",
   });
-  return out;
-}
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    message: "Successfully registered",
+    modified: true,
+  });
+  expect(getInngestHeaders(res.headers)).toEqual({
+    [headerKeys.SdkHandled]: "true",
+  });
+});
