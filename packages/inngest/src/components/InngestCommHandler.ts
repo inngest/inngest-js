@@ -1244,16 +1244,21 @@ export class InngestCommHandler<
       actionResponseVersion = rawRes.version;
       const prepared = await prepareActionRes(rawRes);
 
-      // Unauthenticated responses must not leak SDK identification headers, so
-      // we strip every `x-inngest-*` header except `x-inngest-sdk-handled`
+      // Unauthenticated responses must not leak SDK identification headers,
+      // so we strip every `x-inngest-*` header except `x-inngest-sdk-handled`
       // (which the Inngest backend uses to know that the SDK produced the
-      // response, useful for troubleshooting). In dev mode, signature
+      // response, useful for troubleshooting). `User-Agent` is also stripped
+      // since it advertises the SDK and version. In dev mode, signature
       // validation short-circuits to success so this branch is a no-op.
       const validation = await signatureValidation;
       if (!validation.success) {
         const filteredHeaders: Record<string, string> = {};
         for (const [k, v] of Object.entries(prepared.headers)) {
           const lower = k.toLowerCase();
+          if (lower === "user-agent") {
+            // User-Agent contains the SDK version
+            continue;
+          }
           if (
             lower.startsWith("x-inngest-") &&
             lower !== headerKeys.SdkHandled.toLowerCase()

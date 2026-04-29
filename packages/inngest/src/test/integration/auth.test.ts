@@ -1,7 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { randomSuffix, testNameFromFileUrl } from "@inngest/test-harness";
 import { afterEach, expect, test } from "vitest";
-import { headerKeys } from "../../helpers/consts.ts";
+import { headerKeys, syncKind } from "../../helpers/consts.ts";
 import { signWithHashJs } from "../../helpers/net.ts";
 import { Inngest } from "../../index.ts";
 import { createServer } from "../../node.ts";
@@ -111,6 +111,7 @@ describe("GET", () => {
     expect(getInngestHeaders(res.headers)).toEqual({
       [headerKeys.SdkHandled]: "true",
     });
+    expect(res.headers.get("user-agent")).toBeNull();
   });
 });
 
@@ -128,6 +129,7 @@ describe("POST", () => {
     expect(getInngestHeaders(res.headers)).toEqual({
       [headerKeys.SdkHandled]: "true",
     });
+    expect(res.headers.get("user-agent")).toBeNull();
   });
 
   test("no signature", async () => {
@@ -144,6 +146,7 @@ describe("POST", () => {
     expect(getInngestHeaders(res.headers)).toEqual({
       [headerKeys.SdkHandled]: "true",
     });
+    expect(res.headers.get("user-agent")).toBeNull();
   });
 
   test("incorrect signature", async () => {
@@ -168,6 +171,7 @@ describe("POST", () => {
     expect(getInngestHeaders(res.headers)).toEqual({
       [headerKeys.SdkHandled]: "true",
     });
+    expect(res.headers.get("user-agent")).toBeNull();
   });
 });
 
@@ -185,24 +189,65 @@ test("PATCH with no signature", async () => {
   expect(getInngestHeaders(res.headers)).toEqual({
     [headerKeys.SdkHandled]: "true",
   });
+  expect(res.headers.get("user-agent")).toBeNull();
 });
 
-test("PUT with no signature", async () => {
-  // This is an "out-of-band" sync. It's OK to allow the unauthenticated request
-  // because the SDK reaches out to the Inngest API on its own, and does not
-  // return any sensitive info to the unauthenticated caller. An attacker is
-  // unable to dictate anything besides telling the SDK to sync itself
+describe("PUT", () => {
+  test("correct signature", async () => {
+    // In-band sync.
 
-  const url = await startCloudServer();
-  const res = await fetch(url, {
-    method: "PUT",
+    const url = await startCloudServer();
+
+    // PUT register with no body: server reads body as "".
+    const body = JSON.stringify({
+      url: "http://localhost:1234/api/inngest",
+    });
+    const ts = Math.round(Date.now() / 1000).toString();
+    const sig = `t=${ts}&s=${signWithHashJs(body, signingKey, ts)}`;
+
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        [headerKeys.InngestSyncKind]: syncKind.InBand,
+        [headerKeys.Signature]: sig,
+      },
+      body,
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      url: "http://localhost:1234/api/inngest",
+    });
+    // Validation succeeded → no strip, so the full SDK fingerprint headers,
+    // the out-of-band sync-kind marker, and a signed response come through.
+    expect(getInngestHeaders(res.headers)).toEqual({
+      "x-inngest-framework": "nodejs",
+      "x-inngest-req-version": "2",
+      "x-inngest-sdk": expect.any(String),
+      "x-inngest-sdk-handled": "true",
+      "x-inngest-signature": expect.any(String),
+      "x-inngest-sync-kind": "in_band",
+    });
   });
-  expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({
-    message: "Successfully registered",
-    modified: true,
-  });
-  expect(getInngestHeaders(res.headers)).toEqual({
-    [headerKeys.SdkHandled]: "true",
+
+  test("no signature", async () => {
+    // This is an "out-of-band" sync. It's OK to allow the unauthenticated request
+    // because the SDK reaches out to the Inngest API on its own, and does not
+    // return any sensitive info to the unauthenticated caller. An attacker is
+    // unable to dictate anything besides telling the SDK to sync itself
+
+    const url = await startCloudServer();
+    const res = await fetch(url, {
+      method: "PUT",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      message: "Successfully registered",
+      modified: true,
+    });
+    expect(getInngestHeaders(res.headers)).toEqual({
+      [headerKeys.SdkHandled]: "true",
+    });
+    expect(res.headers.get("user-agent")).toBeNull();
   });
 });
