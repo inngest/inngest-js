@@ -621,6 +621,41 @@ describe("RequestSignature", () => {
 });
 
 describe("introspection", () => {
+  /**
+   * Clear branch-name env vars that `getEnvironmentName()` reads so the
+   * introspection response always produces `env: null` regardless of what
+   * the CI runner exposes (e.g. BRANCH_NAME=main on GitHub Actions).
+   */
+  const branchEnvVars = [
+    "INNGEST_ENV",
+    "BRANCH_NAME",
+    "VERCEL_GIT_COMMIT_REF",
+    "BRANCH",
+    "CF_PAGES_BRANCH",
+    "RENDER_GIT_BRANCH",
+    "RAILWAY_GIT_BRANCH",
+  ] as const;
+
+  let savedEnv: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    savedEnv = {};
+    for (const key of branchEnvVars) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of branchEnvVars) {
+      if (savedEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = savedEnv[key];
+      }
+    }
+  });
+
   const logger = new ConsoleLogger({ level: "silent" });
 
   test("authenticated", async () => {
