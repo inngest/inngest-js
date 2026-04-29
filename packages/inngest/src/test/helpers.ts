@@ -437,11 +437,28 @@ export const testFramework = (
         });
       });
 
+      const signGet = async (signingKey: string) => {
+        const ts = Math.round(Date.now() / 1000).toString();
+        return {
+          [headerKeys.Signature]: `t=${ts}&s=${await signDataWithKey(
+            "",
+            signingKey,
+            ts,
+          )}`,
+        };
+      };
+
       test("can pick up delayed event key from environment", async () => {
+        // Cloud mode (default) requires a signing key + a signed GET to
+        // return introspection.
+        const signingKey = "signing-key-123";
         const ret = await run(
           [{ client: createClient({ id: "test" }), functions: [] }],
-          [{ method: "GET" }],
-          { [envKeys.InngestEventKey]: "event-key-123" },
+          [{ method: "GET", headers: await signGet(signingKey) }],
+          {
+            [envKeys.InngestEventKey]: "event-key-123",
+            [envKeys.InngestSigningKey]: signingKey,
+          },
         );
 
         const body = JSON.parse(ret.body);
@@ -452,10 +469,11 @@ export const testFramework = (
       });
 
       test("can pick up delayed signing key from environment", async () => {
+        const signingKey = "signing-key-123";
         const ret = await run(
           [{ client: createClient({ id: "test" }), functions: [] }],
-          [{ method: "GET" }],
-          { [envKeys.InngestSigningKey]: "signing-key-123" },
+          [{ method: "GET", headers: await signGet(signingKey) }],
+          { [envKeys.InngestSigningKey]: signingKey },
         );
 
         expect(ret.status).toEqual(200);
@@ -467,7 +485,10 @@ export const testFramework = (
         });
       });
 
-      test("#690 returns 200 if signature validation fails", async () => {
+      test("returns 401 in cloud mode if signature validation fails", async () => {
+        // Counterpart of the dropped #690 test: cloud mode GET with no
+        // signature now returns 401 instead of an unauthenticated
+        // introspection body, so we don't fingerprint the deployment.
         const ret = await run(
           [
             {
@@ -479,17 +500,41 @@ export const testFramework = (
           { [envKeys.InngestSigningKey]: "signing-key-123" },
         );
 
-        expect(ret.status).toEqual(200);
-
-        const body = JSON.parse(ret.body);
-
-        expect(body).toMatchObject({
-          has_signing_key: true,
-        });
+        expect(ret.status).toEqual(401);
+        expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
       });
     });
 
     describe("PUT (register)", () => {
+      // Tests that want the SDK to return its full identification headers
+      // (sdk version, framework, env, platform, expected-server-kind) need
+      // to send a properly-signed request — unsigned requests in cloud mode
+      // strip those headers to avoid fingerprinting. Defaults the signed
+      // body to `{}` because `node-mocks-http` materializes a missing body
+      // as an empty object, which the server canonicalizes to `"{}"` before
+      // HMACing.
+      const putSigningKey = "signkey-test-12345";
+      const signedPutHeaders = async (
+        body: unknown = {},
+      ): Promise<Record<string, string>> => {
+        const ts = Math.round(Date.now() / 1000).toString();
+        return {
+          [headerKeys.Signature]: `t=${ts}&s=${await signDataWithKey(
+            body,
+            putSigningKey,
+            ts,
+          )}`,
+        };
+      };
+
+      // Force cloud mode (so the SDK targets api.inngest.com where nock is
+      // mocking, not the dev server) and provide the signing key so the
+      // signature we're sending validates.
+      const putEnv = {
+        [envKeys.InngestSigningKey]: putSigningKey,
+        INNGEST_DEV: "0",
+      };
+
       describe("out-of-band (legacy)", () => {
         describe("prod env registration", () => {
           test("register with correct default URL from request", async () => {
@@ -512,10 +557,12 @@ export const testFramework = (
                   method: "PUT",
                   url: "/api/inngest",
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
+              putEnv,
             );
 
             const retBody = JSON.parse(ret.body);
@@ -552,11 +599,13 @@ export const testFramework = (
                 {
                   method: "PUT",
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
               {
+                ...putEnv,
                 [envKeys.IsNetlify]: "true",
               },
             );
@@ -590,10 +639,12 @@ export const testFramework = (
                   method: "PUT",
                   url: customUrl,
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
+              putEnv,
             );
 
             const retBody = JSON.parse(ret.body);
@@ -642,7 +693,13 @@ export const testFramework = (
 
             await run(
               [{ client: inngest, functions: [fn1], serveHost }],
-              [{ method: "PUT" }],
+              [
+                {
+                  method: "PUT",
+                  headers: { ...(await signedPutHeaders()) },
+                },
+              ],
+              putEnv,
             );
 
             expect(reqToMock).toMatchObject({
@@ -684,7 +741,13 @@ export const testFramework = (
 
             await run(
               [{ client: inngest, functions: [fn1], servePath }],
-              [{ method: "PUT" }],
+              [
+                {
+                  method: "PUT",
+                  headers: { ...(await signedPutHeaders()) },
+                },
+              ],
+              putEnv,
             );
 
             expect(reqToMock).toMatchObject({
@@ -719,10 +782,12 @@ export const testFramework = (
                 {
                   method: "PUT",
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
+              putEnv,
             );
 
             expect(ret).toMatchObject({
@@ -759,7 +824,13 @@ export const testFramework = (
 
           await run(
             [{ client: inngest, functions: [fn1], serveHost, servePath }],
-            [{ method: "PUT" }],
+            [
+              {
+                method: "PUT",
+                headers: { ...(await signedPutHeaders()) },
+              },
+            ],
+            putEnv,
           );
 
           expect(reqToMock).toMatchObject({
@@ -805,14 +876,19 @@ export const testFramework = (
                   status: 200,
                 });
 
-              await run(serveHandler, [
-                {
-                  method: "PUT",
-                  url: `/api/inngest${
-                    deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
-                  }`,
-                },
-              ]);
+              await run(
+                serveHandler,
+                [
+                  {
+                    method: "PUT",
+                    url: `/api/inngest${
+                      deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                    }`,
+                    headers: { ...(await signedPutHeaders()) },
+                  },
+                ],
+                putEnv,
+              );
 
               // Asserts that the nock scope was used
               scope.done();
@@ -930,12 +1006,23 @@ export const testFramework = (
             if (typeof expectedResponse === "number") {
               expect(ret.status).toEqual(expectedResponse);
             } else {
-              expect(ret).toMatchObject({
-                status: 200,
-                headers: expect.objectContaining({
-                  [headerKeys.InngestSyncKind]: expectedResponse,
-                }),
-              });
+              // When the SDK is in cloud mode and the request was unsigned or
+              // had an invalid signature, all `x-inngest-*` headers other
+              // than `x-inngest-sdk-handled` are stripped to avoid
+              // fingerprinting an unauthenticated caller. We can still verify
+              // the sync succeeded (status 200), but the sync-kind header is
+              // unavailable.
+              const sigStripped =
+                sdkMode === serverKind.Cloud && validSignature !== true;
+
+              expect(ret.status).toEqual(200);
+              if (!sigStripped) {
+                expect(ret.headers).toEqual(
+                  expect.objectContaining({
+                    [headerKeys.InngestSyncKind]: expectedResponse,
+                  }),
+                );
+              }
             }
           });
         };
@@ -1087,7 +1174,7 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("#789 missing body", () => {
-        test("returns 500", async () => {
+        test("returns 401", async () => {
           const client = createClient({ id: "test" });
 
           const fn = client.createFunction(
@@ -1103,7 +1190,7 @@ export const testFramework = (
             { body: () => undefined },
           );
 
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
         });
       });
 
@@ -1129,11 +1216,7 @@ export const testFramework = (
             env,
           );
           expect(ret.status).toEqual(401);
-          expect(JSON.parse(ret.body)).toMatchObject({
-            message: expect.stringContaining(
-              `No ${headerKeys.Signature} provided`,
-            ),
-          });
+          expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
@@ -1142,11 +1225,7 @@ export const testFramework = (
             env,
           );
           expect(ret.status).toEqual(401);
-          expect(JSON.parse(ret.body)).toMatchObject({
-            message: expect.stringContaining(
-              `Invalid ${headerKeys.Signature} provided`,
-            ),
-          });
+          expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
         });
         test("should throw an error with an expired signature", async () => {
           const yesterday = new Date();
@@ -1167,10 +1246,8 @@ export const testFramework = (
             ],
             env,
           );
-          expect(ret).toMatchObject({
-            status: 401,
-            body: expect.stringContaining("Signature has expired"),
-          });
+          expect(ret.status).toEqual(401);
+          expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
         });
         // These signatures are randomly generated within a local development environment, matching
         // what is sent from the cloud.
@@ -1323,10 +1400,8 @@ export const testFramework = (
               ],
               env,
             );
-            expect(ret).toMatchObject({
-              status: 401,
-              body: expect.stringContaining("Invalid signature"),
-            });
+            expect(ret.status).toEqual(401);
+            expect(JSON.parse(ret.body)).toEqual({ message: "Unauthorized" });
           });
         });
 
