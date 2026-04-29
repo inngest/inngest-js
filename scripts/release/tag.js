@@ -2,9 +2,14 @@ const path = require("path");
 const { exec: rawExec, getExecOutput } = require("@actions/exec");
 
 const branch = process.env.BRANCH;
-if (branch !== "main" && !branch.endsWith(".x")) {
+const isAllowedBranch =
+  branch === "main" ||
+  branch.endsWith(".x") ||
+  /^v\d+$/.test(branch); // allow v3, v4, etc.
+
+if (!isAllowedBranch) {
   throw new Error(
-    `Stopping release from branch ${branch}; only "main" and "v*.x" branches are allowed to release`
+    `Stopping release from branch ${branch}; only "main", "v*.x", and "v<N>" branches are allowed to release`
   );
 }
 console.log("branch:", branch);
