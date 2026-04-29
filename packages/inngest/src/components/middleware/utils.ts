@@ -1,3 +1,4 @@
+import { type DurationLike, isTemporalDuration } from "../../helpers/temporal";
 import { isRecord } from "../../helpers/types";
 import type { Logger } from "../../middleware/logger";
 import { type SendEventBaseOutput, StepOpCode } from "../../types";
@@ -7,11 +8,12 @@ import type { ExtractLiteralStrings } from "./types";
 
 export function isTimeStrInput(
   value: unknown,
-): value is string | number | Date {
+): value is string | number | Date | DurationLike {
   return (
     typeof value === "string" ||
     typeof value === "number" ||
-    value instanceof Date
+    value instanceof Date ||
+    isTemporalDuration(value)
   );
 }
 

@@ -719,6 +719,23 @@ describe("sleep", () => {
     });
   });
 
+  test("parses month-long Temporal.Duration", async () => {
+    // Calendar-unit Durations resolve relative to "now". Freeze time so the
+    // 1-month conversion is deterministic: 2026-04-28 → 2026-05-28 = 30 days.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T12:00:00Z"));
+
+    try {
+      const duration = Temporal.Duration.from({ months: 1 });
+
+      await expect(step.sleep("id", duration)).resolves.toMatchObject({
+        name: "4w2d",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("returns userland", async () => {
     await expect(step.sleep("id", "1m")).resolves.toMatchObject({
       userland: { id: "id" },

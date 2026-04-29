@@ -147,7 +147,9 @@ export class MiddlewareManager {
     let opName: string | undefined;
     if (stepType === "sleep" && stepInfo.input !== undefined) {
       if (!isTimeStrInput(stepInfo.input[0])) {
-        throw new Error("Sleep time must be a string, number, or Date");
+        throw new Error(
+          "Sleep time must be a string, number, Date, or Temporal.Duration",
+        );
       }
       opName = timeStr(stepInfo.input[0]);
     }

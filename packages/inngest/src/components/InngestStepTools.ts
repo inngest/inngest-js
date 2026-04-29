@@ -795,11 +795,7 @@ export const createStepTools = <
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
-      const msTimeStr: string = timeStr(
-        Temporal.isTemporalDuration(time)
-          ? time.total({ unit: "milliseconds" })
-          : (time as number | string),
-      );
+      const msTimeStr: string = timeStr(time);
 
       return {
         id,
