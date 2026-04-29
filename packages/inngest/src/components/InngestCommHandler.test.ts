@@ -294,6 +294,81 @@ describe("ServeHandler", () => {
   });
 });
 
+describe("error responses", () => {
+  test("missing body", async () => {
+    const inngest = createClient({ id: "test", isDev: true });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runHandler(handler, {
+      actionOverrides: { body: () => undefined },
+    });
+    expect(result.status).toBe(500);
+    const parsed = JSON.parse(result.body) as Record<string, unknown>;
+    expect(parsed).toEqual({ message: "Unauthorized" });
+  });
+
+  test("missing signature header in cloud mode", async () => {
+    const inngest = createClient({
+      id: "test",
+      isDev: false,
+      eventKey: "event-key-123",
+      signingKey: "signkey-test-1234567890",
+    });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    const result = await runHandler(handler, {
+      actionOverrides: {
+        headers: async (_reason: string, key: string) =>
+          key.toLowerCase() === headerKeys.Signature.toLowerCase()
+            ? null
+            : undefined,
+      },
+    });
+    expect(result.status).toBe(401);
+    const parsed = JSON.parse(result.body) as Record<string, unknown>;
+    expect(parsed).toEqual({ message: "Unauthorized" });
+  });
+
+  test("incorrect signature in cloud mode", async () => {
+    const inngest = createClient({
+      id: "test",
+      isDev: false,
+      eventKey: "event-key-123",
+      signingKey: "signkey-test-1234567890",
+    });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "test",
+    );
+    const handler = serve({ client: inngest, functions: [fn] });
+
+    // Well-formed but wrong: current timestamp (so it doesn't trip the
+    // expiry check) paired with an HMAC that doesn't match the body.
+    const ts = Math.round(Date.now() / 1000);
+    const badSig = `t=${ts}&s=${"0".repeat(64)}`;
+
+    const result = await runHandler(handler, {
+      actionOverrides: {
+        headers: async (_reason: string, key: string) =>
+          key.toLowerCase() === headerKeys.Signature.toLowerCase()
+            ? badSig
+            : undefined,
+      },
+    });
+    expect(result.status).toBe(401);
+    const parsed = JSON.parse(result.body) as Record<string, unknown>;
+    expect(parsed).toEqual({ message: "Unauthorized" });
+  });
+});
+
 describe("response version header", () => {
   const inngest = createClient({ id: "test", isDev: true });
 

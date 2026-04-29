@@ -190,6 +190,7 @@ export enum headerKeys {
   InngestRunId = "x-run-id",
   InngestStepId = "x-inngest-step-id",
   InngestForceStepPlan = "x-inngest-force-step-plan",
+  SdkHandled = "x-inngest-sdk-handled",
 }
 
 /**

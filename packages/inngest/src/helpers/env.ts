@@ -269,6 +269,7 @@ export const inngestHeaders = (opts?: {
     "Content-Type": "application/json",
     "User-Agent": sdkVersion,
     [headerKeys.SdkVersion]: sdkVersion,
+    [headerKeys.SdkHandled]: "true",
   };
 
   if (opts?.framework) {
