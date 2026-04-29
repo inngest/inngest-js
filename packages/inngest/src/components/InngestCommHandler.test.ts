@@ -323,17 +323,10 @@ describe("introspection", () => {
       },
     });
     const res = await handler(req);
-    expect(res.status).toBe(200);
-
-    // Unauthenticated response body (since signature is not provided)
-    expect(await res.json()).toEqual({
-      extra: { is_mode_explicit: true },
-      function_count: 0,
-      has_event_key: false,
-      has_signing_key: false,
-      mode: "cloud",
-      schema_version: "2024-05-24",
-    });
+    // Cloud-mode GET without a signature is now treated as unauthorized —
+    // we no longer fall back to the unauthenticated introspection body.
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ message: "Unauthorized" });
   });
 
   test("wrong signature", async () => {

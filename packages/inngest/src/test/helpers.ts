@@ -506,6 +506,35 @@ export const testFramework = (
     });
 
     describe("PUT (register)", () => {
+      // Tests that want the SDK to return its full identification headers
+      // (sdk version, framework, env, platform, expected-server-kind) need
+      // to send a properly-signed request — unsigned requests in cloud mode
+      // strip those headers to avoid fingerprinting. Defaults the signed
+      // body to `{}` because `node-mocks-http` materializes a missing body
+      // as an empty object, which the server canonicalizes to `"{}"` before
+      // HMACing.
+      const putSigningKey = "signkey-test-12345";
+      const signedPutHeaders = async (
+        body: unknown = {},
+      ): Promise<Record<string, string>> => {
+        const ts = Math.round(Date.now() / 1000).toString();
+        return {
+          [headerKeys.Signature]: `t=${ts}&s=${await signDataWithKey(
+            body,
+            putSigningKey,
+            ts,
+          )}`,
+        };
+      };
+
+      // Force cloud mode (so the SDK targets api.inngest.com where nock is
+      // mocking, not the dev server) and provide the signing key so the
+      // signature we're sending validates.
+      const putEnv = {
+        [envKeys.InngestSigningKey]: putSigningKey,
+        INNGEST_DEV: "0",
+      };
+
       describe("out-of-band (legacy)", () => {
         describe("prod env registration", () => {
           test("register with correct default URL from request", async () => {
@@ -528,10 +557,12 @@ export const testFramework = (
                   method: "PUT",
                   url: "/api/inngest",
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
+              putEnv,
             );
 
             const retBody = JSON.parse(ret.body);
@@ -568,11 +599,13 @@ export const testFramework = (
                 {
                   method: "PUT",
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
               {
+                ...putEnv,
                 [envKeys.IsNetlify]: "true",
               },
             );
@@ -606,10 +639,12 @@ export const testFramework = (
                   method: "PUT",
                   url: customUrl,
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
+              putEnv,
             );
 
             const retBody = JSON.parse(ret.body);
@@ -658,7 +693,13 @@ export const testFramework = (
 
             await run(
               [{ client: inngest, functions: [fn1], serveHost }],
-              [{ method: "PUT" }],
+              [
+                {
+                  method: "PUT",
+                  headers: { ...(await signedPutHeaders()) },
+                },
+              ],
+              putEnv,
             );
 
             expect(reqToMock).toMatchObject({
@@ -700,7 +741,13 @@ export const testFramework = (
 
             await run(
               [{ client: inngest, functions: [fn1], servePath }],
-              [{ method: "PUT" }],
+              [
+                {
+                  method: "PUT",
+                  headers: { ...(await signedPutHeaders()) },
+                },
+              ],
+              putEnv,
             );
 
             expect(reqToMock).toMatchObject({
@@ -735,10 +782,12 @@ export const testFramework = (
                 {
                   method: "PUT",
                   headers: {
+                    ...(await signedPutHeaders()),
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
               ],
+              putEnv,
             );
 
             expect(ret).toMatchObject({
@@ -775,7 +824,13 @@ export const testFramework = (
 
           await run(
             [{ client: inngest, functions: [fn1], serveHost, servePath }],
-            [{ method: "PUT" }],
+            [
+              {
+                method: "PUT",
+                headers: { ...(await signedPutHeaders()) },
+              },
+            ],
+            putEnv,
           );
 
           expect(reqToMock).toMatchObject({
@@ -821,14 +876,19 @@ export const testFramework = (
                   status: 200,
                 });
 
-              await run(serveHandler, [
-                {
-                  method: "PUT",
-                  url: `/api/inngest${
-                    deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
-                  }`,
-                },
-              ]);
+              await run(
+                serveHandler,
+                [
+                  {
+                    method: "PUT",
+                    url: `/api/inngest${
+                      deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                    }`,
+                    headers: { ...(await signedPutHeaders()) },
+                  },
+                ],
+                putEnv,
+              );
 
               // Asserts that the nock scope was used
               scope.done();
@@ -946,12 +1006,23 @@ export const testFramework = (
             if (typeof expectedResponse === "number") {
               expect(ret.status).toEqual(expectedResponse);
             } else {
-              expect(ret).toMatchObject({
-                status: 200,
-                headers: expect.objectContaining({
-                  [headerKeys.InngestSyncKind]: expectedResponse,
-                }),
-              });
+              // When the SDK is in cloud mode and the request was unsigned or
+              // had an invalid signature, all `x-inngest-*` headers other
+              // than `x-inngest-sdk-handled` are stripped to avoid
+              // fingerprinting an unauthenticated caller. We can still verify
+              // the sync succeeded (status 200), but the sync-kind header is
+              // unavailable.
+              const sigStripped =
+                sdkMode === serverKind.Cloud && validSignature !== true;
+
+              expect(ret.status).toEqual(200);
+              if (!sigStripped) {
+                expect(ret.headers).toEqual(
+                  expect.objectContaining({
+                    [headerKeys.InngestSyncKind]: expectedResponse,
+                  }),
+                );
+              }
             }
           });
         };
