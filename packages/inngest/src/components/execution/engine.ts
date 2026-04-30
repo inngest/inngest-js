@@ -49,6 +49,7 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import { internalLoggerSymbol } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
@@ -119,15 +120,14 @@ function errorMessage(error: unknown): string {
 const RUN_COMPLETE_STEP_ID = "complete";
 
 /**
- * The `defer.{alias}(id, data)` methods the handler context exposes when a
- * function declares an `onDefer` map. One entry per alias. Sync: lazy ops
- * buffer immediately and ship on the next wire message, so the caller has
- * nothing to wait for.
+ * The `defer(idOrOptions, { function, data })` method exposed on every
+ * handler context. Sync: lazy ops buffer immediately and ship on the next
+ * wire message, so the caller has nothing to wait for.
  */
-type DeferMethods = Record<
-  string,
-  (idOrOptions: StepOptionsOrId, data: Record<string, unknown>) => void
->;
+type DeferFn = (
+  idOrOptions: StepOptionsOrId,
+  options: { function: InngestFunction.Any; data: Record<string, unknown> },
+) => void;
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
@@ -1949,7 +1949,7 @@ class InngestExecutionEngine
     const result = await schema["~standard"].validate(eventData);
     if (result.issues) {
       throw new Error(
-        `onDefer handler "${this.options.fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
+        `defer handler "${this.options.fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
   }
@@ -2041,7 +2041,7 @@ class InngestExecutionEngine
   }
 
   private createFnArg(): Context.Any {
-    const { step, topLevelDefer } = this.createStepTools();
+    const { step, defer } = this.createStepTools();
     const experimentStepRun = (step as unknown as ExperimentStepTools)[
       experimentStepRunSymbol
     ];
@@ -2050,11 +2050,8 @@ class InngestExecutionEngine
       ...(this.options.data as { event: EventPayload }),
       step,
       group: createGroupTools({ experimentStepRun }),
-    } as Context.Any;
-
-    if (topLevelDefer) {
-      fnArg = { ...fnArg, defer: topLevelDefer } as Context.Any;
-    }
+      defer,
+    } as unknown as Context.Any;
 
     if (this.options.handlerKind === "defer") {
       // Delete our internal metadata. The user's handler shouldn't see it since
@@ -2125,7 +2122,7 @@ class InngestExecutionEngine
 
   private createStepTools(): {
     step: ReturnType<typeof createStepTools>;
-    topLevelDefer: DeferMethods | undefined;
+    defer: DeferFn;
   } {
     /**
      * A list of steps that have been found and are being rolled up before being
@@ -2546,64 +2543,57 @@ class InngestExecutionEngine
     };
 
     const baseTools = createStepTools(this.options.client, this, stepHandler);
-    const topLevelDefer = this.buildDeferMethods(stepHandler);
+    const defer = this.buildDefer(stepHandler);
 
-    return { step: baseTools, topLevelDefer };
+    return { step: baseTools, defer };
   }
 
   /**
-   * Build the `defer.{alias}(id, data)` methods for a function that
-   * declares `onDefer`. Each alias validates its input against the defer
-   * function's schema (if any) and emits a `DeferAdd` opcode that routes
-   * to that defer's companion function slug.
+   * Build the `defer(idOrOptions, { function, data })` method exposed on
+   * every handler context. Validates `data` against the target function's
+   * schema (if any) and emits a `DeferAdd` opcode that routes to the
+   * target's companion function slug.
    */
-  private buildDeferMethods(
-    stepHandler: StepHandler,
-  ): DeferMethods | undefined {
-    const onDefer = this.options.fn.opts.onDefer;
-    if (!onDefer || Object.keys(onDefer).length === 0) {
-      return undefined;
-    }
+  private buildDefer(stepHandler: StepHandler): DeferFn {
+    return (idOrOptions, { function: deferFn, data }) => {
+      if (!deferFn.opts.deferMeta) {
+        throw new Error(
+          `defer() received a function that was not created via createDefer(). Pass the result of createDefer(...) as the \`function\` option.`,
+        );
+      }
 
-    const methods: DeferMethods = {};
-
-    for (const [alias, deferFn] of Object.entries(onDefer)) {
       const companionFnSlug = deferFn.id(this.options.client.id);
-      const schema = deferFn.opts.deferMeta?.schema;
+      const schema = deferFn.opts.deferMeta.schema;
 
-      methods[alias] = (idOrOptions, data) => {
-        let input: unknown = data;
-        if (schema) {
-          const result = schema["~standard"].validate(data);
-          if (result instanceof Promise) {
-            throw new Error(
-              `defer() requires a synchronous schema validator; "${alias}" (${companionFnSlug}) returned a Promise.`,
-            );
-          }
-          if (result.issues) {
-            throw new Error(
-              `defer() schema validation failed for "${alias}" (${companionFnSlug}): ${JSON.stringify(result.issues)}`,
-            );
-          }
-          input = result.value ?? data;
+      let input: unknown = data;
+      if (schema) {
+        const result = schema["~standard"].validate(data);
+        if (result instanceof Promise) {
+          throw new Error(
+            `defer() requires a synchronous schema validator; "${companionFnSlug}" returned a Promise.`,
+          );
         }
+        if (result.issues) {
+          throw new Error(
+            `defer() schema validation failed for "${companionFnSlug}": ${JSON.stringify(result.issues)}`,
+          );
+        }
+        input = result.value ?? data;
+      }
 
-        void stepHandler({
-          args: [idOrOptions, input],
-          matchOp: (stepOptions, inputArg) => ({
-            id: stepOptions.id,
-            mode: StepMode.Sync,
-            op: StepOpCode.DeferAdd,
-            name: stepOptions.name ?? stepOptions.id,
-            displayName: stepOptions.name ?? stepOptions.id,
-            opts: { fn_slug: companionFnSlug, input: inputArg },
-            userland: { id: stepOptions.id },
-          }),
-        });
-      };
-    }
-
-    return methods;
+      void stepHandler({
+        args: [idOrOptions, input],
+        matchOp: (stepOptions, inputArg) => ({
+          id: stepOptions.id,
+          mode: StepMode.Sync,
+          op: StepOpCode.DeferAdd,
+          name: stepOptions.name ?? stepOptions.id,
+          displayName: stepOptions.name ?? stepOptions.id,
+          opts: { fn_slug: companionFnSlug, input: inputArg },
+          userland: { id: stepOptions.id },
+        }),
+      });
+    };
   }
 
   /**

@@ -415,9 +415,9 @@ export class InngestCommHandler<
    */
   private readonly rawFns: InngestFunction.Any[];
   /**
-   * All functions contributing to this handler's sync payload: user-passed
-   * functions plus the defer functions collected implicitly from their
-   * `onDefer` maps (deduped by id).
+   * All functions contributing to this handler's sync payload. Currently
+   * the same as `rawFns`; defer functions (created via `createDefer`) must
+   * be passed alongside regular functions in `serve({ functions: [...] })`.
    */
   private readonly allFns: InngestFunction.Any[];
 
@@ -487,35 +487,15 @@ export class InngestCommHandler<
       );
     }
 
-    // Collect defer functions that parents reference via their `onDefer` maps.
-    // Parents can share a single defer (the result of `createDefer`) under
-    // different aliases, so we dedupe by function ID and keep one registry
-    // entry per unique defer.
-    const deferFns = new Map<string, InngestFunction.Any>();
-    for (const fn of this.rawFns) {
-      for (const deferFn of Object.values(fn.opts.onDefer ?? {})) {
-        const id = deferFn.id(this.client.id);
-        const existing = deferFns.get(id);
-        if (existing && existing !== deferFn) {
-          throw new Error(
-            `Two different defer functions registered with the same ID "${id}". Ensure each \`createDefer({ id })\` uses a unique id.`,
-          );
-        }
-        deferFns.set(id, deferFn);
-      }
-    }
-
-    this.allFns = [...this.rawFns, ...deferFns.values()];
+    this.allFns = this.rawFns;
 
     // Build the id -> entry registry. Each main fn contributes either a
     // single `main` entry or, when it has `onFailure`, a `main` + `failure`
-    // pair; each defer fn contributes a single `defer` entry.
+    // pair; each defer fn (created via `createDefer`, identified by
+    // `deferMeta`) contributes a single `defer` entry.
     const entries: Record<string, FnRegistryEntry> = {};
-    const register = (
-      fn: InngestFunction.Any,
-      isDefer: boolean,
-      duplicateMessage: (id: string) => string,
-    ): void => {
+    for (const fn of this.rawFns) {
+      const isDefer = Boolean(fn.opts.deferMeta);
       const mainId = fn.id(this.client.id);
       const failureId = `${mainId}${InngestFunction.failureSuffix}`;
 
@@ -526,7 +506,9 @@ export class InngestCommHandler<
 
       for (const { id } of configs) {
         if (entries[id]) {
-          throw new Error(duplicateMessage(id));
+          throw new Error(
+            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
+          );
         }
 
         let handlerKind: FnRegistryEntry["handlerKind"];
@@ -540,23 +522,6 @@ export class InngestCommHandler<
 
         entries[id] = { fn, handlerKind };
       }
-    };
-
-    for (const fn of this.rawFns) {
-      register(
-        fn,
-        false,
-        (id) =>
-          `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
-      );
-    }
-    for (const deferFn of deferFns.values()) {
-      register(
-        deferFn,
-        true,
-        (id) =>
-          `Duplicate function ID "${id}"; a defer function's id collides with another registered function.`,
-      );
     }
     this.fns = entries;
 

@@ -2,19 +2,23 @@ import { z } from "zod";
 import { createDefer } from "../../../packages/inngest/src/experimental.ts";
 import { inngest } from "./client";
 
-const myDefer = createDefer(inngest, { id: "my-defer" }, async ({ step }) => {
-  await step.run("do-stuff", () => {
-    console.log("Running myDefer");
-    // Do stuff here
-  });
-});
-
-const myDefer2 = createDefer(
+export const myDefer = createDefer(
   inngest,
-  { id: "my-defer-2" },
+  { id: "my-defer" },
   async ({ step }) => {
+    await step.run("do-stuff", () => {
+      console.log("Running myDefer");
+      // Do stuff here
+    });
+  },
+);
+
+export const myDefer2 = createDefer(
+  inngest,
+  { id: "my-defer-2", schema: z.object({ msg: z.string() }) },
+  async ({ event, step }) => {
     await step.run("do-other-stuff", () => {
-      console.log("Running myOtherDefer");
+      console.log("Running myOtherDefer", event.data.msg);
       // Do other stuff here
     });
   },
@@ -25,18 +29,14 @@ export const fn = inngest.createFunction(
     id: "my-fn",
     retries: 0,
     triggers: { event: "my-event" },
-    onDefer: {
-      myDefer,
-      myDefer2,
-    },
   },
   async ({ defer, step }) => {
     const msg = await step.run("create-msg", async () => {
-      defer.myDefer("defer-1", {});
+      defer("defer-1", { function: myDefer, data: {} });
       return "hello from the main run";
     });
 
-    defer.myDefer2("defer-2", { msg });
+    defer("defer-2", { function: myDefer2, data: { msg } });
   },
 );
 
@@ -45,17 +45,13 @@ export const fn2 = inngest.createFunction(
     id: "my-fn-2",
     retries: 0,
     triggers: { event: "my-event-2" },
-    onDefer: {
-      myDefer,
-      myDefer2,
-    },
   },
   async ({ defer, step }) => {
     const msg = await step.run("create-msg", async () => {
-      defer.myDefer("defer-1", {});
+      defer("defer-1", { function: myDefer, data: {} });
       return "hello from the main run";
     });
 
-    defer.myDefer2("defer-2", { msg });
+    defer("defer-2", { function: myDefer2, data: { msg } });
   },
 );

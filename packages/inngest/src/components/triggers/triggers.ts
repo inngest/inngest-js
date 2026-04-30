@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { InngestFunction } from "../InngestFunction.ts";
 
 /**
  * Represents a cron trigger for scheduled function execution.
@@ -258,18 +259,29 @@ export function eventType<
 
 /**
  * Branded result type from {@link createDefer}. Carries `TSchema` at the
- * type level so `MaybeDeferCtx` can extract per-entry data types. At
- * runtime the value is a real `InngestFunction` instance; this shape is
- * phantom and the schema property is never accessed at runtime.
+ * type level so `defer()` can extract the data type from the function it
+ * targets. At runtime the value is a real `InngestFunction` instance, so
+ * it satisfies `InngestFunction.Like` and can be passed to `serve()`
+ * alongside regular functions; `__deferBrand` and `schema` are phantom and
+ * never accessed at runtime.
  */
 export type DeferHandlerResult<
   TSchema extends
     | StandardSchemaV1<Record<string, unknown>>
     | undefined = undefined,
-> = {
+> = InngestFunction.Like & {
   readonly __deferBrand: "DeferHandlerResult";
   readonly schema: TSchema;
 };
+
+export namespace DeferHandlerResult {
+  /**
+   * Matches any `DeferHandlerResult` regardless of its schema. Use as the
+   * constraint for the `function` argument of `defer()`.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: widest schema constraint for inference
+  export type Any = DeferHandlerResult<StandardSchemaV1<any> | undefined>;
+}
 
 /**
  * Create a type-only schema that provides TypeScript types without runtime

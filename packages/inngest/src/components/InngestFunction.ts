@@ -695,18 +695,6 @@ export namespace InngestFunction {
     onFailure?: TFailureHandler;
 
     /**
-     * A map of named defer function references that can be triggered by
-     * calling `defer.{key}()` from the main function handler. Each value
-     * is the result of `createDefer(client, opts, handler)`.
-     *
-     * The key is a call-site alias used as the property name on `defer`.
-     * The defer function itself has its own `id` (passed to `createDefer`)
-     * which becomes the synced function's ID — keys are free to differ
-     * between parents that share the same defer.
-     */
-    onDefer?: Record<string, InngestFunction.Any>;
-
-    /**
      * @internal — set by `createDefer`, not by user code. Marks this
      * function as a defer function so `getConfig` emits a
      * `inngest/deferred.start` trigger and execution validates incoming
