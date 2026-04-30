@@ -139,6 +139,7 @@ export class ConnectionCore {
 
   // Loop promise — resolved when the reconcile loop exits
   private loopPromise: Promise<void> | undefined;
+  private closePromise: Promise<void> | undefined;
 
   // First-ready resolution — resolves start() when first connection is ready
   private resolveFirstReady: (() => void) | undefined;
@@ -272,6 +273,13 @@ export class ConnectionCore {
    * connection closed).
    */
   async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+
+    this.closePromise = this.closeOnce();
+    return this.closePromise;
+  }
+
+  private async closeOnce(): Promise<void> {
     const inFlightCount = Object.keys(
       this._inProgressRequests.requestLeases,
     ).length;
@@ -333,9 +341,13 @@ export class ConnectionCore {
   }
 
   private wake(reason: WakeReason = WAKE_REASON.Unknown): void {
+    // Only the first pending wake needs to resolve the parked loop; later
+    // wakes are accumulated and consumed together on the next iteration.
+    const shouldResolve = this.pendingWakeReasons.length === 0;
     this.pendingWakeReasons.push(reason);
-    this.wakeSignal.resolve();
-    this.resetWakeSignal();
+    if (shouldResolve) {
+      this.wakeSignal.resolve();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -584,10 +596,15 @@ export class ConnectionCore {
         }
       }
 
-      // Wait for something to change
-      await this.wakeSignal.promise;
+      // Wait for something to change. If a wake fired while this loop was
+      // doing async work above, pendingWakeReasons is already populated; don't
+      // wait on the replacement wakeSignal or the wake can be missed.
+      if (this.pendingWakeReasons.length === 0) {
+        await this.wakeSignal.promise;
+      }
       const reasons = this.pendingWakeReasons;
       this.pendingWakeReasons = [];
+      this.resetWakeSignal();
       this.callbacks.logger.debug(
         {
           reasons,

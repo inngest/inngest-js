@@ -250,6 +250,26 @@ describe("ConnectionCore reconcile loop", () => {
       // Connection should be cleaned up
       expect(core.connectionId).toBeUndefined();
     });
+
+    test("concurrent close() calls only perform shutdown side effects once", async () => {
+      const { core, logger, ws } = await connectAndReady();
+
+      const firstClose = core.close();
+      const secondClose = core.close();
+      await flushMicrotasks();
+
+      await Promise.all([firstClose, secondClose]);
+
+      const pauseMessages = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_PAUSE,
+      );
+      expect(pauseMessages).toHaveLength(1);
+
+      const shutdownLogs = logger.info.mock.calls.filter(
+        (call) => call[1] === "Shutting down, waiting for in-flight requests",
+      );
+      expect(shutdownLogs).toHaveLength(1);
+    });
   });
 
   describe("13. Backoff on repeated failures", () => {
@@ -535,6 +555,30 @@ describe("ConnectionCore reconcile loop", () => {
       const woken = findWokenCalls(logger);
       const last = woken[woken.length - 1];
       expect(last?.reasons).toContain(WAKE_REASON.Unknown);
+    });
+
+    test("wake() before the loop parks is consumed on the next iteration", async () => {
+      const { core, logger, ws } = await connectAndReady();
+
+      ws.simulateError(new Error("network error"));
+      await flushMicrotasks();
+
+      const reconnectingWs = MockWebSocket.instances[1]!;
+      expect(reconnectingWs).toBeDefined();
+
+      // Fire a wake while the reconcile loop is still establishing the
+      // replacement connection, before it reaches the next wake await.
+      // biome-ignore lint/suspicious/noExplicitAny: reach private method
+      (core as any).wake(WAKE_REASON.Unknown);
+
+      await driveHandshake(reconnectingWs);
+      await flushMicrotasks();
+
+      const woken = findWokenCalls(logger);
+      const reasons = woken.flatMap((w) => w.reasons);
+      expect(reasons).toContain(WAKE_REASON.Unknown);
+
+      await core.close();
     });
 
     test("close() wakes the loop with reason 'shutdown-requested'", async () => {
