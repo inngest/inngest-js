@@ -6,7 +6,7 @@ import {
   testNameFromFileUrl,
   waitFor,
 } from "@inngest/test-harness";
-import { expect, expectTypeOf, test } from "vitest";
+import { expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { createDefer } from "../../experimental.ts";
 import {
@@ -18,6 +18,15 @@ import { createServer } from "../../node.ts";
 import { matrixCheckpointing } from "./utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
+
+function spyLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+}
 
 test("schema", async () => {
   // When a deferred function specifies a schema, both the static and runtime
@@ -311,13 +320,18 @@ test("multiple steps in defer handler", async () => {
 });
 
 test("schema validation fails in parent function", async () => {
+  // Schema mismatch at the call site is logged and the defer is skipped: the
+  // parent run completes normally and the defer handler never fires.
+
   const state = createState({
     deferHandlerReached: false,
   });
 
+  const internalLogger = spyLogger();
   const client = new Inngest({
     id: randomSuffix(testFileName),
     isDev: true,
+    internalLogger,
   });
   const eventName = randomSuffix("evt");
   const foo = createDefer(
@@ -345,12 +359,20 @@ test("schema validation fails in parent function", async () => {
   });
 
   await client.send({ name: eventName, data: {} });
-  const error = await state.waitForRunFailed();
-  expect(error).toBeDefined();
+  await state.waitForRunComplete();
 
   // Wait long enough to give the defer handler a chance to run (it shouldn't)
   await sleep(2000);
   expect(state.deferHandlerReached).toBe(false);
+
+  expect(internalLogger.error).toHaveBeenCalledWith(
+    expect.objectContaining({
+      runId: state.runId,
+      fnSlug: expect.stringContaining("foo"),
+      issues: expect.any(Array),
+    }),
+    "defer skipped: schema validation failed",
+  );
 });
 
 test("schema validation fails within defer handler", async () => {
@@ -661,4 +683,61 @@ test("one defer shared across multiple parents", async () => {
   await waitFor(() => {
     expect(state.counter).toBe(2);
   });
+});
+
+test("can't pass a normal function", async () => {
+  // Passing a normal function to `defer` doesn't work. It also doesn't fail the
+  // run.
+
+  const parentState = createState({});
+  const childState = createState({});
+
+  const internalLogger = spyLogger();
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    internalLogger,
+  });
+  const fn1 = client.createFunction(
+    {
+      id: "fn-1",
+      retries: 0,
+    },
+    async ({ runId }) => {
+      childState.runId = runId;
+    },
+  );
+  const eventName = randomSuffix("evt");
+  const fn2 = client.createFunction(
+    {
+      id: "fn-2",
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId }) => {
+      parentState.runId = runId;
+      defer("defer", {
+        // @ts-expect-error: should fail
+        function: defer,
+
+        data: {},
+      });
+    },
+  );
+  await createTestApp({
+    client,
+    functions: [fn1, fn2],
+    serve: createServer,
+  });
+  await client.send({ name: eventName });
+  await parentState.waitForRunComplete();
+
+  // Wait long enough to give the child function a chance to run (it shouldn't)
+  await sleep(5000);
+  expect(childState.runId).toBeNull();
+
+  expect(internalLogger.error).toHaveBeenCalledWith(
+    expect.objectContaining({ runId: parentState.runId }),
+    "defer skipped: function not created via createDefer",
+  );
 });

@@ -73,9 +73,15 @@ await step.run("notify", async () => {
 
 `schema` is optional (`StandardSchemaV1`). When present, `data` is validated at the call site and again on the receiver side. The receiver-side check catches serialization round-trips that change the shape (e.g. `Date` becoming an ISO string). The same schema types `event.data` in the handler.
 
-Call-site validation must be synchronous because `defer(...)` itself is sync; if the schema's `validate` returns a Promise, the SDK throws. Receiver-side validation is async, so async validators work there.
+Call-site validation must be synchronous because `defer(...)` itself is sync. If the schema's `validate` returns a Promise, the SDK logs the error and skips the call (see "Error handling"). Receiver-side validation is async, so async validators work there.
 
 Without a schema, `data` falls back to `Record<string, any>`.
+
+## Error handling
+
+`defer(...)` is fire-and-forget, so a misuse should not derail the surrounding handler. When `defer(...)` rejects a call, the SDK logs an error via the internal logger and the call is silently skipped; the parent run continues normally and no `DeferAdd` op is emitted. The defer handler does not fire.
+
+Receiver-side schema failures (the deferred run reading invalid `event.data`) are not in this category: they fail the deferred run itself, with normal retry semantics.
 
 ## Sharing across parents
 

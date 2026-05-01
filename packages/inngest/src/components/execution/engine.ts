@@ -2507,13 +2507,22 @@ class InngestExecutionEngine
    * every handler context. Validates `data` against the target function's
    * schema (if any) and emits a `DeferAdd` opcode that routes to the
    * target's companion function slug.
+   *
+   * `defer()` is fire-and-forget: a misuse should not derail the user's
+   * handler. Validation failures (wrong function, async schema validator,
+   * schema mismatch) are logged and the call is silently skipped.
    */
   private buildDefer(stepHandler: StepHandler): DeferFn {
     return (idOrOptions, { function: deferFn, data }) => {
+      const log = this.options.client[internalLoggerSymbol];
+      const runId = this.fnArg.runId;
+
       if (!(deferFn instanceof DeferredFunction)) {
-        throw new Error(
-          `defer() received a function that was not created via createDefer(). Pass the result of createDefer(...) as the \`function\` option.`,
+        log.error(
+          { runId },
+          "defer skipped: function not created via createDefer",
         );
+        return;
       }
 
       const companionFnSlug = deferFn.id(this.options.client.id);
@@ -2523,14 +2532,18 @@ class InngestExecutionEngine
       if (schema) {
         const result = schema["~standard"].validate(data);
         if (result instanceof Promise) {
-          throw new Error(
-            `defer() requires a synchronous schema validator; "${companionFnSlug}" returned a Promise.`,
+          log.error(
+            { runId, fnSlug: companionFnSlug },
+            "defer() requires a synchronous schema validator. The defer call was skipped.",
           );
+          return;
         }
         if (result.issues) {
-          throw new Error(
-            `defer() schema validation failed for "${companionFnSlug}": ${JSON.stringify(result.issues)}`,
+          log.error(
+            { runId, fnSlug: companionFnSlug, issues: result.issues },
+            "defer skipped: schema validation failed",
           );
+          return;
         }
         input = result.value ?? data;
       }
