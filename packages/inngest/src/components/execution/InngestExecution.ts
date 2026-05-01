@@ -118,7 +118,7 @@ export interface InngestExecutionOptions {
 
   /**
    * A map of hashed defer step IDs to their backend-side metadata
-   * (e.g. `{ cancellable: true }`). Defer ops are not steps in the
+   * (e.g. `{ abortable: true }`). Defer ops are not steps in the
    * memoization sense — they don't produce results — but the backend
    * tracks which ones it has already received so the SDK can avoid
    * re-emitting them on replay.

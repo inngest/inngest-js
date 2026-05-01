@@ -1124,7 +1124,7 @@ export function builtInMiddleware(baseLogger: Logger) {
  * `Record<string, any>`.
  */
 type DeferEvent<TSchema> = {
-  name: internalEvents.DeferredStart;
+  name: internalEvents.DeferredSchedule;
   data: TSchema extends StandardSchemaV1<
     infer D extends Record<string, unknown>
   >
@@ -1136,7 +1136,7 @@ type DeferEvent<TSchema> = {
 /**
  * Base ctx shape for a defer handler: the standard function context
  * (`runId`, `attempt`, `group`, `step` with middleware step extensions)
- * with `event`/`events` pinned to `inngest/deferred.start` and the
+ * with `event`/`events` pinned to `inngest/deferred.schedule` and the
  * schema-typed payload.
  */
 type BaseDeferCtx<
@@ -1161,7 +1161,7 @@ type BaseDeferCtx<
  *
  * Mirrors `inngest.createFunction(opts, handler)`, with three differences:
  * the client is the first positional arg, `triggers` is not accepted (the
- * SDK emits an implicit `inngest/deferred.start` trigger), and `schema`
+ * SDK emits an implicit `inngest/deferred.schedule` trigger), and `schema`
  * describes the payload that callers will send via `defer(id, { function,
  * data })`.
  *
@@ -1284,7 +1284,7 @@ export namespace Inngest {
 
   /**
    * Input type for `createDefer`. Mirrors `CreateFunctionInput` minus
-   * `triggers` (defer functions use an implicit `inngest/deferred.start`
+   * `triggers` (defer functions use an implicit `inngest/deferred.schedule`
    * trigger), `deferMeta` (internal, set by `createDefer`), and
    * `onFailure` (not yet supported on defer functions). Adds `schema` —
    * the StandardSchema describing `event.data` that flows to caller

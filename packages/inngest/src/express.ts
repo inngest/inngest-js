@@ -70,8 +70,11 @@ export const serve = (options: ServeHandlerOptions): any => {
       req: Either<VercelRequest, Request>,
       res: Either<Response, VercelResponse>,
     ) => {
+      console.log("\nrequest");
+      const body = req.body;
+      console.log(body);
       return {
-        body: () => req.body,
+        body: () => body,
         headers: (key) => {
           const header = req.headers[key];
           return Array.isArray(header) ? header[0] : header;
@@ -97,6 +100,8 @@ export const serve = (options: ServeHandlerOptions): any => {
           return Array.isArray(qs) ? qs[0] : qs;
         },
         transformResponse: ({ body, headers, status }) => {
+          console.log("\nresponse");
+          console.log(JSON.stringify(JSON.parse(body), null, 2));
           for (const [name, value] of Object.entries(headers)) {
             res.setHeader(name, value);
           }

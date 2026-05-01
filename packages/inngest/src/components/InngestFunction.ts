@@ -162,10 +162,10 @@ export class InngestFunction<
 
     if (this.opts.deferMeta) {
       // Defer functions are triggered by the backend-emitted
-      // `inngest/deferred.start` event and filtered to this function's
+      // `inngest/deferred.schedule` event and filtered to this function's
       // full ID. User-supplied triggers are ignored for defer functions.
       triggers.push({
-        event: internalEvents.DeferredStart,
+        event: internalEvents.DeferredSchedule,
         expression: `event.data._inngest.fn_slug == '${fnId}'`,
       });
     } else {
@@ -697,7 +697,7 @@ export namespace InngestFunction {
     /**
      * @internal — set by `createDefer`, not by user code. Marks this
      * function as a defer function so `getConfig` emits a
-     * `inngest/deferred.start` trigger and execution validates incoming
+     * `inngest/deferred.schedule` trigger and execution validates incoming
      * event data against the schema.
      */
     deferMeta?: {

@@ -185,7 +185,7 @@ export enum internalEvents {
    * Triggers a defer (companion) function. The backend emits this, carrying the
    * companion's function slug and the user-supplied input.
    */
-  DeferredStart = "inngest/deferred.start",
+  DeferredSchedule = "inngest/deferred.schedule",
 }
 
 export const logPrefix: string = "[Inngest]";
