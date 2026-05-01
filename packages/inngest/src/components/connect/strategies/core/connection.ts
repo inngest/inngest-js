@@ -41,6 +41,7 @@ import { HeartbeatManager } from "./heartbeat.ts";
 import { RequestProcessor } from "./requestProcessor.ts";
 import { StatusReporter } from "./statusReporter.ts";
 import type { BaseConnectionConfig } from "./types.ts";
+import { WAKE_REASON, type WakeReason } from "./types.ts";
 
 /**
  * Connection object representing an active WebSocket connection.
@@ -122,13 +123,23 @@ export class ConnectionCore {
 
   // Wake signal for the reconcile loop
   private wakeSignal: { promise: Promise<void>; resolve: () => void };
+  // Reasons accumulated since the last loop wake. Read + cleared by the loop.
+  private pendingWakeReasons: WakeReason[] = [];
 
   // Whether we've ever successfully connected (used to distinguish
   // CONNECTING from RECONNECTING state transitions).
   private hasConnectedBefore = false;
 
+  // Shutdown diagnostics: periodic "still draining" dump logged while the
+  // drain is outstanding. Started in close(), cleared in teardown.
+  private shutdownDumpInterval: ReturnType<typeof setInterval> | undefined;
+
+  // Cadence for the periodic "still draining" debug dump.
+  private static readonly SHUTDOWN_DUMP_INTERVAL_MS = 60_000;
+
   // Loop promise — resolved when the reconcile loop exits
   private loopPromise: Promise<void> | undefined;
+  private closePromise: Promise<void> | undefined;
 
   // First-ready resolution — resolves start() when first connection is ready
   private resolveFirstReady: (() => void) | undefined;
@@ -176,7 +187,7 @@ export class ConnectionCore {
       },
     };
 
-    const wakeSignalRef = { wake: () => this.wake() };
+    const wakeSignalRef = { wake: (reason?: WakeReason) => this.wake(reason) };
 
     const self = this;
 
@@ -262,6 +273,13 @@ export class ConnectionCore {
    * connection closed).
    */
   async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+
+    this.closePromise = this.closeOnce();
+    return this.closePromise;
+  }
+
+  private async closeOnce(): Promise<void> {
     const inFlightCount = Object.keys(
       this._inProgressRequests.requestLeases,
     ).length;
@@ -269,7 +287,14 @@ export class ConnectionCore {
       { inFlightCount },
       "Shutting down, waiting for in-flight requests",
     );
+    // Flip the shutdown flag before starting any timers so the periodic
+    // dump guard (`if (!this._shutdownRequested) return`) cannot observe a
+    // stale `false` on its first tick.
     this._shutdownRequested = true;
+    // Verbose per-request dump (debug-only) at drain start so operators can
+    // immediately see which runs are holding the shutdown.
+    this.dumpInFlightForShutdown("drain-start");
+    this.startShutdownInFlightDumpTimer();
 
     if (this._activeConnection?.ws.readyState === WebSocket.OPEN) {
       this._activeConnection.ws.send(
@@ -287,7 +312,7 @@ export class ConnectionCore {
       );
     }
 
-    this.wake();
+    this.wake(WAKE_REASON.ShutdownRequested);
 
     if (this.loopPromise) {
       await this.loopPromise;
@@ -315,9 +340,14 @@ export class ConnectionCore {
     this.wakeSignal = { promise, resolve: resolve! };
   }
 
-  private wake(): void {
-    this.wakeSignal.resolve();
-    this.resetWakeSignal();
+  private wake(reason: WakeReason = WAKE_REASON.Unknown): void {
+    // Only the first pending wake needs to resolve the parked loop; later
+    // wakes are accumulated and consumed together on the next iteration.
+    const shouldResolve = this.pendingWakeReasons.length === 0;
+    this.pendingWakeReasons.push(reason);
+    if (shouldResolve) {
+      this.wakeSignal.resolve();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -343,12 +373,84 @@ export class ConnectionCore {
     return Object.keys(this._inProgressRequests.requestLeases).length > 0;
   }
 
+  /**
+   * Debug-level "still draining" dump emitted at drain start and periodically
+   * thereafter while in-flight requests are holding the shutdown. One summary
+   * line plus one line per request carrying `requestId`, `runId`, `stepId`,
+   * `functionSlug`, `ageMs`, and `sinceLastLeaseExtendMs`. Does not affect
+   * info/warn logs.
+   *
+   * `requestLeases` drives the reconcile-loop exit gate, so use it as the
+   * single source of truth for the in-flight set; `requestMeta` carries the
+   * enrichment fields and is kept in sync alongside the lease map.
+   */
+  private dumpInFlightForShutdown(reason: string): void {
+    const leaseIds = Object.keys(this._inProgressRequests.requestLeases);
+    if (leaseIds.length === 0) return;
+    const now = Date.now();
+    const ages: number[] = [];
+    for (const id of leaseIds) {
+      const m = this._inProgressRequests.requestMeta[id];
+      if (m?.leaseAcquiredAt) ages.push(now - m.leaseAcquiredAt);
+    }
+
+    this.callbacks.logger.debug(
+      {
+        reason,
+        inFlightCount: leaseIds.length,
+        oldestAgeMs: ages.length > 0 ? Math.max(...ages) : undefined,
+      },
+      "Shutdown: still draining",
+    );
+
+    for (const id of leaseIds) {
+      const m = this._inProgressRequests.requestMeta[id];
+      if (!m) continue;
+      this.callbacks.logger.debug(
+        {
+          reason,
+          requestId: m.requestId,
+          runId: m.runId,
+          stepId: m.stepId,
+          functionSlug: m.functionSlug,
+          appId: m.appId,
+          ageMs: m.leaseAcquiredAt ? now - m.leaseAcquiredAt : undefined,
+          sinceLastLeaseExtendMs: m.leaseLastExtendedAt
+            ? now - m.leaseLastExtendedAt
+            : undefined,
+        },
+        "Shutdown: still draining in-flight request",
+      );
+    }
+  }
+
+  private startShutdownInFlightDumpTimer(): void {
+    if (this.shutdownDumpInterval) return;
+    this.shutdownDumpInterval = setInterval(() => {
+      if (!this._shutdownRequested) return;
+      this.dumpInFlightForShutdown("periodic");
+      // Wake the loop so its "Reconcile loop woken" line emits a fresh
+      // state snapshot alongside the in-flight dump. Loop will park again
+      // immediately if nothing has changed.
+      this.wake(WAKE_REASON.ShutdownStillPending);
+    }, ConnectionCore.SHUTDOWN_DUMP_INTERVAL_MS);
+  }
+
+  private stopShutdownInFlightDumpTimer(): void {
+    if (this.shutdownDumpInterval) {
+      clearInterval(this.shutdownDumpInterval);
+      this.shutdownDumpInterval = undefined;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Reconcile loop
   // ---------------------------------------------------------------------------
 
   private async reconcileLoop(initialAttempt: number): Promise<void> {
     let attempt = initialAttempt;
+
+    this.callbacks.logger.debug({ initialAttempt }, "Reconcile loop entered");
 
     while (true) {
       // Exit condition: shutdown requested + no in-flight requests
@@ -445,6 +547,10 @@ export class ConnectionCore {
                 ).finish(),
               ),
             );
+            this.callbacks.logger.info(
+              { connectionId: conn.id },
+              "Sent WORKER_READY",
+            );
           }
 
           // Flush any buffered responses via HTTP now that we're active.
@@ -490,10 +596,18 @@ export class ConnectionCore {
         }
       }
 
-      // Wait for something to change
-      await this.wakeSignal.promise;
+      // Wait for something to change. If a wake fired while this loop was
+      // doing async work above, pendingWakeReasons is already populated; don't
+      // wait on the replacement wakeSignal or the wake can be missed.
+      if (this.pendingWakeReasons.length === 0) {
+        await this.wakeSignal.promise;
+      }
+      const reasons = this.pendingWakeReasons;
+      this.pendingWakeReasons = [];
+      this.resetWakeSignal();
       this.callbacks.logger.debug(
         {
+          reasons,
           shutdownRequested: this._shutdownRequested,
           hasActiveConnection: !!this._activeConnection,
           activeConnectionDead: this._activeConnection?.dead,
@@ -502,9 +616,19 @@ export class ConnectionCore {
       );
     }
 
+    this.callbacks.logger.debug(
+      {
+        shutdownRequested: this._shutdownRequested,
+        inFlightCount: Object.keys(this._inProgressRequests.requestLeases)
+          .length,
+      },
+      "Reconcile loop exiting",
+    );
+
     // Teardown
     this.heartbeatManager.stop();
     this.statusReporter.stop();
+    this.stopShutdownInFlightDumpTimer();
     this._activeConnection?.close();
     this._activeConnection = undefined;
     this._drainingConnection?.close();
@@ -540,7 +664,7 @@ export class ConnectionCore {
       if (this._activeConnection?.id === connectionId) {
         this._activeConnection = undefined;
       }
-      this.wake();
+      this.wake(WAKE_REASON.WsError);
     };
 
     ws.onclose = (ev) => {
@@ -561,7 +685,7 @@ export class ConnectionCore {
       if (this._activeConnection?.id === connectionId) {
         this._activeConnection = undefined;
       }
-      this.wake();
+      this.wake(WAKE_REASON.WsClose);
     };
 
     // Message handler for post-handshake messages
@@ -581,7 +705,7 @@ export class ConnectionCore {
         // establishes a replacement.
         this._drainingConnection = this._activeConnection;
         this._activeConnection = undefined;
-        this.wake();
+        this.wake(WAKE_REASON.GatewayClosing);
         return;
       }
 

@@ -13,12 +13,13 @@ import {
 } from "../helpers/consts.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
-  allProcessEnv,
   checkModeConfiguration,
   type Env,
   getPlatformName,
+  getProcessEnv,
   inngestHeaders,
   parseAsBoolean,
+  protectEnv,
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
@@ -33,7 +34,13 @@ import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
+import {
+  hashEventKey,
+  hashSigningKey,
+  removeSigningKeyPrefix,
+  stringify,
+  timingSafeEqual,
+} from "../helpers/strings.ts";
 import { isRecord, type MaybePromise } from "../helpers/types.ts";
 import type { Logger } from "../middleware/logger.ts";
 import {
@@ -429,7 +436,7 @@ export class InngestCommHandler<
    */
   private readonly fns: Record<string, FnRegistryEntry> = {};
 
-  private env: Env = allProcessEnv();
+  private env: Env = getProcessEnv();
 
   private allowExpiredSignatures: boolean;
 
@@ -721,7 +728,7 @@ export class InngestCommHandler<
     // `process.env`; some platforms may not provide all the necessary
     // environment variables or may use two sources.
     // Update both handler's env and client's env to ensure consistency.
-    this.env = { ...allProcessEnv(), ...env };
+    this.env = protectEnv({ ...getProcessEnv(), ...env });
     this.client.setEnvVars(this.env);
 
     const headerPromises = forwardedHeaders.map(async (header) => {
@@ -1258,7 +1265,36 @@ export class InngestCommHandler<
         }),
       );
       actionResponseVersion = rawRes.version;
-      return prepareActionRes(rawRes);
+      const prepared = await prepareActionRes(rawRes);
+
+      // Unauthenticated responses must not leak SDK identification headers,
+      // so we strip every `x-inngest-*` header except `x-inngest-sdk-handled`
+      // (which the Inngest backend uses to know that the SDK produced the
+      // response, useful for troubleshooting). `User-Agent` is also stripped
+      // since it advertises the SDK and version. In dev mode, signature
+      // validation short-circuits to success so this branch is a no-op.
+      const validation = await signatureValidation;
+      if (!validation.success) {
+        const filteredHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(prepared.headers)) {
+          const lower = k.toLowerCase();
+          if (lower === "user-agent") {
+            // User-Agent contains the SDK version
+            continue;
+          }
+          if (
+            lower.startsWith("x-inngest-") &&
+            lower !== headerKeys.SdkHandled.toLowerCase()
+          ) {
+            continue;
+          }
+          filteredHeaders[k] = v;
+        }
+
+        return { ...prepared, headers: filteredHeaders };
+      }
+
+      return prepared;
     };
 
     // Only wrap POST requests with the wrapRequest middleware chain.
@@ -1569,29 +1605,28 @@ export class InngestCommHandler<
           );
 
           return {
-            status: 500,
+            status: 401,
             headers: {
               "Content-Type": "application/json",
             },
-            body: stringify(
-              serializeError(
-                new Error(
-                  "Missing request body when executing, possibly due to missing request body middleware",
-                ),
-              ),
-            ),
+            body: stringify({ message: "Unauthorized" }),
             version: undefined,
           };
         }
 
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
+          this.client[internalLoggerSymbol].error(
+            { err: validationResult.err },
+            "Signature validation failed",
+          );
+
           return {
             status: 401,
             headers: {
               "Content-Type": "application/json",
             },
-            body: stringify(serializeError(validationResult.err)),
+            body: stringify({ message: "Unauthorized" }),
             version: undefined,
           };
         }
@@ -1923,6 +1958,29 @@ export class InngestCommHandler<
       const env = (await getHeaders())[headerKeys.Environment] ?? null;
 
       if (method === "GET") {
+        // In cloud mode, introspection requires a valid signature. We don't
+        // serve an unauthenticated introspection body to anonymous callers
+        // because it leaks deployment fingerprint (mode, function count,
+        // event/signing key presence).
+        if (this.client.mode === "cloud") {
+          const validationResult = await signatureValidation;
+          if (!validationResult.success) {
+            this.client[internalLoggerSymbol].error(
+              { err: validationResult.err },
+              "Signature validation failed",
+            );
+
+            return {
+              status: 401,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify({ message: "Unauthorized" }),
+              version: undefined,
+            };
+          }
+        }
+
         return {
           status: 200,
           body: stringify(
@@ -2086,11 +2144,10 @@ export class InngestCommHandler<
 
     return {
       status: 405,
-      body: JSON.stringify({
-        message: `No action found; expected POST, PUT, or GET but received "${method}"`,
-        mode: this.client.mode,
-      }),
-      headers: {},
+      body: JSON.stringify({ message: "Method not allowed" }),
+      headers: {
+        "Content-Type": "application/json",
+      },
       version: undefined,
     };
   }
@@ -2346,7 +2403,7 @@ export class InngestCommHandler<
       functions: registerBody.functions,
       inspection: introspectionBody,
       platform: getPlatformName({
-        ...allProcessEnv(),
+        ...getProcessEnv(),
         ...this.env,
       }),
       sdk_author: "inngest",
@@ -2409,6 +2466,25 @@ export class InngestCommHandler<
           throw new Error("Signature validation failed");
         }
 
+        // For the signing keys, only send the first 12 characters of the hash.
+        // It's technically safe to send the full hash since the request was
+        // authenticated, but we'll play it safe and only send the first 12
+        // characters. 12 characters is enough to uniquely identify the key
+        // without revealing the full hash.
+        let signingKeyHash: string | null = null;
+        if (this.hashedSigningKey) {
+          signingKeyHash = removeSigningKeyPrefix(this.hashedSigningKey).slice(
+            0,
+            12,
+          );
+        }
+        let signingKeyFallbackHash: string | null = null;
+        if (this.hashedSigningKeyFallback) {
+          signingKeyFallbackHash = removeSigningKeyPrefix(
+            this.hashedSigningKeyFallback,
+          ).slice(0, 12);
+        }
+
         introspection = {
           ...introspection,
           authentication_succeeded: true,
@@ -2431,8 +2507,8 @@ export class InngestCommHandler<
           sdk_version: version,
           serve_origin: this.serveOrigin ?? null,
           serve_path: this.servePath ?? null,
-          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-          signing_key_hash: this.hashedSigningKey ?? null,
+          signing_key_fallback_hash: signingKeyFallbackHash,
+          signing_key_hash: signingKeyHash,
         } satisfies AuthenticatedIntrospection;
       } catch {
         // Swallow signature validation error since we'll just return the
@@ -2622,7 +2698,7 @@ export class InngestCommHandler<
     key: string,
     body: string,
   ): Promise<string> {
-    const now = Date.now();
+    const now = Math.round(Date.now() / 1000);
     const mac = await signDataWithKey(
       body,
       key,
@@ -2634,7 +2710,10 @@ export class InngestCommHandler<
   }
 }
 
-class RequestSignature {
+/**
+ * @internal Exported for testing; not part of the public API.
+ */
+export class RequestSignature {
   public timestamp: string;
   public signature: string;
 
@@ -2653,9 +2732,15 @@ class RequestSignature {
       return false;
     }
 
-    const delta =
-      Date.now() - new Date(Number.parseInt(this.timestamp) * 1000).valueOf();
-    return delta > 1000 * 60 * 5;
+    const ts = Number.parseInt(this.timestamp, 10);
+    if (!Number.isFinite(ts)) {
+      return true;
+    }
+
+    const delta = Date.now() - ts * 1000;
+    // Clamp both ends: negative delta (future-skewed `t`) would otherwise give
+    // captured requests an unbounded replay
+    return Math.abs(delta) > 1000 * 60 * 5;
   }
 
   async #verifySignature({
@@ -2674,7 +2759,7 @@ class RequestSignature {
     }
 
     const mac = await signDataWithKey(body, signingKey, this.timestamp, logger);
-    if (mac !== this.signature) {
+    if (!timingSafeEqual(mac, this.signature)) {
       throw new Error("Invalid signature");
     }
   }

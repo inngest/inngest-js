@@ -11,13 +11,14 @@ import {
 } from "../helpers/consts.ts";
 import { createEntropy } from "../helpers/crypto.ts";
 import {
-  allProcessEnv,
   type Env,
   getFetch,
+  getProcessEnv,
   inngestHeaders,
   type Mode,
   normalizeUrl,
   parseAsBoolean,
+  protectEnv,
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
@@ -328,7 +329,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     this.id = id;
-    this._env = { ...allProcessEnv() };
+    this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
     this.inngestApi = new InngestApi({
@@ -370,9 +371,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * update the client with those values as requests come in.
    */
   public setEnvVars(
-    env: Record<string, string | undefined> = allProcessEnv(),
+    env: Record<string, string | undefined> = getProcessEnv(),
   ): this {
-    this._env = { ...this._env, ...env };
+    this._env = protectEnv({ ...this._env, ...env });
 
     return this;
   }

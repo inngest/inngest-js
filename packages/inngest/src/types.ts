@@ -1486,6 +1486,7 @@ export const functionConfigSchema = z.strictObject({
       }),
       z.strictObject({
         cron: z.string(),
+        jitter: z.string().optional(),
       }),
     ]),
   ),

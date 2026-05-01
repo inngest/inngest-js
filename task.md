@@ -131,5 +131,5 @@ Add way to immediately start the deferred function.
 pnpm -C packages/inngest exec biome check --fix
 
 // Run onDefer integration tests
-(export DEV_SERVER_ENABLED=0 && pnpm -C packages/inngest test:integration src/test/integration/onDefer.test.ts)
+(export DEV_SERVER_ENABLED=0 && pnpm -C packages/inngest test:integration src/test/integration/defer.test.ts)
 ```

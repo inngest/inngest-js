@@ -8,6 +8,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
  */
 type CronTrigger = {
   cron: string;
+  jitter?: string;
 };
 
 /**

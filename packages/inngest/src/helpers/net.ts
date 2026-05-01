@@ -2,6 +2,7 @@ import canonicalize from "canonicalize";
 import hashjs from "hash.js";
 import type { Logger } from "../middleware/logger.ts";
 import { logOnce } from "./log.ts";
+import { removeSigningKeyPrefix } from "./strings.ts";
 
 const { hmac, sha256 } = hashjs;
 
@@ -53,10 +54,8 @@ export function signWithHashJs(
   // raw bytes; it may be pertinent in the future to always parse, then
   // canonicalize the body to ensure it's consistent.
   const encoded = typeof data === "string" ? data : canonicalize(data);
-  // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
-  const key = signingKey.replace(/signkey-\w+-/, "");
   // biome-ignore lint/suspicious/noExplicitAny: intentional
-  const mac = hmac(sha256 as any, key)
+  const mac = hmac(sha256 as any, removeSigningKeyPrefix(signingKey))
     .update(encoded)
     .update(ts)
     .digest("hex");
@@ -74,7 +73,7 @@ async function signWithNative(
   ts: string,
 ): Promise<string> {
   const encoded = typeof data === "string" ? data : canonicalize(data);
-  const key = signingKey.replace(/signkey-\w+-/, "");
+  const key = removeSigningKeyPrefix(signingKey);
 
   let cryptoKey = cryptoKeyCache.get(key);
   if (!cryptoKey) {

@@ -11,7 +11,6 @@ import type { Logger } from "../../../../middleware/logger.ts";
 import {
   ConnectMessage,
   type ConnectMessage as ConnectMessageType,
-  type GatewayExecutorRequestData,
   GatewayMessageType,
   WorkerRequestAckData,
   WorkerRequestExtendLeaseAckData,
@@ -24,7 +23,11 @@ import {
 } from "../../messages.ts";
 import { ConnectionState } from "../../types.ts";
 import type { Connection, ConnectionCoreCallbacks } from "./connection.ts";
-import type { ConnectionAccessor, WakeSignal } from "./types.ts";
+import {
+  type ConnectionAccessor,
+  WAKE_REASON,
+  type WakeSignal,
+} from "./types.ts";
 
 function toError(value: unknown): Error {
   if (value instanceof Error) {
@@ -131,6 +134,7 @@ export class RequestProcessor {
     this.accessor.inProgressRequests.requestLeases[
       gatewayExecutorRequest.requestId
     ] = gatewayExecutorRequest.leaseId;
+    const leaseAcquiredAt = Date.now();
     this.accessor.inProgressRequests.requestMeta[
       gatewayExecutorRequest.requestId
     ] = {
@@ -141,6 +145,8 @@ export class RequestProcessor {
       envId: gatewayExecutorRequest.envId,
       functionSlug: gatewayExecutorRequest.functionSlug,
       accountId: gatewayExecutorRequest.accountId,
+      leaseAcquiredAt,
+      leaseLastExtendedAt: leaseAcquiredAt,
     };
 
     const inFlightCount = Object.keys(
@@ -180,7 +186,14 @@ export class RequestProcessor {
       };
 
       this.logger.debug(
-        { connectionId: latestConn.id, leaseId: currentLeaseId },
+        {
+          connectionId: latestConn.id,
+          leaseId: currentLeaseId,
+          requestId: gatewayExecutorRequest.requestId,
+          functionSlug: gatewayExecutorRequest.functionSlug,
+          runId: gatewayExecutorRequest.runId,
+          stepId: gatewayExecutorRequest.stepId,
+        },
         "Extending lease",
       );
 
@@ -219,6 +232,11 @@ export class RequestProcessor {
             ).finish(),
           ),
         );
+        const meta =
+          this.accessor.inProgressRequests.requestMeta[
+            gatewayExecutorRequest.requestId
+          ];
+        if (meta) meta.leaseLastExtendedAt = Date.now();
       } catch (err) {
         this.logger.warn(
           {
@@ -311,7 +329,7 @@ export class RequestProcessor {
 
       // Wake the loop if shutdown is pending and this was the last request
       if (this.accessor.shutdownRequested && !this.hasInFlightRequests()) {
-        this.wakeSignal.wake();
+        this.wakeSignal.wake(WAKE_REASON.RequestFinishedOnShutdown);
       }
     }
   }
@@ -340,6 +358,30 @@ export class RequestProcessor {
       connectMessage.payload,
     );
 
+    // Late lease-extend ACKs can arrive after a request has already cleaned up
+    // both maps in the completion or lease-lost path. This handler stays
+    // synchronous, so once we observe the request missing from either map we
+    // can safely ignore the ACK instead of recreating a stale lease entry.
+    const hasLease = Object.hasOwn(
+      this.accessor.inProgressRequests.requestLeases,
+      extendLeaseAck.requestId,
+    );
+    const meta =
+      this.accessor.inProgressRequests.requestMeta[extendLeaseAck.requestId];
+    if (!hasLease || !meta) {
+      this.logger.debug(
+        {
+          connectionId,
+          requestId: extendLeaseAck.requestId,
+          newLeaseId: extendLeaseAck.newLeaseId,
+          hadLease: hasLease,
+          hadMeta: !!meta,
+        },
+        "Ignoring extend lease ack for non-in-flight request",
+      );
+      return;
+    }
+
     this.logger.debug(
       { connectionId, newLeaseId: extendLeaseAck.newLeaseId },
       "Received extend lease ack",
@@ -349,9 +391,6 @@ export class RequestProcessor {
       this.accessor.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
         extendLeaseAck.newLeaseId;
     } else {
-      const meta =
-        this.accessor.inProgressRequests.requestMeta[extendLeaseAck.requestId];
-
       this.logger.error(
         {
           connectionId,
@@ -367,6 +406,20 @@ export class RequestProcessor {
       delete this.accessor.inProgressRequests.requestLeases[
         extendLeaseAck.requestId
       ];
+      // Also drop meta so the shutdown dump helper and debug-state snapshot
+      // don't report a request we've explicitly released the lease for.
+      delete this.accessor.inProgressRequests.requestMeta[
+        extendLeaseAck.requestId
+      ];
+
+      // If this was the last in-flight request and a shutdown has been
+      // requested, wake the reconcile loop so close() can observe the
+      // empty lease map and exit. Without this, the loop stays parked on
+      // wakeSignal.promise because the finally-block decrement in
+      // handleExecutorRequest never runs (user code is still hanging).
+      if (this.accessor.shutdownRequested && !this.hasInFlightRequests()) {
+        this.wakeSignal.wake(WAKE_REASON.LeaseLostOnShutdown);
+      }
     }
   }
 

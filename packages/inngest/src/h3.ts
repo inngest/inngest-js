@@ -40,6 +40,7 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { envKeys } from "./helpers/consts.ts";
 import { processEnv } from "./helpers/env.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 
@@ -91,7 +92,7 @@ export const serve = (
         method: () => event.method,
         url: () => {
           let scheme = "https";
-          if ((processEnv("NODE_ENV") ?? "dev").startsWith("dev")) {
+          if ((processEnv(envKeys.NodeEnv) ?? "dev").startsWith("dev")) {
             scheme = "http";
           }
 
