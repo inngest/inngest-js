@@ -220,6 +220,11 @@ export enum internalEvents {
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
   HttpRequest = "inngest/http.request",
+
+  /**
+   * Triggers a deferred function. The backend emits this.
+   */
+  DeferredSchedule = "inngest/deferred.schedule",
 }
 
 export const logPrefix: string = "[Inngest]";

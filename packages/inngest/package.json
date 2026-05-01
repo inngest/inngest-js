@@ -18,7 +18,7 @@
     "test:integration": "vitest run --config vitest.config.integration.ts",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
-    "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
+    "test:types": "tsc --noEmit --project tsconfig.types.json",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
     "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",

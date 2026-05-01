@@ -47,7 +47,7 @@ const runMissingStepExecution = async ({
       runId: "run",
       stepState,
       stepCompletionOrder: Object.keys(stepState),
-      isFailureHandler: false,
+      handlerKind: "main",
       requestedRunStep: hashId("missing-step"),
       reqArgs: [],
       headers: {},

@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
@@ -6,6 +7,7 @@ import {
   dummyEventKey,
   envKeys,
   headerKeys,
+  type internalEvents,
 } from "../helpers/consts.ts";
 import { createEntropy } from "../helpers/crypto.ts";
 import {
@@ -48,9 +50,10 @@ import {
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
+  type StepOptionsOrId,
   sendEventResponseSchema,
 } from "../types.ts";
-
+import { DeferredFunction } from "./DeferredFunction.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -1116,6 +1119,86 @@ export function builtInMiddleware(baseLogger: Logger) {
 }
 
 /**
+ * The `event` shape a defer handler receives. With a schema, `data`
+ * narrows to its inferred type; without one, it falls back to
+ * `Record<string, any>`.
+ */
+type DeferEvent<TSchema> = {
+  name: internalEvents.DeferredSchedule;
+  data: TSchema extends StandardSchemaV1<
+    infer D extends Record<string, unknown>
+  >
+    ? D
+    : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+      Record<string, any>;
+};
+
+/**
+ * Base ctx shape for a defer handler: the standard function context
+ * (`runId`, `attempt`, `group`, `step` with middleware step extensions)
+ * with `event`/`events` pinned to `inngest/deferred.schedule` and the
+ * schema-typed payload.
+ */
+type BaseDeferCtx<
+  TClient extends Inngest.Any,
+  TFnMiddleware extends Middleware.Class[] | undefined,
+  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+> = Omit<BaseContext<TClient>, "event" | "events" | "step"> & {
+  event: DeferEvent<TSchema>;
+  events: [DeferEvent<TSchema>];
+  step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
+    ApplyAllMiddlewareStepExtensions<
+      ClientOptionsFromInngest<TClient>["middleware"]
+    > &
+    ApplyAllMiddlewareStepExtensions<TFnMiddleware>;
+};
+
+/**
+ * Create a typed defer function. One `createDefer` call = one Inngest
+ * function. Returns a `DeferredFunction<TSchema>` so callers of `defer(id,
+ * { function, data })` get the data type inferred from the schema.
+ *
+ * Mirrors `inngest.createFunction(opts, handler)`, with three differences:
+ * the client is the first positional arg, `triggers` is not accepted (the
+ * SDK emits an implicit `inngest/deferred.schedule` trigger), and `schema`
+ * describes the payload that callers will send via `defer(id, { function,
+ * data })`.
+ *
+ * Pass the result to `serve()` alongside regular functions so the SDK
+ * registers it.
+ */
+export function createDefer<
+  TClient extends Inngest.Any,
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>>
+    | undefined = undefined,
+  const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
+  THandler extends Handler.Any = (
+    ctx: BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
+      ApplyAllMiddlewareCtxExtensions<
+        [...ReturnType<typeof builtInMiddleware>]
+      > &
+      ApplyAllMiddlewareCtxExtensions<
+        ClientOptionsFromInngest<TClient>["middleware"]
+      > &
+      ApplyAllMiddlewareCtxExtensions<TFnMiddleware> &
+      Inngest.DeferCtx,
+  ) => unknown,
+>(
+  client: TClient,
+  options: Inngest.CreateDeferInput<TFnMiddleware, TSchema>,
+  handler: THandler,
+): DeferredFunction<TSchema> {
+  const { schema, ...rest } = options;
+  return new DeferredFunction<TSchema>(
+    client,
+    rest,
+    handler as Handler.Any,
+    schema as TSchema,
+  );
+}
+
+/**
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
  *
@@ -1153,8 +1236,31 @@ export namespace Inngest {
   type ResolveTriggers<T> = T extends undefined ? [] : AsArray<NonNullable<T>>;
 
   /**
-   * Input type for createFunction that accepts raw trigger input (single, array, or undefined)
-   * while keeping all other fields from InngestFunction.Options.
+   * Adds the `defer` method to the handler context. `defer(idOrOptions,
+   * { function, data })` emits a `DeferAdd` opcode that triggers the
+   * referenced defer function (created via `createDefer`) with `data`
+   * validated against the function's schema. The data type is inferred
+   * from the function's schema.
+   */
+  export type DeferCtx = {
+    defer: <TFn extends DeferredFunction.Any>(
+      idOrOptions: StepOptionsOrId,
+      options: {
+        function: TFn;
+        data: TFn extends DeferredFunction<
+          StandardSchemaV1<infer D extends Record<string, unknown>>
+        >
+          ? D
+          : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+            Record<string, any>;
+      },
+    ) => void;
+  };
+
+  /**
+   * Input type for createFunction that accepts raw trigger input (single,
+   * array, or undefined) while keeping all other fields from
+   * InngestFunction.Options.
    */
   export type CreateFunctionInput<
     TFnMiddleware extends Middleware.Class[] | undefined,
@@ -1167,6 +1273,19 @@ export namespace Inngest {
     "triggers"
   > & {
     triggers?: TTriggers;
+    middleware?: TFnMiddleware;
+  };
+
+  /**
+   * Input type for `createDefer`. Same shape as `DeferredFunction.Options`
+   * plus `schema` (the StandardSchema describing `event.data` that flows
+   * to caller `defer(id, { function, data })` call sites) and `middleware`.
+   */
+  export type CreateDeferInput<
+    TFnMiddleware extends Middleware.Class[] | undefined,
+    TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  > = DeferredFunction.Options & {
+    schema?: TSchema;
     middleware?: TFnMiddleware;
   };
 
@@ -1198,7 +1317,8 @@ export namespace Inngest {
         ApplyAllMiddlewareCtxExtensions<
           ClientOptionsFromInngest<TClient>["middleware"]
         > &
-        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> & {
+        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> &
+        DeferCtx & {
           step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]

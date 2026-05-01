@@ -266,6 +266,9 @@ export enum StepOpCode {
 
   RunComplete = "RunComplete",
   DiscoveryRequest = "DiscoveryRequest",
+
+  DeferAdd = "DeferAdd",
+  DeferCancel = "DeferCancel",
 }
 
 /**

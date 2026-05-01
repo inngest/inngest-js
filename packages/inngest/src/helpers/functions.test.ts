@@ -31,6 +31,7 @@ describe("#parseFnData", () => {
         event: generateEvent(),
         events: [...Array.from(Array(5).keys())].map(() => generateEvent()),
         steps: {},
+        defers: {},
         ctx: {
           run_id: randomstr(),
           attempt: 0,
