@@ -1,4 +1,3 @@
-import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents, queryKeys } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
@@ -158,45 +157,7 @@ export class InngestFunction<
      */
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
-    const triggers: FunctionConfig["triggers"] = [];
-
-    if (this.opts.deferMeta) {
-      // Defer functions are triggered by the backend-emitted
-      // `inngest/deferred.schedule` event and filtered to this function's
-      // full ID. User-supplied triggers are ignored for defer functions.
-      triggers.push({
-        event: internalEvents.DeferredSchedule,
-        expression: `event.data._inngest.fn_slug == '${fnId}'`,
-      });
-    } else {
-      for (const trigger of this.opts.triggers ?? []) {
-        if (trigger.cron) {
-          const cronTrigger = trigger as { cron: string; jitter?: string };
-          triggers.push({
-            cron: cronTrigger.cron,
-            ...(cronTrigger.jitter ? { jitter: cronTrigger.jitter } : {}),
-          });
-          continue;
-        }
-
-        if (!trigger.event) {
-          continue;
-        }
-
-        // The invoke event is in the triggers if they used the `invoke` trigger
-        // helper. But we need to remove it in the config, or else the function
-        // will be triggered by any invoke.
-        let eventName = trigger.event;
-        if (eventName instanceof EventType) {
-          eventName = eventName.name;
-        }
-        if (eventName === internalEvents.FunctionInvoked) {
-          continue;
-        }
-
-        triggers.push({ event: eventName, expression: trigger.if });
-      }
-    }
+    const triggers = this.getConfigTriggers(fnId);
 
     const fn: FunctionConfig = {
       id: fnId,
@@ -284,6 +245,44 @@ export class InngestFunction<
     }
 
     return config;
+  }
+
+  /**
+   * Build the trigger list for this function's `getConfig` payload. Subclasses
+   * (e.g. `DeferredFunction`) override this to emit implicit triggers.
+   */
+  protected getConfigTriggers(_fnId: string): FunctionConfig["triggers"] {
+    const triggers: FunctionConfig["triggers"] = [];
+
+    for (const trigger of this.opts.triggers ?? []) {
+      if (trigger.cron) {
+        const cronTrigger = trigger as { cron: string; jitter?: string };
+        triggers.push({
+          cron: cronTrigger.cron,
+          ...(cronTrigger.jitter ? { jitter: cronTrigger.jitter } : {}),
+        });
+        continue;
+      }
+
+      if (!trigger.event) {
+        continue;
+      }
+
+      // The invoke event is in the triggers if they used the `invoke` trigger
+      // helper. But we need to remove it in the config, or else the function
+      // will be triggered by any invoke.
+      let eventName = trigger.event;
+      if (eventName instanceof EventType) {
+        eventName = eventName.name;
+      }
+      if (eventName === internalEvents.FunctionInvoked) {
+        continue;
+      }
+
+      triggers.push({ event: eventName, expression: trigger.if });
+    }
+
+    return triggers;
   }
 
   protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
@@ -697,16 +696,6 @@ export namespace InngestFunction {
      * regular handler.
      */
     onFailure?: TFailureHandler;
-
-    /**
-     * @internal — set by `createDefer`, not by user code. Marks this
-     * function as a defer function so `getConfig` emits a
-     * `inngest/deferred.schedule` trigger and execution validates incoming
-     * event data against the schema.
-     */
-    deferMeta?: {
-      schema?: StandardSchemaV1<Record<string, unknown>>;
-    };
 
     /**
      * Define a set of middleware that can be registered to hook into

@@ -48,8 +48,8 @@ import {
   type StepOptionsOrId,
 } from "../../types.ts";
 import { version } from "../../version.ts";
+import { DeferredFunction } from "../DeferredFunction.ts";
 import { internalLoggerSymbol } from "../Inngest.ts";
-import type { InngestFunction } from "../InngestFunction.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
@@ -126,7 +126,7 @@ const RUN_COMPLETE_STEP_ID = "complete";
  */
 type DeferFn = (
   idOrOptions: StepOptionsOrId,
-  options: { function: InngestFunction.Any; data: Record<string, unknown> },
+  options: { function: DeferredFunction.Any; data: Record<string, unknown> },
 ) => void;
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
@@ -1895,16 +1895,16 @@ class InngestExecutionEngine
    * schema (set via `createDefer`'s `opts.schema`).
    */
   private async validateDeferEventSchema(): Promise<void> {
-    const schema = this.options.fn.opts.deferMeta?.schema;
-    if (!schema) {
+    const fn = this.options.fn;
+    if (!(fn instanceof DeferredFunction) || !fn.schema) {
       return;
     }
 
     const eventData = this.fnArg.event?.data;
-    const result = await schema["~standard"].validate(eventData);
+    const result = await fn.schema["~standard"].validate(eventData);
     if (result.issues) {
       throw new Error(
-        `defer handler "${this.options.fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
+        `defer handler "${fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
   }
@@ -2510,14 +2510,14 @@ class InngestExecutionEngine
    */
   private buildDefer(stepHandler: StepHandler): DeferFn {
     return (idOrOptions, { function: deferFn, data }) => {
-      if (!deferFn.opts.deferMeta) {
+      if (!(deferFn instanceof DeferredFunction)) {
         throw new Error(
           `defer() received a function that was not created via createDefer(). Pass the result of createDefer(...) as the \`function\` option.`,
         );
       }
 
       const companionFnSlug = deferFn.id(this.options.client.id);
-      const schema = deferFn.opts.deferMeta.schema;
+      const { schema } = deferFn;
 
       let input: unknown = data;
       if (schema) {

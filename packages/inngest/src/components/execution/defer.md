@@ -32,7 +32,7 @@ const sendEmail = createDefer(
 );
 ```
 
-A defer function is a real Inngest function with its own retries, concurrency, and step state. It's triggered implicitly by `inngest/deferred.schedule` filtered to its own ID, so users don't wire triggers manually. Pass it to `serve({ functions: [...] })` alongside regular functions.
+A defer function is a `DeferredFunction` (a subclass of `InngestFunction`) with its own retries, concurrency, and step state. It's triggered implicitly by `inngest/deferred.schedule` filtered to its own ID, so users don't wire triggers manually. Pass it to `serve({ functions: [...] })` alongside regular functions; the comm handler identifies it via `instanceof DeferredFunction` and registers it with `handlerKind: "defer"`.
 
 `createDefer` is a pure function rather than a method on the Inngest client because we don't yet want to commit to a client-method signature; we may move it later.
 

@@ -62,6 +62,7 @@ import {
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
+import { DeferredFunction } from "./DeferredFunction.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { _internals } from "./execution/engine.ts";
 import {
@@ -490,11 +491,11 @@ export class InngestCommHandler<
 
     // Build the id -> entry registry. Each main fn contributes either a
     // single `main` entry or, when it has `onFailure`, a `main` + `failure`
-    // pair; each defer fn (created via `createDefer`, identified by
-    // `deferMeta`) contributes a single `defer` entry.
+    // pair; each `DeferredFunction` (created via `createDefer`) contributes
+    // a single `defer` entry.
     const entries: Record<string, FnRegistryEntry> = {};
     for (const fn of this.rawFns) {
-      const isDefer = Boolean(fn.opts.deferMeta);
+      const isDefer = fn instanceof DeferredFunction;
       const mainId = fn.id(this.client.id);
       const failureId = `${mainId}${InngestFunction.failureSuffix}`;
 

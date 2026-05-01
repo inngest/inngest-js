@@ -53,7 +53,7 @@ import {
   type StepOptionsOrId,
   sendEventResponseSchema,
 } from "../types.ts";
-
+import { DeferredFunction } from "./DeferredFunction.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -69,7 +69,6 @@ import {
   subscribe as realtimeSubscribe,
 } from "./realtime/subscribe/index.ts";
 import type { Realtime } from "./realtime/types";
-import type { DeferHandlerResult } from "./triggers/triggers.ts";
 import {
   type HandlerWithTriggers,
   isValidatable,
@@ -1156,9 +1155,8 @@ type BaseDeferCtx<
 
 /**
  * Create a typed defer function. One `createDefer` call = one Inngest
- * function. The returned value is a real `InngestFunction` at runtime but
- * is typed as a branded `DeferHandlerResult<TSchema>` so the schema flows
- * to callers of `defer(id, { function, data })`.
+ * function. Returns a `DeferredFunction<TSchema>` so callers of `defer(id,
+ * { function, data })` get the data type inferred from the schema.
  *
  * Mirrors `inngest.createFunction(opts, handler)`, with three differences:
  * the client is the first positional arg, `triggers` is not accepted (the
@@ -1190,19 +1188,14 @@ export function createDefer<
   client: TClient,
   options: Inngest.CreateDeferInput<TFnMiddleware, TSchema>,
   handler: THandler,
-): DeferHandlerResult<TSchema> {
+): DeferredFunction<TSchema> {
   const { schema, ...rest } = options;
-
-  const fn = new InngestFunction(
+  return new DeferredFunction<TSchema>(
     client,
-    {
-      ...rest,
-      triggers: [],
-      deferMeta: { schema },
-    },
+    rest,
     handler as Handler.Any,
+    schema as TSchema,
   );
-  return fn as unknown as DeferHandlerResult<TSchema>;
 }
 
 /**
@@ -1250,11 +1243,11 @@ export namespace Inngest {
    * from the function's schema.
    */
   export type DeferCtx = {
-    defer: <TFn extends DeferHandlerResult.Any>(
+    defer: <TFn extends DeferredFunction.Any>(
       idOrOptions: StepOptionsOrId,
       options: {
         function: TFn;
-        data: TFn extends DeferHandlerResult<
+        data: TFn extends DeferredFunction<
           StandardSchemaV1<infer D extends Record<string, unknown>>
         >
           ? D
@@ -1284,21 +1277,14 @@ export namespace Inngest {
   };
 
   /**
-   * Input type for `createDefer`. Mirrors `CreateFunctionInput` minus
-   * `triggers` (defer functions use an implicit `inngest/deferred.schedule`
-   * trigger), `deferMeta` (internal, set by `createDefer`), `onFailure`
-   * (not yet supported on defer functions), and `batchEvents` (each
-   * `defer(...)` call is its own run, so batching doesn't apply). Adds
-   * `schema`, the StandardSchema describing `event.data` that flows to
-   * caller `defer(id, { function, data })` call sites.
+   * Input type for `createDefer`. Same shape as `DeferredFunction.Options`
+   * plus `schema` (the StandardSchema describing `event.data` that flows
+   * to caller `defer(id, { function, data })` call sites) and `middleware`.
    */
   export type CreateDeferInput<
     TFnMiddleware extends Middleware.Class[] | undefined,
     TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
-  > = Omit<
-    InngestFunction.Options<InngestFunction.Trigger<string>[]>,
-    "triggers" | "onFailure" | "deferMeta" | "batchEvents"
-  > & {
+  > = DeferredFunction.Options & {
     schema?: TSchema;
     middleware?: TFnMiddleware;
   };

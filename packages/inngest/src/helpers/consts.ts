@@ -222,8 +222,7 @@ export enum internalEvents {
   HttpRequest = "inngest/http.request",
 
   /**
-   * Triggers a defer (companion) function. The backend emits this, carrying the
-   * companion's function slug and the user-supplied input.
+   * Triggers a deferred function. The backend emits this.
    */
   DeferredSchedule = "inngest/deferred.schedule",
 }
