@@ -100,3 +100,5 @@ On replay, the executor sends back a `defers` map of hashed step IDs it has alre
 - **Support aborting a `defer` call.** -- A `DeferAbort` opcode is reserved on the backend but the SDK doesn't yet emit it. Needs a user-facing API (e.g. `const { abort } = defer("id", { function, data })`) and the matching opcode emission.
 
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
+
+- **Middleware hook** -- We need a hook to make encryption and serialization work (e.g. `transformDeferInput`).
