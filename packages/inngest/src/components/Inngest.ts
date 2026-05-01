@@ -1286,17 +1286,18 @@ export namespace Inngest {
   /**
    * Input type for `createDefer`. Mirrors `CreateFunctionInput` minus
    * `triggers` (defer functions use an implicit `inngest/deferred.schedule`
-   * trigger), `deferMeta` (internal, set by `createDefer`), and
-   * `onFailure` (not yet supported on defer functions). Adds `schema` —
-   * the StandardSchema describing `event.data` that flows to caller
-   * `defer(id, { function, data })` call sites.
+   * trigger), `deferMeta` (internal, set by `createDefer`), `onFailure`
+   * (not yet supported on defer functions), and `batchEvents` (each
+   * `defer(...)` call is its own run, so batching doesn't apply). Adds
+   * `schema`, the StandardSchema describing `event.data` that flows to
+   * caller `defer(id, { function, data })` call sites.
    */
   export type CreateDeferInput<
     TFnMiddleware extends Middleware.Class[] | undefined,
     TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
   > = Omit<
     InngestFunction.Options<InngestFunction.Trigger<string>[]>,
-    "triggers" | "onFailure" | "deferMeta"
+    "triggers" | "onFailure" | "deferMeta" | "batchEvents"
   > & {
     schema?: TSchema;
     middleware?: TFnMiddleware;
