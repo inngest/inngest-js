@@ -1073,12 +1073,6 @@ class InngestExecutionEngine
           );
         }
 
-        // Opcode-only sync ops (e.g. `DeferAdd`): no local handler to
-        // run, just ship the op and resume the caller.
-        if (!steps[0].fn) {
-          return void (await this.checkpointOpcodeOnlyStep(steps[0]));
-        }
-
         // Otherwise we're good to start executing things right now.
         const result = await this.executeStep(steps[0]);
 
@@ -1421,19 +1415,6 @@ class InngestExecutionEngine
               return maybeReturnNewSteps();
             }
 
-            // Opcode-only sync ops (e.g. `DeferAdd`): no local handler
-            // to run, just ship the op and resume the caller.
-            const [onlyNewStep] = newSteps;
-            if (
-              newSteps.length === 1 &&
-              onlyNewStep &&
-              onlyNewStep.mode === StepMode.Sync &&
-              !onlyNewStep.fn
-            ) {
-              await this.checkpointOpcodeOnlyStep(onlyNewStep);
-              return;
-            }
-
             const stepResult = await this.tryExecuteStep(newSteps);
             if (stepResult) {
               this.devDebug(`executed step "${stepResult.id}" successfully`);
@@ -1590,25 +1571,10 @@ class InngestExecutionEngine
     }
 
     const newSteps = foundSteps.reduce((acc, step) => {
-      if (step.hasStepState) {
-        return acc;
+      if (!step.hasStepState) {
+        acc.push(step);
       }
 
-      // Defer ops live outside `stepState` — the backend tracks them in
-      // `priorDefers`. A memoized defer has no `hasStepState` but must
-      // not be re-emitted on replay.
-      if (this.state.priorDefers[step.hashedId]) {
-        return acc;
-      }
-
-      // Opcode-only sync ops (e.g. `DeferAdd`) are tracked in the lazy
-      // buffer and shipped from there. Exclude them so they aren't
-      // double-counted when callers also concat `lazyOps.drain()`.
-      if (!step.fn && step.mode === StepMode.Sync) {
-        return acc;
-      }
-
-      acc.push(step);
       return acc;
     }, [] as FoundStep[]);
 
@@ -1752,17 +1718,6 @@ class InngestExecutionEngine
         ...op,
         timing: interval,
       }));
-  }
-
-  /**
-   * Ship an opcode-only sync step (e.g. `DeferAdd`) through the checkpoint
-   * stream and resume the caller. No local handler runs; the opcode itself is
-   * the payload.
-   */
-  private async checkpointOpcodeOnlyStep(step: FoundStep): Promise<void> {
-    const op = this.state.lazyOps.push(step);
-    this.resumeStepWithResult(op);
-    await this.checkpoint([]);
   }
 
   /**
@@ -2273,12 +2228,29 @@ class InngestExecutionEngine
       const stepOptions = getStepOptions(args[0]);
       const opId = matchOp(stepOptions, ...args.slice(1));
 
-      // Opcode-only sync ops (e.g. `DeferAdd`) are fire-and-forget: we
-      // resolve them eagerly and buffer the op for lazy shipment rather
-      // than routing through the core loop. See `ARCHITECTURE.md`.
-      const isOpcodeOnlySync = isLazyOp(opts, opId);
+      // Opcode-only sync ops (e.g. `DeferAdd`) are fire-and-forget and
+      // not user-addressable as steps: they have no handler, no
+      // memoization, and shouldn't fire any step middleware (`wrapStep`,
+      // `transformStepInput`, `onStepStart`, etc.). Buffer the op for
+      // lazy shipment and return; the core loop, middleware pipeline,
+      // and `state.steps` are all bypassed. See `ARCHITECTURE.md`.
+      if (isLazyOp(opts, opId)) {
+        const hashedId = _internals.hashId(opId.id);
+        if (!this.state.priorDefers[hashedId]) {
+          this.state.lazyOps.push({
+            id: hashedId,
+            op: opId.op,
+            name: opId.name,
+            displayName: opId.displayName ?? opId.id,
+            opts: opId.opts,
+            userland: opId.userland,
+            data: null,
+          });
+        }
+        return;
+      }
 
-      if (this.state.executingStep && !isOpcodeOnlySync) {
+      if (this.state.executingStep) {
         /**
          * If a step is found after asynchronous actions during another step's
          * execution, everything is fine. The problem here is if we've found
@@ -2517,24 +2489,6 @@ class InngestExecutionEngine
         step.transformedResultPromise.catch((error) => {
           reject(error);
         });
-      } else if (isOpcodeOnlySync) {
-        // Opcode-only sync op (e.g. `DeferAdd`). On the first encounter,
-        // resolve the user's promise immediately and buffer the outgoing op
-        // to be shipped with the next response — a checkpoint, a step-ran,
-        // or a function-resolved.
-        //
-        // This path handles both standalone and nested-in-`step.run` calls
-        // uniformly. The nested case would otherwise deadlock (outer step
-        // awaits defer; defer awaits the core loop; loop is blocked on the
-        // outer step), and standalone calls get free batching.
-        //
-        // On replay, the backend tells us which defers it already has via
-        // `priorDefers`. Skip both buffering and reporting for those — they
-        // are fire-and-forget, so there's no user promise to resolve.
-        if (!this.state.priorDefers[hashedId]) {
-          const lazyOp = this.state.lazyOps.push(step);
-          this.resumeStepWithResult(lazyOp);
-        }
       } else {
         pushStepToReport(step);
       }

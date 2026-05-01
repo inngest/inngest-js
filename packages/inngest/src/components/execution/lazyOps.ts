@@ -1,9 +1,5 @@
 import { type OutgoingOp, StepMode } from "../../types.ts";
-import type {
-  FoundStep,
-  MatchOpFn,
-  StepToolOptions,
-} from "../InngestStepTools.ts";
+import type { MatchOpFn, StepToolOptions } from "../InngestStepTools.ts";
 
 /**
  * Buffer for opcode-only sync ops (e.g. `DeferAdd`). These ops need to be
@@ -36,21 +32,10 @@ export class LazyOps {
   }
 
   /**
-   * Buffer a step as a lazy op. Returns the `OutgoingOp` so the caller can
-   * also resume the user's step promise with it.
+   * Buffer an op for later shipment.
    */
-  push(step: FoundStep): OutgoingOp {
-    const op = {
-      id: step.hashedId,
-      op: step.op,
-      name: step.name,
-      displayName: step.displayName,
-      opts: step.opts,
-      userland: step.userland,
-      data: null,
-    };
+  push(op: OutgoingOp): void {
     this.buffer.push(op);
-    return op;
   }
 }
 
