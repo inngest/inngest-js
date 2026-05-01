@@ -12,10 +12,17 @@ export class LazyOps {
   private buffer: OutgoingOp[] = [];
 
   /**
-   * Whether the buffer has any ops waiting to ship.
+   * Number of ops waiting to ship.
    */
-  has(): boolean {
-    return this.buffer.length > 0;
+  get length(): number {
+    return this.buffer.length;
+  }
+
+  /**
+   * Whether the buffer already contains an op with the given hashed id.
+   */
+  hasId(id: string): boolean {
+    return this.buffer.some((op) => op.id === id);
   }
 
   /**

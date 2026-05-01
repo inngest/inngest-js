@@ -6,7 +6,8 @@ import {
   testNameFromFileUrl,
   waitFor,
 } from "@inngest/test-harness";
-import { expect, expectTypeOf, test, vi } from "vitest";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { createDefer } from "../../experimental.ts";
 import {
@@ -124,6 +125,74 @@ test("re-encountered defer does not trigger new deferred run", async () => {
   expect(deferState.counter).toBe(1);
 });
 
+test("defer ID collision", async () => {
+  // Defer IDs must be unique within a run. If a duplicate is detected, the SDK
+  // logs a warning and doesn't report the duplicate.
+
+  const parentState = createState({});
+  const deferState = createState({
+    count: 0,
+    index: null as number | null,
+  });
+
+  const internalLogger = spyLogger();
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    internalLogger,
+  });
+  const eventName = randomSuffix("evt");
+  const foo = createDefer(client, { id: "foo" }, async ({ event, runId }) => {
+    deferState.runId = runId;
+    deferState.index = event.data.index;
+    deferState.count++;
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId }) => {
+      parentState.runId = runId;
+      defer("dupe", { function: foo, data: { index: 0 } });
+
+      // Doesn't report
+      defer("dupe", { function: foo, data: { index: 1 } });
+    },
+  );
+  await createTestApp({
+    client,
+    functions: [fn, foo],
+    serve: createServer,
+  });
+
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+  await deferState.waitForRunComplete();
+  expect(deferState.index).toBe(0);
+  expect(internalLogger.warn).toHaveBeenCalledWith(
+    expect.objectContaining({
+      id: "dupe",
+      runId: parentState.runId,
+    }),
+    "defer skipped: duplicate ID within run",
+  );
+
+  // Wait long enough to give the 2nd defer a chance to trigger (it shouldn't)
+  await sleep(5000);
+  expect(deferState.count).toBe(1);
+});
+
+test("createDefer rejects ids that break the CEL trigger expression", () => {
+  const client = new Inngest({ id: "test", isDev: true });
+  for (const id of ["foo'bar", "foo\\bar", "foo\nbar"]) {
+    expect(() => {
+      createDefer(client, { id }, async () => {});
+    }).toThrow();
+  }
+});
+
 test("defer in step", async () => {
   // Can call `defer` within a step
 
@@ -205,6 +274,48 @@ matrixCheckpointing("defer at end of function", async (checkpointing) => {
   await deferState.waitForRunComplete();
   expect(parentState.requestCount).toBe(1);
 });
+
+matrixCheckpointing(
+  "defer fires when parent throws after defer() call",
+  async (checkpointing) => {
+    // Ensure that `defer()` still works even if an error is thrown immediately
+    // after it
+
+    const deferState = createState({});
+    const parentState = createState({});
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      checkpointing,
+    });
+    const eventName = randomSuffix("evt");
+    const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
+      deferState.runId = runId;
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ defer, runId }) => {
+        parentState.runId = runId;
+        defer("foo", { function: foo, data: {} });
+        throw new Error("oh no");
+      },
+    );
+    await createTestApp({
+      client,
+      functions: [fn, foo],
+      serve: createServer,
+    });
+
+    await client.send({ name: eventName, data: {} });
+    await parentState.waitForRunFailed();
+    await deferState.waitForRunComplete();
+  },
+);
 
 test("multiple defer functions are independently triggered", async () => {
   const parentState = createState({
@@ -319,60 +430,90 @@ test("multiple steps in defer handler", async () => {
   expect(deferState.steps).toEqual(["a", "b"]);
 });
 
-test("schema validation fails in parent function", async () => {
-  // Schema mismatch at the call site is logged and the defer is skipped: the
+describe("schema validation fails in parent function", () => {
+  // Schema failure at the call site is logged and the defer is skipped: the
   // parent run completes normally and the defer handler never fires.
 
-  const state = createState({
-    deferHandlerReached: false,
-  });
-
-  const internalLogger = spyLogger();
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    internalLogger,
-  });
-  const eventName = randomSuffix("evt");
-  const foo = createDefer(
-    client,
-    { id: "foo", schema: z.object({ msg: z.string() }) },
-    async () => {
-      state.deferHandlerReached = true;
+  // A buggy or compromised StandardSchemaV1 validator that throws synchronously
+  // must not escape `defer()` — fire-and-forget is the contract.
+  const throwingSchema: StandardSchemaV1<Record<string, unknown>> = {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: () => {
+        throw new Error("validator boom");
+      },
     },
-  );
-  const fn = client.createFunction(
+  };
+
+  for (const c of [
     {
-      id: "fn",
-      retries: 0,
-      triggers: { event: eventName },
+      name: "validator returns issues",
+      schema: z.object({ msg: z.string() }),
+      expectedLogPayload: {
+        issues: expect.any(Array),
+      },
+      expectedLogMessage: "defer skipped: schema validation failed",
     },
-    async ({ defer, runId }) => {
-      state.runId = runId;
-      defer("foo", { function: foo, data: { msg: 123 } as never });
+    {
+      name: "validator throws",
+      schema: throwingSchema,
+      expectedLogPayload: {},
+      expectedLogMessage: expect.stringContaining("defer skipped"),
     },
-  );
-  await createTestApp({
-    client,
-    functions: [fn, foo],
-    serve: createServer,
-  });
+  ]) {
+    test(c.name, async () => {
+      const state = createState({
+        deferHandlerReached: false,
+      });
 
-  await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
+      const internalLogger = spyLogger();
+      const client = new Inngest({
+        id: randomSuffix(testFileName),
+        isDev: true,
+        internalLogger,
+      });
+      const eventName = randomSuffix("evt");
+      const foo = createDefer(
+        client,
+        { id: "foo", schema: c.schema },
+        async () => {
+          state.deferHandlerReached = true;
+        },
+      );
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          triggers: { event: eventName },
+        },
+        async ({ defer, runId }) => {
+          state.runId = runId;
+          defer("foo", { function: foo, data: { msg: 123 } });
+        },
+      );
+      await createTestApp({
+        client,
+        functions: [fn, foo],
+        serve: createServer,
+      });
 
-  // Wait long enough to give the defer handler a chance to run (it shouldn't)
-  await sleep(2000);
-  expect(state.deferHandlerReached).toBe(false);
+      await client.send({ name: eventName, data: {} });
+      await state.waitForRunComplete();
 
-  expect(internalLogger.error).toHaveBeenCalledWith(
-    expect.objectContaining({
-      runId: state.runId,
-      fnSlug: expect.stringContaining("foo"),
-      issues: expect.any(Array),
-    }),
-    "defer skipped: schema validation failed",
-  );
+      // Wait long enough to give the defer handler a chance to run (it shouldn't)
+      await sleep(2000);
+      expect(state.deferHandlerReached).toBe(false);
+
+      expect(internalLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: state.runId,
+          ...c.expectedLogPayload,
+        }),
+        c.expectedLogMessage,
+      );
+    });
+  }
 });
 
 test("schema validation fails within defer handler", async () => {
@@ -604,12 +745,12 @@ describe("middleware", () => {
     const client = new Inngest({
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [MW],
     });
     const fooDefer = createDefer(client, { id: "foo" }, async () => {});
     const fn = client.createFunction(
       {
         id: "fn",
+        middleware: [MW],
         triggers: { event: "test" },
       },
       async ({ defer, runId }) => {

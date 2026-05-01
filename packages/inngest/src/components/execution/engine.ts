@@ -1235,6 +1235,47 @@ class InngestExecutionEngine
           this.postCheckpointStream();
         }
 
+        // Buffered defer ops were recorded by user code that ran successfully
+        // before the throw, so they should ship even when the function
+        // ultimately errors. Bundle them with the run's terminal error op
+        // into a `steps-found` response, mirroring the `function-resolved`
+        // bundling for `RunComplete`. The asyncCheckpointing rejection path
+        // achieves the same intent via a final checkpoint call; pure-async
+        // has no checkpoint channel, so we ship via the response body.
+        const lazyOps = this.state.lazyOps.drain();
+        if (lazyOps.length) {
+          const transformed = await this.transformOutput({
+            error: checkpoint.error,
+          });
+          if (transformed.type !== "function-rejected") {
+            return transformed;
+          }
+
+          let terminalOp: StepOpCode.StepFailed | StepOpCode.StepError;
+          if (isFinal) {
+            terminalOp = StepOpCode.StepFailed;
+          } else {
+            terminalOp = StepOpCode.StepError;
+          }
+
+          const steps: OutgoingOp[] = [
+            ...lazyOps,
+            {
+              op: terminalOp,
+              id: hashId(RUN_COMPLETE_STEP_ID),
+              error: checkpoint.error,
+            },
+          ];
+          if (isNonEmpty(steps)) {
+            return {
+              type: "steps-found",
+              ctx: transformed.ctx,
+              ops: transformed.ops,
+              steps,
+            };
+          }
+        }
+
         return this.transformOutput({ error: checkpoint.error });
       },
 
@@ -1251,7 +1292,7 @@ class InngestExecutionEngine
         // If the step's handler buffered any lazy ops (e.g. `defer` calls),
         // ship them alongside the step result instead of losing them in the
         // `step-ran` → single-op response.
-        if (!this.state.lazyOps.has()) {
+        if (this.state.lazyOps.length === 0) {
           return stepRanHandler(stepResult);
         }
 
@@ -1354,7 +1395,7 @@ class InngestExecutionEngine
           // when the function ultimately errors.
           if (
             this.state.checkpointingStepBuffer.length ||
-            this.state.lazyOps.has()
+            this.state.lazyOps.length > 0
           ) {
             const fallback = await attemptCheckpointAndResume(
               undefined,
@@ -1903,7 +1944,9 @@ class InngestExecutionEngine
     const eventData = this.fnArg.event?.data;
     const result = await fn.schema["~standard"].validate(eventData);
     if (result.issues) {
-      throw new Error(
+      // Fail without retries. The event data won't change so there's no point
+      // in retrying. This matches what we do for normal triggers.
+      throw new NonRetriableError(
         `defer handler "${fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
@@ -2236,17 +2279,29 @@ class InngestExecutionEngine
       // and `state.steps` are all bypassed. See `ARCHITECTURE.md`.
       if (isLazyOp(opts, opId)) {
         const hashedId = _internals.hashId(opId.id);
-        if (!this.state.priorDefers[hashedId]) {
-          this.state.lazyOps.push({
-            id: hashedId,
-            op: opId.op,
-            name: opId.name,
-            displayName: opId.displayName ?? opId.id,
-            opts: opId.opts,
-            userland: opId.userland,
-            data: null,
-          });
+        if (this.state.priorDefers[hashedId]) {
+          return;
         }
+        if (this.state.lazyOps.hasId(hashedId)) {
+          // defer.md: "defer IDs must be unique within a run". Skip the
+          // duplicate and warn so the user can spot the bug — silently
+          // shipping two ops with identical hashed ids relies on backend
+          // dedup and hides the mistake.
+          this.options.client[internalLoggerSymbol].warn(
+            { runId: this.fnArg.runId, id: opId.userland?.id ?? opId.id },
+            "defer skipped: duplicate ID within run",
+          );
+          return;
+        }
+        this.state.lazyOps.push({
+          id: hashedId,
+          op: opId.op,
+          name: opId.name,
+          displayName: opId.displayName ?? opId.id,
+          opts: opId.opts,
+          userland: opId.userland,
+          data: null,
+        });
         return;
       }
 
@@ -2517,49 +2572,57 @@ class InngestExecutionEngine
       const log = this.options.client[internalLoggerSymbol];
       const runId = this.fnArg.runId;
 
-      if (!(deferFn instanceof DeferredFunction)) {
-        log.error(
-          { runId },
-          "defer skipped: function not created via createDefer",
-        );
-        return;
-      }
-
-      const companionFnSlug = deferFn.id(this.options.client.id);
-      const { schema } = deferFn;
-
-      let input: unknown = data;
-      if (schema) {
-        const result = schema["~standard"].validate(data);
-        if (result instanceof Promise) {
+      try {
+        if (!(deferFn instanceof DeferredFunction)) {
           log.error(
-            { runId, fnSlug: companionFnSlug },
-            "defer() requires a synchronous schema validator. The defer call was skipped.",
+            { runId },
+            "defer skipped: function not created via createDefer",
           );
           return;
         }
-        if (result.issues) {
-          log.error(
-            { runId, fnSlug: companionFnSlug, issues: result.issues },
-            "defer skipped: schema validation failed",
-          );
-          return;
-        }
-        input = result.value ?? data;
-      }
 
-      void stepHandler({
-        args: [idOrOptions, input],
-        matchOp: (stepOptions, inputArg) => ({
-          id: stepOptions.id,
-          mode: StepMode.Sync,
-          op: StepOpCode.DeferAdd,
-          name: stepOptions.name ?? stepOptions.id,
-          displayName: stepOptions.name ?? stepOptions.id,
-          opts: { fn_slug: companionFnSlug, input: inputArg },
-          userland: { id: stepOptions.id },
-        }),
-      });
+        const { schema } = deferFn;
+        const deferFnSlug = deferFn.id(this.options.client.id);
+
+        let input: unknown = data;
+        if (schema) {
+          const result = schema["~standard"].validate(data);
+          if (result instanceof Promise) {
+            log.error(
+              { runId },
+              "defer() requires a synchronous schema validator. The defer call was skipped.",
+            );
+            return;
+          }
+          if (result.issues) {
+            log.error(
+              { runId, issues: result.issues },
+              "defer skipped: schema validation failed",
+            );
+            return;
+          }
+          input = result.value ?? data;
+        }
+
+        void stepHandler({
+          args: [idOrOptions, input],
+          matchOp: (stepOptions, inputArg) => ({
+            id: stepOptions.id,
+            mode: StepMode.Sync,
+            op: StepOpCode.DeferAdd,
+            name: stepOptions.name ?? stepOptions.id,
+            displayName: stepOptions.name ?? stepOptions.id,
+            opts: { fn_slug: deferFnSlug, input: inputArg },
+            userland: { id: stepOptions.id },
+          }),
+        }).catch((err: unknown) => {
+          log.error({ runId, err }, "defer skipped: unexpected error");
+        });
+      } catch (err) {
+        // Fire-and-forget: a misbehaving schema validator, malformed args, or
+        // any other unexpected throw must not derail the surrounding handler.
+        log.error({ runId, err }, "defer skipped: unexpected error");
+      }
     };
   }
 

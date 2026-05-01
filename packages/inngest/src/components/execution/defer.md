@@ -108,3 +108,7 @@ On replay, the executor sends back a `defers` map of hashed step IDs it has alre
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
 
 - **Middleware hook** -- We need a hook to make encryption and serialization work (e.g. `transformDeferInput`).
+
+- **Preserve buffered defer ops on checkpoint network failure** -- `checkpoint()` drains `state.lazyOps` at the top, then calls the checkpointing API. If the API call exhausts retries and throws, the drained ops are local to `checkpoint()` and lost — `attemptCheckpointAndResume`'s catch block only restores `checkpointingStepBuffer`. User-visible effect: a transient backend hiccup silently drops the user's `defer()` calls. Fix direction: drain in the caller and re-buffer on failure, or have `checkpoint()` restore drained ops on throw.
+
+- **Preserve buffered defer ops on sync-mode terminal rejection** -- Mirrors the async-mode fix but on the sync (durable-endpoint) code path. The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops alongside the terminal error op (or via a final checkpoint if a `checkpointedRun` exists).

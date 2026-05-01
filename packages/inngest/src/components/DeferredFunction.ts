@@ -4,6 +4,8 @@ import type { FunctionConfig, Handler } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 
+const idRegex = /^[a-zA-Z0-9_-]+$/;
+
 /**
  * A defer (companion) function created via `createDefer(...)`. Real
  * `InngestFunction` at runtime, but with the trigger pinned to
@@ -34,6 +36,12 @@ export class DeferredFunction<
     handler: Handler.Any,
     schema: TSchema,
   ) {
+    // The id is interpolated into a CEL trigger expression
+    // (`event.data._inngest.fn_slug == '${fnId}'`). Reject characters that
+    // would break the expression syntactically or broaden the trigger.
+    if (!idRegex.test(opts.id)) {
+      throw new Error(`invalid id "${opts.id}"; must match ${idRegex.source}`);
+    }
     super(
       client,
       { ...opts, triggers: [] } as InngestFunction.Options<[], never>,
