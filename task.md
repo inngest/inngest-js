@@ -41,7 +41,7 @@ serve({ client: inngest, functions: [orderPlaced, sendEmail, processPayment] });
 
 # Implementation
 
-Each `createDefer(client, { id, ... }, handler)` call creates exactly one Inngest function. The `defer(stepId, { function, data })` call emits a `DeferAdd` opcode carrying `{ companion_id, input }`; the backend saves the defer against the run and, once the parent run finalizes, emits an `inngest/deferred.start` event that triggers the corresponding defer function. Defer functions are passed to `serve()` alongside regular functions — they're full Inngest functions that just happen to use an implicit trigger.
+Each `createDefer(client, { id, ... }, handler)` call creates exactly one Inngest function. The `defer(stepId, { function, data })` call emits a `DeferAdd` opcode carrying `{ companion_id, input }`; the backend saves the defer against the run and, once the parent run finalizes, emits an `inngest/deferred.schedule` event that triggers the corresponding defer function. Defer functions are passed to `serve()` alongside regular functions — they're full Inngest functions that just happen to use an implicit trigger.
 
 # Decisions
 
@@ -51,7 +51,7 @@ Opcode-driven (e.g. `DeferAdd`). This requires a new pattern: opcode without a s
 
 Lazy ops are named after their defining behavior: they're lazily reported. We buffer them until the next time we report (HTTP response or outgoing checkpoint request).
 
-Deferred functions are triggered by a new `inngest/deferred.start` event. This event is sent from the backend. The event includes the user-specified input (passed to `defer.{alias}(id, input)`) and some metadata (in the `_inngest` field).
+Deferred functions are triggered by a new `inngest/deferred.schedule` event. This event is sent from the backend. The event includes the user-specified input (passed to `defer.{alias}(id, input)`) and some metadata (in the `_inngest` field).
 
 ## Call semantics
 
@@ -70,10 +70,10 @@ A single deferred function can be referenced by many parent functions. The defer
 ## `createDefer`
 
 Similar call signature to `createFunction()`, but with some differences:
-- Remove `triggers`. The trigger is implicit (`inngest/deferred.start` filtered to the function's own ID).
+- Remove `triggers`. The trigger is implicit (`inngest/deferred.schedule` filtered to the function's own ID).
 - Add `schema` (optional). This defines the shape (runtime and/or static) of the data passed to the deferred function. In a normal Inngest function, this happens in the `triggers` field, but that field doesn't exist for `createDefer()`.
 - Remove `onFailure`. We may add it later.
-- The `event` object in the handler always has the name `inngest/deferred.start`. Its data type is controlled by the `schema` field.
+- The `event` object in the handler always has the name `inngest/deferred.schedule`. Its data type is controlled by the `schema` field.
 
 `createDefer()` is a pure function instead of an `Inngest` client method to avoid committing to a client-method signature yet.
 
@@ -98,7 +98,7 @@ Client-level middleware applies to deferred functions. This is necessary for thi
 `onFailure` and defer functions both execute independently with their own retries, concurrency, and step state. `onFailure` is parent-owned (1:1 lifecycle hook); a defer function is a standalone function that any caller can reference (many:many).
 
 Shared properties:
-- **Triggers are implicit.** The SDK determines how each is activated (`inngest/function.failed` for `onFailure`, `inngest/deferred.start` for defer). Users never wire triggers manually.
+- **Triggers are implicit.** The SDK determines how each is activated (`inngest/function.failed` for `onFailure`, `inngest/deferred.schedule` for defer). Users never wire triggers manually.
 - **Input schemas describe the linkage.** A defer function's schema is the data contract between the caller's `defer()` call and the defer handler's `event.data`, not a normal trigger schema.
 
 Where they diverge:
@@ -117,7 +117,7 @@ Add way to immediately start the deferred function.
 
 - ~~**Nest user data in event payload.**~~ Resolved. The backend owns the payload shape (`{ _inngest, input }`) and the SDK unwraps `input` before the handler sees it; user keys can no longer collide with routing fields.
 - ~~**Replace `isFailureHandler`/`isDeferHandler` booleans with a discriminated union.**~~ Done. `handlerKind: "main" | "failure" | "defer"` replaces both booleans in `InngestExecutionOptions`, `FnRegistryEntry`, and all callsites.
-- ~~**Move defer routing to the opcode path.**~~ Done. `defer(stepId, { function, data })` emits `StepOpCode.DeferAdd`; the backend publishes `inngest/deferred.start` at Finalize. The companion's trigger expression matches on `event.data._inngest.fn_slug`.
+- ~~**Move defer routing to the opcode path.**~~ Done. `defer(stepId, { function, data })` emits `StepOpCode.DeferAdd`; the backend publishes `inngest/deferred.schedule` at Finalize. The companion's trigger expression matches on `event.data._inngest.fn_slug`.
 - ~~**Remove `step.defer`.**~~ Done. The only entry point is the top-level `defer(idOrOptions, { function, data })`, which is already memoized via the opcode path.
 - ~~**Remove `as any` in `createFunction`.**~~ Done. The `onDefer` config type was removed from `CreateFunctionInput`, eliminating the cast.
 - ~~**Pass defer functions to `serve()` instead of collecting them implicitly.**~~ Done. `createDefer` returns a `DeferHandlerResult` that satisfies `InngestFunction.Like`, so users pass it to `serve({ functions: [...] })` alongside regular functions. The comm handler identifies defer functions by `deferMeta` and assigns `handlerKind: "defer"`.

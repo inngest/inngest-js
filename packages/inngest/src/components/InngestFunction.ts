@@ -767,20 +767,6 @@ export namespace InngestFunction {
      */
     checkpointing?: CheckpointingOptions;
   }
-
-  /**
-   * Shared config shape exposed to `createDefer(client, opts, handler)`.
-   * Only `concurrency` and `retries` are user-facing here — the rest
-   * (schema, handler, id) are positional args on `createDefer` itself.
-   */
-  export interface OnDeferConfig {
-    concurrency?:
-      | number
-      | ConcurrencyOption
-      | RecursiveTuple<ConcurrencyOption, 2>;
-
-    retries?: Options<InngestFunction.Trigger<string>[]>["retries"];
-  }
 }
 
 export type CreateExecutionOptions = {

@@ -421,12 +421,6 @@ export class InngestCommHandler<
    * when instantiating the class.
    */
   private readonly rawFns: InngestFunction.Any[];
-  /**
-   * All functions contributing to this handler's sync payload. Currently
-   * the same as `rawFns`; defer functions (created via `createDefer`) must
-   * be passed alongside regular functions in `serve({ functions: [...] })`.
-   */
-  private readonly allFns: InngestFunction.Any[];
 
   private readonly client: Inngest.Any;
 
@@ -493,8 +487,6 @@ export class InngestCommHandler<
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );
     }
-
-    this.allFns = this.rawFns;
 
     // Build the id -> entry registry. Each main fn contributes either a
     // single `main` entry or, when it has `onFailure`, a `main` + `failure`
@@ -2290,7 +2282,7 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    const configs = this.allFns.reduce<FunctionConfig[]>(
+    const configs = this.rawFns.reduce<FunctionConfig[]>(
       (acc, fn) => [
         ...acc,
         ...fn["getConfig"]({ baseUrl: url, appPrefix: this.client.id }),
