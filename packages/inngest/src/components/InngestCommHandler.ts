@@ -2298,7 +2298,21 @@ export class InngestCommHandler<
     const servePath = this.servePath || this.env[envKeys.InngestServePath];
 
     if (servePath) {
-      ret.pathname = servePath;
+      /**
+       * Parse path and query separately. Assigning a string containing `?` to
+       * {@link URL.pathname} percent-encodes the separator (`%3F`), which breaks
+       * Vercel Deployment Protection bypass and other query-based routing.
+       */
+      const serveUrl = new URL(servePath, "http://localhost");
+      ret.pathname = serveUrl.pathname;
+      serveUrl.searchParams.forEach((value, key) => {
+        ret.searchParams.set(key, value);
+      });
+    }
+
+    const bypassSecret = this.env[envKeys.VercelAutomationBypassSecret];
+    if (bypassSecret) {
+      ret.searchParams.set("x-vercel-protection-bypass", bypassSecret);
     }
 
     if (this.serveOrigin) {

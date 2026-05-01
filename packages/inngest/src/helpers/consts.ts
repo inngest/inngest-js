@@ -114,6 +114,15 @@ export enum envKeys {
   VercelEnvKey = "VERCEL_ENV",
 
   /**
+   * When set on Vercel, contains the automation bypass secret for Deployment
+   * Protection. The SDK sends this as the `x-vercel-protection-bypass` query
+   * parameter so Inngest Cloud can invoke protected preview deployments.
+   *
+   * {@link https://vercel.com/docs/security/deployment-protection#protection-bypass-for-automation}
+   */
+  VercelAutomationBypassSecret = "VERCEL_AUTOMATION_BYPASS_SECRET",
+
+  /**
    * Standard Node.js environment indicator (e.g. `"production"`, `"development"`,
    * `"test"`). Read by some framework adapters to choose the request scheme,
    * and by prod-mode inference.

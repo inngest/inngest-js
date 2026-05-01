@@ -775,3 +775,95 @@ describe("introspection", () => {
     expect(await res.json()).toEqual({ message: "Unauthorized" });
   });
 });
+
+describe("reqUrl (Vercel deployment protection bypass)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const createReqUrlProbe = (options: {
+    servePath?: string;
+    serveOrigin?: string;
+  }): InngestCommHandler & { exposeReqUrl: (url: URL) => URL } => {
+    class ReqUrlProbe extends InngestCommHandler {
+      public exposeReqUrl(url: URL): URL {
+        return this.reqUrl(url);
+      }
+    }
+
+    const client = createClient({ id: "test", isDev: true });
+    return new ReqUrlProbe({
+      client,
+      frameworkName: "test",
+      functions: [],
+      ...options,
+      handler: () => ({
+        body: async () => "",
+        headers: () => null,
+        method: () => "GET",
+        url: () => new URL("https://localhost:3000/api/inngest"),
+        transformResponse: ({
+          body,
+          headers,
+          status,
+        }: {
+          body: string;
+          headers: Record<string, string>;
+          status: number;
+        }) => new Response(body, { status, headers }),
+      }),
+    }) as InngestCommHandler & { exposeReqUrl: (url: URL) => URL };
+  };
+
+  test("parses query strings in INNGEST_SERVE_PATH instead of encoding ? into pathname", () => {
+    vi.stubEnv(
+      envKeys.InngestServePath,
+      "/api/inngest?x-vercel-protection-bypass=mysecret",
+    );
+
+    const probe = createReqUrlProbe({});
+    const incoming = new URL(
+      "https://localhost:3000/original/path?fnId=my-fn&stepId=step",
+    );
+    const result = probe.exposeReqUrl(incoming);
+
+    expect(result.pathname).toBe("/api/inngest");
+    expect(result.searchParams.get("x-vercel-protection-bypass")).toBe(
+      "mysecret",
+    );
+    expect(result.searchParams.get("fnId")).toBe("my-fn");
+    expect(result.href).not.toContain("%3F");
+  });
+
+  test("sets x-vercel-protection-bypass from VERCEL_AUTOMATION_BYPASS_SECRET", () => {
+    vi.stubEnv(envKeys.VercelAutomationBypassSecret, "auto-secret");
+
+    const probe = createReqUrlProbe({ servePath: "/api/inngest" });
+    const incoming = new URL("https://localhost:3000/api/inngest?fnId=f1");
+    const result = probe.exposeReqUrl(incoming);
+
+    expect(result.pathname).toBe("/api/inngest");
+    expect(result.searchParams.get("x-vercel-protection-bypass")).toBe(
+      "auto-secret",
+    );
+    expect(result.searchParams.get("fnId")).toBe("f1");
+    expect(result.href).not.toContain("%3F");
+  });
+
+  test("combines serveOrigin with bypass query without encoding ? into pathname", () => {
+    vi.stubEnv(envKeys.VercelAutomationBypassSecret, "tok");
+
+    const probe = createReqUrlProbe({
+      servePath: "/api/inngest",
+      serveOrigin: "https://myapp.vercel.app",
+    });
+    const incoming = new URL("https://localhost:3000/api/inngest?fnId=fn");
+    const result = probe.exposeReqUrl(incoming);
+
+    expect(result.origin).toBe("https://myapp.vercel.app");
+    expect(result.pathname).toBe("/api/inngest");
+    expect(result.searchParams.get("fnId")).toBe("fn");
+    expect(result.searchParams.get("x-vercel-protection-bypass")).toBe("tok");
+    expect(result.href).not.toContain("%3F");
+  });
+});
