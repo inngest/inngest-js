@@ -1,5 +1,15 @@
 # inngest
 
+## 4.3.0
+
+### Minor Changes
+
+- [#1504](https://github.com/inngest/inngest-js/pull/1504) [`5c8f50e1`](https://github.com/inngest/inngest-js/commit/5c8f50e102dcdcaf2e7d42b66972cc4bffb84e72) Thanks [@scottnuma](https://github.com/scottnuma)! - Accept `Temporal.Duration`, `Temporal.Instant`, and `Temporal.ZonedDateTime` (and their `*Like` variants) wherever a timeout or sleep duration is taken: `step.sleep()`, `step.waitForEvent()`, `step.waitForSignal()`, `step.invoke()`, and function-level `cancelOn` timeouts. Durations are treated as relative waits; instants and zoned date-times as absolute deadlines.
+
+### Patch Changes
+
+- [#1480](https://github.com/inngest/inngest-js/pull/1480) [`60cda73f`](https://github.com/inngest/inngest-js/commit/60cda73f255a6fb1f014f6eb3c3541be19940154) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Fix Connect shutdown getting stuck when a late lease-extension ACK recreates a stale in-flight lease entry after request completion or lease loss
+
 ## 4.2.6
 
 ### Patch Changes
