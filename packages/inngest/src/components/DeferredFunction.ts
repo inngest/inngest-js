@@ -1,5 +1,6 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../helpers/consts.ts";
+import { Kind, type Marker, markerKey } from "../helpers/marker.ts";
 import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareStepExtensions,
@@ -41,6 +42,7 @@ export class DeferredFunction<
   []
 > {
   readonly schema: TSchema;
+  readonly [markerKey]: Marker = { kind: Kind.deferredFunction };
 
   constructor(
     client: Inngest.Any,

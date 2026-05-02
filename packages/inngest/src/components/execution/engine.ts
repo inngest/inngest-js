@@ -16,6 +16,7 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
+import { isDeferredFunction } from "../../helpers/marker.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -48,7 +49,6 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import { version } from "../../version.ts";
-import { DeferredFunction } from "../DeferredFunction.ts";
 import { internalLoggerSymbol } from "../Inngest.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
@@ -1927,7 +1927,7 @@ class InngestExecutionEngine
    */
   private async validateDeferEventSchema(): Promise<void> {
     const fn = this.options.fn;
-    if (!(fn instanceof DeferredFunction) || !fn.schema) {
+    if (!isDeferredFunction(fn) || !fn.schema) {
       return;
     }
 
@@ -2563,7 +2563,7 @@ class InngestExecutionEngine
       const runId = this.fnArg.runId;
 
       try {
-        if (!(deferFn instanceof DeferredFunction)) {
+        if (!isDeferredFunction(deferFn)) {
           log.error(
             { runId },
             "defer skipped: function not created via createDefer",
