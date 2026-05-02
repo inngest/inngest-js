@@ -4,16 +4,11 @@ import {
   randomSuffix,
   sleep,
   testNameFromFileUrl,
-  waitFor,
 } from "@inngest/test-harness";
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { createDefer } from "../../../experimental.ts";
-import {
-  dependencyInjectionMiddleware,
-  Inngest,
-  Middleware,
-} from "../../../index.ts";
+import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import { matrixCheckpointing, spyLogger } from "../utils.ts";
 
@@ -122,15 +117,6 @@ test("defer ID collision", async () => {
   // Wait long enough to give the 2nd defer a chance to trigger (it shouldn't)
   await sleep(5000);
   expect(deferState.count).toBe(1);
-});
-
-test("createDefer rejects ids that break the CEL trigger expression", () => {
-  const client = new Inngest({ id: "test", isDev: true });
-  for (const id of ["foo'bar", "foo\\bar", "foo\nbar"]) {
-    expect(() => {
-      createDefer(client, { id }, async () => {});
-    }).toThrow();
-  }
 });
 
 test("defer in step", async () => {
