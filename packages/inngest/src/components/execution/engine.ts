@@ -37,6 +37,7 @@ import {
 import {
   type APIStepPayload,
   type Context,
+  type DeferFn,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -45,7 +46,6 @@ import {
   type OutgoingOp,
   StepMode,
   StepOpCode,
-  type StepOptionsOrId,
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import { DeferredFunction } from "../DeferredFunction.ts";
@@ -118,16 +118,6 @@ function errorMessage(error: unknown): string {
  * Placeholder step ID used when completing a checkpointed run.
  */
 const RUN_COMPLETE_STEP_ID = "complete";
-
-/**
- * The `defer(idOrOptions, { function, data })` method exposed on every
- * handler context. Sync: lazy ops buffer immediately and ship on the next
- * wire message, so the caller has nothing to wait for.
- */
-type DeferFn = (
-  idOrOptions: StepOptionsOrId,
-  options: { function: DeferredFunction.Any; data: Record<string, unknown> },
-) => void;
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 

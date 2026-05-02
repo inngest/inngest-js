@@ -2,6 +2,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
+import type { DeferFn } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
 import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
 
@@ -288,6 +289,8 @@ export type BaseContextWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
 > = {
+  defer: DeferFn;
+
   /**
    * The event data present in the payload.
    */

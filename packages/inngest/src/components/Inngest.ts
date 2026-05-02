@@ -50,7 +50,6 @@ import {
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
-  type StepOptionsOrId,
   sendEventResponseSchema,
 } from "../types.ts";
 import { DeferredFunction } from "./DeferredFunction.ts";
@@ -1181,8 +1180,7 @@ export function createDefer<
       ApplyAllMiddlewareCtxExtensions<
         ClientOptionsFromInngest<TClient>["middleware"]
       > &
-      ApplyAllMiddlewareCtxExtensions<TFnMiddleware> &
-      Inngest.DeferCtx,
+      ApplyAllMiddlewareCtxExtensions<TFnMiddleware>,
   ) => unknown,
 >(
   client: TClient,
@@ -1234,28 +1232,6 @@ export namespace Inngest {
   >;
 
   type ResolveTriggers<T> = T extends undefined ? [] : AsArray<NonNullable<T>>;
-
-  /**
-   * Adds the `defer` method to the handler context. `defer(idOrOptions,
-   * { function, data })` emits a `DeferAdd` opcode that triggers the
-   * referenced defer function (created via `createDefer`) with `data`
-   * validated against the function's schema. The data type is inferred
-   * from the function's schema.
-   */
-  export type DeferCtx = {
-    defer: <TFn extends DeferredFunction.Any>(
-      idOrOptions: StepOptionsOrId,
-      options: {
-        function: TFn;
-        data: TFn extends DeferredFunction<
-          StandardSchemaV1<infer D extends Record<string, unknown>>
-        >
-          ? D
-          : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-            Record<string, any>;
-      },
-    ) => void;
-  };
 
   /**
    * Input type for createFunction that accepts raw trigger input (single,
@@ -1317,8 +1293,7 @@ export namespace Inngest {
         ApplyAllMiddlewareCtxExtensions<
           ClientOptionsFromInngest<TClient>["middleware"]
         > &
-        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> &
-        DeferCtx & {
+        ApplyAllMiddlewareCtxExtensions<TFnMiddleware> & {
           step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
             ApplyAllMiddlewareStepExtensions<
               ClientOptionsFromInngest<TClient>["middleware"]

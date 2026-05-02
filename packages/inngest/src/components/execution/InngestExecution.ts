@@ -113,7 +113,7 @@ export interface InngestExecutionOptions {
   internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
-  data: Omit<Context.Any, "step" | "group" | "publish">;
+  data: Omit<Context.Any, "step" | "group" | "publish" | "defer">;
   stepState: Record<string, MemoizedOp>;
 
   /**
