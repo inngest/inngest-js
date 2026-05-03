@@ -164,8 +164,25 @@ export interface ConnectionAccessor {
 }
 
 /**
+ * Reasons the reconcile loop may be woken. Centralised so call sites are
+ * grep-able and the "Reconcile loop woken" log carries a stable vocabulary.
+ */
+export const WAKE_REASON = {
+  ShutdownRequested: "shutdown-requested",
+  WsError: "ws-error",
+  WsClose: "ws-close",
+  GatewayClosing: "gateway-closing",
+  HeartbeatMissed: "heartbeat-missed",
+  RequestFinishedOnShutdown: "request-finished-on-shutdown",
+  LeaseLostOnShutdown: "lease-lost-on-shutdown",
+  ShutdownStillPending: "shutdown-still-pending",
+  Unknown: "unknown",
+} as const;
+export type WakeReason = (typeof WAKE_REASON)[keyof typeof WAKE_REASON];
+
+/**
  * Wake signal interface for sub-modules to wake the reconcile loop.
  */
 export interface WakeSignal {
-  wake(): void;
+  wake(reason?: WakeReason): void;
 }

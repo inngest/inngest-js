@@ -8,7 +8,7 @@
 
 import ms from "ms";
 import { headerKeys } from "../../../../helpers/consts.ts";
-import { allProcessEnv, getPlatformName } from "../../../../helpers/env.ts";
+import { getPlatformName, getProcessEnv } from "../../../../helpers/env.ts";
 import { resolveApiBaseUrl } from "../../../../helpers/url.ts";
 import type { Logger } from "../../../../middleware/logger.ts";
 import {
@@ -243,7 +243,7 @@ export async function establishConnection(
       const workerConnectRequestMsg = WorkerConnectRequestData.create({
         connectionId: startResp.connectionId,
         environment: config.envName,
-        platform: getPlatformName({ ...allProcessEnv() }),
+        platform: getPlatformName({ ...getProcessEnv() }),
         sdkVersion: `v${version}`,
         sdkLanguage: "typescript",
         framework: "connect",

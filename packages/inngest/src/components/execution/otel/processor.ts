@@ -16,6 +16,7 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
+import { hashSigningKey } from "../../../helpers/strings.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -321,7 +322,7 @@ export class InngestSpanProcessor implements SpanProcessor {
             url: url.href,
             headers: {
               ...app.headers,
-              Authorization: `Bearer ${app.signingKey}`,
+              Authorization: `Bearer ${hashSigningKey(app.signingKey)}`,
             },
           });
 

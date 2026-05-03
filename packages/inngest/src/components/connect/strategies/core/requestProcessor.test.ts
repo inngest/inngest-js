@@ -644,4 +644,173 @@ describe("ConnectionCore request processing", () => {
       await closePromise;
     });
   });
+
+  describe("12. Graceful shutdown wakes reconcile loop when lease is lost", () => {
+    test("close() resolves after lease-lost ack clears the last in-flight request", async () => {
+      // Userland promise that never resolves. Mirrors a function that keeps
+      // running after the gateway reassigns its lease to another worker.
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      const closePromise = core.close();
+      await flushMicrotasks();
+
+      let closed = false;
+      closePromise.then(() => {
+        closed = true;
+      });
+      await flushMicrotasks();
+      expect(closed).toBe(false);
+
+      // Sanity: one in-flight request before the lease-lost ack.
+      expect(core.getDebugState().inFlightRequestCount).toBe(1);
+
+      // Gateway sends extend-lease-ack with empty newLeaseId: lease lost.
+      ws.sendExtendLeaseAck({ requestId: "req-1" });
+      await flushMicrotasks();
+
+      // Lease has been removed: break condition is now satisfied
+      // (shutdownRequested && !hasInFlightRequests()).
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().shutdownRequested).toBe(true);
+
+      // Without wake() in the lost-lease branch of handleExtendLeaseAck,
+      // the reconcile loop stays blocked on wakeSignal.promise and
+      // close() never resolves.
+      await closePromise;
+      expect(core.connectionId).toBeUndefined();
+    });
+
+    test("lease-lost ack also deletes requestMeta (no stale debug-state entry)", async () => {
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({ requestId: "req-meta", appName: "test-app" });
+      await flushMicrotasks();
+
+      // Sanity: meta is populated alongside the lease.
+      expect(core.getDebugState().inFlightRequests).toHaveLength(1);
+      expect(core.getDebugState().inFlightRequests[0]?.requestId).toBe(
+        "req-meta",
+      );
+
+      ws.sendExtendLeaseAck({ requestId: "req-meta" });
+      await flushMicrotasks();
+
+      // After lease-lost we should no longer report this request at all —
+      // neither as a lease nor as a meta entry.
+      const state = core.getDebugState();
+      expect(state.inFlightRequestCount).toBe(0);
+      expect(state.inFlightRequests).toHaveLength(0);
+    });
+
+    test("late extend-lease ack after lease loss does not resurrect a stale lease", async () => {
+      const executionPromise = new Promise<Uint8Array>(() => {});
+
+      const { core, ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-late-after-loss",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      ws.sendExtendLeaseAck({ requestId: "req-late-after-loss" });
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+
+      ws.sendExtendLeaseAck({
+        requestId: "req-late-after-loss",
+        newLeaseId: "late-lease-after-loss",
+      });
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionId: "conn-1",
+          requestId: "req-late-after-loss",
+          newLeaseId: "late-lease-after-loss",
+          hadLease: false,
+          hadMeta: false,
+        }),
+        "Ignoring extend lease ack for non-in-flight request",
+      );
+    });
+
+    test("late extend-lease ack after request completion does not resurrect a stale lease", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const { core, ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-late-ack",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const leaseExtensionMessages = ws.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      );
+      expect(leaseExtensionMessages.length).toBeGreaterThan(0);
+
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+
+      ws.sendExtendLeaseAck({
+        requestId: "req-late-ack",
+        newLeaseId: "late-lease-id",
+      });
+      await flushMicrotasks();
+
+      expect(core.getDebugState().inFlightRequestCount).toBe(0);
+      expect(core.getDebugState().inFlightRequests).toHaveLength(0);
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionId: "conn-1",
+          requestId: "req-late-ack",
+          newLeaseId: "late-lease-id",
+          hadLease: false,
+          hadMeta: false,
+        }),
+        "Ignoring extend lease ack for non-in-flight request",
+      );
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { envKeys } from "../../helpers/consts.ts";
-import { allProcessEnv } from "../../helpers/env.ts";
+import { getProcessEnv } from "../../helpers/env.ts";
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import { prepareConnectionConfig } from "./config.ts";
 import { type ConnectionStrategy, createStrategy } from "./strategies/index.ts";
@@ -54,7 +54,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       options.handleShutdownSignals = DEFAULT_SHUTDOWN_SIGNALS;
     }
 
-    const env = allProcessEnv();
+    const env = getProcessEnv();
 
     if (options.maxWorkerConcurrency === undefined) {
       const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];

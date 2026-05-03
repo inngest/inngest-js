@@ -2,6 +2,7 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
+import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
@@ -496,8 +497,6 @@ export const createStepTools = <
         opts: WaitForSignalOpts,
       ) => Promise<{ signal: string; data: Jsonify<TData> } | null>
     >(({ id, name }, opts) => {
-      // TODO Should support Temporal.DurationLike, Temporal.InstantLike,
-      // Temporal.ZonedDateTimeLike
       return {
         id,
         mode: StepMode.Async,
@@ -585,7 +584,10 @@ export const createStepTools = <
      * Send a Signal to Inngest.
      */
     sendSignal: createTool<
-      (idOrOptions: StepOptionsOrId, opts: SendSignalOpts) => Promise<null>
+      (
+        idOrOptions: StepOptionsOrId,
+        opts: SendSignalOpts,
+      ) => Promise<InngestApi.SendSignalResponse>
     >(
       ({ id, name }, opts) => {
         return {
@@ -639,11 +641,18 @@ export const createStepTools = <
            *
            * The time to wait can be specified using a `number` of milliseconds,
            * an `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or
-           * `"2.5d"`, or a `Date` object.
+           * `"2.5d"`, a `Date`, a `Temporal.Duration` (relative wait), or a
+           * `Temporal.Instant` / `Temporal.ZonedDateTime` (absolute deadline).
            *
            * {@link https://npm.im/ms}
            */
-          timeout: number | string | Date;
+          timeout:
+            | number
+            | string
+            | Date
+            | Temporal.DurationLike
+            | Temporal.InstantLike
+            | Temporal.ZonedDateTimeLike;
         } & ExclusiveKeys<{ match?: string; if?: string }, "match", "if">,
       >(
         idOrOptions: StepOptionsOrId,
@@ -786,11 +795,7 @@ export const createStepTools = <
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
-      const msTimeStr: string = timeStr(
-        Temporal.isTemporalDuration(time)
-          ? time.total({ unit: "milliseconds" })
-          : (time as number | string),
-      );
+      const msTimeStr: string = timeStr(time);
 
       return {
         id,
@@ -871,7 +876,25 @@ export const createStepTools = <
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
       const optsSchema = invokePayloadSchema.extend({
-        timeout: z.union([z.number(), z.string(), z.date()]).optional(),
+        timeout: z
+          .custom<
+            | number
+            | string
+            | Date
+            | Temporal.DurationLike
+            | Temporal.InstantLike
+            | Temporal.ZonedDateTimeLike
+          >(
+            (v) =>
+              typeof v === "number" ||
+              typeof v === "string" ||
+              v instanceof Date ||
+              Temporal.isTemporalDuration(v) ||
+              Temporal.isTemporalInstant(v) ||
+              Temporal.isTemporalZonedDateTime(v),
+            { message: "Invalid timeout" },
+          )
+          .optional(),
       });
 
       const parsedFnOpts = optsSchema
@@ -1148,11 +1171,18 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
        *
        * The time to wait can be specified using a `number` of milliseconds, an
        * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`,
-       * or a `Date` object.
+       * a `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant`
+       * / `Temporal.ZonedDateTime` (absolute deadline).
        *
        * {@link https://npm.im/ms}
        */
-      timeout?: number | string | Date;
+      timeout?:
+        | number
+        | string
+        | Date
+        | Temporal.DurationLike
+        | Temporal.InstantLike
+        | Temporal.ZonedDateTimeLike;
     };
 
 /**
@@ -1185,12 +1215,19 @@ type WaitForSignalOpts = {
    * data.
    *
    * The time to wait can be specified using a `number` of milliseconds, an
-   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-   * a `Date` object.
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, a
+   * `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant` /
+   * `Temporal.ZonedDateTime` (absolute deadline).
    *
    * {@link https://npm.im/ms}
    */
-  timeout: number | string | Date;
+  timeout:
+    | number
+    | string
+    | Date
+    | Temporal.DurationLike
+    | Temporal.InstantLike
+    | Temporal.ZonedDateTimeLike;
 
   /**
    * When this `step.waitForSignal()` call is made, choose whether an existing

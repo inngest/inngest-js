@@ -16,11 +16,11 @@
  * @module
  */
 
+import { createWebApiCommHandler } from "./components/createWebApiCommHandler.ts";
 import type { Inngest } from "./components/Inngest.ts";
-import {
-  InngestCommHandler,
-  type ServeHandlerOptions,
-  type SyncHandlerOptions,
+import type {
+  ServeHandlerOptions,
+  SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import { handleDurableEndpointProxyRequest } from "./components/InngestDurableEndpointProxy.ts";
 import { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
@@ -38,38 +38,7 @@ const commHandler = (
   options: RegisterOptions & { client: Inngest.Like },
   syncOptions?: SyncHandlerOptions,
 ) => {
-  const handler = new InngestCommHandler({
-    frameworkName,
-    ...options,
-    syncOptions,
-    handler: (req: Request) => {
-      return {
-        body: () => req.text(),
-        headers: (key: string) => req.headers.get(key),
-        method: () => req.method,
-        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
-        transformResponse: ({ body, status, headers }) => {
-          return new Response(body, { status, headers });
-        },
-        experimentalTransformSyncResponse: async (data) => {
-          const res = data as Response;
-
-          const headers: Record<string, string> = {};
-          res.headers.forEach((v, k) => {
-            headers[k] = v;
-          });
-
-          return {
-            headers: headers,
-            status: res.status,
-            body: await res.clone().text(),
-          };
-        },
-      };
-    },
-  });
-
-  return handler;
+  return createWebApiCommHandler(frameworkName, options, syncOptions);
 };
 
 /**

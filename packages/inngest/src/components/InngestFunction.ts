@@ -5,6 +5,7 @@ import {
   type Cancellation,
   type CheckpointingOptions,
   type ConcurrencyOption,
+  type DefaultMaxRuntime,
   defaultCheckpointingOptions,
   type FunctionConfig,
   type Handler,
@@ -159,7 +160,11 @@ export class InngestFunction<
     const triggers: FunctionConfig["triggers"] = [];
     for (const trigger of this.opts.triggers ?? []) {
       if (trigger.cron) {
-        triggers.push({ cron: trigger.cron });
+        const cronTrigger = trigger as { cron: string; jitter?: string };
+        triggers.push({
+          cron: cronTrigger.cron,
+          ...(cronTrigger.jitter ? { jitter: cronTrigger.jitter } : {}),
+        });
         continue;
       }
 
@@ -293,6 +298,7 @@ export class InngestFunction<
     requestedRunStep: string | undefined,
     internalFnId: string | undefined,
     disableImmediateExecution: boolean,
+    defaultMaxRuntime: DefaultMaxRuntime,
   ): InternalCheckpointingOptions | undefined {
     if (requestedRunStep || !internalFnId || disableImmediateExecution) {
       return;
@@ -312,13 +318,16 @@ export class InngestFunction<
     }
 
     if (userCfg === true) {
-      return defaultCheckpointingOptions;
+      return {
+        ...defaultCheckpointingOptions,
+        maxRuntime: defaultMaxRuntime,
+      };
     }
 
     return {
       bufferedSteps:
         userCfg.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
-      maxRuntime: userCfg.maxRuntime ?? defaultCheckpointingOptions.maxRuntime,
+      maxRuntime: userCfg.maxRuntime ?? defaultMaxRuntime,
       maxInterval:
         userCfg.maxInterval ?? defaultCheckpointingOptions.maxInterval,
     };

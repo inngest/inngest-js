@@ -41,9 +41,9 @@
             bun
 
             # LSPs
-            nodePackages.typescript-language-server
-            nodePackages.vscode-json-languageserver
-            nodePackages.yaml-language-server
+            typescript-language-server
+            vscode-json-languageserver
+            yaml-language-server
 
             # Tools
             protobuf_29
