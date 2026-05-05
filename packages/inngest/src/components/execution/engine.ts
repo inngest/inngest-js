@@ -2269,9 +2269,6 @@ class InngestExecutionEngine
       // and `state.steps` are all bypassed. See `ARCHITECTURE.md`.
       if (isLazyOp(opts, opId)) {
         const hashedId = _internals.hashId(opId.id);
-        if (this.state.priorDefers[hashedId]) {
-          return;
-        }
         if (this.state.lazyOps.hasId(hashedId)) {
           // defer.md: "defer IDs must be unique within a run". Skip the
           // duplicate and warn so the user can spot the bug — silently
@@ -2281,6 +2278,13 @@ class InngestExecutionEngine
             { runId: this.fnArg.runId, id: opId.userland?.id ?? opId.id },
             "defer skipped: duplicate ID within run",
           );
+          return;
+        }
+        if (this.state.priorDefers[hashedId]) {
+          // Replay: this id was already shipped in a prior execution.  Silently
+          // skip, but mark it as seen so a later call with the same id (a real
+          // duplicate) is detected and warned about above.
+          this.state.lazyOps.markSeen(hashedId);
           return;
         }
         this.state.lazyOps.push({

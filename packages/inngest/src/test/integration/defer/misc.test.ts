@@ -60,63 +60,93 @@ test("re-encountered defer does not trigger new deferred run", async () => {
   expect(deferState.counter).toBe(1);
 });
 
-test("defer ID collision", async () => {
-  // Defer IDs must be unique within a run. If a duplicate is detected, the SDK
-  // logs a warning and doesn't report the duplicate.
-
-  const parentState = createState({});
-  const deferState = createState({
-    count: 0,
-    index: null as number | null,
-  });
-
-  const internalLogger = spyLogger();
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    internalLogger,
-  });
-  const eventName = randomSuffix("evt");
-  const foo = createDefer(client, { id: "foo" }, async ({ event, runId }) => {
-    deferState.runId = runId;
-    deferState.index = event.data.index;
-    deferState.count++;
-  });
-  const fn = client.createFunction(
+describe("defer ID collision", async () => {
+  const cases = [
+    { name: "same checkpoint request", checkpointing: true, sameRequest: true },
     {
-      id: "fn",
-      retries: 0,
-      triggers: { event: eventName },
+      name: "different checkpoint request",
+      checkpointing: true,
+      sameRequest: false,
     },
-    async ({ defer, runId }) => {
-      parentState.runId = runId;
-      defer("dupe", { function: foo, data: { index: 0 } });
-
-      // Doesn't report
-      defer("dupe", { function: foo, data: { index: 1 } });
+    {
+      name: "different non-checkpointing request",
+      checkpointing: false,
+      sameRequest: false,
     },
-  );
-  await createTestApp({
-    client,
-    functions: [fn, foo],
-    serve: createServer,
-  });
+  ];
 
-  await client.send({ name: eventName, data: {} });
-  await parentState.waitForRunComplete();
-  await deferState.waitForRunComplete();
-  expect(deferState.index).toBe(0);
-  expect(internalLogger.warn).toHaveBeenCalledWith(
-    expect.objectContaining({
-      id: "dupe",
-      runId: parentState.runId,
-    }),
-    "defer skipped: duplicate ID within run",
-  );
+  for (const c of cases) {
+    test(c.name, async () => {
+      // Defer IDs must be unique within a run. If a duplicate is detected, the SDK
+      // logs a warning and doesn't report the duplicate.
 
-  // Wait long enough to give the 2nd defer a chance to trigger (it shouldn't)
-  await sleep(5000);
-  expect(deferState.count).toBe(1);
+      const parentState = createState({});
+      const deferState = createState({
+        count: 0,
+        index: null as number | null,
+      });
+
+      const internalLogger = spyLogger();
+      const client = new Inngest({
+        checkpointing: c.checkpointing,
+        id: randomSuffix(testFileName),
+        isDev: true,
+        internalLogger,
+      });
+      const eventName = randomSuffix("evt");
+      const foo = createDefer(
+        client,
+        { id: "foo" },
+        async ({ event, runId }) => {
+          deferState.runId = runId;
+          deferState.index = event.data.index;
+          deferState.count++;
+        },
+      );
+      const fn = client.createFunction(
+        {
+          id: "fn",
+          retries: 0,
+          triggers: { event: eventName },
+        },
+        async ({ defer, runId, step }) => {
+          parentState.runId = runId;
+          defer("dupe", { function: foo, data: { index: 0 } });
+
+          if (!c.sameRequest) {
+            // Add a step to ensure that the two defer calls won't be in the
+            // same outgoing checkpoint request
+            await step.run("between", async () => {});
+          }
+
+          // Doesn't report
+          defer("dupe", { function: foo, data: { index: 1 } });
+        },
+      );
+      await createTestApp({
+        client,
+        functions: [fn, foo],
+        serve: createServer,
+      });
+
+      await client.send({ name: eventName, data: {} });
+      await parentState.waitForRunComplete();
+      await deferState.waitForRunComplete();
+      expect(deferState.index).toBe(0);
+      expect(internalLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "dupe",
+          runId: parentState.runId,
+        }),
+        "defer skipped: duplicate ID within run",
+      );
+
+      // Wait long enough to give the 2nd defer a chance to trigger (it
+      // shouldn't)
+      await sleep(5000);
+      expect(deferState.count).toBe(1);
+    });
+  }
 });
 
 test("defer in step", async () => {

@@ -11,6 +11,12 @@ import type { MatchOpFn, StepToolOptions } from "../InngestStepTools.ts";
 export class LazyOps {
   private buffer: OutgoingOp[] = [];
 
+  // Tracks every id pushed during this execution, including those already
+  // drained. `buffer` alone can't answer "have we seen this id?" once a
+  // checkpoint ships its contents, so duplicates that straddle a drain would
+  // otherwise slip through.
+  private pushedIds: Set<string> = new Set();
+
   /**
    * Number of ops waiting to ship.
    */
@@ -19,10 +25,11 @@ export class LazyOps {
   }
 
   /**
-   * Whether the buffer already contains an op with the given hashed id.
+   * Whether an op with this hashed id has been pushed in this execution
+   * (whether or not it has since been drained).
    */
   hasId(id: string): boolean {
-    return this.buffer.some((op) => op.id === id);
+    return this.pushedIds.has(id);
   }
 
   /**
@@ -43,6 +50,16 @@ export class LazyOps {
    */
   push(op: OutgoingOp): void {
     this.buffer.push(op);
+    this.pushedIds.add(op.id);
+  }
+
+  /**
+   * Record that an id has been observed in this execution without buffering
+   * an op for it. Used to consume a `priorDefers` replay match so that
+   * subsequent encounters of the same id surface as duplicates.
+   */
+  markSeen(id: string): void {
+    this.pushedIds.add(id);
   }
 }
 
