@@ -161,6 +161,7 @@ export const parseFnData = (
               disable_immediate_execution: z.boolean().default(false),
               use_api: z.boolean().default(false),
               qi_id: z.string().optional(),
+              generation_id: z.number().optional(),
               stack: z
                 .object({
                   stack: z

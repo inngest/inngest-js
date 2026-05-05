@@ -3,6 +3,7 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 
+import { StaleDispatchError } from "../../api/api.ts";
 import {
   defaultMaxRetries,
   ExecutionVersion,
@@ -93,6 +94,12 @@ import {
 } from "./streaming.ts";
 
 const { sha1 } = hashjs;
+
+// Defends against `instanceof` failing across bundle boundaries.
+const isStaleDispatchError = (err: unknown): boolean =>
+  err instanceof StaleDispatchError ||
+  // biome-ignore lint/suspicious/noExplicitAny: name check across boundaries
+  (err as any)?.name === "StaleDispatchError";
 
 /**
  * Retry configuration for checkpoint operations.
@@ -474,9 +481,13 @@ class InngestExecutionEngine
             runId: this.fnArg.runId,
             fnId: internalFnId,
             queueItemId,
+            generationId: this.options.generationId,
             steps,
           }),
-        CHECKPOINT_RETRY_OPTIONS,
+        {
+          ...CHECKPOINT_RETRY_OPTIONS,
+          shouldRetry: (err) => !isStaleDispatchError(err),
+        },
       );
     } else {
       throw new Error(
@@ -900,6 +911,21 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
+          // Stale dispatch: the executor has already requeued. Returning
+          // buffered ops would let it memoize them as canonical and chain the
+          // next dispatch off this dead invocation, producing duplicate step
+          // executions.
+          if (isStaleDispatchError(err)) {
+            this.devDebug("stale dispatch detected; halting execution");
+            return {
+              type: "function-rejected" as const,
+              ctx: this.fnArg,
+              ops: {},
+              error: serializeError(err),
+              retriable: false,
+            };
+          }
+
           // If checkpointing fails for any reason, fall back to returning
           // ALL buffered steps to the executor via the normal async flow.
           // The executor persists completed steps and rediscovers any

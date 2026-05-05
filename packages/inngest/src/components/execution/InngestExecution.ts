@@ -138,6 +138,12 @@ export interface InngestExecutionOptions {
   queueItemId?: string;
 
   /**
+   * Echoed back on every async checkpoint POST so the executor can reject
+   * stale dispatches with 409.
+   */
+  generationId?: number;
+
+  /**
    * Headers to be sent with any request to Inngest during this execution.
    */
   headers: Record<string, string>;

@@ -236,6 +236,7 @@ export const retryWithBackoff = async <T>(
   opts?: {
     maxAttempts?: number;
     baseDelay?: number;
+    shouldRetry?: (err: unknown) => boolean;
   },
 ): Promise<T> => {
   const maxAttempts = opts?.maxAttempts || 5;
@@ -245,7 +246,7 @@ export const retryWithBackoff = async <T>(
     try {
       return await fn();
     } catch (err) {
-      if (attempt >= maxAttempts) {
+      if (attempt >= maxAttempts || opts?.shouldRetry?.(err) === false) {
         throw err;
       }
 
