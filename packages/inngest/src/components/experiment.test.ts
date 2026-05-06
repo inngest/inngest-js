@@ -852,7 +852,7 @@ describe("group.experiment() metadata", () => {
       "merge",
       expect.objectContaining({
         experiment_name: "checkout-flow",
-        variant_selected: "control",
+        variant: "control",
         selection_strategy: "fixed",
         available_variants: ["control", "treatment"],
       }),
@@ -1015,8 +1015,8 @@ describe("group.experiment() metadata", () => {
     const values = call![4] as Record<string, unknown>;
 
     expect(values.experiment_name).toBe("full-meta");
-    expect(values.variant_selected).toBeDefined();
-    expect(["control", "treatment"]).toContain(values.variant_selected);
+    expect(values.variant).toBeDefined();
+    expect(["control", "treatment"]).toContain(values.variant);
     expect(values.selection_strategy).toBe("weighted");
     expect(values.available_variants).toEqual(["control", "treatment"]);
     expect(values.variant_weights).toEqual(weights);
