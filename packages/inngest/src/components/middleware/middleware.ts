@@ -248,6 +248,7 @@ export namespace Middleware {
     | "sendEvent"
     | "sleep"
     | "waitForEvent"
+    | "waitForSignal"
   >;
 
   export type StepInfo = {
