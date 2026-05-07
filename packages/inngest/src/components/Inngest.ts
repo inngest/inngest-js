@@ -1070,12 +1070,19 @@ export function builtInMiddleware(baseLogger: Logger) {
         // Create a child logger with run metadata if supported
         if ("child" in logger) {
           try {
-            logger = (
-              logger.child as (meta: Record<string, unknown>) => Logger
-            )({
+            const childMetadata: Record<string, unknown> = {
               runID: arg.ctx.runId,
               eventName: arg.ctx.event.name,
-            });
+            };
+            if (arg.ctx.requestId) {
+              childMetadata.requestId = arg.ctx.requestId;
+            }
+            if (arg.ctx.jobId) {
+              childMetadata.jobId = arg.ctx.jobId;
+            }
+            logger = (
+              logger.child as (meta: Record<string, unknown>) => Logger
+            )(childMetadata);
           } catch (err) {
             logger.error({ err }, 'failed to create "childLogger" with error');
           }

@@ -174,12 +174,22 @@ export function prepareConnectionConfig(
           undefined,
           inngest[internalLoggerSymbol],
         );
+        const data = {
+          ...parsed,
+          ctx: parsed.ctx
+            ? {
+                ...parsed.ctx,
+                request_id: parsed.ctx.request_id ?? msg.requestId,
+                job_id: parsed.ctx.job_id ?? msg.jobId,
+              }
+            : parsed.ctx,
+        };
 
         const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
         return {
           body() {
-            return parsed;
+            return data;
           },
           method() {
             return "POST";

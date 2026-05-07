@@ -507,6 +507,17 @@ export type BaseContext<TClient extends Inngest.Any> = {
    */
   runId: string;
 
+  /**
+   * The request ID for this individual outbound SDK invocation, if provided by
+   * the executor.
+   */
+  requestId?: string;
+
+  /**
+   * The stable job ID for this invocation, if provided by the executor.
+   */
+  jobId?: string;
+
   step: ReturnType<typeof createStepTools<TClient>>;
 
   /**
