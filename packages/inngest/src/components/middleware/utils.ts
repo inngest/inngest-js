@@ -117,6 +117,8 @@ export function stepTypeFromOpCode(
     return "sleep";
   } else if (op === StepOpCode.WaitForEvent) {
     return "waitForEvent";
+  } else if (op === StepOpCode.WaitForSignal) {
+    return "waitForSignal";
   }
 
   logger.warn({ op, type: opts?.type }, "Unknown step type");
