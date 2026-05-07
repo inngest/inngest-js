@@ -1074,10 +1074,10 @@ export function builtInMiddleware(baseLogger: Logger) {
               runID: arg.ctx.runId,
               eventName: arg.ctx.event.name,
             };
-            if (arg.ctx.requestId) {
+            if (typeof arg.ctx.requestId !== "undefined") {
               childMetadata.requestId = arg.ctx.requestId;
             }
-            if (arg.ctx.jobId) {
+            if (typeof arg.ctx.jobId !== "undefined") {
               childMetadata.jobId = arg.ctx.jobId;
             }
             logger = (

@@ -576,6 +576,40 @@ describe("response version header", () => {
     });
     expect(seenIds).toEqual({ requestId: "req-123", jobId: "job-123" });
     expect(childLogger.info).toHaveBeenCalledWith("hello");
+
+    child.mockClear();
+    vi.mocked(childLogger.info).mockClear();
+
+    await runHandler(loggedHandler, {
+      body: {
+        version: ExecutionVersion.V2,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+      headers: {
+        [headerKeys.RequestId]: "",
+        [headerKeys.InngestJobId]: "",
+      },
+    });
+
+    expect(child).toHaveBeenCalledWith({
+      runID: "run-123",
+      eventName: "demo/event.sent",
+      requestId: "",
+      jobId: "",
+    });
+    expect(seenIds).toEqual({ requestId: "", jobId: "" });
+    expect(childLogger.info).toHaveBeenCalledWith("hello");
   });
 });
 
