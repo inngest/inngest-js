@@ -551,6 +551,7 @@ export class InngestApi {
     fnId: string;
     queueItemId: string;
     generationId?: number;
+    stepStartedAt?: number;
     steps: OutgoingOp[];
   }): Promise<void> {
     const body = JSON.stringify({
@@ -558,6 +559,7 @@ export class InngestApi {
       fn_id: args.fnId,
       qi_id: args.queueItemId,
       ...(args.generationId ? { generation_id: args.generationId } : {}),
+      ...(args.stepStartedAt ? { step_started_at: args.stepStartedAt } : {}),
       steps: args.steps,
       ts: new Date().valueOf(),
     });

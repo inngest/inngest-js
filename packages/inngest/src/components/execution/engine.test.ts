@@ -338,6 +338,46 @@ describe("Execution engine checkpoint retry behavior", () => {
       expect(checkpointedNames).toContain("sequential-2");
     });
 
+    describe("metadata propagation to checkpoint payload", () => {
+      test("forwards generationId and stepStartedAt to checkpointStepsAsync", async () => {
+        const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+        await runExecution({
+          mockApi: { checkpointStepsAsync: mockCheckpointStepsAsync },
+          handler: async ({ step }) => {
+            await step.run("sequential-1", () => "result-1");
+
+            // Parallel steps trigger a flush of the buffered sequential step
+            await Promise.all([
+              step.run("parallel-a", () => "a"),
+              step.run("parallel-b", () => "b"),
+            ]);
+          },
+          stepMode: StepMode.AsyncCheckpointing,
+          checkpointingConfig: {
+            bufferedSteps: 5,
+            maxRuntime: 0,
+            maxInterval: 0,
+          },
+          extraPartialOptions: {
+            queueItemId: "queue-item-123",
+            internalFnId: "internal-fn-456",
+            generationId: 7,
+            stepStartedAt: 1_700_000_000_000,
+          },
+        });
+
+        expect(mockCheckpointStepsAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            fnId: "internal-fn-456",
+            queueItemId: "queue-item-123",
+            generationId: 7,
+            stepStartedAt: 1_700_000_000_000,
+          }),
+        );
+      });
+    });
+
     describe("Bug 1: flush-only checkpoint failure must not silently lose steps", () => {
       // When attemptCheckpointAndResume(undefined, false, true) is called
       // (flush-only, no stepResult) and checkpoint() throws, the execution

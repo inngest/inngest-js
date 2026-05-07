@@ -144,6 +144,13 @@ export interface InngestExecutionOptions {
   generationId?: number;
 
   /**
+   * Unix-millisecond epoch captured once when execution begins, sent on every
+   * async checkpoint POST so the executor can short-circuit the staleness
+   * check for fresh dispatches.
+   */
+  stepStartedAt?: number;
+
+  /**
    * Headers to be sent with any request to Inngest during this execution.
    */
   headers: Record<string, string>;
