@@ -269,6 +269,7 @@ export enum StepOpCode {
   DiscoveryRequest = "DiscoveryRequest",
 
   DeferAdd = "DeferAdd",
+  DeferAbort = "DeferAbort",
 }
 
 /**
