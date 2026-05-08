@@ -1734,15 +1734,11 @@ class InngestExecutionEngine
     // Step's stream should be rolled back
     this.streamTools.rollback(outgoingOp.id);
 
-    // Serialize the error so it survives JSON.stringify (raw Error
-    // objects have non-enumerable properties that get dropped).
-    // This is critical for checkpoint requests where the error is
-    // sent as JSON in the request body.
-    const serialized = serializeError(error);
-
+    // `transformOutput` runs `retriability(error)` then serializes — pre-serializing
+    // here drops `RetryAfterError.retryAfter` (custom property) and breaks the check.
     return {
       ...outgoingOp,
-      error: serialized,
+      error,
       op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
       ...(metadata && metadata.length > 0 ? { metadata } : {}),
     };
