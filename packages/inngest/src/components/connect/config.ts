@@ -174,22 +174,12 @@ export function prepareConnectionConfig(
           undefined,
           inngest[internalLoggerSymbol],
         );
-        const data = {
-          ...parsed,
-          ctx: parsed.ctx
-            ? {
-                ...parsed.ctx,
-                request_id: parsed.ctx.request_id ?? msg.requestId,
-                job_id: parsed.ctx.job_id ?? msg.jobId,
-              }
-            : parsed.ctx,
-        };
 
         const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
         return {
           body() {
-            return data;
+            return parsed;
           },
           method() {
             return "POST";
@@ -202,6 +192,10 @@ export function prepareConnectionConfig(
                 return "connect";
               case headerKeys.RequestVersion.toString():
                 return parsed.version.toString();
+              case headerKeys.RequestId.toString():
+                return msg.requestId;
+              case headerKeys.InngestJobId.toString():
+                return msg.jobId;
               case headerKeys.Signature.toString():
                 return null;
               case headerKeys.TraceParent.toString():

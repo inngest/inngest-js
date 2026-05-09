@@ -1654,14 +1654,6 @@ export class InngestCommHandler<
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
               ),
-              request_id: await actions.headers(
-                "getting request ID for forced execution",
-                headerKeys.RequestId,
-              ),
-              job_id: await actions.headers(
-                "getting job ID for forced execution",
-                headerKeys.InngestJobId,
-              ),
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
@@ -2208,18 +2200,14 @@ export class InngestCommHandler<
           : undefined;
 
       const { event, events, steps, ctx } = anyFnData.value;
-      const requestId =
-        ctx?.request_id ??
-        (await actions.headers(
-          "getting request ID for execution",
-          headerKeys.RequestId,
-        ));
-      const jobId =
-        ctx?.job_id ??
-        (await actions.headers(
-          "getting job ID for execution",
-          headerKeys.InngestJobId,
-        ));
+      const requestId = await actions.headers(
+        "getting request ID for execution",
+        headerKeys.RequestId,
+      );
+      const jobId = await actions.headers(
+        "getting job ID for execution",
+        headerKeys.InngestJobId,
+      );
 
       const stepState = Object.entries(steps ?? {}).reduce<
         InngestExecutionOptions["stepState"]

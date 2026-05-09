@@ -86,33 +86,4 @@ describe("#parseFnData", () => {
       }
     });
   });
-
-  test("parses outbound request and job IDs from context", () => {
-    const parsed = parseFnData(
-      {
-        version: ExecutionVersion.V2,
-        sdkDecided: false,
-        event: generateEvent(),
-        events: [generateEvent()],
-        steps: {},
-        ctx: {
-          run_id: randomstr(),
-          request_id: "req-123",
-          job_id: "job-123",
-          attempt: 0,
-          disable_immediate_execution: false,
-          use_api: false,
-          stack: {
-            stack: [],
-            current: 0,
-          },
-        },
-      },
-      undefined,
-      testLogger,
-    );
-
-    expect(parsed.ctx?.request_id).toBe("req-123");
-    expect(parsed.ctx?.job_id).toBe("job-123");
-  });
 });
