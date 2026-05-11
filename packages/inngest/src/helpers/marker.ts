@@ -6,17 +6,8 @@ import type { DeferredFunction } from "../components/DeferredFunction.ts";
  */
 export const markerKey = "~inngest" as const;
 
-export const Kind = {
-  deferredFunction: "deferredFunction",
-} as const;
-export type Kind = (typeof Kind)[keyof typeof Kind];
-
-/**
- * Shape of the SDK-internal marker bag. Each consumer sets only the fields
- * it cares about; readers should narrow on the field they care about.
- */
 export type Marker = {
-  kind?: Kind;
+  kind?: "deferredFunction";
 };
 
 function getMarker(value: unknown): Marker | undefined {

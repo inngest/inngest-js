@@ -30,6 +30,7 @@ import {
   undefinedToNull,
 } from "../helpers/functions.ts";
 import { warnOnce } from "../helpers/log.ts";
+import { isDeferredFunction } from "../helpers/marker.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
@@ -62,7 +63,6 @@ import {
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
-import { DeferredFunction } from "./DeferredFunction.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { _internals } from "./execution/engine.ts";
 import {
@@ -495,7 +495,7 @@ export class InngestCommHandler<
     // a single `defer` entry.
     const entries: Record<string, FnRegistryEntry> = {};
     for (const fn of this.rawFns) {
-      const isDefer = fn instanceof DeferredFunction;
+      const isDefer = isDeferredFunction(fn);
       const mainId = fn.id(this.client.id);
       const failureId = `${mainId}${InngestFunction.failureSuffix}`;
 

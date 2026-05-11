@@ -1,6 +1,6 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../helpers/consts.ts";
-import { Kind, type Marker, markerKey } from "../helpers/marker.ts";
+import { type Marker, markerKey } from "../helpers/marker.ts";
 import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareStepExtensions,
@@ -26,7 +26,9 @@ const idDenyRegex = /['\\\n\r]/;
  * `onFailure` disallowed, and the schema carried as a typed instance
  * property so callers of `defer(id, { function, data })` can extract it.
  *
- * Identify a defer function at runtime via `instanceof DeferredFunction`.
+ * Identify a defer function at runtime via `isDeferredFunction(value)` from
+ * `helpers/marker.ts`. Prefer that over `instanceof`, which fails across
+ * duplicate SDK copies in the same process.
  *
  * @public
  */
@@ -42,7 +44,7 @@ export class DeferredFunction<
   []
 > {
   readonly schema: TSchema;
-  readonly [markerKey]: Marker = { kind: Kind.deferredFunction };
+  readonly [markerKey]: Marker = { kind: "deferredFunction" };
 
   constructor(
     client: Inngest.Any,
