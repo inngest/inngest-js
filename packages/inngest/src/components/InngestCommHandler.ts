@@ -2219,6 +2219,14 @@ export class InngestCommHandler<
           : undefined;
 
       const { defers, event, events, steps, ctx } = anyFnData.value;
+      const requestId = await actions.headers(
+        "getting request ID for execution",
+        headerKeys.RequestId,
+      );
+      const jobId = await actions.headers(
+        "getting job ID for execution",
+        headerKeys.InngestJobId,
+      );
 
       const stepState = Object.entries(steps ?? {}).reduce<
         InngestExecutionOptions["stepState"]
@@ -2258,6 +2266,8 @@ export class InngestCommHandler<
             runId: ctx?.run_id || "",
             attempt: ctx?.attempt ?? 0,
             maxAttempts: ctx?.max_attempts,
+            requestId: requestId ?? undefined,
+            jobId: jobId ?? undefined,
           },
           internalFnId: ctx?.fn_id,
           queueItemId: ctx?.qi_id,
