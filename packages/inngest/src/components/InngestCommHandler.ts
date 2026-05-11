@@ -2299,7 +2299,7 @@ export class InngestCommHandler<
           },
           internalFnId: ctx?.fn_id,
           queueItemId: ctx?.qi_id,
-          requestId: ctx?.request_id,
+          requestId: requestId ?? undefined,
           stepStartedAt,
           stepState,
           priorDefers: defers,
