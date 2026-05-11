@@ -97,6 +97,19 @@ On replay, the executor sends back a `defers` map of hashed step IDs it has alre
 
 ## Todo
 
+### Known gaps (correctness)
+
+These silently drop user `defer()` calls in specific code paths. Fix before
+removing the experimental label.
+
+- **Preserve buffered defer ops on checkpoint network failure** -- `checkpoint()` drains `state.lazyOps` at the top, then calls the checkpointing API. If the API call exhausts retries and throws, the drained ops are local to `checkpoint()` and lost (`attemptCheckpointAndResume`'s catch block only restores `checkpointingStepBuffer`). User-visible effect: a transient backend hiccup silently drops the user's `defer()` calls. Fix direction: drain in the caller and re-buffer on failure, or have `checkpoint()` restore drained ops on throw.
+
+- **Preserve buffered defer ops on sync-mode terminal rejection** -- Mirrors the async-mode fix but on the sync (durable-endpoint) code path. The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops alongside the terminal error op (or via a final checkpoint if a `checkpointedRun` exists).
+
+### Future features (additive)
+
+Net-new capabilities. None affect correctness of the current API.
+
 - **Support async call-site validation** -- `defer()` itself must stay sync (fire-and-forget, no `await` at the call site), so we can't `await schema.validate(data)` inline. Maybe we can attach the pending validation promise to the buffered lazy op and await it at drain time, before the op is reported. A failure should reject the run the same way a sync validation failure does today.
 
 - **Support `onFailure`** -- We may add it later.
@@ -108,7 +121,3 @@ On replay, the executor sends back a `defers` map of hashed step IDs it has alre
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
 
 - **Middleware hook** -- We need a hook to make encryption and serialization work (e.g. `transformDeferInput`).
-
-- **Preserve buffered defer ops on checkpoint network failure** -- `checkpoint()` drains `state.lazyOps` at the top, then calls the checkpointing API. If the API call exhausts retries and throws, the drained ops are local to `checkpoint()` and lost — `attemptCheckpointAndResume`'s catch block only restores `checkpointingStepBuffer`. User-visible effect: a transient backend hiccup silently drops the user's `defer()` calls. Fix direction: drain in the caller and re-buffer on failure, or have `checkpoint()` restore drained ops on throw.
-
-- **Preserve buffered defer ops on sync-mode terminal rejection** -- Mirrors the async-mode fix but on the sync (durable-endpoint) code path. The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops alongside the terminal error op (or via a final checkpoint if a `checkpointedRun` exists).

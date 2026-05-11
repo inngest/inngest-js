@@ -1175,7 +1175,7 @@ class InngestExecutionEngine
           data = await this.options.createResponse(jsonResponse(resultData));
         }
 
-        // Terminal — `attachLazyOps` bundles any buffered ops with
+        // Terminal. `attachLazyOps` bundles any buffered ops with
         // `RunComplete` so the executor finalizes in one round-trip.
         return this.attachLazyOps(this.transformOutput({ data }));
       },
@@ -1969,7 +1969,7 @@ class InngestExecutionEngine
         };
       }
 
-      // Already a multi-op batch — just append.
+      // Already a multi-op batch; just append.
       case "steps-found": {
         return {
           ...result,
