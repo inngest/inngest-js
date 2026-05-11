@@ -158,7 +158,7 @@ export type VariantResult<
  */
 export interface ExperimentMetadataValues {
   experiment_name: string;
-  variant_selected: string;
+  variant: string;
   selection_strategy: string;
   available_variants: string[];
   variant_weights?: Record<string, number>;
@@ -337,7 +337,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
             "merge",
             {
               experiment_name: stepOpts.id,
-              variant_selected: result,
+              variant: result,
               selection_strategy: select.__experimentConfig.strategy,
               available_variants: variantNames,
               ...(select.__experimentConfig.weights && {
