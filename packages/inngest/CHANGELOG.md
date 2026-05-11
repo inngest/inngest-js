@@ -1,5 +1,19 @@
 # inngest
 
+## 4.4.0
+
+### Minor Changes
+
+- [#1508](https://github.com/inngest/inngest-js/pull/1508) [`4771b424`](https://github.com/inngest/inngest-js/commit/4771b42402f9e2f435417b65f4e5a38e54e398af) Thanks [@amh4r](https://github.com/amh4r)! - Add experimental support for deferred functions
+
+### Patch Changes
+
+- [#1512](https://github.com/inngest/inngest-js/pull/1512) [`be675a3d`](https://github.com/inngest/inngest-js/commit/be675a3d3c2a39b415ded8db5e2626e22b941760) Thanks [@amh4r](https://github.com/amh4r)! - Fix waitForSignal not in middleware StepType union
+
+- [#1513](https://github.com/inngest/inngest-js/pull/1513) [`cbad05c3`](https://github.com/inngest/inngest-js/commit/cbad05c3052de84defe36797c23eb0da295022fb) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Standardize variant naming to `variant` instead of `variant_selected`
+
+- [#1516](https://github.com/inngest/inngest-js/pull/1516) [`1bca44a8`](https://github.com/inngest/inngest-js/commit/1bca44a8293d6d44e93266fbe3e8dd4dc7e0fa73) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Add Request ID & Job ID to context and logs
+
 ## 4.3.0
 
 ### Minor Changes
