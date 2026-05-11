@@ -1141,26 +1141,22 @@ class InngestExecutionEngine
           sseResponse = defaultSseResponse(resultData);
         }
 
-        // Drain lazy ops up front so we can bundle them with whatever response
-        // shape we end up returning. Lazy ops are excluded from
-        // `filterNewSteps` so they only appear here.
-        const lazyOps = this.state.lazyOps.drain();
-
         // Real new steps (e.g. from `Promise.race` where the winning branch
         // completed before losing branches reported). The function isn't truly
         // done: the executor needs to memoize these and call back. Don't close
-        // the stream.
+        // the stream. `filterNewSteps` excludes lazy ops, so `attachLazyOps`
+        // is what folds them in here.
         const newSteps = await this.filterNewSteps(
           Array.from(this.state.steps.values()),
         );
 
         if (newSteps?.length) {
-          return {
+          return this.attachLazyOps({
             type: "steps-found",
             ctx: this.fnArg,
             ops: this.ops,
-            steps: [...newSteps, ...lazyOps] as [OutgoingOp, ...OutgoingOp[]],
-          };
+            steps: newSteps as [OutgoingOp, ...OutgoingOp[]],
+          });
         }
 
         // Function is truly done. Close the stream with a terminal
@@ -1179,33 +1175,9 @@ class InngestExecutionEngine
           data = await this.options.createResponse(jsonResponse(resultData));
         }
 
-        // If lazy ops were buffered, bundle them with `RunComplete` so the
-        // executor finalizes the run in a single round-trip instead of
-        // replaying the function just to receive its terminal data.
-        if (lazyOps.length) {
-          const transformed = await this.transformOutput({ data });
-          if (transformed.type !== "function-resolved") {
-            return transformed;
-          }
-          const steps: OutgoingOp[] = [
-            ...lazyOps,
-            {
-              op: StepOpCode.RunComplete,
-              id: hashId(RUN_COMPLETE_STEP_ID),
-              data: undefinedToNull(transformed.data),
-            },
-          ];
-          if (isNonEmpty(steps)) {
-            return {
-              type: "steps-found",
-              ctx: transformed.ctx,
-              ops: transformed.ops,
-              steps,
-            };
-          }
-        }
-
-        return this.transformOutput({ data });
+        // Terminal — `attachLazyOps` bundles any buffered ops with
+        // `RunComplete` so the executor finalizes in one round-trip.
+        return this.attachLazyOps(this.transformOutput({ data }));
       },
 
       /**
@@ -1227,46 +1199,14 @@ class InngestExecutionEngine
 
         // Buffered defer ops were recorded by user code that ran successfully
         // before the throw, so they should ship even when the function
-        // ultimately errors. Bundle them with the run's terminal error op
-        // into a `steps-found` response, mirroring the `function-resolved`
-        // bundling for `RunComplete`. The asyncCheckpointing rejection path
-        // achieves the same intent via a final checkpoint call; pure-async
-        // has no checkpoint channel, so we ship via the response body.
-        const lazyOps = this.state.lazyOps.drain();
-        if (lazyOps.length) {
-          const transformed = await this.transformOutput({
-            error: checkpoint.error,
-          });
-          if (transformed.type !== "function-rejected") {
-            return transformed;
-          }
-
-          let terminalOp: StepOpCode.StepFailed | StepOpCode.StepError;
-          if (isFinal) {
-            terminalOp = StepOpCode.StepFailed;
-          } else {
-            terminalOp = StepOpCode.StepError;
-          }
-
-          const steps: OutgoingOp[] = [
-            ...lazyOps,
-            {
-              op: terminalOp,
-              id: hashId(RUN_COMPLETE_STEP_ID),
-              error: checkpoint.error,
-            },
-          ];
-          if (isNonEmpty(steps)) {
-            return {
-              type: "steps-found",
-              ctx: transformed.ctx,
-              ops: transformed.ops,
-              steps,
-            };
-          }
-        }
-
-        return this.transformOutput({ error: checkpoint.error });
+        // ultimately errors. `attachLazyOps` bundles them alongside the
+        // terminal error op (mirroring the `function-resolved` bundling for
+        // `RunComplete`). The asyncCheckpointing rejection path achieves the
+        // same intent via a final checkpoint call; pure-async has no
+        // checkpoint channel, so we ship via the response body.
+        return this.attachLazyOps(
+          this.transformOutput({ error: checkpoint.error }),
+        );
       },
 
       /**
@@ -1291,12 +1231,12 @@ class InngestExecutionEngine
           return transformed;
         }
 
-        return {
+        return this.attachLazyOps({
           type: "steps-found",
           ctx: transformed.ctx,
           ops: transformed.ops,
-          steps: [transformed.step, ...this.state.lazyOps.drain()],
-        };
+          steps: [transformed.step],
+        });
       },
 
       /**
@@ -1970,6 +1910,85 @@ class InngestExecutionEngine
       ops: this.ops,
       data: undefinedToNull(data),
     };
+  }
+
+  /**
+   * Drain buffered lazy ops (e.g. `DeferAdd` from `defer()`) and merge them
+   * into `result` so they ship in the same outbound message. Lazy ops are
+   * fire-and-forget and have no natural shipping moment, so each terminal code
+   * path must ship them or they're silently dropped.
+   */
+  private attachLazyOps(
+    result: ExecutionResult,
+    extras: readonly OutgoingOp[] = [],
+  ): ExecutionResult {
+    const lazyOps = this.state.lazyOps.drain();
+    if (lazyOps.length === 0 && extras.length === 0) {
+      return result;
+    }
+
+    switch (result.type) {
+      // Convert terminal results into `steps-found` so the lazy ops ride
+      // alongside `RunComplete` / the terminal error op. This lets the executor
+      // finalize in one round-trip instead of replaying just to receive
+      // terminal data.
+      case "function-resolved": {
+        const steps: OutgoingOp[] = [
+          ...extras,
+          ...lazyOps,
+          {
+            op: StepOpCode.RunComplete,
+            id: hashId(RUN_COMPLETE_STEP_ID),
+            data: undefinedToNull(result.data),
+          },
+        ];
+        return {
+          type: "steps-found",
+          ctx: result.ctx,
+          ops: result.ops,
+          steps: steps as [OutgoingOp, ...OutgoingOp[]],
+        };
+      }
+
+      case "function-rejected": {
+        const isFinal = result.retriable === false;
+        const steps: OutgoingOp[] = [
+          ...extras,
+          ...lazyOps,
+          {
+            op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+            id: hashId(RUN_COMPLETE_STEP_ID),
+            error: result.error,
+          },
+        ];
+        return {
+          type: "steps-found",
+          ctx: result.ctx,
+          ops: result.ops,
+          steps: steps as [OutgoingOp, ...OutgoingOp[]],
+        };
+      }
+
+      // Already a multi-op batch — just append.
+      case "steps-found": {
+        return {
+          ...result,
+          steps: [...result.steps, ...extras, ...lazyOps] as [
+            OutgoingOp,
+            ...OutgoingOp[],
+          ],
+        };
+      }
+
+      // `step-ran` / `step-not-found` / `change-mode` carry a single op or no
+      // ops; there's no slot to attach lazy ops or extras. Re-buffer the
+      // drained ops so they ship on the next outbound message.
+      default:
+        for (const op of lazyOps) {
+          this.state.lazyOps.push(op);
+        }
+        return result;
+    }
   }
 
   private createExecutionState(): ExecutionState {
