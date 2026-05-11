@@ -139,9 +139,9 @@ export interface InngestExecutionOptions {
 
   /**
    * Echoed back on every async checkpoint POST so the executor can reject
-   * stale dispatches with 409.
+   * dispatches from superseded requests with 409.
    */
-  generationId?: number;
+  requestId?: string;
 
   /**
    * Unix-millisecond epoch captured once when execution begins, sent on every

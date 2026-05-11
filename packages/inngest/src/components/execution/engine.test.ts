@@ -339,7 +339,7 @@ describe("Execution engine checkpoint retry behavior", () => {
     });
 
     describe("metadata propagation to checkpoint payload", () => {
-      test("forwards generationId and stepStartedAt to checkpointStepsAsync", async () => {
+      test("forwards requestId and stepStartedAt to checkpointStepsAsync", async () => {
         const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
 
         await runExecution({
@@ -362,7 +362,7 @@ describe("Execution engine checkpoint retry behavior", () => {
           extraPartialOptions: {
             queueItemId: "queue-item-123",
             internalFnId: "internal-fn-456",
-            generationId: 7,
+            requestId: "01HW7Z7K8XJZ4Q9P1Y2X3W4V5U",
             stepStartedAt: 1_700_000_000_000,
           },
         });
@@ -371,7 +371,7 @@ describe("Execution engine checkpoint retry behavior", () => {
           expect.objectContaining({
             fnId: "internal-fn-456",
             queueItemId: "queue-item-123",
-            generationId: 7,
+            requestId: "01HW7Z7K8XJZ4Q9P1Y2X3W4V5U",
             stepStartedAt: 1_700_000_000_000,
           }),
         );

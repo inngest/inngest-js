@@ -550,7 +550,7 @@ export class InngestApi {
     runId: string;
     fnId: string;
     queueItemId: string;
-    generationId?: number;
+    requestId?: string;
     stepStartedAt?: number;
     steps: OutgoingOp[];
   }): Promise<void> {
@@ -558,7 +558,7 @@ export class InngestApi {
       run_id: args.runId,
       fn_id: args.fnId,
       qi_id: args.queueItemId,
-      ...(args.generationId ? { generation_id: args.generationId } : {}),
+      ...(args.requestId ? { request_id: args.requestId } : {}),
       ...(args.stepStartedAt ? { step_started_at: args.stepStartedAt } : {}),
       steps: args.steps,
       ts: new Date().valueOf(),
