@@ -20,6 +20,9 @@ import type { Middleware } from "./middleware/index.ts";
 const idDenyRegex = /['\\\n\r]/;
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * A defer (companion) function created via `createDefer(...)`. Real
  * `InngestFunction` at runtime, but with the trigger pinned to
  * `inngest/deferred.schedule` (see `getConfigTriggers`), `triggers` and
@@ -151,6 +154,9 @@ export type CreateDeferInput<
 };
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * Create a typed defer function. One `createDefer` call = one Inngest
  * function. Returns a `DeferredFunction<TSchema>` so callers of `defer(id,
  * { function, data })` get the data type inferred from the schema.
