@@ -15,6 +15,7 @@ export type MetadataScope = "run" | "step" | "extended_trace";
  */
 export type MetadataKind =
   | "inngest.experiment"
+  | "inngest.score"
   | "inngest.warnings"
   | `userland.${string}`;
 
@@ -36,7 +37,7 @@ export type MetadataUpdate = {
 
 export type MetadataValues = Record<string, unknown>;
 
-interface BuilderConfig {
+export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
   stepIndex?: number;
@@ -277,7 +278,7 @@ function getBatchScope(config: BuilderConfig): MetadataScope {
   return "step";
 }
 
-async function performOp(
+export async function performOp(
   client: Inngest,
   config: BuilderConfig,
   values: Record<string, unknown>,
