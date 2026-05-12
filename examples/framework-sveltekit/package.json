@@ -27,7 +27,7 @@
   },
   "type": "module",
   "dependencies": {
-    "h3": "^1.7.1",
+    "h3": "^1.15.11",
     "inngest": "^3.0.0"
   }
 }
