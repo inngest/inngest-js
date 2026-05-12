@@ -34,9 +34,9 @@ test("schema validation succeeds", async () => {
     { id: "process", schema: z.object({ msg: z.string() }) },
     async ({ event, runId }) => {
       deferState.runId = runId;
-      expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<{ msg: string }>();
-      deferState.eventData = event.data;
+      expectTypeOf(event.data.input).not.toBeAny();
+      expectTypeOf(event.data.input).toEqualTypeOf<{ msg: string }>();
+      deferState.eventData = event.data.input;
     },
   );
   const fn = client.createFunction(
@@ -264,7 +264,7 @@ test("defer without schema defaults to any", async () => {
   const eventName = randomSuffix("evt");
   const foo = createDefer(client, { id: "foo" }, async ({ event, runId }) => {
     deferState.runId = runId;
-    deferState.eventData = event.data;
+    deferState.eventData = event.data.input;
   });
   const fn = client.createFunction(
     {
@@ -296,16 +296,16 @@ test("mixed defer functions: with and without schema", () => {
     client,
     { id: "with-schema", schema: z.object({ msg: z.string() }) },
     async ({ event }) => {
-      expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data.msg).toBeString();
+      expectTypeOf(event.data.input).not.toBeAny();
+      expectTypeOf(event.data.input.msg).toBeString();
     },
   );
   const withoutSchema = createDefer(
     client,
     { id: "without-schema" },
     async ({ event }) => {
-      expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
+      expectTypeOf(event.data.input).not.toBeAny();
+      expectTypeOf(event.data.input).toEqualTypeOf<Record<string, any>>();
     },
   );
 
