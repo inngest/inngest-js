@@ -57,6 +57,7 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import { type SendScoreOptions, sendScore } from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
@@ -159,6 +160,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * Flag set by metadataMiddleware to enable step.metadata()
    */
   protected experimentalMetadataEnabled = false;
+
+  /**
+   * @internal
+   * Flag set by scoreMiddleware to enable step.score().
+   */
+  protected experimentalScoreEnabled = false;
 
   /**
    * A dummy Inngest function used in Durable Endpoints. This is necessary
@@ -304,6 +311,15 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       );
     }
     return new UnscopedMetadataBuilder(this);
+  }
+
+  /**
+   * Write a score for a specific run step.
+   *
+   * For durable in-function score writes, prefer `step.score()`.
+   */
+  public async score(options: SendScoreOptions): Promise<void> {
+    await sendScore(this, options);
   }
 
   /**
