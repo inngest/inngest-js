@@ -1,5 +1,5 @@
 ---
-"inngest": minor
+"inngest": patch
 ---
 
-Fix a bug that didn't respect the RetryAt value
+Fix RetryAfterError not respected
