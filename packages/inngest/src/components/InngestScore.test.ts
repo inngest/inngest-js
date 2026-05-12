@@ -142,6 +142,110 @@ describe("sendScore", () => {
     expect(client["updateMetadata"]).not.toHaveBeenCalled();
   });
 
+  test("batches score metadata when targeting the current indexed step by userland ID", async () => {
+    const addMetadata = vi.fn(() => true);
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: {
+        ctx: { runId: "run", attempt: 0 },
+        executingStep: {
+          id: "my-step:1",
+          userlandId: "my-step",
+          userlandIndex: 1,
+        },
+        instance: { addMetadata },
+      },
+    } as unknown as als.AsyncContext);
+
+    const client = mockClient();
+    await sendScore(client, {
+      runId: "run",
+      stepId: "my-step",
+      name: "accuracy",
+      value: 0.9,
+    });
+
+    expect(addMetadata).toHaveBeenCalledWith(
+      "my-step:1",
+      "inngest.score",
+      "step",
+      "merge",
+      { accuracy: 0.9 },
+    );
+    expect(client["updateMetadata"]).not.toHaveBeenCalled();
+  });
+
+  test("uses current step index when an indexed current-step write falls back to API", async () => {
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: {
+        ctx: { runId: "run", attempt: 0 },
+        executingStep: {
+          id: "my-step:1",
+          userlandId: "my-step",
+          userlandIndex: 1,
+        },
+        instance: { addMetadata: vi.fn(() => false) },
+      },
+    } as unknown as als.AsyncContext);
+
+    const client = mockClient();
+    await sendScore(client, {
+      runId: "run",
+      stepId: "my-step",
+      name: "accuracy",
+      value: 0.9,
+    });
+
+    expect(client["updateMetadata"]).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({
+          run_id: "run",
+          step_id: "my-step",
+          step_index: 1,
+        }),
+      }),
+    );
+  });
+
+  test("sends stepIndex when targeting a different indexed step", async () => {
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: {
+        ctx: { runId: "run", attempt: 0 },
+        executingStep: {
+          id: "my-step:1",
+          userlandId: "my-step",
+          userlandIndex: 1,
+        },
+        instance: { addMetadata: vi.fn(() => true) },
+      },
+    } as unknown as als.AsyncContext);
+
+    const client = mockClient();
+    await sendScore(client, {
+      runId: "run",
+      stepId: "my-step",
+      stepIndex: 0,
+      name: "accuracy",
+      value: 0.9,
+    });
+
+    expect(client["updateMetadata"]).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({
+          run_id: "run",
+          step_id: "my-step",
+          step_index: 0,
+        }),
+        metadata: [
+          {
+            kind: "inngest.score",
+            op: "merge",
+            values: { accuracy: 0.9 },
+          },
+        ],
+      }),
+    );
+  });
+
   test("rejects missing step context before writing score metadata", async () => {
     vi.spyOn(als, "getAsyncCtx").mockResolvedValue(undefined);
     const client = mockClient();
@@ -215,6 +319,16 @@ describe("sendScore", () => {
         value: true as unknown as number,
       }),
     ).rejects.toThrow("finite number");
+
+    await expect(
+      sendScore(client, {
+        runId: "run",
+        stepId: "step",
+        stepIndex: 1.5,
+        name: "accuracy",
+        value: 1,
+      }),
+    ).rejects.toThrow("stepIndex must be a non-negative integer");
   });
 
   test("rejects explicitly empty step.score target ids", async () => {

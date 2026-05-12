@@ -9,6 +9,7 @@ const scoreNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 export type SendScoreOptions = {
   runId: string;
   stepId: string;
+  stepIndex?: number;
   name: string;
   value: number;
 };
@@ -16,6 +17,7 @@ export type SendScoreOptions = {
 export type StepScoreOptions = {
   runId?: string;
   stepId?: string;
+  stepIndex?: number;
   name: string;
   value: number;
 };
@@ -33,6 +35,7 @@ function validateScoreFields(
 ): asserts options is {
   runId?: unknown;
   stepId?: unknown;
+  stepIndex?: unknown;
   name: unknown;
   value: unknown;
 } {
@@ -53,6 +56,15 @@ function validateScoreFields(
     if (invalidRequired || invalidOptional) {
       throw new Error(`${field} must be a non-empty string`);
     }
+  }
+
+  if (
+    options.stepIndex !== undefined &&
+    (typeof options.stepIndex !== "number" ||
+      !Number.isInteger(options.stepIndex) ||
+      options.stepIndex < 0)
+  ) {
+    throw new Error("stepIndex must be a non-negative integer");
   }
 
   if (typeof options.name !== "string" || !scoreNameRegex.test(options.name)) {
@@ -89,6 +101,7 @@ export async function sendScore(
     {
       runId: options.runId,
       stepId: options.stepId,
+      stepIndex: options.stepIndex,
     },
     { [options.name]: options.value },
     "inngest.score",
@@ -107,6 +120,7 @@ export async function sendStepScore(
     {
       runId: options.runId,
       stepId: options.stepId ?? null,
+      stepIndex: options.stepIndex,
     },
     { [options.name]: options.value },
     "inngest.score",
