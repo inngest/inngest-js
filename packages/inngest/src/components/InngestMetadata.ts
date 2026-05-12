@@ -303,8 +303,7 @@ function isCurrentStepTarget(
     return false;
   }
 
-  const currentIndex = executingStep.userlandIndex ?? 0;
-  return config.stepIndex === undefined || config.stepIndex === currentIndex;
+  return true;
 }
 
 function normalizeCurrentStepTarget(
@@ -322,10 +321,6 @@ function normalizeCurrentStepTarget(
   }
 
   const currentIndex = executingStep.userlandIndex ?? 0;
-  if (config.stepIndex !== undefined && config.stepIndex !== currentIndex) {
-    return config;
-  }
-
   return {
     ...config,
     ...(currentIndex > 0 ? { stepIndex: currentIndex } : {}),
