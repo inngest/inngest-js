@@ -5,15 +5,20 @@ import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareStepExtensions,
   BaseContext,
+  Context,
   FunctionConfig,
   Handler,
 } from "../types.ts";
+import type { IInngestExecution } from "./execution/InngestExecution.ts";
 import type {
   builtInMiddleware,
   ClientOptionsFromInngest,
   Inngest,
 } from "./Inngest.ts";
-import { InngestFunction } from "./InngestFunction.ts";
+import {
+  type CreateExecutionOptions,
+  InngestFunction,
+} from "./InngestFunction.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import type { Middleware } from "./middleware/index.ts";
 
@@ -81,6 +86,48 @@ export class DeferredFunction<
       },
     ];
   }
+
+  protected override createExecution(
+    opts: CreateExecutionOptions,
+  ): IInngestExecution {
+    return super.createExecution({
+      ...opts,
+      partialOptions: {
+        ...opts.partialOptions,
+        transformCtx: (ctx) => this.transformContext(ctx),
+      },
+    });
+  }
+
+  /**
+   * Hook for massaging the handler context before middleware and user code
+   * run. Reshapes each event's `data` from the wire format
+   * `{ ...userInput, _inngest }` to `{ parent, input }` so handlers (and
+   * batched future calls where parents may differ per event) can see the
+   * routing metadata alongside their typed payload. Subclasses can
+   * override to change behavior.
+   */
+  protected transformContext(ctx: Context.Any): Context.Any {
+    const reshape = (data: Record<string, unknown>) => {
+      const { _inngest, ...input } = data;
+      const meta = (_inngest ?? {}) as {
+        parent_fn_slug?: string;
+        parent_run_id?: string;
+      };
+      return {
+        parent: {
+          fnSlug: meta.parent_fn_slug ?? "",
+          runId: meta.parent_run_id ?? "",
+        } satisfies DeferredFunction.Parent,
+        input,
+      };
+    };
+    ctx.event.data = reshape(ctx.event.data as Record<string, unknown>);
+    for (const event of ctx.events) {
+      event.data = reshape(event.data as Record<string, unknown>);
+    }
+    return ctx;
+  }
 }
 
 /**
@@ -103,21 +150,35 @@ export namespace DeferredFunction {
     InngestFunction.Options<[], never>,
     "triggers" | "onFailure" | "batchEvents"
   >;
+
+  /**
+   * Routing metadata describing the parent run that triggered a defer
+   * handler. Derived from `event.data._inngest` on the wire and surfaced
+   * on each handler event as `data.parent`.
+   */
+  export type Parent = {
+    fnSlug: string;
+    runId: string;
+  };
 }
 
 /**
- * The `event` shape a defer handler receives. With a schema, `data`
- * narrows to its inferred type; without one, it falls back to
- * `Record<string, any>`.
+ * The `event` shape a defer handler receives. `data.parent` carries the
+ * backend's routing metadata for this event (per-event so future batched
+ * deliveries can mix parents); `data.input` carries the user payload —
+ * narrowed by the schema if one is set, otherwise `Record<string, any>`.
  */
 type DeferEvent<TSchema> = {
   name: internalEvents.DeferredSchedule;
-  data: TSchema extends StandardSchemaV1<
-    infer D extends Record<string, unknown>
-  >
-    ? D
-    : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-      Record<string, any>;
+  data: {
+    parent: DeferredFunction.Parent;
+    input: TSchema extends StandardSchemaV1<
+      infer D extends Record<string, unknown>
+    >
+      ? D
+      : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+        Record<string, any>;
+  };
 };
 
 /**
