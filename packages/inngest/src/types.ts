@@ -1259,8 +1259,8 @@ export interface RegisterOptions {
   streaming?: true | false;
 
   /**
-   * Controls whether unauthenticated `PUT` (sync) requests are accepted. When
-   * `true`, syncs will only work via our REST API, UI, or third-party
+   * Controls whether unauthenticated `PUT` (app sync) requests are accepted.
+   * When `true`, syncs will only work via our REST API, UI, or third-party
    * integrations (e.g. Vercel).
    *
    * Equivalent to setting the `INNGEST_ENABLE_UNAUTHED_SYNC` env var. The serve
@@ -1268,12 +1268,12 @@ export interface RegisterOptions {
    *
    * Only applies in cloud mode; dev mode is unaffected.
    *
-   * Unauthed `PUT` requests are intentional feature and not a critical security
-   * risk, but disabling them is good defense in depth. An unauthed `PUT`
-   * request simply tells the SDK to sync itself, but does not control where the
-   * SDK sends its outgoing request (it's always to the Inngest API). This was
-   * added to enable the "sync from CI" use case, but that's now fulfilled by
-   * the Inngest API.
+   * Unauthed `PUT` requests are an intentional feature and not a critical
+   * security risk, but disabling them is good defense in depth. An unauthed
+   * `PUT` request simply tells the SDK to sync itself, but does not control
+   * where the SDK sends its outgoing request (it's always to the Inngest API).
+   * This was added to enable the "sync from CI" use case, but that's now
+   * fulfilled by the Inngest API.
    *
    * @default true
    */
