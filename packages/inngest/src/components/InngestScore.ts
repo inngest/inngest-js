@@ -6,18 +6,20 @@ import { Middleware } from "./middleware/middleware.ts";
 
 const scoreNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 
+type ScoreValue = number | boolean;
+
 export type SendScoreOptions = {
   runId: string;
-  stepId: string;
+  stepId?: string;
   name: string;
-  value: number;
+  value: ScoreValue;
 };
 
 export type StepScoreOptions = {
   runId?: string;
   stepId?: string;
   name: string;
-  value: number;
+  value: ScoreValue;
 };
 
 export type ScoreStepTool = (
@@ -29,7 +31,7 @@ export const scoreSymbol = Symbol.for("inngest.step.score");
 
 function validateScoreFields(
   options: unknown,
-  requireTargetIds: boolean,
+  requiredTargetIds: readonly ("runId" | "stepId")[],
 ): asserts options is {
   runId?: unknown;
   stepId?: unknown;
@@ -42,11 +44,11 @@ function validateScoreFields(
 
   for (const field of ["runId", "stepId"] as const) {
     const value = options[field];
+    const isRequired = requiredTargetIds.includes(field);
     const invalidRequired =
-      requireTargetIds &&
-      (typeof value !== "string" || value.trim().length === 0);
+      isRequired && (typeof value !== "string" || value.trim().length === 0);
     const invalidOptional =
-      !requireTargetIds &&
+      !isRequired &&
       value !== undefined &&
       (typeof value !== "string" || value.trim().length === 0);
 
@@ -61,21 +63,28 @@ function validateScoreFields(
     );
   }
 
-  if (typeof options.value !== "number" || !Number.isFinite(options.value)) {
-    throw new Error("score value must be a finite number");
+  if (
+    typeof options.value !== "boolean" &&
+    (typeof options.value !== "number" || !Number.isFinite(options.value))
+  ) {
+    throw new Error("score value must be a finite number or boolean");
   }
+}
+
+function normalizeScoreValue(value: ScoreValue): number {
+  return typeof value === "boolean" ? Number(value) : value;
 }
 
 function validateSendScoreOptions(
   options: unknown,
 ): asserts options is SendScoreOptions {
-  validateScoreFields(options, true);
+  validateScoreFields(options, ["runId"]);
 }
 
 export function validateStepScoreOptions(
   options: unknown,
 ): asserts options is StepScoreOptions {
-  validateScoreFields(options, false);
+  validateScoreFields(options, []);
 }
 
 export async function sendScore(
@@ -90,7 +99,7 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: options.value },
+    { [options.name]: normalizeScoreValue(options.value) },
     "inngest.score",
     "merge",
   );
@@ -105,10 +114,11 @@ export async function sendStepScore(
   await performOp(
     client,
     {
-      runId: options.runId,
-      stepId: options.stepId ?? null,
+      runId:
+        options.stepId === undefined ? (options.runId ?? null) : options.runId,
+      stepId: options.stepId,
     },
-    { [options.name]: options.value },
+    { [options.name]: normalizeScoreValue(options.value) },
     "inngest.score",
     "merge",
   );
@@ -129,6 +139,7 @@ export const scoreMiddleware = () => {
         step: {
           /**
            * Create a durable score update wrapped in a step.
+           * Omit `stepId` to attach the score to the run.
            *
            * @param memoizationId - The score step ID suffix; the durable step is
            *   recorded as `score:${memoizationId}`.

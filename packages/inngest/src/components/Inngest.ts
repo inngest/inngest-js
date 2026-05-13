@@ -314,7 +314,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
-   * Write a score for a specific run step.
+   * Write a score for a run or a specific run step.
+   *
+   * Omit `stepId` to attach the score to the run.
    *
    * For durable in-function score writes, prefer `step.score()`.
    */
