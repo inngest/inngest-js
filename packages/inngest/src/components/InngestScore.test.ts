@@ -114,6 +114,31 @@ describe("sendScore", () => {
     );
   });
 
+  test("inngest.score writes run-scoped score metadata when stepId is omitted", async () => {
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue(undefined);
+    const client = new Inngest({ id: "app" });
+    const updateMetadata = spyOnUpdateMetadata(client);
+
+    await client.score({
+      runId: "run",
+      name: "passed",
+      value: true,
+    });
+
+    expect(updateMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: { run_id: "run" },
+        metadata: [
+          {
+            kind: "inngest.score",
+            op: "merge",
+            values: { passed: 1 },
+          },
+        ],
+      }),
+    );
+  });
+
   test("batches score metadata when targeting the current step", async () => {
     const addMetadata = vi.fn(() => true);
     vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
@@ -138,6 +163,33 @@ describe("sendScore", () => {
       "step",
       "merge",
       { accuracy: 0.9 },
+    );
+    expect(client["updateMetadata"]).not.toHaveBeenCalled();
+  });
+
+  test("batches run-scoped score metadata when stepId is omitted", async () => {
+    const addMetadata = vi.fn(() => true);
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: {
+        ctx: { runId: "run", attempt: 0 },
+        executingStep: { id: "step" },
+        instance: { addMetadata },
+      },
+    } as unknown as als.AsyncContext);
+
+    const client = mockClient();
+    await sendScore(client, {
+      runId: "run",
+      name: "passed",
+      value: false,
+    });
+
+    expect(addMetadata).toHaveBeenCalledWith(
+      "step",
+      "inngest.score",
+      "run",
+      "merge",
+      { passed: 0 },
     );
     expect(client["updateMetadata"]).not.toHaveBeenCalled();
   });
@@ -206,18 +258,28 @@ describe("sendScore", () => {
     );
   });
 
-  test("rejects missing step context before writing score metadata", async () => {
+  test("step.score helper writes run-scoped score metadata outside execution with explicit runId", async () => {
     vi.spyOn(als, "getAsyncCtx").mockResolvedValue(undefined);
     const client = mockClient();
 
-    await expect(
-      sendStepScore(client, {
-        runId: "run",
-        name: "accuracy",
-        value: 1,
+    await sendStepScore(client, {
+      runId: "run",
+      name: "accuracy",
+      value: 1,
+    });
+
+    expect(client["updateMetadata"]).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: { run_id: "run" },
+        metadata: [
+          {
+            kind: "inngest.score",
+            op: "merge",
+            values: { accuracy: 1 },
+          },
+        ],
       }),
-    ).rejects.toThrow("step() was called without a value");
-    expect(client["updateMetadata"]).not.toHaveBeenCalled();
+    );
   });
 
   test("rejects invalid score input", async () => {
@@ -269,16 +331,7 @@ describe("sendScore", () => {
         name: "accuracy",
         value: Number.NaN,
       }),
-    ).rejects.toThrow("finite number");
-
-    await expect(
-      sendScore(client, {
-        runId: "run",
-        stepId: "step",
-        name: "accuracy",
-        value: true as unknown as number,
-      }),
-    ).rejects.toThrow("finite number");
+    ).rejects.toThrow("finite number or boolean");
   });
 
   test("rejects explicitly empty step.score target ids", async () => {
@@ -377,7 +430,7 @@ describe("scoreMiddleware", () => {
     });
   });
 
-  test("step.score batches when the score step executes immediately", async () => {
+  test("step.score batches run-scoped score metadata when stepId is omitted", async () => {
     const client = new Inngest({
       id: "app",
       middleware: [scoreMiddleware()],
@@ -386,7 +439,7 @@ describe("scoreMiddleware", () => {
     const fn = client.createFunction(
       { id: "fn", triggers: { event: "test" } },
       async ({ step }) => {
-        await step.score("accuracy", { name: "accuracy", value: 1 });
+        await step.score("accuracy", { name: "accuracy", value: true });
       },
     );
 
@@ -402,7 +455,7 @@ describe("scoreMiddleware", () => {
         metadata: [
           {
             kind: "inngest.score",
-            scope: "step",
+            scope: "run",
             op: "merge",
             values: { accuracy: 1 },
           },
