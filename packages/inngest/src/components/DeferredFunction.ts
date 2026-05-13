@@ -101,31 +101,32 @@ export class DeferredFunction<
 
   /**
    * Hook for massaging the handler context before middleware and user code
-   * run. Reshapes each event's `data` from the wire format
-   * `{ ...userInput, _inngest }` to `{ parent, input }` so handlers (and
-   * batched future calls where parents may differ per event) can see the
-   * routing metadata alongside their typed payload. Subclasses can
-   * override to change behavior.
+   * run. Strips `_inngest` routing metadata off each event's `data`
+   * (leaving the user payload directly at `event.data`) and collects the
+   * derived parents into `ctx.parents`, aligned by index so a batched
+   * `events[i]` matches `parents[i]`. Subclasses can override to change
+   * behavior.
    */
   protected transformContext(ctx: Context.Any): Context.Any {
-    const reshape = (data: Record<string, unknown>) => {
+    const strip = (event: { data?: unknown }): DeferredFunction.Parent => {
+      const data = (event.data ?? {}) as Record<string, unknown>;
       const { _inngest, ...input } = data;
       const meta = (_inngest ?? {}) as {
         parent_fn_slug?: string;
         parent_run_id?: string;
       };
+      event.data = input;
       return {
-        parent: {
-          fnSlug: meta.parent_fn_slug ?? "",
-          runId: meta.parent_run_id ?? "",
-        } satisfies DeferredFunction.Parent,
-        input,
+        fnSlug: meta.parent_fn_slug ?? "",
+        runId: meta.parent_run_id ?? "",
       };
     };
-    ctx.event.data = reshape(ctx.event.data as Record<string, unknown>);
-    for (const event of ctx.events) {
-      event.data = reshape(event.data as Record<string, unknown>);
-    }
+    const parents = ctx.events.map(strip);
+    // `ctx.event` is a separate deserialization of the same payload, so
+    // strip it too — but don't add a duplicate parent.
+    strip(ctx.event);
+    (ctx as unknown as { parents: DeferredFunction.Parent[] }).parents =
+      parents;
     return ctx;
   }
 }
@@ -154,7 +155,7 @@ export namespace DeferredFunction {
   /**
    * Routing metadata describing the parent run that triggered a defer
    * handler. Derived from `event.data._inngest` on the wire and surfaced
-   * on each handler event as `data.parent`.
+   * on the handler ctx as `parents[i]`, aligned with `events[i]`.
    */
   export type Parent = {
     fnSlug: string;
@@ -163,29 +164,26 @@ export namespace DeferredFunction {
 }
 
 /**
- * The `event` shape a defer handler receives. `data.parent` carries the
- * backend's routing metadata for this event (per-event so future batched
- * deliveries can mix parents); `data.input` carries the user payload —
- * narrowed by the schema if one is set, otherwise `Record<string, any>`.
+ * The `event` shape a defer handler receives. `data` carries the user
+ * payload directly — narrowed by the schema if one is set, otherwise
+ * `Record<string, any>`. Parent metadata is exposed separately on
+ * `ctx.parents` so events and parents can be matched by index.
  */
 type DeferEvent<TSchema> = {
   name: internalEvents.DeferredSchedule;
-  data: {
-    parent: DeferredFunction.Parent;
-    input: TSchema extends StandardSchemaV1<
-      infer D extends Record<string, unknown>
-    >
-      ? D
-      : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-        Record<string, any>;
-  };
+  data: TSchema extends StandardSchemaV1<
+    infer D extends Record<string, unknown>
+  >
+    ? D
+    : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+      Record<string, any>;
 };
 
 /**
  * Base ctx shape for a defer handler: the standard function context
  * (`runId`, `attempt`, `group`, `step` with middleware step extensions)
  * with `event`/`events` pinned to `inngest/deferred.schedule` and the
- * schema-typed payload.
+ * schema-typed payload, plus `parents` aligned with `events` by index.
  */
 type BaseDeferCtx<
   TClient extends Inngest.Any,
@@ -194,6 +192,7 @@ type BaseDeferCtx<
 > = Omit<BaseContext<TClient>, "event" | "events" | "step"> & {
   event: DeferEvent<TSchema>;
   events: [DeferEvent<TSchema>];
+  parents: [DeferredFunction.Parent];
   step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
     ApplyAllMiddlewareStepExtensions<
       ClientOptionsFromInngest<TClient>["middleware"]
@@ -213,6 +212,23 @@ export type CreateDeferInput<
   schema?: TSchema;
   middleware?: TFnMiddleware;
 };
+
+/**
+ * Full handler context for a defer (or scorer) function — `BaseDeferCtx`
+ * plus every middleware ctx extension that applies (built-in, client,
+ * function-level). Exposed so wrappers like `createScorer` can type the
+ * user's handler without re-deriving the chain.
+ */
+export type DeferContext<
+  TClient extends Inngest.Any,
+  TFnMiddleware extends Middleware.Class[] | undefined,
+  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+> = BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
+  ApplyAllMiddlewareCtxExtensions<[...ReturnType<typeof builtInMiddleware>]> &
+  ApplyAllMiddlewareCtxExtensions<
+    ClientOptionsFromInngest<TClient>["middleware"]
+  > &
+  ApplyAllMiddlewareCtxExtensions<TFnMiddleware>;
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -238,14 +254,7 @@ export function createDefer<
     | undefined = undefined,
   const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
   THandler extends Handler.Any = (
-    ctx: BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
-      ApplyAllMiddlewareCtxExtensions<
-        [...ReturnType<typeof builtInMiddleware>]
-      > &
-      ApplyAllMiddlewareCtxExtensions<
-        ClientOptionsFromInngest<TClient>["middleware"]
-      > &
-      ApplyAllMiddlewareCtxExtensions<TFnMiddleware>,
+    ctx: DeferContext<TClient, TFnMiddleware, TSchema>,
   ) => unknown,
 >(
   client: TClient,

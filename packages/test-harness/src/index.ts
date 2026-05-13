@@ -16,7 +16,7 @@ export type { RunMetadata, TraceMetadataNode } from "./utils.ts";
 export {
   BaseState,
   createState,
-  getRunTrace as getRunMetadata,
+  getRunMetadata,
   getRunTraceMetadata,
   randomSuffix,
   sleep,

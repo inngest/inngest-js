@@ -99,7 +99,7 @@ describe("defer ID collision", async () => {
         { id: "foo" },
         async ({ event, runId }) => {
           deferState.runId = runId;
-          deferState.index = event.data.input.index;
+          deferState.index = event.data.index;
           deferState.count++;
         },
       );
@@ -295,9 +295,9 @@ test("multiple defer functions are independently triggered", async () => {
     { id: "foo", schema: z.object({ to: z.string() }) },
     async ({ event, runId }) => {
       deferFooState.runId = runId;
-      expectTypeOf(event.data.input).not.toBeAny();
-      expectTypeOf(event.data.input).toEqualTypeOf<{ to: string }>();
-      deferFooState.eventData = event.data.input;
+      expectTypeOf(event.data).not.toBeAny();
+      expectTypeOf(event.data).toEqualTypeOf<{ to: string }>();
+      deferFooState.eventData = event.data;
     },
   );
   const bar = createDefer(
@@ -305,9 +305,9 @@ test("multiple defer functions are independently triggered", async () => {
     { id: "bar", schema: z.object({ amount: z.number() }) },
     async ({ event, runId }) => {
       deferBarState.runId = runId;
-      expectTypeOf(event.data.input).not.toBeAny();
-      expectTypeOf(event.data.input).toEqualTypeOf<{ amount: number }>();
-      deferBarState.eventData = event.data.input;
+      expectTypeOf(event.data).not.toBeAny();
+      expectTypeOf(event.data).toEqualTypeOf<{ amount: number }>();
+      deferBarState.eventData = event.data;
     },
   );
   const fn = client.createFunction(

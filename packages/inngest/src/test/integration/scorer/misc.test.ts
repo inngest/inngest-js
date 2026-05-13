@@ -1,6 +1,7 @@
 import {
   createState,
   createTestApp,
+  getRunMetadata,
   randomSuffix,
   testNameFromFileUrl,
 } from "@inngest/test-harness";
@@ -14,13 +15,9 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("success", async () => {
   const parentState = createState({});
-  const deferState = createState({
-    event: null as unknown as {
-      data: {
-        input: { message: string };
-        parent: { fnSlug: string; runId: string };
-      };
-    },
+  const scorerState = createState({
+    event: null as unknown as { data: { message: string } },
+    parents: null as unknown as { fnSlug: string; runId: string }[],
   });
 
   const client = new Inngest({
@@ -28,17 +25,22 @@ test("success", async () => {
     isDev: true,
   });
   const eventName = randomSuffix("evt");
-  const foo = createScorer(
+  const fooScorer = createScorer(
     client,
     { id: "foo", schema: z.object({ message: z.string() }) },
-    async ({ event, runId }) => {
+    async ({ event, parents, runId }) => {
       expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<{
-        input: { message: string };
-        parent: { fnSlug: string; runId: string };
-      }>();
-      deferState.event = event;
-      deferState.runId = runId;
+      expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
+      expectTypeOf(parents).toEqualTypeOf<
+        [{ fnSlug: string; runId: string }]
+      >();
+      scorerState.event = event;
+      scorerState.parents = parents;
+      scorerState.runId = runId;
+      return {
+        name: "verbosity",
+        value: event.data.message.split(" ").length,
+      };
     },
   );
   const fn = client.createFunction(
@@ -50,21 +52,43 @@ test("success", async () => {
     async ({ defer, runId, step }) => {
       parentState.runId = runId;
       await step.run("a", async () => {
-        defer("foo", { function: foo, data: { message: "hi" } });
+        defer("foo", {
+          data: { message: "hello world" },
+          function: fooScorer,
+        });
       });
     },
   );
   await createTestApp({
     client,
-    functions: [fn, foo],
+    functions: [fn, fooScorer],
     serve: createServer,
   });
 
+  // Trigger and wait for completion
   await client.send({ name: eventName, data: {} });
   await parentState.waitForRunComplete();
-  await deferState.waitForRunComplete();
-  expect(deferState.event.data).toEqual({
-    input: { message: "hi" },
-    parent: { fnSlug: `${client.id}-fn`, runId: parentState.runId },
-  });
+  await scorerState.waitForRunComplete();
+
+  // Scorer got the correct data
+  expect(scorerState.event.data).toEqual({ message: "hello world" });
+  expect(scorerState.parents).toEqual([
+    {
+      fnSlug: `${client.id}-fn`,
+      runId: parentState.runId,
+    },
+  ]);
+
+  // Scorer updated the parent run's metadata
+  const metadata = await getRunMetadata(await parentState.waitForRunId());
+  expect(metadata).toEqual(
+    expect.arrayContaining([
+      {
+        kind: "inngest.score",
+        scope: "run",
+        updatedAt: expect.any(String),
+        values: { verbosity: 2 },
+      },
+    ]),
+  );
 });

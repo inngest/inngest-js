@@ -1861,8 +1861,8 @@ class InngestExecutionEngine
   /**
    * Validate the deferred event's data against the defer function's own
    * schema (set via `createDefer`'s `opts.schema`). The defer ctx
-   * transform has already reshaped `event.data` into `{ parent, input }`,
-   * so we validate the `input` half.
+   * transform has already stripped `_inngest` routing metadata onto
+   * `ctx.parents`, so `event.data` is just the user payload.
    */
   private async validateDeferEventSchema(): Promise<void> {
     const fn = this.options.fn;
@@ -1870,7 +1870,7 @@ class InngestExecutionEngine
       return;
     }
 
-    const eventData = (this.fnArg.event?.data as { input?: unknown })?.input;
+    const eventData = this.fnArg.event?.data;
     const result = await fn.schema["~standard"].validate(eventData);
     if (result.issues) {
       // Fail without retries. The event data won't change so there's no point
