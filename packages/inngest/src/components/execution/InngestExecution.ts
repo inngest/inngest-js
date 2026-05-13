@@ -144,11 +144,11 @@ export interface InngestExecutionOptions {
   requestId?: string;
 
   /**
-   * Unix-millisecond epoch captured once when execution begins, sent on every
-   * async checkpoint POST so the executor can short-circuit the staleness
-   * check for fresh dispatches.
+   * Unix-millisecond epoch captured when the SDK started processing the
+   * incoming request, sent on every async checkpoint POST so the executor can
+   * short-circuit the staleness check for fresh dispatches.
    */
-  stepStartedAt?: number;
+  requestStartedAt?: number;
 
   /**
    * Headers to be sent with any request to Inngest during this execution.

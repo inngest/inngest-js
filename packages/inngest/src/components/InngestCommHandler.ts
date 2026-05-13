@@ -2278,7 +2278,7 @@ export class InngestCommHandler<
         this.defaultMaxRuntime,
       );
 
-      const stepStartedAt = Date.now();
+      const requestStartedAt = Date.now();
 
       const executionOptions: CreateExecutionOptions = {
         partialOptions: {
@@ -2300,7 +2300,7 @@ export class InngestCommHandler<
           internalFnId: ctx?.fn_id,
           queueItemId: ctx?.qi_id,
           requestId: requestId ?? undefined,
-          stepStartedAt,
+          requestStartedAt,
           stepState,
           priorDefers: defers,
           requestedRunStep,
