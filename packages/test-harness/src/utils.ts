@@ -235,6 +235,17 @@ export async function getRunTraceMetadata(
   return trace;
 }
 
+/**
+ * Fetch the metadata entries attached to a run's root trace. Returns the
+ * raw list as the Dev Server reports it (e.g. `inngest.score`,
+ * `inngest.usage`). Use to assert that side-effects like `client.score()`
+ * landed on the expected run.
+ */
+export async function getRunMetadata(runId: string): Promise<RunMetadata[]> {
+  const trace = await getRunTraceMetadata(runId);
+  return trace.metadata;
+}
+
 async function fetchRunResult(
   runId: string,
   timeout = 20_000,

@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { createDefer, createScorer } from "../../../packages/inngest/src/experimental.ts";
+import {
+  createDefer,
+  createScorer,
+} from "../../../packages/inngest/src/experimental.ts";
 import { inngest } from "./client";
 
 export const myDefer = createDefer(
@@ -68,12 +71,11 @@ export const fn3 = inngest.createFunction(
         runId,
         stepId: "my-step",
         name: "answer_quality",
-        // @ts-expect-error
-        value: null,
+        value: 10,
       });
       await inngest.score({
         runId,
-        stepId: "my-step",
+        // stepId: "my-step",
         name: "latency_score",
         value: 20,
       });
@@ -114,7 +116,7 @@ export const fn5 = inngest.createFunction(
     retries: 0,
   },
   async ({ runId, step }) => {
-    let stepId = "my-step-1"
+    let stepId = "my-step-1";
     await step.run(stepId, async () => {
       await inngest.score({
         runId,
@@ -130,7 +132,7 @@ export const fn5 = inngest.createFunction(
       });
     });
 
-    stepId = "my-step-2"
+    stepId = "my-step-2";
     await step.run(stepId, async () => {
       await inngest.score({
         runId,
@@ -150,13 +152,19 @@ export const fn5 = inngest.createFunction(
 
 export const scorer = createScorer(
   inngest,
-  { id: "my-scorer", schema: z.object({ text: z.string() }) },
+  {
+    id: "verbosity-scorer",
+    retries: 0,
+    schema: z.object({ text: z.string() }),
+  },
   async ({ event }) => {
-    event.data.parent.fnSlug
-    event.data.parent.runId
-    console.log(event.data)
-  }
-)
+    const wordCount = event.data.text.split(" ").length;
+    return {
+      name: "verbosity",
+      value: wordCount,
+    };
+  },
+);
 
 export const foo = inngest.createFunction(
   {
@@ -164,7 +172,11 @@ export const foo = inngest.createFunction(
     triggers: { event: "foo.start" },
     retries: 0,
   },
-  async ({ defer, step }) => {
-    defer("yo", { function: scorer, data: { text: "hello scorer!" } });
-  }
-)
+  async ({ defer }) => {
+    const text = "Is this the real life? Is this just fantasy?";
+    defer("yo", {
+      function: scorer,
+      data: { text },
+    });
+  },
+);
