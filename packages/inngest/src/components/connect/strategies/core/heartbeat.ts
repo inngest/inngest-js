@@ -12,7 +12,11 @@ import {
   GatewayMessageType,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
 import { ensureUnsharedArrayBuffer } from "../../buffer.ts";
-import type { ConnectionAccessor, WakeSignal } from "./types.ts";
+import {
+  type ConnectionAccessor,
+  WAKE_REASON,
+  type WakeSignal,
+} from "./types.ts";
 
 export class HeartbeatManager {
   private interval: ReturnType<typeof setInterval> | undefined;
@@ -57,7 +61,7 @@ export class HeartbeatManager {
         "Consecutive heartbeats missed, reconnecting",
       );
       conn.dead = true;
-      this.wakeSignal.wake();
+      this.wakeSignal.wake(WAKE_REASON.HeartbeatMissed);
       return;
     }
 

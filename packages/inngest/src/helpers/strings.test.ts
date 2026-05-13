@@ -1,3 +1,5 @@
+import { Temporal } from "temporal-polyfill";
+import { afterEach, beforeEach, vi } from "vitest";
 import { ConsoleLogger } from "../middleware/logger.ts";
 import { signDataWithKey } from "./net.ts";
 import { slugify, stringify, timeStr, timingSafeEqual } from "./strings.ts";
@@ -44,6 +46,63 @@ describe("timeStr", () => {
 
   test("converts a date to an ISO string", () => {
     expect(timeStr(new Date(0))).toEqual("1970-01-01T00:00:00.000Z");
+  });
+
+  test("converts a balanced Temporal.Duration", () => {
+    expect(timeStr(Temporal.Duration.from({ minutes: 1 }))).toEqual("1m");
+  });
+
+  test("converts a Temporal.Instant to an ISO string", () => {
+    const instant = Temporal.Instant.from("1970-01-01T00:00:00Z");
+    expect(timeStr(instant)).toEqual(instant.toString());
+  });
+
+  test("converts a Temporal.ZonedDateTime to an ISO string", () => {
+    const zdt = Temporal.ZonedDateTime.from("1970-01-01T00:00:00+00:00[UTC]");
+    expect(timeStr(zdt)).toEqual(zdt.toInstant().toString());
+  });
+
+  describe("Temporal.Duration matches ms-string equivalents", () => {
+    const cases: Array<{ duration: Temporal.DurationLike; ms: string }> = [
+      { duration: { seconds: 30 }, ms: "30s" },
+      { duration: { minutes: 5 }, ms: "5m" },
+      { duration: { hours: 2 }, ms: "2h" },
+      { duration: { days: 3 }, ms: "3d" },
+      { duration: { weeks: 1 }, ms: "1w" },
+      { duration: { weeks: 2 }, ms: "2w" },
+      // Mixed sub-day combinations should also agree.
+      { duration: { hours: 1, minutes: 30 }, ms: "1.5 hours" },
+    ];
+
+    for (const { duration, ms } of cases) {
+      test(`Duration(${JSON.stringify(duration)}) === ms("${ms}")`, () => {
+        expect(timeStr(Temporal.Duration.from(duration))).toEqual(timeStr(ms));
+      });
+    }
+  });
+
+  describe("Temporal.Duration calendar units are calendar-correct", () => {
+    // Calendar-unit Durations resolve relative to "now". Freeze time so both
+    // the test and `timeStr` see the same `new Date()`, and we can assert
+    // exact equality against the same `.total()` call.
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-28T12:00:00Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("1 month from 2026-04-28 = 30 calendar days", () => {
+      // 2026-04-28 → 2026-05-28 = 30 days = 4w2d
+      expect(timeStr(Temporal.Duration.from({ months: 1 }))).toEqual("4w2d");
+    });
+
+    test("1 year from 2026-04-28 = 365 calendar days", () => {
+      // 2026-04-28 → 2027-04-28 = 365 days = 52w1d (2026 is not a leap year)
+      expect(timeStr(Temporal.Duration.from({ years: 1 }))).toEqual("52w1d");
+    });
   });
 });
 

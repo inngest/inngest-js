@@ -1,7 +1,7 @@
 import httpMocks from "node-mocks-http";
 import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
 import { signDataWithKey } from "../helpers/net.ts";
-import { ConsoleLogger } from "../middleware/logger.ts";
+import { ConsoleLogger, type Logger } from "../middleware/logger.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
@@ -17,6 +17,7 @@ const runHandler = async (
     body?: Record<string, unknown>;
     env?: Record<string, string>;
     actionOverrides?: Record<string, unknown>;
+    headers?: Record<string, string>;
   },
 ) => {
   const body = opts?.body ?? {
@@ -36,6 +37,7 @@ const runHandler = async (
       "content-length": `${JSON.stringify(body).length}`,
       [headerKeys.InngestRunId]: "run-123",
       [headerKeys.Signature]: "",
+      ...opts?.headers,
     },
     body,
   });
@@ -506,6 +508,108 @@ describe("response version header", () => {
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V2.toString(),
     );
+  });
+
+  test("binds outbound request ID headers to the function logger", async () => {
+    const childLogger: Logger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const child = vi.fn(() => childLogger);
+    const logger: Logger & {
+      child: (meta: Record<string, unknown>) => Logger;
+    } = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      child,
+    };
+    const client = createClient({ id: "test", isDev: true, logger });
+    let seenIds:
+      | {
+          requestId?: string;
+          jobId?: string;
+        }
+      | undefined;
+
+    const loggedFn = client.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      ({ logger, requestId, jobId }) => {
+        seenIds = { requestId, jobId };
+        logger.info("hello");
+        return "test";
+      },
+    );
+
+    const loggedHandler = serve({ client, functions: [loggedFn] });
+
+    await runHandler(loggedHandler, {
+      body: {
+        version: ExecutionVersion.V2,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+      headers: {
+        [headerKeys.RequestId]: "req-123",
+        [headerKeys.InngestJobId]: "job-123",
+      },
+    });
+
+    expect(child).toHaveBeenCalledWith({
+      runID: "run-123",
+      eventName: "demo/event.sent",
+      requestId: "req-123",
+      jobId: "job-123",
+    });
+    expect(seenIds).toEqual({ requestId: "req-123", jobId: "job-123" });
+    expect(childLogger.info).toHaveBeenCalledWith("hello");
+
+    child.mockClear();
+    vi.mocked(childLogger.info).mockClear();
+
+    await runHandler(loggedHandler, {
+      body: {
+        version: ExecutionVersion.V2,
+        ctx: {
+          fn_id: "test-test",
+          run_id: "run-123",
+          step_id: "step",
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
+          stack: { stack: [], current: 0 },
+        },
+        event: { name: "demo/event.sent", data: {} },
+        events: [{ name: "demo/event.sent", data: {} }],
+        steps: {},
+      },
+      headers: {
+        [headerKeys.RequestId]: "",
+        [headerKeys.InngestJobId]: "",
+      },
+    });
+
+    expect(child).toHaveBeenCalledWith({
+      runID: "run-123",
+      eventName: "demo/event.sent",
+      requestId: "",
+      jobId: "",
+    });
+    expect(seenIds).toEqual({ requestId: "", jobId: "" });
+    expect(childLogger.info).toHaveBeenCalledWith("hello");
   });
 });
 

@@ -1,5 +1,9 @@
 // AsyncLocalStorage
 
+export {
+  createDefer,
+  DeferredFunction,
+} from "./components/DeferredFunction.ts";
 export type { AsyncContext } from "./components/execution/als.ts";
 export { getAsyncCtx } from "./components/execution/als.ts";
 // Extended Traces (OpenTelemetry)

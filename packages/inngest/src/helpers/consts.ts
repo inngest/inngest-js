@@ -180,6 +180,8 @@ export enum headerKeys {
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
+  RequestId = "x-request-id",
+  InngestJobId = "x-inngest-job-id",
   RequestVersion = "x-inngest-req-version",
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
@@ -221,6 +223,11 @@ export enum internalEvents {
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
   HttpRequest = "inngest/http.request",
+
+  /**
+   * Triggers a deferred function. The backend emits this.
+   */
+  DeferredSchedule = "inngest/deferred.schedule",
 }
 
 export const logPrefix: string = "[Inngest]";

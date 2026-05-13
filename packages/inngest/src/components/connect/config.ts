@@ -192,6 +192,10 @@ export function prepareConnectionConfig(
                 return "connect";
               case headerKeys.RequestVersion.toString():
                 return parsed.version.toString();
+              case headerKeys.RequestId.toString():
+                return msg.requestId;
+              case headerKeys.InngestJobId.toString():
+                return msg.jobId;
               case headerKeys.Signature.toString():
                 return null;
               case headerKeys.TraceParent.toString():

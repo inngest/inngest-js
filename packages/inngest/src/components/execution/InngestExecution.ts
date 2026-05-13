@@ -113,8 +113,18 @@ export interface InngestExecutionOptions {
   internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
-  data: Omit<Context.Any, "step" | "group" | "publish">;
+  data: Omit<Context.Any, "step" | "group" | "publish" | "defer">;
   stepState: Record<string, MemoizedOp>;
+
+  /**
+   * A map of hashed defer step IDs to their backend-side metadata
+   * (e.g. `{ abortable: true }`). Defer ops are not steps in the
+   * memoization sense — they don't produce results — but the backend
+   * tracks which ones it has already received so the SDK can avoid
+   * re-emitting them on replay.
+   */
+  priorDefers?: Record<string, unknown>;
+
   stepCompletionOrder: string[];
   stepMode: StepMode;
   checkpointingConfig?: InternalCheckpointingOptions;
@@ -133,7 +143,17 @@ export interface InngestExecutionOptions {
   headers: Record<string, string>;
   requestedRunStep?: string;
   timer?: ServerTiming;
-  isFailureHandler?: boolean;
+  /**
+   * Which handler variant is being executed. `"failure"` skips
+   * trigger-schema validation and resolves `onFailure` instead of the
+   * main handler. `"defer"` marks the fn as a standalone defer function
+   * (created via `createDefer`); incoming event data is validated
+   * against the defer function's schema.
+   *
+   * @default "main"
+   */
+  handlerKind?: "main" | "failure" | "defer";
+
   disableImmediateExecution?: boolean;
 
   /**

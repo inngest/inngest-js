@@ -1,5 +1,29 @@
 # inngest
 
+## 4.4.0
+
+### Minor Changes
+
+- [#1508](https://github.com/inngest/inngest-js/pull/1508) [`4771b424`](https://github.com/inngest/inngest-js/commit/4771b42402f9e2f435417b65f4e5a38e54e398af) Thanks [@amh4r](https://github.com/amh4r)! - Add experimental support for deferred functions
+
+### Patch Changes
+
+- [#1512](https://github.com/inngest/inngest-js/pull/1512) [`be675a3d`](https://github.com/inngest/inngest-js/commit/be675a3d3c2a39b415ded8db5e2626e22b941760) Thanks [@amh4r](https://github.com/amh4r)! - Fix waitForSignal not in middleware StepType union
+
+- [#1513](https://github.com/inngest/inngest-js/pull/1513) [`cbad05c3`](https://github.com/inngest/inngest-js/commit/cbad05c3052de84defe36797c23eb0da295022fb) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Standardize variant naming to `variant` instead of `variant_selected`
+
+- [#1516](https://github.com/inngest/inngest-js/pull/1516) [`1bca44a8`](https://github.com/inngest/inngest-js/commit/1bca44a8293d6d44e93266fbe3e8dd4dc7e0fa73) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Add Request ID & Job ID to context and logs
+
+## 4.3.0
+
+### Minor Changes
+
+- [#1504](https://github.com/inngest/inngest-js/pull/1504) [`5c8f50e1`](https://github.com/inngest/inngest-js/commit/5c8f50e102dcdcaf2e7d42b66972cc4bffb84e72) Thanks [@scottnuma](https://github.com/scottnuma)! - Accept `Temporal.Duration`, `Temporal.Instant`, and `Temporal.ZonedDateTime` (and their `*Like` variants) wherever a timeout or sleep duration is taken: `step.sleep()`, `step.waitForEvent()`, `step.waitForSignal()`, `step.invoke()`, and function-level `cancelOn` timeouts. Durations are treated as relative waits; instants and zoned date-times as absolute deadlines.
+
+### Patch Changes
+
+- [#1480](https://github.com/inngest/inngest-js/pull/1480) [`60cda73f`](https://github.com/inngest/inngest-js/commit/60cda73f255a6fb1f014f6eb3c3541be19940154) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Fix Connect shutdown getting stuck when a late lease-extension ACK recreates a stale in-flight lease entry after request completion or lease loss
+
 ## 4.2.6
 
 ### Patch Changes

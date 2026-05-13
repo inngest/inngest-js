@@ -151,6 +151,7 @@ export const parseFnData = (
           event: z.record(z.any()),
           events: z.array(z.record(z.any())).default([]),
           steps: stepSchema,
+          defers: z.record(z.unknown()).optional().default({}),
           ctx: z
             .object({
               run_id: z.string(),

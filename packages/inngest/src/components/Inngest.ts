@@ -50,7 +50,6 @@ import {
   type SendEventResponse,
   sendEventResponseSchema,
 } from "../types.ts";
-
 import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -1070,12 +1069,19 @@ export function builtInMiddleware(baseLogger: Logger) {
         // Create a child logger with run metadata if supported
         if ("child" in logger) {
           try {
-            logger = (
-              logger.child as (meta: Record<string, unknown>) => Logger
-            )({
+            const childMetadata: Record<string, unknown> = {
               runID: arg.ctx.runId,
               eventName: arg.ctx.event.name,
-            });
+            };
+            if (typeof arg.ctx.requestId !== "undefined") {
+              childMetadata.requestId = arg.ctx.requestId;
+            }
+            if (typeof arg.ctx.jobId !== "undefined") {
+              childMetadata.jobId = arg.ctx.jobId;
+            }
+            logger = (
+              logger.child as (meta: Record<string, unknown>) => Logger
+            )(childMetadata);
           } catch (err) {
             logger.error({ err }, 'failed to create "childLogger" with error');
           }
@@ -1153,8 +1159,9 @@ export namespace Inngest {
   type ResolveTriggers<T> = T extends undefined ? [] : AsArray<NonNullable<T>>;
 
   /**
-   * Input type for createFunction that accepts raw trigger input (single, array, or undefined)
-   * while keeping all other fields from InngestFunction.Options.
+   * Input type for createFunction that accepts raw trigger input (single,
+   * array, or undefined) while keeping all other fields from
+   * InngestFunction.Options.
    */
   export type CreateFunctionInput<
     TFnMiddleware extends Middleware.Class[] | undefined,

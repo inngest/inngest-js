@@ -1,7 +1,17 @@
 import hashjs from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
+import { Temporal } from "temporal-polyfill";
 import type { TimeStr } from "../types.ts";
+import {
+  type DurationLike,
+  getISOString,
+  type InstantLike,
+  isTemporalDuration,
+  isTemporalInstant,
+  isTemporalZonedDateTime,
+  type ZonedDateTimeLike,
+} from "./temporal.ts";
 
 const { sha256 } = hashjs;
 
@@ -79,22 +89,44 @@ const periods = [
 /**
  * Convert a given `Date`, `number`, or `ms`-compatible `string` to a
  * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h3010s"`).
- *
- * Can optionally provide a `now` date to use as the base for the calculation,
- * otherwise a new date will be created on invocation.
  */
 export const timeStr = (
   /**
    * The future date to use to convert to a time string.
    */
-  input: string | number | Date,
+  input:
+    | string
+    | number
+    | Date
+    | DurationLike
+    | InstantLike
+    | ZonedDateTimeLike,
 ): string => {
   if (input instanceof Date) {
     return input.toISOString();
   }
 
-  const milliseconds: number =
-    typeof input === "string" ? ms(input as `${number}`) : input;
+  if (isTemporalInstant(input) || isTemporalZonedDateTime(input)) {
+    return getISOString(input);
+  }
+
+  let milliseconds: number;
+  if (isTemporalDuration(input)) {
+    // `relativeTo` is required for calendar units (months/years/weeks). We
+    // pass it as an ISO string rather than a Temporal object so this works
+    // regardless of which Temporal implementation the user's Duration came
+    // from (temporal-polyfill, @js-temporal/polyfill, native Temporal):
+    // ISO strings are spec-defined and parsed by every implementation;
+    // cross-polyfill object passing is not.
+    milliseconds = input.total({
+      unit: "milliseconds",
+      relativeTo: Temporal.Now.plainDateTimeISO("UTC").toString(),
+    });
+  } else if (typeof input === "string") {
+    milliseconds = ms(input as `${number}`);
+  } else {
+    milliseconds = input as number;
+  }
 
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {

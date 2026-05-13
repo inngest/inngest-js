@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Agent Guidance
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents when working with code in this repository.
 
 ## Repository Overview
 
@@ -93,6 +93,8 @@ To test examples: `pnpm dev:example` and select from the list.
 ## Internal Docs
 
 - **Durable Endpoint Streaming**: `packages/inngest/src/experimental/durable-endpoints/docs/streaming.md`
+- **Defer (companion functions)**: `packages/inngest/src/components/execution/defer.md`
+- **Execution engine architecture**: `packages/inngest/src/components/execution/ARCHITECTURE.md`
 
 ## Special Notes
 

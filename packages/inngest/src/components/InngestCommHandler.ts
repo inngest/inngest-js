@@ -30,6 +30,7 @@ import {
   undefinedToNull,
 } from "../helpers/functions.ts";
 import { warnOnce } from "../helpers/log.ts";
+import { isDeferredFunction } from "../helpers/marker.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
@@ -77,6 +78,15 @@ import {
   InngestFunction,
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
+
+/**
+ * An entry in the function registry, tracking which config ID maps to which
+ * function and what kind of handler it is (main, failure, or defer).
+ */
+interface FnRegistryEntry {
+  fn: InngestFunction.Any;
+  handlerKind: "main" | "failure" | "defer";
+}
 
 // A response object for when an internal server error occurs. When that
 // happens, we don't to leak any internal details to the client.
@@ -429,10 +439,7 @@ export class InngestCommHandler<
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<
-    string,
-    { fn: InngestFunction.Any; onFailure: boolean }
-  > = {};
+  private readonly fns: Record<string, FnRegistryEntry> = {};
 
   private env: Env = getProcessEnv();
 
@@ -492,32 +499,41 @@ export class InngestCommHandler<
       );
     }
 
-    this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
-    >((acc, fn) => {
+    // Build the id -> entry registry. Each main fn contributes either a
+    // single `main` entry or, when it has `onFailure`, a `main` + `failure`
+    // pair; each `DeferredFunction` (created via `createDefer`) contributes
+    // a single `defer` entry.
+    const entries: Record<string, FnRegistryEntry> = {};
+    for (const fn of this.rawFns) {
+      const isDefer = isDeferredFunction(fn);
+      const mainId = fn.id(this.client.id);
+      const failureId = `${mainId}${InngestFunction.failureSuffix}`;
+
       const configs = fn["getConfig"]({
         baseUrl: new URL("https://example.com"),
         appPrefix: this.client.id,
       });
 
-      const fns = configs.reduce((acc, { id }, index) => {
-        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
-      }, {});
-
-      // biome-ignore lint/complexity/noForEach: intentional
-      configs.forEach(({ id }) => {
-        if (acc[id]) {
+      for (const { id } of configs) {
+        if (entries[id]) {
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
           );
         }
-      });
 
-      return {
-        ...acc,
-        ...fns,
-      };
-    }, {});
+        let handlerKind: FnRegistryEntry["handlerKind"];
+        if (isDefer) {
+          handlerKind = "defer";
+        } else if (id === failureId) {
+          handlerKind = "failure";
+        } else {
+          handlerKind = "main";
+        }
+
+        entries[id] = { fn, handlerKind };
+      }
+    }
+    this.fns = entries;
 
     this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
@@ -983,7 +999,7 @@ export class InngestCommHandler<
         stepCompletionOrder: [],
         stepState: {},
         disableImmediateExecution: false,
-        isFailureHandler: false,
+        handlerKind: "main",
         acceptsSse,
         timer,
         createResponse: (data: unknown) =>
@@ -1639,13 +1655,16 @@ export class InngestCommHandler<
           return unauthorizedResponse;
         }
 
-        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
+        let fn: FnRegistryEntry | undefined;
         let fnId: string | undefined;
 
         if (forceExecution) {
           fn =
             fns?.length && fns[0]
-              ? { fn: fns[0], onFailure: false }
+              ? {
+                  fn: fns[0],
+                  handlerKind: "main" as const,
+                }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
 
@@ -2173,7 +2192,7 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: { fn: InngestFunction.Any; onFailure: boolean };
+    fn: FnRegistryEntry;
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
     requestInfo?: InngestExecutionOptions["requestInfo"];
@@ -2225,7 +2244,15 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const { event, events, steps, ctx } = anyFnData.value;
+      const { defers, event, events, steps, ctx } = anyFnData.value;
+      const requestId = await actions.headers(
+        "getting request ID for execution",
+        headerKeys.RequestId,
+      );
+      const jobId = await actions.headers(
+        "getting job ID for execution",
+        headerKeys.InngestJobId,
+      );
 
       const stepState = Object.entries(steps ?? {}).reduce<
         InngestExecutionOptions["stepState"]
@@ -2265,13 +2292,16 @@ export class InngestCommHandler<
             runId: ctx?.run_id || "",
             attempt: ctx?.attempt ?? 0,
             maxAttempts: ctx?.max_attempts,
+            requestId: requestId ?? undefined,
+            jobId: jobId ?? undefined,
           },
           internalFnId: ctx?.fn_id,
           queueItemId: ctx?.qi_id,
           stepState,
+          priorDefers: defers,
           requestedRunStep,
           timer,
-          isFailureHandler: fn.onFailure,
+          handlerKind: fn.handlerKind,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,
@@ -2289,7 +2319,7 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = this.rawFns.reduce<FunctionConfig[]>(
       (acc, fn) => [
         ...acc,
         ...fn["getConfig"]({ baseUrl: url, appPrefix: this.client.id }),

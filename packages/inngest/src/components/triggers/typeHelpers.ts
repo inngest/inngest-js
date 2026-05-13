@@ -2,6 +2,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
+import type { DeferFn } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
 import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
 
@@ -288,6 +289,8 @@ export type BaseContextWithTriggers<
   TStepTools,
   TTriggers extends readonly any[],
 > = {
+  defer: DeferFn;
+
   /**
    * The event data present in the payload.
    */
@@ -298,6 +301,17 @@ export type BaseContextWithTriggers<
    * The run ID for the current function execution
    */
   runId: string;
+
+  /**
+   * The request ID for this individual outbound SDK invocation, if provided by
+   * the executor.
+   */
+  requestId?: string;
+
+  /**
+   * The stable job ID for this invocation, if provided by the executor.
+   */
+  jobId?: string;
 
   step: TStepTools;
 

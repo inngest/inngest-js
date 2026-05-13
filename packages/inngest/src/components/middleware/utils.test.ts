@@ -1,7 +1,12 @@
+import { Temporal } from "temporal-polyfill";
 import { describe, expect, test } from "vitest";
 import { ConsoleLogger } from "../../middleware/logger.ts";
 import { StepOpCode } from "../../types.ts";
-import { optsFromStepInput, stepTypeFromOpCode } from "./utils.ts";
+import {
+  isSleepInput,
+  optsFromStepInput,
+  stepTypeFromOpCode,
+} from "./utils.ts";
 
 const logger = new ConsoleLogger();
 
@@ -64,6 +69,12 @@ describe("stepTypeFromOpCode", () => {
     expect(stepTypeFromOpCode(StepOpCode.WaitForEvent, undefined, logger)).toBe(
       "waitForEvent",
     );
+  });
+
+  test("WaitForSignal returns 'waitForSignal'", () => {
+    expect(
+      stepTypeFromOpCode(StepOpCode.WaitForSignal, undefined, logger),
+    ).toBe("waitForSignal");
   });
 
   test("AiGateway with type 'step.ai.infer' returns 'ai.infer'", () => {
@@ -139,5 +150,18 @@ describe("optsFromStepInput", () => {
   test("returns undefined when input[0] is not an object", () => {
     expect(optsFromStepInput("invoke", ["not-an-object"])).toBeUndefined();
     expect(optsFromStepInput("invoke", [null])).toBeUndefined();
+  });
+});
+
+describe("isSleepInput", () => {
+  test("accepts string, number, Date, and Temporal.Duration", () => {
+    expect(isSleepInput("1h")).toBe(true);
+    expect(isSleepInput(60_000)).toBe(true);
+    expect(isSleepInput(new Date())).toBe(true);
+    expect(isSleepInput(Temporal.Duration.from({ seconds: 1 }))).toBe(true);
+  });
+
+  test("rejects an invalid value", () => {
+    expect(isSleepInput({})).toBe(false);
   });
 });

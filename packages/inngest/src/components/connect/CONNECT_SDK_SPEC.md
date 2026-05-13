@@ -75,7 +75,7 @@ Worker-initiated, gateway responds.
 ### Request Flow
 
 1. **Gateway → Worker:** `GATEWAY_EXECUTOR_REQUEST`
-   - Fields: requestId, accountId, envId, appId, appName, functionId, functionSlug, stepId (optional), requestPayload, systemTraceCtx, userTraceCtx, runId, leaseId
+   - Fields: requestId, accountId, envId, appId, appName, functionId, functionSlug, stepId (optional), requestPayload, systemTraceCtx, userTraceCtx, runId, leaseId, jobId
 
 2. **Worker validates:** state is ACTIVE, appName is non-empty, appName is in registered appIds
    - If invalid: skip silently (no ACK sent)
