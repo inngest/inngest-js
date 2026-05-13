@@ -1,5 +1,5 @@
 import { InngestTestEngine } from "@inngest/test";
-import FetchMock from "fetch-mock-jest";
+import fetchMock from "@fetch-mock/jest";
 import { EventSchemas, Inngest, type Logger } from "inngest";
 import { z } from "zod/v3";
 import { z as z4 } from "zod/v4";
@@ -7,7 +7,6 @@ import { validationMiddleware } from "./middleware";
 
 const baseUrl = "https://unreachable.com";
 const eventKey = "123";
-const fetchMock = FetchMock.sandbox();
 
 describe("validationMiddleware", () => {
   test("should allow an event through with no schema", async () => {
@@ -617,7 +616,7 @@ describe("validationMiddleware", () => {
 
         const inngest = new Inngest({
           id: "test",
-          fetch: fetchMock as typeof fetch,
+          fetch: fetchMock.fetchHandler.bind(fetchMock),
           baseUrl,
           eventKey,
           schemas: new EventSchemas().fromZod({
@@ -648,7 +647,7 @@ describe("validationMiddleware", () => {
 
         const inngest = new Inngest({
           id: "test",
-          fetch: fetchMock as typeof fetch,
+          fetch: fetchMock.fetchHandler.bind(fetchMock),
           baseUrl,
           eventKey,
           schemas: new EventSchemas().fromSchema({
@@ -753,7 +752,7 @@ describe("validationMiddleware", () => {
 
         const inngest = new Inngest({
           id: "test",
-          fetch: fetchMock as typeof fetch,
+          fetch: fetchMock.fetchHandler.bind(fetchMock),
           baseUrl,
           eventKey,
           schemas: new EventSchemas().fromZod({
@@ -795,7 +794,7 @@ describe("validationMiddleware", () => {
 
         const inngest = new Inngest({
           id: "test",
-          fetch: fetchMock as typeof fetch,
+          fetch: fetchMock.fetchHandler.bind(fetchMock),
           baseUrl,
           eventKey,
           schemas: new EventSchemas().fromSchema({
