@@ -29,7 +29,7 @@ const idDenyRegex = /['\\\n\r]/;
  * Strips our `_inngest` metadata off an event's `data` in place and returns the
  * parent routing metadata extracted from it.
  */
-function stripInngestMeta(event: {
+function stripInngestMetadata(event: {
   data?: Record<string, unknown>;
 }): DeferredFunction.Parent {
   const data = event.data ?? {};
@@ -50,7 +50,9 @@ function stripInngestMeta(event: {
     );
   }
 
+  // Mutate in place
   event.data = input;
+
   return {
     fnSlug: parent_fn_slug,
     runId: parent_run_id,
@@ -137,10 +139,10 @@ export class DeferredFunction<
         transformCtx: (ctx) => {
           // Get the parent info from each event. Also removes our internal
           // metadata from each event (mutates in place).
-          const parents = ctx.events.map(stripInngestMeta);
+          const parents = ctx.events.map(stripInngestMetadata);
 
           // Removes our internal metadata from the event (mutates in place).
-          stripInngestMeta(ctx.event);
+          stripInngestMetadata(ctx.event);
 
           return {
             ...ctx,
