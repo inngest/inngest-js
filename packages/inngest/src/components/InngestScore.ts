@@ -123,6 +123,7 @@ export async function sendStepScore(
   await performOp(
     client,
     {
+      // Omitted stepId means run scope and null keeps current-run lookup intact.
       runId:
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,

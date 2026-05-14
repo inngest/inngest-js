@@ -278,6 +278,10 @@ function getBatchScope(config: BuilderConfig): MetadataScope {
   return "step";
 }
 
+/**
+ * Keep in-step metadata durable by batching only targets that resolve to this
+ * step opcode; other targets must go through REST.
+ */
 function canUseCurrentStepBatch(
   config: BuilderConfig,
   ctx?: AsyncContext,
@@ -291,49 +295,46 @@ function canUseCurrentStepBatch(
   const currentStepId = executingStep.id;
   const currentUserlandStepId = executingStep.userlandId;
 
-  // No explicit step target: run-scoped/default metadata can ride the
-  // current step opcode.
   if (targetStepId === undefined) {
     return true;
   }
 
-  // Null is the builder sentinel for "the currently executing step".
   if (targetStepId === null) {
     return true;
   }
 
+  // Callers may target the runtime step ID or original userland ID.
   return (
     targetStepId === currentStepId || targetStepId === currentUserlandStepId
   );
 }
 
+/**
+ * REST fallback needs step_index when duplicate userland IDs target this step;
+ * batched writes already use the current opcode ID.
+ */
 function normalizeCurrentStepTarget(
   config: BuilderConfig,
   ctx?: AsyncContext,
 ): BuilderConfig {
   const executingStep = ctx?.execution?.executingStep;
-  // Only current step targets can be normalized.
   if (!executingStep) {
     return config;
   }
 
-  // Span targets should keep their explicit scope.
   if (config.spanId) {
     return config;
   }
 
-  // Only userland step IDs need index disambiguation.
   if (!executingStep.userlandId) {
     return config;
   }
 
-  // Non-current step targets already point at the intended step.
   if (config.stepId !== executingStep.userlandId) {
     return config;
   }
 
   const currentIndex = executingStep.userlandIndex ?? 0;
-  // Index 0 is the API default, so no explicit stepIndex is needed.
   if (currentIndex <= 0) {
     return config;
   }
