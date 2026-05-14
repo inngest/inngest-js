@@ -1715,7 +1715,7 @@ class InngestExecutionEngine
       outgoingOp,
     });
 
-    return goIntervalTiming(() => wrappedActualHandler())
+    return goIntervalTiming(() => wrappedActualHandler(), startMs)
       .finally(() => {
         this.devDebug(`finished executing step "${id}"`);
 
