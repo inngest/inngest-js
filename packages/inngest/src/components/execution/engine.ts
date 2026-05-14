@@ -1640,7 +1640,50 @@ class InngestExecutionEngine
     const wrappedActualHandler =
       this.middlewareManager.buildWrapStepHandlerChain(actualHandler, stepInfo);
 
-    return goIntervalTiming(() => wrappedActualHandler())
+    const start = Date.now();
+
+    // Best-effort send a StepPlanned leading-edge.
+    //
+    // Bypasses `state.checkpointingStepBuffer` to avoid waiting for a response.
+    if (
+      this.options.stepMode === StepMode.AsyncCheckpointing &&
+      this.options.internalFnId &&
+      this.options.queueItemId
+    ) {
+      try {
+        void this.options.client["inngestApi"]
+          .checkpointStepStarted({
+            runId: this.options.runId,
+            fnId: this.options.internalFnId,
+            queueItemId: this.options.queueItemId,
+            step: {
+              id: hashedId,
+              op: StepOpCode.StepPlanned,
+              name,
+              displayName,
+              userland,
+              // GoInterval is nanoseconds. `b: 0` — no duration yet at the
+              // leading edge; the completion path emits the full interval.
+              timing: { a: start * 1_000_000, b: 0 },
+            },
+          })
+          .catch((err: unknown) => {
+            this.devDebug(
+              `step_started POST failed (ignored) for hashedId=%s:`,
+              hashedId,
+              err,
+            );
+          });
+      } catch (err) {
+        this.devDebug(
+          `step_started call threw synchronously (ignored) for hashedId=%s:`,
+          hashedId,
+          err,
+        );
+      }
+    }
+
+    return goIntervalTiming(() => wrappedActualHandler(), start)
       .finally(() => {
         this.devDebug(`finished executing step "${id}"`);
 

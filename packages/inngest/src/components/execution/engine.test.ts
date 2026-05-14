@@ -838,4 +838,140 @@ describe("Execution engine checkpoint retry behavior", () => {
       });
     });
   });
+
+  // SDK announces each step.run to the executor *before* invoking
+  // the user's fn so the executor can open a Running
+  // `executor.step` span.
+  describe("Execution engine leading stepPlanned behavior", () => {
+    const asyncCheckpointingOpts = {
+      stepMode: StepMode.AsyncCheckpointing as const,
+      checkpointingConfig: {
+        bufferedSteps: 1,
+        maxRuntime: 0,
+        maxInterval: 0,
+      },
+      extraPartialOptions: {
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+      },
+    };
+
+    test("POSTs once per step.run before fn runs, with op: StepPlanned", async () => {
+      const order: string[] = [];
+      const mockCheckpointStepStarted = vi.fn().mockImplementation(async () => {
+        order.push("step_started");
+        return { ok: true, status: 200 };
+      });
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      await runExecution({
+        mockApi: {
+          checkpointStepStarted: mockCheckpointStepStarted,
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => {
+            order.push("fn:a");
+            return "a";
+          });
+          await step.run("b", () => {
+            order.push("fn:b");
+            return "b";
+          });
+        },
+        ...asyncCheckpointingOpts,
+      });
+
+      expect(mockCheckpointStepStarted).toHaveBeenCalledTimes(2);
+      // Every POST carries op: StepPlanned and no data/error
+      for (const call of mockCheckpointStepStarted.mock.calls) {
+        const step = call[0].step;
+        expect(step.op).toBe(StepOpCode.StepPlanned);
+        expect(step.data).toBeUndefined();
+        expect(step.error).toBeUndefined();
+        expect(step.id).toBeTruthy();
+      }
+      // Ordering: step_started for "a" precedes fn:a, same for b
+      const aStartedIdx = order.indexOf("step_started");
+      const aFnIdx = order.indexOf("fn:a");
+      expect(aStartedIdx).toBeGreaterThanOrEqual(0);
+      expect(aStartedIdx).toBeLessThan(aFnIdx);
+    });
+
+    test("fn body executes even when the POST never resolves", async () => {
+      const order: string[] = [];
+      const mockCheckpointStepStarted = vi.fn().mockImplementation(() => {
+        order.push("post_called");
+        return new Promise(() => {
+          // Never resolves
+        });
+      });
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      await runExecution({
+        mockApi: {
+          checkpointStepStarted: mockCheckpointStepStarted,
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => {
+            order.push("fn_ran");
+            return "a";
+          });
+        },
+        ...asyncCheckpointingOpts,
+      });
+
+      // The POST was started, then fn ran despite the POST not resolving.
+      expect(order).toEqual(["post_called", "fn_ran"]);
+    });
+
+    test("rejected POST is swallowed and fn still completes", async () => {
+      const mockCheckpointStepStarted = vi
+        .fn()
+        .mockRejectedValue(new Error("executor offline"));
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const { result } = await runExecution({
+        mockApi: {
+          checkpointStepStarted: mockCheckpointStepStarted,
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => "a");
+          await step.run("b", () => "b");
+          return "done";
+        },
+        ...asyncCheckpointingOpts,
+      });
+
+      expect(mockCheckpointStepStarted).toHaveBeenCalledTimes(2);
+      // Execution completes successfully; rejections did not propagate.
+      expect(result.type).not.toBe("function-rejected");
+    });
+
+    test("payload includes runId, fnId, queueItemId from execution options", async () => {
+      const mockCheckpointStepStarted = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200 });
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      await runExecution({
+        mockApi: {
+          checkpointStepStarted: mockCheckpointStepStarted,
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => "a");
+        },
+        ...asyncCheckpointingOpts,
+      });
+
+      const call = mockCheckpointStepStarted.mock.calls[0]![0];
+      expect(call.runId).toBe("test-run-id");
+      expect(call.fnId).toBe("internal-fn-456");
+      expect(call.queueItemId).toBe("queue-item-123");
+      expect(call.step.displayName).toBe("a");
+    });
+  });
 });
