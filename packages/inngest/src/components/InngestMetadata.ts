@@ -278,7 +278,7 @@ function getBatchScope(config: BuilderConfig): MetadataScope {
   return "step";
 }
 
-function isCurrentStepTarget(
+function canUseCurrentStepBatch(
   config: BuilderConfig,
   ctx?: AsyncContext,
 ): boolean {
@@ -287,23 +287,24 @@ function isCurrentStepTarget(
     return false;
   }
 
-  if (config.stepId === null) {
+  const targetStepId = config.stepId;
+  const currentStepId = executingStep.id;
+  const currentUserlandStepId = executingStep.userlandId;
+
+  // No explicit step target: run-scoped/default metadata can ride the
+  // current step opcode.
+  if (targetStepId === undefined) {
     return true;
   }
 
-  if (config.stepId === undefined) {
+  // Null is the builder sentinel for "the currently executing step".
+  if (targetStepId === null) {
     return true;
   }
 
-  if (config.stepId === executingStep.id) {
-    return true;
-  }
-
-  if (config.stepId !== executingStep.userlandId) {
-    return false;
-  }
-
-  return true;
+  return (
+    targetStepId === currentStepId || targetStepId === currentUserlandStepId
+  );
 }
 
 function normalizeCurrentStepTarget(
@@ -311,19 +312,35 @@ function normalizeCurrentStepTarget(
   ctx?: AsyncContext,
 ): BuilderConfig {
   const executingStep = ctx?.execution?.executingStep;
-  if (
-    !executingStep ||
-    config.spanId ||
-    !executingStep.userlandId ||
-    config.stepId !== executingStep.userlandId
-  ) {
+  // Only current step targets can be normalized.
+  if (!executingStep) {
+    return config;
+  }
+
+  // Span targets should keep their explicit scope.
+  if (config.spanId) {
+    return config;
+  }
+
+  // Only userland step IDs need index disambiguation.
+  if (!executingStep.userlandId) {
+    return config;
+  }
+
+  // Non-current step targets already point at the intended step.
+  if (config.stepId !== executingStep.userlandId) {
     return config;
   }
 
   const currentIndex = executingStep.userlandIndex ?? 0;
+  // Index 0 is the API default, so no explicit stepIndex is needed.
+  if (currentIndex <= 0) {
+    return config;
+  }
+
   return {
     ...config,
-    ...(currentIndex > 0 ? { stepIndex: currentIndex } : {}),
+    stepIndex: currentIndex,
   };
 }
 
@@ -353,7 +370,7 @@ export async function performOp(
   // We can batch metadata if we're updating the current run
   const canBatch =
     runId === ctx?.execution?.ctx?.runId &&
-    isCurrentStepTarget(normalizedConfig, ctx) &&
+    canUseCurrentStepBatch(normalizedConfig, ctx) &&
     attempt === ctx?.execution?.ctx?.attempt &&
     !normalizedConfig.spanId;
 
