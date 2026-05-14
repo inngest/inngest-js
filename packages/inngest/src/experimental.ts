@@ -1,7 +1,7 @@
 // AsyncLocalStorage
 
 export {
-  createDefer as createDefer,
+  createDefer,
   DeferredFunction,
 } from "./components/DeferredFunction.ts";
 export type { AsyncContext } from "./components/execution/als.ts";

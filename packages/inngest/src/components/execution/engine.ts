@@ -1859,10 +1859,10 @@ class InngestExecutionEngine
   }
 
   /**
-   * Validate the deferred event's data against the defer function's own
-   * schema (set via `createDefer`'s `opts.schema`). The defer ctx
-   * transform has already stripped `_inngest` routing metadata onto
-   * `ctx.parents`, so `event.data` is just the user payload.
+   * Validate the deferred event's data against the defer function's own schema
+   * (set via `createDefer`'s `opts.schema`). Our internal metadata
+   * (`event.data._inngest`) was already stripped, so that won't affect
+   * validation.
    */
   private async validateDeferEventSchema(): Promise<void> {
     const fn = this.options.fn;
