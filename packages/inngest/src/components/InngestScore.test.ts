@@ -194,6 +194,44 @@ describe("sendScore", () => {
     expect(client["updateMetadata"]).not.toHaveBeenCalled();
   });
 
+  test("client.score batches run-scoped metadata inside step.run when stepId is omitted", async () => {
+    const client = new Inngest({ id: "app" });
+    const updateMetadata = spyOnUpdateMetadata(client);
+    const fn = client.createFunction(
+      { id: "fn", triggers: { event: "test" } },
+      async ({ runId, step }) => {
+        await step.run("score", async () => {
+          await client.score({
+            runId,
+            name: "verbosity",
+            value: 2,
+          });
+        });
+      },
+    );
+
+    const result = await startFunction(fn, client, false);
+
+    expect(result.type).toBe("step-ran");
+    if (result.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${result.type}`);
+    }
+
+    expect(result.step).toEqual(
+      expect.objectContaining({
+        metadata: [
+          {
+            kind: "inngest.score",
+            scope: "run",
+            op: "merge",
+            values: { verbosity: 2 },
+          },
+        ],
+      }),
+    );
+    expect(updateMetadata).not.toHaveBeenCalled();
+  });
+
   test("batches score metadata when targeting the current indexed step by userland ID", async () => {
     const addMetadata = vi.fn(() => true);
     vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
