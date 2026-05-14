@@ -430,7 +430,7 @@ export const createStepTools = <
     options,
   ) => {
     if (!client["experimentalScoreEnabled"]) {
-      throw new Error(
+      throw new NonRetriableError(
         'step.score() is experimental. Enable it by adding scoreMiddleware() from "inngest/experimental" to your client middleware.',
       );
     }

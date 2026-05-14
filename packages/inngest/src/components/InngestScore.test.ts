@@ -9,7 +9,7 @@ import type { InngestFunction } from "./InngestFunction.ts";
 import {
   type SendScoreOptions,
   scoreMiddleware,
-  type scoreSymbol,
+  scoreSymbol,
   sendScore,
   sendStepScore,
 } from "./InngestScore.ts";
@@ -442,6 +442,32 @@ describe("scoreMiddleware", () => {
         userland: { id: "score:accuracy" },
       }),
     );
+  });
+
+  test("step.score without scoreMiddleware rejects without retrying", async () => {
+    const client = new Inngest({ id: "app" });
+    const fn = client.createFunction(
+      { id: "fn", triggers: { event: "test" } },
+      async ({ step }) => {
+        await (step as unknown as ExperimentalStepTools)[scoreSymbol](
+          "accuracy",
+          { name: "accuracy", value: 1 },
+        );
+      },
+    );
+
+    const result = await startFunction(fn, client);
+
+    expect(result.type).toBe("function-rejected");
+    if (result.type !== "function-rejected") {
+      throw new Error(`Expected function-rejected, got ${result.type}`);
+    }
+
+    expect(result.retriable).toBe(false);
+    expect(result.error).toMatchObject({
+      name: "NonRetriableError",
+      message: expect.stringContaining("step.score() is experimental"),
+    });
   });
 
   test("step.score rejects invalid input before planning a durable step", async () => {
