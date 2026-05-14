@@ -17,7 +17,7 @@
     "embla-carousel-react": "^8.6.0",
     "inngest": "latest",
     "lucide-react": "^0.507.0",
-    "next": "15.3.6",
+    "next": "^16.2.6",
     "postcss": "^8.5.3",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.0.1",
@@ -31,7 +31,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.3.2",
+    "eslint-config-next": "^16.2.6",
     "tw-animate-css": "^1.2.9",
     "typescript": "^5"
   }
