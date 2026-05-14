@@ -411,13 +411,16 @@ importers:
         version: 8.53.0
       fetch-mock-jest:
         specifier: ^1.5.1
-        version: 1.5.1(node-fetch@3.3.2)
+        version: 1.5.1(node-fetch@2.7.0)
       jest:
         specifier: ^29.3.1
         version: 29.5.0(@types/node@24.3.0)(ts-node@10.9.1(@types/node@24.3.0)(typescript@5.6.3))
       nock:
         specifier: ^13.2.9
         version: 13.2.9
+      node-fetch:
+        specifier: ^2.7.0
+        version: 2.7.0
       ts-jest:
         specifier: ^29.1.0
         version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@24.3.0)(ts-node@10.9.1(@types/node@24.3.0)(typescript@5.6.3)))(typescript@5.6.3)
@@ -7921,7 +7924,7 @@ snapshots:
   '@changesets/get-github-info@0.5.2':
     dependencies:
       dataloader: 1.4.0
-      node-fetch: 2.6.9
+      node-fetch: 2.7.0
     transitivePeerDependencies:
       - encoding
 
@@ -12526,15 +12529,15 @@ snapshots:
       node-domexception: 1.0.0
       web-streams-polyfill: 3.3.3
 
-  fetch-mock-jest@1.5.1(node-fetch@3.3.2):
+  fetch-mock-jest@1.5.1(node-fetch@2.7.0):
     dependencies:
-      fetch-mock: 9.11.0(node-fetch@3.3.2)
+      fetch-mock: 9.11.0(node-fetch@2.7.0)
     optionalDependencies:
-      node-fetch: 3.3.2
+      node-fetch: 2.7.0
     transitivePeerDependencies:
       - supports-color
 
-  fetch-mock@9.11.0(node-fetch@3.3.2):
+  fetch-mock@9.11.0(node-fetch@2.7.0):
     dependencies:
       '@babel/core': 7.23.6
       '@babel/runtime': 7.22.6
@@ -12547,7 +12550,7 @@ snapshots:
       querystring: 0.2.0
       whatwg-url: 14.2.0
     optionalDependencies:
-      node-fetch: 3.3.2
+      node-fetch: 2.7.0
     transitivePeerDependencies:
       - supports-color
 
