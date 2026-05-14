@@ -3,7 +3,6 @@ import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 
-import { StaleDispatchError } from "../../api/api.ts";
 import {
   defaultMaxRetries,
   ExecutionVersion,
@@ -17,7 +16,7 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { isDeferredFunction } from "../../helpers/marker.ts";
+import { isDeferredFunction, isStaleDispatchError } from "../../helpers/marker.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -94,12 +93,6 @@ import {
 } from "./streaming.ts";
 
 const { sha1 } = hashjs;
-
-// Defends against `instanceof` failing across bundle boundaries.
-const isStaleDispatchError = (err: unknown): boolean =>
-  err instanceof StaleDispatchError ||
-  // biome-ignore lint/suspicious/noExplicitAny: name check across boundaries
-  (err as any)?.name === "StaleDispatchError";
 
 /**
  * Retry configuration for checkpoint operations.
@@ -912,10 +905,10 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
-          // Stale dispatch: the executor has already requeued. Returning
-          // buffered ops would let it memoize them as canonical and chain the
-          // next dispatch off this dead invocation, producing duplicate step
-          // executions.
+          // The Inngest Server told us that the corresponding queue item is
+          // stale, so we need to interrupt to avoid running more steps. If we
+          // don't interrupt then we risk duplicate execution, since the same
+          // steps could be executed across multiple requests
           if (isStaleDispatchError(err)) {
             this.devDebug("stale dispatch detected; halting execution");
             return {

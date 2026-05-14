@@ -47,7 +47,7 @@ export class DeferredFunction<
   []
 > {
   readonly schema: TSchema;
-  readonly [markerKey]: Marker = { kind: "deferredFunction" };
+  readonly [markerKey]: Marker = { kind: "DeferredFunction" };
 
   constructor(
     client: Inngest.Any,

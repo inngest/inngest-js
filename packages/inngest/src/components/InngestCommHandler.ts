@@ -2198,6 +2198,8 @@ export class InngestCommHandler<
     requestInfo?: InngestExecutionOptions["requestInfo"];
     mwInstances?: Middleware.BaseMiddleware[];
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+    const requestStartedAt = Date.now();
+
     if (!fn) {
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
@@ -2277,8 +2279,6 @@ export class InngestCommHandler<
         Boolean(ctx?.disable_immediate_execution),
         this.defaultMaxRuntime,
       );
-
-      const requestStartedAt = Date.now();
 
       const executionOptions: CreateExecutionOptions = {
         partialOptions: {

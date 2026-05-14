@@ -1,5 +1,5 @@
 ---
-"inngest": minor
+"inngest": patch
 ---
 
-More gracefully handle 'stale' checkpoints to prevent duplicated runs.
+Fix duplicate execution when response terminates early

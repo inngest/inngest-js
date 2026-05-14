@@ -138,15 +138,12 @@ export interface InngestExecutionOptions {
   queueItemId?: string;
 
   /**
-   * Echoed back on every async checkpoint POST so the executor can reject
-   * dispatches from superseded requests with 409.
+   * Unique identifier for each execution request
    */
   requestId?: string;
 
   /**
-   * Unix-millisecond epoch captured when the SDK started processing the
-   * incoming request, sent on every async checkpoint POST so the executor can
-   * short-circuit the staleness check for fresh dispatches.
+   * Time the SDK starts handling an execution request. Format is unix millis.
    */
   requestStartedAt?: number;
 

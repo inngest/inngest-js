@@ -2,6 +2,7 @@ import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
 import type { ExecutionVersion } from "../helpers/consts.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
+import { type Marker, markerKey } from "../helpers/marker.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
 import {
@@ -33,6 +34,8 @@ export class StaleDispatchError extends Error {
     super(message);
     this.name = "StaleDispatchError";
   }
+  
+  readonly [markerKey]: Marker = { kind: "StaleDispatchError" };
 }
 
 const realtimeSubscriptionTokenSchema = z.object({
@@ -467,6 +470,7 @@ export class InngestApi {
     retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
+    console.log("checkpointNewRun")
     const body = JSON.stringify({
       run_id: args.runId,
       event: args.event,
@@ -511,6 +515,7 @@ export class InngestApi {
     appId: string;
     steps: OutgoingOp[];
   }): Promise<void> {
+    console.log("checkpointSteps")
     const body = JSON.stringify({
       fn_id: args.fnId,
       app_id: args.appId,
@@ -550,8 +555,8 @@ export class InngestApi {
     runId: string;
     fnId: string;
     queueItemId: string;
-    requestId?: string;
-    requestStartedAt?: number;
+    requestId: string | undefined;
+    requestStartedAt: number | undefined;
     steps: OutgoingOp[];
   }): Promise<void> {
     const body = JSON.stringify({
