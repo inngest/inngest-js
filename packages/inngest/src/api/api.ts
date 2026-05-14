@@ -573,6 +573,37 @@ export class InngestApi {
   }
 
   /**
+   * Announce to the executor that a step is about to run, so it can open a
+   * Running `executor.step` span before the step body executes.
+   */
+  async checkpointStepStarted(args: {
+    runId: string;
+    fnId: string;
+    queueItemId: string;
+    step: OutgoingOp;
+  }): Promise<{ ok: boolean; status?: number }> {
+    const body = JSON.stringify({
+      run_id: args.runId,
+      fn_id: args.fnId,
+      qi_id: args.queueItemId,
+      steps: [args.step],
+      ts: new Date().valueOf(),
+    });
+
+    const result = await this.req(
+      `/v1/checkpoint/${encodeURIComponent(args.runId)}/async`,
+      {
+        method: "POST",
+        body,
+      },
+    );
+
+    // Best-effort: do not throw on non-2xx.
+    if (!result.ok) return { ok: false };
+    return { ok: result.value.ok, status: result.value.status };
+  }
+
+  /**
    * POST stream data to the realtime publish/tee endpoint, forwarding raw
    * bytes to all subscribers via the broadcaster.
    */
