@@ -1,4 +1,4 @@
-import { isRecord } from "../helpers/types.ts";
+import { isFiniteNumber, isRecord } from "../helpers/types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
@@ -29,6 +29,25 @@ export type ScoreStepTool = (
 
 export const scoreSymbol = Symbol.for("inngest.step.score");
 
+function validateIdField({
+  value,
+  field,
+  required,
+}: {
+  value: unknown;
+  field: string;
+  required: boolean;
+}): void {
+  if (!required && value === undefined) {
+    return;
+  }
+
+  const isValidString = typeof value === "string" && value.trim().length > 0;
+  if (!isValidString) {
+    throw new Error(`${field} must be a non-empty string`);
+  }
+}
+
 function validateScoreFields(
   options: unknown,
   requiredTargetIds: readonly ("runId" | "stepId")[],
@@ -43,18 +62,11 @@ function validateScoreFields(
   }
 
   for (const field of ["runId", "stepId"] as const) {
-    const value = options[field];
-    const isRequired = requiredTargetIds.includes(field);
-    const invalidRequired =
-      isRequired && (typeof value !== "string" || value.trim().length === 0);
-    const invalidOptional =
-      !isRequired &&
-      value !== undefined &&
-      (typeof value !== "string" || value.trim().length === 0);
-
-    if (invalidRequired || invalidOptional) {
-      throw new Error(`${field} must be a non-empty string`);
-    }
+    validateIdField({
+      value: options[field],
+      field,
+      required: requiredTargetIds.includes(field),
+    });
   }
 
   if (typeof options.name !== "string" || !scoreNameRegex.test(options.name)) {
@@ -63,10 +75,7 @@ function validateScoreFields(
     );
   }
 
-  if (
-    typeof options.value !== "boolean" &&
-    (typeof options.value !== "number" || !Number.isFinite(options.value))
-  ) {
+  if (typeof options.value !== "boolean" && !isFiniteNumber(options.value)) {
     throw new Error("score value must be a finite number or boolean");
   }
 }
