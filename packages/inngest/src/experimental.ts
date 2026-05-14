@@ -13,9 +13,4 @@ export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components
 // Step Metadata
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
 // Scoring
-export type {
-  ScoreStepTool,
-  SendScoreOptions,
-  StepScoreOptions,
-} from "./components/InngestScore.ts";
 export { scoreMiddleware } from "./components/InngestScore.ts";
