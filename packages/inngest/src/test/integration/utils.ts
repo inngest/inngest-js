@@ -164,17 +164,19 @@ const anyEvent = {
   user: expect.any(Object),
 };
 
-export const anyContext = {
+export const anyContext = expect.objectContaining({
   attempt: expect.any(Number),
   defer: expect.any(Function),
   event: anyEvent,
   events: [anyEvent],
   group: expect.any(Object),
+  jobId: expect.any(String),
   logger: expect.any(Object),
   maxAttempts: expect.any(Number),
+  requestId: expect.any(String),
   runId: expect.any(String),
   step: expect.any(Object),
-};
+});
 
 const fetchEventSchema = z.object({
   data: z.object({
