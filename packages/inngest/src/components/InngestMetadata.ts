@@ -292,7 +292,7 @@ function canUseCurrentStepBatch(
   }
 
   const targetStepId = config.stepId;
-  const currentStepId = executingStep.id;
+  const currentRuntimeStepId = executingStep.id;
   const currentUserlandStepId = executingStep.userlandId;
 
   if (targetStepId === undefined) {
@@ -305,44 +305,9 @@ function canUseCurrentStepBatch(
 
   // Callers may target the runtime step ID or original userland ID.
   return (
-    targetStepId === currentStepId || targetStepId === currentUserlandStepId
+    targetStepId === currentRuntimeStepId ||
+    targetStepId === currentUserlandStepId
   );
-}
-
-/**
- * REST fallback needs step_index when duplicate userland IDs target this step;
- * batched writes already use the current opcode ID.
- */
-function normalizeCurrentStepTarget(
-  config: BuilderConfig,
-  ctx?: AsyncContext,
-): BuilderConfig {
-  const executingStep = ctx?.execution?.executingStep;
-  if (!executingStep) {
-    return config;
-  }
-
-  if (config.spanId) {
-    return config;
-  }
-
-  if (!executingStep.userlandId) {
-    return config;
-  }
-
-  if (config.stepId !== executingStep.userlandId) {
-    return config;
-  }
-
-  const currentIndex = executingStep.userlandIndex ?? 0;
-  if (currentIndex <= 0) {
-    return config;
-  }
-
-  return {
-    ...config,
-    stepIndex: currentIndex,
-  };
 }
 
 export async function performOp(
@@ -353,8 +318,7 @@ export async function performOp(
   op: MetadataOpcode,
 ): Promise<void> {
   const ctx = await getAsyncCtx();
-  const normalizedConfig = normalizeCurrentStepTarget(config, ctx);
-  const target = buildTarget(normalizedConfig, ctx);
+  const target = buildTarget(config, ctx);
 
   const isInsideRun = !!ctx?.execution;
   const isInsideStep = !!ctx?.execution?.executingStep;
@@ -364,21 +328,20 @@ export async function performOp(
     );
   }
 
-  const runId = normalizedConfig.runId ?? ctx?.execution?.ctx?.runId;
-  // TODO: get step index from ctx?
-  const attempt = normalizedConfig.attempt ?? ctx?.execution?.ctx?.attempt;
+  const runId = config.runId ?? ctx?.execution?.ctx?.runId;
+  const attempt = config.attempt ?? ctx?.execution?.ctx?.attempt;
 
   // We can batch metadata if we're updating the current run
   const canBatch =
     runId === ctx?.execution?.ctx?.runId &&
-    canUseCurrentStepBatch(normalizedConfig, ctx) &&
+    canUseCurrentStepBatch(config, ctx) &&
     attempt === ctx?.execution?.ctx?.attempt &&
-    !normalizedConfig.spanId;
+    !config.spanId;
 
   if (canBatch) {
     const executingStep = ctx?.execution?.executingStep;
     const execInstance = ctx?.execution?.instance;
-    const scope = getBatchScope(normalizedConfig);
+    const scope = getBatchScope(config);
 
     if (
       executingStep?.id &&

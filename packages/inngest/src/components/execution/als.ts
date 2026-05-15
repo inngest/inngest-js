@@ -39,7 +39,6 @@ export interface AsyncContext {
     executingStep?: StepOptions & {
       hashedId?: string;
       userlandId?: string;
-      userlandIndex?: number;
     };
 
     /**

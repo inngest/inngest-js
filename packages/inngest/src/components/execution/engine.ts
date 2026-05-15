@@ -1599,7 +1599,6 @@ class InngestExecutionEngine
         name: displayName,
         hashedId,
         userlandId: userland.id,
-        userlandIndex: userland.index,
       };
     }
 
