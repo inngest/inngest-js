@@ -144,7 +144,7 @@ describe("sendScore", () => {
     vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
       execution: {
         ctx: { runId: "run", attempt: 0 },
-        executingStep: { id: "step" },
+        executingStep: { id: "step", userlandId: "step" },
         instance: { addMetadata },
       },
     } as unknown as als.AsyncContext);
