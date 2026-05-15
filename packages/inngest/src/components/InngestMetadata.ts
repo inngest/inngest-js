@@ -278,16 +278,12 @@ function getBatchScope(config: BuilderConfig): MetadataScope {
   return "step";
 }
 
-/**
- * Keep in-step metadata durable by batching only targets that resolve to this
- * step opcode; other targets must go through REST.
- */
-function canUseCurrentStepBatch(
+function targetsCurrentStep(
   config: BuilderConfig,
   ctx?: AsyncContext,
 ): boolean {
   const executingStep = ctx?.execution?.executingStep;
-  if (!executingStep || config.spanId) {
+  if (!executingStep) {
     return false;
   }
 
@@ -329,7 +325,7 @@ export async function performOp(
   // We can batch metadata if we're updating the current run
   const canBatch =
     runId === ctx?.execution?.ctx?.runId &&
-    canUseCurrentStepBatch(config, ctx) &&
+    targetsCurrentStep(config, ctx) &&
     attempt === ctx?.execution?.ctx?.attempt &&
     !config.spanId;
 
