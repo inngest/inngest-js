@@ -1662,6 +1662,7 @@ class InngestExecutionEngine
               name,
               displayName,
               userland,
+              ...(opts ? { opts } : {}),
               // GoInterval is nanoseconds. `b: 0` — no duration yet at the
               // leading edge; the completion path emits the full interval.
               timing: { a: start * 1_000_000, b: 0 },
