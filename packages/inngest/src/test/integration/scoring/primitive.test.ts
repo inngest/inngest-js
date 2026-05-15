@@ -59,12 +59,12 @@ describe("client.score", async () => {
     const trace = await getRunTraceMetadata(runId);
 
     // Run
-    expectScoreValue(trace.metadata, "run_score", 1);
+    expectScoreValue(trace.metadata, "run_score", true);
     expectNoScoreValue(trace.metadata, "step_score");
 
     // Step
     const step = findSpanByName(trace, "my-step");
-    expectScoreValue(step.metadata, "step_score", 0);
+    expectScoreValue(step.metadata, "step_score", false);
     expectNoScoreValue(step.metadata, "run_score");
   });
 
@@ -217,12 +217,12 @@ describe("step.score", async () => {
     expectNoSpanByName(trace, "score:step-score");
 
     // Run
-    expectScoreValue(trace.metadata, "run_score", 1);
+    expectScoreValue(trace.metadata, "run_score", true);
     expectNoScoreValue(trace.metadata, "step_score");
 
     // Step
     const step = findSpanByName(trace, "my-step");
-    expectScoreValue(step.metadata, "step_score", 0);
+    expectScoreValue(step.metadata, "step_score", false);
     expectNoScoreValue(step.metadata, "run_score");
   });
 

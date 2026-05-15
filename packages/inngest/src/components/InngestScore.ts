@@ -80,10 +80,6 @@ function validateScoreFields(
   }
 }
 
-function normalizeScoreValue(value: ScoreValue): number {
-  return typeof value === "boolean" ? Number(value) : value;
-}
-
 function validateSendScoreOptions(
   options: unknown,
 ): asserts options is SendScoreOptions {
@@ -108,7 +104,7 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: normalizeScoreValue(options.value) },
+    { [options.name]: options.value },
     "inngest.score",
     "merge",
   );
@@ -128,7 +124,7 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: normalizeScoreValue(options.value) },
+    { [options.name]: options.value },
     "inngest.score",
     "merge",
   );
