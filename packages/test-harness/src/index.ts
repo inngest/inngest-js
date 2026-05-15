@@ -21,4 +21,7 @@ export {
   waitFor,
   BaseState,
   createState,
+  getRunMetadata,
+  getRunTraceMetadata,
 } from "./utils.ts";
+export type { RunMetadata, TraceMetadataNode } from "./utils.ts";
