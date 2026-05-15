@@ -11,7 +11,7 @@ function scoreValues(metadata: RunMetadata[]) {
 export function expectScoreValue(
   metadata: RunMetadata[],
   name: string,
-  value: number,
+  value: number | boolean,
 ) {
   expect(scoreValues(metadata)).toEqual(
     expect.objectContaining({ [name]: value }),
