@@ -292,7 +292,6 @@ function canUseCurrentStepBatch(
   }
 
   const targetStepId = config.stepId;
-  const currentRuntimeStepId = executingStep.id;
   const currentUserlandStepId = executingStep.userlandId;
 
   if (targetStepId === undefined) {
@@ -303,11 +302,7 @@ function canUseCurrentStepBatch(
     return true;
   }
 
-  // Callers may target the runtime step ID or original userland ID.
-  return (
-    targetStepId === currentRuntimeStepId ||
-    targetStepId === currentUserlandStepId
-  );
+  return targetStepId === currentUserlandStepId;
 }
 
 export async function performOp(
