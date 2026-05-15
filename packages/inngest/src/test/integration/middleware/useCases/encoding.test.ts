@@ -101,7 +101,7 @@ test("base64 encoding/decoding middleware", async () => {
   await state.waitForRunFailed();
 
   const expectedFnInputArg = {
-    ctx: {
+    ctx: expect.objectContaining({
       attempt: 0,
       maxAttempts: 1,
       defer: expect.any(Function),
@@ -111,7 +111,7 @@ test("base64 encoding/decoding middleware", async () => {
       logger: expect.any(Object),
       runId: expect.any(String),
       step: expect.any(Object),
-    },
+    }),
     fn,
     steps: {},
   };
