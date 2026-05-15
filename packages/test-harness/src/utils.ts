@@ -85,20 +85,6 @@ const runMetadataEntrySchema = z.object({
 
 export type RunMetadata = z.infer<typeof runMetadataEntrySchema>;
 
-const runMetadataSchema = z.object({
-  data: z.object({
-    run: z
-      .object({
-        trace: z
-          .object({
-            metadata: z.array(runMetadataEntrySchema).nullable().default([]),
-          })
-          .nullable(),
-      })
-      .nullable(),
-  }),
-});
-
 export type TraceMetadataNode = {
   name: string;
   stepID: string | null;
@@ -107,7 +93,7 @@ export type TraceMetadataNode = {
   childrenSpans: TraceMetadataNode[];
 };
 
-const traceMetadataNodeSchema: z.ZodType<TraceMetadataNode> = z.lazy(() =>
+const traceMetadataNodeSchema: z.ZodType<TraceMetadataNode, z.ZodTypeDef, unknown> = z.lazy(() =>
   z.object({
     name: z.string(),
     stepID: z.string().nullable(),
@@ -198,36 +184,6 @@ async function fetchTraceOutput(outputID: string): Promise<RunResult> {
     }
   }
   return { data: null };
-}
-
-/**
- * Fetch metadata entries attached to the root run trace.
- */
-export async function getRunMetadata(runId: string): Promise<RunMetadata[]> {
-  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: `query ($runId: String!) {
-        run(runID: $runId) {
-          trace(preview: true) {
-            metadata {
-              scope
-              kind
-              values
-              updatedAt
-            }
-          }
-        }
-      }`,
-      variables: { runId },
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
-  const parsed = runMetadataSchema.parse(await res.json());
-  return parsed.data.run?.trace?.metadata ?? [];
 }
 
 /**
