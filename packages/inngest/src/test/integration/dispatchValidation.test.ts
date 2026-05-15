@@ -24,8 +24,8 @@ function sleep(ms: number) {
 function createGatewayTimeoutProxy(getUpstreamPort: () => number): http.Server {
   let count = 0;
   return http.createServer((clientReq, clientRes) => {
-    count++;
     const should504 = count === 0;
+    count++;
     const proxyReq = http.request({
       hostname: "127.0.0.1",
       port: getUpstreamPort(),
@@ -147,12 +147,12 @@ test("interrupt control flow when dispatch validation fails", async () => {
   await registerApp(`http://127.0.0.1:${appPort}${servePath}`);
 
   await client.send({ name: eventName });
-  await state.waitForRunComplete();
+  await state.waitForRunComplete(50_000);
 
   expect(state.stepCounts).toEqual({
-    a: 1,
+    a: 2,
     b: 1,
     c: 1,
     d: 1,
   });
-}, 60_000);
+}, 90_000);
