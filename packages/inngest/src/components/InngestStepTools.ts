@@ -438,8 +438,7 @@ export const createStepTools = <
 
     validateStepScoreOptions(options);
 
-    const scoreStepId = `score:${memoizationId}`;
-    await tools.run(scoreStepId, async () => {
+    await tools.run(memoizationId, async () => {
       await sendStepScore(client, options);
     });
   };

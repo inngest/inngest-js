@@ -405,8 +405,8 @@ describe("scoreMiddleware", () => {
       expect.objectContaining({
         op: StepOpCode.StepPlanned,
         id: expect.any(String),
-        displayName: "score:accuracy",
-        userland: { id: "score:accuracy" },
+        displayName: "accuracy",
+        userland: { id: "accuracy" },
       }),
     );
   });
