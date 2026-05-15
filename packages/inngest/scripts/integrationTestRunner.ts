@@ -175,6 +175,7 @@ async function startDevServer(
     "npx",
     [
       "--yes",
+      "--ignore-scripts=false",
       "inngest-cli@latest",
       "dev",
       "--port",
