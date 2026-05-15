@@ -1,8 +1,6 @@
-import type { RunMetadata, TraceMetadataNode } from "@inngest/test-harness";
 import {
   createState,
   createTestApp,
-  getRunMetadata,
   getRunTraceMetadata,
   randomSuffix,
   testNameFromFileUrl,
@@ -11,165 +9,266 @@ import { expect, test } from "vitest";
 import { scoreMiddleware } from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
+import {
+  expectNoScoreValue,
+  expectScoreValue,
+  findSpanByName,
+} from "./utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-function scoreEntries(metadata: RunMetadata[]) {
-  return metadata.filter((md) => md.kind === "inngest.score");
-}
+describe("client.score", async () => {
+  test("outside function", async () => {
+    const state = createState({});
 
-function scoreValues(metadata: RunMetadata[]) {
-  return Object.assign({}, ...scoreEntries(metadata).map((md) => md.values));
-}
-
-function expectScoreValue(
-  metadata: RunMetadata[],
-  name: string,
-  value: number,
-) {
-  expect(scoreValues(metadata)).toEqual(
-    expect.objectContaining({ [name]: value }),
-  );
-}
-
-function expectNoScoreValue(metadata: RunMetadata[], name: string) {
-  expect(scoreValues(metadata)).not.toHaveProperty(name);
-}
-
-function flattenTrace(node: TraceMetadataNode): TraceMetadataNode[] {
-  return [node, ...node.childrenSpans.flatMap(flattenTrace)];
-}
-
-function findSpanByName(trace: TraceMetadataNode, name: string) {
-  const spans = flattenTrace(trace);
-  const span = spans.find((node) => node.name === name);
-  if (!span) {
-    throw new Error(
-      `Unable to find span "${name}". Found spans: ${spans
-        .map((node) => node.name)
-        .join(", ")}`,
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ runId, step }) => {
+        state.runId = runId;
+        await step.run("my-step", () => {});
+      },
     );
-  }
-  return span;
-}
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
-test("client.score outside a function writes run-scoped metadata", async () => {
-  const state = createState({});
+    await client.send({ name: eventName, data: {} });
+    await state.waitForRunComplete();
 
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
+    const runId = await state.waitForRunId();
+
+    // Score run
+    await client.score({ runId, name: "run_score", value: 1 });
+
+    // Score step
+    await client.score({
+      name: "step_score",
+      runId,
+      stepId: "my-step",
+      value: 2,
+    });
+
+    const trace = await getRunTraceMetadata(runId);
+
+    // Run
+    expectScoreValue(trace.metadata, "run_score", 1);
+    expectNoScoreValue(trace.metadata, "step_score");
+
+    // Step
+    const step = findSpanByName(trace, "my-step");
+    expectScoreValue(step.metadata, "step_score", 2);
+    expectNoScoreValue(step.metadata, "run_score");
   });
-  const eventName = randomSuffix("evt");
-  const fn = client.createFunction(
-    {
-      id: "fn",
-      retries: 0,
-      triggers: { event: eventName },
-    },
-    async ({ runId }) => {
-      state.runId = runId;
-    },
-  );
-  await createTestApp({ client, functions: [fn], serve: createServer });
 
-  await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
+  test("inside step.run", async () => {
+    const state = createState({});
 
-  const runId = await state.waitForRunId();
-  await client.score({ runId, name: "external_score", value: 3 });
+    const client = new Inngest({
+      checkpointing: true,
+      id: randomSuffix(testFileName),
+      isDev: true,
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ runId, step }) => {
+        state.runId = runId;
+        await step.run("my-step", async () => {
+          // Score run
+          await client.score({
+            runId,
+            name: "run_score",
+            value: 1,
+          });
 
-  const metadata = await getRunMetadata(runId);
-  expectScoreValue(metadata, "external_score", 3);
-  expect(scoreEntries(metadata)).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        kind: "inngest.score",
-        scope: "run",
-        values: expect.objectContaining({ external_score: 3 }),
-      }),
-    ]),
-  );
+          // Score step
+          await client.score({
+            runId,
+            stepId: "my-step",
+            name: "step_score",
+            value: 2,
+          });
+        });
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
+
+    await client.send({ name: eventName, data: {} });
+    await state.waitForRunComplete();
+    const trace = await getRunTraceMetadata(await state.waitForRunId());
+
+    // Run
+    expectScoreValue(trace.metadata, "run_score", 1);
+    expectNoScoreValue(trace.metadata, "step_score");
+
+    // Step
+    const step = findSpanByName(trace, "my-step");
+    expectScoreValue(step.metadata, "step_score", 2);
+    expectNoScoreValue(step.metadata, "run_score");
+  });
+
+  test("non-existent step", async () => {
+    // Error when scoring a step that doesn't exist
+
+    const state = createState({
+      error: null as unknown,
+    });
+
+    const client = new Inngest({
+      checkpointing: true,
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [scoreMiddleware()],
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ runId, step }) => {
+        state.runId = runId;
+        await step.run("my-step", async () => {
+          try {
+            await client.score({
+              name: "step_score",
+              runId,
+              stepId: "non-existent",
+              value: 2,
+            });
+          } catch (err) {
+            state.error = err;
+            throw err;
+          }
+        });
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
+
+    await client.send({ name: eventName, data: {} });
+    const output = await state.waitForRunFailed();
+    expect(output).toEqual({
+      message: "Failed to update metadata: Unable to find metadata target",
+      name: "Error",
+    });
+
+    expect(state.error).toBeInstanceOf(Error);
+    const error = state.error as Error;
+    expect(error.message).toEqual(
+      "Failed to update metadata: Unable to find metadata target",
+    );
+  });
 });
 
-test("client.score inside step.run routes run and step metadata by scope", async () => {
-  const state = createState({});
+describe("step.score", async () => {
+  test("happy", async () => {
+    const state = createState({});
 
-  const client = new Inngest({
-    checkpointing: true,
-    id: randomSuffix(testFileName),
-    isDev: true,
-  });
-  const eventName = randomSuffix("evt");
-  const fn = client.createFunction(
-    {
-      id: "fn",
-      retries: 0,
-      triggers: { event: eventName },
-    },
-    async ({ runId, step }) => {
-      state.runId = runId;
-      await step.run("writer-step", async () => {
-        await client.score({
-          runId,
-          stepId: "writer-step",
-          name: "step_quality",
-          value: 1,
-        });
-        await client.score({
-          runId,
-          name: "run_quality",
+    const client = new Inngest({
+      checkpointing: true,
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [scoreMiddleware()],
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ runId, step }) => {
+        state.runId = runId;
+        await step.run("my-step", () => {});
+
+        // Score run
+        await step.score("run-score", { name: "run_score", value: 1 });
+
+        // Score step
+        await step.score("step-score", {
+          name: "step_score",
+          stepId: "my-step",
           value: 2,
         });
-      });
-    },
-  );
-  await createTestApp({ client, functions: [fn], serve: createServer });
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
 
-  await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
+    await client.send({ name: eventName, data: {} });
+    await state.waitForRunComplete();
+    const trace = await getRunTraceMetadata(await state.waitForRunId());
 
-  const runId = await state.waitForRunId();
-  const runMetadata = await getRunMetadata(runId);
-  expectScoreValue(runMetadata, "run_quality", 2);
-  expectNoScoreValue(runMetadata, "step_quality");
+    // Run
+    expectScoreValue(trace.metadata, "run_score", 1);
+    expectNoScoreValue(trace.metadata, "step_score");
 
-  const trace = await getRunTraceMetadata(runId);
-  const writerStep = findSpanByName(trace, "writer-step");
-  expectScoreValue(writerStep.metadata, "step_quality", 1);
-  expectNoScoreValue(writerStep.metadata, "run_quality");
-});
-
-test("step.score writes run-scoped metadata by default", async () => {
-  const state = createState({});
-
-  const client = new Inngest({
-    checkpointing: true,
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [scoreMiddleware()],
+    // Step
+    const step = findSpanByName(trace, "my-step");
+    expectScoreValue(step.metadata, "step_score", 2);
+    expectNoScoreValue(step.metadata, "run_score");
   });
-  const eventName = randomSuffix("evt");
-  const fn = client.createFunction(
-    {
-      id: "fn",
-      retries: 0,
-      triggers: { event: eventName },
-    },
-    async ({ runId, step }) => {
-      state.runId = runId;
-      await step.score("run-quality", { name: "run_quality", value: true });
-    },
-  );
-  await createTestApp({ client, functions: [fn], serve: createServer });
 
-  await client.send({ name: eventName, data: {} });
-  await state.waitForRunComplete();
+  test("non-existent step", async () => {
+    // Error when scoring a step that doesn't exist
 
-  const runId = await state.waitForRunId();
-  const metadata = await getRunMetadata(runId);
-  expectScoreValue(metadata, "run_quality", 1);
+    const state = createState({
+      error: null as unknown,
+    });
 
-  const trace = await getRunTraceMetadata(runId);
-  findSpanByName(trace, "score:run-quality");
+    const client = new Inngest({
+      checkpointing: true,
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [scoreMiddleware()],
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ runId, step }) => {
+        state.runId = runId;
+        await step.run("my-step", () => {});
+
+        try {
+          await step.score("step-score", {
+            name: "step_score",
+            stepId: "non-existent",
+            value: 2,
+          });
+        } catch (err) {
+          state.error = err;
+          throw err;
+        }
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
+
+    await client.send({ name: eventName, data: {} });
+    const output = await state.waitForRunFailed();
+    expect(output).toEqual({
+      message: "Failed to update metadata: Unable to find metadata target",
+      name: "Error",
+    });
+
+    expect(state.error).toBeInstanceOf(Error);
+    const error = state.error as Error;
+    expect(error.message).toEqual(
+      "Failed to update metadata: Unable to find metadata target",
+    );
+  });
 });
