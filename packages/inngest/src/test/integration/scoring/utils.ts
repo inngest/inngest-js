@@ -38,3 +38,7 @@ export function findSpanByName(trace: TraceMetadataNode, name: string) {
   }
   return span;
 }
+
+export function expectNoSpanByName(trace: TraceMetadataNode, name: string) {
+  expect(flattenTrace(trace).map((node) => node.name)).not.toContain(name);
+}

@@ -11,6 +11,7 @@ import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import {
   expectNoScoreValue,
+  expectNoSpanByName,
   expectScoreValue,
   findSpanByName,
 } from "./utils.ts";
@@ -45,14 +46,14 @@ describe("client.score", async () => {
     const runId = await state.waitForRunId();
 
     // Score run
-    await client.score({ runId, name: "run_score", value: 1 });
+    await client.score({ runId, name: "run_score", value: true });
 
     // Score step
     await client.score({
       name: "step_score",
       runId,
       stepId: "my-step",
-      value: 2,
+      value: false,
     });
 
     const trace = await getRunTraceMetadata(runId);
@@ -63,7 +64,7 @@ describe("client.score", async () => {
 
     // Step
     const step = findSpanByName(trace, "my-step");
-    expectScoreValue(step.metadata, "step_score", 2);
+    expectScoreValue(step.metadata, "step_score", 0);
     expectNoScoreValue(step.metadata, "run_score");
   });
 
@@ -194,13 +195,13 @@ describe("step.score", async () => {
         await step.run("my-step", () => {});
 
         // Score run
-        await step.score("run-score", { name: "run_score", value: 1 });
+        await step.score("run-score", { name: "run_score", value: true });
 
         // Score step
         await step.score("step-score", {
           name: "step_score",
           stepId: "my-step",
-          value: 2,
+          value: false,
         });
       },
     );
@@ -210,13 +211,18 @@ describe("step.score", async () => {
     await state.waitForRunComplete();
     const trace = await getRunTraceMetadata(await state.waitForRunId());
 
+    findSpanByName(trace, "run-score");
+    findSpanByName(trace, "step-score");
+    expectNoSpanByName(trace, "score:run-score");
+    expectNoSpanByName(trace, "score:step-score");
+
     // Run
     expectScoreValue(trace.metadata, "run_score", 1);
     expectNoScoreValue(trace.metadata, "step_score");
 
     // Step
     const step = findSpanByName(trace, "my-step");
-    expectScoreValue(step.metadata, "step_score", 2);
+    expectScoreValue(step.metadata, "step_score", 0);
     expectNoScoreValue(step.metadata, "run_score");
   });
 
