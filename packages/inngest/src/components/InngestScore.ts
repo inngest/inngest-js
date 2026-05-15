@@ -151,8 +151,7 @@ export const scoreMiddleware = () => {
            * Create a durable score update wrapped in a step.
            * Omit `stepId` to attach the score to the run.
            *
-           * @param memoizationId - The score step ID suffix; the durable step is
-           *   recorded as `score:${memoizationId}`.
+           * @param memoizationId - The durable step ID used to memoize this score write.
            */
           score: ExperimentalStepTools[typeof scoreSymbol];
         };
