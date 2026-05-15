@@ -34,7 +34,7 @@ export class StaleDispatchError extends Error {
     super(message);
     this.name = "StaleDispatchError";
   }
-  
+
   readonly [markerKey]: Marker = { kind: "StaleDispatchError" };
 }
 
@@ -470,7 +470,6 @@ export class InngestApi {
     retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
-    console.log("checkpointNewRun")
     const body = JSON.stringify({
       run_id: args.runId,
       event: args.event,
@@ -515,7 +514,6 @@ export class InngestApi {
     appId: string;
     steps: OutgoingOp[];
   }): Promise<void> {
-    console.log("checkpointSteps")
     const body = JSON.stringify({
       fn_id: args.fnId,
       app_id: args.appId,

@@ -16,7 +16,10 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { isDeferredFunction, isStaleDispatchError } from "../../helpers/marker.ts";
+import {
+  isDeferredFunction,
+  isStaleDispatchError,
+} from "../../helpers/marker.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
