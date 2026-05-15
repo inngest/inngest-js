@@ -32,7 +32,7 @@ test("return Response object", async () => {
   expect(res.status).toBe(200);
 
   // FIXME: The output is double-encoded. This is a Inngest server bug (not SDK)
-  expect((await res.json())).toBe("\"hello world\"");
+  expect(await res.json()).toBe('"hello world"');
 
   await state.waitForRunComplete();
 });
@@ -59,6 +59,6 @@ test("return string", async () => {
 
   res = await fetch(res.headers.get("location")!);
   expect(res.status).toBe(200);
-  expect((await res.json())).toBe("hello world");
+  expect(await res.json()).toBe("hello world");
   await state.waitForRunComplete();
 });
