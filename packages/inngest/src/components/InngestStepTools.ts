@@ -707,7 +707,7 @@ export const createStepTools = <
      * of the `run` tool, meaning you can return and reason about return data
      * for next steps.
      */
-    run: createStepRun(),
+    run: createStepRun("step.run"),
 
     /**
      * AI tooling for running AI models and other AI-related tasks.
