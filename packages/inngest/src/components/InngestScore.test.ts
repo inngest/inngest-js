@@ -75,6 +75,17 @@ describe("client.score validation", () => {
       }),
     ).rejects.toThrow("finite number or boolean");
   });
+
+  test("requires an explicit run outside execution context", async () => {
+    const client = new Inngest({ id: "app" });
+
+    await expect(
+      client.score({
+        name: "accuracy",
+        value: 1,
+      } satisfies SendScoreOptions),
+    ).rejects.toThrow("No run context available");
+  });
 });
 
 describe("step.score validation", () => {

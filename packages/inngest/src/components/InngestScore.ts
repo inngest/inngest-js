@@ -9,7 +9,7 @@ const scoreNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 type ScoreValue = number | boolean;
 
 export type SendScoreOptions = {
-  runId: string;
+  runId?: string;
   stepId?: string;
   name: string;
   value: ScoreValue;
@@ -83,7 +83,7 @@ function validateScoreFields(
 function validateSendScoreOptions(
   options: unknown,
 ): asserts options is SendScoreOptions {
-  validateScoreFields(options, ["runId"]);
+  validateScoreFields(options, []);
 }
 
 export function validateStepScoreOptions(
@@ -146,6 +146,7 @@ export const scoreMiddleware = () => {
           /**
            * Create a durable score update wrapped in a step.
            * Omit `stepId` to attach the score to the run.
+           * Use `inngest.score()` for live score writes inside `step.run()`.
            *
            * @param memoizationId - The durable step ID used to memoize this score write.
            */

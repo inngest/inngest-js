@@ -68,6 +68,39 @@ describe("client.score", async () => {
     expectNoScoreValue(step.metadata, "run_score");
   });
 
+  test("inside function body infers run", async () => {
+    const state = createState({});
+
+    const client = new Inngest({
+      checkpointing: true,
+      id: randomSuffix(testFileName),
+      isDev: true,
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ runId, step }) => {
+        state.runId = runId;
+        await client.score({ name: "run_score", value: true });
+        await step.run("my-step", () => {});
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
+
+    await client.send({ name: eventName, data: {} });
+    await state.waitForRunComplete();
+    const trace = await getRunTraceMetadata(await state.waitForRunId());
+
+    expectScoreValue(trace.metadata, "run_score", true);
+
+    const step = findSpanByName(trace, "my-step");
+    expectNoScoreValue(step.metadata, "run_score");
+  });
+
   test("inside step.run", async () => {
     const state = createState({});
 
@@ -86,19 +119,24 @@ describe("client.score", async () => {
       async ({ runId, step }) => {
         state.runId = runId;
         await step.run("my-step", async () => {
-          // Score run
+          // Infer current step
           await client.score({
-            runId,
-            name: "run_score",
+            name: "implicit_step_score",
             value: 1,
           });
 
-          // Score step
+          // Explicit run target wins over current step inference
           await client.score({
             runId,
-            stepId: "my-step",
-            name: "step_score",
+            name: "explicit_run_score",
             value: 2,
+          });
+
+          // Infer current run with explicit step target
+          await client.score({
+            stepId: "my-step",
+            name: "explicit_step_score",
+            value: 3,
           });
         });
       },
@@ -110,13 +148,15 @@ describe("client.score", async () => {
     const trace = await getRunTraceMetadata(await state.waitForRunId());
 
     // Run
-    expectScoreValue(trace.metadata, "run_score", 1);
-    expectNoScoreValue(trace.metadata, "step_score");
+    expectScoreValue(trace.metadata, "explicit_run_score", 2);
+    expectNoScoreValue(trace.metadata, "implicit_step_score");
+    expectNoScoreValue(trace.metadata, "explicit_step_score");
 
     // Step
     const step = findSpanByName(trace, "my-step");
-    expectScoreValue(step.metadata, "step_score", 2);
-    expectNoScoreValue(step.metadata, "run_score");
+    expectScoreValue(step.metadata, "implicit_step_score", 1);
+    expectScoreValue(step.metadata, "explicit_step_score", 3);
+    expectNoScoreValue(step.metadata, "explicit_run_score");
   });
 
   test("non-existent step", async () => {

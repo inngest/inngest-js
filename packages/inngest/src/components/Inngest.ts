@@ -314,11 +314,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
-   * Write a score for a run or a specific run step.
+   * Write a live score for a run or a specific run step.
    *
-   * Omit `stepId` to attach the score to the run.
+   * Explicit targets win. Otherwise, the current run or step is inferred from
+   * the execution context.
    *
-   * For durable in-function score writes, prefer `step.score()`.
+   * For standalone durable score writes, prefer `step.score()`.
    */
   public async score(options: SendScoreOptions): Promise<void> {
     await sendScore(this, options);
