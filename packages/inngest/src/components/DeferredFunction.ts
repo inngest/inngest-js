@@ -1,6 +1,8 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { internalEvents } from "../helpers/consts.ts";
+import { UnreachableError } from "../helpers/errors.ts";
 import { type Marker, markerKey } from "../helpers/marker.ts";
+import { isRecord } from "../helpers/types.ts";
 import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareStepExtensions,
@@ -8,16 +10,54 @@ import type {
   FunctionConfig,
   Handler,
 } from "../types.ts";
+import type { IInngestExecution } from "./execution/InngestExecution.ts";
 import type {
   builtInMiddleware,
   ClientOptionsFromInngest,
   Inngest,
 } from "./Inngest.ts";
-import { InngestFunction } from "./InngestFunction.ts";
+import {
+  type CreateExecutionOptions,
+  InngestFunction,
+} from "./InngestFunction.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import type { Middleware } from "./middleware/index.ts";
 
 const idDenyRegex = /['\\\n\r]/;
+
+/**
+ * Strips our `_inngest` metadata off an event's `data` in place and returns the
+ * parent routing metadata extracted from it.
+ */
+function stripInngestMetadata(event: {
+  data?: Record<string, unknown>;
+}): DeferredFunction.Parent {
+  const data = event.data ?? {};
+  const { _inngest, ...input } = data;
+
+  if (!isRecord(_inngest)) {
+    throw new UnreachableError("deferred event is missing _inngest metadata");
+  }
+  const { parent_fn_slug, parent_run_id } = _inngest;
+  if (typeof parent_fn_slug !== "string") {
+    throw new UnreachableError(
+      "deferred event _inngest metadata is missing parent_fn_slug",
+    );
+  }
+  if (typeof parent_run_id !== "string") {
+    throw new UnreachableError(
+      "deferred event _inngest metadata is missing parent_run_id",
+    );
+  }
+
+  // Mutate in place
+  event.data = input;
+
+  return {
+    fnSlug: parent_fn_slug,
+    runId: parent_run_id,
+  };
+}
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -81,6 +121,37 @@ export class DeferredFunction<
       },
     ];
   }
+
+  /**
+   * Installs a `transformCtx` hook that runs before middleware and user code:
+   * - Strips our `_inngest` metadata off each event's `data`, ensuring it
+   *   matches what the user expects.
+   * - Collects the parent function's slug and run ID from that metadata into
+   *   `ctx.parents`, so the handler can correlate each event to its parent.
+   */
+  protected override createExecution(
+    opts: CreateExecutionOptions,
+  ): IInngestExecution {
+    return super.createExecution({
+      ...opts,
+      partialOptions: {
+        ...opts.partialOptions,
+        transformCtx: (ctx) => {
+          // Get the parent info from each event. Also removes our internal
+          // metadata from each event (mutates in place).
+          const parents = ctx.events.map(stripInngestMetadata);
+
+          // Removes our internal metadata from the event (mutates in place).
+          stripInngestMetadata(ctx.event);
+
+          return {
+            ...ctx,
+            parents,
+          };
+        },
+      },
+    });
+  }
 }
 
 /**
@@ -103,12 +174,23 @@ export namespace DeferredFunction {
     InngestFunction.Options<[], never>,
     "triggers" | "onFailure" | "batchEvents"
   >;
+
+  /**
+   * Metadata describing the parent run that triggered the deferred run. Derived
+   * from `event.data._inngest` and surfaced on the handler ctx as `parents[i]`,
+   * aligned with `events[i]`.
+   */
+  export type Parent = {
+    fnSlug: string;
+    runId: string;
+  };
 }
 
 /**
- * The `event` shape a defer handler receives. With a schema, `data`
- * narrows to its inferred type; without one, it falls back to
- * `Record<string, any>`.
+ * The `event` shape a defer handler receives. `data` carries the user payload
+ * directly, narrowed by the schema if one is set (otherwise
+ * `Record<string, any>`). Parent metadata is exposed separately on
+ * `ctx.parents` so events and parents can be matched by index.
  */
 type DeferEvent<TSchema> = {
   name: internalEvents.DeferredSchedule;
@@ -124,7 +206,7 @@ type DeferEvent<TSchema> = {
  * Base ctx shape for a defer handler: the standard function context
  * (`runId`, `attempt`, `group`, `step` with middleware step extensions)
  * with `event`/`events` pinned to `inngest/deferred.schedule` and the
- * schema-typed payload.
+ * schema-typed payload, plus `parents` aligned with `events` by index.
  */
 type BaseDeferCtx<
   TClient extends Inngest.Any,
@@ -133,6 +215,7 @@ type BaseDeferCtx<
 > = Omit<BaseContext<TClient>, "event" | "events" | "step"> & {
   event: DeferEvent<TSchema>;
   events: [DeferEvent<TSchema>];
+  parents: [DeferredFunction.Parent];
   step: ReturnType<typeof createStepTools<TClient, TFnMiddleware>> &
     ApplyAllMiddlewareStepExtensions<
       ClientOptionsFromInngest<TClient>["middleware"]
@@ -152,6 +235,21 @@ export type CreateDeferInput<
   schema?: TSchema;
   middleware?: TFnMiddleware;
 };
+
+/**
+ * Full handler context for a defer function: `BaseDeferCtx` plus every
+ * middleware ctx extension that applies (built-in, client, function-level).
+ */
+export type DeferContext<
+  TClient extends Inngest.Any,
+  TFnMiddleware extends Middleware.Class[] | undefined,
+  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+> = BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
+  ApplyAllMiddlewareCtxExtensions<[...ReturnType<typeof builtInMiddleware>]> &
+  ApplyAllMiddlewareCtxExtensions<
+    ClientOptionsFromInngest<TClient>["middleware"]
+  > &
+  ApplyAllMiddlewareCtxExtensions<TFnMiddleware>;
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -177,14 +275,7 @@ export function createDefer<
     | undefined = undefined,
   const TFnMiddleware extends Middleware.Class[] | undefined = undefined,
   THandler extends Handler.Any = (
-    ctx: BaseDeferCtx<TClient, TFnMiddleware, TSchema> &
-      ApplyAllMiddlewareCtxExtensions<
-        [...ReturnType<typeof builtInMiddleware>]
-      > &
-      ApplyAllMiddlewareCtxExtensions<
-        ClientOptionsFromInngest<TClient>["middleware"]
-      > &
-      ApplyAllMiddlewareCtxExtensions<TFnMiddleware>,
+    ctx: DeferContext<TClient, TFnMiddleware, TSchema>,
   ) => unknown,
 >(
   client: TClient,

@@ -14,3 +14,4 @@ export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
+export { createScorer } from "./components/ScoreFunction.ts";
