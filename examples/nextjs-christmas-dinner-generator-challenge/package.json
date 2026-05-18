@@ -8,8 +8,7 @@
     "generate-jsons": "ts-node scripts/generate-jsons.ts",
     "inngest": "npx inngest-cli@latest dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
     "@langchain/community": "^0.3.11",
@@ -18,7 +17,7 @@
     "@neondatabase/serverless": "^0.10.4",
     "@tanstack/react-query": "^5.62.7",
     "inngest": "^3.27.5",
-    "next": "15.1.9",
+    "next": "^16.2.6",
     "react": "^19.0.1",
     "react-dom": "^19.0.1"
   },
@@ -29,7 +28,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.1.0",
+    "eslint-config-next": "^16.2.6",
     "glob": "^11.0.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
