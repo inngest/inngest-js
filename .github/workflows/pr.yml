@@ -93,7 +93,7 @@ jobs:
       - name: Check publishing types health
         id: typescheck
         continue-on-error: true
-        run: pnpm dlx @arethetypeswrong/cli inngest.tgz
+        run: pnpm exec attw inngest.tgz
 
       - name: Fail if any checks failed
         if: steps.publint.outcome != 'success' || steps.typescheck.outcome != 'success'
