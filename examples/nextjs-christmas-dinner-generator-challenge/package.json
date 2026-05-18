@@ -8,8 +8,7 @@
     "generate-jsons": "ts-node scripts/generate-jsons.ts",
     "inngest": "npx inngest-cli@latest dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
     "@langchain/community": "^0.3.11",
