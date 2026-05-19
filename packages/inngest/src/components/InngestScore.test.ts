@@ -97,6 +97,15 @@ describe("client.score validation", () => {
       client.score({
         runId: "run",
         stepId: "step",
+        name: "foo\nbar",
+        value: 1,
+      }),
+    ).rejects.toThrow("score name must not contain control characters");
+
+    await expect(
+      client.score({
+        runId: "run",
+        stepId: "step",
         name: "accuracy",
         value: Number.NaN,
       }),
@@ -217,6 +226,13 @@ describe("step.score validation", () => {
         value: 1,
       }),
     ).toThrow("score name must be 114 bytes or fewer");
+
+    expect(() =>
+      validateStepScoreOptions({
+        name: "foo\tbar",
+        value: 1,
+      }),
+    ).toThrow("score name must not contain control characters");
 
     expect(() =>
       validateStepScoreOptions({

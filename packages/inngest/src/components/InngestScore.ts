@@ -70,6 +70,11 @@ function validateScoreFields(
     throw new Error("score name must be a non-empty string");
   }
 
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejecting control chars in user-supplied names
+  if (/[\x00-\x1f\x7f]/.test(options.name)) {
+    throw new Error("score name must not contain control characters");
+  }
+
   const nameByteLength = new TextEncoder().encode(options.name).length;
   if (nameByteLength > maxScoreNameByteLength) {
     throw new Error(
