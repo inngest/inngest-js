@@ -1,11 +1,15 @@
 import type { RunMetadata, TraceMetadataNode } from "@inngest/test-harness";
 
-function scoreEntries(metadata: RunMetadata[]) {
-  return metadata.filter((md) => md.kind === "inngest.score");
-}
+const namedScorePrefix = "inngest.score.";
 
-function scoreValues(metadata: RunMetadata[]) {
-  return Object.assign({}, ...scoreEntries(metadata).map((md) => md.values));
+function scoreValues(metadata: RunMetadata[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const md of metadata) {
+    if (md.kind.startsWith(namedScorePrefix)) {
+      out[md.kind.slice(namedScorePrefix.length)] = md.values.value;
+    }
+  }
+  return out;
 }
 
 export function expectScoreValue(

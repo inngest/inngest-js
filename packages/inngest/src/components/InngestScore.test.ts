@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { KnownKeys } from "../helpers/types.ts";
 import { Inngest } from "./Inngest.ts";
@@ -54,16 +54,25 @@ describe("client.score validation", () => {
         stepId: "step",
         value: 1,
       } as unknown as ScoreOptions),
-    ).rejects.toThrow("invalid score name");
+    ).rejects.toThrow("score name must be a non-empty string");
 
     await expect(
       client.score({
         runId: "run",
         stepId: "step",
-        name: "bad-name",
+        name: "",
         value: 1,
       }),
-    ).rejects.toThrow("invalid score name");
+    ).rejects.toThrow("score name must be a non-empty string");
+
+    await expect(
+      client.score({
+        runId: "run",
+        stepId: "step",
+        name: "x".repeat(115),
+        value: 1,
+      }),
+    ).rejects.toThrow("score name must be 114 characters or fewer");
 
     await expect(
       client.score({
@@ -84,6 +93,63 @@ describe("client.score validation", () => {
         value: 1,
       } satisfies ScoreOptions),
     ).rejects.toThrow("No run context available");
+  });
+
+  test("emits inngest.score.<name> kind with value-keyed payload", async () => {
+    const client = new Inngest({ id: "app" });
+    const spy = vi
+      .fn<
+        (args: {
+          target: { run_id: string };
+          metadata: Array<{
+            kind: string;
+            op: string;
+            values: Record<string, unknown>;
+          }>;
+        }) => Promise<void>
+      >()
+      .mockResolvedValue();
+    (client as unknown as { updateMetadata: typeof spy }).updateMetadata = spy;
+
+    await client.score({
+      runId: "run-abc",
+      name: "click-through rate (variant A)!",
+      value: 0.23,
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]?.[0]?.metadata).toEqual([
+      {
+        kind: "inngest.score.click-through rate (variant A)!",
+        op: "merge",
+        values: { value: 0.23 },
+      },
+    ]);
+  });
+
+  test("accepts boolean values in the named-score shape", async () => {
+    const client = new Inngest({ id: "app" });
+    const spy = vi
+      .fn<
+        (args: {
+          metadata: Array<{
+            kind: string;
+            values: Record<string, unknown>;
+          }>;
+        }) => Promise<void>
+      >()
+      .mockResolvedValue();
+    (client as unknown as { updateMetadata: typeof spy }).updateMetadata = spy;
+
+    await client.score({ runId: "run-abc", name: "pass", value: true });
+
+    expect(spy.mock.calls[0]?.[0]?.metadata).toEqual([
+      {
+        kind: "inngest.score.pass",
+        op: "merge",
+        values: { value: true },
+      },
+    ]);
   });
 });
 
@@ -107,10 +173,17 @@ describe("step.score validation", () => {
 
     expect(() =>
       validateStepScoreOptions({
-        name: "bad-name",
+        name: "",
         value: 1,
       }),
-    ).toThrow("invalid score name");
+    ).toThrow("score name must be a non-empty string");
+
+    expect(() =>
+      validateStepScoreOptions({
+        name: "x".repeat(115),
+        value: 1,
+      }),
+    ).toThrow("score name must be 114 characters or fewer");
 
     expect(() =>
       validateStepScoreOptions({
@@ -120,11 +193,18 @@ describe("step.score validation", () => {
     ).toThrow("finite number or boolean");
   });
 
-  test("accepts optional targets and boolean values", () => {
+  test("accepts optional targets, arbitrary names, and boolean values", () => {
     expect(() =>
       validateStepScoreOptions({
         name: "accuracy",
         value: true,
+      } satisfies ScoreOptions),
+    ).not.toThrow();
+
+    expect(() =>
+      validateStepScoreOptions({
+        name: "click-through rate (variant A)!",
+        value: 0.23,
       } satisfies ScoreOptions),
     ).not.toThrow();
   });

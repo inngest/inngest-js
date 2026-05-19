@@ -4,7 +4,9 @@ import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
-const scoreNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
+// Server caps the full kind at 128 chars; "inngest.score." is 14 chars, so the
+// user-supplied suffix can be up to 114.
+const maxScoreNameLength = 114;
 
 type ScoreValue = number | boolean;
 
@@ -62,9 +64,13 @@ function validateScoreFields(
     });
   }
 
-  if (typeof options.name !== "string" || !scoreNameRegex.test(options.name)) {
+  if (typeof options.name !== "string" || options.name.length === 0) {
+    throw new Error("score name must be a non-empty string");
+  }
+
+  if (options.name.length > maxScoreNameLength) {
     throw new Error(
-      `invalid score name "${String(options.name)}"; must match ${scoreNameRegex.source}`,
+      `score name must be ${maxScoreNameLength} characters or fewer`,
     );
   }
 
@@ -97,8 +103,8 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: options.value },
-    "inngest.score",
+    { value: options.value },
+    `inngest.score.${options.name}`,
     "merge",
   );
 }
@@ -117,8 +123,8 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: options.value },
-    "inngest.score",
+    { value: options.value },
+    `inngest.score.${options.name}`,
     "merge",
   );
 }
