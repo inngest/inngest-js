@@ -4,7 +4,11 @@ import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
-const scoreNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
+// Server caps the full kind at 128 bytes; "inngest.score." is 14 bytes, so the
+// user-supplied suffix can be up to 114 UTF-8 bytes.
+const scoreKindPrefix = "inngest.score." as const;
+const maxKindByteLength = 128;
+const maxScoreNameByteLength = maxKindByteLength - scoreKindPrefix.length;
 
 type ScoreValue = number | boolean;
 
@@ -62,9 +66,24 @@ function validateScoreFields(
     });
   }
 
-  if (typeof options.name !== "string" || !scoreNameRegex.test(options.name)) {
+  if (typeof options.name !== "string" || options.name.trim().length === 0) {
+    throw new Error("score name must be a non-empty string");
+  }
+
+  // Single quote rejection mirrors the cloud MetricKeyRegex; without it,
+  // valid-looking score names like "it's-broken" would silently drop in
+  // variant aggregation.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejecting control chars and single quotes in user-supplied names
+  if (/[\x00-\x1f\x7f']/.test(options.name)) {
     throw new Error(
-      `invalid score name "${String(options.name)}"; must match ${scoreNameRegex.source}`,
+      "score name must not contain control characters or single quotes",
+    );
+  }
+
+  const nameByteLength = new TextEncoder().encode(options.name).length;
+  if (nameByteLength > maxScoreNameByteLength) {
+    throw new Error(
+      `score name must be ${maxScoreNameByteLength} bytes or fewer in UTF-8 (got ${nameByteLength})`,
     );
   }
 
@@ -97,8 +116,8 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: options.value },
-    "inngest.score",
+    { value: options.value },
+    `${scoreKindPrefix}${options.name}`,
     "merge",
   );
 }
@@ -117,8 +136,8 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: options.value },
-    "inngest.score",
+    { value: options.value },
+    `${scoreKindPrefix}${options.name}`,
     "merge",
   );
 }

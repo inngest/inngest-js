@@ -84,10 +84,10 @@ test("success", async () => {
   expect(metadata).toEqual(
     expect.arrayContaining([
       {
-        kind: "inngest.score",
+        kind: "inngest.score.verbosity",
         scope: "run",
         updatedAt: expect.any(String),
-        values: { verbosity: 2 },
+        values: { value: 2 },
       },
     ]),
   );
