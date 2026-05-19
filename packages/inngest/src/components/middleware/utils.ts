@@ -101,7 +101,7 @@ export function stepTypeFromOpCode(
   } else if (op === StepOpCode.InvokeFunction) {
     return "invoke";
   } else if (op === StepOpCode.StepPlanned) {
-    if (opts?.type === undefined) {
+    if (opts?.type === undefined || opts?.type === "step.run") {
       return "run";
     }
     if (opts?.type === "step.sendEvent") {
