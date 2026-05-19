@@ -4,9 +4,11 @@ import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
-// Server caps the full kind at 128 chars; "inngest.score." is 14 chars, so the
-// user-supplied suffix can be up to 114.
-const maxScoreNameLength = 114;
+// Server caps the full kind at 128 bytes; "inngest.score." is 14 bytes, so the
+// user-supplied suffix can be up to 114 UTF-8 bytes.
+const scoreKindPrefix = "inngest.score." as const;
+const maxKindByteLength = 128;
+const maxScoreNameByteLength = maxKindByteLength - scoreKindPrefix.length;
 
 type ScoreValue = number | boolean;
 
@@ -64,13 +66,14 @@ function validateScoreFields(
     });
   }
 
-  if (typeof options.name !== "string" || options.name.length === 0) {
+  if (typeof options.name !== "string" || options.name.trim().length === 0) {
     throw new Error("score name must be a non-empty string");
   }
 
-  if (options.name.length > maxScoreNameLength) {
+  const nameByteLength = new TextEncoder().encode(options.name).length;
+  if (nameByteLength > maxScoreNameByteLength) {
     throw new Error(
-      `score name must be ${maxScoreNameLength} characters or fewer`,
+      `score name must be ${maxScoreNameByteLength} bytes or fewer in UTF-8 (got ${nameByteLength})`,
     );
   }
 
@@ -104,7 +107,7 @@ export async function sendScore(
       stepId: options.stepId,
     },
     { value: options.value },
-    `inngest.score.${options.name}`,
+    `${scoreKindPrefix}${options.name}`,
     "merge",
   );
 }
@@ -124,7 +127,7 @@ export async function sendStepScore(
       stepId: options.stepId,
     },
     { value: options.value },
-    `inngest.score.${options.name}`,
+    `${scoreKindPrefix}${options.name}`,
     "merge",
   );
 }

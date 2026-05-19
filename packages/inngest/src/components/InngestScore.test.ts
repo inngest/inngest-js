@@ -69,10 +69,29 @@ describe("client.score validation", () => {
       client.score({
         runId: "run",
         stepId: "step",
+        name: "   ",
+        value: 1,
+      }),
+    ).rejects.toThrow("score name must be a non-empty string");
+
+    await expect(
+      client.score({
+        runId: "run",
+        stepId: "step",
         name: "x".repeat(115),
         value: 1,
       }),
-    ).rejects.toThrow("score name must be 114 characters or fewer");
+    ).rejects.toThrow("score name must be 114 bytes or fewer");
+
+    // 60 × "é" = 120 UTF-8 bytes, under the 114-char limit but over the byte cap.
+    await expect(
+      client.score({
+        runId: "run",
+        stepId: "step",
+        name: "é".repeat(60),
+        value: 1,
+      }),
+    ).rejects.toThrow("score name must be 114 bytes or fewer");
 
     await expect(
       client.score({
@@ -180,10 +199,24 @@ describe("step.score validation", () => {
 
     expect(() =>
       validateStepScoreOptions({
+        name: "   ",
+        value: 1,
+      }),
+    ).toThrow("score name must be a non-empty string");
+
+    expect(() =>
+      validateStepScoreOptions({
         name: "x".repeat(115),
         value: 1,
       }),
-    ).toThrow("score name must be 114 characters or fewer");
+    ).toThrow("score name must be 114 bytes or fewer");
+
+    expect(() =>
+      validateStepScoreOptions({
+        name: "é".repeat(60),
+        value: 1,
+      }),
+    ).toThrow("score name must be 114 bytes or fewer");
 
     expect(() =>
       validateStepScoreOptions({
