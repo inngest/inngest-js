@@ -37,6 +37,10 @@ export type MetadataUpdate = {
 
 export type MetadataValues = Record<string, unknown>;
 
+/**
+ * Internal metadata target config shared by metadata and score helpers.
+ * @internal
+ */
 export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
@@ -301,6 +305,10 @@ function targetsCurrentStep(
   return targetStepId === currentUserlandStepId;
 }
 
+/**
+ * Internal metadata write helper shared by metadata and score helpers.
+ * @internal
+ */
 export async function performOp(
   client: Inngest,
   config: BuilderConfig,
