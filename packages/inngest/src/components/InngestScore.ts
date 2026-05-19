@@ -70,9 +70,14 @@ function validateScoreFields(
     throw new Error("score name must be a non-empty string");
   }
 
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejecting control chars in user-supplied names
-  if (/[\x00-\x1f\x7f]/.test(options.name)) {
-    throw new Error("score name must not contain control characters");
+  // Single quote rejection mirrors the cloud MetricKeyRegex; without it,
+  // valid-looking score names like "it's-broken" would silently drop in
+  // variant aggregation.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejecting control chars and single quotes in user-supplied names
+  if (/[\x00-\x1f\x7f']/.test(options.name)) {
+    throw new Error(
+      "score name must not contain control characters or single quotes",
+    );
   }
 
   const nameByteLength = new TextEncoder().encode(options.name).length;

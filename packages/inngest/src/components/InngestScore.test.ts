@@ -100,7 +100,20 @@ describe("client.score validation", () => {
         name: "foo\nbar",
         value: 1,
       }),
-    ).rejects.toThrow("score name must not contain control characters");
+    ).rejects.toThrow(
+      "score name must not contain control characters or single quotes",
+    );
+
+    await expect(
+      client.score({
+        runId: "run",
+        stepId: "step",
+        name: "it's-broken",
+        value: 1,
+      }),
+    ).rejects.toThrow(
+      "score name must not contain control characters or single quotes",
+    );
 
     await expect(
       client.score({
@@ -232,7 +245,18 @@ describe("step.score validation", () => {
         name: "foo\tbar",
         value: 1,
       }),
-    ).toThrow("score name must not contain control characters");
+    ).toThrow(
+      "score name must not contain control characters or single quotes",
+    );
+
+    expect(() =>
+      validateStepScoreOptions({
+        name: "it's-broken",
+        value: 1,
+      }),
+    ).toThrow(
+      "score name must not contain control characters or single quotes",
+    );
 
     expect(() =>
       validateStepScoreOptions({
