@@ -6,11 +6,11 @@ import {
   type DeferredFunction,
 } from "./DeferredFunction.ts";
 import type { Inngest } from "./Inngest.ts";
-import type { SendScoreOptions } from "./InngestScore.ts";
+import type { ScoreOptions } from "./InngestScore.ts";
 import type { Middleware } from "./middleware/index.ts";
 
 type ScorerResult =
-  | (Omit<SendScoreOptions, "runId"> & { runId?: string })
+  | (Omit<ScoreOptions, "runId"> & { runId?: string })
   | null
   | undefined;
 

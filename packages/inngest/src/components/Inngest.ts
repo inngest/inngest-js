@@ -57,7 +57,7 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
-import { type SendScoreOptions, sendScore } from "./InngestScore.ts";
+import { type ScoreOptions, sendScore } from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
@@ -321,7 +321,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    *
    * For standalone durable score writes, prefer `step.score()`.
    */
-  public async score(options: SendScoreOptions): Promise<void> {
+  public async score(options: ScoreOptions): Promise<void> {
     await sendScore(this, options);
   }
 

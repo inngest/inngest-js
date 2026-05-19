@@ -8,14 +8,7 @@ const scoreNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
 
 type ScoreValue = number | boolean;
 
-export type SendScoreOptions = {
-  runId?: string;
-  stepId?: string;
-  name: string;
-  value: ScoreValue;
-};
-
-export type StepScoreOptions = {
+export type ScoreOptions = {
   runId?: string;
   stepId?: string;
   name: string;
@@ -24,7 +17,7 @@ export type StepScoreOptions = {
 
 export type ScoreStepTool = (
   memoizationId: string,
-  options: StepScoreOptions,
+  options: ScoreOptions,
 ) => Promise<void>;
 
 export const scoreSymbol = Symbol.for("inngest.step.score");
@@ -82,19 +75,19 @@ function validateScoreFields(
 
 function validateSendScoreOptions(
   options: unknown,
-): asserts options is SendScoreOptions {
+): asserts options is ScoreOptions {
   validateScoreFields(options, []);
 }
 
 export function validateStepScoreOptions(
   options: unknown,
-): asserts options is StepScoreOptions {
+): asserts options is ScoreOptions {
   validateScoreFields(options, []);
 }
 
 export async function sendScore(
   client: Inngest,
-  options: SendScoreOptions,
+  options: ScoreOptions,
 ): Promise<void> {
   validateSendScoreOptions(options);
 
@@ -112,7 +105,7 @@ export async function sendScore(
 
 export async function sendStepScore(
   client: Inngest,
-  options: StepScoreOptions,
+  options: ScoreOptions,
 ): Promise<void> {
   validateStepScoreOptions(options);
 

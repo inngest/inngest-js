@@ -3,8 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { KnownKeys } from "../helpers/types.ts";
 import { Inngest } from "./Inngest.ts";
 import {
-  type SendScoreOptions,
-  type StepScoreOptions,
+  type ScoreOptions,
   scoreMiddleware,
   type scoreSymbol,
   validateStepScoreOptions,
@@ -28,7 +27,7 @@ describe("client.score validation", () => {
     const client = new Inngest({ id: "app" });
 
     await expect(
-      client.score(undefined as unknown as SendScoreOptions),
+      client.score(undefined as unknown as ScoreOptions),
     ).rejects.toThrow("score options must be an object");
 
     await expect(
@@ -54,7 +53,7 @@ describe("client.score validation", () => {
         runId: "run",
         stepId: "step",
         value: 1,
-      } as unknown as SendScoreOptions),
+      } as unknown as ScoreOptions),
     ).rejects.toThrow("invalid score name");
 
     await expect(
@@ -83,7 +82,7 @@ describe("client.score validation", () => {
       client.score({
         name: "accuracy",
         value: 1,
-      } satisfies SendScoreOptions),
+      } satisfies ScoreOptions),
     ).rejects.toThrow("No run context available");
   });
 });
@@ -126,7 +125,7 @@ describe("step.score validation", () => {
       validateStepScoreOptions({
         name: "accuracy",
         value: true,
-      } satisfies StepScoreOptions),
+      } satisfies ScoreOptions),
     ).not.toThrow();
   });
 });
