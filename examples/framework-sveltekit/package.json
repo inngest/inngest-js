@@ -16,6 +16,7 @@
     "@sveltejs/adapter-auto": "^3.0.0",
     "@sveltejs/adapter-vercel": "^6.3.2",
     "@sveltejs/kit": "^2.8.3",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "prettier": "^3.0.0",
     "prettier-plugin-svelte": "^3.0.0",
     "svelte": "^5.55.7",
