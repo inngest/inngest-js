@@ -1642,6 +1642,21 @@ class InngestExecutionEngine
 
     const start = Date.now();
 
+    // DEBUG(EXE-1547-debug): log the StepPlanned-gate inputs so we can see in
+    // CI whether the gate is firing for plain example runs (which should be
+    // StepMode.Sync, not AsyncCheckpointing).
+    console.error(
+      `[EXE-1547-debug] step="${id}" hashedId="${hashedId}" stepMode=${String(
+        this.options.stepMode,
+      )} internalFnId=${String(this.options.internalFnId)} queueItemId=${String(
+        this.options.queueItemId,
+      )} willSendStepPlanned=${
+        this.options.stepMode === StepMode.AsyncCheckpointing &&
+        Boolean(this.options.internalFnId) &&
+        Boolean(this.options.queueItemId)
+      }`,
+    );
+
     // Best-effort send a StepPlanned leading-edge.
     //
     // Bypasses `state.checkpointingStepBuffer` to avoid waiting for a response.
@@ -1650,6 +1665,9 @@ class InngestExecutionEngine
       this.options.internalFnId &&
       this.options.queueItemId
     ) {
+      console.error(
+        `[EXE-1547-debug] SENDING StepPlanned for step="${id}" hashedId="${hashedId}"`,
+      );
       try {
         void this.options.client["inngestApi"]
           .checkpointStepStarted({
