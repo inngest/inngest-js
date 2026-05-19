@@ -2,6 +2,7 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
+import { createDeferredPromise } from "../../helpers/promises.ts";
 import { createClient } from "../../test/helpers.ts";
 import { StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
@@ -842,7 +843,16 @@ describe("Execution engine checkpoint retry behavior", () => {
   // SDK announces each step.run to the executor *before* invoking
   // the user's fn so the executor can open a Running
   // `executor.step` span.
+  //
+  // The POST is deferred by STEP_PLANNED_LEADING_EDGE_DELAY_MS (1000ms).
+  // Fast steps (settling before the threshold) skip the POST entirely;
+  // only long-running steps produce a leading-edge span. Tests park step
+  // bodies on deferred promises and manually advance fake timers past
+  // the threshold to exercise the leading-edge path.
   describe("Execution engine leading stepPlanned behavior", () => {
+    // Mirrors the constant in engine.ts. If that value changes, update here.
+    const STEP_PLANNED_LEADING_EDGE_DELAY_MS = 1000;
+
     const asyncCheckpointingOpts = {
       stepMode: StepMode.AsyncCheckpointing as const,
       checkpointingConfig: {
@@ -856,6 +866,12 @@ describe("Execution engine checkpoint retry behavior", () => {
       },
     };
 
+    // Override the outer beforeEach's `shouldAdvanceTime: true` so the
+    // 1s timer only fires when we advance manually.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
     test("POSTs once per step.run before fn runs, with op: StepPlanned", async () => {
       const order: string[] = [];
       const mockCheckpointStepStarted = vi.fn().mockImplementation(async () => {
@@ -864,23 +880,38 @@ describe("Execution engine checkpoint retry behavior", () => {
       });
       const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
 
-      await runExecution({
+      const deferredA = createDeferredPromise<void>();
+      const deferredB = createDeferredPromise<void>();
+
+      const setup = setupExecution({
         mockApi: {
           checkpointStepStarted: mockCheckpointStepStarted,
           checkpointStepsAsync: mockCheckpointStepsAsync,
         },
         handler: async ({ step }) => {
-          await step.run("a", () => {
+          await step.run("a", async () => {
+            await deferredA.promise;
             order.push("fn:a");
             return "a";
           });
-          await step.run("b", () => {
+          await step.run("b", async () => {
+            await deferredB.promise;
             order.push("fn:b");
             return "b";
           });
         },
         ...asyncCheckpointingOpts,
       });
+      const executionPromise = setup.execution.start();
+
+      // Park step a past the threshold so the POST fires.
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS);
+      deferredA.resolve();
+      // Let step a settle and step b's timer schedule.
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS);
+      deferredB.resolve();
+      await advanceThroughRetries();
+      await executionPromise;
 
       expect(mockCheckpointStepStarted).toHaveBeenCalledTimes(2);
       // Every POST carries op: StepPlanned and no data/error
@@ -908,19 +939,29 @@ describe("Execution engine checkpoint retry behavior", () => {
       });
       const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
 
-      await runExecution({
+      const deferred = createDeferredPromise<void>();
+
+      const setup = setupExecution({
         mockApi: {
           checkpointStepStarted: mockCheckpointStepStarted,
           checkpointStepsAsync: mockCheckpointStepsAsync,
         },
         handler: async ({ step }) => {
-          await step.run("a", () => {
+          await step.run("a", async () => {
+            await deferred.promise;
             order.push("fn_ran");
             return "a";
           });
         },
         ...asyncCheckpointingOpts,
       });
+      const executionPromise = setup.execution.start();
+
+      // Fire the leading-edge POST while the step is still in-flight.
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS);
+      deferred.resolve();
+      await advanceThroughRetries();
+      await executionPromise;
 
       // The POST was started, then fn ran despite the POST not resolving.
       expect(order).toEqual(["post_called", "fn_ran"]);
@@ -932,18 +973,35 @@ describe("Execution engine checkpoint retry behavior", () => {
         .mockRejectedValue(new Error("executor offline"));
       const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
 
-      const { result } = await runExecution({
+      const deferredA = createDeferredPromise<void>();
+      const deferredB = createDeferredPromise<void>();
+
+      const setup = setupExecution({
         mockApi: {
           checkpointStepStarted: mockCheckpointStepStarted,
           checkpointStepsAsync: mockCheckpointStepsAsync,
         },
         handler: async ({ step }) => {
-          await step.run("a", () => "a");
-          await step.run("b", () => "b");
+          await step.run("a", async () => {
+            await deferredA.promise;
+            return "a";
+          });
+          await step.run("b", async () => {
+            await deferredB.promise;
+            return "b";
+          });
           return "done";
         },
         ...asyncCheckpointingOpts,
       });
+      const executionPromise = setup.execution.start();
+
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS);
+      deferredA.resolve();
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS);
+      deferredB.resolve();
+      await advanceThroughRetries();
+      const result = await executionPromise;
 
       expect(mockCheckpointStepStarted).toHaveBeenCalledTimes(2);
       // Execution completes successfully; rejections did not propagate.
@@ -956,22 +1014,64 @@ describe("Execution engine checkpoint retry behavior", () => {
         .mockResolvedValue({ ok: true, status: 200 });
       const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
 
-      await runExecution({
+      const deferred = createDeferredPromise<void>();
+
+      const setup = setupExecution({
         mockApi: {
           checkpointStepStarted: mockCheckpointStepStarted,
           checkpointStepsAsync: mockCheckpointStepsAsync,
         },
         handler: async ({ step }) => {
-          await step.run("a", () => "a");
+          await step.run("a", async () => {
+            await deferred.promise;
+            return "a";
+          });
         },
         ...asyncCheckpointingOpts,
       });
+      const executionPromise = setup.execution.start();
+
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS);
+      deferred.resolve();
+      await advanceThroughRetries();
+      await executionPromise;
 
       const call = mockCheckpointStepStarted.mock.calls[0]![0];
       expect(call.runId).toBe("test-run-id");
       expect(call.fnId).toBe("internal-fn-456");
       expect(call.queueItemId).toBe("queue-item-123");
       expect(call.step.displayName).toBe("a");
+    });
+
+    test("fast step settling under the threshold skips the POST", async () => {
+      const mockCheckpointStepStarted = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200 });
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const setup = setupExecution({
+        mockApi: {
+          checkpointStepStarted: mockCheckpointStepStarted,
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          // Synchronous step settles immediately.
+          await step.run("a", () => "a");
+        },
+        ...asyncCheckpointingOpts,
+      });
+
+      // Signal: awaiting full execution guarantees every step's .finally()
+      // has run, which means clearTimeout has been called. No timer advance
+      // first — if .finally() ever stops clearing the timer, this await
+      // hangs (the pending setTimeout keeps the execution alive) and the
+      // test times out instead of silently passing.
+      await setup.execution.start();
+
+      // Confirm the timer was cancelled, not merely unscheduled-yet.
+      await vi.advanceTimersByTimeAsync(STEP_PLANNED_LEADING_EDGE_DELAY_MS * 3);
+
+      expect(mockCheckpointStepStarted).not.toHaveBeenCalled();
     });
   });
 });

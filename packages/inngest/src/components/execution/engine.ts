@@ -121,6 +121,12 @@ const RUN_COMPLETE_STEP_ID = "complete";
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
+/**
+ * Delay before sending the StepPlanned leading-edge POST. Steps that settle
+ * before this fires never produce a leading-edge span
+ */
+const STEP_PLANNED_LEADING_EDGE_DELAY_MS = 1000;
+
 export const createExecutionEngine: InngestExecutionFactory = (options) => {
   return new InngestExecutionEngine(options);
 };
@@ -1642,50 +1648,63 @@ class InngestExecutionEngine
 
     const start = Date.now();
 
-    // Best-effort send a StepPlanned leading-edge.
-    //
-    // Bypasses `state.checkpointingStepBuffer` to avoid waiting for a response.
+    // Best-effort send a StepPlanned leading-edge, deferred by
+    // STEP_PLANNED_LEADING_EDGE_DELAY_MS. If the step settles before the
+    // timer fires, the POST is skipped — only long-running steps produce
+    // a leading-edge span. 
+		// 
+		// Bypasses `state.checkpointingStepBuffer` to
+    // avoid waiting for a response.
+    let stepPlannedTimer: ReturnType<typeof setTimeout> | undefined;
     if (
       this.options.stepMode === StepMode.AsyncCheckpointing &&
       this.options.internalFnId &&
       this.options.queueItemId
     ) {
-      try {
-        void this.options.client["inngestApi"]
-          .checkpointStepStarted({
-            runId: this.options.runId,
-            fnId: this.options.internalFnId,
-            queueItemId: this.options.queueItemId,
-            step: {
-              id: hashedId,
-              op: StepOpCode.StepPlanned,
-              name,
-              displayName,
-              userland,
-              ...(opts ? { opts } : {}),
-              // GoInterval is nanoseconds. `b: 0` — no duration yet at the
-              // leading edge; the completion path emits the full interval.
-              timing: { a: start * 1_000_000, b: 0 },
-            },
-          })
-          .catch((err: unknown) => {
-            this.devDebug(
-              `step_started POST failed (ignored) for hashedId=%s:`,
-              hashedId,
-              err,
-            );
-          });
-      } catch (err) {
-        this.devDebug(
-          `step_started call threw synchronously (ignored) for hashedId=%s:`,
-          hashedId,
-          err,
-        );
-      }
+      const internalFnId = this.options.internalFnId;
+      const queueItemId = this.options.queueItemId;
+      stepPlannedTimer = setTimeout(() => {
+        try {
+          void this.options.client["inngestApi"]
+            .checkpointStepStarted({
+              runId: this.options.runId,
+              fnId: internalFnId,
+              queueItemId,
+              step: {
+                id: hashedId,
+                op: StepOpCode.StepPlanned,
+                name,
+                displayName,
+                userland,
+                ...(opts ? { opts } : {}),
+                // GoInterval is nanoseconds. `b: 0` — no duration yet at
+                // the leading edge; the completion path emits the full
+                // interval.
+                timing: { a: start * 1_000_000, b: 0 },
+              },
+            })
+            .catch((err: unknown) => {
+              this.devDebug(
+                `step_started POST failed (ignored) for hashedId=%s:`,
+                hashedId,
+                err,
+              );
+            });
+        } catch (err) {
+          this.devDebug(
+            `step_started call threw synchronously (ignored) for hashedId=%s:`,
+            hashedId,
+            err,
+          );
+        }
+      }, STEP_PLANNED_LEADING_EDGE_DELAY_MS);
     }
 
     return goIntervalTiming(() => wrappedActualHandler(), start)
       .finally(() => {
+        // Cancel the leading-edge POST if the step settled first
+        if (stepPlannedTimer) clearTimeout(stepPlannedTimer);
+
         this.devDebug(`finished executing step "${id}"`);
 
         this.state.executingStep = undefined;
