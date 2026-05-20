@@ -213,7 +213,7 @@ export function buildTarget(
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
-      step_attempt: config.attempt ?? ctxAttempt,
+      step_attempt: config.attempt ?? undefined,
     };
   } else if (config.runId !== undefined) {
     return {
