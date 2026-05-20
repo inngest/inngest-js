@@ -1650,6 +1650,14 @@ class InngestExecutionEngine
       this.options.internalFnId &&
       this.options.queueItemId
     ) {
+      // DEBUG(EXE-1547): leading-edge gate hit. If this fires during a
+      // Sync/Async example (anything other than AsyncCheckpointing), the
+      // gate is misclassifying mode.
+      console.error(
+        `[EXE-1547-debug] leading-edge gate fired step="${id}" hashedId="${hashedId}" stepMode=${String(
+          this.options.stepMode,
+        )}`,
+      );
       try {
         void this.options.client["inngestApi"]
           .checkpointStepStarted({
