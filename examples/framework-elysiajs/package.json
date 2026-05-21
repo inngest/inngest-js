@@ -6,7 +6,7 @@
   },
   "dependencies": {
     "elysia": "^1.4.28",
-    "inngest": "^3.40.2"
+    "inngest": "^4.4.0"
   },
   "devDependencies": {
     "bun-types": "latest"
