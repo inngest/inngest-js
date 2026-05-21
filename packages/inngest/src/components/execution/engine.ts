@@ -840,6 +840,29 @@ class InngestExecutionEngine
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
+        // When this request started as a retry attempt (attempt > 0), return
+        // the successful step to the executor without running any more user
+        // code in this request. In non-checkpoint mode, each step's first
+        // invocation arrives in a fresh request with attempt=0 from the
+        // executor, so subsequent steps get a full retry budget. Continuing
+        // execution here would mean any later step inherits the in-flight
+        // attempt counter, exhausting its retries.
+        const startedAsRetry = (this.options.data?.attempt ?? 0) > 0;
+        if (startedAsRetry && resume) {
+          delete this.state.executingStep;
+
+          // We need to interrupt and respond, rather than checkpointing and
+          // resuming. This is necessary because we need the attempt counter to
+          // reset. If the attempt counter doesn't reset, then we'll miss
+          // retries if the next step errors.
+          //
+          // We can't just reset the attempt counter to 0 within the SDK because
+          // the Executor's attempt counter is still >0. If the next step errors
+          // then we'll respond with the error and the Executor will incorrectly
+          // think the next step has already retried.
+          return stepRanHandler(stepResult);
+        }
+
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
         // Clear `executingStep` immediately after resuming, before any await.
