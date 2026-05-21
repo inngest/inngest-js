@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
-    "ai": "^4.3.16",
+    "ai": "^5.0.52",
     "exa-js": "^1.4.8",
-    "inngest": "3.52.0",
+    "inngest": "^3.54.0",
     "next": "^16.2.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
