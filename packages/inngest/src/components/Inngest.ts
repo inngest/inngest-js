@@ -46,6 +46,7 @@ import {
   type BaseContext,
   type ClientOptions,
   type EventPayload,
+  type EventSessions,
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
@@ -91,6 +92,47 @@ type ChannelTopicsInput<InputChannel extends Realtime.ChannelInput> = [
  * Capturing the global type of fetch so that we can reliably access it below.
  */
 type FetchT = typeof fetch;
+
+const normalizeEventSessions = (
+  sessions: EventSessions | null | undefined,
+): Record<string, string> | undefined => {
+  if (sessions === undefined || sessions === null) {
+    return undefined;
+  }
+  if (typeof sessions !== "object" || Array.isArray(sessions)) {
+    throw new Error("Event sessions must be an object");
+  }
+
+  const entries = Object.entries(sessions);
+
+  const normalized: Record<string, string> = {};
+  for (const [name, value] of entries) {
+    if (!name) {
+      throw new Error("Event session names cannot be empty");
+    }
+    if (
+      typeof value !== "string" &&
+      typeof value !== "number" &&
+      typeof value !== "boolean"
+    ) {
+      throw new Error(
+        `Event session "${name}" must be a string, number, or boolean`,
+      );
+    }
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new Error(`Event session "${name}" must be a finite number`);
+    }
+
+    const id = String(value);
+    if (!id) {
+      throw new Error(`Event session "${name}" cannot have an empty ID`);
+    }
+
+    normalized[name] = id;
+  }
+
+  return normalized;
+};
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -926,6 +968,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         id: p.id,
         ts: p.ts || nowMillis,
         data: p.data || {},
+        sessions: normalizeEventSessions(p.sessions),
       };
     });
 

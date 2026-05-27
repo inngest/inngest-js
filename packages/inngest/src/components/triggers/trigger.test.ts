@@ -3,6 +3,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import type { EventSessions } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
 import { cron, eventType, invoke, staticSchema } from "./triggers.ts";
 
@@ -272,6 +273,7 @@ describe("eventType with schema", () => {
         id: "123",
         ts: 1715769600,
         v: "1.0.0",
+        sessions: { conversation_id: "conv_123" },
       },
     );
     expect(created2.data).toEqual({ msg: "hello" });
@@ -286,6 +288,9 @@ describe("eventType with schema", () => {
     expect(created2.v).toBe("1.0.0");
     expectTypeOf(created2.v).not.toBeAny();
     expectTypeOf(created2.v).toEqualTypeOf<string | undefined>();
+    expect(created2.sessions).toEqual({ conversation_id: "conv_123" });
+    expectTypeOf(created2.sessions).not.toBeAny();
+    expectTypeOf(created2.sessions).toEqualTypeOf<EventSessions | undefined>();
 
     await created2.validate();
 

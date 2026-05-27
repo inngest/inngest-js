@@ -677,6 +677,14 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
   name: string;
 
   /**
+   * Session metadata used to group runs triggered by this event.
+   *
+   * Keys are session names, values are session identifiers. Values are
+   * normalized to strings before the event is sent.
+   */
+  sessions?: EventSessions;
+
+  /**
    * An integer representing the milliseconds since the unix epoch at which this
    * event occurred.
    *
@@ -685,6 +693,22 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
    */
   ts?: number;
 }
+
+/**
+ * Primitive values accepted for event session identifiers when sending an
+ * event. Numbers and booleans are normalized to strings before sending.
+ *
+ * @public
+ */
+export type EventSessionValue = string | number | boolean;
+
+/**
+ * Session metadata accepted when sending an event. Values are normalized to
+ * strings before sending; received events carry `Record<string, string>`.
+ *
+ * @public
+ */
+export type EventSessions = Record<string, EventSessionValue>;
 
 export const sendEventResponseSchema = z.object({
   /**

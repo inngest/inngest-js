@@ -105,6 +105,8 @@ export type {
   Context,
   EventNameFromTrigger,
   EventPayload,
+  EventSessions,
+  EventSessionValue,
   FailureEventArgs,
   FailureEventPayload,
   FinishedEventPayload,
