@@ -51,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has_packages: ${{ steps.set-matrix.outputs.has_packages }}
     steps:
       - id: set-matrix
         run: |
@@ -70,10 +71,12 @@ jobs:
             ] | map(. as $pkg | select($labelList | index("prerelease/" + $pkg.package)))
           ')
 
+          echo "has_packages=$(jq -n --argjson data "$MATRIX" '$data | length > 0')" >> $GITHUB_OUTPUT
           echo "matrix=$(jq -cn --argjson data "$MATRIX" '{include: $data}')" >> $GITHUB_OUTPUT
 
   prereleases:
     needs: generate-prerelease-matrix
+    if: needs.generate-prerelease-matrix.outputs.has_packages == 'true'
     concurrency: prerelease-${{ github.ref }}
     continue-on-error: true
     strategy:
