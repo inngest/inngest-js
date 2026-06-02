@@ -2198,6 +2198,8 @@ export class InngestCommHandler<
     requestInfo?: InngestExecutionOptions["requestInfo"];
     mwInstances?: Middleware.BaseMiddleware[];
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+    const requestStartedAt = Date.now();
+
     if (!fn) {
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
@@ -2297,6 +2299,8 @@ export class InngestCommHandler<
           },
           internalFnId: ctx?.fn_id,
           queueItemId: ctx?.qi_id,
+          requestId: requestId ?? undefined,
+          requestStartedAt,
           stepState,
           priorDefers: defers,
           requestedRunStep,

@@ -16,7 +16,10 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { isDeferredFunction } from "../../helpers/marker.ts";
+import {
+  isDeferredFunction,
+  isStaleDispatchError,
+} from "../../helpers/marker.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -474,9 +477,14 @@ class InngestExecutionEngine
             runId: this.fnArg.runId,
             fnId: internalFnId,
             queueItemId,
+            requestId: this.options.requestId,
+            requestStartedAt: this.options.requestStartedAt,
             steps,
           }),
-        CHECKPOINT_RETRY_OPTIONS,
+        {
+          ...CHECKPOINT_RETRY_OPTIONS,
+          shouldRetry: (err) => !isStaleDispatchError(err),
+        },
       );
     } else {
       throw new Error(
@@ -900,6 +908,21 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
+          // The Inngest Server told us that the corresponding queue item is
+          // stale, so we need to interrupt to avoid running more steps. If we
+          // don't interrupt then we risk duplicate execution, since the same
+          // steps could be executed across multiple requests
+          if (isStaleDispatchError(err)) {
+            this.devDebug("stale dispatch detected; halting execution");
+            return {
+              type: "function-rejected" as const,
+              ctx: this.fnArg,
+              ops: {},
+              error: serializeError(err),
+              retriable: false,
+            };
+          }
+
           // If checkpointing fails for any reason, fall back to returning
           // ALL buffered steps to the executor via the normal async flow.
           // The executor persists completed steps and rediscovers any

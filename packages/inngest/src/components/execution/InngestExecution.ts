@@ -138,6 +138,16 @@ export interface InngestExecutionOptions {
   queueItemId?: string;
 
   /**
+   * Unique identifier for each execution request
+   */
+  requestId?: string;
+
+  /**
+   * Time the SDK starts handling an execution request. Format is unix millis.
+   */
+  requestStartedAt?: number;
+
+  /**
    * Headers to be sent with any request to Inngest during this execution.
    */
   headers: Record<string, string>;
