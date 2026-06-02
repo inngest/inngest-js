@@ -602,6 +602,40 @@ export class InngestApi {
   }
 
   /**
+   * Best-effort progress checkpoint for an in-flight step. Used to send a
+   * leading-edge `StepPlanned` (and optionally its trailing `StepRun` marker)
+   * for steps that exceed the in-progress threshold. Unlike
+   * `checkpointStepsAsync`, this does not throw on non-2xx — the caller
+   * decides how to react (typically by sending a combined leading+trailing
+   * payload on the trailing edge).
+   */
+  async checkpointStepProgress(args: {
+    runId: string;
+    fnId: string;
+    queueItemId: string;
+    steps: OutgoingOp[];
+  }): Promise<{ ok: boolean; status?: number }> {
+    const body = JSON.stringify({
+      run_id: args.runId,
+      fn_id: args.fnId,
+      qi_id: args.queueItemId,
+      steps: args.steps,
+      ts: new Date().valueOf(),
+    });
+
+    const result = await this.req(
+      `/v1/checkpoint/${encodeURIComponent(args.runId)}/async`,
+      {
+        method: "POST",
+        body,
+      },
+    );
+
+    if (!result.ok) return { ok: false };
+    return { ok: result.value.ok, status: result.value.status };
+  }
+
+  /**
    * POST stream data to the realtime publish/tee endpoint, forwarding raw
    * bytes to all subscribers via the broadcaster.
    */

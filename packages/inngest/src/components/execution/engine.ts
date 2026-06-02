@@ -107,6 +107,21 @@ const { sha1 } = hashjs;
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 
+/**
+ * If a step in `AsyncCheckpointing` mode runs for this long without finishing,
+ * the SDK fires a leading-edge `StepPlanned` so the executor can show an
+ * in-progress span.
+ */
+const IN_PROGRESS_THRESHOLD_MS = 1000;
+
+/**
+ * If the leading-edge `StepPlanned` POST is still in-flight when the step
+ * completes, we wait this long for it to resolve before giving up and
+ * sending a combined `StepPlanned + StepRun` trailing payload. Keeps step
+ * completion from being blocked by a hung POST.
+ */
+const LEADING_POST_GRACE_MS = 250;
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -881,9 +896,13 @@ class InngestExecutionEngine
         // NESTING_STEPS warning in the next step's handler.
         delete this.state.executingStep;
 
-        // Buffer a copy with transformed data for checkpointing
+        // Buffer a copy with transformed data for checkpointing.
+        // `stepResult.opts` carries dynamic markers like `_paired_trailing`
+        // set during finalize that aren't on the userland step record, so
+        // it must take precedence over `stepToResume.opts`.
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
+          opts: stepResult.opts ?? stepToResume.opts,
           data: stepResult.data,
         });
       }
@@ -1686,6 +1705,16 @@ class InngestExecutionEngine
     const wrappedActualHandler =
       this.middlewareManager.buildWrapStepHandlerChain(actualHandler, stepInfo);
 
+    // In `AsyncCheckpointing`, allocate an in-progress record so we can
+    // fire a leading-edge `StepPlanned` for steps that exceed the
+    // threshold.
+    const startMs = Date.now();
+    const inProgressRecord = this.startInProgressTracker({
+      hashedId,
+      startMs,
+      outgoingOp,
+    });
+
     return goIntervalTiming(() => wrappedActualHandler())
       .finally(() => {
         this.devDebug(`finished executing step "${id}"`);
@@ -1731,10 +1760,164 @@ class InngestExecutionEngine
           stepInfo,
         });
       })
-      .then((op) => ({
-        ...op,
-        timing: interval,
-      }));
+      .then(async (op) => {
+        const withTiming: OutgoingOp = { ...op, timing: interval };
+        if (!inProgressRecord) return withTiming;
+        return await this.finalizeInProgressStep(inProgressRecord, withTiming);
+      });
+  }
+
+  /**
+   * Allocate an in-progress tracker and schedule the leading-edge
+   * `StepPlanned` POST. Returns `null` (no tracking) outside checkpointing
+   * mode or when the required identifiers aren't present.
+   */
+  private startInProgressTracker(args: {
+    hashedId: string;
+    startMs: number;
+    outgoingOp: OutgoingOp;
+  }): InProgressStepRecord | null {
+    if (
+      this.options.stepMode !== StepMode.AsyncCheckpointing ||
+      !this.options.internalFnId ||
+      !this.options.queueItemId
+    ) {
+      return null;
+    }
+
+    const record: InProgressStepRecord = {
+      hashedId: args.hashedId,
+      startMs: args.startMs,
+      outgoingOp: args.outgoingOp,
+      leadingTimer: null,
+      leadingState: { kind: "pending" },
+    };
+
+    record.leadingTimer = setTimeout(() => {
+      record.leadingTimer = null;
+      this.firePlannedLeadingEdge(record);
+    }, IN_PROGRESS_THRESHOLD_MS);
+
+    this.state.inProgressStep = record;
+    return record;
+  }
+
+  /**
+   * Timer callback that POSTs the leading-edge `StepPlanned` and
+   * records the result on the tracker.
+   */
+  private firePlannedLeadingEdge(record: InProgressStepRecord): void {
+    if (!this.options.internalFnId || !this.options.queueItemId) {
+      // Should not happen — gated on the same conditions as
+      // `maybeStartInProgressTracker`. Defensive only.
+      record.leadingState = { kind: "failed" };
+      return;
+    }
+
+    const plannedOp: OutgoingOp = {
+      ...record.outgoingOp,
+      op: StepOpCode.StepPlanned,
+      timing: {
+        // zero-length span starting at startMs
+        a: record.startMs * 1_000_000,
+        b: 0,
+      },
+    };
+
+    const promise = this.options.client["inngestApi"]
+      .checkpointStepProgress({
+        runId: this.options.runId,
+        fnId: this.options.internalFnId,
+        queueItemId: this.options.queueItemId,
+        steps: [plannedOp],
+      })
+      .then(
+        (res) => {
+          record.leadingState = res.ok
+            ? { kind: "succeeded" }
+            : { kind: "failed" };
+          return res;
+        },
+        (err: unknown) => {
+          this.devDebug(
+            `in-progress leading-edge POST failed for hashedId=%s:`,
+            record.hashedId,
+            err,
+          );
+          record.leadingState = { kind: "failed" };
+          return { ok: false };
+        },
+      );
+
+    record.leadingState = { kind: "in-flight", promise };
+  }
+
+  /**
+   * Trailing-edge dispatch. Decides how the step's terminal
+   * `OutgoingOp` is shaped based on whether/how the leading-edge POST
+   * landed. Returns the (possibly mutated) op for the caller to push onto
+   * the checkpoint buffer as usual. May enqueue a separate `StepPlanned`
+   * op onto the buffer when the leading edge didn't make it.
+   */
+  private async finalizeInProgressStep(
+    record: InProgressStepRecord,
+    op: OutgoingOp,
+  ): Promise<OutgoingOp> {
+    if (record.leadingTimer) {
+      clearTimeout(record.leadingTimer);
+      record.leadingTimer = null;
+    }
+    if (this.state.inProgressStep === record) {
+      this.state.inProgressStep = undefined;
+    }
+
+    let state = record.leadingState;
+
+    if (state.kind === "in-flight") {
+      // Bounded wait for the in-flight POST before we fall back. Don't let a
+      // hung leading POST hold up step completion.
+      const timeout = new Promise<{ ok: boolean }>((resolve) => {
+        setTimeout(() => resolve({ ok: false }), LEADING_POST_GRACE_MS);
+      });
+      const res = await Promise.race([state.promise, timeout]);
+      state = res.ok ? { kind: "succeeded" } : { kind: "failed" };
+    }
+
+    if (state.kind === "pending") {
+      // Step finished before the timer fired. Emit the usual
+      // StepRun with both the actual start and end time
+      return op;
+    }
+
+    if (state.kind === "failed") {
+      // Leading edge never made it — push a `StepPlanned` ahead of the
+      // trailing op so the executor still receives both markers.
+      const plannedOp: OutgoingOp = {
+        ...record.outgoingOp,
+        op: StepOpCode.StepPlanned,
+        timing: {
+          a: record.startMs * 1_000_000,
+          b: 0,
+        },
+      };
+      this.state.checkpointingStepBuffer.push(plannedOp);
+    }
+
+    // Trailing-edge marker: zero-length span anchored at `t_end`. The
+    // `_paired_trailing: true` opts marker tells the executor this is the
+    // completion arm of an earlier `StepPlanned`, so it should write only
+    // `EndedAt`/`DynamicStatus` (not `QueuedAt`/`StartedAt`) — otherwise
+    // the maxMap-by-start_time aggregation would clobber the leading's
+    // queued/started timestamps and make the step appear to take 0ms.
+    const endNs =
+      (op.timing?.a ?? record.startMs * 1_000_000) + (op.timing?.b ?? 0);
+    const collapsedTrailing: OutgoingOp = {
+      ...op,
+      opts: { ...(op.opts ?? {}), _paired_trailing: true },
+      timing: { a: endNs, b: 0 },
+    };
+
+    return collapsedTrailing;
   }
 
   /**
@@ -2996,6 +3179,25 @@ type CheckpointHandlers = Record<
   }
 >;
 
+/**
+ * Per-step state on reporting step progress. Tracks the leading-edge timer
+ * and the delivery state of the leading-edge `StepPlanned` POST.
+ */
+export interface InProgressStepRecord {
+  hashedId: string;
+  /** `t_start` in ms (Date.now), shared with `goIntervalTiming`. */
+  startMs: number;
+  /** Skeleton op (id, name, displayName, userland, opts) shared by leading/trailing payloads. */
+  outgoingOp: OutgoingOp;
+  /** Pending leading-edge timer. Cleared when the step finishes. */
+  leadingTimer: ReturnType<typeof setTimeout> | null;
+  leadingState:
+    | { kind: "pending" }
+    | { kind: "in-flight"; promise: Promise<{ ok: boolean }> }
+    | { kind: "succeeded" }
+    | { kind: "failed" };
+}
+
 export interface ExecutionState {
   /**
    * A value that indicates that we're executing this step. Can be used to
@@ -3105,6 +3307,12 @@ export interface ExecutionState {
    * A buffer of steps that are currently queued to be checkpointed.
    */
   checkpointingStepBuffer: OutgoingOp[];
+
+  /**
+   * Tracker for the currently-executing `AsyncCheckpointing` step's
+   * state.
+   */
+  inProgressStep?: InProgressStepRecord;
 
   /**
    * Buffer for opcode-only sync ops (e.g. `DeferAdd`) awaiting shipment
