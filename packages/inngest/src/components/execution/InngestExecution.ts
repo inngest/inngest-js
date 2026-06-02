@@ -164,6 +164,14 @@ export interface InngestExecutionOptions {
    */
   handlerKind?: "main" | "failure" | "defer";
 
+  /**
+   * Whether this execution is part of a Durable Endpoint flow. Could be either
+   * sync mode (request not from Inngest) or async mode (request from Inngest).
+   *
+   * @default false
+   */
+  isDurableEndpoint?: boolean;
+
   disableImmediateExecution?: boolean;
 
   /**

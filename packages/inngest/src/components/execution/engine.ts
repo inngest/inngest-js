@@ -1211,7 +1211,7 @@ class InngestExecutionEngine
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result event.
-        if (!this.streamTools.activated) {
+        if (this.options.isDurableEndpoint && !this.streamTools.activated) {
           this.postCheckpointStream();
         }
 
@@ -1239,7 +1239,7 @@ class InngestExecutionEngine
           await this.streamEnd();
         }
 
-        if (!this.streamTools.activated) {
+        if (this.options.isDurableEndpoint && !this.streamTools.activated) {
           this.postCheckpointStream();
         }
 

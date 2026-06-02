@@ -993,6 +993,7 @@ export class InngestCommHandler<
           events: [event],
           maxAttempts: fn.opts.retries ?? defaultMaxRetries,
         },
+        isDurableEndpoint: true,
         runId,
         headers: {},
         reqArgs: args,
@@ -2298,6 +2299,11 @@ export class InngestCommHandler<
             jobId: jobId ?? undefined,
           },
           internalFnId: ctx?.fn_id,
+
+          // Rely on `forceExecution` to know if this is a Durable Endpoint in
+          // async mode.
+          isDurableEndpoint: forceExecution,
+
           queueItemId: ctx?.qi_id,
           requestId: requestId ?? undefined,
           requestStartedAt,
