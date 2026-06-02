@@ -12,3 +12,6 @@ export { extendedTracesMiddleware } from "./components/execution/otel/middleware
 export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components/execution/otel/processor.ts";
 // Step Metadata
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
+// Scoring
+export { scoreMiddleware } from "./components/InngestScore.ts";
+export { createScorer } from "./components/ScoreFunction.ts";

@@ -1644,6 +1644,7 @@ class InngestExecutionEngine
         id,
         name: displayName,
         hashedId,
+        userlandId: userland.id,
       };
     }
 
@@ -1904,8 +1905,10 @@ class InngestExecutionEngine
   }
 
   /**
-   * Validate the deferred event's data against the defer function's own
-   * schema (set via `createDefer`'s `opts.schema`).
+   * Validate the deferred event's data against the defer function's own schema
+   * (set via `createDefer`'s `opts.schema`). Our internal metadata
+   * (`event.data._inngest`) was already stripped, so that won't affect
+   * validation.
    */
   private async validateDeferEventSchema(): Promise<void> {
     const fn = this.options.fn;
@@ -2101,15 +2104,6 @@ class InngestExecutionEngine
       group: createGroupTools({ experimentStepRun }),
       defer,
     } as unknown as Context.Any;
-
-    if (this.options.handlerKind === "defer") {
-      // Delete our internal metadata. The user's handler shouldn't see it since
-      // it's an implementation detail
-      delete fnArg.event.data._inngest;
-      for (const event of fnArg.events) {
-        delete event.data._inngest;
-      }
-    }
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.

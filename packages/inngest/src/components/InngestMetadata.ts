@@ -15,6 +15,7 @@ export type MetadataScope = "run" | "step" | "extended_trace";
  */
 export type MetadataKind =
   | "inngest.experiment"
+  | `inngest.score.${string}`
   | "inngest.warnings"
   | `userland.${string}`;
 
@@ -36,7 +37,11 @@ export type MetadataUpdate = {
 
 export type MetadataValues = Record<string, unknown>;
 
-interface BuilderConfig {
+/**
+ * Internal metadata target config shared by metadata and score helpers.
+ * @internal
+ */
+export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
   stepIndex?: number;
@@ -277,7 +282,34 @@ function getBatchScope(config: BuilderConfig): MetadataScope {
   return "step";
 }
 
-async function performOp(
+function targetsCurrentStep(
+  config: BuilderConfig,
+  ctx?: AsyncContext,
+): boolean {
+  const executingStep = ctx?.execution?.executingStep;
+  if (!executingStep) {
+    return false;
+  }
+
+  const targetStepId = config.stepId;
+  const currentUserlandStepId = executingStep.userlandId;
+
+  if (targetStepId === undefined) {
+    return true;
+  }
+
+  if (targetStepId === null) {
+    return true;
+  }
+
+  return targetStepId === currentUserlandStepId;
+}
+
+/**
+ * Internal metadata write helper shared by metadata and score helpers.
+ * @internal
+ */
+export async function performOp(
   client: Inngest,
   config: BuilderConfig,
   values: Record<string, unknown>,
@@ -296,14 +328,12 @@ async function performOp(
   }
 
   const runId = config.runId ?? ctx?.execution?.ctx?.runId;
-  const stepId = config.stepId ?? ctx?.execution?.executingStep?.id;
-  // TODO: get step index from ctx?
   const attempt = config.attempt ?? ctx?.execution?.ctx?.attempt;
 
   // We can batch metadata if we're updating the current run
   const canBatch =
     runId === ctx?.execution?.ctx?.runId &&
-    stepId === ctx?.execution?.executingStep?.id &&
+    targetsCurrentStep(config, ctx) &&
     attempt === ctx?.execution?.ctx?.attempt &&
     !config.spanId;
 
