@@ -354,10 +354,10 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
     if (stepCtx) {
-        span.setAttribute(Attribute.InngestStepId, stepCtx.id);
-        span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
-        span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
-        span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
+      span.setAttribute(Attribute.InngestStepId, stepCtx.id);
+      span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
+      span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
+      span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
     }
 
     // For direct children of the root span during step execution, set a
