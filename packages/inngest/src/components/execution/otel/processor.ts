@@ -352,6 +352,14 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#spansToExport.add(span);
     this.#traceParents.set(spanId, parentState);
 
+    const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
+    if (stepCtx) {
+        span.setAttribute(Attribute.InngestStepId, stepCtx.id);
+        span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
+        span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
+        span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
+    }
+
     // For direct children of the root span during step execution, set a
     // dedicated attribute with the deterministic step span ID. The Go executor
     // creates executor.step spans with the same deterministic ID (from the same
@@ -362,7 +370,6 @@ export class InngestSpanProcessor implements SpanProcessor {
         (span as unknown as { parentSpanId?: string }).parentSpanId;
 
       if (spanParentId === parentState.rootSpanId) {
-        const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
         if (stepCtx) {
           const seed = stepCtx.hashedStepId + ":" + String(stepCtx.attempt);
           const newSpanId = deterministicSpanID(seed);
@@ -376,10 +383,6 @@ export class InngestSpanProcessor implements SpanProcessor {
             stepCtx.attempt,
           );
           span.setAttribute(Attribute.InngestStepParentSpanId, newSpanId);
-          span.setAttribute(Attribute.InngestStepId, stepCtx.id);
-          span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
-          span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
-          span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
         }
       }
     }
