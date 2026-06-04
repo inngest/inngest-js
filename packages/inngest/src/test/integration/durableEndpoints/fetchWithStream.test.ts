@@ -4,7 +4,7 @@ import { fetchWithStream } from "../../../experimental/durable-endpoints/client.
 import { stream } from "../../../experimental/durable-endpoints/index.ts";
 import { NonRetriableError, step } from "../../../index.ts";
 import { silencedLogger } from "../../helpers.ts";
-import { createGate, setupEndpoint, urlWithTestName } from "./helpers.ts";
+import { Gate, setupEndpoint, urlWithTestName } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -220,12 +220,12 @@ describe("failed", () => {
 
 describe("server killed mid-stream", () => {
   test("sync mode", async () => {
-    const gate = createGate();
+    const gate = new Gate();
     const { port, server } = await setupEndpoint(testFileName, async () => {
       await step.run("a", async () => {
         stream.push("before-kill");
         // Pause here so the test can kill the server mid-execution.
-        await gate.promise;
+        await gate.waitPromise;
         stream.push("after-kill");
       });
       return Response.json("unreachable");
@@ -244,13 +244,13 @@ describe("server killed mid-stream", () => {
   });
 
   test("async mode", async () => {
-    const gate = createGate();
+    const gate = new Gate();
     const { port, server } = await setupEndpoint(testFileName, async () => {
       await step.sleep("go-async", "1s");
       await step.run("a", async () => {
         stream.push("before-kill");
         // Pause here so the test can kill the server mid-execution.
-        await gate.promise;
+        await gate.waitPromise;
         stream.push("after-kill");
       });
       return Response.json("unreachable");

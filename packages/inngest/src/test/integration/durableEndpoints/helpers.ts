@@ -155,14 +155,51 @@ export function getStreamData(events: SseEvent[]): string[] {
 }
 
 /**
- * A deferred promise the handler can `await` and the test can `open()`.
+ * Effectively a deferred promise with some useful extras. Valuable as a way to
+ * pause execution within Inngest functions, allowing tests to assert transient
+ * state.
  */
-export function createGate(): { promise: Promise<void>; open: () => void } {
-  let open!: () => void;
-  const promise = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  return { promise, open };
+export class Gate {
+  private hasReached = false;
+  private markReached!: () => void;
+  private openGate!: () => void;
+  private reachedPromise: Promise<void>;
+  private waitPromise: Promise<void>;
+
+  constructor() {
+    this.reachedPromise = new Promise<void>((resolve) => {
+      this.markReached = resolve;
+    });
+
+    this.waitPromise = new Promise<void>((resolve) => {
+      this.openGate = resolve;
+    });
+  }
+
+  /**
+   * Open the gate, resolving callers blocked on the `wait` method.
+   */
+  open(): void {
+    this.openGate();
+  }
+
+  /**
+   * Wait until the gate is opened.
+   */
+  wait(): Promise<void> {
+    if (!this.hasReached) {
+      this.hasReached = true;
+      this.markReached();
+    }
+    return this.waitPromise;
+  }
+
+  /**
+   * Wait until the gate is reached (i.e. the `wait` method is called).
+   */
+  waitUntilReached(): Promise<void> {
+    return this.reachedPromise;
+  }
 }
 
 /**
