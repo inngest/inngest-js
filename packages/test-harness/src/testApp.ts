@@ -1,3 +1,5 @@
+// biome-ignore-all lint/suspicious/noExplicitAny: it's cool
+
 import type http from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -7,7 +9,6 @@ import type { AddressInfo } from "node:net";
  * Uses `any` so callers can pass their own concrete `createServer` without
  * type mismatches between different inngest package versions.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ServeFactory = (options: {
   client: any;
   functions: any[];
