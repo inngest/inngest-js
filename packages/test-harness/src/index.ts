@@ -1,24 +1,23 @@
 export {
   DEV_SERVER_PORT,
   DEV_SERVER_URL,
+  isDevServerRunning,
   startDevServer,
   stopDevServer,
-  isDevServerRunning,
 } from "./devServer.ts";
-
+export type { ServeFactory, TestApp } from "./testApp.ts";
 export {
-  createTestServer,
   createTestApp,
+  createTestServer,
   registerApp,
   waitForFunctions,
 } from "./testApp.ts";
-export type { ServeFactory, TestApp } from "./testApp.ts";
 
 export {
-  randomSuffix,
-  testNameFromFileUrl,
-  sleep,
-  waitFor,
   BaseState,
   createState,
+  randomSuffix,
+  sleep,
+  testNameFromFileUrl,
+  waitFor,
 } from "./utils.ts";

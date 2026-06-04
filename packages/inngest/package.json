@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "4.4.0",
+  "version": "4.5.0",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.cjs",
   "module": "./index.js",
@@ -365,7 +365,7 @@
     "koa": "^2.14.2",
     "minimist": "^1.2.8",
     "mitata": "^0.1.11",
-    "next": "^13.5.11",
+    "next": "^16.2.6",
     "nock": "^13.2.9",
     "node-mocks-http": "^1.11.0",
     "nodemon": "^2.0.20",
