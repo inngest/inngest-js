@@ -218,3 +218,74 @@ export function createState<T extends Record<string, unknown>>(
 ): BaseState & T {
   return Object.assign(new BaseState(), initial);
 }
+
+export async function getStepsWithStatus({
+  runId,
+  status,
+}: {
+  runId: string;
+  status: string;
+}): Promise<string[]> {
+  const query = `
+    query Query($runID: String!, $preview: Boolean) {
+      run(runID: $runID) {
+        trace(preview: $preview) {
+          ...TraceDetails
+          childrenSpans {
+            ...TraceDetails
+          }
+        }
+      }
+    }
+
+    fragment TraceDetails on RunTraceSpan {
+      name
+      status
+      stepOp
+    }`;
+
+  const schema = z.object({
+    data: z.object({
+      run: z.object({
+        trace: z.object({
+          childrenSpans: z.array(
+            z.object({
+              name: z.string(),
+              status: z.string(),
+              stepOp: z.string().nullable(),
+            }),
+          ),
+        }),
+      }),
+    }),
+  });
+
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: query,
+      variables: { runID: runId, preview: true },
+      operationName: "Query",
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
+  const body = schema.parse(await res.json());
+  const runningSteps = [] as string[];
+  for (const span of body.data.run.trace.childrenSpans) {
+    if (span.stepOp === null) {
+      // Not a step
+      continue;
+    }
+    if (span.status !== status) {
+      continue;
+    }
+    runningSteps.push(span.name);
+  }
+
+  return runningSteps;
+}

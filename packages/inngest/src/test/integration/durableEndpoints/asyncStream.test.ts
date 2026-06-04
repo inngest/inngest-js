@@ -10,7 +10,7 @@ import { stream } from "../../../experimental/durable-endpoints/index.ts";
 import { step } from "../../../index.ts";
 
 import {
-  createGate,
+  Gate,
   getStreamData,
   pollForAsyncReader,
   readSseStream,
@@ -214,20 +214,20 @@ test("stream data is not buffered in sync or async mode", async () => {
   // Use gates to pause between chunks, allowing us to assert that SSE events
   // arrive incrementally
   const gates = {
-    syncStep: createGate(),
-    asyncStep: createGate(),
+    syncStep: new Gate(),
+    asyncStep: new Gate(),
   };
 
   const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
     await step.run("a", async () => {
       stream.push("first");
-      await gates.syncStep.promise;
+      await gates.syncStep.waitPromise;
       stream.push("second");
     });
     await step.sleep("go-async", "1s");
     await step.run("b", async () => {
       stream.push("third");
-      await gates.asyncStep.promise;
+      await gates.asyncStep.waitPromise;
       stream.push("fourth");
     });
     return Response.json("done");
