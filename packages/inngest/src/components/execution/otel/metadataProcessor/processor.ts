@@ -13,18 +13,11 @@ import {
   createProviderWithProcessor,
   extendProviderWithProcessor,
 } from "../util.ts";
+import { extractAIMetadata } from "./libStrategies/index.ts";
 
 const aiMetadataDebug = Debug(`${debugPrefix}:AIMetadataSpanProcessor`);
 
 const metadataKind = "inngest.ai" as const;
-
-const aiAttributes = {
-  inputTokens: "ai.usage.inputTokens",
-  operationId: "ai.operationId",
-  operationName: "operation.name",
-  outputTokens: "ai.usage.outputTokens",
-  modelId: "ai.model.id",
-} as const;
 
 type StepContext = {
   id: string;
@@ -169,11 +162,14 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
   private trackSpan(parentState: SpanState, span: Span): void {
     const spanId = span.spanContext().spanId;
     const step = this.getCurrentStep(parentState.rootSpanId);
-    const state = {
+    const state: SpanState = {
       ...parentState,
-      ...(step ? { step } : parentState.step ? { step: parentState.step } : {}),
       headers: parentState.headers ?? this.getCurrentHeaders(),
     };
+
+    if (step) {
+      state.step = step;
+    }
 
     this.#spanCleanup.register(span, spanId, span);
     this.#spansToProcess.add(spanId);
@@ -257,31 +253,6 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
   }
 }
 
-const extractAIMetadata = (span: ReadableSpan): Record<string, unknown> => {
-  const values: Record<string, unknown> = {};
-
-  if (!isTopLevelAISpan(span)) {
-    return values;
-  }
-
-  const inputTokens = span.attributes[aiAttributes.inputTokens];
-  if (typeof inputTokens === "number" && Number.isFinite(inputTokens)) {
-    values["input-tokens"] = inputTokens;
-  }
-
-  const outputTokens = span.attributes[aiAttributes.outputTokens];
-  if (typeof outputTokens === "number" && Number.isFinite(outputTokens)) {
-    values["output-tokens"] = outputTokens;
-  }
-
-  const modelId = span.attributes[aiAttributes.modelId];
-  if (typeof modelId === "string" && modelId) {
-    values["model-id"] = modelId;
-  }
-
-  return values;
-};
-
 const getParentSpanId = (span: Span): string | undefined => {
   if ("parentSpanContext" in span) {
     const spanId = getSpanIdFromContext(span.parentSpanContext);
@@ -302,35 +273,9 @@ const getSpanIdFromContext = (value: unknown): string | undefined => {
     return undefined;
   }
 
-  return typeof value.spanId === "string" ? value.spanId : undefined;
-};
-
-const isTopLevelAISpan = (span: ReadableSpan): boolean => {
-  if (span.instrumentationScope.name !== "ai") {
-    return false;
+  if (typeof value.spanId !== "string") {
+    return undefined;
   }
 
-  const operationName = span.attributes[aiAttributes.operationName];
-  const operationId = span.attributes[aiAttributes.operationId];
-
-  if (
-    typeof operationName === "string" &&
-    typeof operationId === "string" &&
-    operationName !== operationId
-  ) {
-    return false;
-  }
-
-  const spanOperation =
-    typeof operationName === "string"
-      ? operationName
-      : typeof operationId === "string"
-        ? operationId
-        : span.name;
-
-  if (!spanOperation.startsWith("ai.")) {
-    return false;
-  }
-
-  return !spanOperation.slice("ai.".length).includes(".");
+  return value.spanId;
 };

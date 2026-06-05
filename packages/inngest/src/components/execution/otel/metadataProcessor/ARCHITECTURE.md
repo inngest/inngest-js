@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Extract a small allowlist of AI SDK OpenTelemetry attributes and attach them to
+Extract a small allowlist of AI OpenTelemetry attributes and attach them to
 Inngest step metadata. This processor observes spans only; it does not export
 traces.
 
@@ -15,8 +15,8 @@ traces.
    `clientProcessorMap`.
 4. The processor tracks child spans under the active `inngest.execution` span and
    captures step context when spans start.
-5. On span end, top-level `ai.*` operation spans become `inngest.ai` step
-   metadata.
+5. On span end, `libStrategies/` matches known AI span schemas and extracts
+   metadata for `inngest.ai` step updates.
 
 ## Extended Traces Patterns Reused
 
@@ -32,9 +32,21 @@ traces.
 {
   "input-tokens": 15,
   "output-tokens": 21,
-  "model-id": "gpt-4o-mini"
+  "model": "gpt-4o-mini"
 }
 ```
 
+Supported input schemas are Vercel AI SDK `ai.*` attributes and GenAI semantic
+convention `gen_ai.*` attributes, such as those emitted by OpenAI
+instrumentation.
+
 Each qualifying top-level AI span writes one merge update. Numeric aggregation is
 future work.
+
+## Strategies
+
+Strategies only match spans and extract metadata. They do not know about Inngest
+step state, batching, API fallback, or provider setup.
+
+Emitted metadata key names live in `metadata.ts` and are shared by all
+strategies.

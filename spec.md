@@ -12,10 +12,19 @@ Create an OTel processor that extracts allowlisted OTel attributes and then adds
 
 Since the OTel->metadata transform happens SDK-side, we don't need to export these spans. We already have an existing "Extended Traces" feature that exports spans, but that's considered a separate feature. Our changes must not break Extended Traces.
 
-The only attributes we're extracting now are:
+The only metadata values we're extracting now are:
 - Input tokens
 - Output tokens
-- Model ID
+- Model
+
+Supported span schemas:
+- Vercel AI SDK `ai.*` attributes
+- GenAI semantic convention `gen_ai.*` attributes
+
+Each schema is handled by a small library strategy under
+`metadataProcessor/libStrategies/`. Strategies only match spans and extract
+metadata; lifecycle tracking and metadata writes stay in the processor.
+Emitted metadata key names are shared in `metadataProcessor/metadata.ts`.
 
 The processor is installed automatically and follows the same provider setup
 approach as Extended Traces: create an OTel provider if one does not exist, or
@@ -27,7 +36,7 @@ Metadata is written to step scope with kind `inngest.ai` using kebab-case keys:
 {
   "input-tokens": 15,
   "output-tokens": 21,
-  "model-id": "gpt-4o-mini"
+  "model": "gpt-4o-mini"
 }
 ```
 
@@ -119,9 +128,16 @@ Example span:
 }
 ```
 
+### `openai`
+
+The official OpenAI SDK does not emit spans by itself. It needs an OTel
+instrumentation package registered before `openai` is imported. With
+`@opentelemetry/instrumentation-openai@0.15.0`, use chat completions or
+embeddings; that version does not patch `responses.create`.
+
 ## Concerns
 
-- If this becomes default-on or opt-out, users may unexpectedly persist model IDs
+- If this becomes default-on or opt-out, users may unexpectedly persist model names
   and token usage into Inngest metadata. This should be documented clearly because
   some users have compliance, privacy, or billing-data handling requirements.
 - The initial implementation intentionally does not include a disable path. Before
@@ -130,6 +146,6 @@ Example span:
 - Automatic metadata writes can increase metadata volume for steps that create many
   AI spans. The implementation should avoid unnecessary writes and consider how
   repeated spans in a single step are aggregated.
-- Token counts are numeric metrics while model ID is categorical. Merge-only
+- Token counts are numeric metrics while model is categorical. Merge-only
   metadata updates need a clear convention so multiple spans do not silently
   overwrite data in a surprising way.

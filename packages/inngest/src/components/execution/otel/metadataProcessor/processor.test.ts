@@ -2,6 +2,7 @@ import type { Span } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { Inngest } from "../../../Inngest.ts";
 import { type AsyncContext, getAsyncLocalStorage } from "../../als.ts";
+import { aiMetadataKeys } from "./metadata.ts";
 import { InngestAIMetadataSpanProcessor } from "./processor.ts";
 
 const createSpan = ({
@@ -25,10 +26,20 @@ const createSpan = ({
     },
     instrumentationScope: { name: instrumentationScopeName },
     name,
-    parentSpanContext: parentSpanId ? { spanId: parentSpanId } : undefined,
+    parentSpanContext: createParentSpanContext(parentSpanId),
     setAttribute: vi.fn(),
     spanContext: () => ({ spanId }),
   }) as unknown as Span & ReadableSpan;
+
+const createParentSpanContext = (
+  spanId: string | undefined,
+): { spanId: string } | undefined => {
+  if (!spanId) {
+    return undefined;
+  }
+
+  return { spanId };
+};
 
 const createClient = () =>
   ({
@@ -105,9 +116,53 @@ describe("InngestAIMetadataSpanProcessor", () => {
       "step",
       "merge",
       {
-        "input-tokens": 15,
-        "model-id": "gpt-4o-mini",
-        "output-tokens": 21,
+        [aiMetadataKeys.inputTokens]: 15,
+        [aiMetadataKeys.model]: "gpt-4o-mini",
+        [aiMetadataKeys.outputTokens]: 21,
+      },
+    );
+  });
+
+  test("batches OpenAI GenAI semantic convention attributes as step metadata", async () => {
+    const client = createClient();
+    const processor = new InngestAIMetadataSpanProcessor(client);
+    const addMetadata = vi.fn(() => true);
+    const root = createSpan({ spanId: "root" });
+    const openAISpan = createSpan({
+      spanId: "openai-span",
+      parentSpanId: "root",
+      name: "chat gpt-5.4-nano",
+      instrumentationScopeName: "@opentelemetry/instrumentation-openai",
+      attributes: {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "gpt-5.4-nano",
+        "gen_ai.response.model": "gpt-5.4-nano-2026-05-28",
+        "gen_ai.system": "openai",
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 38,
+      },
+    });
+
+    await runWithExecutionContext({ addMetadata, client }, () => {
+      processor.declareStartingSpan({
+        span: root,
+        runId: "run-1",
+        traceparent: undefined,
+        tracestate: undefined,
+      });
+      processor.onStart(openAISpan);
+      processor.onEnd(openAISpan);
+    });
+
+    expect(addMetadata).toHaveBeenCalledWith(
+      "step-1",
+      "inngest.ai",
+      "step",
+      "merge",
+      {
+        [aiMetadataKeys.inputTokens]: 17,
+        [aiMetadataKeys.model]: "gpt-5.4-nano-2026-05-28",
+        [aiMetadataKeys.outputTokens]: 38,
       },
     );
   });
@@ -154,8 +209,8 @@ describe("InngestAIMetadataSpanProcessor", () => {
             kind: "inngest.ai",
             op: "merge",
             values: {
-              "input-tokens": 10,
-              "model-id": "gpt-4o-mini",
+              [aiMetadataKeys.inputTokens]: 10,
+              [aiMetadataKeys.model]: "gpt-4o-mini",
             },
           },
         ],
@@ -245,9 +300,9 @@ describe("InngestAIMetadataSpanProcessor", () => {
       "step",
       "merge",
       {
-        "input-tokens": 15,
-        "model-id": "gpt-4o-mini",
-        "output-tokens": 21,
+        [aiMetadataKeys.inputTokens]: 15,
+        [aiMetadataKeys.model]: "gpt-4o-mini",
+        [aiMetadataKeys.outputTokens]: 21,
       },
     );
   });
@@ -287,7 +342,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
       "inngest.ai",
       "step",
       "merge",
-      { "input-tokens": 5 },
+      { [aiMetadataKeys.inputTokens]: 5 },
     );
     expect(addMetadata).toHaveBeenNthCalledWith(
       2,
@@ -295,7 +350,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
       "inngest.ai",
       "step",
       "merge",
-      { "input-tokens": 8 },
+      { [aiMetadataKeys.inputTokens]: 8 },
     );
   });
 });

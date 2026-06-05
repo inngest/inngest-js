@@ -4,12 +4,18 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "dev": "INNGEST_DEV=1 tsx watch --include './**/*.ts' --include '../../packages/inngest/src/**/*.ts' --env-file ./.env index.ts"
+    "dev": "INNGEST_DEV=1 NODE_OPTIONS='--require ./instrumentation.cjs' tsx watch --include './**/*.ts' --include '../../packages/inngest/src/**/*.ts' --env-file ./.env index.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "3.0.68",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": ">=2.0.0 <3.0.0",
+    "@opentelemetry/instrumentation": ">=0.200.0 <0.300.0",
+    "@opentelemetry/instrumentation-openai": "0.15.0",
+    "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0",
     "ai": "6.0.197",
     "express": "^4.19.2",
+    "openai": "^5.8.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
