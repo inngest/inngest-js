@@ -2636,6 +2636,11 @@ class InngestExecutionEngine
           return;
         }
 
+        if (!isRecord(data)) {
+          log.error({ runId }, "defer skipped: data must be an object");
+          return;
+        }
+
         const { schema } = deferFn;
         const deferFnSlug = deferFn.id(this.options.client.id);
 
