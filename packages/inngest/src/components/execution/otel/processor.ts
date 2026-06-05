@@ -139,6 +139,25 @@ export class InngestSpanProcessor implements SpanProcessor {
   #checkpointingRoots = new Set<string>();
 
   /**
+   * Step windows: per-step accumulators for spans that end while a step's
+   * userland code is executing. Keyed by root span ID: the engine never
+   * executes two steps concurrently within one request (parallelism switches
+   * to async mode, one step per request), so at most one window is open per
+   * root at a time — the engine, which always knows which step it is
+   * executing, supplies step identity at drain time. A `null` value means
+   * the window is open but nothing has accumulated yet.
+   *
+   * Entry presence doubles as the "a step is executing in this scope" signal
+   * consulted from `onEnd`; spans ending with no matching open window are
+   * ignored by the accumulator (but still exported as usual).
+   *
+   * PROTOTYPE: accumulates a simple count of userland spans that ended
+   * during the step. The full feature folds extracted AI metadata here
+   * instead.
+   */
+  #stepWindows = new Map<string, { spanCount: number } | null>();
+
+  /**
    * In order to only capture a subset of spans, we need to declare the initial
    * span that we care about and then export its children.
    *
@@ -263,6 +282,73 @@ export class InngestSpanProcessor implements SpanProcessor {
   public clearStepExecution(rootSpanId: string): void {
     processorDevDebug("clearStepExecution: rootSpanId=%s", rootSpanId);
     this.#activeStepContext.delete(rootSpanId);
+  }
+
+  /**
+   * Open a step window: spans ending while this window is open are folded
+   * into its accumulator. Called by the engine just before a step's userland
+   * code runs, in both checkpointing and classic modes.
+   */
+  public openStepWindow(rootSpanId: string): void {
+    processorDevDebug("openStepWindow: rootSpanId=%s", rootSpanId);
+    this.#stepWindows.set(rootSpanId, null);
+  }
+
+  /**
+   * Close a step window and drain its accumulator. Called by the engine in
+   * the step's teardown, before the step's outgoing op is finalized, so the
+   * returned values can ride the op as metadata.
+   *
+   * Deleting the entry is also the cleanup: this processor is a
+   * process-lifetime singleton and the keys are strings, so GC gives us
+   * nothing for free here.
+   *
+   * TODO: backstop sweep (e.g. at `forceFlush`) for windows orphaned by
+   * steps that threw before reaching their teardown.
+   */
+  public closeStepWindow(
+    rootSpanId: string,
+  ): Record<string, unknown> | undefined {
+    const acc = this.#stepWindows.get(rootSpanId);
+    this.#stepWindows.delete(rootSpanId);
+    processorDevDebug(
+      "closeStepWindow: rootSpanId=%s spanCount=%s",
+      rootSpanId,
+      acc ? acc.spanCount : "(empty)",
+    );
+
+    return acc ? { spanCount: acc.spanCount } : undefined;
+  }
+
+  /**
+   * Fold a tracked span that just ended into its root's step window, if one
+   * is open. A span with no open window is ignored (it may have ended after
+   * its step's op was already reported; fine to drop for now).
+   */
+  #recordSpanEndInStepWindow(spanId: string): void {
+    const rootSpanId = this.#traceParents.get(spanId)?.rootSpanId;
+    if (!rootSpanId) {
+      return;
+    }
+
+    if (!this.#stepWindows.has(rootSpanId)) {
+      return processorDevDebug(
+        "span %s ended with no open step window for root %s; ignoring",
+        spanId,
+        rootSpanId,
+      );
+    }
+
+    const acc = this.#stepWindows.get(rootSpanId) ?? { spanCount: 0 };
+    acc.spanCount += 1;
+    this.#stepWindows.set(rootSpanId, acc);
+
+    processorDevDebug(
+      "span %s counted in step window %s; spanCount=%d",
+      spanId,
+      rootSpanId,
+      acc.spanCount,
+    );
   }
 
   /**
@@ -490,6 +576,11 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     try {
       if (this.#spansToExport.has(span as unknown as Span)) {
+        // Fold this span into its step window (if one is open) before
+        // `cleanupSpan` in the `finally` below deletes the `#traceParents`
+        // entry needed to find the span's root.
+        this.#recordSpanEndInStepWindow(spanId);
+
         if (!this.#batcher) {
           return devDebug(
             "batcher not initialized, so failed exporting span",

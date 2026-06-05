@@ -1661,6 +1661,17 @@ class InngestExecutionEngine
         );
     }
 
+    // Open a step window so the span processor can accumulate per-step data
+    // from userland spans ending during this step. Unconditional (both
+    // checkpointing and classic modes); steps never execute concurrently
+    // within one request, so the root span ID alone identifies the window —
+    // we supply step identity at drain time below.
+    if (this.rootSpanId) {
+      clientProcessorMap
+        .get(this.options.client)
+        ?.openStepWindow(this.rootSpanId);
+    }
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
@@ -1696,6 +1707,19 @@ class InngestExecutionEngine
           clientProcessorMap
             .get(this.options.client)
             ?.clearStepExecution(this.rootSpanId);
+        }
+
+        // Drain this step's window and attach the accumulated values to the
+        // step's op as metadata. This runs before the `.then()` below reads
+        // `state.metadata`, so the values ride the outgoing op.
+        if (this.rootSpanId) {
+          const values = clientProcessorMap
+            .get(this.options.client)
+            ?.closeStepWindow(this.rootSpanId);
+
+          if (values) {
+            this.addMetadata(id, "userland.spanCount", "step", "merge", values);
+          }
         }
 
         if (store?.execution) {
