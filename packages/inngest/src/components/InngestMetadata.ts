@@ -14,6 +14,7 @@ export type MetadataScope = "run" | "step" | "extended_trace";
  * Metadata of the same kind attached to the same item at the same scope are combined.
  */
 export type MetadataKind =
+  | "inngest.ai"
   | "inngest.experiment"
   | "inngest.warnings"
   | `userland.${string}`;

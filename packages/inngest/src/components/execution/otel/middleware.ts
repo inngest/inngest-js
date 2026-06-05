@@ -2,7 +2,7 @@ import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
 import { version } from "../../../version.ts";
 import { Middleware } from "../../middleware/middleware.ts";
-import { clientProcessorMap } from "./access.ts";
+import { registerClientProcessor } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
 import {
@@ -160,13 +160,13 @@ export const extendedTracesMiddleware = ({
       );
 
       if (processor) {
-        clientProcessorMap.set(client, processor);
+        registerClientProcessor(client, processor);
       } else if (processorReady) {
         // createProvider is async; register the processor once it resolves.
         processorReady
           .then(() => {
             if (processor) {
-              clientProcessorMap.set(client, processor);
+              registerClientProcessor(client, processor);
             }
           })
           .catch((err) => {

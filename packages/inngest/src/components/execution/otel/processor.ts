@@ -19,7 +19,7 @@ import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
 import { hashSigningKey } from "../../../helpers/strings.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
-import { clientProcessorMap } from "./access.ts";
+import { registerClientProcessor } from "./access.ts";
 import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
 
 const processorDevDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
@@ -81,7 +81,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     app?: Inngest.Like,
   ) {
     if (app) {
-      clientProcessorMap.set(app as Inngest.Any, this);
+      registerClientProcessor(app as Inngest.Any, this);
     }
   }
 

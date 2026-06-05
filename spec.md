@@ -17,6 +17,23 @@ The only attributes we're extracting now are:
 - Output tokens
 - Model ID
 
+The processor is installed automatically and follows the same provider setup
+approach as Extended Traces: create an OTel provider if one does not exist, or
+extend the existing provider when one is already registered.
+
+Metadata is written to step scope with kind `inngest.ai` using kebab-case keys:
+
+```json
+{
+  "input-tokens": 15,
+  "output-tokens": 21,
+  "model-id": "gpt-4o-mini"
+}
+```
+
+For now, each qualifying top-level AI operation span emits its own metadata
+update. Numeric values are not aggregated yet.
+
 ## Libraries
 
 ### `ai`
@@ -101,3 +118,18 @@ Example span:
   links: []
 }
 ```
+
+## Concerns
+
+- If this becomes default-on or opt-out, users may unexpectedly persist model IDs
+  and token usage into Inngest metadata. This should be documented clearly because
+  some users have compliance, privacy, or billing-data handling requirements.
+- The initial implementation intentionally does not include a disable path. Before
+  enabling this broadly, decide whether users need a runtime or client-level escape
+  hatch.
+- Automatic metadata writes can increase metadata volume for steps that create many
+  AI spans. The implementation should avoid unnecessary writes and consider how
+  repeated spans in a single step are aggregated.
+- Token counts are numeric metrics while model ID is categorical. Merge-only
+  metadata updates need a clear convention so multiple spans do not silently
+  overwrite data in a surprising way.

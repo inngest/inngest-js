@@ -1,6 +1,9 @@
 import { context, trace } from "@opentelemetry/api";
 import type { Instrumentation } from "@opentelemetry/instrumentation";
-import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import {
+  BasicTracerProvider,
+  type SpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { debugPrefix } from "./consts.ts";
 import { InngestSpanProcessor } from "./processor.ts";
@@ -9,6 +12,18 @@ const debug = Debug(`${debugPrefix}:createProvider`);
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];
+
+const getExistingProvider = () => {
+  const globalProvider = trace.getTracerProvider();
+  if (!globalProvider) {
+    return undefined;
+  }
+
+  return "getDelegate" in globalProvider &&
+    typeof globalProvider.getDelegate === "function"
+    ? globalProvider.getDelegate()
+    : globalProvider;
+};
 
 export const createProvider = async (
   _behaviour: Behaviour,
@@ -20,10 +35,6 @@ export const createProvider = async (
   try {
     // TODO Check if there's an existing provider
     const processor = new InngestSpanProcessor();
-
-    const p = new BasicTracerProvider({
-      spanProcessors: [processor],
-    });
 
     // Dynamic imports to avoid loading the full auto-instrumentation suite at
     // module evaluation time. These are only needed when creating a new provider,
@@ -53,10 +64,73 @@ export const createProvider = async (
       instrumentations: instrList,
     });
 
-    trace.setGlobalTracerProvider(p);
+    const extended = extendProviderWithProcessor(processor, "auto");
+    if (extended.success) {
+      return { success: true, processor };
+    }
+
+    const p = new BasicTracerProvider({
+      spanProcessors: [processor],
+    });
+
+    if (!trace.setGlobalTracerProvider(p)) {
+      const retryExtended = extendProviderWithProcessor(processor, "auto");
+      if (retryExtended.success) {
+        return { success: true, processor };
+      }
+
+      return {
+        success: false,
+        error: new Error("Unable to set or extend global OTel provider"),
+      };
+    }
+
     context.setGlobalContextManager(new AsyncHooksContextManager().enable());
 
     return { success: true, processor };
+  } catch (err) {
+    debug("failed to create provider:", err);
+    return { success: false, error: err };
+  }
+};
+
+export const createProviderWithProcessor = async (
+  processor: SpanProcessor,
+): Promise<{ success: true } | { success: false; error?: unknown }> => {
+  try {
+    const extended = extendProviderWithProcessor(processor, "auto");
+    if (extended.success) {
+      return { success: true };
+    }
+
+    const { AsyncHooksContextManager } = await import(
+      "@opentelemetry/context-async-hooks"
+    );
+
+    const p = new BasicTracerProvider({
+      spanProcessors: [processor],
+    });
+
+    const retryExtended = extendProviderWithProcessor(processor, "auto");
+    if (retryExtended.success) {
+      return { success: true };
+    }
+
+    if (!trace.setGlobalTracerProvider(p)) {
+      const finalExtended = extendProviderWithProcessor(processor, "auto");
+      if (finalExtended.success) {
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error: new Error("Unable to set or extend global OTel provider"),
+      };
+    }
+
+    context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+
+    return { success: true };
   } catch (err) {
     debug("failed to create provider:", err);
     return { success: false, error: err };
@@ -70,9 +144,28 @@ export const createProvider = async (
 export const extendProvider = (
   behaviour: Behaviour,
 ): { success: true; processor: InngestSpanProcessor } | { success: false } => {
+  const processor = new InngestSpanProcessor();
+  const extended = extendProviderWithProcessor(
+    processor,
+    behaviour,
+    "InngestSpanProcessor",
+  );
+
+  if (!extended.success) {
+    return { success: false };
+  }
+
+  return { success: true, processor };
+};
+
+export const extendProviderWithProcessor = (
+  processor: SpanProcessor,
+  behaviour: Behaviour,
+  processorName = "span processor",
+): { success: true } | { success: false } => {
   // Attempt to add our processor and export to the existing provider
-  const globalProvider = trace.getTracerProvider();
-  if (!globalProvider) {
+  const existingProvider = getExistingProvider();
+  if (!existingProvider) {
     if (behaviour !== "auto") {
       console.warn(
         'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
@@ -82,33 +175,13 @@ export const extendProvider = (
     return { success: false };
   }
 
-  // trace.getTracerProvider() returns a ProxyTracerProvider wrapper
-  // Unwrap it to get the actual provider.
-  const existingProvider =
-    "getDelegate" in globalProvider &&
-    typeof globalProvider.getDelegate === "function"
-      ? globalProvider.getDelegate()
-      : globalProvider;
-
-  if (!existingProvider) {
-    if (behaviour !== "auto") {
-      console.warn(
-        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
-      );
-    }
-
-    return { success: false };
-  }
-
-  const processor = new InngestSpanProcessor();
-
   // OTel SDK v1 exposes addSpanProcessor() on BasicTracerProvider.
   if (
     "addSpanProcessor" in existingProvider &&
     typeof existingProvider.addSpanProcessor === "function"
   ) {
     existingProvider.addSpanProcessor(processor);
-    return { success: true, processor };
+    return { success: true };
   }
 
   // OTel SDK v2 removed addSpanProcessor() — span processors are constructor-only.
@@ -118,12 +191,12 @@ export const extendProvider = (
   const spanProcessors = getInternalSpanProcessors(existingProvider);
   if (spanProcessors) {
     spanProcessors.push(processor);
-    return { success: true, processor };
+    return { success: true };
   }
 
   if (behaviour !== "auto") {
     console.warn(
-      "Unable to add InngestSpanProcessor to existing OTel provider. " +
+      `Unable to add ${processorName} to existing OTel provider. ` +
         "The provider does not support addSpanProcessor() (OTel SDK v1) " +
         "or expose _activeSpanProcessor._spanProcessors (OTel SDK v2).",
     );

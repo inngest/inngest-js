@@ -7,6 +7,7 @@ export const fn1 = inngest.createFunction(
     id: "fn-1",
     retries: 0,
     triggers: { event: "event-1" },
+    checkpointing: false,
   },
   async ({ event, step }) => {
     // step.run makes the call durable + memoized on retries. The AI SDK emits

@@ -219,10 +219,15 @@ export class InngestExecution {
   constructor(protected options: InngestExecutionOptions) {
     this.devDebug = Debug(`${debugPrefix}:${this.options.runId}`);
   }
+
+  get headers(): Record<string, string> {
+    return this.options.headers;
+  }
 }
 
 export interface IInngestExecution {
   version: ExecutionVersion;
+  headers?: Record<string, string>;
   start(): Promise<ExecutionResult>;
 
   addMetadata(
