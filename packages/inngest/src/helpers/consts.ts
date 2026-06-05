@@ -181,6 +181,7 @@ export enum headerKeys {
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
   RequestId = "x-request-id",
+  GenerationId = "x-generation-id",
   InngestJobId = "x-inngest-job-id",
   RequestVersion = "x-inngest-req-version",
   RetryAfter = "retry-after",
