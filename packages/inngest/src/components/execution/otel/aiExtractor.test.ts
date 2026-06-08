@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
-import { extractAIMetadataFromAttributes } from "./aiExtractor.ts";
+import type { AIMetadata } from "./aiExtractor.ts";
+import { aggregate, extractAIMetadataFromAttributes } from "./aiExtractor.ts";
 
 /**
  * These fixtures are real OTLP/JSON spans captured from instrumented OpenAI SDK
@@ -186,5 +187,35 @@ describe("extractAIMetadataFromAttributes", () => {
       "gen_ai.usage.input_tokens": 22,
     });
     expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
+  });
+});
+
+describe("aggregate", () => {
+  test("sums input tokens and keeps the first model", () => {
+    const a: AIMetadata = { model: "gpt-4.1-nano", inputTokens: 10 };
+    const b: AIMetadata = { model: "gpt-4o", inputTokens: 22 };
+    expect(aggregate(a, b)).toEqual({ model: "gpt-4.1-nano", inputTokens: 32 });
+  });
+
+  test("falls back to the second model when the first is absent", () => {
+    expect(
+      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 }),
+    ).toEqual({ model: "gpt-4o", inputTokens: 8 });
+  });
+
+  test("treats a missing input token count as zero", () => {
+    expect(aggregate({ model: "a", inputTokens: 7 }, { model: "b" })).toEqual({
+      model: "a",
+      inputTokens: 7,
+    });
+    expect(aggregate({ model: "a" }, { model: "b", inputTokens: 4 })).toEqual({
+      model: "a",
+      inputTokens: 4,
+    });
+  });
+
+  test("omits fields absent from both inputs", () => {
+    expect(aggregate({}, {})).toEqual({});
+    expect(aggregate({ model: "a" }, {})).toEqual({ model: "a" });
   });
 });

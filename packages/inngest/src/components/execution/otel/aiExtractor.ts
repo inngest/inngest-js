@@ -118,3 +118,27 @@ export const extractAIMetadataFromAttributes = (
 
   return metadata;
 };
+
+/**
+ * Aggregates two {@link AIMetadata} values into one.
+ *
+ * Input token counts are summed, while `a`'s model takes precedence over `b`'s.
+ * Each field is only present in the result when at least one input supplies it.
+ *
+ * @param a - The primary metadata; its `model` wins when both are present.
+ * @param b - The secondary metadata.
+ */
+export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
+  const metadata: AIMetadata = {};
+
+  const model = a.model ?? b.model;
+  if (model !== undefined) {
+    metadata.model = model;
+  }
+
+  if (a.inputTokens !== undefined || b.inputTokens !== undefined) {
+    metadata.inputTokens = (a.inputTokens ?? 0) + (b.inputTokens ?? 0);
+  }
+
+  return metadata;
+};
