@@ -1,87 +1,6 @@
 import { DEV_SERVER_URL, waitFor } from "@inngest/test-harness";
 import { trace } from "@opentelemetry/api";
 import { z } from "zod/v3";
-import {
-  aiMetadataKeys,
-  aiMetadataKind,
-} from "../../../components/execution/otel/metadataProcessor/metadata.ts";
-
-const openAIInputTokens = 18;
-const openAIOutputTokens = 39;
-const openAIRequestModel = "gpt-5.4-nano";
-const openAIResponseModel = "gpt-5.4-nano-2026-03-17";
-
-export const openAIStepName = "lib-openai";
-export const openAIStepMetadata = {
-  kind: aiMetadataKind,
-  scope: "step",
-  values: {
-    [aiMetadataKeys.inputTokens]: openAIInputTokens,
-    [aiMetadataKeys.model]: openAIResponseModel,
-    [aiMetadataKeys.outputTokens]: openAIOutputTokens,
-  },
-};
-
-const traceMetadataSchema = z.object({
-  kind: z.string(),
-  scope: z.string(),
-  updatedAt: z.string().nullable().optional(),
-  values: z.record(z.unknown()),
-});
-
-export type RunTraceSpan = {
-  childrenSpans: RunTraceSpan[];
-  metadata: z.infer<typeof traceMetadataSchema>[];
-  name: string;
-};
-
-const runTraceSpanSchema: z.ZodType<RunTraceSpan> = z.lazy(() =>
-  z.object({
-    childrenSpans: z.array(runTraceSpanSchema).default([]),
-    metadata: z.array(traceMetadataSchema),
-    name: z.string(),
-  }),
-);
-
-const runTraceResponseSchema = z.object({
-  data: z.object({
-    run: z
-      .object({
-        trace: runTraceSpanSchema.nullable(),
-      })
-      .nullable(),
-  }),
-});
-
-const getRunQuery = `query GetRun($runID: String!, $preview: Boolean) {
-  run(runID: $runID) {
-    trace(preview: $preview) {
-      ...TraceDetails
-      childrenSpans {
-        ...TraceDetails
-        childrenSpans {
-          ...TraceDetails
-          childrenSpans {
-            ...TraceDetails
-            childrenSpans {
-              ...TraceDetails
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-fragment TraceDetails on RunTraceSpan {
-  name
-  metadata {
-    scope
-    kind
-    values
-    updatedAt
-  }
-}`;
 
 export async function waitForOtelProvider(): Promise<void> {
   await waitFor(() => {
@@ -96,47 +15,18 @@ export async function waitForOtelProvider(): Promise<void> {
   });
 }
 
-export async function waitForRunTrace(runId: string): Promise<RunTraceSpan> {
-  return waitFor(async () => {
-    const runTrace = await fetchRunTrace(runId);
-    if (!runTrace) {
-      throw new Error("Run trace not found");
-    }
-
-    return runTrace;
-  });
-}
-
-export function findSpanByName(
-  span: RunTraceSpan,
-  name: string,
-): RunTraceSpan | undefined {
-  if (span.name === name) {
-    return span;
-  }
-
-  for (const child of span.childrenSpans) {
-    const found = findSpanByName(child, name);
-    if (found) {
-      return found;
-    }
-  }
-
-  return undefined;
-}
-
-export function recordOpenAISpan(): string {
+export function simulateOpenAICall(): string {
   const tracer = trace.getTracer("@opentelemetry/instrumentation-openai");
   return tracer.startActiveSpan(
-    `chat ${openAIRequestModel}`,
+    "open-ai-span",
     {
       attributes: {
         "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": openAIRequestModel,
-        "gen_ai.response.model": openAIResponseModel,
+        "gen_ai.request.model": "gpt-5.4-nano",
+        "gen_ai.response.model": "gpt-5.4-nano-2026-03-17",
         "gen_ai.system": "openai",
-        "gen_ai.usage.input_tokens": openAIInputTokens,
-        "gen_ai.usage.output_tokens": openAIOutputTokens,
+        "gen_ai.usage.input_tokens": 18,
+        "gen_ai.usage.output_tokens": 39,
       },
     },
     (span) => {
@@ -146,11 +36,64 @@ export function recordOpenAISpan(): string {
   );
 }
 
-async function fetchRunTrace(runId: string): Promise<RunTraceSpan | null> {
+const fetchStepsQuery = `
+  query Query($runID: String!, $preview: Boolean) {
+    run(runID: $runID) {
+      trace(preview: $preview) {
+        childrenSpans {
+          childrenSpans {
+            isUserland
+            name
+          }
+          metadata {
+            scope
+            kind
+            values
+          }
+          name
+        }
+      }
+    }
+  }`;
+
+const fetchStepsResponseSchema = z.object({
+  data: z.object({
+    run: z
+      .object({
+        trace: z.object({
+          // Steps
+          childrenSpans: z.array(
+            z.object({
+              // Extended traces
+              childrenSpans: z.array(
+                z.object({
+                  isUserland: z.boolean(),
+                  name: z.string(),
+                }),
+              ),
+
+              metadata: z.array(
+                z.object({
+                  kind: z.string(),
+                  scope: z.string(),
+                  updatedAt: z.string().nullable().optional(),
+                  values: z.record(z.unknown()),
+                }),
+              ),
+              name: z.string(),
+            }),
+          ),
+        }),
+      })
+      .nullable(),
+  }),
+});
+
+async function fetchSteps(runId: string) {
   const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
     body: JSON.stringify({
-      operationName: "GetRun",
-      query: getRunQuery,
+      operationName: "Query",
+      query: fetchStepsQuery,
       variables: { preview: true, runID: runId },
     }),
     headers: { "Content-Type": "application/json" },
@@ -161,11 +104,22 @@ async function fetchRunTrace(runId: string): Promise<RunTraceSpan | null> {
     throw new Error(await res.text());
   }
 
-  const parsed = runTraceResponseSchema.parse(await res.json());
+  const parsed = fetchStepsResponseSchema.parse(await res.json());
   const run = parsed.data.run;
   if (!run) {
     return null;
   }
 
-  return run.trace;
+  return run.trace.childrenSpans;
+}
+
+export async function waitForSteps(runId: string) {
+  return waitFor(async () => {
+    const runTrace = await fetchSteps(runId);
+    if (!runTrace) {
+      throw new Error("Run trace not found");
+    }
+
+    return runTrace;
+  });
 }
