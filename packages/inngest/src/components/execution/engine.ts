@@ -301,12 +301,15 @@ class InngestExecutionEngine
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
               this.rootSpanId = span.spanContext().spanId;
-              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
-                span,
-                runId: this.options.runId,
-                traceparent: this.options.headers[headerKeys.TraceParent],
-                tracestate: this.options.headers[headerKeys.TraceState],
-              });
+              for (const p of clientProcessorMap.get(this.options.client) ??
+                []) {
+                p.declareStartingSpan({
+                  span,
+                  runId: this.options.runId,
+                  traceparent: this.options.headers[headerKeys.TraceParent],
+                  tracestate: this.options.headers[headerKeys.TraceState],
+                });
+              }
 
               return this._start()
                 .then((result) => {
@@ -1651,15 +1654,26 @@ class InngestExecutionEngine
     this.devDebug(`executing step "${id}"`);
 
     if (this.rootSpanId && this.options.checkpointingConfig) {
-      clientProcessorMap
-        .get(this.options.client)
-        ?.declareStepExecution(
+      for (const p of clientProcessorMap.get(this.options.client) ?? []) {
+        p.declareStepExecution?.(
           this.rootSpanId,
           userland.id ?? "",
           userland.index ?? 0,
           hashedId,
           this.options.data?.attempt ?? 0,
         );
+      }
+    }
+
+    // Open a step window so the span processors can accumulate per-step data
+    // from userland spans ending during this step. Unconditional (both
+    // checkpointing and classic modes); steps never execute concurrently
+    // within one request, so the root span ID alone identifies the window —
+    // we supply step identity at drain time below.
+    if (this.rootSpanId) {
+      for (const p of clientProcessorMap.get(this.options.client) ?? []) {
+        p.openStepWindow?.(this.rootSpanId);
+      }
     }
 
     let interval: GoInterval | undefined;
@@ -1694,9 +1708,26 @@ class InngestExecutionEngine
         this.state.executingStep = undefined;
 
         if (this.rootSpanId && this.options.checkpointingConfig) {
-          clientProcessorMap
-            .get(this.options.client)
-            ?.clearStepExecution(this.rootSpanId);
+          for (const p of clientProcessorMap.get(this.options.client) ?? []) {
+            p.clearStepExecution?.(this.rootSpanId);
+          }
+        }
+
+        // Drain this step's window across all processors and attach the merged
+        // values to the step's op as metadata. This runs before the `.then()`
+        // below reads `state.metadata`, so the values ride the outgoing op.
+        if (this.rootSpanId) {
+          let merged: Record<string, unknown> | undefined;
+          for (const p of clientProcessorMap.get(this.options.client) ?? []) {
+            const values = p.closeStepWindow?.(this.rootSpanId);
+            if (values) {
+              merged = { ...merged, ...values };
+            }
+          }
+
+          if (merged) {
+            this.addMetadata(id, "userland.spanCount", "step", "merge", merged);
+          }
         }
 
         if (store?.execution) {
