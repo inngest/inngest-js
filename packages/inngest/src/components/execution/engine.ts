@@ -2359,6 +2359,7 @@ class InngestExecutionEngine
 
     const stepHandler: StepHandler = async ({
       args,
+      defer,
       matchOp,
       opts,
     }): Promise<unknown> => {
@@ -2390,6 +2391,16 @@ class InngestExecutionEngine
           // duplicate) is detected and warned about above.
           this.state.lazyOps.markSeen(hashedId);
           return;
+        }
+        if (defer) {
+          const prepared = await this.middlewareManager.applyToDefer({
+            deferFn: defer.fn,
+            data: defer.data,
+          });
+          if (!prepared) {
+            return;
+          }
+          opId.opts = { ...opId.opts, input: prepared.data };
         }
         this.state.lazyOps.push({
           id: hashedId,
@@ -2684,7 +2695,7 @@ class InngestExecutionEngine
         const { schema } = deferFn;
         const deferFnSlug = deferFn.id(this.options.client.id);
 
-        let input: unknown = data;
+        let input: Record<string, unknown> = data;
         if (schema) {
           const result = schema["~standard"].validate(data);
           if (result instanceof Promise) {
@@ -2713,6 +2724,7 @@ class InngestExecutionEngine
 
         void stepHandler({
           args: [idOrOptions, finalInput],
+          defer: { fn: deferFn, data: finalInput },
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,
             mode: StepMode.Sync,
