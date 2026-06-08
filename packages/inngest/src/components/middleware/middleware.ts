@@ -7,6 +7,7 @@ import type {
   SendEventBaseOutput,
   StepOptions,
 } from "../../types.ts";
+import type { DeferredFunction } from "../DeferredFunction.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import type { createStepTools } from "../InngestStepTools.ts";
@@ -52,6 +53,17 @@ export namespace Middleware {
   export type TransformSendEventArgs = {
     events: EventPayload<Record<string, unknown>>[];
     readonly fn: DeepReadonly<InngestFunction.Any> | null;
+  };
+
+  /**
+   * The argument passed to `transformDeferInput`.
+   */
+  export type TransformDeferInputArgs = {
+    readonly fn: DeepReadonly<InngestFunction.Any>;
+    defers: Array<{
+      readonly deferFn: DeepReadonly<DeferredFunction.Any>;
+      data: Record<string, unknown>;
+    }>;
   };
 
   /**
@@ -448,6 +460,19 @@ export namespace Middleware {
     transformSendEvent?(
       arg: Middleware.TransformSendEventArgs,
     ): MaybePromise<Middleware.TransformSendEventArgs>;
+
+    /**
+     * Called when sending deferred functions.
+     * Return the (potentially modified) arg object.
+     *
+     * Use cases:
+     * - Serialize or encrypt defer data before sending it to the Inngest Server.
+     *
+     * Do not mutate arguments.
+     */
+    transformDeferInput?(
+      arg: Middleware.TransformDeferInputArgs,
+    ): MaybePromise<Middleware.TransformDeferInputArgs>;
 
     /**
      * Called 1 time per step per request (likely multiple times per step).
