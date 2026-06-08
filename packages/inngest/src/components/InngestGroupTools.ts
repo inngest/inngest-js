@@ -353,7 +353,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
               "step",
               "merge",
               {
-                'sdk.group.experiment.nullishBucket':
+                "sdk.group.experiment.nullishBucket":
                   "experiment.bucket() received a null/undefined value; " +
                   'hashing empty string "" for variant selection',
               },
