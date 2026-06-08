@@ -515,6 +515,100 @@ describe("encryptionMiddleware", () => {
     });
   });
 
+  describe("transformDeferInput", () => {
+    const createMiddleware = (opts?: { decryptOnly?: boolean }) => {
+      const MWClass = encryptionMiddleware({ key, ...opts });
+      return new MWClass({ client: fromPartial({}) });
+    };
+
+    test("encrypts the encrypted field of deferred-function input", async () => {
+      const mw = createMiddleware();
+      const result = await mw.transformDeferInput!({
+        fn: fromPartial({}),
+        defers: [
+          {
+            deferFn: fromPartial({}),
+            data: {
+              public_field: "visible",
+              [EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD]: {
+                secret: "data",
+              },
+            },
+          },
+        ],
+      });
+
+      const data = result.defers[0]!.data;
+      expect(data.public_field).toBe("visible");
+      await expectEncrypted(
+        data[EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD],
+        { secret: "data" },
+      );
+    });
+
+    test("skips encryption when decryptOnly is set", async () => {
+      const mw = createMiddleware({ decryptOnly: true });
+      const result = await mw.transformDeferInput!({
+        fn: fromPartial({}),
+        defers: [
+          {
+            deferFn: fromPartial({}),
+            data: {
+              [EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD]: {
+                secret: "data",
+              },
+            },
+          },
+        ],
+      });
+
+      expect(result.defers[0]!.data).toEqual({
+        [EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD]: { secret: "data" },
+      });
+    });
+
+    test("round-trip across the defer.data -> event.data handoff", async () => {
+      const mw = createMiddleware();
+
+      const deferResult = await mw.transformDeferInput!({
+        fn: fromPartial({}),
+        defers: [
+          {
+            deferFn: fromPartial({}),
+            data: {
+              public_field: "visible",
+              [EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD]: {
+                secret: "data",
+              },
+            },
+          },
+        ],
+      });
+
+      const inFlightData = deferResult.defers[0]!.data;
+      expect(inFlightData.public_field).toBe("visible");
+      await expectEncrypted(
+        inFlightData[EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD],
+        { secret: "data" },
+      );
+
+      const triggerEvent = { name: "test.event", data: inFlightData };
+      const inputResult = await mw.transformFunctionInput!({
+        ctx: fromPartial({
+          event: triggerEvent,
+          events: [triggerEvent],
+        }),
+        fn: fromPartial({}),
+        steps: {},
+      });
+
+      expect(inputResult.ctx.event.data).toEqual({
+        public_field: "visible",
+        [EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD]: { secret: "data" },
+      });
+    });
+  });
+
   describe("eventEncryptionField", () => {
     test("encrypts only the custom field when eventEncryptionField is set", async () => {
       const MWClass = encryptionMiddleware({

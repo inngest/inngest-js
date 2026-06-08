@@ -219,3 +219,68 @@ test("transformDeferInput composes in forward order", async () => {
   // Forward order: MW1 runs first (1 * 10 = 10), then MW2 (10 + 5 = 15)
   expect(deferState.value).toBe(15);
 });
+
+test("transformDeferInput output round-trips through transformFunctionInput", async () => {
+  const deferState = createState({ value: 0, encoded: "" });
+
+  const encode = (n: number) => Buffer.from(String(n)).toString("base64");
+  const decode = (s: string) =>
+    Number(Buffer.from(s, "base64").toString("utf-8"));
+
+  class MW extends Middleware.BaseMiddleware {
+    readonly id = "mw";
+    override transformDeferInput(
+      arg: Middleware.TransformDeferInputArgs,
+    ): Middleware.TransformDeferInputArgs {
+      return {
+        ...arg,
+        defers: arg.defers.map((d) => ({
+          ...d,
+          data: { encoded: encode(d.data.value as number) },
+        })),
+      };
+    }
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ): Middleware.TransformFunctionInputArgs {
+      const encoded = arg.ctx.event.data.encoded;
+      if (typeof encoded !== "string") return arg;
+      deferState.encoded = encoded;
+      return {
+        ...arg,
+        ctx: {
+          ...arg.ctx,
+          event: { ...arg.ctx.event, data: { value: decode(encoded) } },
+        },
+      };
+    }
+  }
+
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [MW],
+  });
+  const eventName = randomSuffix("evt");
+  const foo = createDefer(
+    client,
+    { id: "foo", schema: z.object({ value: z.number() }) },
+    async ({ event, runId }) => {
+      deferState.runId = runId;
+      deferState.value = event.data.value;
+    },
+  );
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: { event: eventName } },
+    async ({ defer }) => {
+      defer("foo", { function: foo, data: { value: 42 } });
+    },
+  );
+  await createTestApp({ client, functions: [fn, foo], serve: createServer });
+
+  await client.send({ name: eventName });
+  await deferState.waitForRunComplete();
+
+  expect(deferState.encoded).toBe(encode(42));
+  expect(deferState.value).toBe(42);
+});
