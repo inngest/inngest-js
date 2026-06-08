@@ -16,7 +16,7 @@ const createSpan = () =>
   }) as Span;
 
 describe("registerClientProcessor", () => {
-  test("always stores a registry that fans out lifecycle calls", () => {
+  test("stores lifecycle processors in a shared array", () => {
     const client = createClient();
     const processor1 = createProcessor();
     const processor2 = createProcessor();
@@ -28,21 +28,28 @@ describe("registerClientProcessor", () => {
     const secondRegisteredValue = clientProcessorMap.get(client);
 
     expect(secondRegisteredValue).toBe(firstRegisteredValue);
+    if (!secondRegisteredValue) {
+      throw new Error("Expected processors to be registered");
+    }
 
-    secondRegisteredValue?.declareStartingSpan({
-      runId: "run-1",
-      span: createSpan(),
-      traceparent: undefined,
-      tracestate: undefined,
-    });
-    secondRegisteredValue?.declareStepExecution(
-      "root-span",
-      "step-1",
-      0,
-      "hashed-step-1",
-      1,
-    );
-    secondRegisteredValue?.clearStepExecution("root-span");
+    expect(secondRegisteredValue).toEqual([processor1, processor2]);
+
+    for (const processor of secondRegisteredValue) {
+      processor.declareStartingSpan({
+        runId: "run-1",
+        span: createSpan(),
+        traceparent: undefined,
+        tracestate: undefined,
+      });
+      processor.declareStepExecution(
+        "root-span",
+        "step-1",
+        0,
+        "hashed-step-1",
+        1,
+      );
+      processor.clearStepExecution("root-span");
+    }
 
     expect(processor1.declareStartingSpan).toHaveBeenCalledTimes(1);
     expect(processor2.declareStartingSpan).toHaveBeenCalledTimes(1);

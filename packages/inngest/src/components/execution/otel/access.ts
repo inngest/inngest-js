@@ -26,38 +26,6 @@ export interface InngestTraceLifecycleProcessor {
   clearStepExecution(rootSpanId: string): void;
 }
 
-export class ClientProcessorRegistry implements InngestTraceLifecycleProcessor {
-  #processors = new Set<InngestTraceLifecycleProcessor>();
-
-  add(processor: InngestTraceLifecycleProcessor): void {
-    this.#processors.add(processor);
-  }
-
-  declareStartingSpan(
-    args: Parameters<InngestTraceLifecycleProcessor["declareStartingSpan"]>[0],
-  ): void {
-    for (const processor of this.#processors) {
-      processor.declareStartingSpan(args);
-    }
-  }
-
-  declareStepExecution(
-    ...args: Parameters<InngestTraceLifecycleProcessor["declareStepExecution"]>
-  ): void {
-    for (const processor of this.#processors) {
-      processor.declareStepExecution(...args);
-    }
-  }
-
-  clearStepExecution(
-    ...args: Parameters<InngestTraceLifecycleProcessor["clearStepExecution"]>
-  ): void {
-    for (const processor of this.#processors) {
-      processor.clearStepExecution(...args);
-    }
-  }
-}
-
 /**
  * A map of Inngest clients to their OTel span processors. This is used to
  * ensure that we only create one span processor per client, and that we can
@@ -66,18 +34,20 @@ export class ClientProcessorRegistry implements InngestTraceLifecycleProcessor {
  */
 export const clientProcessorMap = new WeakMap<
   Inngest.Any,
-  ClientProcessorRegistry
+  InngestTraceLifecycleProcessor[]
 >();
 
 export const registerClientProcessor = (
   client: Inngest.Any,
   processor: InngestTraceLifecycleProcessor,
 ): void => {
-  let registry = clientProcessorMap.get(client);
-  if (!registry) {
-    registry = new ClientProcessorRegistry();
-    clientProcessorMap.set(client, registry);
+  let processors = clientProcessorMap.get(client);
+  if (!processors) {
+    processors = [];
+    clientProcessorMap.set(client, processors);
   }
 
-  registry.add(processor);
+  if (!processors.includes(processor)) {
+    processors.push(processor);
+  }
 };

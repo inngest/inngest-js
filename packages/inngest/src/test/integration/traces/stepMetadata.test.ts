@@ -57,7 +57,7 @@ test("AI OTel attributes become step metadata", async () => {
   });
 });
 
-test.only("Extended Traces and OTel attribute extraction are compatible", async () => {
+test("Extended Traces and OTel attribute extraction are compatible", async () => {
   // When Extended Traces is enabled, OTel attribute extraction works exactly
   // the same and also the span appears.
 
