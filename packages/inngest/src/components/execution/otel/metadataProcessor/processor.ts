@@ -13,11 +13,11 @@ import {
   createProviderWithProcessor,
   extendProviderWithProcessor,
 } from "../util.ts";
+import { registerAIMetadataInstrumentations } from "./instrumentations.ts";
 import { extractAIMetadata } from "./libStrategies/index.ts";
+import { aiMetadataKind } from "./metadata.ts";
 
 const aiMetadataDebug = Debug(`${debugPrefix}:AIMetadataSpanProcessor`);
-
-const metadataKind = "inngest.ai" as const;
 
 type StepContext = {
   id: string;
@@ -46,6 +46,10 @@ export const registerAIMetadataSpanProcessor = (client: Inngest.Any): void => {
   const processor = new InngestAIMetadataSpanProcessor(client);
   processors.set(client, processor);
   registerClientProcessor(client, processor);
+
+  void registerAIMetadataInstrumentations().catch((err) => {
+    aiMetadataDebug("unable to register AI metadata instrumentations", err);
+  });
 
   const extended = extendProviderWithProcessor(processor, "auto");
   if (extended.success) {
@@ -220,7 +224,7 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
       canBatch &&
       execution?.instance.addMetadata(
         state.step.id,
-        metadataKind,
+        aiMetadataKind,
         "step",
         "merge",
         values,
@@ -241,7 +245,7 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
         sendMetadataViaAPI(
           this.client,
           target,
-          metadataKind,
+          aiMetadataKind,
           "merge",
           values,
           state.headers,

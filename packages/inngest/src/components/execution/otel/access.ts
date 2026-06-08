@@ -26,7 +26,7 @@ export interface InngestTraceLifecycleProcessor {
   clearStepExecution(rootSpanId: string): void;
 }
 
-class ClientProcessorRegistry implements InngestTraceLifecycleProcessor {
+export class ClientProcessorRegistry implements InngestTraceLifecycleProcessor {
   #processors = new Set<InngestTraceLifecycleProcessor>();
 
   add(processor: InngestTraceLifecycleProcessor): void {
@@ -66,25 +66,18 @@ class ClientProcessorRegistry implements InngestTraceLifecycleProcessor {
  */
 export const clientProcessorMap = new WeakMap<
   Inngest.Any,
-  InngestTraceLifecycleProcessor
+  ClientProcessorRegistry
 >();
 
 export const registerClientProcessor = (
   client: Inngest.Any,
   processor: InngestTraceLifecycleProcessor,
 ): void => {
-  const existing = clientProcessorMap.get(client);
-
-  if (existing instanceof ClientProcessorRegistry) {
-    existing.add(processor);
-    return;
+  let registry = clientProcessorMap.get(client);
+  if (!registry) {
+    registry = new ClientProcessorRegistry();
+    clientProcessorMap.set(client, registry);
   }
 
-  const registry = new ClientProcessorRegistry();
-  if (existing) {
-    registry.add(existing);
-  }
   registry.add(processor);
-
-  clientProcessorMap.set(client, registry);
 };

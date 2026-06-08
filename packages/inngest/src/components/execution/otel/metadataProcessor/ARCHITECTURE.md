@@ -25,6 +25,10 @@ traces.
 - Ignore infrastructure spans between checkpointed steps.
 - Support OTel v1 `addSpanProcessor()` and OTel v2 internal processor arrays.
 - Use `FinalizationRegistry` plus explicit cleanup to avoid stale span state.
+- Defer metadata-only provider creation behind in-flight Extended Traces provider
+  creation, so Extended Traces can register its instrumentations first.
+- Register AI-specific instrumentations here, not in Extended Traces, so
+  metadata behavior is the same with or without Extended Traces enabled.
 
 ## Metadata
 

@@ -6,12 +6,18 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { debugPrefix } from "./consts.ts";
+import { disableAIMetadataAutoInstrumentations } from "./metadataProcessor/instrumentations.ts";
 import { InngestSpanProcessor } from "./processor.ts";
 
 const debug = Debug(`${debugPrefix}:createProvider`);
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];
+type CreateProviderResult =
+  | { success: true; processor: InngestSpanProcessor }
+  | { success: false; error?: unknown };
+
+let activeProviderCreation: Promise<CreateProviderResult> | undefined;
 
 const getExistingProvider = () => {
   const globalProvider = trace.getTracerProvider();
@@ -19,19 +25,34 @@ const getExistingProvider = () => {
     return undefined;
   }
 
-  return "getDelegate" in globalProvider &&
+  if (
+    "getDelegate" in globalProvider &&
     typeof globalProvider.getDelegate === "function"
-    ? globalProvider.getDelegate()
-    : globalProvider;
+  ) {
+    return globalProvider.getDelegate();
+  }
+
+  return globalProvider;
 };
 
 export const createProvider = async (
-  _behaviour: Behaviour,
+  behaviour: Behaviour,
   instrumentations: Instrumentations | undefined = [],
-): Promise<
-  | { success: true; processor: InngestSpanProcessor }
-  | { success: false; error?: unknown }
-> => {
+): Promise<CreateProviderResult> => {
+  const creation = createProviderInternal(behaviour, instrumentations);
+  activeProviderCreation = creation;
+
+  return creation.finally(() => {
+    if (activeProviderCreation === creation) {
+      activeProviderCreation = undefined;
+    }
+  });
+};
+
+const createProviderInternal = async (
+  _behaviour: Behaviour,
+  instrumentations: Instrumentations | undefined,
+): Promise<CreateProviderResult> => {
   try {
     // TODO Check if there's an existing provider
     const processor = new InngestSpanProcessor();
@@ -47,17 +68,18 @@ export const createProvider = async (
     const { registerInstrumentations } = await import(
       "@opentelemetry/instrumentation"
     );
-    const { AnthropicInstrumentation } = await import(
-      "@traceloop/instrumentation-anthropic"
-    );
     const { AsyncHooksContextManager } = await import(
       "@opentelemetry/context-async-hooks"
     );
 
+    let additionalInstrumentations: Instrumentations = [];
+    if (instrumentations) {
+      additionalInstrumentations = instrumentations;
+    }
+
     const instrList: Instrumentations = [
-      ...instrumentations,
-      ...getNodeAutoInstrumentations(),
-      new AnthropicInstrumentation(),
+      ...additionalInstrumentations,
+      ...getNodeAutoInstrumentations(disableAIMetadataAutoInstrumentations),
     ];
 
     registerInstrumentations({
@@ -103,6 +125,16 @@ export const createProviderWithProcessor = async (
       return { success: true };
     }
 
+    if (await waitForActiveProviderCreation()) {
+      const extendedAfterProviderCreation = extendProviderWithProcessor(
+        processor,
+        "auto",
+      );
+      if (extendedAfterProviderCreation.success) {
+        return { success: true };
+      }
+    }
+
     const { AsyncHooksContextManager } = await import(
       "@opentelemetry/context-async-hooks"
     );
@@ -135,6 +167,20 @@ export const createProviderWithProcessor = async (
     debug("failed to create provider:", err);
     return { success: false, error: err };
   }
+};
+
+const waitForActiveProviderCreation = async (): Promise<boolean> => {
+  await new Promise<void>((resolve) => {
+    queueMicrotask(resolve);
+  });
+
+  const creation = activeProviderCreation;
+  if (!creation) {
+    return false;
+  }
+
+  await creation.catch(() => undefined);
+  return true;
 };
 
 /**
@@ -222,7 +268,11 @@ function getInternalSpanProcessors(provider: unknown): unknown[] | undefined {
     if (typeof active !== "object" || active === null) return undefined;
 
     const arr = (active as Record<string, unknown>)._spanProcessors;
-    return Array.isArray(arr) ? arr : undefined;
+    if (!Array.isArray(arr)) {
+      return undefined;
+    }
+
+    return arr;
   } catch {
     return undefined;
   }

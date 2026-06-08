@@ -1,3 +1,5 @@
+export const aiMetadataKind = "inngest.ai";
+
 export const aiMetadataKeys = {
   inputTokens: "input-tokens",
   model: "model",

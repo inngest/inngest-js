@@ -1,8 +1,10 @@
 import type { Span } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { Inngest } from "../../../Inngest.ts";
+import { group, step } from "../../../InngestStepTools.ts";
 import { type AsyncContext, getAsyncLocalStorage } from "../../als.ts";
-import { aiMetadataKeys } from "./metadata.ts";
+import { ExecutionVersion } from "../../InngestExecution.ts";
+import { aiMetadataKeys, aiMetadataKind } from "./metadata.ts";
 import { InngestAIMetadataSpanProcessor } from "./processor.ts";
 
 const createSpan = ({
@@ -65,17 +67,31 @@ const runWithExecutionContext = async (
   fn: () => void,
 ) => {
   const als = await getAsyncLocalStorage();
-  als.run(
-    {
-      app: client,
-      execution: {
-        ctx: { attempt, runId },
-        executingStep: { id: stepId },
-        instance: { addMetadata, headers },
+  const event = { data: {}, name: "test" };
+  const executionContext: AsyncContext = {
+    app: client,
+    execution: {
+      ctx: {
+        attempt,
+        defer: () => undefined,
+        event,
+        events: [event],
+        group,
+        runId,
+        step,
       },
-    } as AsyncContext,
-    fn,
-  );
+      executingStep: { id: stepId },
+      instance: {
+        addMetadata,
+        headers,
+        start: async () => {
+          throw new Error("not implemented");
+        },
+        version: ExecutionVersion.V2,
+      },
+    },
+  };
+  als.run(executionContext, fn);
 };
 
 describe("InngestAIMetadataSpanProcessor", () => {
@@ -112,7 +128,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
 
     expect(addMetadata).toHaveBeenCalledWith(
       "step-1",
-      "inngest.ai",
+      aiMetadataKind,
       "step",
       "merge",
       {
@@ -156,7 +172,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
 
     expect(addMetadata).toHaveBeenCalledWith(
       "step-1",
-      "inngest.ai",
+      aiMetadataKind,
       "step",
       "merge",
       {
@@ -206,7 +222,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
         headers: { "x-inngest-env": "branch" },
         metadata: [
           {
-            kind: "inngest.ai",
+            kind: aiMetadataKind,
             op: "merge",
             values: {
               [aiMetadataKeys.inputTokens]: 10,
@@ -296,7 +312,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
     expect(addMetadata).toHaveBeenCalledTimes(1);
     expect(addMetadata).toHaveBeenCalledWith(
       "step-1",
-      "inngest.ai",
+      aiMetadataKind,
       "step",
       "merge",
       {
@@ -339,7 +355,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
     expect(addMetadata).toHaveBeenNthCalledWith(
       1,
       "step-1",
-      "inngest.ai",
+      aiMetadataKind,
       "step",
       "merge",
       { [aiMetadataKeys.inputTokens]: 5 },
@@ -347,7 +363,7 @@ describe("InngestAIMetadataSpanProcessor", () => {
     expect(addMetadata).toHaveBeenNthCalledWith(
       2,
       "step-1",
-      "inngest.ai",
+      aiMetadataKind,
       "step",
       "merge",
       { [aiMetadataKeys.inputTokens]: 8 },
