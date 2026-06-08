@@ -2,7 +2,7 @@ import { context, trace } from "@opentelemetry/api";
 import type { Instrumentation } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import { getInternalSpanProcessors } from "./attach.ts";
+import { attachToGlobalProvider } from "./attach.ts";
 import { debugPrefix } from "./consts.ts";
 import { InngestSpanProcessor } from "./processor.ts";
 
@@ -71,62 +71,17 @@ export const createProvider = async (
 export const extendProvider = (
   behaviour: Behaviour,
 ): { success: true; processor: InngestSpanProcessor } | { success: false } => {
-  // Attempt to add our processor and export to the existing provider
-  const globalProvider = trace.getTracerProvider();
-  if (!globalProvider) {
-    if (behaviour !== "auto") {
-      console.warn(
-        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
-      );
-    }
-
-    return { success: false };
-  }
-
-  // trace.getTracerProvider() returns a ProxyTracerProvider wrapper
-  // Unwrap it to get the actual provider.
-  const existingProvider =
-    "getDelegate" in globalProvider &&
-    typeof globalProvider.getDelegate === "function"
-      ? globalProvider.getDelegate()
-      : globalProvider;
-
-  if (!existingProvider) {
-    if (behaviour !== "auto") {
-      console.warn(
-        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
-      );
-    }
-
-    return { success: false };
-  }
-
   const processor = new InngestSpanProcessor();
 
-  // OTel SDK v1 exposes addSpanProcessor() on BasicTracerProvider.
-  if (
-    "addSpanProcessor" in existingProvider &&
-    typeof existingProvider.addSpanProcessor === "function"
-  ) {
-    existingProvider.addSpanProcessor(processor);
-    return { success: true, processor };
-  }
-
-  // OTel SDK v2 removed addSpanProcessor() — span processors are constructor-only.
-  // No public API exists to add processors post-construction (OTel issue #5299),
-  // so push into the internal _spanProcessors array.
-  // These fields are TypeScript `private` (not #private), so accessible at runtime.
-  const spanProcessors = getInternalSpanProcessors(existingProvider);
-  if (spanProcessors) {
-    spanProcessors.push(processor);
+  if (attachToGlobalProvider(processor)) {
     return { success: true, processor };
   }
 
   if (behaviour !== "auto") {
     console.warn(
       "Unable to add InngestSpanProcessor to existing OTel provider. " +
-        "The provider does not support addSpanProcessor() (OTel SDK v1) " +
-        "or expose _activeSpanProcessor._spanProcessors (OTel SDK v2).",
+        "Either no provider is registered, it is not a BasicTracerProvider, or it does not support addSpanProcessor() (OTel SDK v1) or expose _activeSpanProcessor._spanProcessors (OTel SDK v2). " +
+        'Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
     );
   }
 
