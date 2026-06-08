@@ -478,6 +478,7 @@ class InngestExecutionEngine
             fnId: internalFnId,
             queueItemId,
             requestId: this.options.requestId,
+            generationId: this.options.generationId,
             requestStartedAt: this.options.requestStartedAt,
             steps,
           }),

@@ -2252,6 +2252,17 @@ export class InngestCommHandler<
         "getting request ID for execution",
         headerKeys.RequestId,
       );
+
+      const rawGenerationId = await actions.headers(
+        "getting generation ID for execution",
+        headerKeys.GenerationId,
+      );
+      const parsedGenerationId = Number(rawGenerationId);
+      const generationId =
+        rawGenerationId && Number.isInteger(parsedGenerationId)
+          ? parsedGenerationId
+          : undefined;
+
       const jobId = await actions.headers(
         "getting job ID for execution",
         headerKeys.InngestJobId,
@@ -2306,6 +2317,7 @@ export class InngestCommHandler<
 
           queueItemId: ctx?.qi_id,
           requestId: requestId ?? undefined,
+          generationId: generationId ?? undefined,
           requestStartedAt,
           stepState,
           priorDefers: defers,

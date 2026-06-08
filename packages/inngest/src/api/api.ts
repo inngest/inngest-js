@@ -553,6 +553,7 @@ export class InngestApi {
     runId: string;
     fnId: string;
     queueItemId: string;
+    generationId: number | undefined;
     requestId: string | undefined;
     requestStartedAt: number | undefined;
     steps: OutgoingOp[];
@@ -561,10 +562,9 @@ export class InngestApi {
       run_id: args.runId,
       fn_id: args.fnId,
       qi_id: args.queueItemId,
-      ...(args.requestId ? { request_id: args.requestId } : {}),
-      ...(args.requestStartedAt
-        ? { request_started_at: args.requestStartedAt }
-        : {}),
+      request_id: args.requestId,
+      generation_id: args.generationId,
+      request_started_at: args.requestStartedAt,
       steps: args.steps,
       ts: new Date().valueOf(),
     });

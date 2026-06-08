@@ -143,6 +143,11 @@ export interface InngestExecutionOptions {
   requestId?: string;
 
   /**
+   * Incrementing ID used to denote the generation in which this job was queued
+   */
+  generationId?: number;
+
+  /**
    * Time the SDK starts handling an execution request. Format is unix millis.
    */
   requestStartedAt?: number;
