@@ -932,7 +932,8 @@ describe("group.experiment() metadata", () => {
       "step",
       "merge",
       expect.objectContaining({
-        "sdk.group.experiment.nullishBucket": expect.stringContaining("null/undefined"),
+        "sdk.group.experiment.nullishBucket":
+          expect.stringContaining("null/undefined"),
       }),
     );
   });
