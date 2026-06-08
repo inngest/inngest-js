@@ -51,6 +51,9 @@ import {
   sendEventResponseSchema,
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
+import { registerClientProcessor } from "./execution/otel/access.ts";
+import { attachToGlobalProvider } from "./execution/otel/attach.ts";
+import { InngestMetadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -1057,6 +1060,52 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
  */
 export function builtInMiddleware(baseLogger: Logger) {
   return [
+    /**
+     * A built-in, default-on middleware that attaches a passive, read-only span
+     * processor to the host's existing OTel provider. It is independent of the
+     * opt-in Extended Traces middleware and never creates a provider or imports
+     * instrumentation, so it cannot interfere with host OTel.
+     *
+     * PROTOTYPE: the processor currently just logs every span it observes; the
+     * full feature will accumulate per-step span data into step metadata.
+     */
+    class SpanMetadataMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "inngest:span-metadata";
+
+      static override onRegister({ client }: Middleware.OnRegisterArgs) {
+        // Opt-out (default on). Threading a typed client option is a follow-up;
+        // for now the kill switch is the env var.
+        if (
+          parseAsBoolean(getProcessEnv()[envKeys.InngestDisableSpanMetadata])
+        ) {
+          return;
+        }
+
+        const processor = new InngestMetadataSpanProcessor(baseLogger);
+
+        // Register so the engine drives `declareStartingSpan` (and future
+        // step-window hooks) on this processor, independently of Extended
+        // Traces.
+        registerClientProcessor(client, processor);
+
+        // Extend-only: attaches to a provider the host (or Extended Traces)
+        // already registered, so the processor receives span lifecycle events.
+        // If none exists, this is a silent no-op.
+        //
+        // Attaches at client-construction time, which is sufficient when the
+        // provider is set up first (e.g. a `--require` OTel bootstrap). A lazy,
+        // idempotent attach at first run — to also catch providers created
+        // after construction — is a follow-up.
+        const attached = attachToGlobalProvider(processor);
+
+        baseLogger.info(
+          { attached },
+          attached
+            ? "[span-metadata] attached metadata span processor to existing OTel provider"
+            : "[span-metadata] no OTel provider found; metadata span processor not attached",
+        );
+      }
+    },
     class LoggerMiddleware extends Middleware.BaseMiddleware {
       readonly id = "inngest:logger";
       proxyLogger = new ProxyLogger(baseLogger);

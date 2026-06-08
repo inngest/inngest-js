@@ -37,6 +37,7 @@ export enum envKeys {
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
+  InngestDisableSpanMetadata = "INNGEST_DISABLE_SPAN_METADATA",
   InngestEnableUnauthedSync = "INNGEST_ENABLE_UNAUTHED_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
