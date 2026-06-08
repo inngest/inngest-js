@@ -27,10 +27,9 @@ export interface InngestTraceLifecycleProcessor {
 }
 
 /**
- * A map of Inngest clients to their OTel span processors. This is used to
- * ensure that we only create one span processor per client, and that we can
- * access the span processor from the client without exposing the OTel
- * libraries to the user.
+ * A map of Inngest clients to their trace lifecycle processors. This lets the
+ * execution engine notify OTel-backed features without importing OTel-heavy
+ * processor implementations.
  */
 export const clientProcessorMap = new WeakMap<
   Inngest.Any,

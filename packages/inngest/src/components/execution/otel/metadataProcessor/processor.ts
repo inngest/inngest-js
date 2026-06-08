@@ -36,15 +36,8 @@ type SpanIdProvider = {
   spanContext(): { spanId: string };
 };
 
-const processors = new WeakMap<Inngest.Any, InngestAIMetadataSpanProcessor>();
-
 export const registerAIMetadataSpanProcessor = (client: Inngest.Any): void => {
-  if (processors.has(client)) {
-    return;
-  }
-
   const processor = new InngestAIMetadataSpanProcessor(client);
-  processors.set(client, processor);
   registerClientProcessor(client, processor);
 
   void registerAIMetadataInstrumentations().catch((err) => {
@@ -66,7 +59,6 @@ export const registerAIMetadataSpanProcessor = (client: Inngest.Any): void => {
 export class InngestAIMetadataSpanProcessor implements SpanProcessor {
   constructor(private client: Inngest.Any) {}
 
-  #spansToProcess = new Set<string>();
   #spanStates = new Map<string, SpanState>();
   #spanCleanup = new FinalizationRegistry<string>((spanId) => {
     if (spanId) {
@@ -138,10 +130,6 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
     const spanId = span.spanContext().spanId;
 
     try {
-      if (!this.#spansToProcess.has(spanId)) {
-        return;
-      }
-
       const state = this.#spanStates.get(spanId);
       const step = state?.step;
       if (!state || !step) {
@@ -176,7 +164,6 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
     }
 
     this.#spanCleanup.register(span, spanId, span);
-    this.#spansToProcess.add(spanId);
     this.#spanStates.set(spanId, state);
   }
 
@@ -184,7 +171,6 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
     const spanId = span.spanContext().spanId;
 
     this.#spanCleanup.unregister(span);
-    this.#spansToProcess.delete(spanId);
     this.#spanStates.delete(spanId);
   }
 

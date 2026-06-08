@@ -11,7 +11,7 @@ import { createServer } from "../../../node.ts";
 import {
   simulateOpenAICall,
   waitForOtelProvider,
-  waitForSteps,
+  waitForTraceSteps,
 } from "./util.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -42,10 +42,9 @@ test("AI OTel attributes become step metadata", async () => {
   await client.send({ name: eventName });
   await state.waitForRunComplete();
 
-  const steps = await waitForSteps(await state.waitForRunId());
+  const steps = await waitForTraceSteps(await state.waitForRunId());
   const step = steps.find((step) => step.name === "my-step");
 
-  // AI metadata exists
   expect(step?.metadata).toContainEqual({
     kind: "inngest.ai",
     scope: "step",
@@ -88,10 +87,10 @@ test("Extended Traces and OTel attribute extraction are compatible", async () =>
   await state.waitForRunComplete();
 
   const runId = await state.waitForRunId();
-  const steps = await waitForSteps(runId);
+  const steps = await waitForTraceSteps(runId);
   const step = steps.find((step) => step.name === "my-step");
 
-  // Extended Trace exists
+  // Extended Traces userland spans appear as child spans under the step.
   expect(step?.childrenSpans).toEqual([
     {
       isUserland: true,
@@ -99,7 +98,6 @@ test("Extended Traces and OTel attribute extraction are compatible", async () =>
     },
   ]);
 
-  // AI metadata exists
   expect(step?.metadata).toContainEqual({
     kind: "inngest.ai",
     scope: "step",

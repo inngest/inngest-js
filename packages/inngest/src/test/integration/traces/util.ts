@@ -36,7 +36,7 @@ export function simulateOpenAICall(): string {
   );
 }
 
-const fetchStepsQuery = `
+const fetchTraceStepsQuery = `
   query Query($runID: String!, $preview: Boolean) {
     run(runID: $runID) {
       trace(preview: $preview) {
@@ -56,44 +56,44 @@ const fetchStepsQuery = `
     }
   }`;
 
-const fetchStepsResponseSchema = z.object({
+const metadataSchema = z.object({
+  kind: z.string(),
+  scope: z.string(),
+  values: z.record(z.unknown()),
+});
+
+const userlandSpanSchema = z.object({
+  isUserland: z.boolean(),
+  name: z.string(),
+});
+
+export type UserlandSpan = z.infer<typeof userlandSpanSchema>;
+
+const traceStepSchema = z.object({
+  childrenSpans: z.array(userlandSpanSchema),
+  metadata: z.array(metadataSchema),
+  name: z.string(),
+});
+
+export type TraceStep = z.infer<typeof traceStepSchema>;
+
+const fetchTraceStepsResponseSchema = z.object({
   data: z.object({
     run: z
       .object({
         trace: z.object({
-          // Steps
-          childrenSpans: z.array(
-            z.object({
-              // Extended traces
-              childrenSpans: z.array(
-                z.object({
-                  isUserland: z.boolean(),
-                  name: z.string(),
-                }),
-              ),
-
-              metadata: z.array(
-                z.object({
-                  kind: z.string(),
-                  scope: z.string(),
-                  updatedAt: z.string().nullable().optional(),
-                  values: z.record(z.unknown()),
-                }),
-              ),
-              name: z.string(),
-            }),
-          ),
+          childrenSpans: z.array(traceStepSchema),
         }),
       })
       .nullable(),
   }),
 });
 
-async function fetchSteps(runId: string) {
+async function fetchTraceSteps(runId: string): Promise<TraceStep[] | null> {
   const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
     body: JSON.stringify({
       operationName: "Query",
-      query: fetchStepsQuery,
+      query: fetchTraceStepsQuery,
       variables: { preview: true, runID: runId },
     }),
     headers: { "Content-Type": "application/json" },
@@ -104,7 +104,7 @@ async function fetchSteps(runId: string) {
     throw new Error(await res.text());
   }
 
-  const parsed = fetchStepsResponseSchema.parse(await res.json());
+  const parsed = fetchTraceStepsResponseSchema.parse(await res.json());
   const run = parsed.data.run;
   if (!run) {
     return null;
@@ -113,13 +113,13 @@ async function fetchSteps(runId: string) {
   return run.trace.childrenSpans;
 }
 
-export async function waitForSteps(runId: string) {
+export async function waitForTraceSteps(runId: string): Promise<TraceStep[]> {
   return waitFor(async () => {
-    const runTrace = await fetchSteps(runId);
-    if (!runTrace) {
+    const steps = await fetchTraceSteps(runId);
+    if (!steps) {
       throw new Error("Run trace not found");
     }
 
-    return runTrace;
+    return steps;
   });
 }

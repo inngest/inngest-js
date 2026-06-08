@@ -39,7 +39,6 @@ export async function startDevServer(): Promise<void> {
       ],
       {
         stdio: ["ignore", "pipe", "pipe"],
-        shell: true,
       },
     );
 
