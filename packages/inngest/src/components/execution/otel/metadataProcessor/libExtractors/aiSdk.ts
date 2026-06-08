@@ -1,7 +1,6 @@
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
-import { type AIMetadataValues, aiMetadataKeys } from "../metadata.ts";
-import { firstFiniteNumber, firstNonEmptyString } from "./helpers.ts";
-import type { AIMetadataStrategy } from "./types.ts";
+import { extractMetadataValues } from "./helpers.ts";
+import type { AIMetadataExtractor } from "./types.ts";
 
 const aiAttributes = {
   inputTokens: "ai.usage.inputTokens",
@@ -11,30 +10,17 @@ const aiAttributes = {
   modelId: "ai.model.id",
 } as const;
 
-export const aiSdkStrategy: AIMetadataStrategy = {
+export const aiSdkExtractor: AIMetadataExtractor = {
   name: "ai-sdk",
   matches(span) {
     return isTopLevelAISpan(span);
   },
   extract(span) {
-    const values: AIMetadataValues = {};
-
-    const inputTokens = firstFiniteNumber(span, [aiAttributes.inputTokens]);
-    if (inputTokens !== undefined) {
-      values[aiMetadataKeys.inputTokens] = inputTokens;
-    }
-
-    const outputTokens = firstFiniteNumber(span, [aiAttributes.outputTokens]);
-    if (outputTokens !== undefined) {
-      values[aiMetadataKeys.outputTokens] = outputTokens;
-    }
-
-    const modelId = firstNonEmptyString(span, [aiAttributes.modelId]);
-    if (modelId !== undefined) {
-      values[aiMetadataKeys.model] = modelId;
-    }
-
-    return values;
+    return extractMetadataValues(span, {
+      inputTokens: [aiAttributes.inputTokens],
+      model: [aiAttributes.modelId],
+      outputTokens: [aiAttributes.outputTokens],
+    });
   },
 };
 

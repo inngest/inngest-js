@@ -86,7 +86,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
-      processorReady = createProvider(behaviour, instrumentations).then(
+      processorReady = createProvider(instrumentations).then(
         (created) => {
           if (created.success) {
             devDebug("created new provider");
@@ -103,7 +103,7 @@ export const extendedTracesMiddleware = ({
       break;
     }
     case "createProvider": {
-      processorReady = createProvider(behaviour, instrumentations).then(
+      processorReady = createProvider(instrumentations).then(
         (created) => {
           if (created.success) {
             devDebug("created new provider");

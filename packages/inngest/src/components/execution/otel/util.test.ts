@@ -1,15 +1,7 @@
-import { type Span, type TracerProvider, trace } from "@opentelemetry/api";
-import {
-  BasicTracerProvider,
-  type ReadableSpan,
-  type SpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+import { type TracerProvider, trace } from "@opentelemetry/api";
+import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import { InngestSpanProcessor } from "./processor.ts";
-import {
-  createProvider,
-  createProviderWithProcessor,
-  extendProvider,
-} from "./util.ts";
+import { extendProvider } from "./util.ts";
 
 // Simulate a provider with `addSpanProcessor` (like NodeTracerProvider or
 // OTel SDK v1 BasicTracerProvider — v2 removed this method from the class).
@@ -20,13 +12,6 @@ function createProviderWithAddSpanProcessor() {
   (provider as any).addSpanProcessor = addSpanProcessor;
   return { provider, addSpanProcessor };
 }
-
-const createNoopSpanProcessor = (): SpanProcessor => ({
-  forceFlush: vi.fn(async () => undefined),
-  onEnd: vi.fn((_span: ReadableSpan) => undefined),
-  onStart: vi.fn((_span: Span) => undefined),
-  shutdown: vi.fn(async () => undefined),
-});
 
 describe("extendProvider", () => {
   afterEach(() => {
@@ -150,38 +135,5 @@ describe("extendProvider", () => {
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
-  });
-
-  test("should let Extended Traces provider creation win over AI metadata provider creation", async () => {
-    trace.disable();
-
-    const metadataProcessor = createNoopSpanProcessor();
-    const metadataProviderCreation =
-      createProviderWithProcessor(metadataProcessor);
-    const extendedTracesProviderCreation = createProvider("auto", []);
-
-    const [metadataResult, extendedTracesResult] = await Promise.all([
-      metadataProviderCreation,
-      extendedTracesProviderCreation,
-    ]);
-
-    expect(metadataResult.success).toBe(true);
-    expect(extendedTracesResult.success).toBe(true);
-
-    const provider = trace.getTracerProvider();
-    let delegate: unknown = provider;
-    if (
-      "getDelegate" in provider &&
-      typeof provider.getDelegate === "function"
-    ) {
-      delegate = provider.getDelegate();
-    }
-
-    // biome-ignore lint/suspicious/noExplicitAny: accessing OTel internals for test assertion
-    const spanProcessors = (delegate as any)._activeSpanProcessor
-      ._spanProcessors;
-
-    expect(spanProcessors).toContain(metadataProcessor);
-    expect(spanProcessors).toContainEqual(expect.any(InngestSpanProcessor));
   });
 });

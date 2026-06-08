@@ -13,18 +13,16 @@ traces.
    create a `BasicTracerProvider` if none exists.
 3. The execution engine fans out run and step lifecycle calls through
    `clientProcessorMap`.
-4. The processor tracks child spans under the active `inngest.execution` span and
-   captures step context when spans start.
-5. On span end, `libStrategies/` matches known AI span schemas and extracts
-   metadata for `inngest.ai` step updates.
+4. On span end, `libExtractors/` matches known AI span schemas and extracts
+   metadata.
+5. If an Inngest step is currently executing, the processor adds one
+   `inngest.ai` merge update to that step's checkpoint payload.
 
 ## Extended Traces Patterns Reused
 
-- Start from `declareStartingSpan()` and follow child spans by parent span ID.
-- Use `declareStepExecution()` / `clearStepExecution()` to scope spans to steps.
-- Ignore infrastructure spans between checkpointed steps.
+- Share `clientProcessorMap` and lifecycle fan-out so AI metadata and Extended
+  Traces can coexist on the same client.
 - Support OTel v1 `addSpanProcessor()` and OTel v2 internal processor arrays.
-- Use `FinalizationRegistry` plus explicit cleanup to avoid stale span state.
 - Defer metadata-only provider creation behind in-flight Extended Traces provider
   creation, so Extended Traces can register its instrumentations first.
 - Register AI-specific instrumentations here, not in Extended Traces, so
@@ -47,10 +45,10 @@ instrumentation.
 Each qualifying top-level AI span writes one merge update. Numeric aggregation is
 future work.
 
-## Strategies
+## Extractors
 
-Strategies only match spans and extract metadata. They do not know about Inngest
-step state, batching, API fallback, or provider setup.
+Extractors only match spans and extract metadata. They do not know about Inngest
+step state, batching, or provider setup.
 
 Emitted metadata key names live in `metadata.ts` and are shared by all
-strategies.
+extractors.
