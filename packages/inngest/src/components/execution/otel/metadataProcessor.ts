@@ -1,42 +1,121 @@
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { Logger } from "../../../middleware/logger.ts";
+import type { StepWindowMetadata } from "./access.ts";
+import {
+  type AIMetadata,
+  aggregate,
+  extractAIMetadataFromAttributes,
+} from "./aiExtractor.ts";
 import { InngestSpanProcessorBase } from "./baseProcessor.ts";
 
 /**
- * A passive, read-only OTel span processor that is entirely independent of the
+ * A read-only OTel span processor that is independent of the
  * Extended Traces processor (`InngestSpanProcessor`).
  *
- * It reuses the shared run/span tracking from {@link InngestSpanProcessorBase}
- * but adds none of the export behaviour: it never mutates spans (the
- * `onSpanTracked` hook is left as the base's no-op) and never exports. Because
- * it touches no OTel global state, it cannot interfere with the host app's
- * tracing or with Extended Traces — it merely observes the same spans.
+ * As each tracked span ends, it extracts {@link AIMetadata} (model + input
+ * tokens) from the span's attributes and folds it into the currently-open step
+ * window. When the step ends, the aggregated metadata is written back to the
+ * step's metadata under the `inngest.ai` kind.
  *
- * PROTOTYPE: on each tracked span ending it logs the span and its run root span
- * ID. The full feature will accumulate per-step span data and write it back to
- * step metadata; this proves an independent processor can resolve the run root
- * for ending spans.
+ * NOTE on `step.ai.*` overlap: this processor only sees AI metadata emitted as
+ * OTel span attributes by host-app instrumentation (traceloop / OpenInference /
+ * Vercel-native telemetry) for LLM calls that end synchronously inside a step.
+ * `step.ai.infer` has no host spans (the Inngest AI gateway runs server-side,
+ * which extracts `inngest.ai` itself), so there is no overlap there. But
+ * `step.ai.wrap` returning a Vercel AI SDK response is parsed server-side into
+ * `inngest.ai` too — so a wrapped Vercel call with native OTel telemetry
+ * enabled would be counted by both the server (from step output) and here (from
+ * spans), and the two `inngest.ai` updates merge. We accept that double-count
+ * risk for now; reconciling duplicate emitters for one step is a server-side
+ * follow-up.
  */
 export class InngestMetadataSpanProcessor extends InngestSpanProcessorBase {
   #logger: Logger;
+
+  /**
+   * Step windows: per-step accumulators for AI metadata extracted from spans
+   * that end while a step's userland code is executing. Keyed by run root span
+   * ID. A `null` value means the window is open but no AI metadata has been
+   * seen yet.
+   */
+  #stepWindows = new Map<string, AIMetadata | null>();
 
   constructor(logger: Logger) {
     super();
     this.#logger = logger;
   }
 
+  /**
+   * Open a step window: AI metadata from spans ending while this window is open
+   * is folded into its accumulator.
+   */
+  openStepWindow(rootSpanId: string): void {
+    this.#stepWindows.set(rootSpanId, null);
+  }
+
+  /**
+   * Close a step window and drain its accumulator. Called by the engine in the
+   * step's teardown, before the step's outgoing op is finalized, so the
+   * returned values can ride the op as metadata. Returns `undefined` when no AI
+   * metadata accumulated, so steps with no AI activity stamp nothing.
+   */
+  closeStepWindow(rootSpanId: string): StepWindowMetadata | undefined {
+    const aiMetadata = this.#stepWindows.get(rootSpanId);
+    this.#stepWindows.delete(rootSpanId);
+
+    if (!aiMetadata) {
+      return undefined;
+    }
+
+    // Map the internal camelCase shape onto the server's `inngest.ai` schema
+    // (snake_case keys). We only emit the fields we extract; absent fields are
+    // omitted rather than zero-valued.
+    const values: Record<string, unknown> = {};
+    if (aiMetadata.model !== undefined) {
+      values.model = aiMetadata.model;
+    }
+    if (aiMetadata.inputTokens !== undefined) {
+      values.input_tokens = aiMetadata.inputTokens;
+    }
+
+    if (Object.keys(values).length === 0) {
+      return undefined;
+    }
+
+    this.#logger.debug(
+      { rootSpanId, ...values },
+      "[span-metadata] step window closed with AI metadata",
+    );
+
+    return { kind: "inngest.ai", values };
+  }
+
+  /**
+   * Fold AI metadata extracted from a span that just ended into its root's step
+   * window, if one is open.
+   */
+  #recordSpanEndInStepWindow(rootSpanId: string, span: ReadableSpan): void {
+    if (!this.#stepWindows.has(rootSpanId)) {
+      return;
+    }
+
+    const aiMetadata = extractAIMetadataFromAttributes(span.attributes);
+    if (Object.keys(aiMetadata).length === 0) {
+      return;
+    }
+
+    const acc = this.#stepWindows.get(rootSpanId);
+    this.#stepWindows.set(
+      rootSpanId,
+      acc ? aggregate(acc, aiMetadata) : aiMetadata,
+    );
+  }
+
   protected override onSpanEnding(
     span: ReadableSpan,
     rootSpanId: string,
   ): void {
-    this.#logger.info(
-      {
-        spanId: span.spanContext().spanId,
-        rootSpanId,
-        name: span.name,
-      },
-      "[span-metadata] span ended",
-    );
+    this.#recordSpanEndInStepWindow(rootSpanId, span);
   }
 
   async forceFlush(): Promise<void> {}

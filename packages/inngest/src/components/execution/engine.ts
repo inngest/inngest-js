@@ -1713,20 +1713,17 @@ class InngestExecutionEngine
           }
         }
 
-        // Drain this step's window across all processors and attach the merged
-        // values to the step's op as metadata. This runs before the `.then()`
-        // below reads `state.metadata`, so the values ride the outgoing op.
+        // Drain this step's window across all processors and attach each
+        // processor's contribution to the step's op as metadata. This runs
+        // before the `.then()` below reads `state.metadata`, so the values
+        // ride the outgoing op. Each processor owns its metadata `kind` (e.g.
+        // the metadata processor emits `inngest.ai`).
         if (this.rootSpanId) {
-          let merged: Record<string, unknown> | undefined;
           for (const p of clientProcessorMap.get(this.options.client) ?? []) {
-            const values = p.closeStepWindow?.(this.rootSpanId);
-            if (values) {
-              merged = { ...merged, ...values };
+            const result = p.closeStepWindow?.(this.rootSpanId);
+            if (result) {
+              this.addMetadata(id, result.kind, "step", "merge", result.values);
             }
-          }
-
-          if (merged) {
-            this.addMetadata(id, "userland.spanCount", "step", "merge", merged);
           }
         }
 

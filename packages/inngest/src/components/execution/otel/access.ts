@@ -6,6 +6,17 @@
 
 import type { Span } from "@opentelemetry/api";
 import type { Inngest } from "../../Inngest.ts";
+import type { MetadataKind, MetadataValues } from "../../InngestMetadata.ts";
+
+/**
+ * What a processor contributes to a step's metadata when its step window
+ * closes: a single metadata `kind` and the `values` to merge under it. The
+ * processor owns the kind so the engine doesn't hardcode it.
+ */
+export interface StepWindowMetadata {
+  kind: MetadataKind;
+  values: MetadataValues;
+}
 
 /**
  * The engine→processor channel. Any Inngest-aware span processor implements the
@@ -31,7 +42,7 @@ export interface InngestRunSpanProcessor {
   ): void;
   clearStepExecution?(rootSpanId: string): void;
   openStepWindow?(rootSpanId: string): void;
-  closeStepWindow?(rootSpanId: string): Record<string, unknown> | undefined;
+  closeStepWindow?(rootSpanId: string): StepWindowMetadata | undefined;
 }
 
 /**
