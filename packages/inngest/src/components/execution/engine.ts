@@ -2394,6 +2394,10 @@ class InngestExecutionEngine
           this.state.lazyOps.markSeen(hashedId);
           return;
         }
+        // Reserve the id synchronously, before the `applyToDefer` await below.
+        // `defer()` is fire-and-forget, so two sync calls with the same id
+        // would otherwise both pass the `hasId` check above and race to push.
+        this.state.lazyOps.markSeen(hashedId);
         if (defer) {
           const prepared = await this.middlewareManager.applyToDefer({
             deferFn: defer.fn,
