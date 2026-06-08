@@ -6,6 +6,7 @@ import {
   aggregate,
   extractAIMetadataFromAttributes,
 } from "./aiExtractor.ts";
+import { attachToGlobalProvider } from "./attach.ts";
 import { InngestSpanProcessorBase } from "./baseProcessor.ts";
 
 /**
@@ -40,9 +41,40 @@ export class InngestMetadataSpanProcessor extends InngestSpanProcessorBase {
    */
   #stepWindows = new Map<string, AIMetadata | null>();
 
+  /**
+   * Whether this processor has been attached to a global OTel provider. Guards
+   * {@link ensureAttached} so a repeated call can never push the processor into
+   * a provider's processor list twice (which would double-process every span
+   * and double-count tokens).
+   */
+  #attached = false;
+
   constructor(logger: Logger) {
     super();
     this.#logger = logger;
+  }
+
+  /**
+   * Idempotently attach this processor to the global OTel provider so it begins
+   * receiving span lifecycle events. Returns whether it is attached.
+   *
+   * Attaching is extend-only (never creates a provider). It is attempted both at
+   * client construction — which catches a provider set up first, e.g. a
+   * `--require` OTel bootstrap — and again lazily on each request, which catches
+   * a provider created after construction, e.g. the Extended Traces middleware's
+   * asynchronous `createProvider`. The `#attached` guard makes the repeat calls
+   * safe.
+   */
+  ensureAttached(): boolean {
+    if (this.#attached) {
+      return true;
+    }
+
+    if (attachToGlobalProvider(this)) {
+      this.#attached = true;
+    }
+
+    return this.#attached;
   }
 
   /**

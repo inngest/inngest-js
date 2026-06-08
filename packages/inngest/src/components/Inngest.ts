@@ -52,7 +52,6 @@ import {
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { registerClientProcessor } from "./execution/otel/access.ts";
-import { attachToGlobalProvider } from "./execution/otel/attach.ts";
 import { InngestMetadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -1059,6 +1058,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
  * so the no-arg constructors can capture the base logger.
  */
 export function builtInMiddleware(baseLogger: Logger) {
+  // The client's metadata span processor, shared between the static
+  // `onRegister` (which creates and first-attaches it) and the per-request
+  // `wrapRequest` (which retries the attach). Undefined when span metadata is
+  // disabled via env.
+  let metadataProcessor: InngestMetadataSpanProcessor | undefined;
+
   return [
     /**
      * A built-in, default-on middleware that attaches a passive, read-only span
@@ -1066,8 +1071,9 @@ export function builtInMiddleware(baseLogger: Logger) {
      * opt-in Extended Traces middleware and never creates a provider or imports
      * instrumentation, so it cannot interfere with host OTel.
      *
-     * PROTOTYPE: the processor currently just logs every span it observes; the
-     * full feature will accumulate per-step span data into step metadata.
+     * As each span ends it extracts AI metadata (model + input tokens) from the
+     * span's attributes and accumulates it per step; on step end the engine
+     * writes it back to the step's metadata under the `inngest.ai` kind.
      */
     class SpanMetadataMiddleware extends Middleware.BaseMiddleware {
       readonly id = "inngest:span-metadata";
@@ -1082,28 +1088,35 @@ export function builtInMiddleware(baseLogger: Logger) {
         }
 
         const processor = new InngestMetadataSpanProcessor(baseLogger);
+        metadataProcessor = processor;
 
-        // Register so the engine drives `declareStartingSpan` (and future
-        // step-window hooks) on this processor, independently of Extended
-        // Traces.
+        // Register so the engine drives `declareStartingSpan` and the
+        // step-window hooks on this processor, independently of Extended Traces.
         registerClientProcessor(client, processor);
 
-        // Extend-only: attaches to a provider the host (or Extended Traces)
-        // already registered, so the processor receives span lifecycle events.
-        // If none exists, this is a silent no-op.
-        //
-        // Attaches at client-construction time, which is sufficient when the
-        // provider is set up first (e.g. a `--require` OTel bootstrap). A lazy,
-        // idempotent attach at first run — to also catch providers created
-        // after construction — is a follow-up.
-        const attached = attachToGlobalProvider(processor);
+        // Extend-only attach: hooks the processor onto a provider the host (or
+        // Extended Traces) already registered, so it receives span lifecycle
+        // events. Attempting at construction catches a provider set up first
+        // (e.g. a `--require` OTel bootstrap); when none exists yet, this is a
+        // silent no-op and `wrapRequest` retries (idempotently) — that catches
+        // a provider created after construction, e.g. Extended Traces' async
+        // `createProvider`.
+        const attached = processor.ensureAttached();
 
         baseLogger.info(
           { attached },
           attached
             ? "[span-metadata] attached metadata span processor to existing OTel provider"
-            : "[span-metadata] no OTel provider found; metadata span processor not attached",
+            : "[span-metadata] no OTel provider yet; will retry attach on first request",
         );
+      }
+
+      override wrapRequest({ next }: Middleware.WrapRequestArgs) {
+        // Idempotent retry: catches a provider that was created after client
+        // construction (e.g. Extended Traces' async `createProvider`). No-op
+        // once already attached.
+        metadataProcessor?.ensureAttached();
+        return next();
       }
     },
     class LoggerMiddleware extends Middleware.BaseMiddleware {
