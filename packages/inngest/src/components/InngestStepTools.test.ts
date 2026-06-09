@@ -157,6 +157,24 @@ describe("waitForEvent", () => {
     });
   });
 
+  describe("types", () => {
+    test("types matched event sessions as strings", () => {
+      const _test = async () => {
+        const result = await step.waitForEvent("id", {
+          event: "event",
+          timeout: "2h",
+        });
+
+        assertType<
+          IsEqual<
+            NonNullable<typeof result>["sessions"],
+            Record<string, string> | undefined
+          >
+        >(true);
+      };
+    });
+  });
+
   test("returns userland", async () => {
     await expect(
       step.waitForEvent("id", { event: "event", timeout: "2h" }),
@@ -1109,7 +1127,6 @@ describe("invoke", () => {
             sessions: {
               conversation_id: "conversation_1234",
               priority: 1,
-              active: true,
             },
           }),
         ).resolves.toMatchObject({
@@ -1118,7 +1135,6 @@ describe("invoke", () => {
               sessions: {
                 conversation_id: "conversation_1234",
                 priority: "1",
-                active: "true",
               },
             },
           },
