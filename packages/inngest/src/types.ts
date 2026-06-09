@@ -657,6 +657,14 @@ export interface MinimalEventPayload<TData = any> {
    * (optional)
    */
   v?: string;
+
+  /**
+   * Session metadata used to group runs triggered by this event.
+   *
+   * Keys are session names, values are session identifiers. Values are
+   * normalized to strings before the event is sent.
+   */
+  sessions?: EventSessions;
 }
 
 /**
@@ -675,14 +683,6 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
    * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
    */
   name: string;
-
-  /**
-   * Session metadata used to group runs triggered by this event.
-   *
-   * Keys are session names, values are session identifiers. Values are
-   * normalized to strings before the event is sent.
-   */
-  sessions?: EventSessions;
 
   /**
    * An integer representing the milliseconds since the unix epoch at which this

@@ -1100,6 +1100,51 @@ describe("invoke", () => {
           step.invoke("id", { function: fn, data: { foo: "foo" } }),
         ).resolves.toMatchObject({ userland: { id: "id" } });
       });
+
+      test("normalizes sessions into the payload", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            sessions: {
+              conversation_id: "conversation_1234",
+              priority: 1,
+              active: true,
+            },
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            payload: {
+              sessions: {
+                conversation_id: "conversation_1234",
+                priority: "1",
+                active: "true",
+              },
+            },
+          },
+        });
+      });
+
+      test("omits sessions from the payload if none given", async () => {
+        const op = (await step.invoke("id", {
+          function: fn,
+          data: { foo: "foo" },
+        })) as unknown as { opts: { payload: Record<string, unknown> } };
+
+        expect(op.opts.payload.sessions).toBeUndefined();
+      });
+
+      test("rejects invalid session values", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            sessions: { conversation_id: Number.NaN },
+          }),
+        ).rejects.toThrowError(
+          'Event session "conversation_id" must be a finite number',
+        );
+      });
     });
   });
 
@@ -1129,6 +1174,20 @@ describe("invoke", () => {
         invoke("id", {
           function: referenceFunction({ functionId: "fn" }),
           data: { foo: "" },
+        });
+    });
+
+    test("allows setting sessions for an invocation", () => {
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => "return",
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: fn,
+          data: { foo: "" },
+          sessions: { conversation_id: "conversation_1234", priority: 1 },
         });
     });
 
