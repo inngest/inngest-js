@@ -2,19 +2,6 @@ import { DEV_SERVER_URL, waitFor } from "@inngest/test-harness";
 import { trace } from "@opentelemetry/api";
 import { z } from "zod/v3";
 
-export async function waitForOtelProvider(): Promise<void> {
-  await waitFor(() => {
-    const span = trace.getTracer("inngest-test").startSpan("otel-ready");
-    try {
-      if (!span.isRecording()) {
-        throw new Error("OTel provider is not ready");
-      }
-    } finally {
-      span.end();
-    }
-  });
-}
-
 export function simulateOpenAICall(): string {
   const tracer = trace.getTracer("@opentelemetry/instrumentation-openai");
   return tracer.startActiveSpan(

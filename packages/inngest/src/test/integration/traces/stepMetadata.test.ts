@@ -4,7 +4,7 @@ import {
   randomSuffix,
   testNameFromFileUrl,
 } from "@inngest/test-harness";
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { extendedTracesMiddleware } from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
@@ -12,7 +12,6 @@ import { matrixCheckpointing } from "../utils.ts";
 import {
   simulateOpenAICall,
   type TraceStep,
-  waitForOtelProvider,
   waitForTraceSteps,
 } from "./util.ts";
 
@@ -59,7 +58,6 @@ matrixCheckpointing(
         return "done";
       },
     );
-    await waitForOtelProvider();
     await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
@@ -98,7 +96,6 @@ matrixCheckpointing(
         return "done";
       },
     );
-    await waitForOtelProvider();
     await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName });
