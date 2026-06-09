@@ -55,7 +55,6 @@ matrixCheckpointing(
       async ({ runId, step }) => {
         state.runId = runId;
         await step.run("my-step", simulateOpenAICall);
-        return "done";
       },
     );
     await createTestApp({ client, functions: [fn], serve: createServer });
@@ -69,6 +68,48 @@ matrixCheckpointing(
     expect(getAIMetadata(step)).toEqual([expectedAIMetadata]);
   },
 );
+
+matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
+  const state = createState();
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    checkpointing,
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn-1",
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      await step.run("my-step", async () => {
+        await simulateOpenAICall();
+        await simulateOpenAICall();
+      });
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  const steps = await waitForTraceSteps(await state.waitForRunId());
+  const step = steps.find((step) => step.name === "my-step");
+
+  expect(getAIMetadata(step)).toEqual([
+    {
+      ...expectedAIMetadata,
+      values: {
+        ...expectedAIMetadata.values,
+        "input-tokens": 2 * expectedAIMetadata.values["input-tokens"],
+        "output-tokens": 2 * expectedAIMetadata.values["output-tokens"],
+      },
+    },
+  ]);
+});
 
 matrixCheckpointing(
   "Extended Traces and OTel attribute extraction are compatible",
@@ -93,7 +134,6 @@ matrixCheckpointing(
       async ({ runId, step }) => {
         state.runId = runId;
         await step.run("my-step", simulateOpenAICall);
-        return "done";
       },
     );
     await createTestApp({ client, functions: [fn], serve: createServer });

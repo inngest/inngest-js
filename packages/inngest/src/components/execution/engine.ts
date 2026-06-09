@@ -58,7 +58,6 @@ import type {
   MetadataKind,
   MetadataOpcode,
   MetadataScope,
-  MetadataUpdate,
 } from "../InngestMetadata.ts";
 import {
   createStepTools,
@@ -89,6 +88,7 @@ import {
 } from "./InngestExecution.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+import { StepMetadataBuffer } from "./stepMetadata.ts";
 import {
   buildSseMetadataEvent,
   prependToStream,
@@ -337,14 +337,7 @@ class InngestExecutionEngine
     op: MetadataOpcode,
     values: Record<string, unknown>,
   ) {
-    if (!this.state.metadata) {
-      this.state.metadata = new Map();
-    }
-
-    const updates = this.state.metadata.get(stepId) ?? [];
-    updates.push({ kind, scope, op, values });
-    this.state.metadata.set(stepId, updates);
-
+    this.state.metadata.add(stepId, { kind, scope, op, values });
     return true;
   }
 
@@ -1711,7 +1704,7 @@ class InngestExecutionEngine
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
-        const metadata = this.state.metadata?.get(id);
+        const metadata = this.state.metadata.getForStep(id);
         const serverData = await resultPromise;
 
         // Don't resolve memoizationDeferred here. wrapStep's next() must
@@ -1857,7 +1850,7 @@ class InngestExecutionEngine
     stepInfo: Middleware.StepInfo;
   }): Promise<OutgoingOp> {
     const isFinal = !this.retriability(error);
-    const metadata = this.state.metadata?.get(id);
+    const metadata = this.state.metadata.getForStep(id);
 
     await this.middlewareManager.onStepError(
       stepInfo,
@@ -2086,7 +2079,7 @@ class InngestExecutionEngine
       },
       checkpointingStepBuffer: [],
       lazyOps: new LazyOps(),
-      metadata: new Map(),
+      metadata: new StepMetadataBuffer(),
     };
 
     return state;
@@ -3123,7 +3116,7 @@ export interface ExecutionState {
   /**
    * Metadata collected during execution to be sent with outgoing ops.
    */
-  metadata?: Map<string, Array<MetadataUpdate>>;
+  metadata: StepMetadataBuffer;
 }
 
 const hashId = (id: string): string => {

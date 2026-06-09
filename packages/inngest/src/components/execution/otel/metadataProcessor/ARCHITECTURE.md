@@ -16,7 +16,7 @@ Step association is captured when a child span starts. Checkpointing executions 
 
 - `processor.ts`: OTel lifecycle, root ownership, step association, and metadata writes.
 - `libExtractors/`: library/schema-specific attribute extraction. Extractors do not know about Inngest execution state.
-- `metadata.ts`: shared metadata kind and key names.
+- `metadata.ts`: shared metadata kind, key names, and AI aggregation rules.
 - `instrumentations.ts`: AI instrumentation registration.
 
 ## Extended Traces Patterns Reused
@@ -39,7 +39,7 @@ The processor also reuses the execution lifecycle shape: `declareStartingSpan()`
 
 Supported input schemas are Vercel AI SDK `ai.*` attributes and GenAI semantic convention `gen_ai.*` attributes, such as those emitted by OpenAI instrumentation.
 
-Each qualifying top-level AI span writes one merge update. Numeric aggregation is future work.
+Each qualifying top-level AI span writes one merge update. The execution metadata buffer aggregates `inngest.ai` step updates before sending metadata: repeated numeric keys are summed, and non-numeric keys follow merge semantics by keeping the latest value.
 
 ## Invariants
 
@@ -47,4 +47,4 @@ Each qualifying top-level AI span writes one merge update. Numeric aggregation i
 - Do not attach metadata without a step.
 - Keep extractors limited to span matching and metadata extraction.
 - Keep metadata key names in `metadata.ts`.
-- Call `addMetadata()` once per qualifying span; aggregation belongs in a future change.
+- Call `addMetadata()` once per qualifying span; the execution metadata buffer applies the `metadata.ts` aggregation helper before sending step metadata.

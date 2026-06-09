@@ -167,7 +167,7 @@ describe("Execution engine checkpoint retry behavior", () => {
     });
 
     describe("metadata propagation to checkpoint payload", () => {
-      test("includes metadata from state.metadata in the checkpoint steps", async () => {
+      test("includes metadata in the checkpoint steps", async () => {
         const client = createClient({ id: "test" });
 
         const mockCheckpointNewRun = vi.fn().mockResolvedValue({
@@ -223,11 +223,15 @@ describe("Execution engine checkpoint retry behavior", () => {
             values: { status: "processing" },
           },
         ];
-        (
-          execution as unknown as {
-            state: { metadata: Map<string, MetadataUpdate[]> };
-          }
-        ).state.metadata = new Map([["my-step", metadataUpdates]]);
+        for (const update of metadataUpdates) {
+          execution.addMetadata(
+            "my-step",
+            update.kind,
+            update.scope,
+            update.op,
+            update.values,
+          );
+        }
 
         const executionPromise = execution.start();
         await advanceThroughRetries();
