@@ -2,31 +2,30 @@
 
 ## Purpose
 
-Extract a small allowlist of AI OpenTelemetry attributes and attach them to
-Inngest step metadata. This processor observes spans only; it does not export
-traces.
+Extract a small allowlist of AI OpenTelemetry attributes and attach them to Inngest step metadata. This processor observes spans only; it does not export traces.
 
-## Flow
+## Mental Model
 
-1. `Inngest` registers one processor per client at construction.
-2. Provider setup mirrors Extended Traces: extend the current OTel provider, or
-   create a `BasicTracerProvider` if none exists.
-3. The execution engine declares the Inngest root span through
-   `clientProcessorMap`; checkpointing executions also declare active steps.
-4. The processor follows child spans under its declared root and scopes them to
-   the current step.
-5. On span end, `libExtractors/` matches known AI span schemas and extracts
-   metadata for one `inngest.ai` merge update.
+OTel span processors are process-global, but Inngest clients are not. A process can have multiple Inngest clients, and every registered OTel processor sees every recording span. The metadata processor handles this by treating the Inngest execution root span as its ownership boundary.
+
+`Inngest` registers one metadata processor per client. When an execution starts, the engine declares the `inngest.execution` root span through `clientProcessorMap`. The processor then follows only child spans under that declared root and ignores unrelated spans from the rest of the process.
+
+Step association is captured when a child span starts. Checkpointing executions declare the active step through `declareStepExecution()` / `clearStepExecution()`; non-checkpointing executions use the active execution context because the engine does not call those step lifecycle methods today. When the span ends, the processor extracts AI metadata and adds one `inngest.ai` merge update to the captured step.
+
+## Files
+
+- `processor.ts`: OTel lifecycle, root ownership, step association, and metadata writes.
+- `libExtractors/`: library/schema-specific attribute extraction. Extractors do not know about Inngest execution state.
+- `metadata.ts`: shared metadata kind and key names.
+- `instrumentations.ts`: AI instrumentation registration.
 
 ## Extended Traces Patterns Reused
 
-- Start from `declareStartingSpan()` and follow child spans by parent span ID.
-- Use `declareStepExecution()` / `clearStepExecution()` to scope spans to steps.
-- Support OTel v1 `addSpanProcessor()` and OTel v2 internal processor arrays.
-- Defer metadata-only provider creation behind in-flight Extended Traces provider
-  creation, so Extended Traces can register its instrumentations first.
-- Register AI-specific instrumentations here, not in Extended Traces, so
-  metadata behavior is the same with or without Extended Traces enabled.
+Extended Traces is a separate feature and may or may not be enabled for a client. AI metadata must behave the same either way.
+
+Provider setup mirrors Extended Traces: first try to extend the current OTel provider, otherwise create a `BasicTracerProvider`. Metadata-only provider creation waits behind in-flight Extended Traces provider creation, so both features land on the same provider when enabled together.
+
+The processor also reuses the execution lifecycle shape: `declareStartingSpan()` marks the root span, and checkpointing step lifecycle calls scope spans to active steps. AI-specific instrumentations are registered here, not in Extended Traces, so metadata behavior is the same with or without Extended Traces enabled.
 
 ## Metadata
 
@@ -38,17 +37,14 @@ traces.
 }
 ```
 
-Supported input schemas are Vercel AI SDK `ai.*` attributes and GenAI semantic
-convention `gen_ai.*` attributes, such as those emitted by OpenAI
-instrumentation.
+Supported input schemas are Vercel AI SDK `ai.*` attributes and GenAI semantic convention `gen_ai.*` attributes, such as those emitted by OpenAI instrumentation.
 
-Each qualifying top-level AI span writes one merge update. Numeric aggregation is
-future work.
+Each qualifying top-level AI span writes one merge update. Numeric aggregation is future work.
 
-## Extractors
+## Invariants
 
-Extractors only match spans and extract metadata. They do not know about Inngest
-step state, batching, transport, or provider setup.
-
-Emitted metadata key names live in `metadata.ts` and are shared by all
-extractors.
+- Only process spans under a root span declared to this processor.
+- Do not attach metadata without a step.
+- Keep extractors limited to span matching and metadata extraction.
+- Keep metadata key names in `metadata.ts`.
+- Call `addMetadata()` once per qualifying span; aggregation belongs in a future change.
