@@ -10,17 +10,36 @@ import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import {
   simulateOpenAICall,
+  type TraceStep,
   waitForOtelProvider,
   waitForTraceSteps,
 } from "./util.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
+const expectedAIMetadata = {
+  kind: "inngest.ai",
+  scope: "step",
+  values: {
+    "input-tokens": 18,
+    model: "gpt-5.4-nano-2026-03-17",
+    "output-tokens": 39,
+  },
+};
+
+const getAIMetadata = (step: TraceStep | undefined) => {
+  if (!step) {
+    return [];
+  }
+
+  return step.metadata.filter((metadata) => {
+    return metadata.kind === "inngest.ai" && metadata.scope === "step";
+  });
+};
 
 test("AI OTel attributes become step metadata", async () => {
   const state = createState();
   const eventName = randomSuffix("evt");
   const client = new Inngest({
-    checkpointing: false,
     id: randomSuffix(testFileName),
     isDev: true,
   });
@@ -45,15 +64,7 @@ test("AI OTel attributes become step metadata", async () => {
   const steps = await waitForTraceSteps(await state.waitForRunId());
   const step = steps.find((step) => step.name === "my-step");
 
-  expect(step?.metadata).toContainEqual({
-    kind: "inngest.ai",
-    scope: "step",
-    values: {
-      "input-tokens": 18,
-      model: "gpt-5.4-nano-2026-03-17",
-      "output-tokens": 39,
-    },
-  });
+  expect(getAIMetadata(step)).toEqual([expectedAIMetadata]);
 });
 
 test("Extended Traces and OTel attribute extraction are compatible", async () => {
@@ -63,7 +74,6 @@ test("Extended Traces and OTel attribute extraction are compatible", async () =>
   const state = createState();
   const eventName = randomSuffix("evt");
   const client = new Inngest({
-    checkpointing: false,
     id: randomSuffix(testFileName),
     isDev: true,
     middleware: [extendedTracesMiddleware()],
@@ -98,13 +108,5 @@ test("Extended Traces and OTel attribute extraction are compatible", async () =>
     },
   ]);
 
-  expect(step?.metadata).toContainEqual({
-    kind: "inngest.ai",
-    scope: "step",
-    values: {
-      "input-tokens": 18,
-      model: "gpt-5.4-nano-2026-03-17",
-      "output-tokens": 39,
-    },
-  });
+  expect(getAIMetadata(step)).toEqual([expectedAIMetadata]);
 });

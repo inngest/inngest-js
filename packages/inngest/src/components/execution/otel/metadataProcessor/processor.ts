@@ -18,6 +18,15 @@ import { aiMetadataKind } from "./metadata.ts";
 
 const aiMetadataDebug = Debug(`${debugPrefix}:AIMetadataSpanProcessor`);
 
+type StepContext = {
+  id: string;
+};
+
+type SpanState = {
+  rootSpanId: string;
+  step?: StepContext;
+};
+
 export const registerAIMetadataSpanProcessor = (client: Inngest.Any): void => {
   const processor = new InngestAIMetadataSpanProcessor();
   registerClientProcessor(client, processor);
@@ -39,51 +48,146 @@ export const registerAIMetadataSpanProcessor = (client: Inngest.Any): void => {
 };
 
 export class InngestAIMetadataSpanProcessor implements SpanProcessor {
-  declareStartingSpan(_args: {
+  #activeStepContext = new Map<string, StepContext>();
+  #spanStates = new Map<string, SpanState>();
+  #spanCleanup = new FinalizationRegistry<string>((spanId) => {
+    this.#spanStates.delete(spanId);
+  });
+
+  declareStartingSpan(args: {
     span: Span;
     runId: string;
     traceparent: string | undefined;
     tracestate: string | undefined;
-  }): void {}
+  }): void {
+    this.trackSpan(args.span, {
+      rootSpanId: getSpanId(args.span),
+    });
+  }
 
   declareStepExecution(
-    _rootSpanId: string,
-    _id: string,
+    rootSpanId: string,
+    id: string,
     _index: number,
     _hashedStepId: string,
     _attempt: number,
-  ): void {}
+  ): void {
+    this.#activeStepContext.set(rootSpanId, { id });
+  }
 
-  clearStepExecution(_rootSpanId: string): void {}
+  clearStepExecution(rootSpanId: string): void {
+    this.#activeStepContext.delete(rootSpanId);
+  }
 
-  onStart(_span: Span): void {}
+  onStart(span: Span): void {
+    const parentSpanId = getParentSpanId(span);
+    if (!parentSpanId) {
+      return;
+    }
+
+    const parentState = this.#spanStates.get(parentSpanId);
+    if (!parentState) {
+      return;
+    }
+
+    const step =
+      parentState.step ?? this.getCurrentStep(parentState.rootSpanId);
+    if (!step) {
+      return;
+    }
+
+    this.trackSpan(span, {
+      rootSpanId: parentState.rootSpanId,
+      step,
+    });
+  }
 
   onEnd(span: ReadableSpan): void {
-    const execution = getAsyncCtxSync()?.execution;
-    const stepId = execution?.executingStep?.id;
-    if (!execution || !stepId) {
-      return;
-    }
+    const spanState = this.#spanStates.get(getSpanId(span));
 
-    const values = extractAIMetadata(span);
-    if (Object.keys(values).length === 0) {
-      return;
-    }
+    try {
+      const step = spanState?.step;
+      if (!step) {
+        return;
+      }
 
-    if (
-      !execution.instance.addMetadata(
-        stepId,
-        aiMetadataKind,
-        "step",
-        "merge",
-        values,
-      )
-    ) {
-      aiMetadataDebug("failed to add AI metadata to checkpoint payload");
+      const execution = getAsyncCtxSync()?.execution;
+      if (!execution || execution.executingStep?.id !== step.id) {
+        return;
+      }
+
+      const values = extractAIMetadata(span);
+      if (Object.keys(values).length === 0) {
+        return;
+      }
+
+      if (
+        !execution.instance.addMetadata(
+          step.id,
+          aiMetadataKind,
+          "step",
+          "merge",
+          values,
+        )
+      ) {
+        aiMetadataDebug("failed to add AI metadata to checkpoint payload");
+      }
+    } finally {
+      this.cleanupSpan(span);
     }
   }
 
   async forceFlush(): Promise<void> {}
 
   async shutdown(): Promise<void> {}
+
+  private getCurrentStep(rootSpanId: string): StepContext | undefined {
+    const activeStep = this.#activeStepContext.get(rootSpanId);
+    if (activeStep) {
+      return activeStep;
+    }
+
+    const stepId = getAsyncCtxSync()?.execution?.executingStep?.id;
+    if (!stepId) {
+      return;
+    }
+
+    return { id: stepId };
+  }
+
+  private trackSpan(span: Span, state: SpanState): void {
+    const spanId = getSpanId(span);
+    this.#spanCleanup.register(span, spanId, span);
+    this.#spanStates.set(spanId, state);
+  }
+
+  private cleanupSpan(span: ReadableSpan): void {
+    const spanId = getSpanId(span);
+    this.#spanCleanup.unregister(span);
+    this.#spanStates.delete(spanId);
+  }
 }
+
+const getSpanId = (span: Span | ReadableSpan): string => {
+  return span.spanContext().spanId;
+};
+
+const getParentSpanId = (span: Span): string | undefined => {
+  if ("parentSpanContext" in span) {
+    const parentSpanContext = span.parentSpanContext;
+    if (
+      parentSpanContext &&
+      typeof parentSpanContext === "object" &&
+      "spanId" in parentSpanContext &&
+      typeof parentSpanContext.spanId === "string"
+    ) {
+      return parentSpanContext.spanId;
+    }
+  }
+
+  if ("parentSpanId" in span && typeof span.parentSpanId === "string") {
+    return span.parentSpanId;
+  }
+
+  return;
+};
