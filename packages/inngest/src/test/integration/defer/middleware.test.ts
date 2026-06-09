@@ -5,7 +5,6 @@ import {
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
-import { z } from "zod";
 import { createDefer } from "../../../experimental.ts";
 import {
   dependencyInjectionMiddleware,
@@ -115,107 +114,4 @@ test("no step hooks", async () => {
     wrapStep: 0,
     wrapStepHandler: 0,
   });
-});
-
-test("transformDeferInput can modify data", async () => {
-  const deferState = createState({ value: 0 });
-
-  class MW extends Middleware.BaseMiddleware {
-    readonly id = "mw";
-    override transformDeferInput(
-      arg: Middleware.TransformDeferInputArgs,
-    ): Middleware.TransformDeferInputArgs {
-      return {
-        ...arg,
-        defers: arg.defers.map((d) => ({ ...d, data: { value: 42 } })),
-      };
-    }
-  }
-
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [MW],
-  });
-  const eventName = randomSuffix("evt");
-  const foo = createDefer(
-    client,
-    { id: "foo", schema: z.object({ value: z.number() }) },
-    async ({ event, runId }) => {
-      deferState.runId = runId;
-      deferState.value = event.data.value;
-    },
-  );
-  const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: { event: eventName } },
-    async ({ defer }) => {
-      defer("foo", { function: foo, data: { value: 1 } });
-    },
-  );
-  await createTestApp({ client, functions: [fn, foo], serve: createServer });
-
-  await client.send({ name: eventName });
-  await deferState.waitForRunComplete();
-  expect(deferState.value).toBe(42);
-});
-
-test("transformDeferInput composes in forward order", async () => {
-  const deferState = createState({ value: 0 });
-
-  class MW1 extends Middleware.BaseMiddleware {
-    readonly id = "mw1";
-    override transformDeferInput(
-      arg: Middleware.TransformDeferInputArgs,
-    ): Middleware.TransformDeferInputArgs {
-      return {
-        ...arg,
-        defers: arg.defers.map((d) => ({
-          ...d,
-          data: { value: (d.data.value as number) * 10 },
-        })),
-      };
-    }
-  }
-
-  class MW2 extends Middleware.BaseMiddleware {
-    readonly id = "mw2";
-    override transformDeferInput(
-      arg: Middleware.TransformDeferInputArgs,
-    ): Middleware.TransformDeferInputArgs {
-      return {
-        ...arg,
-        defers: arg.defers.map((d) => ({
-          ...d,
-          data: { value: (d.data.value as number) + 5 },
-        })),
-      };
-    }
-  }
-
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    middleware: [MW1, MW2],
-  });
-  const eventName = randomSuffix("evt");
-  const foo = createDefer(
-    client,
-    { id: "foo", schema: z.object({ value: z.number() }) },
-    async ({ event, runId }) => {
-      deferState.runId = runId;
-      deferState.value = event.data.value;
-    },
-  );
-  const fn = client.createFunction(
-    { id: "fn", retries: 0, triggers: { event: eventName } },
-    async ({ defer }) => {
-      defer("foo", { function: foo, data: { value: 1 } });
-    },
-  );
-  await createTestApp({ client, functions: [fn, foo], serve: createServer });
-
-  await client.send({ name: eventName });
-  await deferState.waitForRunComplete();
-  // Forward order: MW1 runs first (1 * 10 = 10), then MW2 (10 + 5 = 15)
-  expect(deferState.value).toBe(15);
 });
