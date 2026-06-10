@@ -24,7 +24,7 @@ export const aiSdkExtractor: AIMetadataExtractor = {
   },
 };
 
-const isTopLevelAISpan = (span: ReadableSpan): boolean => {
+function isTopLevelAISpan(span: ReadableSpan): boolean {
   if (span.instrumentationScope.name !== "ai") {
     return false;
   }
@@ -52,4 +52,4 @@ const isTopLevelAISpan = (span: ReadableSpan): boolean => {
   }
 
   return !spanOperation.slice("ai.".length).includes(".");
-};
+}

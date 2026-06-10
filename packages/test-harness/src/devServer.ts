@@ -22,10 +22,10 @@ export async function startDevServer(): Promise<void> {
   }
 
   return new Promise((resolve, reject) => {
-    // npx inngest-cli@latest dev --no-discovery --port 8288
     devServerProcess = spawn(
       "npx",
       [
+        "--ignore-scripts=false",
         "inngest-cli@latest",
         "dev",
         "--no-discovery",

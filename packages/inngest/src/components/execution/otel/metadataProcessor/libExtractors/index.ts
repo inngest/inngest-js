@@ -9,7 +9,7 @@ const extractors: AIMetadataExtractor[] = [
   genAISemconvExtractor,
 ];
 
-export const extractAIMetadata = (span: ReadableSpan): AIMetadataValues => {
+export function extractAIMetadata(span: ReadableSpan): AIMetadataValues {
   for (const extractor of extractors) {
     if (!extractor.matches(span)) {
       continue;
@@ -22,4 +22,4 @@ export const extractAIMetadata = (span: ReadableSpan): AIMetadataValues => {
   }
 
   return {};
-};
+}

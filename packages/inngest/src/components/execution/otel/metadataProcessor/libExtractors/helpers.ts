@@ -1,14 +1,14 @@
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { type AIMetadataValues, aiMetadataKeys } from "../metadata.ts";
 
-export const extractMetadataValues = (
+export function extractMetadataValues(
   span: ReadableSpan,
   keys: {
     inputTokens: string[];
     model: string[];
     outputTokens: string[];
   },
-): AIMetadataValues => {
+): AIMetadataValues {
   const values: AIMetadataValues = {};
 
   const inputTokens = firstFiniteNumber(span, keys.inputTokens);
@@ -27,12 +27,12 @@ export const extractMetadataValues = (
   }
 
   return values;
-};
+}
 
-export const firstFiniteNumber = (
+export function firstFiniteNumber(
   span: ReadableSpan,
   keys: string[],
-): number | undefined => {
+): number | undefined {
   for (const key of keys) {
     const value = span.attributes[key];
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -41,12 +41,12 @@ export const firstFiniteNumber = (
   }
 
   return undefined;
-};
+}
 
-export const firstNonEmptyString = (
+export function firstNonEmptyString(
   span: ReadableSpan,
   keys: string[],
-): string | undefined => {
+): string | undefined {
   for (const key of keys) {
     const value = span.attributes[key];
     if (typeof value === "string" && value) {
@@ -55,4 +55,4 @@ export const firstNonEmptyString = (
   }
 
   return undefined;
-};
+}

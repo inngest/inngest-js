@@ -27,26 +27,18 @@ export interface InngestTraceLifecycleProcessor {
 }
 
 /**
- * A map of Inngest clients to their trace lifecycle processors. This lets the
+ * A map of Inngest clients to their trace lifecycle processor. This lets the
  * execution engine notify OTel-backed features without importing OTel-heavy
- * processor implementations.
+ * processor implementation.
  */
 export const clientProcessorMap = new WeakMap<
   Inngest.Any,
-  InngestTraceLifecycleProcessor[]
+  InngestTraceLifecycleProcessor
 >();
 
 export const registerClientProcessor = (
   client: Inngest.Any,
   processor: InngestTraceLifecycleProcessor,
 ): void => {
-  let processors = clientProcessorMap.get(client);
-  if (!processors) {
-    processors = [];
-    clientProcessorMap.set(client, processors);
-  }
-
-  if (!processors.includes(processor)) {
-    processors.push(processor);
-  }
+  clientProcessorMap.set(client, processor);
 };

@@ -88,6 +88,8 @@ import {
 } from "./InngestExecution.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+import { aiMetadataKind } from "./otel/metadataProcessor/metadata.ts";
+import { aiMetadataSpanProcessor } from "./otel/metadataProcessor/processor.ts";
 import { StepMetadataBuffer } from "./stepMetadata.ts";
 import {
   buildSseMetadataEvent,
@@ -301,17 +303,33 @@ class InngestExecutionEngine
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
               this.rootSpanId = span.spanContext().spanId;
+              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
+                span,
+                runId: this.options.runId,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                tracestate: this.options.headers[headerKeys.TraceState],
+              });
 
-              const processors =
-                clientProcessorMap.get(this.options.client) ?? [];
-              for (const processor of processors) {
-                processor.declareStartingSpan({
-                  span,
-                  runId: this.options.runId,
-                  traceparent: this.options.headers[headerKeys.TraceParent],
-                  tracestate: this.options.headers[headerKeys.TraceState],
-                });
-              }
+              aiMetadataSpanProcessor.declareStartingSpan({
+                onMetadata: (values) => {
+                  const stepId = this.state.executingStep?.userland?.id;
+                  if (!stepId) {
+                    return false;
+                  }
+
+                  this.state.metadata.add(stepId, {
+                    kind: aiMetadataKind,
+                    op: "merge",
+                    scope: "step",
+                    values,
+                  });
+                  return true;
+                },
+                span,
+                runId: this.options.runId,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                tracestate: this.options.headers[headerKeys.TraceState],
+              });
 
               return this._start()
                 .then((result) => {
@@ -1648,16 +1666,15 @@ class InngestExecutionEngine
     this.devDebug(`executing step "${id}"`);
 
     if (this.rootSpanId && this.options.checkpointingConfig) {
-      const processors = clientProcessorMap.get(this.options.client) ?? [];
-      for (const processor of processors) {
-        processor.declareStepExecution(
+      clientProcessorMap
+        .get(this.options.client)
+        ?.declareStepExecution(
           this.rootSpanId,
           userland.id ?? "",
           userland.index ?? 0,
           hashedId,
           this.options.data?.attempt ?? 0,
         );
-      }
     }
 
     let interval: GoInterval | undefined;
@@ -1692,10 +1709,9 @@ class InngestExecutionEngine
         this.state.executingStep = undefined;
 
         if (this.rootSpanId && this.options.checkpointingConfig) {
-          const processors = clientProcessorMap.get(this.options.client) ?? [];
-          for (const processor of processors) {
-            processor.clearStepExecution(this.rootSpanId);
-          }
+          clientProcessorMap
+            .get(this.options.client)
+            ?.clearStepExecution(this.rootSpanId);
         }
 
         if (store?.execution) {

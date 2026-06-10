@@ -4,23 +4,29 @@ import { z } from "zod/v3";
 
 export function simulateOpenAICall(): string {
   const tracer = trace.getTracer("@opentelemetry/instrumentation-openai");
-  return tracer.startActiveSpan(
-    "open-ai-span",
-    {
-      attributes: {
-        "gen_ai.operation.name": "chat",
-        "gen_ai.request.model": "gpt-5.4-nano",
-        "gen_ai.response.model": "gpt-5.4-nano-2026-03-17",
-        "gen_ai.system": "openai",
-        "gen_ai.usage.input_tokens": 18,
-        "gen_ai.usage.output_tokens": 39,
-      },
-    },
-    (span) => {
-      span.end();
-      return "done";
-    },
-  );
+  return tracer.startActiveSpan("open-ai-wrapper", (wrapperSpan) => {
+    try {
+      return tracer.startActiveSpan(
+        "open-ai-span",
+        {
+          attributes: {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.model": "gpt-5.4-nano",
+            "gen_ai.response.model": "gpt-5.4-nano-2026-03-17",
+            "gen_ai.system": "openai",
+            "gen_ai.usage.input_tokens": 18,
+            "gen_ai.usage.output_tokens": 39,
+          },
+        },
+        (span) => {
+          span.end();
+          return "done";
+        },
+      );
+    } finally {
+      wrapperSpan.end();
+    }
+  });
 }
 
 const fetchTraceStepsQuery = `
@@ -29,6 +35,10 @@ const fetchTraceStepsQuery = `
       trace(preview: $preview) {
         childrenSpans {
           childrenSpans {
+            childrenSpans {
+              isUserland
+              name
+            }
             isUserland
             name
           }
@@ -49,7 +59,13 @@ const metadataSchema = z.object({
   values: z.record(z.unknown()),
 });
 
+const nestedUserlandSpanSchema = z.object({
+  isUserland: z.boolean(),
+  name: z.string(),
+});
+
 const userlandSpanSchema = z.object({
+  childrenSpans: z.array(nestedUserlandSpanSchema),
   isUserland: z.boolean(),
   name: z.string(),
 });

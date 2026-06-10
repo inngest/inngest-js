@@ -4,75 +4,79 @@ import type {
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import type { Inngest } from "../../../Inngest.ts";
-import { getAsyncCtxSync } from "../../als.ts";
-import { registerClientProcessor } from "../access.ts";
 import { debugPrefix } from "../consts.ts";
+import { registerDefaultInstrumentations } from "../instrumentations.ts";
 import {
   createProviderWithProcessor,
   extendProviderWithProcessor,
 } from "../util.ts";
-import { registerAIMetadataInstrumentations } from "./instrumentations.ts";
 import { extractAIMetadata } from "./libExtractors/index.ts";
-import { aiMetadataKind } from "./metadata.ts";
+import type { AIMetadataValues } from "./metadata.ts";
 
 const aiMetadataDebug = Debug(`${debugPrefix}:AIMetadataSpanProcessor`);
 
-type StepContext = {
-  id: string;
+type SpanContext = {
+  onMetadata?: AIMetadataHandler;
+  rootSpanId: string;
 };
 
-type SpanState = {
-  rootSpanId: string;
-  step?: StepContext;
-};
+interface AIMetadataHandler {
+  (values: AIMetadataValues): boolean;
+}
+
+let isProviderRegistrationStarted = false;
 
 /**
- * Register one metadata processor for this client. OTel span processors are
- * global, so each processor must later ignore spans that do not belong to its
- * own client's declared execution root.
+ * Ensure the process-level metadata processor is registered with OTel. The
+ * engine calls the singleton directly for per-run lifecycle state.
  */
-export const registerAIMetadataSpanProcessor = (client: Inngest.Any): void => {
-  const processor = new InngestAIMetadataSpanProcessor();
-  registerClientProcessor(client, processor);
+export async function registerAIMetadataSpanProcessor(): Promise<void> {
+  try {
+    await registerDefaultInstrumentations();
+  } catch (err) {
+    aiMetadataDebug("unable to register default OTel instrumentations", err);
+  }
 
-  void registerAIMetadataInstrumentations().catch((err) => {
-    aiMetadataDebug("unable to register AI metadata instrumentations", err);
-  });
+  await ensureProviderRegistered(aiMetadataSpanProcessor);
+}
+
+async function ensureProviderRegistered(
+  processor: InngestAIMetadataSpanProcessor,
+): Promise<void> {
+  if (isProviderRegistrationStarted) {
+    return;
+  }
+
+  isProviderRegistrationStarted = true;
 
   const extended = extendProviderWithProcessor(processor, "auto");
   if (extended.success) {
     return;
   }
 
-  void createProviderWithProcessor(processor).then((created) => {
-    if (!created.success) {
-      aiMetadataDebug("unable to create provider", created.error);
-    }
-  });
-};
+  const created = await createProviderWithProcessor(processor);
+  if (!created.success) {
+    isProviderRegistrationStarted = false;
+    aiMetadataDebug("unable to create provider", created.error);
+  }
+}
 
 export class InngestAIMetadataSpanProcessor implements SpanProcessor {
   /**
-   * Populated only for checkpointing executions today. Multiple steps can run
-   * under the same root span, so the engine tells us which step is active.
+   * Tracks root spans and descendants by span ID. A child span is tracked only
+   * when its parent is already tracked, so lineage back to the declared
+   * execution root is preserved incrementally as spans start. Each tracked span
+   * points to the root context and metadata callback.
    */
-  #activeStepContext = new Map<string, StepContext>();
-
-  /**
-   * Tracks only spans under an Inngest root declared to this processor. This
-   * prevents multiple Inngest clients in one process from all writing metadata
-   * for the same AI span.
-   */
-  #spanStates = new Map<string, SpanState>();
+  #spanContexts = new Map<string, SpanContext>();
 
   /**
    * Normal span end calls cleanupSpan(). Use FinalizationRegistry to
-   * automatically remove state if a tracked span is garbage-collected without
-   * ending.
+   * automatically remove state and root callbacks if a tracked span is
+   * garbage-collected without ending.
    */
   #spanCleanup = new FinalizationRegistry<string>((spanId) => {
-    this.#spanStates.delete(spanId);
+    this.cleanupSpanState(spanId);
   });
 
   /**
@@ -81,37 +85,36 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
    * processor.
    */
   declareStartingSpan(args: {
+    onMetadata?: AIMetadataHandler;
     span: Span;
     runId: string;
     traceparent: string | undefined;
     tracestate: string | undefined;
   }): void {
+    const rootSpanId = args.span.spanContext().spanId;
     this.trackSpan(args.span, {
-      rootSpanId: args.span.spanContext().spanId,
+      onMetadata: args.onMetadata,
+      rootSpanId,
     });
   }
 
   /**
-   * Called before a checkpointing step handler runs. Non-checkpointing steps do
-   * not call this today, so they use the active execution context instead.
+   * Lifecycle method shared with Extended Traces. AI metadata attribution is
+   * handled by the execution callback, so this processor does not need step
+   * lifecycle state.
    */
   declareStepExecution(
-    rootSpanId: string,
-    id: string,
+    _rootSpanId: string,
+    _id: string,
     _index: number,
     _hashedStepId: string,
     _attempt: number,
-  ): void {
-    this.#activeStepContext.set(rootSpanId, { id });
-  }
+  ): void {}
 
   /**
-   * Called after a checkpointing step handler finishes, paired with
-   * declareStepExecution().
+   * Lifecycle method shared with Extended Traces. No-op for AI metadata.
    */
-  clearStepExecution(rootSpanId: string): void {
-    this.#activeStepContext.delete(rootSpanId);
-  }
+  clearStepExecution(_rootSpanId: string): void {}
 
   /**
    * OTel hook called when any span starts. Track spans whose parent is already
@@ -125,40 +128,23 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
       return;
     }
 
-    const parentState = this.#spanStates.get(parentSpanId);
-    if (!parentState) {
+    const parentSpanContext = this.#spanContexts.get(parentSpanId);
+    if (!parentSpanContext) {
       return;
     }
 
-    const step =
-      parentState.step ?? this.getCurrentStep(parentState.rootSpanId);
-    if (!step) {
-      return;
-    }
-
-    this.trackSpan(span, {
-      rootSpanId: parentState.rootSpanId,
-      step,
-    });
+    this.trackSpan(span, parentSpanContext);
   }
 
   /**
    * OTel hook called when any span ends. Extract AI metadata from tracked spans
-   * and attach it to the step captured at span start.
+   * and emit it through the callback for the owning execution root.
    */
   onEnd(span: ReadableSpan): void {
-    const spanState = this.#spanStates.get(span.spanContext().spanId);
+    const spanContext = this.#spanContexts.get(span.spanContext().spanId);
 
     try {
-      const step = spanState?.step;
-      if (!step) {
-        return;
-      }
-
-      const execution = getAsyncCtxSync()?.execution;
-      // If the span ends after the step changed or outside execution context,
-      // do not attach metadata to a stale or unrelated step.
-      if (!execution || execution.executingStep?.id !== step.id) {
+      if (!spanContext?.onMetadata) {
         return;
       }
 
@@ -167,15 +153,8 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
         return;
       }
 
-      if (
-        !execution.instance.addMetadata(
-          step.id,
-          aiMetadataKind,
-          "step",
-          "merge",
-          values,
-        )
-      ) {
+      const added = spanContext.onMetadata(values);
+      if (!added) {
         aiMetadataDebug("failed to add AI metadata to checkpoint payload");
       }
     } finally {
@@ -196,34 +175,13 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
   async shutdown(): Promise<void> {}
 
   /**
-   * Finds the Inngest step a newly-started child span should attach to.
-   * Checkpointing steps are declared by the engine; non-checkpointing steps
-   * fall back to the active execution context.
-   */
-  private getCurrentStep(rootSpanId: string): StepContext | undefined {
-    const activeStep = this.#activeStepContext.get(rootSpanId);
-    if (activeStep) {
-      return activeStep;
-    }
-
-    // Non-checkpointing executions do not declare step lifecycle to processors,
-    // but onStart() still runs inside the step's ALS context.
-    const stepId = getAsyncCtxSync()?.execution?.executingStep?.id;
-    if (!stepId) {
-      return;
-    }
-
-    return { id: stepId };
-  }
-
-  /**
    * Marks a span as owned by this processor so child spans can be followed and
-   * ended spans can be matched back to their step.
+   * ended spans can be matched back to their execution root.
    */
-  private trackSpan(span: Span, state: SpanState): void {
+  private trackSpan(span: Span, spanContext: SpanContext): void {
     const spanId = span.spanContext().spanId;
     this.#spanCleanup.register(span, spanId, span);
-    this.#spanStates.set(spanId, state);
+    this.#spanContexts.set(spanId, spanContext);
   }
 
   /**
@@ -232,6 +190,21 @@ export class InngestAIMetadataSpanProcessor implements SpanProcessor {
   private cleanupSpan(span: ReadableSpan): void {
     const spanId = span.spanContext().spanId;
     this.#spanCleanup.unregister(span);
-    this.#spanStates.delete(spanId);
+    this.cleanupSpanState(spanId);
+  }
+
+  /**
+   * Removes span tracking state and releases the metadata callback when the
+   * span is an execution root.
+   */
+  private cleanupSpanState(spanId: string): void {
+    const spanContext = this.#spanContexts.get(spanId);
+    if (spanContext?.rootSpanId === spanId) {
+      delete spanContext.onMetadata;
+    }
+
+    this.#spanContexts.delete(spanId);
   }
 }
+
+export const aiMetadataSpanProcessor = new InngestAIMetadataSpanProcessor();

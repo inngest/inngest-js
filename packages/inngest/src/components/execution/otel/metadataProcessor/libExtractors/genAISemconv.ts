@@ -30,7 +30,7 @@ export const genAISemconvExtractor: AIMetadataExtractor = {
   },
 };
 
-const isGenAISemanticConventionSpan = (span: ReadableSpan): boolean => {
+function isGenAISemanticConventionSpan(span: ReadableSpan): boolean {
   const system = span.attributes[genAIAttributes.system];
   const operationName = span.attributes[genAIAttributes.operationName];
 
@@ -40,4 +40,4 @@ const isGenAISemanticConventionSpan = (span: ReadableSpan): boolean => {
     typeof operationName === "string" &&
     operationName.length > 0
   );
-};
+}

@@ -1,18 +1,20 @@
 import { context, trace } from "@opentelemetry/api";
-import type { Instrumentation } from "@opentelemetry/instrumentation";
 import {
   BasicTracerProvider,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { debugPrefix } from "./consts.ts";
-import { disableAIMetadataAutoInstrumentations } from "./metadataProcessor/instrumentations.ts";
+import {
+  type Instrumentations,
+  registerDefaultInstrumentations,
+} from "./instrumentations.ts";
 import { InngestSpanProcessor } from "./processor.ts";
 
 const debug = Debug(`${debugPrefix}:createProvider`);
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
-export type Instrumentations = (Instrumentation | Instrumentation[])[];
+export type { Instrumentations };
 
 type ProviderResult = { success: true } | { success: false; error?: unknown };
 type CreateProviderResult =
@@ -35,28 +37,6 @@ const getExistingProvider = () => {
   }
 
   return globalProvider;
-};
-
-const registerAutoInstrumentations = async (
-  extra: Instrumentations,
-): Promise<void> => {
-  // Dynamic imports avoid pulling in the full auto-instrumentation suite at
-  // module evaluation time. These are only needed when creating a new
-  // provider; static imports caused version conflicts with host app OTel
-  // setups (e.g. Sentry) and silently broke inngest.send(). See #1324.
-  const { getNodeAutoInstrumentations } = await import(
-    "@opentelemetry/auto-instrumentations-node"
-  );
-  const { registerInstrumentations } = await import(
-    "@opentelemetry/instrumentation"
-  );
-
-  registerInstrumentations({
-    instrumentations: [
-      ...extra,
-      ...getNodeAutoInstrumentations(disableAIMetadataAutoInstrumentations),
-    ],
-  });
 };
 
 /**
@@ -101,7 +81,7 @@ const installProcessor = async (
   const work = async (): Promise<ProviderResult> => {
     try {
       if (opts.instrumentations) {
-        await registerAutoInstrumentations(opts.instrumentations);
+        await registerDefaultInstrumentations(opts.instrumentations);
       }
 
       if (extendProviderWithProcessor(processor, "auto").success) {

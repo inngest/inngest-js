@@ -338,7 +338,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
 
-    registerAIMetadataSpanProcessor(this);
+    void registerAIMetadataSpanProcessor();
 
     this.middleware = [
       ...builtInMiddleware(this._logger),

@@ -26,7 +26,7 @@ const expectedAIMetadata = {
   },
 };
 
-const getAIMetadata = (step: TraceStep | undefined) => {
+function getAIMetadata(step: TraceStep | undefined) {
   if (!step) {
     return [];
   }
@@ -34,7 +34,7 @@ const getAIMetadata = (step: TraceStep | undefined) => {
   return step.metadata.filter((metadata) => {
     return metadata.kind === "inngest.ai" && metadata.scope === "step";
   });
-};
+}
 
 matrixCheckpointing(
   "AI OTel attributes become step metadata",
@@ -63,7 +63,9 @@ matrixCheckpointing(
     await state.waitForRunComplete();
 
     const steps = await waitForTraceSteps(await state.waitForRunId());
-    const step = steps.find((step) => step.name === "my-step");
+    const step = steps.find((step) => {
+      return step.name === "my-step";
+    });
 
     expect(getAIMetadata(step)).toEqual([expectedAIMetadata]);
   },
@@ -97,7 +99,9 @@ matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
   await state.waitForRunComplete();
 
   const steps = await waitForTraceSteps(await state.waitForRunId());
-  const step = steps.find((step) => step.name === "my-step");
+  const step = steps.find((step) => {
+    return step.name === "my-step";
+  });
 
   expect(getAIMetadata(step)).toEqual([
     {
@@ -143,13 +147,21 @@ matrixCheckpointing(
 
     const runId = await state.waitForRunId();
     const steps = await waitForTraceSteps(runId);
-    const step = steps.find((step) => step.name === "my-step");
+    const step = steps.find((step) => {
+      return step.name === "my-step";
+    });
 
     // Extended Traces userland spans appear as child spans under the step.
     expect(step?.childrenSpans).toEqual([
       {
+        childrenSpans: [
+          {
+            isUserland: true,
+            name: "open-ai-span",
+          },
+        ],
         isUserland: true,
-        name: "open-ai-span",
+        name: "open-ai-wrapper",
       },
     ]);
 
