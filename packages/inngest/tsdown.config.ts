@@ -30,6 +30,7 @@ export default defineConfig({
     "src/remix.ts",
     "src/experimental/durable-endpoints/index.ts",
     "src/experimental/durable-endpoints/client.ts",
+    "src/experimental/otel-register.ts",
     "src/sveltekit.ts",
     "src/types.ts",
 

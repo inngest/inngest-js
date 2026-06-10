@@ -56,10 +56,54 @@ export const createProvider = async (
     trace.setGlobalTracerProvider(p);
     context.setGlobalContextManager(new AsyncHooksContextManager().enable());
 
+    await warnIfModulePatchingInactive();
+
     return { success: true, processor };
   } catch (err) {
     debug("failed to create provider:", err);
     return { success: false, error: err };
+  }
+};
+
+/**
+ * Most OTel instrumentations patch modules at load time by hooking
+ * `require()`, which cannot see ES module imports. In an ESM app that hasn't
+ * registered OTel's loader hook, the instrumentations registered by
+ * `createProvider` silently capture nothing (http, databases, AI SDKs, etc.).
+ *
+ * `http` is always included in the auto-instrumentations registered above, so
+ * an unpatched `http` namespace right after registration means module
+ * patching is inactive for ESM imports. Only checked in the ESM build — in
+ * CJS apps the `require()` hook works and patches modules lazily, so this
+ * probe would be a false positive there.
+ */
+const warnIfModulePatchingInactive = async (): Promise<void> => {
+  try {
+    // `typeof module` distinguishes our ESM build from our CJS build at
+    // runtime; bundlers rewrite `require` references, so it can't be used
+    // here.
+    const isEsm = typeof module === "undefined";
+    const instrumentationOverridden =
+      process.env.OTEL_NODE_ENABLED_INSTRUMENTATIONS !== undefined ||
+      process.env.OTEL_NODE_DISABLED_INSTRUMENTATIONS !== undefined;
+    if (!isEsm || instrumentationOverridden) {
+      return;
+    }
+
+    type MaybeWrapped = { __wrapped?: boolean } | undefined;
+    const http = (await import("node:http")) as {
+      get?: MaybeWrapped;
+      default?: { get?: MaybeWrapped };
+    };
+    const get = http.get ?? http.default?.get;
+    if (get?.__wrapped !== true) {
+      console.warn(
+        "inngest: OTel module instrumentation appears to be inactive, so extended traces will miss spans from modules like http, databases, and AI SDKs. ESM apps must register OpenTelemetry's module loader hook before any other code runs by starting Node with `--import inngest/experimental/otel-register`.",
+      );
+    }
+  } catch (err) {
+    // This is purely a diagnostic; never break provider creation over it.
+    debug("failed to check module instrumentation:", err);
   }
 };
 

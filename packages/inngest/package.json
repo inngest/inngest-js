@@ -242,6 +242,14 @@
       "import": "./experimental/durable-endpoints/client.js",
       "require": "./experimental/durable-endpoints/client.cjs"
     },
+    "./experimental/otel-register": {
+      "types": {
+        "import": "./experimental/otel-register.d.ts",
+        "require": "./experimental/otel-register.d.cts"
+      },
+      "import": "./experimental/otel-register.js",
+      "require": "./experimental/otel-register.cjs"
+    },
     "./realtime": {
       "types": {
         "import": "./realtime.d.ts",
