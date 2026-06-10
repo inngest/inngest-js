@@ -15,17 +15,17 @@ The processor does not know about steps. When a span ends, it extracts AI metada
 ## Files
 
 - `processor.ts`: OTel lifecycle, root ownership, and extracted metadata callback routing.
+- `provider.ts`: AI Metadata's feature-owned OTel create/extend setup.
 - `libExtractors/`: library/schema-specific attribute extraction. Extractors do not know about Inngest execution state.
 - `metadata.ts`: shared metadata kind, key names, and AI aggregation rules.
-- `../instrumentations.ts`: shared default OTel instrumentation registration used by AI metadata and Extended Traces.
 
 ## Extended Traces Patterns Reused
 
 Extended Traces is a separate feature and may or may not be enabled for a client. AI metadata must behave the same either way.
 
-Provider setup mirrors Extended Traces: first try to extend the current OTel provider, otherwise create a `BasicTracerProvider`. Metadata-only provider creation waits behind in-flight Extended Traces provider creation, so both features land on the same provider when enabled together.
+Provider setup intentionally mirrors Extended Traces instead of sharing its helper code: first try to extend the current OTel provider, otherwise create a `BasicTracerProvider` with the same default instrumentations. Provider creation uses the shared OTel setup mutex so AI Metadata and Extended Traces cannot race to install different global providers. The Extended Traces processor still only exists when the Extended Traces middleware is enabled; AI metadata registers its own singleton processor independently.
 
-The processor also reuses the execution lifecycle shape: `declareStartingSpan()` marks the root span. Default OTel instrumentations are registered through the shared OTel setup used by Extended Traces, so metadata behavior is the same with or without Extended Traces enabled.
+The processor also reuses the execution lifecycle shape: `declareStartingSpan()` marks the root span. AI Metadata owns its processor and setup so the feature works the same with or without Extended Traces enabled.
 
 ## Metadata
 

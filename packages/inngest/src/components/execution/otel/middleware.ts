@@ -5,6 +5,7 @@ import { Middleware } from "../../middleware/middleware.ts";
 import { registerClientProcessor } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
+import { withOTelLock } from "./providerSetupMutex.ts";
 import {
   type Behaviour,
   createProvider,
@@ -77,17 +78,18 @@ export const extendedTracesMiddleware = ({
   let processor: InngestSpanProcessor | undefined;
   let processorReady: Promise<void> | undefined;
 
-  switch (behaviour) {
-    case "auto": {
-      const extended = extendProvider(behaviour);
-      if (extended.success) {
-        devDebug("extended existing provider");
-        processor = extended.processor;
-        break;
-      }
+  if (behaviour !== "off") {
+    processorReady = withOTelLock(async function () {
+      switch (behaviour) {
+        case "auto": {
+          const extended = extendProvider(behaviour);
+          if (extended.success) {
+            devDebug("extended existing provider");
+            processor = extended.processor;
+            break;
+          }
 
-      processorReady = createProvider(instrumentations).then(
-        (created) => {
+          const created = await createProvider(behaviour, instrumentations);
           if (created.success) {
             devDebug("created new provider");
             processor = created.processor;
@@ -97,14 +99,11 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
-        },
-      );
 
-      break;
-    }
-    case "createProvider": {
-      processorReady = createProvider(instrumentations).then(
-        (created) => {
+          break;
+        }
+        case "createProvider": {
+          const created = await createProvider(behaviour, instrumentations);
           if (created.success) {
             devDebug("created new provider");
             processor = created.processor;
@@ -114,34 +113,30 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
-        },
-      );
 
-      break;
-    }
-    case "extendProvider": {
-      const extended = extendProvider(behaviour);
-      if (extended.success) {
-        devDebug("extended existing provider");
-        processor = extended.processor;
-        break;
+          break;
+        }
+        case "extendProvider": {
+          const extended = extendProvider(behaviour);
+          if (extended.success) {
+            devDebug("extended existing provider");
+            processor = extended.processor;
+          } else {
+            console.warn(
+              'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
+            );
+          }
+
+          break;
+        }
+        default: {
+          // unknown
+          console.warn(
+            `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
+          );
+        }
       }
-
-      console.warn(
-        'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
-      );
-
-      break;
-    }
-    case "off": {
-      break;
-    }
-    default: {
-      // unknown
-      console.warn(
-        `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
-      );
-    }
+    });
   }
 
   class ExtendedTracesMiddleware extends Middleware.BaseMiddleware {
@@ -162,7 +157,7 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         registerClientProcessor(client, processor);
       } else if (processorReady) {
-        // createProvider is async; register the processor once it resolves.
+        // Provider setup is async; register the processor once it resolves.
         processorReady
           .then(() => {
             if (processor) {

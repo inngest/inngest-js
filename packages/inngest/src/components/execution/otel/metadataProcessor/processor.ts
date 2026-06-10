@@ -5,13 +5,9 @@ import type {
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { debugPrefix } from "../consts.ts";
-import { registerDefaultInstrumentations } from "../instrumentations.ts";
-import {
-  createProviderWithProcessor,
-  extendProviderWithProcessor,
-} from "../util.ts";
 import { extractAIMetadata } from "./libExtractors/index.ts";
 import type { AIMetadataValues } from "./metadata.ts";
+import { registerAIMetadataProvider } from "./provider.ts";
 
 const aiMetadataDebug = Debug(`${debugPrefix}:AIMetadataSpanProcessor`);
 
@@ -31,12 +27,6 @@ let isProviderRegistrationStarted = false;
  * engine calls the singleton directly for per-run lifecycle state.
  */
 export async function registerAIMetadataSpanProcessor(): Promise<void> {
-  try {
-    await registerDefaultInstrumentations();
-  } catch (err) {
-    aiMetadataDebug("unable to register default OTel instrumentations", err);
-  }
-
   await ensureProviderRegistered(aiMetadataSpanProcessor);
 }
 
@@ -49,12 +39,7 @@ async function ensureProviderRegistered(
 
   isProviderRegistrationStarted = true;
 
-  const extended = extendProviderWithProcessor(processor, "auto");
-  if (extended.success) {
-    return;
-  }
-
-  const created = await createProviderWithProcessor(processor);
+  const created = await registerAIMetadataProvider(processor);
   if (!created.success) {
     isProviderRegistrationStarted = false;
     aiMetadataDebug("unable to create provider", created.error);
