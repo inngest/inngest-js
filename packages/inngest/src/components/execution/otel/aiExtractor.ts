@@ -142,3 +142,29 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
 
   return metadata;
 };
+
+/**
+ * Maps an {@link AIMetadata} value onto the server's `inngest.ai` metadata
+ * schema (snake_case keys). Only the fields we extract are emitted; absent
+ * fields are omitted rather than zero-valued. Returns `undefined` when there
+ * is nothing to emit, so callers can skip stamping metadata entirely.
+ */
+export const toInngestAIMetadataValues = (
+  metadata: AIMetadata,
+): Record<string, unknown> | undefined => {
+  const values: Record<string, unknown> = {};
+
+  if (metadata.model !== undefined) {
+    values.model = metadata.model;
+  }
+
+  if (metadata.inputTokens !== undefined) {
+    values.input_tokens = metadata.inputTokens;
+  }
+
+  if (Object.keys(values).length === 0) {
+    return undefined;
+  }
+
+  return values;
+};
