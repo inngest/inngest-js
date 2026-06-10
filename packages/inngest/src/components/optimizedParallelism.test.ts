@@ -4,7 +4,7 @@ import { createClient, runFnWithStack } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
 import { InngestCommHandler } from "./InngestCommHandler.ts";
 
-describe("EXE-1135: Default to optimized parallelism", () => {
+describe("Default to optimized parallelism", () => {
   describe("shouldOptimizeParallelism precedence", () => {
     // Function-level takes priority over client-level, which takes priority over default (true)
     test.each([
@@ -350,21 +350,28 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       event: { name: "test/event", data: {} },
       events: [{ name: "test/event", data: {} }],
       steps: {},
-      ctx: { run_id: "run-123", attempt: 0 },
+      ctx: { fn_id: "fn-123", run_id: "run-123", attempt: 0 },
       version: -1, // SDK decides
     };
 
     const createHandler = (
       client: ReturnType<typeof createClient>,
       fn: ReturnType<ReturnType<typeof createClient>["createFunction"]>,
+      { fnIdInCtx = true }: { fnIdInCtx?: boolean } = {},
     ) => {
-      const bodyStr = JSON.stringify(sdkDecidesRequestBody);
+      const requestBody = fnIdInCtx
+        ? sdkDecidesRequestBody
+        : {
+            ...sdkDecidesRequestBody,
+            ctx: { run_id: "run-123", attempt: 0 },
+          };
+      const bodyStr = JSON.stringify(requestBody);
       return new InngestCommHandler({
         frameworkName: "test",
         client,
         functions: [fn],
         handler: () => ({
-          body: () => sdkDecidesRequestBody,
+          body: () => requestBody,
           headers: (key: string) =>
             key.toLowerCase() === "content-length"
               ? bodyStr.length.toString()
@@ -385,29 +392,36 @@ describe("EXE-1135: Default to optimized parallelism", () => {
     test.each([
       {
         fnOpt: undefined,
-        clientOpt: undefined,
+        checkpointing: undefined,
         expectedVersion: ExecutionVersion.V2,
         desc: "default",
       },
       {
         fnOpt: false,
-        clientOpt: undefined,
-        expectedVersion: ExecutionVersion.V1,
-        desc: "function opt-out",
+        checkpointing: undefined,
+        expectedVersion: ExecutionVersion.V2,
+        desc: "function opt-out, checkpointing default",
       },
       {
-        fnOpt: undefined,
-        clientOpt: false,
+        fnOpt: false,
+        checkpointing: false,
         expectedVersion: ExecutionVersion.V1,
-        desc: "client opt-out",
+        desc: "function opt-out, checkpointing disabled",
+      },
+      {
+        fnOpt: false,
+        checkpointing: undefined,
+        fnIdInCtx: false,
+        expectedVersion: ExecutionVersion.V1,
+        desc: "function opt-out, executor without fn_id",
       },
     ])(
       "uses V$expectedVersion with $desc",
-      async ({ fnOpt, clientOpt, expectedVersion }) => {
+      async ({ fnOpt, checkpointing, fnIdInCtx, expectedVersion }) => {
         const client = createClient({
           id: "test",
           isDev: true,
-          ...(clientOpt !== undefined && { optimizeParallelism: clientOpt }),
+          ...(checkpointing !== undefined && { checkpointing }),
         });
         const fn = client.createFunction(
           {
@@ -418,7 +432,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
           async () => "done",
         );
 
-        const handler = createHandler(client, fn);
+        const handler = createHandler(client, fn, { fnIdInCtx });
         const response = (await handler.createHandler()()) as {
           headers: Record<string, string>;
         };

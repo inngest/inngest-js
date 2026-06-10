@@ -1,4 +1,5 @@
 import { internalEvents, queryKeys } from "../helpers/consts.ts";
+import { warnOnce } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
 import {
@@ -19,7 +20,7 @@ import type {
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
 
-import type { Inngest } from "./Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import type { Middleware } from "./middleware/middleware.ts";
 import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
@@ -74,6 +75,14 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
+
+    if (this.opts.optimizeParallelism === false) {
+      warnOnce(
+        this.client[internalLoggerSymbol],
+        `optimize-parallelism-deprecated:${this.opts.id}`,
+        '`optimizeParallelism: false` is deprecated; use `group.parallel({ mode: "race" }, ...)` for race semantics instead',
+      );
+    }
   }
 
   /**
@@ -304,6 +313,21 @@ export class InngestFunction<
     );
   }
 
+  private canCheckpoint(internalFnId: string | undefined): boolean {
+    return Boolean(internalFnId) && this.checkpointingConfig() !== false;
+  }
+
+  private checkpointingConfig(): CheckpointingOptions {
+    // TODO We should check the commhandler's client instead of this one?
+    return (
+      this.opts.checkpointing ??
+      this.client["options"].checkpointing ??
+      this.opts.experimentalCheckpointing ??
+      this.client["options"].experimentalCheckpointing ??
+      true
+    );
+  }
+
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private shouldAsyncCheckpoint(
     requestedRunStep: string | undefined,
@@ -311,17 +335,15 @@ export class InngestFunction<
     disableImmediateExecution: boolean,
     defaultMaxRuntime: DefaultMaxRuntime,
   ): InternalCheckpointingOptions | undefined {
-    if (requestedRunStep || !internalFnId || disableImmediateExecution) {
+    if (
+      requestedRunStep ||
+      disableImmediateExecution ||
+      !this.canCheckpoint(internalFnId)
+    ) {
       return;
     }
 
-    // TODO We should check the commhandler's client instead of this one?
-    const userCfg =
-      this.opts.checkpointing ??
-      this.client["options"].checkpointing ??
-      this.opts.experimentalCheckpointing ??
-      this.client["options"].experimentalCheckpointing ??
-      true;
+    const userCfg = this.checkpointingConfig();
 
     if (!userCfg) {
       // Opted out
@@ -714,6 +736,8 @@ export namespace InngestFunction {
      *
      * Overrides the client-level setting.
      *
+     * @deprecated Use `group.parallel({ mode: "race" })` for race semantics
+     * instead.
      * @default true
      */
     optimizeParallelism?: boolean;
