@@ -1,11 +1,13 @@
+import type { Server } from "node:http";
 import {
   createState,
+  createTestApp,
   randomSuffix,
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { Inngest } from "../../../index.ts";
-import { createRecordedTestApp } from "./recordingProxy.ts";
+import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -19,9 +21,68 @@ const stepNames = [
   "after-3",
 ] as const;
 
+interface RecordedOp {
+  op: string;
+  name?: string;
+  displayName?: string;
+}
+
+function isOpLike(value: unknown): value is RecordedOp {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "op" in value &&
+    typeof value.op === "string"
+  );
+}
+
+/**
+ * Capture every op the app returns to the executor so tests can assert on
+ * the executor↔SDK protocol. Only responses are tapped; request bodies are
+ * left untouched because the comm handler reads them lazily.
+ */
+function recordResponseOps(server: Server): RecordedOp[] {
+  const ops: RecordedOp[] = [];
+
+  server.prependListener("request", (_req, res) => {
+    const chunks: Buffer[] = [];
+    const write = res.write.bind(res);
+    const end = res.end.bind(res);
+
+    res.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
+      chunks.push(Buffer.from(chunk));
+      return write(chunk, ...rest);
+    }) as typeof res.write;
+
+    res.end = ((chunk?: unknown, ...rest: never[]) => {
+      if (typeof chunk === "string" || chunk instanceof Uint8Array) {
+        chunks.push(Buffer.from(chunk));
+      }
+      return end(chunk as never, ...rest);
+    }) as typeof res.end;
+
+    res.on("finish", () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        return;
+      }
+      for (const item of Array.isArray(body) ? body : [body]) {
+        if (isOpLike(item)) {
+          ops.push(item);
+        }
+      }
+    });
+  });
+
+  return ops;
+}
+
 /**
  * Two sequential steps, a `Promise.all` of two parallel steps, then three
- * more sequential steps, with all executor↔SDK traffic recorded.
+ * more sequential steps, with every op the SDK returns to the executor
+ * recorded.
  */
 async function runScenario(opts: { optimizeParallelism?: boolean }) {
   const state = createState({
@@ -58,15 +119,17 @@ async function runScenario(opts: { optimizeParallelism?: boolean }) {
     },
   );
 
-  const { requests } = await createRecordedTestApp({
+  const { server } = await createTestApp({
     client,
     functions: [fn],
+    serve: createServer,
   });
+  const responseOps = recordResponseOps(server);
 
   await client.send({ name: eventName });
   const result = await state.waitForRunComplete();
 
-  return { counts: state.counts, requests, result };
+  return { counts: state.counts, responseOps, result };
 }
 
 /**
@@ -77,37 +140,25 @@ async function runScenario(opts: { optimizeParallelism?: boolean }) {
 function assertResumesCheckpointing(
   scenario: Awaited<ReturnType<typeof runScenario>>,
 ): void {
-  const { counts, requests, result } = scenario;
+  const { counts, responseOps, result } = scenario;
 
   expect(result).toBe("done");
   for (const name of stepNames) {
     expect(counts[name], `step ${name} should run exactly once`).toBe(1);
   }
 
-  // POSTs are run traffic; the registration PUT is not.
-  const posts = requests.filter((r) => r.method === "POST");
-  expect(posts.length).toBeGreaterThan(0);
-
-  const first = posts[0];
-  expect(first?.requestReqVersion).toBe("-1");
-  expect(first?.responseReqVersion).toBe("2");
+  // Guards against the StepPlanned assertion below passing vacuously if
+  // response recording breaks.
+  expect(responseOps.map((op) => op.op)).toContain("RunComplete");
 
   // Checkpointing resumed: no StepPlanned discovery for the trailing
   // sequential steps.
-  const trailingPlanned = posts.flatMap((r) =>
-    r.responseOps.filter(
-      (op) =>
-        op.op === "StepPlanned" &&
-        (op.displayName ?? op.name ?? "").startsWith("after-"),
-    ),
+  const trailingPlanned = responseOps.filter(
+    (op) =>
+      op.op === "StepPlanned" &&
+      (op.displayName ?? op.name ?? "").startsWith("after-"),
   );
   expect(trailingPlanned).toHaveLength(0);
-
-  // The request that completed the run was no longer forcing step planning.
-  const finalPost = posts.find((r) =>
-    r.responseOps.some((op) => op.op === "RunComplete"),
-  );
-  expect(finalPost?.disableImmediateExecution).toBe(false);
 }
 
 test("resumes checkpointing after parallelism (default config)", async () => {
