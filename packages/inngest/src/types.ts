@@ -146,6 +146,14 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
+
+  /**
+   * Sessions of the original triggering event, used to group runs.
+   *
+   * Always a map of strings when received; number and boolean identifiers
+   * given when sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
 };
 
 /**
@@ -185,6 +193,14 @@ export type FinishedEventPayload = {
         result: unknown;
       }
   );
+
+  /**
+   * Sessions of the original triggering event, used to group runs.
+   *
+   * Always a map of strings when received; number and boolean identifiers
+   * given when sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
 };
 
 /**
@@ -198,6 +214,14 @@ export type CancelledEventPayload = {
     run_id: string;
     correlation_id?: string;
   };
+
+  /**
+   * Sessions of the original triggering event, used to group runs.
+   *
+   * Always a map of strings when received; number and boolean identifiers
+   * given when sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
 };
 
 /**
