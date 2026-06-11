@@ -774,8 +774,46 @@ export type ApplyAllMiddlewareTransforms<
   T,
   TKind extends TransformKind = "stepOutputTransform",
 > = TMw extends [Middleware.Class, ...Middleware.Class[]]
-  ? ApplyMiddlewareTransformsInternal<TMw, T, TKind>
+  ? AnyMiddlewareOverridesTransform<TMw, TKind> extends true
+    ? ApplyMiddlewareTransformsInternal<TMw, T, TKind>
+    : Jsonify<T>
   : Jsonify<T>; // No middleware or empty array - apply default Jsonify
+
+/**
+ * Whether a middleware transform explicitly overrides the default Jsonify
+ * transform. Default transforms are collapsed to a single Jsonify application
+ * so nested object/array inference does not degrade across middleware stacks.
+ */
+type AnyMiddlewareOverridesTransform<
+  TMw extends Middleware.Class[] | undefined,
+  TKind extends TransformKind,
+> = TMw extends [
+  infer First extends Middleware.Class,
+  ...infer Rest extends Middleware.Class[],
+]
+  ? IsDefaultMiddlewareTransform<
+      GetMiddlewareTransformerByKind<First, TKind>
+    > extends true
+    ? AnyMiddlewareOverridesTransform<Rest, TKind>
+    : true
+  : false;
+
+type DefaultTransformProbe = {
+  readonly __inngestDefaultTransformCheck: Date;
+};
+
+type IsDefaultMiddlewareTransform<
+  TTransform extends Middleware.StaticTransform,
+> = IsSame<
+  ApplyMiddlewareStaticTransform<TTransform, DefaultTransformProbe>,
+  Jsonify<DefaultTransformProbe>
+>;
+
+type IsSame<A, B> = (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B
+  ? 1
+  : 2
+  ? true
+  : false;
 
 /**
  * Internal helper that recursively applies middleware transforms.
