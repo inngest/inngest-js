@@ -2215,17 +2215,11 @@ export class InngestCommHandler<
     const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
 
-    // Checkpointing runs already execute with V2 semantics; reporting V1
-    // would mis-stamp the run server-side and permanently disable
-    // checkpointing after parallelism.
-    const checkpointingActive =
-      fn.fn["canCheckpoint"]?.(immediateFnData.ctx?.fn_id) === true;
-
+    // Handle opting out of optimized parallelism
     if (
       version === ExecutionVersion.V2 &&
       sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.() === false &&
-      !checkpointingActive
+      fn.fn["shouldOptimizeParallelism"]?.() === false
     ) {
       version = ExecutionVersion.V1;
     }

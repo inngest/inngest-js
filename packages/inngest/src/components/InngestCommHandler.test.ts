@@ -440,12 +440,8 @@ describe("response version header", () => {
     );
   });
 
-  test("responds with V1 when function opts out of optimized parallelism and checkpointing is disabled", async () => {
-    const client = createClient({
-      id: "test",
-      isDev: true,
-      checkpointing: false,
-    });
+  test("responds with V1 when function opts out of optimized parallelism", async () => {
+    const client = createClient({ id: "test", isDev: true });
 
     const optedOutFn = client.createFunction(
       {
@@ -460,18 +456,17 @@ describe("response version header", () => {
 
     const result = await runHandler(optedOutHandler);
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V1.toString(),
     );
   });
 
-  test("responds with V1 when client opts out of optimized parallelism and checkpointing is disabled", async () => {
+  test("responds with V1 when client opts out of optimized parallelism", async () => {
     const client = createClient({
       id: "test",
       isDev: true,
       optimizeParallelism: false,
-      checkpointing: false,
     });
 
     const fn = client.createFunction(
@@ -483,7 +478,7 @@ describe("response version header", () => {
 
     const result = await runHandler(handler);
 
-    expect(result.status).toBe(200);
+    expect(result.status).toBe(206);
     expect(result.headers[headerKeys.RequestVersion]).toBe(
       ExecutionVersion.V1.toString(),
     );

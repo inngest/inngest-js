@@ -313,21 +313,6 @@ export class InngestFunction<
     );
   }
 
-  private canCheckpoint(internalFnId: string | undefined): boolean {
-    return Boolean(internalFnId) && this.checkpointingConfig() !== false;
-  }
-
-  private checkpointingConfig(): CheckpointingOptions {
-    // TODO We should check the commhandler's client instead of this one?
-    return (
-      this.opts.checkpointing ??
-      this.client["options"].checkpointing ??
-      this.opts.experimentalCheckpointing ??
-      this.client["options"].experimentalCheckpointing ??
-      true
-    );
-  }
-
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private shouldAsyncCheckpoint(
     requestedRunStep: string | undefined,
@@ -335,15 +320,17 @@ export class InngestFunction<
     disableImmediateExecution: boolean,
     defaultMaxRuntime: DefaultMaxRuntime,
   ): InternalCheckpointingOptions | undefined {
-    if (
-      requestedRunStep ||
-      disableImmediateExecution ||
-      !this.canCheckpoint(internalFnId)
-    ) {
+    if (requestedRunStep || !internalFnId || disableImmediateExecution) {
       return;
     }
 
-    const userCfg = this.checkpointingConfig();
+    // TODO We should check the commhandler's client instead of this one?
+    const userCfg =
+      this.opts.checkpointing ??
+      this.client["options"].checkpointing ??
+      this.opts.experimentalCheckpointing ??
+      this.client["options"].experimentalCheckpointing ??
+      true;
 
     if (!userCfg) {
       // Opted out

@@ -84,7 +84,7 @@ function recordResponseOps(server: Server): RecordedOp[] {
  * more sequential steps, with every op the SDK returns to the executor
  * recorded.
  */
-async function runScenario(opts: { optimizeParallelism?: boolean }) {
+async function runScenario() {
   const state = createState({
     counts: {} as Record<string, number>,
   });
@@ -98,7 +98,6 @@ async function runScenario(opts: { optimizeParallelism?: boolean }) {
     id: randomSuffix(testFileName),
     isDev: true,
     checkpointing: true,
-    optimizeParallelism: opts.optimizeParallelism,
   });
 
   const eventName = randomSuffix("evt");
@@ -161,16 +160,7 @@ function assertResumesCheckpointing(
   expect(trailingPlanned).toHaveLength(0);
 }
 
-test("resumes checkpointing after parallelism (default config)", async () => {
-  const scenario = await runScenario({});
-  assertResumesCheckpointing(scenario);
-});
-
-// Pins the fix for inngest/inngest#3717: the executor stamps the reported
-// version into run metadata on the first request, and its ForceStepPlan
-// reset only applies to stamped versions >= 2. Reporting 1 for an opted-out
-// run would permanently disable checkpointing after a `Promise.all`.
-test("resumes checkpointing after parallelism (optimizeParallelism: false)", async () => {
-  const scenario = await runScenario({ optimizeParallelism: false });
+test("resumes checkpointing after parallelism", async () => {
+  const scenario = await runScenario();
   assertResumesCheckpointing(scenario);
 });
