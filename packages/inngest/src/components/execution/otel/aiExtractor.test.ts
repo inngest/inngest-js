@@ -192,6 +192,31 @@ describe("extractAIMetadataFromAttributes", () => {
     });
     expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
   });
+
+  // The Vercel AI SDK emits a wrapper span (e.g. `ai.generateText`) whose
+  // `ai.usage.*` duplicates its provider-call child (`ai.generateText.doGenerate`).
+  // The wrapper must extract to nothing so the per-step aggregate doesn't count
+  // the same tokens twice; the child (which carries the documented `.do*`
+  // segment) carries the usage.
+  test("skips the Vercel rollup span so its usage isn't double-counted", () => {
+    const rollup = {
+      "ai.operationId": "ai.generateText",
+      "ai.model.id": "gpt-4.1-nano",
+      "ai.usage.inputTokens": 17,
+    };
+    expect(extractAIMetadataFromAttributes(rollup)).toEqual({});
+
+    // The provider-call (leaf) span is still extracted normally.
+    const leaf = {
+      "ai.operationId": "ai.generateText.doGenerate",
+      "ai.model.id": "gpt-4.1-nano",
+      "ai.usage.inputTokens": 17,
+    };
+    expect(extractAIMetadataFromAttributes(leaf)).toEqual({
+      model: "gpt-4.1-nano",
+      inputTokens: 17,
+    });
+  });
 });
 
 describe("aggregate", () => {

@@ -68,6 +68,31 @@ interface Candidate {
 }
 
 /**
+ * We identify rollup spans as spans with Vercel's unique "ai.operationId" attribute key
+ * and a value that does not container ".do", based on their naming patterns.
+ *
+ * @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry
+ */
+const VERCEL_PROVIDER_CALL_SEGMENT = /\.do[A-Z]/;
+
+/**
+ * Whether the span is a Vercel AI SDK framework wrapper span.
+ *
+ * The Vercel AI SDK emits a span *tree*: a framework rollup span
+ * (`ai.generateText`) whose children are the provider-call (leaf)
+ * spans (`ai.generateText.doGenerate`).
+ *
+ * Both carry overlapping data about calls, so using both would double count.
+ * We choose to skip the rollup span.
+ */
+const isVercelRollupSpan = (attributes: Attributes): boolean => {
+  const op = attributes["ai.operationId"];
+  // Only Vercel AI SDK spans carry `ai.operationId`; among them, the
+  // provider-call leaf has a `.do*` segment and the wrapper does not.
+  return typeof op === "string" && !VERCEL_PROVIDER_CALL_SEGMENT.test(op);
+};
+
+/**
  * Extracts AI model metadata from a span's attributes.
  *
  * Attributes are matched across multiple instrumentation conventions
@@ -80,6 +105,12 @@ interface Candidate {
 export const extractAIMetadataFromAttributes = (
   attributes: Attributes,
 ): AIMetadata => {
+  // The Vercel AI SDK's rollup span duplicates its provider-call child's usage;
+  // skip it to avoid double counting.
+  if (isVercelRollupSpan(attributes)) {
+    return {};
+  }
+
   // Track the highest-precedence (lowest convention) candidate seen per field.
   const candidates: Partial<Record<Field, Candidate>> = {};
 
