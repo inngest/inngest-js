@@ -505,7 +505,6 @@ describe("send", () => {
             conversation_id: "conversation_1234",
             model: "gpt-4.1",
             priority: 1,
-            active: true,
           },
         }),
       ).resolves.toMatchObject({
@@ -520,7 +519,6 @@ describe("send", () => {
         conversation_id: "conversation_1234",
         model: "gpt-4.1",
         priority: "1",
-        active: "true",
       });
     });
 
@@ -557,7 +555,7 @@ describe("send", () => {
           data: {},
           sessions: { "": "conversation_1234" },
         }),
-      ).rejects.toThrowError("Event session names cannot be empty");
+      ).rejects.toThrowError("Event session keys cannot be empty");
     });
 
     test("should reject event session values with unsupported runtime types", async () => {
@@ -573,7 +571,21 @@ describe("send", () => {
           >,
         }),
       ).rejects.toThrowError(
-        'Event session "conversation_id" must be a string, number, or boolean',
+        'Event session "conversation_id" must be a string or number',
+      );
+    });
+
+    test("should reject boolean event session values", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          // Booleans are low-cardinality labels, not session IDs.
+          sessions: { active: true } as unknown as Record<string, string>,
+        }),
+      ).rejects.toThrowError(
+        'Event session "active" must be a string or number',
       );
     });
 

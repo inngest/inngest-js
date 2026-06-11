@@ -18,31 +18,28 @@ export const normalizeEventSessions = (
 
   const entries = Object.entries(sessions);
 
-  const normalized: Record<string, string> = {};
-  for (const [name, value] of entries) {
-    if (!name) {
-      throw new Error("Event session names cannot be empty");
+  // Collected as entries and built with Object.fromEntries so that special
+  // keys like "__proto__" become own properties instead of being silently
+  // dropped by a plain object assignment.
+  const normalized: [string, string][] = [];
+  for (const [key, value] of entries) {
+    if (!key) {
+      throw new Error("Event session keys cannot be empty");
     }
-    if (
-      typeof value !== "string" &&
-      typeof value !== "number" &&
-      typeof value !== "boolean"
-    ) {
-      throw new Error(
-        `Event session "${name}" must be a string, number, or boolean`,
-      );
+    if (typeof value !== "string" && typeof value !== "number") {
+      throw new Error(`Event session "${key}" must be a string or number`);
     }
     if (typeof value === "number" && !Number.isFinite(value)) {
-      throw new Error(`Event session "${name}" must be a finite number`);
+      throw new Error(`Event session "${key}" must be a finite number`);
     }
 
     const id = String(value);
     if (!id) {
-      throw new Error(`Event session "${name}" cannot have an empty ID`);
+      throw new Error(`Event session "${key}" cannot have an empty ID`);
     }
 
-    normalized[name] = id;
+    normalized.push([key, id]);
   }
 
-  return normalized;
+  return Object.fromEntries(normalized);
 };

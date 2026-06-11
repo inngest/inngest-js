@@ -150,8 +150,8 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   /**
    * Sessions of the original triggering event, used to group runs.
    *
-   * Always a map of strings when received; number and boolean identifiers
-   * given when sending are normalized to strings.
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
    */
   sessions?: Record<string, string>;
 };
@@ -197,8 +197,8 @@ export type FinishedEventPayload = {
   /**
    * Sessions of the original triggering event, used to group runs.
    *
-   * Always a map of strings when received; number and boolean identifiers
-   * given when sending are normalized to strings.
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
    */
   sessions?: Record<string, string>;
 };
@@ -218,8 +218,8 @@ export type CancelledEventPayload = {
   /**
    * Sessions of the original triggering event, used to group runs.
    *
-   * Always a map of strings when received; number and boolean identifiers
-   * given when sending are normalized to strings.
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
    */
   sessions?: Record<string, string>;
 };
@@ -685,7 +685,7 @@ export interface MinimalEventPayload<TData = any> {
   /**
    * Session metadata used to group runs triggered by this event.
    *
-   * Keys are session names, values are session identifiers. Values are
+   * Keys are session keys, values are session IDs. Values are
    * normalized to strings before the event is sent.
    */
   sessions?: EventSessions;
@@ -719,12 +719,12 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
 }
 
 /**
- * Primitive values accepted for event session identifiers when sending an
- * event. Numbers and booleans are normalized to strings before sending.
+ * Primitive values accepted for event session IDs when sending an
+ * event. Numbers are normalized to strings before sending.
  *
  * @public
  */
-export type EventSessionValue = string | number | boolean;
+export type EventSessionValue = string | number;
 
 /**
  * Session metadata accepted when sending an event. Values are normalized to

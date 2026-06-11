@@ -44,8 +44,8 @@ export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
   /**
    * Session metadata used to group runs triggered by this event.
    *
-   * Always a map of strings when received; number and boolean identifiers
-   * given when sending are normalized to strings.
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
    */
   sessions?: Record<string, string>;
 
