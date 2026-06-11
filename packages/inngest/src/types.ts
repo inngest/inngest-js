@@ -1048,6 +1048,8 @@ export interface ClientOptions {
    * to settle before resolving. Use `group.parallel()` for `Promise.race()`
    * semantics.
    *
+   * @deprecated Use `group.parallel({ mode: "race" })` for race semantics
+   * instead.
    * @default true
    */
   optimizeParallelism?: boolean;
