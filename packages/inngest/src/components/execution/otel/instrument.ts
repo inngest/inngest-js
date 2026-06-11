@@ -1,28 +1,71 @@
 import { context, trace } from "@opentelemetry/api";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
+import {
+  type Instrumentation,
+  registerInstrumentations,
+} from "@opentelemetry/instrumentation";
 import {
   BasicTracerProvider,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import Debug from "debug";
-import { debugPrefix } from "../consts.ts";
-import { withOTelLock } from "../providerSetupMutex.ts";
-import type { Instrumentations } from "../util.ts";
+import { debugPrefix } from "./consts.ts";
+import { aiMetadataSpanProcessor } from "./metadataProcessor/processor.ts";
 
-const debug = Debug(`${debugPrefix}:AIMetadataProvider`);
+const debug = Debug(`${debugPrefix}:instrumentTraces`);
 
 type ProviderResult = { success: true } | { success: false; error?: unknown };
+type Instrumentations = (Instrumentation | Instrumentation[])[];
 
-export async function registerAIMetadataProvider(
-  processor: SpanProcessor,
-): Promise<ProviderResult> {
-  return withOTelLock(function () {
-    return registerAIMetadataProviderLocked(processor);
-  });
+let isTraceInstrumentationStarted = false;
+
+/**
+ * Installs Inngest trace instrumentation into the process-global OTel provider.
+ * Call this before importing instrumented libraries.
+ */
+export function instrumentTraces(): void {
+  if (isTraceInstrumentationStarted) {
+    return;
+  }
+
+  isTraceInstrumentationStarted = true;
+
+  const instrumented = registerTraceInstrumentations();
+  if (!instrumented.success) {
+    isTraceInstrumentationStarted = false;
+    debug("unable to register trace instrumentations", instrumented.error);
+    return;
+  }
+
+  const registered = setupTraceProvider(aiMetadataSpanProcessor);
+  if (!registered.success) {
+    isTraceInstrumentationStarted = false;
+    debug("unable to create provider", registered.error);
+  }
 }
 
-async function registerAIMetadataProviderLocked(
-  processor: SpanProcessor,
-): Promise<ProviderResult> {
+function registerTraceInstrumentations(): ProviderResult {
+  try {
+    // Keep this list intentionally aligned with Extended Traces.
+    const instrumentations: Instrumentations = [
+      ...getNodeAutoInstrumentations(),
+      new AnthropicInstrumentation(),
+    ];
+
+    registerInstrumentations({
+      instrumentations,
+    });
+
+    return { success: true };
+  } catch (err) {
+    debug("failed to register trace instrumentations:", err);
+    return { success: false, error: err };
+  }
+}
+
+function setupTraceProvider(processor: SpanProcessor): ProviderResult {
   const extended = extendProvider(processor);
   if (extended.success) {
     return extended;
@@ -53,35 +96,10 @@ function extendProvider(
   return { success: false };
 }
 
-async function createProvider(
-  processor: SpanProcessor,
-): Promise<ProviderResult> {
+function createProvider(processor: SpanProcessor): ProviderResult {
   try {
     const provider = new BasicTracerProvider({
       spanProcessors: [processor],
-    });
-
-    // Keep this list intentionally aligned with Extended Traces.
-    const { getNodeAutoInstrumentations } = await import(
-      "@opentelemetry/auto-instrumentations-node"
-    );
-    const { registerInstrumentations } = await import(
-      "@opentelemetry/instrumentation"
-    );
-    const { AnthropicInstrumentation } = await import(
-      "@traceloop/instrumentation-anthropic"
-    );
-    const { AsyncHooksContextManager } = await import(
-      "@opentelemetry/context-async-hooks"
-    );
-
-    const instrumentations: Instrumentations = [
-      ...getNodeAutoInstrumentations(),
-      new AnthropicInstrumentation(),
-    ];
-
-    registerInstrumentations({
-      instrumentations,
     });
 
     if (!trace.setGlobalTracerProvider(provider)) {

@@ -1,9 +1,4 @@
-import { openai } from "@ai-sdk/openai";
-import { generateText } from "ai";
-import OpenAI from "openai";
-import { inngest } from "./client.ts";
-
-const openaiClient = new OpenAI();
+import { inngest, openaiClient } from "./client.ts";
 
 export const fn1 = inngest.createFunction(
   {
@@ -13,9 +8,6 @@ export const fn1 = inngest.createFunction(
     checkpointing: false,
   },
   async ({ event, step }) => {
-    // step.run makes the call durable + memoized on retries. AI spans come from
-    // the AI SDK telemetry flag or the OpenAI instrumentation preloaded via
-    // --require ./instrumentation.cjs.
     // await step.run("lib-ai", async () => {
     //   const { text } = await generateText({
     //     model: openai("gpt-5.4-nano"),

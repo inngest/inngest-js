@@ -7,7 +7,6 @@ import Debug from "debug";
 import { debugPrefix } from "../consts.ts";
 import { extractAIMetadata } from "./libExtractors/index.ts";
 import type { AIMetadataValues } from "./metadata.ts";
-import { registerAIMetadataProvider } from "./provider.ts";
 
 const aiMetadataDebug = Debug(`${debugPrefix}:AIMetadataSpanProcessor`);
 
@@ -18,32 +17,6 @@ type SpanContext = {
 
 interface AIMetadataHandler {
   (values: AIMetadataValues): boolean;
-}
-
-let isProviderRegistrationStarted = false;
-
-/**
- * Ensure the process-level metadata processor is registered with OTel. The
- * engine calls the singleton directly for per-run lifecycle state.
- */
-export async function registerAIMetadataSpanProcessor(): Promise<void> {
-  await ensureProviderRegistered(aiMetadataSpanProcessor);
-}
-
-async function ensureProviderRegistered(
-  processor: InngestAIMetadataSpanProcessor,
-): Promise<void> {
-  if (isProviderRegistrationStarted) {
-    return;
-  }
-
-  isProviderRegistrationStarted = true;
-
-  const created = await registerAIMetadataProvider(processor);
-  if (!created.success) {
-    isProviderRegistrationStarted = false;
-    aiMetadataDebug("unable to create provider", created.error);
-  }
 }
 
 export class InngestAIMetadataSpanProcessor implements SpanProcessor {

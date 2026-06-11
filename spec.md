@@ -21,14 +21,16 @@ Supported span schemas:
 - Vercel AI SDK `ai.*` attributes
 - GenAI semantic convention `gen_ai.*` attributes
 
-Each schema is handled by a small library strategy under
-`metadataProcessor/libStrategies/`. Strategies only match spans and extract
+Each schema is handled by a small library extractor under
+`metadataProcessor/libExtractors/`. Extractors only match spans and extract
 metadata; lifecycle tracking and metadata writes stay in the processor.
 Emitted metadata key names are shared in `metadataProcessor/metadata.ts`.
 
-The processor is installed automatically and follows the same provider setup
-approach as Extended Traces: create an OTel provider if one does not exist, or
-extend the existing provider when one is already registered.
+Users install trace instrumentation explicitly by calling `instrumentTraces()` before
+importing instrumented libraries. The setup registers the default
+instrumentations, creates an OTel provider if one does not exist, or extends the
+existing provider when one is already registered. Extended Traces no longer
+creates providers or registers instrumentations itself.
 
 Metadata is written to step scope with kind `inngest.ai` using kebab-case keys:
 
@@ -40,8 +42,8 @@ Metadata is written to step scope with kind `inngest.ai` using kebab-case keys:
 }
 ```
 
-For now, each qualifying top-level AI operation span emits its own metadata
-update. Numeric values are not aggregated yet.
+Each qualifying top-level AI operation span emits its own metadata update.
+Numeric metadata values are summed before step metadata is sent.
 
 ## Libraries
 
@@ -140,9 +142,9 @@ embeddings; that version does not patch `responses.create`.
 - If this becomes default-on or opt-out, users may unexpectedly persist model names
   and token usage into Inngest metadata. This should be documented clearly because
   some users have compliance, privacy, or billing-data handling requirements.
-- The initial implementation intentionally does not include a disable path. Before
-  enabling this broadly, decide whether users need a runtime or client-level escape
-  hatch.
+- The initial implementation intentionally does not include a disable path. This
+  is less risky while setup is explicit, but default-on or opt-out behavior would
+  need a runtime or client-level escape hatch.
 - Automatic metadata writes can increase metadata volume for steps that create many
   AI spans. The implementation should avoid unnecessary writes and consider how
   repeated spans in a single step are aggregated.

@@ -5,7 +5,10 @@ import {
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect } from "vitest";
-import { extendedTracesMiddleware } from "../../../experimental.ts";
+import {
+  extendedTracesMiddleware,
+  instrumentTraces,
+} from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import { matrixCheckpointing } from "../utils.ts";
@@ -39,6 +42,8 @@ function getAIMetadata(step: TraceStep | undefined) {
 matrixCheckpointing(
   "AI OTel attributes become step metadata",
   async (checkpointing) => {
+    instrumentTraces();
+
     const state = createState();
     const eventName = randomSuffix("evt");
     const client = new Inngest({
@@ -72,6 +77,8 @@ matrixCheckpointing(
 );
 
 matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
+  instrumentTraces();
+
   const state = createState();
   const eventName = randomSuffix("evt");
   const client = new Inngest({
@@ -118,6 +125,8 @@ matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
 matrixCheckpointing(
   "Extended Traces and OTel attribute extraction are compatible",
   async (checkpointing) => {
+    instrumentTraces();
+
     // When Extended Traces is enabled, OTel attribute extraction works exactly
     // the same and also the span appears.
 

@@ -51,7 +51,6 @@ import {
   sendEventResponseSchema,
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
-import { registerAIMetadataSpanProcessor } from "./execution/otel/metadataProcessor/processor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -337,8 +336,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
-
-    void registerAIMetadataSpanProcessor();
 
     this.middleware = [
       ...builtInMiddleware(this._logger),

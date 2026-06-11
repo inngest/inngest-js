@@ -5,13 +5,7 @@ import { Middleware } from "../../middleware/middleware.ts";
 import { registerClientProcessor } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
-import { withOTelLock } from "./providerSetupMutex.ts";
-import {
-  type Behaviour,
-  createProvider,
-  extendProvider,
-  type Instrumentations,
-} from "./util.ts";
+import { extendProvider } from "./util.ts";
 
 const devDebug = Debug(`${debugPrefix}:middleware`);
 
@@ -30,29 +24,6 @@ class InngestTracesLogger implements DiagLogger {
  */
 export interface ExtendedTracesMiddlewareOptions {
   /**
-   * The behaviour of the Extended Traces middleware. This controls whether the
-   * middleware will create a new OpenTelemetry provider, extend an existing one, or
-   * do nothing. The default is "auto", which will attempt to extend an
-   * existing provider, and if that fails, create a new one.
-   *
-   * - `"auto"`: Attempt to extend an existing provider, and if that fails,
-   *   create a new one.
-   * - `"createProvider"`: Create a new OpenTelemetry provider.
-   * - `"extendProvider"`: Attempt to extend an existing provider.
-   * - `"off"`: Do nothing.
-   */
-  behaviour?: Behaviour;
-
-  /**
-   * Add additional instrumentations to the OpenTelemetry provider.
-   *
-   * Note that these only apply if the provider is created by the middleware;
-   * extending an existing provider cannot add instrumentations and it instead
-   * must be done wherever the provider is created.
-   */
-  instrumentations?: Instrumentations;
-
-  /**
    * The log level for the Extended Traces middleware, specifically a diagnostic logger
    * attached to the global OpenTelemetry provider.
    *
@@ -69,74 +40,14 @@ export interface ExtendedTracesMiddlewareOptions {
  * in your Inngest dashboard (or Dev Server).
  */
 export const extendedTracesMiddleware = ({
-  behaviour = "auto",
-  instrumentations,
   logLevel = DiagLogLevel.ERROR,
 }: ExtendedTracesMiddlewareOptions = {}) => {
-  devDebug("behaviour:", behaviour);
-
   let processor: InngestSpanProcessor | undefined;
-  let processorReady: Promise<void> | undefined;
 
-  if (behaviour !== "off") {
-    processorReady = withOTelLock(async function () {
-      switch (behaviour) {
-        case "auto": {
-          const extended = extendProvider(behaviour);
-          if (extended.success) {
-            devDebug("extended existing provider");
-            processor = extended.processor;
-            break;
-          }
-
-          const created = await createProvider(behaviour, instrumentations);
-          if (created.success) {
-            devDebug("created new provider");
-            processor = created.processor;
-          } else {
-            console.warn(
-              "no provider found to extend and unable to create one",
-              created.error ?? "",
-            );
-          }
-
-          break;
-        }
-        case "createProvider": {
-          const created = await createProvider(behaviour, instrumentations);
-          if (created.success) {
-            devDebug("created new provider");
-            processor = created.processor;
-          } else {
-            console.warn(
-              "unable to create provider, Extended Traces middleware will not work",
-              created.error ?? "",
-            );
-          }
-
-          break;
-        }
-        case "extendProvider": {
-          const extended = extendProvider(behaviour);
-          if (extended.success) {
-            devDebug("extended existing provider");
-            processor = extended.processor;
-          } else {
-            console.warn(
-              'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
-            );
-          }
-
-          break;
-        }
-        default: {
-          // unknown
-          console.warn(
-            `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
-          );
-        }
-      }
-    });
+  const extended = extendProvider();
+  if (extended.success) {
+    devDebug("extended existing provider");
+    processor = extended.processor;
   }
 
   class ExtendedTracesMiddleware extends Middleware.BaseMiddleware {
@@ -156,17 +67,6 @@ export const extendedTracesMiddleware = ({
 
       if (processor) {
         registerClientProcessor(client, processor);
-      } else if (processorReady) {
-        // Provider setup is async; register the processor once it resolves.
-        processorReady
-          .then(() => {
-            if (processor) {
-              registerClientProcessor(client, processor);
-            }
-          })
-          .catch((err) => {
-            devDebug("failed to register processor for client:", err);
-          });
       }
     }
 

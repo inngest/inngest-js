@@ -14,17 +14,21 @@
 
 This directory exports some key pieces for the SDK:
 
+- `instrument.ts` provides `instrumentTraces()`, used to install the shared
+  trace provider, context manager, default instrumentations, and AI metadata
+  processor
 - `processor.ts` provides `InngestSpanProcessor`, used to process and export
   spans to Inngest
-- `middleware.ts` provides `extendedTracesMiddleware()`, used to instantiate providers and
-  enable it within an app
+- `middleware.ts` provides `extendedTracesMiddleware()`, used to enable Extended
+  Traces for an app after trace instrumentation has been installed
 - `access.ts` provides safe access to span processors when using a client,
   without importing any OTel depedencies, ensuring we can reliably treeshake
   them if not used
 
 ## Basic usage
 
-Import and run the `extendedTracesMiddleware()` before any other code.
+Install trace instrumentation before any other app code, then add
+`extendedTracesMiddleware()` to the Inngest client.
 
 > [!IMPORTANT]
 > This ensures that the [tracer
@@ -32,16 +36,26 @@ Import and run the `extendedTracesMiddleware()` before any other code.
 > and any
 > [instrumentation](https://opentelemetry.io/docs/concepts/instrumentation/) has
 > time to patch code in order to collect traces and spans from all parts of your
-> application. Loading running `extendedTracesMiddleware()` after any other code risks not
+> application. Loading trace instrumentation after app code risks not
 > instrumenting it.
 
 ```ts
-// Import this first
-import { extendedTracesMiddleware } from "inngest";
-const otel = extendedTracesMiddleware();
+// instrumentation.ts
+import { instrumentTraces } from "inngest/experimental";
 
-// Then everything else
+instrumentTraces();
+```
+
+```sh
+node --import ./instrumentation.ts ./app.ts
+```
+
+```ts
+// app.ts
+import { extendedTracesMiddleware } from "inngest/experimental";
 import { Inngest } from "inngest";
+
+const otel = extendedTracesMiddleware();
 
 const inngest = new Inngest({
   id: "my-app",
@@ -76,57 +90,31 @@ export const { GET, POST, PUT } = serve({
 A JavaScript process can only have a single OpenTelemetry Provider. Some
 libraries such as Sentry also create their own provider.
 
-`extendedTracesMiddleware()` will first try to _extend_ an existing provider and will only
-create one if none has been found. If an existing provider is extended, we won't
-contribute any automatic [instrumentation](#instrumentation).
+`extendedTracesMiddleware()` only extends an existing provider. Use
+`instrumentTraces()` to create an Inngest-owned provider, or create your own
+provider before calling `extendedTracesMiddleware()`.
 
-In the case of Sentry, `extendedTracesMiddleware()` will extend Sentry's provider as long
-as it's run after `Sentry.init()`.
+In the case of Sentry, `extendedTracesMiddleware()` will extend Sentry's provider
+as long as it's run after `Sentry.init()`.
 
 > [!NOTE]
 > This extension should also work for OpenTelemetry providers that originate
 > within the runtime, like [Deno's OpenTelemetry](https://docs.deno.com/runtime/fundamentals/open_telemetry/).
 
-This behaviour can be changed:
-
-```ts
-extendedTracesMiddleware({
-  behaviour: "auto",
-});
-```
-
-The options are:
-
-- `"auto"` (default): Attempt to extend a provider if one exists, else create one, fails
-  if neither worked
-- `"extendProvider"`: Only attempt to extend a provider and fails if none exists
-- `"createProvider"`: Only attempt to create a provider and fails if we couldn't
-- `"off"`: Do nothing
-
-If you're intending to only use `extendedTracesMiddleware()` to extend an existing
-provider, you no longer need to ensure that it is called before any other code.
-
 ### Manually extend
 
 If you're already manually creating your own trace provider and import ordering
-is an issue, you may want to manually add Inngest's `InngestSpanProcessor` to
-your existing setup.
+is an issue, manually add Inngest's `InngestSpanProcessor` to your existing
+setup.
 
-Add an `InngestSpanExporter` to your provider:
+Add an `InngestSpanProcessor` to your provider:
 
 ```ts
 // Create your client the same as you would normally
 import { Inngest } from "inngest";
-import { extendedTracesMiddleware } from "inngest/experimental";
 
 export const inngest = new Inngest({
   id: "my-app",
-  middleware: [
-    extendedTracesMiddleware({
-      // Make sure the middleware doesn't try to
-      behaviour: "off",
-    }),
-  ],
 });
 ```
 
@@ -147,8 +135,7 @@ provider.register();
 
 ## Instrumentation
 
-`extendedTracesMiddleware()` will automatically instrument common code for you if it's
-used to create your provider.
+`instrumentTraces()` automatically instruments common code.
 
 Here's a list of automatic supported instrumentation:
 
@@ -201,9 +188,9 @@ OpenTelemetry](https://www.prisma.io/docs/orm/prisma-client/observability-and-lo
 
 ```ts
 import { PrismaInstrumentation } from "@prisma/instrumentation";
-import { extendedTracesMiddleware } from "inngest/experimental";
+import { registerInstrumentations } from "@opentelemetry/instrumentation";
 
-const otel = extendedTracesMiddleware({
+registerInstrumentations({
   instrumentations: [new PrismaInstrumentation()],
 });
 ```

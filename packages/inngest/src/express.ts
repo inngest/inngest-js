@@ -97,7 +97,6 @@ export const serve = (options: ServeHandlerOptions): any => {
           return Array.isArray(qs) ? qs[0] : qs;
         },
         transformResponse: ({ body, headers, status }) => {
-          console.log(JSON.stringify(JSON.parse(body), null, 2));
           for (const [name, value] of Object.entries(headers)) {
             res.setHeader(name, value);
           }

@@ -1,5 +1,11 @@
 // Initialize otel middleware first
-import { extendedTracesMiddleware } from "inngest/experimental";
+import {
+  extendedTracesMiddleware,
+  instrumentTraces,
+} from "inngest/experimental";
+
+instrumentTraces();
+
 const otel = extendedTracesMiddleware();
 
 // Then everything else

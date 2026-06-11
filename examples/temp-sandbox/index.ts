@@ -1,4 +1,7 @@
+import "./inngest/instrumentation.ts";
+
 import express from "express";
+
 import { serve } from "../../packages/inngest/src/express.ts";
 import { functions, inngest } from "./inngest/index.ts";
 

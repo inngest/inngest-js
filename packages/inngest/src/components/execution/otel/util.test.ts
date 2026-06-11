@@ -22,7 +22,7 @@ describe("extendProvider", () => {
     const { provider } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto");
+    const result = extendProvider();
 
     expect(result.success).toBe(true);
     expect((result as { processor: unknown }).processor).toBeInstanceOf(
@@ -30,29 +30,12 @@ describe("extendProvider", () => {
     );
   });
 
-  test("should succeed with behaviour 'extendProvider'", () => {
-    const { provider } = createProviderWithAddSpanProcessor();
-    trace.setGlobalTracerProvider(provider);
-
-    const result = extendProvider("extendProvider");
-
-    expect(result.success).toBe(true);
-  });
-
-  test("should return success: false when no provider is registered", () => {
-    trace.disable();
-
-    const result = extendProvider("auto");
-
-    expect(result.success).toBe(false);
-  });
-
-  test("should warn and return success: false with behaviour 'extendProvider' when no real provider", () => {
+  test("should warn and return success: false when no provider is registered", () => {
     trace.disable();
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = extendProvider("extendProvider");
+    const result = extendProvider();
 
     expect(result.success).toBe(false);
     expect(warnSpy).toHaveBeenCalled();
@@ -64,7 +47,7 @@ describe("extendProvider", () => {
     const { provider, addSpanProcessor } = createProviderWithAddSpanProcessor();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto");
+    const result = extendProvider();
 
     expect(result.success).toBe(true);
     expect(addSpanProcessor).toHaveBeenCalledTimes(1);
@@ -80,7 +63,7 @@ describe("extendProvider", () => {
     const provider = new BasicTracerProvider();
     trace.setGlobalTracerProvider(provider);
 
-    const result = extendProvider("auto");
+    const result = extendProvider();
 
     expect(result.success).toBe(true);
     expect((result as { processor: unknown }).processor).toBeInstanceOf(
@@ -94,15 +77,6 @@ describe("extendProvider", () => {
     expect(spanProcessors).toContainEqual(expect.any(InngestSpanProcessor));
   });
 
-  test("should succeed with behaviour 'extendProvider' via v2 path", () => {
-    const provider = new BasicTracerProvider();
-    trace.setGlobalTracerProvider(provider);
-
-    const result = extendProvider("extendProvider");
-
-    expect(result.success).toBe(true);
-  });
-
   test("should warn and fail when provider has neither addSpanProcessor nor _activeSpanProcessor", () => {
     const mockProvider = {
       getTracer: vi.fn(),
@@ -111,28 +85,12 @@ describe("extendProvider", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = extendProvider("extendProvider");
+    const result = extendProvider();
 
     expect(result.success).toBe(false);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Unable to add InngestSpanProcessor"),
     );
-
-    warnSpy.mockRestore();
-  });
-
-  test("should not warn on unknown provider when behaviour is 'auto'", () => {
-    const mockProvider = {
-      getTracer: vi.fn(),
-    };
-    trace.setGlobalTracerProvider(mockProvider as unknown as TracerProvider);
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const result = extendProvider("auto");
-
-    expect(result.success).toBe(false);
-    expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
   });
