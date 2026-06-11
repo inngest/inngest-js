@@ -107,6 +107,13 @@ const { sha1 } = hashjs;
  */
 const CHECKPOINT_RETRY_OPTIONS = { maxAttempts: 5, baseDelay: 100 };
 
+/**
+ * If a step in `AsyncCheckpointing` mode runs for this long without finishing,
+ * the SDK fires a leading-edge `StepPlanned` so the executor can show an
+ * in-progress span.
+ */
+const IN_PROGRESS_THRESHOLD_MS = 1000;
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -1687,8 +1694,15 @@ class InngestExecutionEngine
     const wrappedActualHandler =
       this.middlewareManager.buildWrapStepHandlerChain(actualHandler, stepInfo);
 
-    return goIntervalTiming(() => wrappedActualHandler())
+    // In `AsyncCheckpointing`, schedule a leading-edge `StepPlanned` for
+    // steps that exceed the in-progress threshold.
+    const startMs = Date.now();
+    const leadingEdgeTimer = this.scheduleLeadingEdge(startMs, outgoingOp);
+
+    return goIntervalTiming(() => wrappedActualHandler(), startMs)
       .finally(() => {
+        if (leadingEdgeTimer) clearTimeout(leadingEdgeTimer);
+
         this.devDebug(`finished executing step "${id}"`);
 
         this.state.executingStep = undefined;
@@ -1736,6 +1750,77 @@ class InngestExecutionEngine
         ...op,
         timing: interval,
       }));
+  }
+
+  /**
+   * Schedule the leading-edge `StepPlanned` POST for a step that runs past
+   * the in-progress threshold. Returns the timer so the caller can clear it
+   * when the step finishes, or `null` (no tracking) outside checkpointing
+   * mode or when the required identifiers aren't present.
+   */
+  private scheduleLeadingEdge(
+    startMs: number,
+    outgoingOp: OutgoingOp,
+  ): ReturnType<typeof setTimeout> | null {
+    const { internalFnId, queueItemId } = this.options;
+    if (
+      this.options.stepMode !== StepMode.AsyncCheckpointing ||
+      !internalFnId ||
+      !queueItemId
+    ) {
+      return null;
+    }
+
+    return setTimeout(() => {
+      this.firePlannedLeadingEdge({
+        startMs,
+        outgoingOp,
+        internalFnId,
+        queueItemId,
+      });
+    }, IN_PROGRESS_THRESHOLD_MS);
+  }
+
+  /**
+   * Timer callback that POSTs the leading-edge `StepPlanned`.
+   */
+  private firePlannedLeadingEdge(args: {
+    startMs: number;
+    outgoingOp: OutgoingOp;
+    internalFnId: string;
+    queueItemId: string;
+  }): void {
+    const plannedOp: OutgoingOp = {
+      ...args.outgoingOp,
+      op: StepOpCode.StepPlanned,
+      timing: {
+        // Zero-length span starting 1ms before the step's true start.
+        //
+        // The -1ms delta ensures that when this StepPlanned OpCode's span
+        // aggregates with the final StepRun OpCode's span,
+        // the StepRun OpCode's status=Completed overrides the StepPlanned
+        // OpCode's status=Running
+        a: (args.startMs - 1) * 1_000_000,
+        b: 0,
+      },
+    };
+
+    this.options.client["inngestApi"]
+      .checkpointStepsAsync({
+        runId: this.options.runId,
+        fnId: args.internalFnId,
+        queueItemId: args.queueItemId,
+        requestId: this.options.requestId,
+        requestStartedAt: this.options.requestStartedAt,
+        steps: [plannedOp],
+      })
+      .catch((err: unknown) => {
+        this.devDebug(
+          `in-progress leading-edge POST failed for hashedId=%s:`,
+          args.outgoingOp.id,
+          err,
+        );
+      });
   }
 
   /**
