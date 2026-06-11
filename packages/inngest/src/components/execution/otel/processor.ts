@@ -1,4 +1,4 @@
-import type { Span } from "@opentelemetry/api";
+import { type Context, type Span, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
   detectResources,
@@ -428,14 +428,10 @@ export class InngestSpanProcessor implements SpanProcessor {
    * interface. This is called when a span is started, and is used to track
    * spans that are children of spans we care about.
    */
-  onStart(span: Span): void {
+  onStart(span: Span, parentContext: Context): void {
     const devDebug = processorDevDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
-    // Support both OTel SDK v2.x (parentSpanContext.spanId) and v1.x
-    // (parentSpanId as a plain string) since users may have either version.
-    const parentSpanId =
-      (span as unknown as ReadableSpan).parentSpanContext?.spanId ??
-      (span as unknown as { parentSpanId?: string }).parentSpanId;
+    const parentSpanId = trace.getSpanContext(parentContext)?.spanId;
 
     // The root span isn't captured here, but we can capture children of it
     // here.
