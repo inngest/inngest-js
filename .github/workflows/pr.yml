@@ -309,6 +309,15 @@ jobs:
           name: inngestpkg
           path: packages/inngest
 
+      - name: Cache inngest-cli binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm/_npx
+          key: inngest-cli-1.27.0-${{ runner.os }}
+
+      - name: Pre-download inngest-cli
+        run: npx --yes inngest-cli@1.27.0 --help || true
+
       - name: Run integration tests
         run: pnpm run itest ${{ matrix.example }}
         env:
