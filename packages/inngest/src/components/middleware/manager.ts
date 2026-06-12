@@ -199,11 +199,9 @@ export class MiddlewareManager {
   }
 
   /**
-   * Runs `transformDeferInput` middleware. Returns `null` when middleware
-   * drops the defer (empty `defers` array); the caller should skip emitting
-   * the op.
+   * Runs `transformDeferInput` middleware.
    */
-  async applyToDefer(input: ApplyToDeferInput): Promise<PreparedDefer | null> {
+  async applyToDefer(input: ApplyToDeferInput): Promise<PreparedDefer> {
     if (!this.hasTransformDeferInput) {
       return { data: input.data };
     }
@@ -212,12 +210,7 @@ export class MiddlewareManager {
       input.deferFn,
       input.data,
     );
-    // TODO: when we add batching, return all defers instead of the first.
-    const firstDefer = transformed.defers[0];
-    if (!firstDefer) {
-      return null;
-    }
-    return { data: firstDefer.data };
+    return { data: transformed.data };
   }
 
   private buildStepInfo(opts: StepInfoOptions): Middleware.StepInfo {
@@ -337,7 +330,8 @@ export class MiddlewareManager {
   ): Promise<Middleware.TransformDeferInputArgs> {
     let result: Middleware.TransformDeferInputArgs = {
       fn: this.fn,
-      defers: [{ deferFn, data }],
+      deferFn,
+      data,
     };
 
     for (const mw of this.middleware) {

@@ -60,10 +60,8 @@ export namespace Middleware {
    */
   export type TransformDeferInputArgs = {
     readonly fn: DeepReadonly<InngestFunction.Any>;
-    defers: Array<{
-      readonly deferFn: DeepReadonly<DeferredFunction.Any>;
-      data: Record<string, unknown>;
-    }>;
+    readonly deferFn: DeepReadonly<DeferredFunction.Any>;
+    data: Record<string, unknown>;
   };
 
   /**

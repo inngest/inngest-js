@@ -17,7 +17,6 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 test("re-encountered defer does not trigger new deferred run", async () => {
   // When a deferred function is re-encountered (e.g. function re-entry), it
   // should not trigger a new deferred run
-
   const parentState = createState({});
   const deferState = createState({ counter: 0 });
 
