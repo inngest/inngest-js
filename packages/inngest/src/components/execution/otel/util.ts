@@ -115,6 +115,9 @@ export const extendProvider = (
   // No public API exists to add processors post-construction (OTel issue #5299),
   // so push into the internal _spanProcessors array.
   // These fields are TypeScript `private` (not #private), so accessible at runtime.
+  // TODO: Replace this internal mutation with a SpanProcessor delegator that is
+  // installed when creating the provider and can dynamically delegate to
+  // processors added later.
   const spanProcessors = getInternalSpanProcessors(existingProvider);
   if (spanProcessors) {
     spanProcessors.push(processor);
