@@ -9,6 +9,11 @@ import type { Attributes, AttributeValue } from "@opentelemetry/api";
 export interface AIMetadata {
   /** The requested model, e.g. `gpt-4.1-nano`. */
   model?: string;
+  /**
+   * The model that served the request, which may differ from the requested
+   * {@link model} (e.g. a dated snapshot like `gpt-4.1-nano-2025-04-14`).
+   */
+  responseModel?: string;
   /** The number of input (prompt) tokens consumed by the request. */
   inputTokens?: number;
 }
@@ -38,6 +43,10 @@ interface Mapping {
 const keyFieldMap: Record<string, Mapping> = {
   // OpenTelemetry Semantic Conventions
   "gen_ai.request.model": { field: "model", convention: Convention.Semconv },
+  "gen_ai.response.model": {
+    field: "responseModel",
+    convention: Convention.Semconv,
+  },
   "gen_ai.usage.input_tokens": {
     field: "inputTokens",
     convention: Convention.Semconv,
@@ -52,6 +61,10 @@ const keyFieldMap: Record<string, Mapping> = {
 
   // Vercel AI SDK (native `ai.*` telemetry)
   "ai.model.id": { field: "model", convention: Convention.Vercel },
+  "ai.response.model": {
+    field: "responseModel",
+    convention: Convention.Vercel,
+  },
   "ai.usage.inputTokens": {
     field: "inputTokens",
     convention: Convention.Vercel,
@@ -106,6 +119,11 @@ export const extractAIMetadataFromAttributes = (
     metadata.model = model;
   }
 
+  const responseModel = candidates.responseModel?.value;
+  if (typeof responseModel === "string" && responseModel !== "") {
+    metadata.responseModel = responseModel;
+  }
+
   const inputTokens = candidates.inputTokens?.value;
   if (inputTokens !== undefined) {
     // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64
@@ -136,6 +154,11 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
     metadata.model = model;
   }
 
+  const responseModel = a.responseModel ?? b.responseModel;
+  if (responseModel !== undefined) {
+    metadata.responseModel = responseModel;
+  }
+
   if (a.inputTokens !== undefined || b.inputTokens !== undefined) {
     metadata.inputTokens = (a.inputTokens ?? 0) + (b.inputTokens ?? 0);
   }
@@ -156,6 +179,10 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.model !== undefined) {
     values.model = metadata.model;
+  }
+
+  if (metadata.responseModel !== undefined) {
+    values.response_model = metadata.responseModel;
   }
 
   if (metadata.inputTokens !== undefined) {

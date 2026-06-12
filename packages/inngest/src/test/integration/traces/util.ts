@@ -6,10 +6,6 @@ import { z } from "zod/v3";
  * Emits the span shape `@opentelemetry/instrumentation-openai` produces for a
  * chat completion, without needing the OpenAI SDK or an API key: a wrapper
  * span containing a `gen_ai.*`-attributed span.
- *
- * The response model and output tokens are deliberately present even though
- * the metadata processor doesn't extract them; tests assert they don't leak
- * into step metadata.
  */
 export function simulateOpenAICall(): string {
   const tracer = trace.getTracer("@opentelemetry/instrumentation-openai");

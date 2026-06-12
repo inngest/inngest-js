@@ -15,7 +15,7 @@ import {
  * calls, copied from the Inngest server-side extractor's test suite. Each
  * `<variant>.otlp.json` has a sibling `<variant>.otlp.json.out` golden that
  * records, per span, the metadata the server extracts. We assert only the
- * subset this extractor implements (`model` and `input_tokens`).
+ * subset this extractor implements.
  */
 const testdataDir = join(dirname(fileURLToPath(import.meta.url)), "testdata");
 
@@ -85,13 +85,14 @@ const loadOtlpSpans = (fixturePath: string): OtlpSpan[] => {
 /** The fields of a golden block this extractor is responsible for. */
 interface GoldenMetadata {
   model?: string;
+  responseModel?: string;
   inputTokens?: number;
 }
 
 /**
  * Parse a golden `.out` file into one expected metadata entry per span, in
  * document order. Each block is `SPAN <name>` followed by either a JSON object
- * or the literal `no AI metadata extracted`. We keep only the two fields this
+ * or the literal `no AI metadata extracted`. We keep only the fields this
  * extractor produces, treating empty/zero values as absent (the server golden
  * always renders them, this extractor omits them).
  */
@@ -110,10 +111,12 @@ const loadGolden = (goldenPath: string): GoldenMetadata[] => {
     } else {
       const parsed = JSON.parse(text) as {
         model?: string;
+        response_model?: string;
         input_tokens?: number;
       };
       blocks.push({
         model: parsed.model || undefined,
+        responseModel: parsed.response_model || undefined,
         inputTokens: parsed.input_tokens || undefined,
       });
     }
@@ -187,10 +190,28 @@ describe("extractAIMetadataFromAttributes", () => {
     const extracted = extractAIMetadataFromAttributes({
       "ai.model.id": "vercel-model",
       "gen_ai.request.model": "semconv-model",
+      "ai.response.model": "vercel-response-model",
+      "gen_ai.response.model": "semconv-response-model",
       "ai.usage.inputTokens": 10,
       "gen_ai.usage.input_tokens": 22,
     });
-    expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
+    expect(extracted).toEqual({
+      model: "semconv-model",
+      responseModel: "semconv-response-model",
+      inputTokens: 22,
+    });
+  });
+
+  test("extracts the response model independently of the requested model", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.model": "gpt-4.1-nano",
+        "gen_ai.response.model": "gpt-4.1-nano-2025-04-14",
+      }),
+    ).toEqual({
+      model: "gpt-4.1-nano",
+      responseModel: "gpt-4.1-nano-2025-04-14",
+    });
   });
 });
 
@@ -205,6 +226,15 @@ describe("aggregate", () => {
     expect(
       aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 }),
     ).toEqual({ model: "gpt-4o", inputTokens: 8 });
+  });
+
+  test("keeps the first response model and falls back to the second", () => {
+    expect(
+      aggregate(
+        { responseModel: "gpt-4o-2024-08-06" },
+        { responseModel: "gpt-4.1-2025-04-14" },
+      ),
+    ).toEqual({ responseModel: "gpt-4o-2024-08-06" });
   });
 
   test("treats a missing input token count as zero", () => {
@@ -225,10 +255,18 @@ describe("aggregate", () => {
 });
 
 describe("toInngestAIMetadataValues", () => {
-  test("maps both fields onto the server's snake_case schema", () => {
+  test("maps all fields onto the server's snake_case schema", () => {
     expect(
-      toInngestAIMetadataValues({ model: "gpt-4o", inputTokens: 42 }),
-    ).toEqual({ model: "gpt-4o", input_tokens: 42 });
+      toInngestAIMetadataValues({
+        model: "gpt-4o",
+        responseModel: "gpt-4o-2024-08-06",
+        inputTokens: 42,
+      }),
+    ).toEqual({
+      model: "gpt-4o",
+      response_model: "gpt-4o-2024-08-06",
+      input_tokens: 42,
+    });
   });
 
   test("omits absent fields rather than zero-valuing them", () => {

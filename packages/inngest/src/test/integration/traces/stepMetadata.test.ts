@@ -27,14 +27,14 @@ context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-// Request model (not response model) and input tokens only, mapped to the
-// server's snake_case `inngest.ai` schema.
+// Mapped to server's snake_case `inngest.ai` schema.
 const expectedAIMetadata = {
   kind: "inngest.ai",
   scope: "step",
   values: {
     input_tokens: 18,
     model: "gpt-5.4-nano",
+    response_model: "gpt-5.4-nano-2026-03-17",
   },
 };
 
