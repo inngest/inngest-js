@@ -4,6 +4,7 @@ import type {
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
+import { isRecord } from "../../../helpers/types.ts";
 import {
   type AIMetadata,
   extractAIMetadataFromAttributes,
@@ -93,11 +94,15 @@ const attachToProvider = (
  * change — must never crash the host app.
  */
 function getInternalSpanProcessors(provider: unknown): unknown[] | undefined {
-  try {
-    const active = (provider as Record<string, unknown>)?._activeSpanProcessor;
-    if (typeof active !== "object" || active === null) return undefined;
+  if (!isRecord(provider)) {
+    return undefined;
+  }
 
-    const arr = (active as Record<string, unknown>)._spanProcessors;
+  try {
+    const active = provider._activeSpanProcessor;
+    if (!isRecord(active)) return undefined;
+
+    const arr = active._spanProcessors;
     return Array.isArray(arr) ? arr : undefined;
   } catch {
     return undefined;
@@ -212,7 +217,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
   /**
    * Clean up references to a span that has ended (or been GC'd).
    */
-  private cleanupSpan(span: Span): void {
+  private cleanupSpan(span: ReadableSpan): void {
     const { traceId, spanId } = span.spanContext();
     this.#spanCleanup.unregister(span);
     this.#spanSinks.delete(spanSinkKey(traceId, spanId));
@@ -261,7 +266,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
 
       sink(aiMetadata);
     } finally {
-      this.cleanupSpan(span as unknown as Span);
+      this.cleanupSpan(span);
     }
   }
 
