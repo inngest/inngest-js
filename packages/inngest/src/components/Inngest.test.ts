@@ -492,6 +492,117 @@ describe("send", () => {
       );
     });
 
+    test("should normalize event sessions before sending", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      const mockedFetch = vi.mocked(global.fetch);
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          data: {},
+          sessions: {
+            conversation_id: "conversation_1234",
+            model: "gpt-4.1",
+            priority: 1,
+          },
+        }),
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+
+      const body: Array<Record<string, unknown>> = JSON.parse(
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
+      );
+
+      expect(body[0]?.sessions).toEqual({
+        conversation_id: "conversation_1234",
+        model: "gpt-4.1",
+        priority: "1",
+      });
+    });
+
+    test("should keep special object keys like __proto__ as session keys", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      const mockedFetch = vi.mocked(global.fetch);
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          data: {},
+          sessions: JSON.parse('{"__proto__": "conversation_1234"}'),
+        }),
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+
+      const body: Array<Record<string, unknown>> = JSON.parse(
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
+      );
+
+      expect(Object.entries(body[0]?.sessions as object)).toEqual([
+        ["__proto__", "conversation_1234"],
+      ]);
+    });
+
+    test("should reject empty event session names", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          data: {},
+          sessions: { "": "conversation_1234" },
+        }),
+      ).rejects.toThrowError("Event session keys cannot be empty");
+    });
+
+    test("should reject event session values with unsupported runtime types", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          data: {},
+          sessions: { conversation_id: null } as unknown as Record<
+            string,
+            string
+          >,
+        }),
+      ).rejects.toThrowError(
+        'Event session "conversation_id" must be a string or number',
+      );
+    });
+
+    test("should reject boolean event session values", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          // Booleans are low-cardinality labels, not session IDs.
+          sessions: { active: true } as unknown as Record<string, string>,
+        }),
+      ).rejects.toThrowError(
+        'Event session "active" must be a string or number',
+      );
+    });
+
+    test("should reject non-finite event session numbers", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      await expect(
+        inngest.send({
+          name: "test.sessions",
+          data: {},
+          sessions: { conversation_id: Number.NaN },
+        }),
+      ).rejects.toThrowError(
+        'Event session "conversation_id" must be a finite number',
+      );
+    });
+
     if (nodeVersion?.major && nodeVersion.major >= 19) {
       test("should use seed header for idempotency ID if none given", async () => {
         const inngest = createClient({ id: "test", eventKey: testEventKey });
@@ -665,6 +776,15 @@ describe("send", () => {
         const _fn = () =>
           inngest.send({ name: "anything", data: "foo", id: "test" });
       });
+
+      test("allows setting sessions for an event", () => {
+        const _fn = () =>
+          inngest.send({
+            name: "anything",
+            data: "foo",
+            sessions: { conversation_id: "conversation_1234", priority: 1 },
+          });
+      });
     });
   });
 });
@@ -717,6 +837,17 @@ describe("createFunction", () => {
             assertType<string>(event.name);
             // biome-ignore lint/suspicious/noExplicitAny: intentional test for untyped event data
             assertType<IsEqual<typeof event.data, Record<string, any>>>(true);
+          },
+        );
+      });
+
+      test("types received event sessions as strings", () => {
+        inngest.createFunction(
+          { id: "test", triggers: [{ event: "test" }] },
+          ({ event }) => {
+            assertType<
+              IsEqual<typeof event.sessions, Record<string, string> | undefined>
+            >(true);
           },
         );
       });

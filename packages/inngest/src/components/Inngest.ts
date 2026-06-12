@@ -26,6 +26,7 @@ import {
   warnOnce,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
+import { normalizeEventSessions } from "../helpers/sessions.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -926,6 +927,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         id: p.id,
         ts: p.ts || nowMillis,
         data: p.data || {},
+        sessions: normalizeEventSessions(p.sessions),
       };
     });
 

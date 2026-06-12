@@ -146,6 +146,14 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
+
+  /**
+   * Sessions of the original triggering event, used to group runs.
+   *
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
 };
 
 /**
@@ -185,6 +193,14 @@ export type FinishedEventPayload = {
         result: unknown;
       }
   );
+
+  /**
+   * Sessions of the original triggering event, used to group runs.
+   *
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
 };
 
 /**
@@ -198,6 +214,14 @@ export type CancelledEventPayload = {
     run_id: string;
     correlation_id?: string;
   };
+
+  /**
+   * Sessions of the original triggering event, used to group runs.
+   *
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
 };
 
 /**
@@ -657,6 +681,14 @@ export interface MinimalEventPayload<TData = any> {
    * (optional)
    */
   v?: string;
+
+  /**
+   * Session metadata used to group runs triggered by this event.
+   *
+   * Keys are session keys, values are session IDs. Values are
+   * normalized to strings before the event is sent.
+   */
+  sessions?: EventSessions;
 }
 
 /**
@@ -685,6 +717,22 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
    */
   ts?: number;
 }
+
+/**
+ * Primitive values accepted for event session IDs when sending an
+ * event. Numbers are normalized to strings before sending.
+ *
+ * @public
+ */
+export type EventSessionValue = string | number;
+
+/**
+ * Session metadata accepted when sending an event. Values are normalized to
+ * strings before sending; received events carry `Record<string, string>`.
+ *
+ * @public
+ */
+export type EventSessions = Record<string, EventSessionValue>;
 
 export const sendEventResponseSchema = z.object({
   /**

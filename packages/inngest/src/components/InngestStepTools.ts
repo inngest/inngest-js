@@ -4,6 +4,7 @@ import { z } from "zod/v3";
 
 import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
+import { normalizeEventSessions } from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -15,6 +16,7 @@ import {
   type ApplyAllMiddlewareTransforms,
   type Context,
   type EventPayload,
+  type EventSessions,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
@@ -916,10 +918,21 @@ export const createStepTools = <
         );
       }
 
-      const { _type, function: fn, data, v, timeout } = parsedFnOpts.data;
-      const payload = { data, v } satisfies MinimalEventPayload;
+      const {
+        _type,
+        function: fn,
+        data,
+        v,
+        sessions,
+        timeout,
+      } = parsedFnOpts.data;
+      const payload = {
+        data,
+        v,
+        sessions: normalizeEventSessions(sessions),
+      } satisfies MinimalEventPayload;
       const opts: {
-        payload: MinimalEventPayload;
+        payload: typeof payload;
         function_id: string;
         timeout?: string;
       } = {
@@ -1152,6 +1165,7 @@ export const group: GroupTools = {
 export const invokePayloadSchema = z.object({
   data: z.record(z.any()).optional(),
   v: z.string().optional(),
+  sessions: z.record(z.any()).optional(),
 });
 
 type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
@@ -1161,6 +1175,15 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
     Omit<TriggerEventFromFunction<TFunction>, "id"> & {
+      /**
+       * Session metadata used to group the invoked run with other runs.
+       *
+       * Sessions are not inherited from the calling run; pass them explicitly
+       * to group the invoked run. Values are normalized to strings before
+       * sending, as with `inngest.send()`.
+       */
+      sessions?: EventSessions;
+
       /**
        * The step function will wait for the invocation to finish for a maximum
        * of this time, at which point the retured promise will be rejected
@@ -1259,7 +1282,14 @@ type WaitForEventResult<TOpts> =
       StandardSchemaV1<infer TData extends Record<string, unknown>>
     >;
   }
-    ? { name: TName; data: TData; id: string; ts: number; v?: string } | null
+    ? {
+        name: TName;
+        data: TData;
+        id: string;
+        ts: number;
+        v?: string;
+        sessions?: Record<string, string>;
+      } | null
     : // Case 2: event is an EventType without a schema
       TOpts extends {
           event: EventType<infer TName extends string, undefined>;
@@ -1271,6 +1301,7 @@ type WaitForEventResult<TOpts> =
           id: string;
           ts: number;
           v?: string;
+          sessions?: Record<string, string>;
         } | null
       : // Case 3: event is a string with schema (spread EventType)
         TOpts extends {
@@ -1285,6 +1316,7 @@ type WaitForEventResult<TOpts> =
             id: string;
             ts: number;
             v?: string;
+            sessions?: Record<string, string>;
           } | null
         : // Case 4: event is just a string
           TOpts extends { event: infer TName extends string }
@@ -1295,6 +1327,7 @@ type WaitForEventResult<TOpts> =
               id: string;
               ts: number;
               v?: string;
+              sessions?: Record<string, string>;
             } | null
           : EventPayload | null;
 
