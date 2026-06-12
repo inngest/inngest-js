@@ -31,7 +31,13 @@ type CatchAll =
   | Inngest.StepOptionsOrId
   | Inngest.StrictUnion<any>
   | Inngest.TimeStr
-  | Inngest.UnionKeys<any>;
+  | Inngest.UnionKeys<any>
+  // Types that were missing from the public entry and caused TS2742/TS2883
+  // during declaration emit in composite / declaration:true projects (#1510, #1514)
+  | Inngest.InngestApi.SendSignalResponse
+  | Inngest.MaybePromise<string>
+  | Inngest.GroupExperiment
+  | Inngest.ParallelOptions;
 
 class MyMiddleware extends Inngest.Middleware.BaseMiddleware {
   readonly id = "test";
