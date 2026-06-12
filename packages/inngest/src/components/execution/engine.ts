@@ -416,7 +416,7 @@ class InngestExecutionEngine
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
-    const lazyOps = this.state.lazyOps.drain();
+    const lazyOps = await this.state.lazyOps.drain();
     if (lazyOps.length > 0) {
       steps = [...steps, ...lazyOps];
     }
@@ -827,7 +827,7 @@ class InngestExecutionEngine
 
       const allSteps: OutgoingOp[] = [
         ...(newSteps ?? []),
-        ...this.state.lazyOps.drain(),
+        ...(await this.state.lazyOps.drain()),
       ];
       if (allSteps.length === 0) {
         return;
@@ -1324,7 +1324,7 @@ class InngestExecutionEngine
           // `steps-found` batch — we want to bundle them with the final
           // response (alongside `RunComplete` or any newly-discovered
           // real steps) so the executor doesn't need an extra round-trip.
-          const lazyOps = this.state.lazyOps.drain();
+          const lazyOps = await this.state.lazyOps.drain();
 
           const output = await asyncHandlers["function-resolved"](
             checkpoint,
@@ -1961,11 +1961,11 @@ class InngestExecutionEngine
    * fire-and-forget and have no natural shipping moment, so each terminal code
    * path must ship them or they're silently dropped.
    */
-  private attachLazyOps(
+  private async attachLazyOps(
     result: ExecutionResult,
     extras: readonly OutgoingOp[] = [],
-  ): ExecutionResult {
-    const lazyOps = this.state.lazyOps.drain();
+  ): Promise<ExecutionResult> {
+    const lazyOps = await this.state.lazyOps.drain();
     if (lazyOps.length === 0 && extras.length === 0) {
       return result;
     }
@@ -2028,7 +2028,7 @@ class InngestExecutionEngine
       // drained ops so they ship on the next outbound message.
       default:
         for (const op of lazyOps) {
-          this.state.lazyOps.push(op);
+          this.state.lazyOps.push(op.id, op);
         }
         return result;
     }
@@ -2317,6 +2317,7 @@ class InngestExecutionEngine
 
     const stepHandler: StepHandler = async ({
       args,
+      defer,
       matchOp,
       opts,
     }): Promise<unknown> => {
@@ -2349,7 +2350,7 @@ class InngestExecutionEngine
           this.state.lazyOps.markSeen(hashedId);
           return;
         }
-        this.state.lazyOps.push({
+        const op: OutgoingOp = {
           id: hashedId,
           op: opId.op,
           name: opId.name,
@@ -2357,7 +2358,19 @@ class InngestExecutionEngine
           opts: opId.opts,
           userland: opId.userland,
           data: null,
-        });
+        };
+
+        // Reserve membership synchronously; async prep may settle later.
+        const ready = defer
+          ? this.prepareDeferOp(op, defer).catch((err: unknown) => {
+              this.options.client[internalLoggerSymbol].error(
+                { runId: this.fnArg.runId, err },
+                "defer skipped: unexpected error",
+              );
+              return null;
+            })
+          : op;
+        this.state.lazyOps.push(hashedId, ready);
         return;
       }
 
@@ -2615,13 +2628,13 @@ class InngestExecutionEngine
 
   /**
    * Build the `defer(idOrOptions, { function, data })` method exposed on
-   * every handler context. Validates `data` against the target function's
-   * schema (if any) and emits a `DeferAdd` opcode that routes to the
-   * target's companion function slug.
+   * every handler context. Emits a `DeferAdd` opcode that routes to the
+   * target's companion function slug. Schema validation and middleware
+   * transforms happen in `prepareDeferOp`, after the op is buffered.
    *
    * `defer()` is fire-and-forget: a misuse should not derail the user's
-   * handler. Validation failures (wrong function, async schema validator,
-   * schema mismatch) are logged and the call is silently skipped.
+   * handler. Validation failures (wrong function, schema mismatch) are
+   * logged and the call is silently skipped.
    */
   private buildDefer(stepHandler: StepHandler): DeferFn {
     return (idOrOptions, { function: deferFn, data }) => {
@@ -2637,31 +2650,11 @@ class InngestExecutionEngine
           return;
         }
 
-        const { schema } = deferFn;
         const deferFnSlug = deferFn.id(this.options.client.id);
 
-        let input: unknown = data;
-        if (schema) {
-          const result = schema["~standard"].validate(data);
-          if (result instanceof Promise) {
-            log.error(
-              { runId },
-              "defer() requires a synchronous schema validator. The defer call was skipped.",
-            );
-            return;
-          }
-          if (result.issues) {
-            log.error(
-              { runId, issues: result.issues },
-              "defer skipped: schema validation failed",
-            );
-            return;
-          }
-          input = result.value ?? data;
-        }
-
         void stepHandler({
-          args: [idOrOptions, input],
+          args: [idOrOptions, data],
+          defer: { fn: deferFn, data },
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,
             mode: StepMode.Sync,
@@ -2675,11 +2668,42 @@ class InngestExecutionEngine
           log.error({ runId, err }, "defer skipped: unexpected error");
         });
       } catch (err) {
-        // Fire-and-forget: a misbehaving schema validator, malformed args, or
-        // any other unexpected throw must not derail the surrounding handler.
+        // Fire-and-forget: malformed args or any other unexpected throw must
+        // not derail the surrounding handler.
         log.error({ runId, err }, "defer skipped: unexpected error");
       }
     };
+  }
+
+  /**
+   * Prepare a buffered `DeferAdd` op (schema validation + middleware).
+   * Runs after buffering so `defer()` stays sync. Resolves `null` to skip.
+   */
+  private async prepareDeferOp(
+    op: OutgoingOp,
+    defer: NonNullable<Parameters<StepHandler>[0]["defer"]>,
+  ): Promise<OutgoingOp | null> {
+    let input = defer.data;
+
+    const { schema } = defer.fn;
+    if (schema) {
+      const result = await schema["~standard"].validate(input);
+      if (result.issues) {
+        this.options.client[internalLoggerSymbol].error(
+          { runId: this.fnArg.runId, issues: result.issues },
+          "defer skipped: schema validation failed",
+        );
+        return null;
+      }
+      input = result.value ?? input;
+    }
+
+    const prepared = await this.middlewareManager.applyToDefer({
+      deferFn: defer.fn,
+      data: input,
+    });
+
+    return { ...op, opts: { ...op.opts, input: prepared.data } };
   }
 
   /**
