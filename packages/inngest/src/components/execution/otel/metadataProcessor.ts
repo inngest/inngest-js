@@ -129,9 +129,21 @@ const spanSinkKey = (traceId: string, spanId: string): string =>
  */
 export class InngestMetadataSpanProcessor implements SpanProcessor {
   /**
-   * A map of tracked spans to their sink. The map is seeded at the
-   * step's root by {@link declareStartingSpan} and propagated to descendants in
-   * {@link onStart}.
+   * A map of tracked spans to their sink.
+   *
+   * We use traceId:spanID as the key, which uniquely identifies each span. See
+   * {@link spanSinkKey}
+   *
+   * The engine seeds the map during {@link declareStartingSpan} with the root
+   * span and its sink.
+   *
+   * During onStart, the processor looks up the span's parent's sink and then
+   * records the span as also using that sink. If the parent is not found, then
+   * the span is not descended from a root step span, and therefore does not
+   * need to have a sink.
+   *
+   * All spans with the same root span that started the step will share the
+   * same sink.
    */
   #spanSinks = new Map<string, AIMetadataSink>();
 
