@@ -343,6 +343,29 @@ export const encryptionMiddleware = (
         events: encryptedEvents,
       };
     }
+
+    override async transformDeferInput(
+      arg: Middleware.TransformDeferInputArgs,
+    ): Promise<Middleware.TransformDeferInputArgs> {
+      if (opts.decryptOnly) {
+        return arg;
+      }
+
+      const encryptedDefers = await Promise.all(
+        arg.defers.map(async (defer) => {
+          if (!defer.data) {
+            return defer;
+          }
+
+          return {
+            ...defer,
+            data: await encryptEventData(defer.data),
+          };
+        }),
+      );
+
+      return { ...arg, defers: encryptedDefers };
+    }
   }
 
   return EncryptionMiddleware;
