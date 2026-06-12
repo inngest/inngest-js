@@ -1,12 +1,59 @@
 import type { RequestEvent } from "@sveltejs/kit";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch, { Headers, Response } from "cross-fetch";
+import { envKeys } from "./helpers/consts.ts";
 import * as SvelteKitHandler from "./sveltekit.ts";
-import { testFramework } from "./test/helpers.ts";
+import { createClient, testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
 const originalHeaders = globalThis.Headers;
+
+const createRequestEvent = ({
+  body,
+  headers,
+  method,
+  url = "https://localhost:3000/api/inngest",
+}: {
+  body?: unknown;
+  headers?: Record<string, string>;
+  method: "GET" | "POST" | "PUT";
+  url?: string;
+}): RequestEvent => {
+  const RequestHeaders = globalThis.Headers ?? Headers;
+  const requestHeaders = new RequestHeaders();
+
+  // biome-ignore lint/complexity/noForEach: intentional
+  Object.entries(headers ?? {}).forEach(([key, value]) => {
+    requestHeaders.set(key, value);
+  });
+
+  return fromPartial<RequestEvent>({
+    request: fromPartial({
+      method,
+      url,
+      headers: requestHeaders,
+      text: () =>
+        Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
+    }),
+  });
+};
+
+const runHandler = async (
+  serveOptions: Parameters<typeof SvelteKitHandler.serve>[0],
+  event: RequestEvent,
+  method: "GET" | "POST" | "PUT",
+  env?: Record<string, string>,
+) => {
+  const previousEnv = process.env;
+  process.env = { ...previousEnv, ...env };
+
+  try {
+    return await SvelteKitHandler.serve(serveOptions)[method](event);
+  } finally {
+    process.env = previousEnv;
+  }
+};
 
 testFramework("SvelteKit", SvelteKitHandler, {
   lifecycleChanges: () => {
@@ -65,4 +112,144 @@ testFramework("SvelteKit", SvelteKitHandler, {
       headers,
     };
   },
+});
+
+describe("SvelteKit streaming", () => {
+  beforeEach(() => {
+    Object.defineProperties(globalThis, {
+      fetch: { value: originalFetch, configurable: true },
+      Response: { value: originalResponse, configurable: true },
+      Headers: { value: originalHeaders, configurable: true },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperties(globalThis, {
+      fetch: { value: originalFetch, configurable: true },
+      Response: { value: originalResponse, configurable: true },
+      Headers: { value: originalHeaders, configurable: true },
+    });
+  });
+
+  test("uses a streamed response for `streaming: true`", async () => {
+    const client = createClient({ id: "test", isDev: true });
+    const fn = client.createFunction(
+      {
+        name: "Test",
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+      },
+      () => "fn",
+    );
+    const event = {
+      data: {},
+      id: "",
+      name: "demo/event.sent",
+      ts: 1674082830001,
+      user: {},
+      v: "1",
+    };
+
+    const response = await runHandler(
+      {
+        client,
+        functions: [fn],
+        streaming: true,
+      },
+      createRequestEvent({
+        method: "POST",
+        url: "https://localhost:3000/api/inngest?fnId=test-test&stepId=step",
+        headers: {
+          host: "localhost:3000",
+        },
+        body: {
+          ctx: {
+            fn_id: "local-testing-local-cron",
+            run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+            step_id: "step",
+          },
+          event,
+          events: [event],
+          steps: {},
+          use_api: false,
+        },
+      }),
+      "POST",
+      {
+        [envKeys.InngestDevMode]: "1",
+      },
+    );
+
+    expect(response.status).toEqual(201);
+    const streamedBody = JSON.parse((await response.text()).trimStart());
+
+    expect(streamedBody.status).toEqual(206);
+    expect(JSON.parse(streamedBody.body)).toMatchObject([
+      {
+        op: "RunComplete",
+        data: "fn",
+      },
+    ]);
+  });
+
+  test("uses a streamed response when INNGEST_STREAMING=true", async () => {
+    const client = createClient({ id: "test", isDev: true });
+    const fn = client.createFunction(
+      {
+        name: "Test",
+        id: "test",
+        triggers: [{ event: "demo/event.sent" }],
+      },
+      () => "fn",
+    );
+    const event = {
+      data: {},
+      id: "",
+      name: "demo/event.sent",
+      ts: 1674082830001,
+      user: {},
+      v: "1",
+    };
+
+    const response = await runHandler(
+      {
+        client,
+        functions: [fn],
+      },
+      createRequestEvent({
+        method: "POST",
+        url: "https://localhost:3000/api/inngest?fnId=test-test&stepId=step",
+        headers: {
+          host: "localhost:3000",
+        },
+        body: {
+          ctx: {
+            fn_id: "local-testing-local-cron",
+            run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+            step_id: "step",
+          },
+          event,
+          events: [event],
+          steps: {},
+          use_api: false,
+        },
+      }),
+      "POST",
+      {
+        [envKeys.InngestDevMode]: "1",
+        [envKeys.InngestStreaming]: "true",
+      },
+    );
+
+    expect(response.status).toEqual(201);
+    const streamedBody = JSON.parse((await response.text()).trimStart());
+
+    expect(streamedBody.status).toEqual(206);
+    expect(JSON.parse(streamedBody.body)).toMatchObject([
+      {
+        op: "RunComplete",
+        data: "fn",
+      },
+    ]);
+  });
 });
