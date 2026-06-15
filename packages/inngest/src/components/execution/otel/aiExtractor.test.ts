@@ -144,6 +144,32 @@ describe("extractAIMetadataFromAttributes", () => {
     });
     expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
   });
+
+  test("langfuse input tokens win over a co-present gen_ai count", () => {
+    const attributes = {
+      "gen_ai.response.model": "gpt-4.1-nano-another",
+      "gen_ai.usage.input_tokens": 100,
+      "langfuse.observation.model.name": "gpt-4.1-nano-2025-04-14",
+      "langfuse.observation.usage_details":
+        '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
+    };
+    // Order-independent: langfuse outranks semconv regardless of key order.
+    const expected = { inputTokens: 22 };
+    expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
+    expect(
+      extractAIMetadataFromAttributes(
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
+    ).toEqual(expected);
+  });
+
+  test("ignores a malformed langfuse usage_details blob", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "langfuse.observation.usage_details": "not json",
+      }),
+    ).toEqual({});
+  });
 });
 
 describe("aggregate", () => {
