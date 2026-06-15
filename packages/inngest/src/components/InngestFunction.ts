@@ -1,4 +1,5 @@
 import { internalEvents, queryKeys } from "../helpers/consts.ts";
+import { warnOnce } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
 import {
@@ -19,7 +20,7 @@ import type {
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
 
-import type { Inngest } from "./Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import type { Middleware } from "./middleware/middleware.ts";
 import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
@@ -74,6 +75,14 @@ export class InngestFunction<
     this.opts = opts;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
+
+    if (this.opts.optimizeParallelism === false) {
+      warnOnce(
+        this.client[internalLoggerSymbol],
+        `optimize-parallelism-deprecated:${this.opts.id}`,
+        '`optimizeParallelism: false` is deprecated; use `group.parallel({ mode: "race" }, ...)` for race semantics instead',
+      );
+    }
   }
 
   /**
@@ -714,6 +723,8 @@ export namespace InngestFunction {
      *
      * Overrides the client-level setting.
      *
+     * @deprecated Use `group.parallel({ mode: "race" })` for race semantics
+     * instead.
      * @default true
      */
     optimizeParallelism?: boolean;
