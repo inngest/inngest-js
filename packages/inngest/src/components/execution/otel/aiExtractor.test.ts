@@ -141,6 +141,8 @@ describe("extractAIMetadataFromAttributes", () => {
       "gen_ai.request.model": "semconv-model",
       "ai.response.model": "vercel-response-model",
       "gen_ai.response.model": "semconv-response-model",
+      "ai.model.provider": "vercel-system",
+      "gen_ai.provider.name": "semconv-system",
       "ai.usage.inputTokens": 10,
       "gen_ai.usage.input_tokens": 22,
       "ai.usage.outputTokens": 5,
@@ -149,9 +151,26 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(extracted).toEqual({
       model: "semconv-model",
       responseModel: "semconv-response-model",
+      system: "semconv-system",
       inputTokens: 22,
       outputTokens: 6,
     });
+  });
+
+  test("prefers gen_ai.provider.name over the deprecated gen_ai.system", () => {
+    // Both are semconv; the keyRank tiebreak ranks the deprecated key behind
+    // its replacement regardless of attribute order.
+    const attributes = {
+      "gen_ai.system": "deprecated-system",
+      "gen_ai.provider.name": "current-system",
+    };
+    const expected = { system: "current-system" };
+    expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
+    expect(
+      extractAIMetadataFromAttributes(
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
+    ).toEqual(expected);
   });
 
   test("langfuse input tokens and response model win over co-present gen_ai", () => {
@@ -190,18 +209,21 @@ describe("aggregate", () => {
     const a: AIMetadata = {
       model: "gpt-4.1-nano",
       responseModel: "gpt-4.1-nano-2025-04-14",
+      system: "openai.chat",
       inputTokens: 10,
       outputTokens: 4,
     };
     const b: AIMetadata = {
       model: "gpt-4o",
       responseModel: "gpt-4o-2024-08-06",
+      system: "openai.responses",
       inputTokens: 22,
       outputTokens: 8,
     };
     expect(aggregate(a, b)).toEqual({
       model: "gpt-4.1-nano",
       responseModel: "gpt-4.1-nano-2025-04-14",
+      system: "openai.chat",
       inputTokens: 32,
       outputTokens: 12,
     });
@@ -249,12 +271,14 @@ describe("toInngestAIMetadataValues", () => {
       toInngestAIMetadataValues({
         model: "gpt-4o",
         responseModel: "gpt-4o-2024-08-06",
+        system: "openai.chat",
         inputTokens: 42,
         outputTokens: 8,
       }),
     ).toEqual({
       model: "gpt-4o",
       response_model: "gpt-4o-2024-08-06",
+      system: "openai.chat",
       input_tokens: 42,
       output_tokens: 8,
     });
@@ -267,6 +291,9 @@ describe("toInngestAIMetadataValues", () => {
     expect(
       toInngestAIMetadataValues({ responseModel: "gpt-4o-2024-08-06" }),
     ).toEqual({ response_model: "gpt-4o-2024-08-06" });
+    expect(toInngestAIMetadataValues({ system: "openai.chat" })).toEqual({
+      system: "openai.chat",
+    });
     expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
       input_tokens: 7,
     });
