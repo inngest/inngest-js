@@ -20,6 +20,8 @@ export interface AIMetadata {
    * as `system` on the server schema.
    */
   system?: string;
+  /** The provider's identifier for the response, e.g. `chatcmpl-...`. */
+  responseId?: string;
   /** The number of input (prompt) tokens consumed by the request. */
   inputTokens?: number;
   /** The number of output (completion) tokens produced by the response. */
@@ -163,6 +165,10 @@ const keyFieldMap: Record<string, Mapping> = {
     convention: Convention.Semconv,
     keyRank: 1,
   },
+  "gen_ai.response.id": {
+    field: "responseId",
+    convention: Convention.Semconv,
+  },
   "gen_ai.usage.input_tokens": {
     field: "inputTokens",
     convention: Convention.Semconv,
@@ -200,6 +206,10 @@ const keyFieldMap: Record<string, Mapping> = {
   // (not bare `openai`); stored faithfully, no normalization.
   "ai.model.provider": {
     field: "system",
+    convention: Convention.Vercel,
+  },
+  "ai.response.id": {
+    field: "responseId",
     convention: Convention.Vercel,
   },
   "ai.usage.inputTokens": {
@@ -303,6 +313,11 @@ export const extractAIMetadataFromAttributes = (
     metadata.system = system;
   }
 
+  const responseId = candidates.responseId?.value;
+  if (typeof responseId === "string" && responseId !== "") {
+    metadata.responseId = responseId;
+  }
+
   // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64 as
   // either a number or a quoted string, so coerce defensively.
   const inputTokens = candidates.inputTokens?.value;
@@ -352,6 +367,11 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
     metadata.system = system;
   }
 
+  const responseId = a.responseId ?? b.responseId;
+  if (responseId !== undefined) {
+    metadata.responseId = responseId;
+  }
+
   if (a.inputTokens !== undefined || b.inputTokens !== undefined) {
     metadata.inputTokens = (a.inputTokens ?? 0) + (b.inputTokens ?? 0);
   }
@@ -384,6 +404,10 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.system !== undefined) {
     values.system = metadata.system;
+  }
+
+  if (metadata.responseId !== undefined) {
+    values.response_id = metadata.responseId;
   }
 
   if (metadata.inputTokens !== undefined) {

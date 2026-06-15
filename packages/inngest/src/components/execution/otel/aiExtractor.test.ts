@@ -143,6 +143,8 @@ describe("extractAIMetadataFromAttributes", () => {
       "gen_ai.response.model": "semconv-response-model",
       "ai.model.provider": "vercel-system",
       "gen_ai.provider.name": "semconv-system",
+      "ai.response.id": "vercel-response-id",
+      "gen_ai.response.id": "semconv-response-id",
       "ai.usage.inputTokens": 10,
       "gen_ai.usage.input_tokens": 22,
       "ai.usage.outputTokens": 5,
@@ -152,6 +154,7 @@ describe("extractAIMetadataFromAttributes", () => {
       model: "semconv-model",
       responseModel: "semconv-response-model",
       system: "semconv-system",
+      responseId: "semconv-response-id",
       inputTokens: 22,
       outputTokens: 6,
     });
@@ -210,6 +213,7 @@ describe("aggregate", () => {
       model: "gpt-4.1-nano",
       responseModel: "gpt-4.1-nano-2025-04-14",
       system: "openai.chat",
+      responseId: "chatcmpl-a",
       inputTokens: 10,
       outputTokens: 4,
     };
@@ -217,6 +221,7 @@ describe("aggregate", () => {
       model: "gpt-4o",
       responseModel: "gpt-4o-2024-08-06",
       system: "openai.responses",
+      responseId: "chatcmpl-b",
       inputTokens: 22,
       outputTokens: 8,
     };
@@ -224,6 +229,7 @@ describe("aggregate", () => {
       model: "gpt-4.1-nano",
       responseModel: "gpt-4.1-nano-2025-04-14",
       system: "openai.chat",
+      responseId: "chatcmpl-a",
       inputTokens: 32,
       outputTokens: 12,
     });
@@ -272,6 +278,7 @@ describe("toInngestAIMetadataValues", () => {
         model: "gpt-4o",
         responseModel: "gpt-4o-2024-08-06",
         system: "openai.chat",
+        responseId: "chatcmpl-abc",
         inputTokens: 42,
         outputTokens: 8,
       }),
@@ -279,6 +286,7 @@ describe("toInngestAIMetadataValues", () => {
       model: "gpt-4o",
       response_model: "gpt-4o-2024-08-06",
       system: "openai.chat",
+      response_id: "chatcmpl-abc",
       input_tokens: 42,
       output_tokens: 8,
     });
@@ -293,6 +301,9 @@ describe("toInngestAIMetadataValues", () => {
     ).toEqual({ response_model: "gpt-4o-2024-08-06" });
     expect(toInngestAIMetadataValues({ system: "openai.chat" })).toEqual({
       system: "openai.chat",
+    });
+    expect(toInngestAIMetadataValues({ responseId: "chatcmpl-abc" })).toEqual({
+      response_id: "chatcmpl-abc",
     });
     expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
       input_tokens: 7,
