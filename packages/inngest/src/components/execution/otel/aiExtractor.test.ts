@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
 import type { AIMetadata } from "./aiExtractor.ts";
-import { aggregate, extractAIMetadataFromAttributes } from "./aiExtractor.ts";
+import {
+  aggregate,
+  extractAIMetadataFromAttributes,
+  toInngestAIMetadataValues,
+} from "./aiExtractor.ts";
 
 /**
  * These fixtures are real OTLP/JSON spans captured from instrumented OpenAI SDK
@@ -217,5 +221,26 @@ describe("aggregate", () => {
   test("omits fields absent from both inputs", () => {
     expect(aggregate({}, {})).toEqual({});
     expect(aggregate({ model: "a" }, {})).toEqual({ model: "a" });
+  });
+});
+
+describe("toInngestAIMetadataValues", () => {
+  test("maps both fields onto the server's snake_case schema", () => {
+    expect(
+      toInngestAIMetadataValues({ model: "gpt-4o", inputTokens: 42 }),
+    ).toEqual({ model: "gpt-4o", input_tokens: 42 });
+  });
+
+  test("omits absent fields rather than zero-valuing them", () => {
+    expect(toInngestAIMetadataValues({ model: "gpt-4o" })).toEqual({
+      model: "gpt-4o",
+    });
+    expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
+      input_tokens: 7,
+    });
+  });
+
+  test("returns undefined when there is nothing to emit", () => {
+    expect(toInngestAIMetadataValues({})).toBeUndefined();
   });
 });

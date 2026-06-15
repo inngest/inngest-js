@@ -16,6 +16,7 @@ export type MetadataScope = "run" | "step" | "extended_trace";
 export type MetadataKind =
   | "inngest.experiment"
   | "inngest.warnings"
+  | "inngest.ai"
   | `userland.${string}`;
 
 /**
