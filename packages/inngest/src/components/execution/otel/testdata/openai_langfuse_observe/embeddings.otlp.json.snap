@@ -1,6 +1,8 @@
 [
   {
     "span": "OpenAI.embeddings",
-    "metadata": {}
+    "metadata": {
+      "responseModel": "text-embedding-3-small"
+    }
   }
 ]

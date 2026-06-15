@@ -3,14 +3,22 @@
     "span": "ai.generateText.doGenerate",
     "metadata": {
       "model": "gpt-4.1-nano",
-      "inputTokens": 22
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "system": "openai.chat",
+      "responseId": "chatcmpl-DmRo36qp18PR3bwmtZfTN9ElKOUVx",
+      "inputTokens": 22,
+      "outputTokens": 6,
+      "totalTokens": 28
     }
   },
   {
     "span": "ai.generateText",
     "metadata": {
       "model": "gpt-4.1-nano",
-      "inputTokens": 22
+      "system": "openai.chat",
+      "inputTokens": 22,
+      "outputTokens": 6,
+      "totalTokens": 28
     }
   }
 ]

@@ -2,7 +2,10 @@
   {
     "span": "OpenAI.chat",
     "metadata": {
-      "inputTokens": 56
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "inputTokens": 56,
+      "outputTokens": 30,
+      "totalTokens": 86
     }
   }
 ]

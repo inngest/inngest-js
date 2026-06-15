@@ -7,9 +7,10 @@ import { z } from "zod/v3";
  * chat completion, without needing the OpenAI SDK or an API key: a wrapper
  * span containing a `gen_ai.*`-attributed span.
  *
- * The response model and output tokens are deliberately present even though
- * the metadata processor doesn't extract them; tests assert they don't leak
- * into step metadata.
+ * The span carries the full `gen_ai.*` set the extractor recognizes (request +
+ * response model, system, and input/output token counts) so tests can assert
+ * the complete `inngest.ai` metadata shape. `gen_ai.operation.name` is included
+ * to confirm unrecognized attributes don't leak into step metadata.
  */
 export function simulateOpenAICall(): string {
   const tracer = trace.getTracer("@opentelemetry/instrumentation-openai");

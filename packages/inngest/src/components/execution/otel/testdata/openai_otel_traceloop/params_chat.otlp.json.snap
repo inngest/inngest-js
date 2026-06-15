@@ -3,7 +3,12 @@
     "span": "chat gpt-4.1-nano",
     "metadata": {
       "model": "gpt-4.1-nano",
-      "inputTokens": 22
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "system": "openai",
+      "responseId": "chatcmpl-DmQhkoGWd8y8RoHHnRbkw7BHGMj8j",
+      "inputTokens": 22,
+      "outputTokens": 6,
+      "totalTokens": 28
     }
   }
 ]
