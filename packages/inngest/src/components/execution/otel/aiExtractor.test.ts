@@ -157,6 +157,8 @@ describe("extractAIMetadataFromAttributes", () => {
       responseId: "semconv-response-id",
       inputTokens: 22,
       outputTokens: 6,
+      // No total attribute present, so it's derived from input + output.
+      totalTokens: 28,
     });
   });
 
@@ -189,6 +191,7 @@ describe("extractAIMetadataFromAttributes", () => {
       responseModel: "gpt-4.1-nano-2025-04-14",
       inputTokens: 22,
       outputTokens: 6,
+      totalTokens: 28,
     };
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
@@ -205,6 +208,24 @@ describe("extractAIMetadataFromAttributes", () => {
       }),
     ).toEqual({});
   });
+
+  test("prefers a provider-supplied total over deriving it from input + output", () => {
+    // The provider's total need not equal input + output (e.g. it may include
+    // reasoning tokens), so the supplied value must win over the derived one.
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.usage.input_tokens": 22,
+        "gen_ai.usage.output_tokens": 6,
+        "gen_ai.usage.total_tokens": 99,
+      }),
+    ).toEqual({ inputTokens: 22, outputTokens: 6, totalTokens: 99 });
+  });
+
+  test("does not derive a total when no token counts are present", () => {
+    expect(
+      extractAIMetadataFromAttributes({ "gen_ai.request.model": "gpt-4o" }),
+    ).toEqual({ model: "gpt-4o" });
+  });
 });
 
 describe("aggregate", () => {
@@ -216,6 +237,7 @@ describe("aggregate", () => {
       responseId: "chatcmpl-a",
       inputTokens: 10,
       outputTokens: 4,
+      totalTokens: 14,
     };
     const b: AIMetadata = {
       model: "gpt-4o",
@@ -224,6 +246,7 @@ describe("aggregate", () => {
       responseId: "chatcmpl-b",
       inputTokens: 22,
       outputTokens: 8,
+      totalTokens: 30,
     };
     expect(aggregate(a, b)).toEqual({
       model: "gpt-4.1-nano",
@@ -232,6 +255,7 @@ describe("aggregate", () => {
       responseId: "chatcmpl-a",
       inputTokens: 32,
       outputTokens: 12,
+      totalTokens: 44,
     });
   });
 
@@ -281,6 +305,7 @@ describe("toInngestAIMetadataValues", () => {
         responseId: "chatcmpl-abc",
         inputTokens: 42,
         outputTokens: 8,
+        totalTokens: 50,
       }),
     ).toEqual({
       model: "gpt-4o",
@@ -289,6 +314,7 @@ describe("toInngestAIMetadataValues", () => {
       response_id: "chatcmpl-abc",
       input_tokens: 42,
       output_tokens: 8,
+      total_tokens: 50,
     });
   });
 
@@ -304,6 +330,9 @@ describe("toInngestAIMetadataValues", () => {
     });
     expect(toInngestAIMetadataValues({ responseId: "chatcmpl-abc" })).toEqual({
       response_id: "chatcmpl-abc",
+    });
+    expect(toInngestAIMetadataValues({ totalTokens: 50 })).toEqual({
+      total_tokens: 50,
     });
     expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
       input_tokens: 7,

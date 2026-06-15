@@ -91,7 +91,9 @@ describe("InngestMetadataSpanProcessor", () => {
       "gen_ai.usage.input_tokens": 42,
     });
 
-    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 42 }]);
+    expect(pushed).toEqual([
+      { model: "gpt-4.1-nano", inputTokens: 42, totalTokens: 42 },
+    ]);
   });
 
   test("pushes once per span; aggregation is the sink owner's job", () => {
@@ -108,8 +110,8 @@ describe("InngestMetadataSpanProcessor", () => {
     });
 
     expect(pushed).toEqual([
-      { model: "gpt-4.1-nano", inputTokens: 10 },
-      { model: "gpt-4.1-mini", inputTokens: 5 },
+      { model: "gpt-4.1-nano", inputTokens: 10, totalTokens: 10 },
+      { model: "gpt-4.1-mini", inputTokens: 5, totalTokens: 5 },
     ]);
   });
 
@@ -137,7 +139,9 @@ describe("InngestMetadataSpanProcessor", () => {
     });
     mid.end();
 
-    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 7 }]);
+    expect(pushed).toEqual([
+      { model: "gpt-4.1-nano", inputTokens: 7, totalTokens: 7 },
+    ]);
   });
 
   test("ignores spans that are not part of a declared run", () => {
