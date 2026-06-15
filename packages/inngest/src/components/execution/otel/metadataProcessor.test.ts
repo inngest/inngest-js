@@ -13,7 +13,13 @@ describe("InngestMetadataSpanProcessor", () => {
 
   function setup() {
     const processor = new InngestMetadataSpanProcessor();
-    const provider = new BasicTracerProvider({ spanProcessors: [processor] });
+    const provider = new BasicTracerProvider();
+    // Mirror production wiring: register the provider globally and let the
+    // processor attach itself, which flips its `#attached` latch. Injecting via
+    // the constructor would leave the processor unattached, so
+    // `declareStartingSpan` would no-op.
+    trace.setGlobalTracerProvider(provider);
+    processor.attach();
     const tracer = provider.getTracer("test");
     return { processor, tracer };
   }
