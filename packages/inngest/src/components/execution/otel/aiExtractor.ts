@@ -14,6 +14,12 @@ export interface AIMetadata {
    * of the requested {@link AIMetadata.model} (e.g. `gpt-4.1-nano-2025-04-14`).
    */
   responseModel?: string;
+  /**
+   * The AI provider/system that served the request, stored raw per emitter
+   * (e.g. `openai`, or the provider + API surface like `openai.chat`). Emitted
+   * as `system` on the server schema.
+   */
+  system?: string;
   /** The number of input (prompt) tokens consumed by the request. */
   inputTokens?: number;
   /** The number of output (completion) tokens produced by the response. */
@@ -41,6 +47,12 @@ interface Mapping {
    */
   field?: Field;
   convention: Convention;
+  /**
+   * Tiebreak used to order keys within the same convention; lower wins
+   * (default 0). Used e.g. to rank the deprecated `gen_ai.system` behind its
+   * replacement `gen_ai.provider.name`, which are both semconv.
+   */
+  keyRank?: number;
   /**
    * Composite attributes (e.g. a JSON blob of token counts) provide an
    * `expand` that explodes the raw value into synthetic scalar attributes,
@@ -140,6 +152,17 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "responseModel",
     convention: Convention.Semconv,
   },
+  "gen_ai.provider.name": {
+    field: "system",
+    convention: Convention.Semconv,
+  },
+  // Deprecated in semconv in favor of `gen_ai.provider.name`; both are semconv,
+  // so this keyRank places it behind its replacement.
+  "gen_ai.system": {
+    field: "system",
+    convention: Convention.Semconv,
+    keyRank: 1,
+  },
   "gen_ai.usage.input_tokens": {
     field: "inputTokens",
     convention: Convention.Semconv,
@@ -163,11 +186,20 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "outputTokens",
     convention: Convention.OpenInference,
   },
+  // `llm.system` identifies the AI product/vendor (openai, anthropic, …),
+  // matching the semantics of the deprecated semconv `gen_ai.system`.
+  "llm.system": { field: "system", convention: Convention.OpenInference },
 
   // Vercel AI SDK (native `ai.*` telemetry)
   "ai.model.id": { field: "model", convention: Convention.Vercel },
   "ai.response.model": {
     field: "responseModel",
+    convention: Convention.Vercel,
+  },
+  // `ai.model.provider` is the provider + API surface, e.g. `openai.responses`
+  // (not bare `openai`); stored faithfully, no normalization.
+  "ai.model.provider": {
+    field: "system",
     convention: Convention.Vercel,
   },
   "ai.usage.inputTokens": {
@@ -187,6 +219,7 @@ const keyFieldMap: Record<string, Mapping> = {
 interface Candidate {
   value: AttributeValue;
   convention: Convention;
+  keyRank: number;
 }
 
 /**
@@ -209,9 +242,20 @@ export const extractAIMetadataFromAttributes = (
     if (!mapping.field) {
       return;
     }
+    const keyRank = mapping.keyRank ?? 0;
     const existing = candidates[mapping.field];
-    if (!existing || mapping.convention < existing.convention) {
-      candidates[mapping.field] = { value, convention: mapping.convention };
+    // Order by convention first, breaking ties within a convention by keyRank;
+    // lower wins for both.
+    if (
+      !existing ||
+      mapping.convention < existing.convention ||
+      (mapping.convention === existing.convention && keyRank < existing.keyRank)
+    ) {
+      candidates[mapping.field] = {
+        value,
+        convention: mapping.convention,
+        keyRank,
+      };
     }
   };
 
@@ -252,6 +296,11 @@ export const extractAIMetadataFromAttributes = (
   const responseModel = candidates.responseModel?.value;
   if (typeof responseModel === "string" && responseModel !== "") {
     metadata.responseModel = responseModel;
+  }
+
+  const system = candidates.system?.value;
+  if (typeof system === "string" && system !== "") {
+    metadata.system = system;
   }
 
   // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64 as
@@ -298,6 +347,11 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
     metadata.responseModel = responseModel;
   }
 
+  const system = a.system ?? b.system;
+  if (system !== undefined) {
+    metadata.system = system;
+  }
+
   if (a.inputTokens !== undefined || b.inputTokens !== undefined) {
     metadata.inputTokens = (a.inputTokens ?? 0) + (b.inputTokens ?? 0);
   }
@@ -326,6 +380,10 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.responseModel !== undefined) {
     values.response_model = metadata.responseModel;
+  }
+
+  if (metadata.system !== undefined) {
+    values.system = metadata.system;
   }
 
   if (metadata.inputTokens !== undefined) {
