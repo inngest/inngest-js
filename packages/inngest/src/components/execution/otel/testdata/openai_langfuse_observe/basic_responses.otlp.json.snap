@@ -2,7 +2,10 @@
   {
     "span": "OpenAI.responses",
     "metadata": {
-      "inputTokens": 17
+      "responseModel": "gpt-5.4-nano-2026-03-17",
+      "inputTokens": 17,
+      "outputTokens": 36,
+      "totalTokens": 53
     }
   }
 ]

@@ -3,14 +3,22 @@
     "span": "ai.generateText.doGenerate",
     "metadata": {
       "model": "gpt-5.4-nano",
-      "inputTokens": 17
+      "responseModel": "gpt-5.4-nano-2026-03-17",
+      "system": "openai.responses",
+      "responseId": "resp_0e56d5c95850276a006a1f57da3d60819a8974cbbffaedd001",
+      "inputTokens": 17,
+      "outputTokens": 40,
+      "totalTokens": 57
     }
   },
   {
     "span": "ai.generateText",
     "metadata": {
       "model": "gpt-5.4-nano",
-      "inputTokens": 17
+      "system": "openai.responses",
+      "inputTokens": 17,
+      "outputTokens": 40,
+      "totalTokens": 57
     }
   }
 ]

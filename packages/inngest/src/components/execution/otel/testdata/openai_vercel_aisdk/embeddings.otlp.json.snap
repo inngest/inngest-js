@@ -3,14 +3,18 @@
     "span": "ai.embed.doEmbed",
     "metadata": {
       "model": "text-embedding-3-small",
-      "inputTokens": 10
+      "system": "openai.embedding",
+      "inputTokens": 10,
+      "totalTokens": 10
     }
   },
   {
     "span": "ai.embed",
     "metadata": {
       "model": "text-embedding-3-small",
-      "inputTokens": 10
+      "system": "openai.embedding",
+      "inputTokens": 10,
+      "totalTokens": 10
     }
   }
 ]
