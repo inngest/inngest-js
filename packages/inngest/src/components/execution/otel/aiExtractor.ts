@@ -26,6 +26,11 @@ export interface AIMetadata {
   inputTokens?: number;
   /** The number of output (completion) tokens produced by the response. */
   outputTokens?: number;
+  /**
+   * The total tokens consumed. Taken from the provider's count when supplied,
+   * otherwise derived as input + output when either is present.
+   */
+  totalTokens?: number;
 }
 
 /**
@@ -72,22 +77,23 @@ const langfuseUsagePrefix = "__langfuse.usage_details.";
 
 /**
  * The `langfuse.observation.usage_details` JSON blob (e.g.
- * `{"input":17,"output":36,"total":53}`). Langfuse emits more counts (total,
- * cached, reasoning, …), but this extractor only reads the ones it tracks.
+ * `{"input":17,"output":36,"total":53}`). Langfuse emits more counts (cached,
+ * reasoning, …), but this extractor only reads the ones it tracks.
  */
 interface LangfuseUsageDetails {
   input?: number;
   output?: number;
+  total?: number;
 }
 
-/** The usage counts we lift out of the Langfuse blob, in precedence order. */
-const langfuseUsageKeys = ["input", "output"] as const;
+/** The usage counts we lift out of the Langfuse blob. */
+const langfuseUsageKeys = ["input", "output", "total"] as const;
 
 /**
  * Parses the {@link LangfuseUsageDetails} JSON blob and emits a synthetic
- * scalar attribute for each count we track. Only `input` and `output` are
- * emitted; the other counts are intentionally dropped since this extractor
- * tracks input and output tokens alone.
+ * scalar attribute for each count we track. Only `input`, `output`, and `total`
+ * are emitted; the other counts are intentionally dropped since this extractor
+ * tracks input, output, and total tokens alone.
  */
 const expandLangfuseUsageDetails = (
   value: AttributeValue,
@@ -143,6 +149,10 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "outputTokens",
     convention: Convention.Langfuse,
   },
+  [`${langfuseUsagePrefix}total`]: {
+    field: "totalTokens",
+    convention: Convention.Langfuse,
+  },
   "langfuse.observation.model.name": {
     field: "responseModel",
     convention: Convention.Langfuse,
@@ -177,6 +187,10 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "outputTokens",
     convention: Convention.Semconv,
   },
+  "gen_ai.usage.total_tokens": {
+    field: "totalTokens",
+    convention: Convention.Semconv,
+  },
 
   // OpenInference. `llm.model_name` is the model that served the request (a
   // response model), not the requested model — hence it maps to `responseModel`.
@@ -190,6 +204,10 @@ const keyFieldMap: Record<string, Mapping> = {
   },
   "llm.token_count.completion": {
     field: "outputTokens",
+    convention: Convention.OpenInference,
+  },
+  "llm.token_count.total": {
+    field: "totalTokens",
     convention: Convention.OpenInference,
   },
   // `llm.system` identifies the AI product/vendor (openai, anthropic, …),
@@ -218,6 +236,10 @@ const keyFieldMap: Record<string, Mapping> = {
   },
   "ai.usage.outputTokens": {
     field: "outputTokens",
+    convention: Convention.Vercel,
+  },
+  "ai.usage.totalTokens": {
+    field: "totalTokens",
     convention: Convention.Vercel,
   },
   // Embeddings spans emit only a single `ai.usage.tokens` count (no
@@ -320,20 +342,36 @@ export const extractAIMetadataFromAttributes = (
 
   // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64 as
   // either a number or a quoted string, so coerce defensively.
-  const inputTokens = candidates.inputTokens?.value;
-  if (inputTokens !== undefined) {
-    const n = Number(inputTokens);
-    if (!Number.isNaN(n)) {
-      metadata.inputTokens = n;
+  const count = (field: Field): number | undefined => {
+    const raw = candidates[field]?.value;
+    if (raw === undefined) {
+      return undefined;
     }
+    const n = Number(raw);
+    return Number.isNaN(n) ? undefined : n;
+  };
+
+  const inputTokens = count("inputTokens");
+  if (inputTokens !== undefined) {
+    metadata.inputTokens = inputTokens;
   }
 
-  const outputTokens = candidates.outputTokens?.value;
+  const outputTokens = count("outputTokens");
   if (outputTokens !== undefined) {
-    const n = Number(outputTokens);
-    if (!Number.isNaN(n)) {
-      metadata.outputTokens = n;
+    metadata.outputTokens = outputTokens;
+  }
+
+  // Use the provider's total when supplied, otherwise derive it from input +
+  // output when either is present, mirroring the server-side extractor.
+  let totalTokens = count("totalTokens");
+  if (totalTokens === undefined) {
+    const sum = (inputTokens ?? 0) + (outputTokens ?? 0);
+    if (sum > 0) {
+      totalTokens = sum;
     }
+  }
+  if (totalTokens !== undefined) {
+    metadata.totalTokens = totalTokens;
   }
 
   return metadata;
@@ -342,9 +380,9 @@ export const extractAIMetadataFromAttributes = (
 /**
  * Aggregates two {@link AIMetadata} values into one.
  *
- * Input and output token counts are summed, while `a`'s models take precedence
- * over `b`'s. Each field is only present in the result when at least one input
- * supplies it.
+ * Input, output, and total token counts are summed, while `a`'s models take
+ * precedence over `b`'s. Each field is only present in the result when at least
+ * one input supplies it.
  *
  * @param a - The primary metadata; its models win when both are present.
  * @param b - The secondary metadata.
@@ -378,6 +416,10 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
 
   if (a.outputTokens !== undefined || b.outputTokens !== undefined) {
     metadata.outputTokens = (a.outputTokens ?? 0) + (b.outputTokens ?? 0);
+  }
+
+  if (a.totalTokens !== undefined || b.totalTokens !== undefined) {
+    metadata.totalTokens = (a.totalTokens ?? 0) + (b.totalTokens ?? 0);
   }
 
   return metadata;
@@ -416,6 +458,10 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.outputTokens !== undefined) {
     values.output_tokens = metadata.outputTokens;
+  }
+
+  if (metadata.totalTokens !== undefined) {
+    values.total_tokens = metadata.totalTokens;
   }
 
   if (Object.keys(values).length === 0) {
