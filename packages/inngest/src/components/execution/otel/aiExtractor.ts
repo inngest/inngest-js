@@ -11,6 +11,8 @@ export interface AIMetadata {
   model?: string;
   /** The number of input (prompt) tokens consumed by the request. */
   inputTokens?: number;
+  /** The number of output (completion) tokens produced by the response. */
+  outputTokens?: number;
 }
 
 /**
@@ -50,11 +52,23 @@ interface Mapping {
 const langfuseUsagePrefix = "__langfuse.usage_details.";
 
 /**
- * Parses the `langfuse.observation.usage_details` JSON blob (e.g.
- * `{"input":17,"output":36,"total":53}`) and emits a synthetic scalar
- * attribute for each count we track. Only `input` is emitted; the other counts
- * (output, total, cached, reasoning, …) are intentionally dropped since this
- * extractor tracks input tokens alone.
+ * The `langfuse.observation.usage_details` JSON blob (e.g.
+ * `{"input":17,"output":36,"total":53}`). Langfuse emits more counts (total,
+ * cached, reasoning, …), but this extractor only reads the ones it tracks.
+ */
+interface LangfuseUsageDetails {
+  input?: number;
+  output?: number;
+}
+
+/** The usage counts we lift out of the Langfuse blob, in precedence order. */
+const langfuseUsageKeys = ["input", "output"] as const;
+
+/**
+ * Parses the {@link LangfuseUsageDetails} JSON blob and emits a synthetic
+ * scalar attribute for each count we track. Only `input` and `output` are
+ * emitted; the other counts are intentionally dropped since this extractor
+ * tracks input and output tokens alone.
  */
 const expandLangfuseUsageDetails = (
   value: AttributeValue,
@@ -63,23 +77,28 @@ const expandLangfuseUsageDetails = (
     return {};
   }
 
-  let counts: unknown;
+  let parsed: unknown;
   try {
-    counts = JSON.parse(value);
+    parsed = JSON.parse(value);
   } catch {
     return {};
   }
 
-  if (typeof counts !== "object" || counts === null) {
+  if (typeof parsed !== "object" || parsed === null) {
     return {};
   }
 
-  const input = (counts as Record<string, unknown>).input;
-  if (typeof input !== "number") {
-    return {};
+  const counts = parsed as LangfuseUsageDetails;
+
+  const out: Record<string, AttributeValue> = {};
+  for (const key of langfuseUsageKeys) {
+    const count = counts[key];
+    if (typeof count === "number") {
+      out[`${langfuseUsagePrefix}${key}`] = count;
+    }
   }
 
-  return { [`${langfuseUsagePrefix}input`]: input };
+  return out;
 };
 
 /**
@@ -101,11 +120,19 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "inputTokens",
     convention: Convention.Langfuse,
   },
+  [`${langfuseUsagePrefix}output`]: {
+    field: "outputTokens",
+    convention: Convention.Langfuse,
+  },
 
   // OpenTelemetry Semantic Conventions
   "gen_ai.request.model": { field: "model", convention: Convention.Semconv },
   "gen_ai.usage.input_tokens": {
     field: "inputTokens",
+    convention: Convention.Semconv,
+  },
+  "gen_ai.usage.output_tokens": {
+    field: "outputTokens",
     convention: Convention.Semconv,
   },
 
@@ -115,11 +142,19 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "inputTokens",
     convention: Convention.OpenInference,
   },
+  "llm.token_count.completion": {
+    field: "outputTokens",
+    convention: Convention.OpenInference,
+  },
 
   // Vercel AI SDK (native `ai.*` telemetry)
   "ai.model.id": { field: "model", convention: Convention.Vercel },
   "ai.usage.inputTokens": {
     field: "inputTokens",
+    convention: Convention.Vercel,
+  },
+  "ai.usage.outputTokens": {
+    field: "outputTokens",
     convention: Convention.Vercel,
   },
   // Embeddings spans emit only a single `ai.usage.tokens` count (no
@@ -193,13 +228,21 @@ export const extractAIMetadataFromAttributes = (
     metadata.model = model;
   }
 
+  // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64 as
+  // either a number or a quoted string, so coerce defensively.
   const inputTokens = candidates.inputTokens?.value;
   if (inputTokens !== undefined) {
-    // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64
-    // as either a number or a quoted string, so coerce defensively.
     const n = Number(inputTokens);
     if (!Number.isNaN(n)) {
       metadata.inputTokens = n;
+    }
+  }
+
+  const outputTokens = candidates.outputTokens?.value;
+  if (outputTokens !== undefined) {
+    const n = Number(outputTokens);
+    if (!Number.isNaN(n)) {
+      metadata.outputTokens = n;
     }
   }
 
@@ -209,8 +252,9 @@ export const extractAIMetadataFromAttributes = (
 /**
  * Aggregates two {@link AIMetadata} values into one.
  *
- * Input token counts are summed, while `a`'s model takes precedence over `b`'s.
- * Each field is only present in the result when at least one input supplies it.
+ * Input and output token counts are summed, while `a`'s model takes precedence
+ * over `b`'s. Each field is only present in the result when at least one input
+ * supplies it.
  *
  * @param a - The primary metadata; its `model` wins when both are present.
  * @param b - The secondary metadata.
@@ -225,6 +269,10 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
 
   if (a.inputTokens !== undefined || b.inputTokens !== undefined) {
     metadata.inputTokens = (a.inputTokens ?? 0) + (b.inputTokens ?? 0);
+  }
+
+  if (a.outputTokens !== undefined || b.outputTokens !== undefined) {
+    metadata.outputTokens = (a.outputTokens ?? 0) + (b.outputTokens ?? 0);
   }
 
   return metadata;
@@ -247,6 +295,10 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.inputTokens !== undefined) {
     values.input_tokens = metadata.inputTokens;
+  }
+
+  if (metadata.outputTokens !== undefined) {
+    values.output_tokens = metadata.outputTokens;
   }
 
   if (Object.keys(values).length === 0) {

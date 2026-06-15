@@ -141,8 +141,14 @@ describe("extractAIMetadataFromAttributes", () => {
       "gen_ai.request.model": "semconv-model",
       "ai.usage.inputTokens": 10,
       "gen_ai.usage.input_tokens": 22,
+      "ai.usage.outputTokens": 5,
+      "gen_ai.usage.output_tokens": 6,
     });
-    expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
+    expect(extracted).toEqual({
+      model: "semconv-model",
+      inputTokens: 22,
+      outputTokens: 6,
+    });
   });
 
   test("langfuse input tokens win over a co-present gen_ai count", () => {
@@ -154,7 +160,7 @@ describe("extractAIMetadataFromAttributes", () => {
         '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
     };
     // Order-independent: langfuse outranks semconv regardless of key order.
-    const expected = { inputTokens: 22 };
+    const expected = { inputTokens: 22, outputTokens: 6 };
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
@@ -173,10 +179,25 @@ describe("extractAIMetadataFromAttributes", () => {
 });
 
 describe("aggregate", () => {
-  test("sums input tokens and keeps the first model", () => {
-    const a: AIMetadata = { model: "gpt-4.1-nano", inputTokens: 10 };
-    const b: AIMetadata = { model: "gpt-4o", inputTokens: 22 };
-    expect(aggregate(a, b)).toEqual({ model: "gpt-4.1-nano", inputTokens: 32 });
+  test("sums input and output tokens and keeps the first model", () => {
+    const a: AIMetadata = {
+      model: "gpt-4.1-nano",
+      inputTokens: 10,
+      outputTokens: 4,
+    };
+    const b: AIMetadata = { model: "gpt-4o", inputTokens: 22, outputTokens: 8 };
+    expect(aggregate(a, b)).toEqual({
+      model: "gpt-4.1-nano",
+      inputTokens: 32,
+      outputTokens: 12,
+    });
+  });
+
+  test("treats a missing output token count as zero", () => {
+    expect(aggregate({ outputTokens: 7 }, { model: "b" })).toEqual({
+      model: "b",
+      outputTokens: 7,
+    });
   });
 
   test("falls back to the second model when the first is absent", () => {
@@ -203,10 +224,14 @@ describe("aggregate", () => {
 });
 
 describe("toInngestAIMetadataValues", () => {
-  test("maps both fields onto the server's snake_case schema", () => {
+  test("maps all fields onto the server's snake_case schema", () => {
     expect(
-      toInngestAIMetadataValues({ model: "gpt-4o", inputTokens: 42 }),
-    ).toEqual({ model: "gpt-4o", input_tokens: 42 });
+      toInngestAIMetadataValues({
+        model: "gpt-4o",
+        inputTokens: 42,
+        outputTokens: 8,
+      }),
+    ).toEqual({ model: "gpt-4o", input_tokens: 42, output_tokens: 8 });
   });
 
   test("omits absent fields rather than zero-valuing them", () => {
@@ -215,6 +240,9 @@ describe("toInngestAIMetadataValues", () => {
     });
     expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
       input_tokens: 7,
+    });
+    expect(toInngestAIMetadataValues({ outputTokens: 9 })).toEqual({
+      output_tokens: 9,
     });
   });
 
