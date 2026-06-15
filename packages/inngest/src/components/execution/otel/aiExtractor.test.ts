@@ -139,6 +139,8 @@ describe("extractAIMetadataFromAttributes", () => {
     const extracted = extractAIMetadataFromAttributes({
       "ai.model.id": "vercel-model",
       "gen_ai.request.model": "semconv-model",
+      "ai.response.model": "vercel-response-model",
+      "gen_ai.response.model": "semconv-response-model",
       "ai.usage.inputTokens": 10,
       "gen_ai.usage.input_tokens": 22,
       "ai.usage.outputTokens": 5,
@@ -146,12 +148,13 @@ describe("extractAIMetadataFromAttributes", () => {
     });
     expect(extracted).toEqual({
       model: "semconv-model",
+      responseModel: "semconv-response-model",
       inputTokens: 22,
       outputTokens: 6,
     });
   });
 
-  test("langfuse input tokens win over a co-present gen_ai count", () => {
+  test("langfuse input tokens and response model win over co-present gen_ai", () => {
     const attributes = {
       "gen_ai.response.model": "gpt-4.1-nano-another",
       "gen_ai.usage.input_tokens": 100,
@@ -160,7 +163,11 @@ describe("extractAIMetadataFromAttributes", () => {
         '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
     };
     // Order-independent: langfuse outranks semconv regardless of key order.
-    const expected = { inputTokens: 22, outputTokens: 6 };
+    const expected = {
+      responseModel: "gpt-4.1-nano-2025-04-14",
+      inputTokens: 22,
+      outputTokens: 6,
+    };
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
@@ -179,18 +186,31 @@ describe("extractAIMetadataFromAttributes", () => {
 });
 
 describe("aggregate", () => {
-  test("sums input and output tokens and keeps the first model", () => {
+  test("sums input and output tokens and keeps the first models", () => {
     const a: AIMetadata = {
       model: "gpt-4.1-nano",
+      responseModel: "gpt-4.1-nano-2025-04-14",
       inputTokens: 10,
       outputTokens: 4,
     };
-    const b: AIMetadata = { model: "gpt-4o", inputTokens: 22, outputTokens: 8 };
+    const b: AIMetadata = {
+      model: "gpt-4o",
+      responseModel: "gpt-4o-2024-08-06",
+      inputTokens: 22,
+      outputTokens: 8,
+    };
     expect(aggregate(a, b)).toEqual({
       model: "gpt-4.1-nano",
+      responseModel: "gpt-4.1-nano-2025-04-14",
       inputTokens: 32,
       outputTokens: 12,
     });
+  });
+
+  test("falls back to the second response model when the first is absent", () => {
+    expect(
+      aggregate({ inputTokens: 5 }, { responseModel: "gpt-4o-2024-08-06" }),
+    ).toEqual({ responseModel: "gpt-4o-2024-08-06", inputTokens: 5 });
   });
 
   test("treats a missing output token count as zero", () => {
@@ -228,16 +248,25 @@ describe("toInngestAIMetadataValues", () => {
     expect(
       toInngestAIMetadataValues({
         model: "gpt-4o",
+        responseModel: "gpt-4o-2024-08-06",
         inputTokens: 42,
         outputTokens: 8,
       }),
-    ).toEqual({ model: "gpt-4o", input_tokens: 42, output_tokens: 8 });
+    ).toEqual({
+      model: "gpt-4o",
+      response_model: "gpt-4o-2024-08-06",
+      input_tokens: 42,
+      output_tokens: 8,
+    });
   });
 
   test("omits absent fields rather than zero-valuing them", () => {
     expect(toInngestAIMetadataValues({ model: "gpt-4o" })).toEqual({
       model: "gpt-4o",
     });
+    expect(
+      toInngestAIMetadataValues({ responseModel: "gpt-4o-2024-08-06" }),
+    ).toEqual({ response_model: "gpt-4o-2024-08-06" });
     expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
       input_tokens: 7,
     });
