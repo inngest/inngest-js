@@ -198,6 +198,12 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
     traceparent: string | undefined;
     onAIMetadata: AIMetadataSink;
   }): void {
+    // If this processor is not attached to a  provider, we don't need to
+    // declare starting spans.
+    if (!this.#attached) {
+      return;
+    }
+
     // If we don't have a traceparent, then this isn't a step the Executor is
     // tracking, so we don't track it either.
     if (!traceparent) {
