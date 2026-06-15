@@ -9,6 +9,11 @@ import type { Attributes, AttributeValue } from "@opentelemetry/api";
 export interface AIMetadata {
   /** The requested model, e.g. `gpt-4.1-nano`. */
   model?: string;
+  /**
+   * The model that actually served the request. This is often a dated snapshot
+   * of the requested {@link AIMetadata.model} (e.g. `gpt-4.1-nano-2025-04-14`).
+   */
+  responseModel?: string;
   /** The number of input (prompt) tokens consumed by the request. */
   inputTokens?: number;
   /** The number of output (completion) tokens produced by the response. */
@@ -109,9 +114,9 @@ const keyFieldMap: Record<string, Mapping> = {
   // Langfuse (`langfuse.*` telemetry). Langfuse reports token usage as a single
   // JSON blob under `usage_details`; it is expanded into synthetic per-count
   // attributes that are matched back through this map. Langfuse only emits a
-  // response model (not the requested model), which this extractor doesn't
-  // track, so no `model` mapping is registered here. Langfuse outranks the
-  // other conventions when several are present on one span.
+  // response model (not the requested model), so no `model` mapping is
+  // registered here. Langfuse outranks the other conventions when several are
+  // present on one span.
   "langfuse.observation.usage_details": {
     convention: Convention.Langfuse,
     expand: expandLangfuseUsageDetails,
@@ -124,9 +129,17 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "outputTokens",
     convention: Convention.Langfuse,
   },
+  "langfuse.observation.model.name": {
+    field: "responseModel",
+    convention: Convention.Langfuse,
+  },
 
   // OpenTelemetry Semantic Conventions
   "gen_ai.request.model": { field: "model", convention: Convention.Semconv },
+  "gen_ai.response.model": {
+    field: "responseModel",
+    convention: Convention.Semconv,
+  },
   "gen_ai.usage.input_tokens": {
     field: "inputTokens",
     convention: Convention.Semconv,
@@ -136,8 +149,12 @@ const keyFieldMap: Record<string, Mapping> = {
     convention: Convention.Semconv,
   },
 
-  // OpenInference
-  "llm.model_name": { field: "model", convention: Convention.OpenInference },
+  // OpenInference. `llm.model_name` is the model that served the request (a
+  // response model), not the requested model — hence it maps to `responseModel`.
+  "llm.model_name": {
+    field: "responseModel",
+    convention: Convention.OpenInference,
+  },
   "llm.token_count.prompt": {
     field: "inputTokens",
     convention: Convention.OpenInference,
@@ -149,6 +166,10 @@ const keyFieldMap: Record<string, Mapping> = {
 
   // Vercel AI SDK (native `ai.*` telemetry)
   "ai.model.id": { field: "model", convention: Convention.Vercel },
+  "ai.response.model": {
+    field: "responseModel",
+    convention: Convention.Vercel,
+  },
   "ai.usage.inputTokens": {
     field: "inputTokens",
     convention: Convention.Vercel,
@@ -228,6 +249,11 @@ export const extractAIMetadataFromAttributes = (
     metadata.model = model;
   }
 
+  const responseModel = candidates.responseModel?.value;
+  if (typeof responseModel === "string" && responseModel !== "") {
+    metadata.responseModel = responseModel;
+  }
+
   // Token counts arrive as numbers from the SDK, but OTLP/JSON encodes int64 as
   // either a number or a quoted string, so coerce defensively.
   const inputTokens = candidates.inputTokens?.value;
@@ -252,11 +278,11 @@ export const extractAIMetadataFromAttributes = (
 /**
  * Aggregates two {@link AIMetadata} values into one.
  *
- * Input and output token counts are summed, while `a`'s model takes precedence
+ * Input and output token counts are summed, while `a`'s models take precedence
  * over `b`'s. Each field is only present in the result when at least one input
  * supplies it.
  *
- * @param a - The primary metadata; its `model` wins when both are present.
+ * @param a - The primary metadata; its models win when both are present.
  * @param b - The secondary metadata.
  */
 export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
@@ -265,6 +291,11 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
   const model = a.model ?? b.model;
   if (model !== undefined) {
     metadata.model = model;
+  }
+
+  const responseModel = a.responseModel ?? b.responseModel;
+  if (responseModel !== undefined) {
+    metadata.responseModel = responseModel;
   }
 
   if (a.inputTokens !== undefined || b.inputTokens !== undefined) {
@@ -291,6 +322,10 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.model !== undefined) {
     values.model = metadata.model;
+  }
+
+  if (metadata.responseModel !== undefined) {
+    values.response_model = metadata.responseModel;
   }
 
   if (metadata.inputTokens !== undefined) {
