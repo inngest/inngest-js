@@ -14,7 +14,13 @@ let isTraceInstrumentationHookRegistered = false;
 let isTraceInstrumentationStarted = false;
 
 /**
- * Installs Inngest trace instrumentation into the process-global OTel provider.
+ * Installs supported trace instrumentations and ensures a process-global OTel
+ * provider exists.
+ *
+ * If the app already configured a tracer provider, that provider is left in
+ * place. Otherwise, this creates a basic provider so preloaded
+ * instrumentations can emit spans.
+ *
  * Call this before importing instrumented libraries.
  */
 export function instrumentTracing(): void {
@@ -97,6 +103,6 @@ function ensureTraceProvider(): MaybeError<void> {
   } catch (e) {
     const err = toError(e);
     debug("failed to initialize provider:", err);
-    return toError(err);
+    return err;
   }
 }
