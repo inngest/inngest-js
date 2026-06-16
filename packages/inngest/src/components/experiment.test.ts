@@ -115,7 +115,23 @@ const createHarness = () => {
     ctx,
   );
 
-  const deps: GroupToolsDeps = { experimentStepRun: experimentStepRun };
+  /**
+   * Records the `experimentContext` that was active in ALS each time the score
+   * tool ran. The real `step.score` is a `step.run` under the hood, so it reads
+   * this context to spread the experiment fields into the step's opts — this
+   * captures what it would see.
+   */
+  const scoreContexts: unknown[] = [];
+  const experimentStepScore = vi.fn(
+    async (
+      _memoId: string,
+      _opts: { name: string; value: number | boolean },
+    ) => {
+      scoreContexts.push(als.getStore()?.execution?.experimentContext);
+    },
+  );
+
+  const deps: GroupToolsDeps = { experimentStepRun, experimentStepScore };
   const group = createGroupTools(deps);
 
   /**
@@ -124,7 +140,16 @@ const createHarness = () => {
    */
   const run = <T>(fn: () => Promise<T>): Promise<T> => als.run(ctx, fn);
 
-  return { group, exec, ctx, experimentStepRun, HASHED_STEP_ID, run };
+  return {
+    group,
+    exec,
+    ctx,
+    experimentStepRun,
+    experimentStepScore,
+    scoreContexts,
+    HASHED_STEP_ID,
+    run,
+  };
 };
 
 // ====================================================================
@@ -538,10 +563,11 @@ describe("group.experiment() return shapes", () => {
       }),
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       result: "result-b",
       variant: "b",
     });
+    expect(typeof result.score).toBe("function");
   });
 });
 
@@ -818,6 +844,174 @@ describe("group.experiment() ALS propagation", () => {
 
     expect(capturedTracker).toBeDefined();
     expect(capturedTracker!.found).toBe(false);
+  });
+});
+
+// ====================================================================
+// experiment.score() — scoring from a later step
+// ====================================================================
+
+describe("group.experiment() score()", () => {
+  test("withVariant return includes a score function", async () => {
+    const { group, run } = createHarness();
+
+    const result = await run(() =>
+      group.experiment("exp", {
+        variants: {
+          a: () => {
+            fakeStepCall();
+            return "a";
+          },
+        },
+        select: experiment.fixed("a"),
+        withVariant: true,
+      }),
+    );
+
+    expect(typeof result.score).toBe("function");
+  });
+
+  test("score() runs the score tool inside the experiment context", async () => {
+    const { group, run, experimentStepScore, scoreContexts, HASHED_STEP_ID } =
+      createHarness();
+
+    const { score } = await run(() =>
+      group.experiment("checkout-flow", {
+        variants: {
+          control: () => {
+            fakeStepCall();
+            return "c";
+          },
+        },
+        select: experiment.fixed("control"),
+        withVariant: true,
+      }),
+    );
+
+    await run(() => score("score-latency", { name: "latency", value: 42 }));
+
+    // Forwards the memo id and targets the score step itself (step scope) so
+    // the value co-locates with the variant on the score step's own row.
+    expect(experimentStepScore).toHaveBeenCalledWith("score-latency", {
+      stepId: "score-latency",
+      name: "latency",
+      value: 42,
+    });
+
+    // The score's underlying step sees the same experiment fields an
+    // in-callback score would, so the executor stamps the variant onto its row.
+    expect(scoreContexts[0]).toEqual({
+      experimentStepID: HASHED_STEP_ID,
+      experimentName: "checkout-flow",
+      variant: "control",
+      selectionStrategy: "fixed",
+    });
+  });
+
+  test("score() re-enters the experiment context on replay without a hashed step ID", async () => {
+    // On replay the selection step is memoized, so experimentStepHashedId stays
+    // undefined. The scorer must still carry the (replay-stable) variant/name —
+    // the executor stamps from those, not from experimentStepID.
+    const exec = mockExecution();
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-id-replay" } as never,
+      },
+    };
+
+    const memoizedStepRun = vi.fn(
+      async (_idOrOptions: unknown, _callback: unknown) => "control",
+    );
+
+    const scoreContexts: unknown[] = [];
+    const experimentStepScore = vi.fn(async () => {
+      scoreContexts.push(als.getStore()?.execution?.experimentContext);
+    });
+
+    const group = createGroupTools({
+      experimentStepRun: memoizedStepRun,
+      experimentStepScore,
+    });
+
+    const { score } = await als.run(ctx, () =>
+      group.experiment("my-exp", {
+        variants: {
+          control: () => {
+            fakeStepCall();
+            return "old";
+          },
+          new_flow: () => {
+            fakeStepCall();
+            return "new";
+          },
+        },
+        select: experiment.fixed("control"),
+        withVariant: true,
+      }),
+    );
+
+    await als.run(ctx, () => score("s", { name: "ok", value: true }));
+
+    expect(scoreContexts[0]).toEqual({
+      experimentStepID: "",
+      experimentName: "my-exp",
+      variant: "control",
+      selectionStrategy: "fixed",
+    });
+  });
+
+  test("score() throws when the score tool dep is missing", async () => {
+    const exec = mockExecution();
+    const ctx: AsyncContext = {
+      app: {} as AsyncContext["app"],
+      execution: {
+        instance: exec,
+        ctx: { runId: "run-id-123" } as never,
+      },
+    };
+    const { fn: experimentStepRun } = createMockExperimentStepRun(exec, ctx);
+    const group = createGroupTools({ experimentStepRun });
+
+    const { score } = await als.run(ctx, () =>
+      group.experiment("exp", {
+        variants: {
+          a: () => {
+            fakeStepCall();
+            return "a";
+          },
+        },
+        select: experiment.fixed("a"),
+        withVariant: true,
+      }),
+    );
+
+    await expect(
+      als.run(ctx, () => score("s", { name: "x", value: 1 })),
+    ).rejects.toThrow("requires step tools to be available");
+  });
+
+  test("score() throws when called outside a function execution", async () => {
+    const { group, run } = createHarness();
+
+    const { score } = await run(() =>
+      group.experiment("exp", {
+        variants: {
+          a: () => {
+            fakeStepCall();
+            return "a";
+          },
+        },
+        select: experiment.fixed("a"),
+        withVariant: true,
+      }),
+    );
+
+    // Called without an active ALS execution context.
+    await expect(score("s", { name: "x", value: 1 })).rejects.toThrow(
+      "must be called within the same Inngest function execution",
+    );
   });
 });
 

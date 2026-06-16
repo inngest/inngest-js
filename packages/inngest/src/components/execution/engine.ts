@@ -57,8 +57,10 @@ import type {
   MetadataScope,
   MetadataUpdate,
 } from "../InngestMetadata.ts";
+import { scoreSymbol } from "../InngestScore.ts";
 import {
   createStepTools,
+  type ExperimentalStepTools,
   type ExperimentStepTools,
   experimentStepRunSymbol,
   type FoundStep,
@@ -2051,11 +2053,14 @@ class InngestExecutionEngine
     const experimentStepRun = (step as unknown as ExperimentStepTools)[
       experimentStepRunSymbol
     ];
+    const experimentStepScore = (step as unknown as ExperimentalStepTools)[
+      scoreSymbol
+    ];
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-      group: createGroupTools({ experimentStepRun }),
+      group: createGroupTools({ experimentStepRun, experimentStepScore }),
       defer,
     } as unknown as Context.Any;
 

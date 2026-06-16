@@ -6,6 +6,7 @@ import {
   getAsyncLocalStorage,
   isALSFallback,
 } from "./execution/als.ts";
+import type { ScoreOptions, ScoreStepTool } from "./InngestScore.ts";
 import { getStepOptions } from "./InngestStepTools.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 
@@ -129,16 +130,40 @@ export interface ExperimentOptions<
 
 /**
  * Options for `group.experiment()` when `withVariant` is true, which causes
- * the return type to include both the result and the selected variant name.
+ * the return type to include the result, the selected variant name, and a
+ * `score` function for attaching scores to the experiment from later steps.
  */
 export interface ExperimentOptionsWithVariant<
   TVariants extends Record<string, () => unknown>,
 > extends ExperimentOptions<TVariants> {
   /**
-   * When true, the return value includes the variant name alongside the result.
+   * When true, the return value includes the variant name and a `score`
+   * function alongside the result.
    */
   withVariant: true;
 }
+
+/**
+ * Options accepted by the `score` function returned from `group.experiment()`.
+ * The score always attaches to the current run's experiment, so only the score
+ * name and value are configurable.
+ */
+export type ExperimentScoreOptions = Pick<ScoreOptions, "name" | "value">;
+
+/**
+ * Attaches a score to the experiment that returned it.
+ *
+ * Must be called as a top-level step within the same function execution that
+ * created the experiment (typically in a later step). The score lands
+ * co-located with the experiment's variant, exactly as an in-callback
+ * `step.score()` would, and survives retries because it is a memoized step.
+ *
+ * @param memoizationId - The durable step ID used to memoize this score write.
+ */
+export type ExperimentScorer = (
+  memoizationId: string,
+  options: ExperimentScoreOptions,
+) => Promise<void>;
 
 /**
  * Computes the return type of an experiment based on variant callbacks.
@@ -169,8 +194,9 @@ export interface ExperimentMetadataValues {
  */
 export interface GroupExperiment {
   /**
-   * Run an A/B experiment that selects and executes a variant. Returns both
-   * the result and the selected variant name.
+   * Run an A/B experiment that selects and executes a variant. Returns the
+   * result, the selected variant name, and a `score` function for attaching
+   * scores to the experiment from later steps.
    */
   <TVariants extends Record<string, () => unknown>>(
     idOrOptions: StepOptionsOrId,
@@ -178,6 +204,7 @@ export interface GroupExperiment {
   ): Promise<{
     result: VariantResult<never, TVariants>;
     variant: string;
+    score: ExperimentScorer;
   }>;
 
   /**
@@ -257,6 +284,13 @@ export interface GroupToolsDeps {
    */
   // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
   experimentStepRun?: (...args: any[]) => Promise<any>;
+
+  /**
+   * The `step.score` tool, extracted from step tools via the score symbol.
+   * Used by the `score` function returned from `group.experiment()`. Undefined
+   * when not available.
+   */
+  experimentStepScore?: ScoreStepTool;
 }
 
 /**
@@ -392,6 +426,18 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     // for the hashed ID fallback) so that variant sub-steps discovered on
     // replay still carry experiment fields in their opts and the executor
     // can attach metadata to their ClickHouse rows.
+    // The experiment fields propagated into every sub-step's OutgoingOp.opts.
+    // These are all replay-stable: `variant` is memoized via the selection
+    // step and the name/strategy are literals. `experimentStepID` is best-effort
+    // (empty on replay) and unused by the executor, which stamps the variant
+    // from `experimentName`/`variant` alone.
+    const experimentContext = {
+      experimentStepID: experimentStepHashedId ?? "",
+      experimentName: stepOpts.id,
+      variant: selectedVariant,
+      selectionStrategy: select.__experimentConfig.strategy,
+    };
+
     const currentCtx = getAsyncCtxSync();
     const stepTracker = { found: false };
     let result: unknown;
@@ -402,12 +448,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
         ...currentCtx,
         execution: {
           ...currentCtx.execution,
-          experimentContext: {
-            experimentStepID: experimentStepHashedId ?? "",
-            experimentName: stepOpts.id,
-            variant: selectedVariant,
-            selectionStrategy: select.__experimentConfig.strategy,
-          },
+          experimentContext,
           experimentStepTracker: stepTracker,
         },
       };
@@ -427,8 +468,53 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
+    // A scorer that attaches to this experiment from a later step. It re-enters
+    // the experiment context (above) so the score's underlying step picks up
+    // the experiment fields in its opts — the executor then stamps the variant
+    // onto the same row as the score value, exactly as an in-callback
+    // `step.score()` would. Replay-safe: the captured context is deterministic
+    // and the score is a memoized step.
+    const score: ExperimentScorer = async (memoizationId, scoreOptions) => {
+      const stepScore = deps?.experimentStepScore;
+      if (!stepScore) {
+        throw new Error(
+          "`experiment.score()` requires step tools to be available. " +
+            "Ensure you are calling this within an Inngest function execution.",
+        );
+      }
+
+      const scoreCtx = getAsyncCtxSync();
+      if (!scoreCtx?.execution || isALSFallback()) {
+        throw new Error(
+          "`experiment.score()` must be called within the same Inngest " +
+            "function execution that created the experiment.",
+        );
+      }
+
+      const als = await getAsyncLocalStorage();
+      const scopedCtx: AsyncContext = {
+        ...scoreCtx,
+        execution: {
+          ...scoreCtx.execution,
+          experimentContext,
+        },
+      };
+
+      await als.run(scopedCtx, () =>
+        stepScore(memoizationId, {
+          // Target the score step itself so the value lands at step scope on
+          // the score step's own row — the same row the executor stamps the
+          // variant onto (via the experiment context above). Without a stepId
+          // the score is run-scoped and never co-locates with the experiment.
+          stepId: memoizationId,
+          name: scoreOptions.name,
+          value: scoreOptions.value,
+        }),
+      );
+    };
+
     if (withVariant) {
-      return { result, variant: selectedVariant };
+      return { result, variant: selectedVariant, score };
     }
 
     return result;
