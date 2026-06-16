@@ -123,7 +123,7 @@ describe("extractAIMetadataFromAttributes", () => {
         }));
 
         await expect(
-          `${JSON.stringify(extracted, null, 2)}\n`
+          `${JSON.stringify(extracted, null, 2)}\n`,
         ).toMatchFileSnapshot(snapPath);
       });
     }
@@ -131,7 +131,7 @@ describe("extractAIMetadataFromAttributes", () => {
 
   test("returns empty object when no AI attributes are present", () => {
     expect(extractAIMetadataFromAttributes({ "http.method": "GET" })).toEqual(
-      {}
+      {},
     );
   });
 
@@ -173,8 +173,8 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse())
-      )
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
     ).toEqual(expected);
   });
 
@@ -198,8 +198,8 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse())
-      )
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
     ).toEqual(expected);
   });
 
@@ -207,7 +207,7 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(
       extractAIMetadataFromAttributes({
         "langfuse.observation.usage_details": "not json",
-      })
+      }),
     ).toEqual({});
   });
 
@@ -219,7 +219,7 @@ describe("extractAIMetadataFromAttributes", () => {
         "gen_ai.usage.input_tokens": 22,
         "gen_ai.usage.output_tokens": 6,
         "gen_ai.usage.total_tokens": 99,
-      })
+      }),
     ).toEqual({ inputTokens: 22, outputTokens: 6, totalTokens: 99 });
   });
 
@@ -230,7 +230,7 @@ describe("extractAIMetadataFromAttributes", () => {
       extractAIMetadataFromAttributes({
         "ai.usage.inputTokenDetails.cacheReadTokens": 2048,
         "ai.usage.outputTokenDetails.reasoningTokens": 51,
-      })
+      }),
     ).toEqual({ cacheReadTokens: 2048, reasoningTokens: 51 });
   });
 
@@ -247,14 +247,14 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse())
-      )
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
     ).toEqual(expected);
   });
 
   test("does not derive a total when no token counts are present", () => {
     expect(
-      extractAIMetadataFromAttributes({ "gen_ai.request.model": "gpt-4o" })
+      extractAIMetadataFromAttributes({ "gen_ai.request.model": "gpt-4o" }),
     ).toEqual({ model: "gpt-4o" });
   });
 });
@@ -292,7 +292,7 @@ describe("aggregate", () => {
 
   test("falls back to the second response model when the first is absent", () => {
     expect(
-      aggregate({ inputTokens: 5 }, { responseModel: "gpt-4o-2024-08-06" })
+      aggregate({ inputTokens: 5 }, { responseModel: "gpt-4o-2024-08-06" }),
     ).toEqual({ responseModel: "gpt-4o-2024-08-06", inputTokens: 5 });
   });
 
@@ -305,7 +305,7 @@ describe("aggregate", () => {
 
   test("falls back to the second model when the first is absent", () => {
     expect(
-      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 })
+      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 }),
     ).toEqual({ model: "gpt-4o", inputTokens: 8 });
   });
 
@@ -340,7 +340,7 @@ describe("toInngestAIMetadataValues", () => {
         cacheReadTokens: 30,
         cacheCreationTokens: 12,
         reasoningTokens: 4,
-      })
+      }),
     ).toEqual({
       model: "gpt-4o",
       response_model: "gpt-4o-2024-08-06",
@@ -360,7 +360,7 @@ describe("toInngestAIMetadataValues", () => {
       model: "gpt-4o",
     });
     expect(
-      toInngestAIMetadataValues({ responseModel: "gpt-4o-2024-08-06" })
+      toInngestAIMetadataValues({ responseModel: "gpt-4o-2024-08-06" }),
     ).toEqual({ response_model: "gpt-4o-2024-08-06" });
     expect(toInngestAIMetadataValues({ system: "openai.chat" })).toEqual({
       system: "openai.chat",
