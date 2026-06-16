@@ -31,6 +31,17 @@ export interface AIMetadata {
    * otherwise derived as input + output when either is present.
    */
   totalTokens?: number;
+  /**
+   * Detailed token counts, present only when the emitter reports them.
+   * Providers differ on accounting: OpenAI's cached tokens are a subset of
+   * {@link AIMetadata.inputTokens}, while Anthropic's cache counts are additive
+   * to it — callers must not assume a single relationship.
+   */
+  cacheReadTokens?: number;
+  /** Tokens written to the prompt cache. */
+  cacheCreationTokens?: number;
+  /** Reasoning/thinking tokens, when the emitter reports them separately. */
+  reasoningTokens?: number;
 }
 
 /**
@@ -76,26 +87,27 @@ interface Mapping {
 const langfuseUsagePrefix = "__langfuse.usage_details.";
 
 /**
- * The `langfuse.observation.usage_details` JSON blob (e.g.
- * `{"input":17,"output":36,"total":53}`). Langfuse emits more counts (cached,
- * reasoning, …), but this extractor only reads the ones it tracks.
+ * Prefix for the synthetic attributes exploded from the langsmith
+ * `gen_ai.usage.input_token_details` JSON blob (e.g.
+ * `{"audio":0,"cache_read":2048}`). The double underscore marks them derived.
  */
-interface LangfuseUsageDetails {
-  input?: number;
-  output?: number;
-  total?: number;
-}
-
-/** The usage counts we lift out of the Langfuse blob. */
-const langfuseUsageKeys = ["input", "output", "total"] as const;
+const genAIInputTokenDetailsPrefix = "__gen_ai.input_token_details.";
 
 /**
- * Parses the {@link LangfuseUsageDetails} JSON blob and emits a synthetic
- * scalar attribute for each count we track. Only `input`, `output`, and `total`
- * are emitted; the other counts are intentionally dropped since this extractor
- * tracks input, output, and total tokens alone.
+ * Prefix for the synthetic attributes exploded from the langsmith
+ * `gen_ai.usage.output_token_details` JSON blob (e.g. `{"reasoning":51}`).
  */
-const expandLangfuseUsageDetails = (
+const genAIOutputTokenDetailsPrefix = "__gen_ai.output_token_details.";
+
+/**
+ * Parses a stringified JSON object of integer counts and emits one synthetic
+ * scalar attribute per integer entry, keyed as `${prefix}${key}`. Several
+ * emitters pack token detail into a single JSON-string attribute rather than
+ * scalar attributes; this explodes them so each entry flows back through
+ * {@link keyFieldMap} like any other attribute. Non-integer entries are skipped.
+ */
+const expandIntBlob = (
+  prefix: string,
   value: AttributeValue,
 ): Record<string, AttributeValue> => {
   if (typeof value !== "string" || value === "") {
@@ -113,18 +125,34 @@ const expandLangfuseUsageDetails = (
     return {};
   }
 
-  const counts = parsed as LangfuseUsageDetails;
-
   const out: Record<string, AttributeValue> = {};
-  for (const key of langfuseUsageKeys) {
-    const count = counts[key];
-    if (typeof count === "number") {
-      out[`${langfuseUsagePrefix}${key}`] = count;
+  for (const [key, count] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (typeof count === "number" && Number.isInteger(count)) {
+      out[`${prefix}${key}`] = count;
     }
   }
 
   return out;
 };
+
+/** Explodes the `langfuse.observation.usage_details` blob under {@link langfuseUsagePrefix}. */
+const expandLangfuseUsageDetails = (
+  value: AttributeValue,
+): Record<string, AttributeValue> => expandIntBlob(langfuseUsagePrefix, value);
+
+/** Explodes the langsmith `gen_ai.usage.input_token_details` blob. */
+const expandGenAIInputTokenDetails = (
+  value: AttributeValue,
+): Record<string, AttributeValue> =>
+  expandIntBlob(genAIInputTokenDetailsPrefix, value);
+
+/** Explodes the langsmith `gen_ai.usage.output_token_details` blob. */
+const expandGenAIOutputTokenDetails = (
+  value: AttributeValue,
+): Record<string, AttributeValue> =>
+  expandIntBlob(genAIOutputTokenDetailsPrefix, value);
 
 /**
  * Maps a source attribute key to the canonical {@link AIMetadata} field it
@@ -151,6 +179,14 @@ const keyFieldMap: Record<string, Mapping> = {
   },
   [`${langfuseUsagePrefix}total`]: {
     field: "totalTokens",
+    convention: Convention.Langfuse,
+  },
+  [`${langfuseUsagePrefix}input_cached_tokens`]: {
+    field: "cacheReadTokens",
+    convention: Convention.Langfuse,
+  },
+  [`${langfuseUsagePrefix}output_reasoning_tokens`]: {
+    field: "reasoningTokens",
     convention: Convention.Langfuse,
   },
   "langfuse.observation.model.name": {
@@ -187,8 +223,45 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "outputTokens",
     convention: Convention.Semconv,
   },
+  // NOT an official OTel GenAI semconv attribute: the spec defines only
+  // input/output token counts, no total. Emitted in practice by Traceloop and
+  // others, so we still accept it.
   "gen_ai.usage.total_tokens": {
     field: "totalTokens",
+    convention: Convention.Semconv,
+  },
+  "gen_ai.usage.cache_read.input_tokens": {
+    field: "cacheReadTokens",
+    convention: Convention.Semconv,
+  },
+  // cache_creation has no cross-convention equivalent; only Anthropic (via
+  // Traceloop's gen_ai.*) reports tokens written to the cache.
+  "gen_ai.usage.cache_creation.input_tokens": {
+    field: "cacheCreationTokens",
+    convention: Convention.Semconv,
+  },
+  // NOT an official OTel GenAI semconv attribute: the spec uses flat scalar
+  // attributes (e.g. gen_ai.usage.cache_read.input_tokens), not a nested
+  // *_token_details object. This is langsmith's convention, which packs
+  // cache/audio detail into a single JSON blob; expand it into synthetic
+  // children matched back below.
+  "gen_ai.usage.input_token_details": {
+    convention: Convention.Semconv,
+    expand: expandGenAIInputTokenDetails,
+  },
+  [`${genAIInputTokenDetailsPrefix}cache_read`]: {
+    field: "cacheReadTokens",
+    convention: Convention.Semconv,
+  },
+  // NOT an official OTel GenAI semconv attribute (see input_token_details
+  // above): langsmith's nested blob, vs. the spec's flat
+  // gen_ai.usage.reasoning.output_tokens.
+  "gen_ai.usage.output_token_details": {
+    convention: Convention.Semconv,
+    expand: expandGenAIOutputTokenDetails,
+  },
+  [`${genAIOutputTokenDetailsPrefix}reasoning`]: {
+    field: "reasoningTokens",
     convention: Convention.Semconv,
   },
 
@@ -208,6 +281,14 @@ const keyFieldMap: Record<string, Mapping> = {
   },
   "llm.token_count.total": {
     field: "totalTokens",
+    convention: Convention.OpenInference,
+  },
+  "llm.token_count.prompt_details.cache_read": {
+    field: "cacheReadTokens",
+    convention: Convention.OpenInference,
+  },
+  "llm.token_count.completion_details.reasoning": {
+    field: "reasoningTokens",
     convention: Convention.OpenInference,
   },
   // `llm.system` identifies the AI product/vendor (openai, anthropic, …),
@@ -241,6 +322,31 @@ const keyFieldMap: Record<string, Mapping> = {
   "ai.usage.totalTokens": {
     field: "totalTokens",
     convention: Convention.Vercel,
+  },
+  // Cached-input count. The AI SDK emits both a flat top-level attribute and a
+  // nested `inputTokenDetails` breakdown carrying the same value; neither is
+  // documented in the telemetry spec and Vercel marks neither deprecated. The
+  // flat form is the canonical normalized `LanguageModelUsage` field, so it
+  // wins (keyRank 0); the nested form is a fallback (keyRank 1) for emitters
+  // that report only the breakdown.
+  "ai.usage.cachedInputTokens": {
+    field: "cacheReadTokens",
+    convention: Convention.Vercel,
+  },
+  "ai.usage.inputTokenDetails.cacheReadTokens": {
+    field: "cacheReadTokens",
+    convention: Convention.Vercel,
+    keyRank: 1,
+  },
+  // Reasoning count; same flat-vs-nested duplication as cachedInputTokens above.
+  "ai.usage.reasoningTokens": {
+    field: "reasoningTokens",
+    convention: Convention.Vercel,
+  },
+  "ai.usage.outputTokenDetails.reasoningTokens": {
+    field: "reasoningTokens",
+    convention: Convention.Vercel,
+    keyRank: 1,
   },
   // Embeddings spans emit only a single `ai.usage.tokens` count (no
   // input/output split); map it to inputTokens to match the semconv embeddings
@@ -374,6 +480,23 @@ export const extractAIMetadataFromAttributes = (
     metadata.totalTokens = totalTokens;
   }
 
+  // Detailed token counts, stored raw as each emitter reports them; no
+  // cross-field derivation since providers account for them differently.
+  const cacheReadTokens = count("cacheReadTokens");
+  if (cacheReadTokens !== undefined) {
+    metadata.cacheReadTokens = cacheReadTokens;
+  }
+
+  const cacheCreationTokens = count("cacheCreationTokens");
+  if (cacheCreationTokens !== undefined) {
+    metadata.cacheCreationTokens = cacheCreationTokens;
+  }
+
+  const reasoningTokens = count("reasoningTokens");
+  if (reasoningTokens !== undefined) {
+    metadata.reasoningTokens = reasoningTokens;
+  }
+
   return metadata;
 };
 
@@ -422,6 +545,24 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
     metadata.totalTokens = (a.totalTokens ?? 0) + (b.totalTokens ?? 0);
   }
 
+  if (a.cacheReadTokens !== undefined || b.cacheReadTokens !== undefined) {
+    metadata.cacheReadTokens =
+      (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0);
+  }
+
+  if (
+    a.cacheCreationTokens !== undefined ||
+    b.cacheCreationTokens !== undefined
+  ) {
+    metadata.cacheCreationTokens =
+      (a.cacheCreationTokens ?? 0) + (b.cacheCreationTokens ?? 0);
+  }
+
+  if (a.reasoningTokens !== undefined || b.reasoningTokens !== undefined) {
+    metadata.reasoningTokens =
+      (a.reasoningTokens ?? 0) + (b.reasoningTokens ?? 0);
+  }
+
   return metadata;
 };
 
@@ -462,6 +603,18 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.totalTokens !== undefined) {
     values.total_tokens = metadata.totalTokens;
+  }
+
+  if (metadata.cacheReadTokens !== undefined) {
+    values.cache_read_tokens = metadata.cacheReadTokens;
+  }
+
+  if (metadata.cacheCreationTokens !== undefined) {
+    values.cache_creation_tokens = metadata.cacheCreationTokens;
+  }
+
+  if (metadata.reasoningTokens !== undefined) {
+    values.reasoning_tokens = metadata.reasoningTokens;
   }
 
   if (Object.keys(values).length === 0) {

@@ -123,7 +123,7 @@ describe("extractAIMetadataFromAttributes", () => {
         }));
 
         await expect(
-          `${JSON.stringify(extracted, null, 2)}\n`,
+          `${JSON.stringify(extracted, null, 2)}\n`
         ).toMatchFileSnapshot(snapPath);
       });
     }
@@ -131,7 +131,7 @@ describe("extractAIMetadataFromAttributes", () => {
 
   test("returns empty object when no AI attributes are present", () => {
     expect(extractAIMetadataFromAttributes({ "http.method": "GET" })).toEqual(
-      {},
+      {}
     );
   });
 
@@ -173,8 +173,8 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse()),
-      ),
+        Object.fromEntries(Object.entries(attributes).reverse())
+      )
     ).toEqual(expected);
   });
 
@@ -187,17 +187,19 @@ describe("extractAIMetadataFromAttributes", () => {
         '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
     };
     // Order-independent: langfuse outranks semconv regardless of key order.
+    // `input_cached_tokens` from the same blob surfaces as cacheReadTokens.
     const expected = {
       responseModel: "gpt-4.1-nano-2025-04-14",
       inputTokens: 22,
       outputTokens: 6,
       totalTokens: 28,
+      cacheReadTokens: 5,
     };
     expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
     expect(
       extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse()),
-      ),
+        Object.fromEntries(Object.entries(attributes).reverse())
+      )
     ).toEqual(expected);
   });
 
@@ -205,7 +207,7 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(
       extractAIMetadataFromAttributes({
         "langfuse.observation.usage_details": "not json",
-      }),
+      })
     ).toEqual({});
   });
 
@@ -217,13 +219,42 @@ describe("extractAIMetadataFromAttributes", () => {
         "gen_ai.usage.input_tokens": 22,
         "gen_ai.usage.output_tokens": 6,
         "gen_ai.usage.total_tokens": 99,
-      }),
+      })
     ).toEqual({ inputTokens: 22, outputTokens: 6, totalTokens: 99 });
+  });
+
+  test("falls back to the nested Vercel token detail attributes", () => {
+    // When only the nested `*TokenDetails` breakdown is present (not the flat
+    // top-level count), the fallback keyRank mapping still captures it.
+    expect(
+      extractAIMetadataFromAttributes({
+        "ai.usage.inputTokenDetails.cacheReadTokens": 2048,
+        "ai.usage.outputTokenDetails.reasoningTokens": 51,
+      })
+    ).toEqual({ cacheReadTokens: 2048, reasoningTokens: 51 });
+  });
+
+  test("prefers the flat Vercel count over the nested detail when both differ", () => {
+    // The flat normalized count outranks the nested breakdown (keyRank 0 vs 1),
+    // regardless of attribute order.
+    const attributes = {
+      "ai.usage.inputTokenDetails.cacheReadTokens": 1,
+      "ai.usage.cachedInputTokens": 2048,
+      "ai.usage.outputTokenDetails.reasoningTokens": 2,
+      "ai.usage.reasoningTokens": 51,
+    };
+    const expected = { cacheReadTokens: 2048, reasoningTokens: 51 };
+    expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
+    expect(
+      extractAIMetadataFromAttributes(
+        Object.fromEntries(Object.entries(attributes).reverse())
+      )
+    ).toEqual(expected);
   });
 
   test("does not derive a total when no token counts are present", () => {
     expect(
-      extractAIMetadataFromAttributes({ "gen_ai.request.model": "gpt-4o" }),
+      extractAIMetadataFromAttributes({ "gen_ai.request.model": "gpt-4o" })
     ).toEqual({ model: "gpt-4o" });
   });
 });
@@ -261,7 +292,7 @@ describe("aggregate", () => {
 
   test("falls back to the second response model when the first is absent", () => {
     expect(
-      aggregate({ inputTokens: 5 }, { responseModel: "gpt-4o-2024-08-06" }),
+      aggregate({ inputTokens: 5 }, { responseModel: "gpt-4o-2024-08-06" })
     ).toEqual({ responseModel: "gpt-4o-2024-08-06", inputTokens: 5 });
   });
 
@@ -274,7 +305,7 @@ describe("aggregate", () => {
 
   test("falls back to the second model when the first is absent", () => {
     expect(
-      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 }),
+      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 })
     ).toEqual({ model: "gpt-4o", inputTokens: 8 });
   });
 
@@ -306,7 +337,10 @@ describe("toInngestAIMetadataValues", () => {
         inputTokens: 42,
         outputTokens: 8,
         totalTokens: 50,
-      }),
+        cacheReadTokens: 30,
+        cacheCreationTokens: 12,
+        reasoningTokens: 4,
+      })
     ).toEqual({
       model: "gpt-4o",
       response_model: "gpt-4o-2024-08-06",
@@ -315,6 +349,9 @@ describe("toInngestAIMetadataValues", () => {
       input_tokens: 42,
       output_tokens: 8,
       total_tokens: 50,
+      cache_read_tokens: 30,
+      cache_creation_tokens: 12,
+      reasoning_tokens: 4,
     });
   });
 
@@ -323,7 +360,7 @@ describe("toInngestAIMetadataValues", () => {
       model: "gpt-4o",
     });
     expect(
-      toInngestAIMetadataValues({ responseModel: "gpt-4o-2024-08-06" }),
+      toInngestAIMetadataValues({ responseModel: "gpt-4o-2024-08-06" })
     ).toEqual({ response_model: "gpt-4o-2024-08-06" });
     expect(toInngestAIMetadataValues({ system: "openai.chat" })).toEqual({
       system: "openai.chat",
