@@ -66,7 +66,7 @@ matrixCheckpointing(
 
     const steps = await waitForTraceSteps(await state.waitForRunId());
     const step = steps.find((step) => {
-      return step.name === "my-step";
+      return step.name === "my-step" && hasAiMetadata(step.metadata);
     });
 
     expect(getAIMetadata(step)).toEqual([expectedAIMetadata]);
@@ -102,7 +102,7 @@ matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
 
   const steps = await waitForTraceSteps(await state.waitForRunId());
   const step = steps.find((step) => {
-    return step.name === "my-step";
+    return step.name === "my-step" && hasAiMetadata(step.metadata);
   });
 
   expect(getAIMetadata(step)).toEqual([
@@ -150,7 +150,7 @@ matrixCheckpointing(
 
     const steps = await waitForTraceSteps(await state.waitForRunId());
     const aiStep = steps.find((step) => {
-      return step.name === "ai-step";
+      return step.name === "ai-step" && hasAiMetadata(step.metadata);
     });
     const noAiStep = steps.find((step) => {
       return step.name === "no-ai-step";
@@ -162,3 +162,14 @@ matrixCheckpointing(
     expect(getAIMetadata(noAiStep)).toEqual([]);
   },
 );
+
+// Temporary workaround for intentionally duplicate step spans in Dev Server.
+// TODO: Delete this once the duplicate step spans go away
+function hasAiMetadata(metadata: { kind: string }[]) {
+  for (const m of metadata) {
+    if (m.kind === "inngest.ai") {
+      return true;
+    }
+  }
+  return false;
+}
