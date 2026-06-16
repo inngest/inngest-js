@@ -225,6 +225,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  "otel_checks":
+    name: "otel: Checks"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/otel
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: true
+          build: false
+      - run: pnpm run type-check
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run build
+
   "test_test":
     name: "test: Test"
     runs-on: ubuntu-latest

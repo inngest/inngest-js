@@ -1,0 +1,60 @@
+{
+  "name": "@inngest/otel",
+  "version": "0.1.1",
+  "description": "OpenTelemetry instrumentation helpers for Inngest",
+  "type": "module",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format:check": "biome format .",
+    "postversion": "pnpm run build",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
+    "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-otel.tgz"
+  },
+  "exports": {
+    "./node": {
+      "types": "./node.d.ts",
+      "import": "./node.js"
+    }
+  },
+  "files": [
+    "*.js",
+    "*.d.ts",
+    "*.map",
+    "CHANGELOG.md",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "keywords": [
+    "inngest",
+    "opentelemetry",
+    "tracing"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/otel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/otel"
+  },
+  "author": "Inngest Inc. <hello@inngest.com>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.75.0",
+    "@opentelemetry/context-async-hooks": "^2.7.1",
+    "@opentelemetry/instrumentation": "^0.217.0",
+    "@opentelemetry/sdk-trace-base": "^2.7.1",
+    "@traceloop/instrumentation-anthropic": "^0.20.0",
+    "debug": "^4.3.4"
+  },
+  "devDependencies": {
+    "@types/debug": "^4.1.12",
+    "@types/node": "~24.3.0",
+    "tsdown": "^0.15.4",
+    "typescript": "^5.9.2"
+  }
+}
