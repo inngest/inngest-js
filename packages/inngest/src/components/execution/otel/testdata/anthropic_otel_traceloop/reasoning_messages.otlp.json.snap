@@ -9,7 +9,8 @@
       "outputTokens": 500,
       "totalTokens": 552,
       "cacheReadTokens": 0,
-      "cacheCreationTokens": 0
+      "cacheCreationTokens": 0,
+      "maxTokens": 4096
     }
   }
 ]

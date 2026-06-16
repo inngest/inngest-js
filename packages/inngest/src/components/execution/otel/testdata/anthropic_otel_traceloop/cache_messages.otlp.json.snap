@@ -9,7 +9,8 @@
       "outputTokens": 4,
       "totalTokens": 17,
       "cacheReadTokens": 0,
-      "cacheCreationTokens": 2463
+      "cacheCreationTokens": 2463,
+      "maxTokens": 16
     }
   },
   {
@@ -22,7 +23,8 @@
       "outputTokens": 4,
       "totalTokens": 7,
       "cacheReadTokens": 2463,
-      "cacheCreationTokens": 10
+      "cacheCreationTokens": 10,
+      "maxTokens": 16
     }
   }
 ]

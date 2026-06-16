@@ -257,6 +257,131 @@ describe("extractAIMetadataFromAttributes", () => {
       extractAIMetadataFromAttributes({ "gen_ai.request.model": "gpt-4o" }),
     ).toEqual({ model: "gpt-4o" });
   });
+
+  test("extracts request parameters from semconv scalars", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.temperature": 0.7,
+        "gen_ai.request.top_p": 0.9,
+        "gen_ai.request.max_tokens": 64,
+        "gen_ai.request.frequency_penalty": 0.2,
+        "gen_ai.request.presence_penalty": 0.1,
+        "gen_ai.request.stop_sequences": ["\n\n", "END"],
+      }),
+    ).toEqual({
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 64,
+      frequencyPenalty: 0.2,
+      presencePenalty: 0.1,
+      stopSequences: ["\n\n", "END"],
+    });
+  });
+
+  test("extracts request parameters from Vercel scalars, incl. seed", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "ai.settings.temperature": 0.7,
+        "ai.settings.topP": 0.9,
+        "ai.settings.maxOutputTokens": 64,
+        "ai.settings.seed": 42,
+        // Not an inference parameter; must be ignored.
+        "ai.settings.maxRetries": 2,
+      }),
+    ).toEqual({ temperature: 0.7, topP: 0.9, maxTokens: 64, seed: 42 });
+  });
+
+  test("semconv request params outrank the co-present Vercel shape", () => {
+    // The Vercel AI SDK emits both shapes; semconv wins, but seed only exists
+    // in the Vercel shape so it still comes through.
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.temperature": 0.7,
+        "ai.settings.temperature": 0.1,
+        "ai.settings.seed": 42,
+      }),
+    ).toEqual({ temperature: 0.7, seed: 42 });
+  });
+
+  test("coerces langsmith's string-encoded scalars and merges its params blob", () => {
+    // langsmith splits params: `ls_*` scalars (string encoded) carry temp /
+    // max_tokens / stop, the invocation_params blob carries the rest.
+    expect(
+      extractAIMetadataFromAttributes({
+        "langsmith.metadata.ls_temperature": "0.7",
+        "langsmith.metadata.ls_max_tokens": "64",
+        "langsmith.metadata.ls_stop": '["\\n\\n"]',
+        "langsmith.metadata.ls_invocation_params":
+          '{"top_p":0.9,"frequency_penalty":0.2,"presence_penalty":0.1,"seed":42}',
+      }),
+    ).toEqual({
+      temperature: 0.7,
+      maxTokens: 64,
+      stopSequences: ["\n\n"],
+      topP: 0.9,
+      frequencyPenalty: 0.2,
+      presencePenalty: 0.1,
+      seed: 42,
+    });
+  });
+
+  test("expands the OpenInference invocation_parameters blob", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "llm.invocation_parameters":
+          '{"model":"gpt-4.1-nano","temperature":0.7,"max_tokens":64,"stop":["\\n\\n"],"seed":42}',
+      }),
+    ).toEqual({
+      temperature: 0.7,
+      maxTokens: 64,
+      stopSequences: ["\n\n"],
+      seed: 42,
+    });
+  });
+
+  test("an explicit scalar param outranks the same field from a blob", () => {
+    // Within one convention, scalar attributes (keyRank 0) beat blob-derived
+    // values (keyRank 1) regardless of attribute order.
+    const attributes = {
+      "langsmith.metadata.ls_temperature": "0.7",
+      "langsmith.metadata.ls_invocation_params": '{"temperature":0.1}',
+    };
+    expect(extractAIMetadataFromAttributes(attributes)).toEqual({
+      temperature: 0.7,
+    });
+    expect(
+      extractAIMetadataFromAttributes(
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
+    ).toEqual({ temperature: 0.7 });
+  });
+
+  test("keeps a zero-valued temperature rather than dropping it", () => {
+    expect(
+      extractAIMetadataFromAttributes({ "gen_ai.request.temperature": 0 }),
+    ).toEqual({ temperature: 0 });
+  });
+
+  test("normalises stop sequences and ignores empty lists", () => {
+    // A JSON-encoded array string is parsed.
+    expect(
+      extractAIMetadataFromAttributes({
+        "langsmith.metadata.ls_stop": '["a","b"]',
+      }),
+    ).toEqual({ stopSequences: ["a", "b"] });
+    // A bare string becomes a single-element list.
+    expect(
+      extractAIMetadataFromAttributes({
+        "langsmith.metadata.ls_stop": "STOP",
+      }),
+    ).toEqual({ stopSequences: ["STOP"] });
+    // An empty array yields no field.
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.stop_sequences": [],
+      }),
+    ).toEqual({});
+  });
 });
 
 describe("aggregate", () => {
@@ -324,6 +449,20 @@ describe("aggregate", () => {
     expect(aggregate({}, {})).toEqual({});
     expect(aggregate({ model: "a" }, {})).toEqual({ model: "a" });
   });
+
+  test("takes request params from the first input, not summing them", () => {
+    expect(
+      aggregate(
+        { temperature: 0.7, maxTokens: 64, stopSequences: ["a"] },
+        { temperature: 0.1, maxTokens: 32, seed: 42 },
+      ),
+    ).toEqual({
+      temperature: 0.7,
+      maxTokens: 64,
+      stopSequences: ["a"],
+      seed: 42,
+    });
+  });
 });
 
 describe("toInngestAIMetadataValues", () => {
@@ -340,6 +479,13 @@ describe("toInngestAIMetadataValues", () => {
         cacheReadTokens: 30,
         cacheCreationTokens: 12,
         reasoningTokens: 4,
+        temperature: 0.7,
+        topP: 0.9,
+        maxTokens: 64,
+        frequencyPenalty: 0.2,
+        presencePenalty: 0.1,
+        stopSequences: ["\n\n"],
+        seed: 42,
       }),
     ).toEqual({
       model: "gpt-4o",
@@ -352,6 +498,13 @@ describe("toInngestAIMetadataValues", () => {
       cache_read_tokens: 30,
       cache_creation_tokens: 12,
       reasoning_tokens: 4,
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 64,
+      frequency_penalty: 0.2,
+      presence_penalty: 0.1,
+      stop_sequences: ["\n\n"],
+      seed: 42,
     });
   });
 

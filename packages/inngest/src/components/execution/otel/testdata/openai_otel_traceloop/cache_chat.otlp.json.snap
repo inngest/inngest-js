@@ -8,7 +8,8 @@
       "responseId": "chatcmpl-DrBrgzpTtrFbHKiZ36GmsPO7HAhQl",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "maxTokens": 8
     }
   },
   {
@@ -20,7 +21,8 @@
       "responseId": "chatcmpl-DrBrg0ysvawmgNh8yg9ZLSVLo1fDF",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "maxTokens": 8
     }
   }
 ]

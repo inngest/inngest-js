@@ -7,7 +7,9 @@
       "outputTokens": 36,
       "totalTokens": 53,
       "cacheReadTokens": 0,
-      "reasoningTokens": 0
+      "reasoningTokens": 0,
+      "temperature": 1,
+      "topP": 0.98
     }
   }
 ]
