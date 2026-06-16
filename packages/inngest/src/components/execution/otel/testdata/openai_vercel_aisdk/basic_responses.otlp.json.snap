@@ -8,7 +8,9 @@
       "responseId": "resp_0e56d5c95850276a006a1f57da3d60819a8974cbbffaedd001",
       "inputTokens": 17,
       "outputTokens": 40,
-      "totalTokens": 57
+      "totalTokens": 57,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   },
   {
@@ -18,7 +20,9 @@
       "system": "openai.responses",
       "inputTokens": 17,
       "outputTokens": 40,
-      "totalTokens": 57
+      "totalTokens": 57,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   }
 ]

@@ -1,0 +1,26 @@
+[
+  {
+    "span": "OpenAI Chat Completions",
+    "metadata": {
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "system": "openai",
+      "inputTokens": 2239,
+      "outputTokens": 1,
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
+    }
+  },
+  {
+    "span": "OpenAI Chat Completions",
+    "metadata": {
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "system": "openai",
+      "inputTokens": 2239,
+      "outputTokens": 1,
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
+    }
+  }
+]

@@ -3,9 +3,11 @@
     "span": "OpenAI.responses",
     "metadata": {
       "responseModel": "gpt-5.4-nano-2026-03-17",
-      "inputTokens": 17,
-      "outputTokens": 13,
-      "totalTokens": 30
+      "inputTokens": 42,
+      "outputTokens": 211,
+      "totalTokens": 295,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 42
     }
   }
 ]

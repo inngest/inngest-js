@@ -8,7 +8,9 @@
       "responseId": "chatcmpl-DmRo4ru2GBGYvimObCx5jGYZ8uk0r",
       "inputTokens": 56,
       "outputTokens": 14,
-      "totalTokens": 70
+      "totalTokens": 70,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   },
   {
@@ -18,7 +20,9 @@
       "system": "openai.chat",
       "inputTokens": 56,
       "outputTokens": 14,
-      "totalTokens": 70
+      "totalTokens": 70,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   }
 ]

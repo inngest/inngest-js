@@ -4,9 +4,11 @@
     "metadata": {
       "responseModel": "gpt-5.4-nano-2026-03-17",
       "system": "openai",
-      "inputTokens": 17,
-      "outputTokens": 13,
-      "totalTokens": 30
+      "inputTokens": 42,
+      "outputTokens": 191,
+      "totalTokens": 233,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 44
     }
   }
 ]

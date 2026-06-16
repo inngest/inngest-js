@@ -6,7 +6,9 @@
       "system": "openai",
       "inputTokens": 17,
       "outputTokens": 51,
-      "totalTokens": 68
+      "totalTokens": 68,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   }
 ]
