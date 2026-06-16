@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "c3bac86caae70a7b0b18a6c403762745",
-              "spanId": "a136eef854aa06b0",
+              "traceId": "f2b045257c88ee5ba9cb124feccb8e73",
+              "spanId": "c3f1ca7fa387e086",
               "name": "OpenAI Responses",
               "kind": 1,
-              "startTimeUnixNano": "1780434773558000000",
-              "endTimeUnixNano": "1780434774513158875",
+              "startTimeUnixNano": "1781569367226000000",
+              "endTimeUnixNano": "1781569369081861042",
               "attributes": [
                 {
                   "key": "openinference.span.kind",
@@ -60,7 +60,7 @@
                 {
                   "key": "input.value",
                   "value": {
-                    "stringValue": "{\"model\":\"gpt-5.4-nano\",\"input\":\"What is 17 * 24? Think briefly.\",\"reasoning\":{\"effort\":\"low\"}}"
+                    "stringValue": "{\"model\":\"gpt-5.4-nano\",\"input\":\"A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much is the ball? Show careful step-by-step reasoning.\",\"reasoning\":{\"effort\":\"high\"}}"
                   }
                 },
                 {
@@ -72,7 +72,7 @@
                 {
                   "key": "llm.invocation_parameters",
                   "value": {
-                    "stringValue": "{\"model\":\"gpt-5.4-nano\",\"reasoning\":{\"effort\":\"low\"}}"
+                    "stringValue": "{\"model\":\"gpt-5.4-nano\",\"reasoning\":{\"effort\":\"high\"}}"
                   }
                 },
                 {
@@ -96,13 +96,13 @@
                 {
                   "key": "llm.input_messages.0.message.content",
                   "value": {
-                    "stringValue": "What is 17 * 24? Think briefly."
+                    "stringValue": "A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much is the ball? Show careful step-by-step reasoning."
                   }
                 },
                 {
                   "key": "output.value",
                   "value": {
-                    "stringValue": "{\"id\":\"resp_0bb05c8bbda65b3a006a1f4755a630819ba81985eea7461451\",\"object\":\"response\",\"created_at\":1780434773,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1780434774,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_0bb05c8bbda65b3a006a1f4755fe30819bb696d24aa869d49e\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"17 × 24 = **408**.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"low\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":17,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":13,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":30},\"user\":null,\"metadata\":{},\"output_text\":\"17 × 24 = **408**.\"}"
+                    "stringValue": "{\"id\":\"resp_0abc1f796c057b8b006a30975751c4819ab793208685a933d0\",\"object\":\"response\",\"created_at\":1781569367,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1781569368,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"rs_0abc1f796c057b8b006a309757a1f4819aa12c0d96b1217fc0\",\"type\":\"reasoning\",\"content\":[],\"summary\":[]},{\"id\":\"msg_0abc1f796c057b8b006a309757ee6c819a94f74633836fdafb\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Let the **ball** cost \\\\(x\\\\) dollars.\\n\\nThen the **bat** costs \\\\(x + 1.00\\\\) dollars (since it costs $1 more than the ball).\\n\\nTogether they cost $1.10 total, so:\\n\\\\[\\nx + (x + 1) = 1.10\\n\\\\]\\n\\nCombine like terms:\\n\\\\[\\n2x + 1 = 1.10\\n\\\\]\\n\\nSubtract 1 from both sides:\\n\\\\[\\n2x = 0.10\\n\\\\]\\n\\nDivide both sides by 2:\\n\\\\[\\nx = 0.05\\n\\\\]\\n\\n✅ **The ball costs \\\\(\\\\$0.05\\\\)** (5 cents).\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"high\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":42,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":191,\"output_tokens_details\":{\"reasoning_tokens\":44},\"total_tokens\":233},\"user\":null,\"metadata\":{},\"output_text\":\"Let the **ball** cost \\\\(x\\\\) dollars.\\n\\nThen the **bat** costs \\\\(x + 1.00\\\\) dollars (since it costs $1 more than the ball).\\n\\nTogether they cost $1.10 total, so:\\n\\\\[\\nx + (x + 1) = 1.10\\n\\\\]\\n\\nCombine like terms:\\n\\\\[\\n2x + 1 = 1.10\\n\\\\]\\n\\nSubtract 1 from both sides:\\n\\\\[\\n2x = 0.10\\n\\\\]\\n\\nDivide both sides by 2:\\n\\\\[\\nx = 0.05\\n\\\\]\\n\\n✅ **The ball costs \\\\(\\\\$0.05\\\\)** (5 cents).\"}"
                   }
                 },
                 {
@@ -118,33 +118,39 @@
                   }
                 },
                 {
-                  "key": "llm.output_messages.0.message.contents.0.message_content.type",
+                  "key": "llm.output_messages.1.message.role",
+                  "value": {
+                    "stringValue": "assistant"
+                  }
+                },
+                {
+                  "key": "llm.output_messages.1.message.contents.0.message_content.type",
                   "value": {
                     "stringValue": "output_text"
                   }
                 },
                 {
-                  "key": "llm.output_messages.0.message.contents.0.message_content.text",
+                  "key": "llm.output_messages.1.message.contents.0.message_content.text",
                   "value": {
-                    "stringValue": "17 × 24 = **408**."
+                    "stringValue": "Let the **ball** cost \\(x\\) dollars.\n\nThen the **bat** costs \\(x + 1.00\\) dollars (since it costs $1 more than the ball).\n\nTogether they cost $1.10 total, so:\n\\[\nx + (x + 1) = 1.10\n\\]\n\nCombine like terms:\n\\[\n2x + 1 = 1.10\n\\]\n\nSubtract 1 from both sides:\n\\[\n2x = 0.10\n\\]\n\nDivide both sides by 2:\n\\[\nx = 0.05\n\\]\n\n✅ **The ball costs \\(\\$0.05\\)** (5 cents)."
                   }
                 },
                 {
                   "key": "llm.token_count.completion",
                   "value": {
-                    "intValue": 13
+                    "intValue": 191
                   }
                 },
                 {
                   "key": "llm.token_count.prompt",
                   "value": {
-                    "intValue": 17
+                    "intValue": 42
                   }
                 },
                 {
                   "key": "llm.token_count.total",
                   "value": {
-                    "intValue": 30
+                    "intValue": 233
                   }
                 },
                 {
@@ -156,7 +162,7 @@
                 {
                   "key": "llm.token_count.completion_details.reasoning",
                   "value": {
-                    "intValue": 0
+                    "intValue": 44
                   }
                 }
               ],

@@ -6,7 +6,7 @@
           {
             "key": "host.name",
             "value": {
-              "stringValue": "Mac.localdomain"
+              "stringValue": "Scotts-MacBook-Pro.local"
             }
           },
           {
@@ -24,7 +24,7 @@
           {
             "key": "process.pid",
             "value": {
-              "intValue": 90049
+              "intValue": 34770
             }
           },
           {
@@ -36,7 +36,7 @@
           {
             "key": "process.executable.path",
             "value": {
-              "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+              "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
             }
           },
           {
@@ -45,7 +45,7 @@
               "arrayValue": {
                 "values": [
                   {
-                    "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+                    "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
                   },
                   {
                     "stringValue": "--require"
@@ -63,7 +63,7 @@
           {
             "key": "process.runtime.version",
             "value": {
-              "stringValue": "24.13.1"
+              "stringValue": "22.22.2"
             }
           },
           {
@@ -125,12 +125,12 @@
           },
           "spans": [
             {
-              "traceId": "a82f012672983aa393d7309287721ecc",
-              "spanId": "b02f67378b40e2bd",
+              "traceId": "271ac4f10125cf923ec65a316455e4b7",
+              "spanId": "b087a0f1ef055ff8",
               "name": "OpenAI.responses",
               "kind": 1,
-              "startTimeUnixNano": "1780441266710000000",
-              "endTimeUnixNano": "1780441267555921458",
+              "startTimeUnixNano": "1781569372895000000",
+              "endTimeUnixNano": "1781569375023859125",
               "attributes": [
                 {
                   "key": "user.id",
@@ -165,7 +165,7 @@
                 {
                   "key": "langfuse.observation.input",
                   "value": {
-                    "stringValue": "What is 17 * 24? Think briefly."
+                    "stringValue": "A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much is the ball? Show careful step-by-step reasoning."
                   }
                 },
                 {
@@ -183,19 +183,19 @@
                 {
                   "key": "langfuse.observation.output",
                   "value": {
-                    "stringValue": "17 × 24 = **408**."
+                    "stringValue": "Let the **ball** cost \\(x\\) dollars.\n\n1. **Bat costs $1.00 more than the ball**, so the bat costs:\n   \\[\n   x + 1.00\n   \\]\n2. The **total** cost of bat and ball is **$1.10**, so:\n   \\[\n   x + (x + 1.00) = 1.10\n   \\]\n3. Combine like terms:\n   \\[\n   2x + 1.00 = 1.10\n   \\]\n4. Subtract \\(1.00\\) from both sides:\n   \\[\n   2x = 1.10 - 1.00 = 0.10\n   \\]\n5. Divide both sides by 2:\n   \\[\n   x = \\frac{0.10}{2} = 0.05\n   \\]\n\n✅ **The ball costs \\(\\$0.05\\)** (5 cents)."
                   }
                 },
                 {
                   "key": "langfuse.observation.usage_details",
                   "value": {
-                    "stringValue": "{\"input\":17,\"output\":13,\"total\":30,\"input_cached_tokens\":0,\"output_reasoning_tokens\":0}"
+                    "stringValue": "{\"input\":42,\"output\":211,\"total\":295,\"input_cached_tokens\":0,\"output_reasoning_tokens\":42}"
                   }
                 },
                 {
                   "key": "langfuse.observation.metadata.reasoning",
                   "value": {
-                    "stringValue": "{\"context\":\"current_turn\",\"effort\":\"low\",\"summary\":null}"
+                    "stringValue": "{\"context\":\"current_turn\",\"effort\":\"high\",\"summary\":null}"
                   }
                 },
                 {
