@@ -1,0 +1,13 @@
+[
+  {
+    "span": "chat claude-sonnet-4-6",
+    "metadata": {
+      "model": "claude-sonnet-4-6",
+      "responseModel": "claude-sonnet-4-6",
+      "system": "anthropic",
+      "inputTokens": 52,
+      "outputTokens": 500,
+      "totalTokens": 552
+    }
+  }
+]
