@@ -1,5 +1,17 @@
 # inngest
 
+## 4.6.0
+
+### Minor Changes
+
+- [#1567](https://github.com/inngest/inngest-js/pull/1567) [`1c3ad876`](https://github.com/inngest/inngest-js/commit/1c3ad87606cea9441f2e01c4f44d2ed81cef8621) Thanks [@Linell](https://github.com/Linell)! - Deprecate `optimizeParallelism: false` — use `group.parallel({ mode: "race" })` for race semantics instead. Opting out prevents runs from resuming checkpointing after a `Promise.all`.
+
+- [#1568](https://github.com/inngest/inngest-js/pull/1568) [`bd6016c1`](https://github.com/inngest/inngest-js/commit/bd6016c18d135be04853f3fd72f5ba604ce9857c) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing OTel instrumented LLM calls
+
+### Patch Changes
+
+- [#1561](https://github.com/inngest/inngest-js/pull/1561) [`ba9874dc`](https://github.com/inngest/inngest-js/commit/ba9874dc4275592922ae5d9b1ea51a4ff60b2000) Thanks [@rhino1998](https://github.com/rhino1998)! - feat(experiments): Rename experiment_name -> experiment in metadata
+
 ## 4.5.1
 
 ### Patch Changes
