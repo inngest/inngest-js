@@ -10,7 +10,9 @@
       "outputTokens": 1,
       "totalTokens": 2240,
       "cacheReadTokens": 2048,
-      "reasoningTokens": 0
+      "reasoningTokens": 0,
+      "temperature": 0,
+      "maxTokens": 8
     }
   },
   {
@@ -22,7 +24,9 @@
       "outputTokens": 1,
       "totalTokens": 2240,
       "cacheReadTokens": 2048,
-      "reasoningTokens": 0
+      "reasoningTokens": 0,
+      "temperature": 0,
+      "maxTokens": 8
     }
   },
   {
@@ -36,7 +40,9 @@
       "outputTokens": 1,
       "totalTokens": 2240,
       "cacheReadTokens": 2048,
-      "reasoningTokens": 0
+      "reasoningTokens": 0,
+      "temperature": 0,
+      "maxTokens": 8
     }
   },
   {
@@ -48,7 +54,9 @@
       "outputTokens": 1,
       "totalTokens": 2240,
       "cacheReadTokens": 2048,
-      "reasoningTokens": 0
+      "reasoningTokens": 0,
+      "temperature": 0,
+      "maxTokens": 8
     }
   }
 ]
