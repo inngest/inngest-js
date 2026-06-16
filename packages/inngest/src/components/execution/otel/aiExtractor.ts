@@ -43,6 +43,24 @@ export interface AIMetadata {
   cacheCreationTokens?: number;
   /** Reasoning/thinking tokens, when the emitter reports them separately. */
   reasoningTokens?: number;
+
+  // Request / inference parameters. These describe the request the caller made,
+  // not the response, and are stored raw as the emitter reports them.
+
+  /** Sampling temperature requested, e.g. `0.7`. */
+  temperature?: number;
+  /** Nucleus sampling probability mass requested (`top_p`), e.g. `0.9`. */
+  topP?: number;
+  /** Upper bound on tokens to generate (`max_tokens` / `maxOutputTokens`). */
+  maxTokens?: number;
+  /** Frequency penalty requested. */
+  frequencyPenalty?: number;
+  /** Presence penalty requested. */
+  presencePenalty?: number;
+  /** Stop sequences requested; always normalised to a list of strings. */
+  stopSequences?: string[];
+  /** Sampling seed requested, when the emitter reports it. */
+  seed?: number;
 }
 
 /**
@@ -155,6 +173,109 @@ const expandGenAIOutputTokenDetails = (
   expandIntBlob(genAIOutputTokenDetailsPrefix, value);
 
 /**
+ * Prefixes for the synthetic attributes exploded from each convention's request
+ * parameter blob. Langfuse (`model.parameters`), OpenInference
+ * (`llm.invocation_parameters`), and langsmith (`ls_invocation_params`) all pack
+ * the same OpenAI-style parameter vocabulary into one JSON string; each gets its
+ * own prefix so the children re-match under the right convention.
+ */
+const langfuseParamsPrefix = "__langfuse.model_parameters.";
+const openInferenceParamsPrefix = "__openinference.invocation_parameters.";
+const langsmithParamsPrefix = "__langsmith.invocation_params.";
+
+/**
+ * Like {@link expandIntBlob} but for request parameters: emits a synthetic
+ * attribute for every entry whose value is a number (temperature, top_p, …,
+ * including non-integers) or a string array (`stop`). Other entry types are
+ * skipped, so unmapped keys (e.g. `model`, `response_format`) fall away.
+ */
+const expandParamsBlob = (
+  prefix: string,
+  value: AttributeValue,
+): Record<string, AttributeValue> => {
+  if (typeof value !== "string" || value === "") {
+    return {};
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return {};
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    return {};
+  }
+
+  const out: Record<string, AttributeValue> = {};
+  for (const [key, param] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (typeof param === "number") {
+      out[`${prefix}${key}`] = param;
+    } else if (
+      Array.isArray(param) &&
+      param.every((x): x is string => typeof x === "string")
+    ) {
+      out[`${prefix}${key}`] = param;
+    }
+  }
+
+  return out;
+};
+
+/** Explodes the `langfuse.observation.model.parameters` blob. */
+const expandLangfuseParams = (
+  value: AttributeValue,
+): Record<string, AttributeValue> =>
+  expandParamsBlob(langfuseParamsPrefix, value);
+
+/** Explodes the OpenInference `llm.invocation_parameters` blob. */
+const expandOpenInferenceParams = (
+  value: AttributeValue,
+): Record<string, AttributeValue> =>
+  expandParamsBlob(openInferenceParamsPrefix, value);
+
+/** Explodes the langsmith `langsmith.metadata.ls_invocation_params` blob. */
+const expandLangsmithParams = (
+  value: AttributeValue,
+): Record<string, AttributeValue> =>
+  expandParamsBlob(langsmithParamsPrefix, value);
+
+/**
+ * The OpenAI-style parameter keys that appear inside every convention's request
+ * parameter blob, mapped to the canonical {@link AIMetadata} field each fills.
+ * Shared by the per-blob child mappings built via {@link paramBlobChildMappings}.
+ */
+const paramBlobKeyToField: Record<string, Field> = {
+  temperature: "temperature",
+  top_p: "topP",
+  max_tokens: "maxTokens",
+  frequency_penalty: "frequencyPenalty",
+  presence_penalty: "presencePenalty",
+  stop: "stopSequences",
+  seed: "seed",
+};
+
+/**
+ * Builds the child mappings for one request parameter blob: each
+ * `${prefix}${rawKey}` synthetic attribute mapped to its field under the given
+ * convention. Blob-derived values rank behind scalar attributes of the same
+ * convention (keyRank 1) so an explicit scalar wins if an emitter reports both.
+ */
+const paramBlobChildMappings = (
+  prefix: string,
+  convention: Convention,
+): Record<string, Mapping> =>
+  Object.fromEntries(
+    Object.entries(paramBlobKeyToField).map(([rawKey, field]) => [
+      `${prefix}${rawKey}`,
+      { field, convention, keyRank: 1 },
+    ]),
+  );
+
+/**
  * Maps a source attribute key to the canonical {@link AIMetadata} field it
  * populates and the convention it belongs to.
  */
@@ -193,9 +314,39 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "responseModel",
     convention: Convention.Langfuse,
   },
+  // Langfuse packs request parameters into a single JSON blob; expand it into
+  // synthetic children matched back below.
+  "langfuse.observation.model.parameters": {
+    convention: Convention.Langfuse,
+    expand: expandLangfuseParams,
+  },
+  ...paramBlobChildMappings(langfuseParamsPrefix, Convention.Langfuse),
 
   // OpenTelemetry Semantic Conventions
   "gen_ai.request.model": { field: "model", convention: Convention.Semconv },
+  // Request / inference parameters as semconv scalars (official, Traceloop, and
+  // Vercel all emit these alongside their own shapes).
+  "gen_ai.request.temperature": {
+    field: "temperature",
+    convention: Convention.Semconv,
+  },
+  "gen_ai.request.top_p": { field: "topP", convention: Convention.Semconv },
+  "gen_ai.request.max_tokens": {
+    field: "maxTokens",
+    convention: Convention.Semconv,
+  },
+  "gen_ai.request.frequency_penalty": {
+    field: "frequencyPenalty",
+    convention: Convention.Semconv,
+  },
+  "gen_ai.request.presence_penalty": {
+    field: "presencePenalty",
+    convention: Convention.Semconv,
+  },
+  "gen_ai.request.stop_sequences": {
+    field: "stopSequences",
+    convention: Convention.Semconv,
+  },
   "gen_ai.response.model": {
     field: "responseModel",
     convention: Convention.Semconv,
@@ -262,6 +413,26 @@ const keyFieldMap: Record<string, Mapping> = {
     field: "reasoningTokens",
     convention: Convention.Semconv,
   },
+  // langsmith request parameters. It splits them between `ls_*` scalars (string
+  // encoded) and an `ls_invocation_params` JSON blob; the two are complementary.
+  // langsmith rides the semconv namespace here, as its token-detail blobs do.
+  "langsmith.metadata.ls_temperature": {
+    field: "temperature",
+    convention: Convention.Semconv,
+  },
+  "langsmith.metadata.ls_max_tokens": {
+    field: "maxTokens",
+    convention: Convention.Semconv,
+  },
+  "langsmith.metadata.ls_stop": {
+    field: "stopSequences",
+    convention: Convention.Semconv,
+  },
+  "langsmith.metadata.ls_invocation_params": {
+    convention: Convention.Semconv,
+    expand: expandLangsmithParams,
+  },
+  ...paramBlobChildMappings(langsmithParamsPrefix, Convention.Semconv),
 
   // OpenInference. `llm.model_name` is the model that served the request (a
   // response model), not the requested model — hence it maps to `responseModel`.
@@ -292,6 +463,16 @@ const keyFieldMap: Record<string, Mapping> = {
   // `llm.system` identifies the AI product/vendor (openai, anthropic, …),
   // matching the semantics of the deprecated semconv `gen_ai.system`.
   "llm.system": { field: "system", convention: Convention.OpenInference },
+  // OpenInference reports request parameters only as a JSON blob; expand it into
+  // synthetic children matched back below.
+  "llm.invocation_parameters": {
+    convention: Convention.OpenInference,
+    expand: expandOpenInferenceParams,
+  },
+  ...paramBlobChildMappings(
+    openInferenceParamsPrefix,
+    Convention.OpenInference,
+  ),
 
   // Vercel AI SDK (native `ai.*` telemetry)
   "ai.model.id": { field: "model", convention: Convention.Vercel },
@@ -350,6 +531,32 @@ const keyFieldMap: Record<string, Mapping> = {
   // input/output split); map it to inputTokens to match the semconv embeddings
   // case.
   "ai.usage.tokens": { field: "inputTokens", convention: Convention.Vercel },
+  // Request / inference parameters as Vercel scalars. Vercel also emits the
+  // semconv `gen_ai.request.*` shape, which outranks these (Semconv < Vercel);
+  // `seed` is the one parameter only the Vercel shape carries. `maxRetries` is
+  // an SDK transport setting, not an inference parameter, so it is left unmapped.
+  "ai.settings.temperature": {
+    field: "temperature",
+    convention: Convention.Vercel,
+  },
+  "ai.settings.topP": { field: "topP", convention: Convention.Vercel },
+  "ai.settings.maxOutputTokens": {
+    field: "maxTokens",
+    convention: Convention.Vercel,
+  },
+  "ai.settings.frequencyPenalty": {
+    field: "frequencyPenalty",
+    convention: Convention.Vercel,
+  },
+  "ai.settings.presencePenalty": {
+    field: "presencePenalty",
+    convention: Convention.Vercel,
+  },
+  "ai.settings.stopSequences": {
+    field: "stopSequences",
+    convention: Convention.Vercel,
+  },
+  "ai.settings.seed": { field: "seed", convention: Convention.Vercel },
 };
 
 interface Candidate {
@@ -495,7 +702,79 @@ export const extractAIMetadataFromAttributes = (
     metadata.reasoningTokens = reasoningTokens;
   }
 
+  // Request / inference parameters. The numeric ones reuse the same defensive
+  // coercion as token counts (`count` accepts non-integers too); 0 is a valid
+  // value, so the `!== undefined` guards must not collapse it to absent.
+  const temperature = count("temperature");
+  if (temperature !== undefined) {
+    metadata.temperature = temperature;
+  }
+
+  const topP = count("topP");
+  if (topP !== undefined) {
+    metadata.topP = topP;
+  }
+
+  const maxTokens = count("maxTokens");
+  if (maxTokens !== undefined) {
+    metadata.maxTokens = maxTokens;
+  }
+
+  const frequencyPenalty = count("frequencyPenalty");
+  if (frequencyPenalty !== undefined) {
+    metadata.frequencyPenalty = frequencyPenalty;
+  }
+
+  const presencePenalty = count("presencePenalty");
+  if (presencePenalty !== undefined) {
+    metadata.presencePenalty = presencePenalty;
+  }
+
+  const seed = count("seed");
+  if (seed !== undefined) {
+    metadata.seed = seed;
+  }
+
+  // Stop sequences arrive as a native string array (semconv, Vercel, blobs) or
+  // as a JSON-encoded array string (langsmith `ls_stop`); normalise both to a
+  // non-empty list of strings.
+  const stopSequences = toStopSequences(candidates.stopSequences?.value);
+  if (stopSequences !== undefined) {
+    metadata.stopSequences = stopSequences;
+  }
+
   return metadata;
+};
+
+/**
+ * Normalises a stop-sequences candidate into a non-empty `string[]`, or
+ * `undefined` when there is nothing usable. Accepts a native string array, a
+ * JSON-encoded array string, or a bare single stop string.
+ */
+const toStopSequences = (
+  raw: AttributeValue | undefined,
+): string[] | undefined => {
+  if (Array.isArray(raw)) {
+    const strings = raw.filter((x): x is string => typeof x === "string");
+    return strings.length > 0 ? strings : undefined;
+  }
+
+  if (typeof raw === "string" && raw !== "") {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const strings = parsed.filter(
+          (x): x is string => typeof x === "string",
+        );
+        return strings.length > 0 ? strings : undefined;
+      }
+    } catch {
+      // Not JSON: treat the raw value as a single stop sequence below.
+    }
+    return [raw];
+  }
+
+  return undefined;
 };
 
 /**
@@ -561,6 +840,43 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
       (a.reasoningTokens ?? 0) + (b.reasoningTokens ?? 0);
   }
 
+  // Request parameters describe the request, not a quantity, so they are not
+  // summed: `a`'s value wins, falling back to `b`.
+  const temperature = a.temperature ?? b.temperature;
+  if (temperature !== undefined) {
+    metadata.temperature = temperature;
+  }
+
+  const topP = a.topP ?? b.topP;
+  if (topP !== undefined) {
+    metadata.topP = topP;
+  }
+
+  const maxTokens = a.maxTokens ?? b.maxTokens;
+  if (maxTokens !== undefined) {
+    metadata.maxTokens = maxTokens;
+  }
+
+  const frequencyPenalty = a.frequencyPenalty ?? b.frequencyPenalty;
+  if (frequencyPenalty !== undefined) {
+    metadata.frequencyPenalty = frequencyPenalty;
+  }
+
+  const presencePenalty = a.presencePenalty ?? b.presencePenalty;
+  if (presencePenalty !== undefined) {
+    metadata.presencePenalty = presencePenalty;
+  }
+
+  const stopSequences = a.stopSequences ?? b.stopSequences;
+  if (stopSequences !== undefined) {
+    metadata.stopSequences = stopSequences;
+  }
+
+  const seed = a.seed ?? b.seed;
+  if (seed !== undefined) {
+    metadata.seed = seed;
+  }
+
   return metadata;
 };
 
@@ -613,6 +929,34 @@ export const toInngestAIMetadataValues = (
 
   if (metadata.reasoningTokens !== undefined) {
     values.reasoning_tokens = metadata.reasoningTokens;
+  }
+
+  if (metadata.temperature !== undefined) {
+    values.temperature = metadata.temperature;
+  }
+
+  if (metadata.topP !== undefined) {
+    values.top_p = metadata.topP;
+  }
+
+  if (metadata.maxTokens !== undefined) {
+    values.max_tokens = metadata.maxTokens;
+  }
+
+  if (metadata.frequencyPenalty !== undefined) {
+    values.frequency_penalty = metadata.frequencyPenalty;
+  }
+
+  if (metadata.presencePenalty !== undefined) {
+    values.presence_penalty = metadata.presencePenalty;
+  }
+
+  if (metadata.stopSequences !== undefined) {
+    values.stop_sequences = metadata.stopSequences;
+  }
+
+  if (metadata.seed !== undefined) {
+    values.seed = metadata.seed;
   }
 
   if (Object.keys(values).length === 0) {
