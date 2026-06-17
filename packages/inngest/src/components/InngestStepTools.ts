@@ -4,7 +4,7 @@ import { z } from "zod/v3";
 
 import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { normalizeEventSessions } from "../helpers/sessions.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -15,13 +15,14 @@ import type {
 import {
   type ApplyAllMiddlewareTransforms,
   type Context,
+  type EventMeta,
   type EventPayload,
-  type EventSessions,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type OutgoingOp,
+  type ReceivedEventMeta,
   type SendEventOutput,
   StepMode,
   StepOpCode,
@@ -918,18 +919,11 @@ export const createStepTools = <
         );
       }
 
-      const {
-        _type,
-        function: fn,
-        data,
-        v,
-        sessions,
-        timeout,
-      } = parsedFnOpts.data;
+      const { _type, function: fn, data, v, meta, timeout } = parsedFnOpts.data;
       const payload = {
         data,
         v,
-        sessions: normalizeEventSessions(sessions),
+        meta: normalizeEventMeta(meta),
       } satisfies MinimalEventPayload;
       const opts: {
         payload: typeof payload;
@@ -1165,7 +1159,11 @@ export const group: GroupTools = {
 export const invokePayloadSchema = z.object({
   data: z.record(z.any()).optional(),
   v: z.string().optional(),
-  sessions: z.record(z.any()).optional(),
+  meta: z
+    .object({
+      sessions: z.record(z.any()).optional(),
+    })
+    .optional(),
 });
 
 type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
@@ -1176,13 +1174,13 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
     Omit<TriggerEventFromFunction<TFunction>, "id"> & {
       /**
-       * Session metadata used to group the invoked run with other runs.
+       * Event meta shared with the invoked run.
        *
-       * Sessions are not inherited from the calling run; pass them explicitly
-       * to group the invoked run. Values are normalized to strings before
-       * sending, as with `inngest.send()`.
+       * Meta is not inherited from the calling run; pass `meta.sessions`
+       * explicitly to group the invoked run. Values are normalized to strings
+       * before sending, as with `inngest.send()`.
        */
-      sessions?: EventSessions;
+      meta?: EventMeta;
 
       /**
        * The step function will wait for the invocation to finish for a maximum
@@ -1288,7 +1286,7 @@ type WaitForEventResult<TOpts> =
         id: string;
         ts: number;
         v?: string;
-        sessions?: Record<string, string>;
+        meta?: ReceivedEventMeta;
       } | null
     : // Case 2: event is an EventType without a schema
       TOpts extends {
@@ -1301,7 +1299,7 @@ type WaitForEventResult<TOpts> =
           id: string;
           ts: number;
           v?: string;
-          sessions?: Record<string, string>;
+          meta?: ReceivedEventMeta;
         } | null
       : // Case 3: event is a string with schema (spread EventType)
         TOpts extends {
@@ -1316,7 +1314,7 @@ type WaitForEventResult<TOpts> =
             id: string;
             ts: number;
             v?: string;
-            sessions?: Record<string, string>;
+            meta?: ReceivedEventMeta;
           } | null
         : // Case 4: event is just a string
           TOpts extends { event: infer TName extends string }
@@ -1327,7 +1325,7 @@ type WaitForEventResult<TOpts> =
               id: string;
               ts: number;
               v?: string;
-              sessions?: Record<string, string>;
+              meta?: ReceivedEventMeta;
             } | null
           : EventPayload | null;
 

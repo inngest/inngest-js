@@ -1,6 +1,6 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-import type { EventSessions } from "../../types.ts";
+import type { EventMeta } from "../../types.ts";
 
 /**
  * Represents a cron trigger for scheduled function execution.
@@ -58,7 +58,7 @@ type EventCreateArgs<
         id?: string;
         ts?: number;
         v?: string;
-        sessions?: EventSessions;
+        meta?: EventMeta;
       },
     ]
   : [
@@ -67,7 +67,7 @@ type EventCreateArgs<
         id?: string;
         ts?: number;
         v?: string;
-        sessions?: EventSessions;
+        meta?: EventMeta;
       },
     ];
 
@@ -100,7 +100,7 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
   id?: string;
   ts?: number;
   v?: string;
-  sessions?: EventSessions;
+  meta?: EventMeta;
 };
 
 export type EventTypeWithAnySchema<TName extends string> = EventType<
@@ -169,7 +169,7 @@ export class EventType<
       id: options?.id,
       ts: options?.ts,
       v: options?.v ?? this.version,
-      sessions: options?.sessions,
+      meta: options?.meta,
 
       // Method for validating and transforming the event data against the
       // schema

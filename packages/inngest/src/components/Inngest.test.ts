@@ -501,10 +501,12 @@ describe("send", () => {
         inngest.send({
           name: "test.sessions",
           data: {},
-          sessions: {
-            conversation_id: "conversation_1234",
-            model: "gpt-4.1",
-            priority: 1,
+          meta: {
+            sessions: {
+              conversation_id: "conversation_1234",
+              model: "gpt-4.1",
+              priority: 1,
+            },
           },
         }),
       ).resolves.toMatchObject({
@@ -515,7 +517,7 @@ describe("send", () => {
         mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
 
-      expect(body[0]?.sessions).toEqual({
+      expect((body[0]?.meta as Record<string, unknown>)?.sessions).toEqual({
         conversation_id: "conversation_1234",
         model: "gpt-4.1",
         priority: "1",
@@ -531,7 +533,9 @@ describe("send", () => {
         inngest.send({
           name: "test.sessions",
           data: {},
-          sessions: JSON.parse('{"__proto__": "conversation_1234"}'),
+          meta: {
+            sessions: JSON.parse('{"__proto__": "conversation_1234"}'),
+          },
         }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
@@ -541,9 +545,11 @@ describe("send", () => {
         mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
 
-      expect(Object.entries(body[0]?.sessions as object)).toEqual([
-        ["__proto__", "conversation_1234"],
-      ]);
+      expect(
+        Object.entries(
+          (body[0]?.meta as Record<string, unknown>)?.sessions as object,
+        ),
+      ).toEqual([["__proto__", "conversation_1234"]]);
     });
 
     test("should reject empty event session names", async () => {
@@ -553,7 +559,7 @@ describe("send", () => {
         inngest.send({
           name: "test.sessions",
           data: {},
-          sessions: { "": "conversation_1234" },
+          meta: { sessions: { "": "conversation_1234" } },
         }),
       ).rejects.toThrowError("Event session keys cannot be empty");
     });
@@ -565,10 +571,12 @@ describe("send", () => {
         inngest.send({
           name: "test.sessions",
           data: {},
-          sessions: { conversation_id: null } as unknown as Record<
-            string,
-            string
-          >,
+          meta: {
+            sessions: { conversation_id: null } as unknown as Record<
+              string,
+              string
+            >,
+          },
         }),
       ).rejects.toThrowError(
         'Event session "conversation_id" must be a string or number',
@@ -582,7 +590,9 @@ describe("send", () => {
         inngest.send({
           name: "test.sessions",
           // Booleans are low-cardinality labels, not session IDs.
-          sessions: { active: true } as unknown as Record<string, string>,
+          meta: {
+            sessions: { active: true } as unknown as Record<string, string>,
+          },
         }),
       ).rejects.toThrowError(
         'Event session "active" must be a string or number',
@@ -596,7 +606,7 @@ describe("send", () => {
         inngest.send({
           name: "test.sessions",
           data: {},
-          sessions: { conversation_id: Number.NaN },
+          meta: { sessions: { conversation_id: Number.NaN } },
         }),
       ).rejects.toThrowError(
         'Event session "conversation_id" must be a finite number',
@@ -782,7 +792,9 @@ describe("send", () => {
           inngest.send({
             name: "anything",
             data: "foo",
-            sessions: { conversation_id: "conversation_1234", priority: 1 },
+            meta: {
+              sessions: { conversation_id: "conversation_1234", priority: 1 },
+            },
           });
       });
     });
@@ -841,12 +853,15 @@ describe("createFunction", () => {
         );
       });
 
-      test("types received event sessions as strings", () => {
+      test("types received event meta sessions as strings", () => {
         inngest.createFunction(
           { id: "test", triggers: [{ event: "test" }] },
           ({ event }) => {
             assertType<
-              IsEqual<typeof event.sessions, Record<string, string> | undefined>
+              IsEqual<
+                typeof event.meta,
+                { sessions?: Record<string, string> } | undefined
+              >
             >(true);
           },
         );

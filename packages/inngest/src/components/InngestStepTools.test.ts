@@ -158,7 +158,7 @@ describe("waitForEvent", () => {
   });
 
   describe("types", () => {
-    test("types matched event sessions as strings", () => {
+    test("types matched event meta sessions as strings", () => {
       const _test = async () => {
         const result = await step.waitForEvent("id", {
           event: "event",
@@ -167,8 +167,8 @@ describe("waitForEvent", () => {
 
         assertType<
           IsEqual<
-            NonNullable<typeof result>["sessions"],
-            Record<string, string> | undefined
+            NonNullable<typeof result>["meta"],
+            { sessions?: Record<string, string> } | undefined
           >
         >(true);
       };
@@ -1124,30 +1124,34 @@ describe("invoke", () => {
           step.invoke("id", {
             function: fn,
             data: { foo: "foo" },
-            sessions: {
-              conversation_id: "conversation_1234",
-              priority: 1,
+            meta: {
+              sessions: {
+                conversation_id: "conversation_1234",
+                priority: 1,
+              },
             },
           }),
         ).resolves.toMatchObject({
           opts: {
             payload: {
-              sessions: {
-                conversation_id: "conversation_1234",
-                priority: "1",
+              meta: {
+                sessions: {
+                  conversation_id: "conversation_1234",
+                  priority: "1",
+                },
               },
             },
           },
         });
       });
 
-      test("omits sessions from the payload if none given", async () => {
+      test("omits meta from the payload if none given", async () => {
         const op = (await step.invoke("id", {
           function: fn,
           data: { foo: "foo" },
         })) as unknown as { opts: { payload: Record<string, unknown> } };
 
-        expect(op.opts.payload.sessions).toBeUndefined();
+        expect(op.opts.payload.meta).toBeUndefined();
       });
 
       test("rejects invalid session values", async () => {
@@ -1155,7 +1159,7 @@ describe("invoke", () => {
           step.invoke("id", {
             function: fn,
             data: { foo: "foo" },
-            sessions: { conversation_id: Number.NaN },
+            meta: { sessions: { conversation_id: Number.NaN } },
           }),
         ).rejects.toThrowError(
           'Event session "conversation_id" must be a finite number',
@@ -1193,7 +1197,7 @@ describe("invoke", () => {
         });
     });
 
-    test("allows setting sessions for an invocation", () => {
+    test("allows setting meta sessions for an invocation", () => {
       const fn = client.createFunction(
         { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
@@ -1203,7 +1207,9 @@ describe("invoke", () => {
         invoke("id", {
           function: fn,
           data: { foo: "" },
-          sessions: { conversation_id: "conversation_1234", priority: 1 },
+          meta: {
+            sessions: { conversation_id: "conversation_1234", priority: 1 },
+          },
         });
     });
 

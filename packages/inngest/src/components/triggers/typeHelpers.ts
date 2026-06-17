@@ -2,7 +2,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { AsTuple } from "../../helpers/types.ts";
-import type { DeferFn } from "../../types.ts";
+import type { DeferFn, ReceivedEventMeta } from "../../types.ts";
 import type { createGroupTools } from "../InngestGroupTools.ts";
 import type { EventType, EventTypeWithAnySchema } from "./triggers.ts";
 
@@ -42,12 +42,9 @@ export type ReceivedEvent<TName, TData extends BasicDataUnknown> = {
   name: TName;
 
   /**
-   * Session metadata used to group runs triggered by this event.
-   *
-   * Always a map of strings when received; number IDs given when
-   * sending are normalized to strings.
+   * Event meta shared across runs triggered by this event.
    */
-  sessions?: Record<string, string>;
+  meta?: ReceivedEventMeta;
 
   ts: number;
   v: string;

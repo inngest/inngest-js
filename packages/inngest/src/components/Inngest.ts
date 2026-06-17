@@ -26,7 +26,7 @@ import {
   warnOnce,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
-import { normalizeEventSessions } from "../helpers/sessions.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -921,13 +921,22 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     // filled by the event server so is safe, and adding here fixes Next.js
     // server action cache issues.
     payloads = payloads.map((p) => {
+      const {
+        sessions: _sessions,
+        ctx: _ctx,
+        ...rest
+      } = p as typeof p & {
+        sessions?: unknown;
+        ctx?: unknown;
+      };
+
       return {
-        ...p,
+        ...rest,
         // Always generate an idempotency ID for an event for retries
         id: p.id,
         ts: p.ts || nowMillis,
         data: p.data || {},
-        sessions: normalizeEventSessions(p.sessions),
+        meta: normalizeEventMeta(p.meta),
       };
     });
 

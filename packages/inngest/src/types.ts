@@ -148,12 +148,9 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   };
 
   /**
-   * Sessions of the original triggering event, used to group runs.
-   *
-   * Always a map of strings when received; number IDs given when
-   * sending are normalized to strings.
+   * Meta from the original triggering event, used to group runs.
    */
-  sessions?: Record<string, string>;
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -195,12 +192,9 @@ export type FinishedEventPayload = {
   );
 
   /**
-   * Sessions of the original triggering event, used to group runs.
-   *
-   * Always a map of strings when received; number IDs given when
-   * sending are normalized to strings.
+   * Meta from the original triggering event, used to group runs.
    */
-  sessions?: Record<string, string>;
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -216,12 +210,9 @@ export type CancelledEventPayload = {
   };
 
   /**
-   * Sessions of the original triggering event, used to group runs.
-   *
-   * Always a map of strings when received; number IDs given when
-   * sending are normalized to strings.
+   * Meta from the original triggering event, used to group runs.
    */
-  sessions?: Record<string, string>;
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -683,12 +674,9 @@ export interface MinimalEventPayload<TData = any> {
   v?: string;
 
   /**
-   * Session metadata used to group runs triggered by this event.
-   *
-   * Keys are session keys, values are session IDs. Values are
-   * normalized to strings before the event is sent.
+   * Event meta shared across runs triggered by this event.
    */
-  sessions?: EventSessions;
+  meta?: EventMeta;
 }
 
 /**
@@ -727,12 +715,42 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
 export type EventSessionValue = string | number;
 
 /**
- * Session metadata accepted when sending an event. Values are normalized to
+ * Session meta accepted when sending an event. Values are normalized to
  * strings before sending; received events carry `Record<string, string>`.
  *
  * @public
  */
 export type EventSessions = Record<string, EventSessionValue>;
+
+/**
+ * Event meta accepted when sending an event.
+ *
+ * @public
+ */
+export type EventMeta = {
+  /**
+   * Session meta used to group runs triggered by this event.
+   *
+   * Keys are session keys, values are session IDs. Values are
+   * normalized to strings before the event is sent.
+   */
+  sessions?: EventSessions;
+};
+
+/**
+ * Event meta received by a function handler.
+ *
+ * @public
+ */
+export type ReceivedEventMeta = {
+  /**
+   * Session meta used to group runs triggered by this event.
+   *
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
+};
 
 export const sendEventResponseSchema = z.object({
   /**

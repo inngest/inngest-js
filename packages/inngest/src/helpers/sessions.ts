@@ -1,4 +1,4 @@
-import type { EventSessions } from "../types.ts";
+import type { EventMeta, EventSessions } from "../types.ts";
 
 /**
  * Validates event sessions and normalizes their values to strings, matching
@@ -17,6 +17,9 @@ export const normalizeEventSessions = (
   }
 
   const entries = Object.entries(sessions);
+  if (entries.length === 0) {
+    return undefined;
+  }
 
   // Collected as entries and built with Object.fromEntries so that special
   // keys like "__proto__" become own properties instead of being silently
@@ -42,4 +45,22 @@ export const normalizeEventSessions = (
   }
 
   return Object.fromEntries(normalized);
+};
+
+export const normalizeEventMeta = (
+  meta: EventMeta | null | undefined,
+): { sessions?: Record<string, string> } | undefined => {
+  if (meta === undefined || meta === null) {
+    return undefined;
+  }
+  if (typeof meta !== "object" || Array.isArray(meta)) {
+    throw new Error("Event meta must be an object");
+  }
+
+  const sessions = normalizeEventSessions(meta.sessions);
+  if (sessions === undefined) {
+    return undefined;
+  }
+
+  return { sessions };
 };

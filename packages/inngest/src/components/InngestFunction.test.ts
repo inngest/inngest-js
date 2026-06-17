@@ -1921,14 +1921,14 @@ describe("runFn", () => {
           );
         });
 
-        test("onFailure event has received-side sessions", () => {
+        test("onFailure event has received-side meta sessions", () => {
           inngest.createFunction(
             {
               id: "test",
               triggers: [{ event: "test" }],
               onFailure: ({ event }) => {
-                expectTypeOf(event.sessions).toEqualTypeOf<
-                  Record<string, string> | undefined
+                expectTypeOf(event.meta).toEqualTypeOf<
+                  { sessions?: Record<string, string> } | undefined
                 >();
               },
             },
