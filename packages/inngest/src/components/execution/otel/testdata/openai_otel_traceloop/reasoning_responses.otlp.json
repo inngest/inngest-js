@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "9ac25a45e5a1d62dd5d759552625a22c",
-              "spanId": "d1c55bfc69dddc8e",
+              "traceId": "5948090a1e7d152fafa2ebd1ce7a96ff",
+              "spanId": "0cbd671bd0e22f9e",
               "name": "chat gpt-5.4-nano",
               "kind": 3,
-              "startTimeUnixNano": "1780434769570000000",
-              "endTimeUnixNano": "1780434770618695833",
+              "startTimeUnixNano": "1781569361974000000",
+              "endTimeUnixNano": "1781569363903694666",
               "attributes": [
                 {
                   "key": "gen_ai.provider.name",
@@ -66,7 +66,7 @@
                 {
                   "key": "gen_ai.input.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"What is 17 * 24? Think briefly.\"}]}]"
+                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much is the ball? Show careful step-by-step reasoning.\"}]}]"
                   }
                 },
                 {
@@ -78,25 +78,25 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "resp_0947697ae2c24bfe006a1f4751ad68819aa81bfb021e3ac05e"
+                    "stringValue": "resp_0c60a4699589898c006a30975211fc819bb449f93de9ebbf6b"
                   }
                 },
                 {
                   "key": "gen_ai.usage.input_tokens",
                   "value": {
-                    "intValue": 17
+                    "intValue": 42
                   }
                 },
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 13
+                    "intValue": 198
                   }
                 },
                 {
                   "key": "gen_ai.usage.total_tokens",
                   "value": {
-                    "intValue": 30
+                    "intValue": 240
                   }
                 },
                 {
@@ -114,7 +114,7 @@
                 {
                   "key": "gen_ai.output.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"17 × 24 = **408**.\"}]}]"
+                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"Let the **ball** cost \\\\(x\\\\) dollars.\\n\\n- The **bat** costs \\\\(x + 1.00\\\\) dollars (because it costs $1 more than the ball).\\n- Together they cost $1.10:\\n\\n\\\\[\\nx + (x + 1.00) = 1.10\\n\\\\]\\n\\nNow solve:\\n\\n\\\\[\\n2x + 1.00 = 1.10\\n\\\\]\\n\\\\[\\n2x = 1.10 - 1.00 = 0.10\\n\\\\]\\n\\\\[\\nx = \\\\frac{0.10}{2} = 0.05\\n\\\\]\\n\\n✅ **The ball costs \\\\(\\\\$0.05\\\\)** (5 cents).\"}]}]"
                   }
                 }
               ],

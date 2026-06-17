@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "11db093acd07b3edf3fb0a5e0ec5ec60",
-              "spanId": "a6b5626e2a6f6e66",
+              "traceId": "daf92e7f64653fbcbb8de00a4ef53322",
+              "spanId": "85e47c7a60990630",
               "name": "chat gpt-4.1-nano",
               "kind": 3,
-              "startTimeUnixNano": "1781569322549000000",
-              "endTimeUnixNano": "1781569323835238292",
+              "startTimeUnixNano": "1781569327483000000",
+              "endTimeUnixNano": "1781569327858152292",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -76,45 +76,15 @@
                   }
                 },
                 {
-                  "key": "gen_ai.request.frequency_penalty",
-                  "value": {
-                    "doubleValue": 0.2
-                  }
-                },
-                {
                   "key": "gen_ai.request.max_tokens",
                   "value": {
-                    "intValue": 64
-                  }
-                },
-                {
-                  "key": "gen_ai.request.presence_penalty",
-                  "value": {
-                    "doubleValue": 0.1
-                  }
-                },
-                {
-                  "key": "gen_ai.request.stop_sequences",
-                  "value": {
-                    "arrayValue": {
-                      "values": [
-                        {
-                          "stringValue": "\n\n"
-                        }
-                      ]
-                    }
+                    "intValue": 8
                   }
                 },
                 {
                   "key": "gen_ai.request.temperature",
                   "value": {
-                    "doubleValue": 0.7
-                  }
-                },
-                {
-                  "key": "gen_ai.request.top_p",
-                  "value": {
-                    "doubleValue": 0.9
+                    "intValue": 0
                   }
                 },
                 {
@@ -132,7 +102,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DrBr1MuPKdHPsQKsEJiGPeor6ptxv"
+                    "stringValue": "chatcmpl-DrBr5zUhpOxbBjjb7qsqtleSFCcyz"
                   }
                 },
                 {
@@ -144,13 +114,110 @@
                 {
                   "key": "gen_ai.usage.input_tokens",
                   "value": {
-                    "intValue": 22
+                    "intValue": 2239
                   }
                 },
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 6
+                    "intValue": 1
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            },
+            {
+              "traceId": "e1743e0b86fb66a74fd1e8503c8fb7eb",
+              "spanId": "d0d90319347ecdec",
+              "name": "chat gpt-4.1-nano",
+              "kind": 3,
+              "startTimeUnixNano": "1781569327859000000",
+              "endTimeUnixNano": "1781569328220285542",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano"
+                  }
+                },
+                {
+                  "key": "gen_ai.system",
+                  "value": {
+                    "stringValue": "openai"
+                  }
+                },
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "api.openai.com"
+                  }
+                },
+                {
+                  "key": "server.port",
+                  "value": {
+                    "intValue": 443
+                  }
+                },
+                {
+                  "key": "gen_ai.request.max_tokens",
+                  "value": {
+                    "intValue": 8
+                  }
+                },
+                {
+                  "key": "gen_ai.request.temperature",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-DrBr6NKl1gWrM71LXh99LvZ3VVMtc"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano-2025-04-14"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": 2239
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": 1
                   }
                 }
               ],

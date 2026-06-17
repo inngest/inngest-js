@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "62667b771b8722db2d07f2a970fe508c",
-              "spanId": "cde1100a145adede",
+              "traceId": "85edef8d306e288c3faea914df3fb7a1",
+              "spanId": "b0c6f0ecf3f0b1c7",
               "name": "OpenAI Chat Completions",
               "kind": 1,
-              "startTimeUnixNano": "1780434773258000000",
-              "endTimeUnixNano": "1780434773557464792",
+              "startTimeUnixNano": "1781569366992000000",
+              "endTimeUnixNano": "1781569367225317209",
               "attributes": [
                 {
                   "key": "openinference.span.kind",

@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "11ba7f7788bfcc93b09a60537e4d868c",
-              "spanId": "7ae40e90d08d49a0",
+              "traceId": "07383d165561f6d97a5006506622e092",
+              "spanId": "b2e88bec3e98b712",
               "name": "OpenAI Chat Completions",
               "kind": 1,
-              "startTimeUnixNano": "1780434772622000000",
-              "endTimeUnixNano": "1780434773257964042",
+              "startTimeUnixNano": "1781569366411000000",
+              "endTimeUnixNano": "1781569366991138125",
               "attributes": [
                 {
                   "key": "openinference.span.kind",
@@ -108,7 +108,7 @@
                 {
                   "key": "output.value",
                   "value": {
-                    "stringValue": "{\"id\":\"chatcmpl-DmQhoinvyDnFdBrj1SRTBp0tnSdXk\",\"object\":\"chat.completion\",\"created\":1780434772,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_u2pjsFzugXyY04mM1oDWyt3q\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"Paris\\\"}\"}}],\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":56,\"completion_tokens\":30,\"total_tokens\":86,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"service_tier\":\"default\",\"system_fingerprint\":\"fp_86d7a15f4a\"}"
+                    "stringValue": "{\"id\":\"chatcmpl-DrBriy6E103We2PMUg1HWFqtT64F9\",\"object\":\"chat.completion\",\"created\":1781569366,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_t3HPGP2E9APk9Qfq306CXZmu\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"Paris\\\"}\"}}],\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":56,\"completion_tokens\":30,\"total_tokens\":86,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"service_tier\":\"default\",\"system_fingerprint\":\"fp_6998dd7b18\"}"
                   }
                 },
                 {
@@ -126,7 +126,7 @@
                 {
                   "key": "llm.output_messages.0.message.tool_calls.0.tool_call.id",
                   "value": {
-                    "stringValue": "call_u2pjsFzugXyY04mM1oDWyt3q"
+                    "stringValue": "call_t3HPGP2E9APk9Qfq306CXZmu"
                   }
                 },
                 {

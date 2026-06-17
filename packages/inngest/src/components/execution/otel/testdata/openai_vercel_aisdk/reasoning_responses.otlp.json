@@ -37,13 +37,13 @@
           },
           "spans": [
             {
-              "traceId": "2a0e5b71319287cf9aa23f020d7da34c",
-              "spanId": "18ca6b1e4e439eb7",
-              "parentSpanId": "6efc0430fc5c8cf4",
+              "traceId": "f517f6f38edd91a3018ab2f4559335b5",
+              "spanId": "21c824eb83f369ef",
+              "parentSpanId": "269e07a1aa5e58a2",
               "name": "ai.generateText.doGenerate",
               "kind": 1,
-              "startTimeUnixNano": "1780439005818000000",
-              "endTimeUnixNano": "1780439008175387417",
+              "startTimeUnixNano": "1781569378401000000",
+              "endTimeUnixNano": "1781569380938723417",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -108,7 +108,7 @@
                 {
                   "key": "ai.response.text",
                   "value": {
-                    "stringValue": "Let the **ball** cost \\(x\\) dollars.\n\n1. The **bat** costs $1.00 more than the ball, so the bat costs \\(x + 1.00\\).\n2. Together they cost $1.10, so:\n   \\[\n   x + (x + 1.00) = 1.10\n   \\]\n3. Combine like terms:\n   \\[\n   2x + 1.00 = 1.10\n   \\]\n4. Subtract $1.00 from both sides:\n   \\[\n   2x = 0.10\n   \\]\n5. Divide both sides by 2:\n   \\[\n   x = 0.05\n   \\]\n\n✅ **The ball costs \\(\\$0.05\\) (5 cents).**"
+                    "stringValue": "Let the **ball** cost \\(x\\) dollars.\n\n1. **Bat cost:** “The bat costs \\$1.00 more than the ball,” so the bat costs  \n   \\[\n   x + 1.00\n   \\]\n2. **Total cost:** The bat and ball cost \\$1.10 total, so  \n   \\[\n   x + (x + 1.00) = 1.10\n   \\]\n3. **Combine like terms:**  \n   \\[\n   2x + 1.00 = 1.10\n   \\]\n4. **Subtract 1.00 from both sides:**  \n   \\[\n   2x = 1.10 - 1.00 = 0.10\n   \\]\n5. **Divide by 2:**  \n   \\[\n   x = \\frac{0.10}{2} = 0.05\n   \\]\n\n✅ **The ball costs \\$0.05 (5 cents).**"
                   }
                 },
                 {
@@ -120,7 +120,7 @@
                 {
                   "key": "ai.response.id",
                   "value": {
-                    "stringValue": "resp_0f7e98e261a60d2a006a1f57ddee9c819b824783b5b0c8e87a"
+                    "stringValue": "resp_075c5a0fa12d9c42006a3097629c388198b6cf046b3222fd4b"
                   }
                 },
                 {
@@ -132,13 +132,13 @@
                 {
                   "key": "ai.response.timestamp",
                   "value": {
-                    "stringValue": "2026-06-02T22:23:25.000Z"
+                    "stringValue": "2026-06-16T00:22:58.000Z"
                   }
                 },
                 {
                   "key": "ai.response.providerMetadata",
                   "value": {
-                    "stringValue": "{\"openai\":{\"responseId\":\"resp_0f7e98e261a60d2a006a1f57ddee9c819b824783b5b0c8e87a\",\"serviceTier\":\"default\"}}"
+                    "stringValue": "{\"openai\":{\"responseId\":\"resp_075c5a0fa12d9c42006a3097629c388198b6cf046b3222fd4b\",\"serviceTier\":\"default\"}}"
                   }
                 },
                 {
@@ -162,31 +162,31 @@
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": 195
+                    "intValue": 261
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": 178
+                    "intValue": 213
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.reasoningTokens",
                   "value": {
-                    "intValue": 17
+                    "intValue": 48
                   }
                 },
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": 237
+                    "intValue": 303
                   }
                 },
                 {
                   "key": "ai.usage.reasoningTokens",
                   "value": {
-                    "intValue": 17
+                    "intValue": 48
                   }
                 },
                 {
@@ -210,7 +210,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "resp_0f7e98e261a60d2a006a1f57ddee9c819b824783b5b0c8e87a"
+                    "stringValue": "resp_075c5a0fa12d9c42006a3097629c388198b6cf046b3222fd4b"
                   }
                 },
                 {
@@ -228,7 +228,7 @@
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 195
+                    "intValue": 261
                   }
                 }
               ],
@@ -243,12 +243,12 @@
               "flags": 257
             },
             {
-              "traceId": "2a0e5b71319287cf9aa23f020d7da34c",
-              "spanId": "6efc0430fc5c8cf4",
+              "traceId": "f517f6f38edd91a3018ab2f4559335b5",
+              "spanId": "269e07a1aa5e58a2",
               "name": "ai.generateText",
               "kind": 1,
-              "startTimeUnixNano": "1780439005818000000",
-              "endTimeUnixNano": "1780439008176356458",
+              "startTimeUnixNano": "1781569378400000000",
+              "endTimeUnixNano": "1781569380939081167",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -301,7 +301,7 @@
                 {
                   "key": "ai.response.text",
                   "value": {
-                    "stringValue": "Let the **ball** cost \\(x\\) dollars.\n\n1. The **bat** costs $1.00 more than the ball, so the bat costs \\(x + 1.00\\).\n2. Together they cost $1.10, so:\n   \\[\n   x + (x + 1.00) = 1.10\n   \\]\n3. Combine like terms:\n   \\[\n   2x + 1.00 = 1.10\n   \\]\n4. Subtract $1.00 from both sides:\n   \\[\n   2x = 0.10\n   \\]\n5. Divide both sides by 2:\n   \\[\n   x = 0.05\n   \\]\n\n✅ **The ball costs \\(\\$0.05\\) (5 cents).**"
+                    "stringValue": "Let the **ball** cost \\(x\\) dollars.\n\n1. **Bat cost:** “The bat costs \\$1.00 more than the ball,” so the bat costs  \n   \\[\n   x + 1.00\n   \\]\n2. **Total cost:** The bat and ball cost \\$1.10 total, so  \n   \\[\n   x + (x + 1.00) = 1.10\n   \\]\n3. **Combine like terms:**  \n   \\[\n   2x + 1.00 = 1.10\n   \\]\n4. **Subtract 1.00 from both sides:**  \n   \\[\n   2x = 1.10 - 1.00 = 0.10\n   \\]\n5. **Divide by 2:**  \n   \\[\n   x = \\frac{0.10}{2} = 0.05\n   \\]\n\n✅ **The ball costs \\$0.05 (5 cents).**"
                   }
                 },
                 {
@@ -313,7 +313,7 @@
                 {
                   "key": "ai.response.providerMetadata",
                   "value": {
-                    "stringValue": "{\"openai\":{\"responseId\":\"resp_0f7e98e261a60d2a006a1f57ddee9c819b824783b5b0c8e87a\",\"serviceTier\":\"default\"}}"
+                    "stringValue": "{\"openai\":{\"responseId\":\"resp_075c5a0fa12d9c42006a3097629c388198b6cf046b3222fd4b\",\"serviceTier\":\"default\"}}"
                   }
                 },
                 {
@@ -337,31 +337,31 @@
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": 195
+                    "intValue": 261
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": 178
+                    "intValue": 213
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.reasoningTokens",
                   "value": {
-                    "intValue": 17
+                    "intValue": 48
                   }
                 },
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": 237
+                    "intValue": 303
                   }
                 },
                 {
                   "key": "ai.usage.reasoningTokens",
                   "value": {
-                    "intValue": 17
+                    "intValue": 48
                   }
                 },
                 {

@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "71cf19bb84453e7d515b8f49aa00e6fe",
-              "spanId": "6759083dcb25cf8d",
+              "traceId": "20f14ccc6581e027f99d9179c58ef6b3",
+              "spanId": "106409fc568ea88a",
               "name": "ChatOpenAI",
               "kind": 1,
-              "startTimeUnixNano": "1780441343487000000",
-              "endTimeUnixNano": "1780441344024000000",
+              "startTimeUnixNano": "1781569389417000000",
+              "endTimeUnixNano": "1781569389894000000",
               "attributes": [
                 {
                   "key": "langsmith.traceable",
@@ -192,7 +192,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmSPnK1FqD0W1V6k55vnLKTyNV9cH"
+                    "stringValue": "chatcmpl-DrBs5NWq2cjOCfOmsXB701DaqqHMF"
                   }
                 },
                 {
@@ -210,7 +210,7 @@
                 {
                   "key": "gen_ai.response.system_fingerprint",
                   "value": {
-                    "stringValue": "fp_97e92d7018"
+                    "stringValue": "fp_66578ab455"
                   }
                 },
                 {
@@ -228,7 +228,7 @@
                 {
                   "key": "gen_ai.completion",
                   "value": {
-                    "stringValue": "{\"id\":\"chatcmpl-DmSPnK1FqD0W1V6k55vnLKTyNV9cH\",\"object\":\"chat.completion\",\"created\":1780441343,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Red, blue, yellow.\",\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"service_tier\":\"default\",\"system_fingerprint\":\"fp_97e92d7018\",\"usage_metadata\":{\"input_tokens\":22,\"output_tokens\":6,\"total_tokens\":28,\"input_token_details\":{\"audio\":0,\"cache_read\":0},\"output_token_details\":{\"audio\":0,\"reasoning\":0}}}"
+                    "stringValue": "{\"id\":\"chatcmpl-DrBs5NWq2cjOCfOmsXB701DaqqHMF\",\"object\":\"chat.completion\",\"created\":1781569389,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Red, blue, yellow.\",\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"service_tier\":\"default\",\"system_fingerprint\":\"fp_66578ab455\",\"usage_metadata\":{\"input_tokens\":22,\"output_tokens\":6,\"total_tokens\":28,\"input_token_details\":{\"audio\":0,\"cache_read\":0},\"output_token_details\":{\"audio\":0,\"reasoning\":0}}}"
                   }
                 }
               ],

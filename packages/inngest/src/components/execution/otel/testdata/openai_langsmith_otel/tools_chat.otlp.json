@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "fc930536ff567e3c06eb0c0aa4ff78ba",
-              "spanId": "7a4cb1a61dc110c9",
+              "traceId": "83a116b65c37acf1ef33ca61142c6b4e",
+              "spanId": "7fce9e4ea77f108b",
               "name": "ChatOpenAI",
               "kind": 1,
-              "startTimeUnixNano": "1780441344277000000",
-              "endTimeUnixNano": "1780441345103000000",
+              "startTimeUnixNano": "1781569390147000000",
+              "endTimeUnixNano": "1781569390950000000",
               "attributes": [
                 {
                   "key": "langsmith.traceable",
@@ -174,7 +174,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmSPog8FUcyXw3C6bUGF0WZZDZw1k"
+                    "stringValue": "chatcmpl-DrBs68ShlhujNjnFypB1xKq8Q9G1r"
                   }
                 },
                 {
@@ -192,7 +192,7 @@
                 {
                   "key": "gen_ai.response.system_fingerprint",
                   "value": {
-                    "stringValue": "fp_327b48687d"
+                    "stringValue": "fp_6998dd7b18"
                   }
                 },
                 {
@@ -210,7 +210,7 @@
                 {
                   "key": "gen_ai.completion",
                   "value": {
-                    "stringValue": "{\"id\":\"chatcmpl-DmSPog8FUcyXw3C6bUGF0WZZDZw1k\",\"object\":\"chat.completion\",\"created\":1780441344,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_ykiS5AwsG1Y6jUpN1fytEmux\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"Paris\\\"}\"}}],\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"tool_calls\"}],\"service_tier\":\"default\",\"system_fingerprint\":\"fp_327b48687d\",\"usage_metadata\":{\"input_tokens\":56,\"output_tokens\":30,\"total_tokens\":86,\"input_token_details\":{\"audio\":0,\"cache_read\":0},\"output_token_details\":{\"audio\":0,\"reasoning\":0}}}"
+                    "stringValue": "{\"id\":\"chatcmpl-DrBs68ShlhujNjnFypB1xKq8Q9G1r\",\"object\":\"chat.completion\",\"created\":1781569390,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_csCP2dR7kSjleOfJ8MVP78jt\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"Paris\\\"}\"}}],\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"tool_calls\"}],\"service_tier\":\"default\",\"system_fingerprint\":\"fp_6998dd7b18\",\"usage_metadata\":{\"input_tokens\":56,\"output_tokens\":30,\"total_tokens\":86,\"input_token_details\":{\"audio\":0,\"cache_read\":0},\"output_token_details\":{\"audio\":0,\"reasoning\":0}}}"
                   }
                 }
               ],

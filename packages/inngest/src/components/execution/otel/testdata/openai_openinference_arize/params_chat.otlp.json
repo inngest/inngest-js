@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "2a03cf569d944245b3ad340848e3d8cd",
-              "spanId": "1474483d9547301e",
+              "traceId": "fa94084cfe41105251ce28aa41d4addc",
+              "spanId": "f13cd7a12d8fcc7f",
               "name": "OpenAI Chat Completions",
               "kind": 1,
-              "startTimeUnixNano": "1780434772157000000",
-              "endTimeUnixNano": "1780434772621823625",
+              "startTimeUnixNano": "1781569365883000000",
+              "endTimeUnixNano": "1781569366410650875",
               "attributes": [
                 {
                   "key": "openinference.span.kind",
@@ -114,7 +114,7 @@
                 {
                   "key": "output.value",
                   "value": {
-                    "stringValue": "{\"id\":\"chatcmpl-DmQhoJiZxT6BsgDEC6bwuLQchCIE7\",\"object\":\"chat.completion\",\"created\":1780434772,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Red, blue, yellow.\",\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":22,\"completion_tokens\":6,\"total_tokens\":28,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"service_tier\":\"default\",\"system_fingerprint\":\"fp_96f2a865f6\"}"
+                    "stringValue": "{\"id\":\"chatcmpl-DrBricI2CiETG2blyypRlwXEzCJgo\",\"object\":\"chat.completion\",\"created\":1781569366,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Red, blue, yellow.\",\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":22,\"completion_tokens\":6,\"total_tokens\":28,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"service_tier\":\"default\",\"system_fingerprint\":\"fp_66578ab455\"}"
                   }
                 },
                 {

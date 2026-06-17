@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "abfdcffdc9d58d4907c632cb5ebde721",
-              "spanId": "93d60525c6f42e2f",
+              "traceId": "e48a023f81d4e2a0c9a4dd59333b7af6",
+              "spanId": "ce3b20e13523414f",
               "name": "ChatOpenAI",
               "kind": 1,
-              "startTimeUnixNano": "1780441346513000000",
-              "endTimeUnixNano": "1780441347995000000",
+              "startTimeUnixNano": "1781569391658000000",
+              "endTimeUnixNano": "1781569393697000000",
               "attributes": [
                 {
                   "key": "langsmith.traceable",
@@ -120,7 +120,7 @@
                 {
                   "key": "langsmith.metadata.ls_invocation_params",
                   "value": {
-                    "stringValue": "{\"reasoning\":{\"effort\":\"low\"},\"use_responses_api\":true}"
+                    "stringValue": "{\"reasoning\":{\"effort\":\"high\"},\"use_responses_api\":true}"
                   }
                 },
                 {
@@ -132,37 +132,37 @@
                 {
                   "key": "gen_ai.prompt",
                   "value": {
-                    "stringValue": "{\"model\":\"gpt-5.4-nano\",\"input\":\"What is 17 * 24? Think briefly.\",\"reasoning\":{\"effort\":\"low\"}}"
+                    "stringValue": "{\"model\":\"gpt-5.4-nano\",\"input\":\"A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much is the ball? Show careful step-by-step reasoning.\",\"reasoning\":{\"effort\":\"high\"}}"
                   }
                 },
                 {
                   "key": "langsmith.usage_metadata",
                   "value": {
-                    "stringValue": "{\"input_tokens\":17,\"output_tokens\":12,\"total_tokens\":29,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}"
+                    "stringValue": "{\"input_tokens\":42,\"output_tokens\":238,\"total_tokens\":280,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":51}}"
                   }
                 },
                 {
                   "key": "langsmith.metadata.usage_metadata",
                   "value": {
-                    "stringValue": "{\"input_tokens\":17,\"output_tokens\":12,\"total_tokens\":29,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}"
+                    "stringValue": "{\"input_tokens\":42,\"output_tokens\":238,\"total_tokens\":280,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":51}}"
                   }
                 },
                 {
                   "key": "gen_ai.usage.input_tokens",
                   "value": {
-                    "intValue": 17
+                    "intValue": 42
                   }
                 },
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 12
+                    "intValue": 238
                   }
                 },
                 {
                   "key": "gen_ai.usage.total_tokens",
                   "value": {
-                    "intValue": 29
+                    "intValue": 280
                   }
                 },
                 {
@@ -174,7 +174,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "resp_0c58250a28f29e7f006a1f61028f248199962f6ae9f6dcec2f"
+                    "stringValue": "resp_0b427a55574fd2a6006a30976fba7481989905eecdba88aab7"
                   }
                 },
                 {
@@ -192,13 +192,13 @@
                 {
                   "key": "gen_ai.usage.output_token_details",
                   "value": {
-                    "stringValue": "{\"reasoning\":0}"
+                    "stringValue": "{\"reasoning\":51}"
                   }
                 },
                 {
                   "key": "gen_ai.completion",
                   "value": {
-                    "stringValue": "{\"id\":\"resp_0c58250a28f29e7f006a1f61028f248199962f6ae9f6dcec2f\",\"object\":\"response\",\"created_at\":1780441346,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1780441347,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_0c58250a28f29e7f006a1f6102e5508199b723d69648100b8a\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"17 × 24 = 408.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"low\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"user\":null,\"metadata\":{},\"output_text\":\"17 × 24 = 408.\",\"usage_metadata\":{\"input_tokens\":17,\"output_tokens\":12,\"total_tokens\":29,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}}"
+                    "stringValue": "{\"id\":\"resp_0b427a55574fd2a6006a30976fba7481989905eecdba88aab7\",\"object\":\"response\",\"created_at\":1781569391,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1781569393,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"rs_0b427a55574fd2a6006a3097702128819887cdfa51db52adc1\",\"type\":\"reasoning\",\"content\":[],\"summary\":[]},{\"id\":\"msg_0b427a55574fd2a6006a3097706c708198b4340053a7e57f10\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Let the **ball** cost \\\\(x\\\\) dollars.\\n\\n1. The bat costs **$1.00 more** than the ball, so the bat costs:\\n   \\\\[\\n   x + 1.00\\n   \\\\]\\n\\n2. Together they cost **$1.10**, so:\\n   \\\\[\\n   x + (x + 1.00) = 1.10\\n   \\\\]\\n\\n3. Combine like terms:\\n   \\\\[\\n   2x + 1.00 = 1.10\\n   \\\\]\\n\\n4. Subtract \\\\(1.00\\\\) from both sides:\\n   \\\\[\\n   2x = 0.10\\n   \\\\]\\n\\n5. Divide both sides by 2:\\n   \\\\[\\n   x = 0.05\\n   \\\\]\\n\\n✅ **The ball costs \\\\(\\\\$0.05\\\\) (5 cents).**\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"high\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"user\":null,\"metadata\":{},\"output_text\":\"Let the **ball** cost \\\\(x\\\\) dollars.\\n\\n1. The bat costs **$1.00 more** than the ball, so the bat costs:\\n   \\\\[\\n   x + 1.00\\n   \\\\]\\n\\n2. Together they cost **$1.10**, so:\\n   \\\\[\\n   x + (x + 1.00) = 1.10\\n   \\\\]\\n\\n3. Combine like terms:\\n   \\\\[\\n   2x + 1.00 = 1.10\\n   \\\\]\\n\\n4. Subtract \\\\(1.00\\\\) from both sides:\\n   \\\\[\\n   2x = 0.10\\n   \\\\]\\n\\n5. Divide both sides by 2:\\n   \\\\[\\n   x = 0.05\\n   \\\\]\\n\\n✅ **The ball costs \\\\(\\\\$0.05\\\\) (5 cents).**\",\"usage_metadata\":{\"input_tokens\":42,\"output_tokens\":238,\"total_tokens\":280,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":51}}}"
                   }
                 }
               ],

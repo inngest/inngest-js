@@ -6,7 +6,7 @@
           {
             "key": "host.name",
             "value": {
-              "stringValue": "Mac.localdomain"
+              "stringValue": "Scotts-MacBook-Pro.local"
             }
           },
           {
@@ -24,7 +24,7 @@
           {
             "key": "process.pid",
             "value": {
-              "intValue": 90049
+              "intValue": 34770
             }
           },
           {
@@ -36,7 +36,7 @@
           {
             "key": "process.executable.path",
             "value": {
-              "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+              "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
             }
           },
           {
@@ -45,7 +45,7 @@
               "arrayValue": {
                 "values": [
                   {
-                    "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+                    "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
                   },
                   {
                     "stringValue": "--require"
@@ -63,7 +63,7 @@
           {
             "key": "process.runtime.version",
             "value": {
-              "stringValue": "24.13.1"
+              "stringValue": "22.22.2"
             }
           },
           {
@@ -125,12 +125,12 @@
           },
           "spans": [
             {
-              "traceId": "f4d5f632e8f3495b35a51c53d4f43013",
-              "spanId": "5c584938b1fcf355",
+              "traceId": "11583ba7a48660d5ba83721e729fded9",
+              "spanId": "1de93431df05db47",
               "name": "OpenAI.embeddings",
               "kind": 1,
-              "startTimeUnixNano": "1780441267558000000",
-              "endTimeUnixNano": "1780441267694131209",
+              "startTimeUnixNano": "1781569375026000000",
+              "endTimeUnixNano": "1781569375266155709",
               "attributes": [
                 {
                   "key": "user.id",

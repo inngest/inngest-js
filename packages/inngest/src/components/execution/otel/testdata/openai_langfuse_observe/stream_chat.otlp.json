@@ -6,7 +6,7 @@
           {
             "key": "host.name",
             "value": {
-              "stringValue": "Mac.localdomain"
+              "stringValue": "Scotts-MacBook-Pro.local"
             }
           },
           {
@@ -24,7 +24,7 @@
           {
             "key": "process.pid",
             "value": {
-              "intValue": 90049
+              "intValue": 34770
             }
           },
           {
@@ -36,7 +36,7 @@
           {
             "key": "process.executable.path",
             "value": {
-              "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+              "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
             }
           },
           {
@@ -45,7 +45,7 @@
               "arrayValue": {
                 "values": [
                   {
-                    "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+                    "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
                   },
                   {
                     "stringValue": "--require"
@@ -63,7 +63,7 @@
           {
             "key": "process.runtime.version",
             "value": {
-              "stringValue": "24.13.1"
+              "stringValue": "22.22.2"
             }
           },
           {
@@ -125,12 +125,12 @@
           },
           "spans": [
             {
-              "traceId": "86a472475f9372999ad6aa874e12df16",
-              "spanId": "30aed59495f699d5",
+              "traceId": "8a960397a4fd5bd17a528aa86bd5b16a",
+              "spanId": "87dea559c6f629a9",
               "name": "OpenAI.chat",
               "kind": 1,
-              "startTimeUnixNano": "1780441266156000000",
-              "endTimeUnixNano": "1780441266709381625",
+              "startTimeUnixNano": "1781569372602000000",
+              "endTimeUnixNano": "1781569372891216000",
               "attributes": [
                 {
                   "key": "user.id",
@@ -195,7 +195,7 @@
                 {
                   "key": "langfuse.observation.completion_start_time",
                   "value": {
-                    "stringValue": "\"2026-06-02T23:01:06.474Z\""
+                    "stringValue": "\"2026-06-16T00:22:52.767Z\""
                   }
                 }
               ],

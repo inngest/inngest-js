@@ -6,7 +6,7 @@
           {
             "key": "host.name",
             "value": {
-              "stringValue": "Mac.localdomain"
+              "stringValue": "Scotts-MacBook-Pro.local"
             }
           },
           {
@@ -24,7 +24,7 @@
           {
             "key": "process.pid",
             "value": {
-              "intValue": 90049
+              "intValue": 34770
             }
           },
           {
@@ -36,7 +36,7 @@
           {
             "key": "process.executable.path",
             "value": {
-              "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+              "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
             }
           },
           {
@@ -45,7 +45,7 @@
               "arrayValue": {
                 "values": [
                   {
-                    "stringValue": "/nix/store/0rb3g0249h5y7bzzcavsjj7s6hhpabdy-nodejs-24.13.1/bin/node"
+                    "stringValue": "/nix/store/nr8415papcsk0rgkq6irdbc091i9xd05-nodejs-slim-22.22.2/bin/node"
                   },
                   {
                     "stringValue": "--require"
@@ -63,7 +63,7 @@
           {
             "key": "process.runtime.version",
             "value": {
-              "stringValue": "24.13.1"
+              "stringValue": "22.22.2"
             }
           },
           {
@@ -125,12 +125,12 @@
           },
           "spans": [
             {
-              "traceId": "112f0ac11a707ae86e5beeca4e69c274",
-              "spanId": "0eff81027f19c6cc",
+              "traceId": "a8ded4bed4dcece52090e0b908b8fdf9",
+              "spanId": "f950a48a0edd469b",
               "name": "OpenAI.responses",
               "kind": 1,
-              "startTimeUnixNano": "1780441264063000000",
-              "endTimeUnixNano": "1780441264969987000",
+              "startTimeUnixNano": "1781569370472000000",
+              "endTimeUnixNano": "1781569371373545583",
               "attributes": [
                 {
                   "key": "user.id",
@@ -183,13 +183,13 @@
                 {
                   "key": "langfuse.observation.output",
                   "value": {
-                    "stringValue": "Once upon a moonlit night, a gentle unicorn tucked in the stars with its shimmering horn, humming lullabies until the whole sky drifted off to sleep."
+                    "stringValue": "In the quiet glow of moonlight, a kind unicorn tiptoed through the meadow, sprinkling stardust on sleepy flowers until every dream in the night felt safe and bright."
                   }
                 },
                 {
                   "key": "langfuse.observation.usage_details",
                   "value": {
-                    "stringValue": "{\"input\":17,\"output\":36,\"total\":53,\"input_cached_tokens\":0,\"output_reasoning_tokens\":0}"
+                    "stringValue": "{\"input\":17,\"output\":41,\"total\":58,\"input_cached_tokens\":0,\"output_reasoning_tokens\":0}"
                   }
                 },
                 {

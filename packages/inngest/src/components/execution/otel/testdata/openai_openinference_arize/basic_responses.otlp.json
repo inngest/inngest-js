@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "3d88fb8475a5862cdd03df2a84e78e58",
-              "spanId": "a1ee169f5e03eaa5",
+              "traceId": "0b086db37621d0cad9236b48c28872db",
+              "spanId": "caa21ea91828229e",
               "name": "OpenAI Responses",
               "kind": 1,
-              "startTimeUnixNano": "1780434771108000000",
-              "endTimeUnixNano": "1780434772157110083",
+              "startTimeUnixNano": "1781569364990000000",
+              "endTimeUnixNano": "1781569365882716750",
               "attributes": [
                 {
                   "key": "openinference.span.kind",
@@ -102,7 +102,7 @@
                 {
                   "key": "output.value",
                   "value": {
-                    "stringValue": "{\"id\":\"resp_05b43dbc82c0dbda006a1f475336dc8198aa7fd44bc7245aa6\",\"object\":\"response\",\"created_at\":1780434771,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1780434771,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_05b43dbc82c0dbda006a1f475386fc8198a601a9ddc5f50a1e\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"On the softest moonlit night, a gentle unicorn trotted through a field of sleeping flowers, sprinkling stardust on each petal until every leaf whispered, “Goodnight,” and the whole world drifted into dreams.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"none\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":17,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":51,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":68},\"user\":null,\"metadata\":{},\"output_text\":\"On the softest moonlit night, a gentle unicorn trotted through a field of sleeping flowers, sprinkling stardust on each petal until every leaf whispered, “Goodnight,” and the whole world drifted into dreams.\"}"
+                    "stringValue": "{\"id\":\"resp_0db8c66dba3e06d1006a309755190c819a8443a47fb5dc1e53\",\"object\":\"response\",\"created_at\":1781569365,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1781569365,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_0db8c66dba3e06d1006a30975555b8819a8b41b0fdfcae091c\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"Under a velvet night sky, a gentle unicorn tiptoed through a moonlit meadow, sprinkling stardust on sleepy flowers until every petal yawned into dreams.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"none\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":17,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":40,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":57},\"user\":null,\"metadata\":{},\"output_text\":\"Under a velvet night sky, a gentle unicorn tiptoed through a moonlit meadow, sprinkling stardust on sleepy flowers until every petal yawned into dreams.\"}"
                   }
                 },
                 {
@@ -126,13 +126,13 @@
                 {
                   "key": "llm.output_messages.0.message.contents.0.message_content.text",
                   "value": {
-                    "stringValue": "On the softest moonlit night, a gentle unicorn trotted through a field of sleeping flowers, sprinkling stardust on each petal until every leaf whispered, “Goodnight,” and the whole world drifted into dreams."
+                    "stringValue": "Under a velvet night sky, a gentle unicorn tiptoed through a moonlit meadow, sprinkling stardust on sleepy flowers until every petal yawned into dreams."
                   }
                 },
                 {
                   "key": "llm.token_count.completion",
                   "value": {
-                    "intValue": 51
+                    "intValue": 40
                   }
                 },
                 {
@@ -144,7 +144,7 @@
                 {
                   "key": "llm.token_count.total",
                   "value": {
-                    "intValue": 68
+                    "intValue": 57
                   }
                 },
                 {

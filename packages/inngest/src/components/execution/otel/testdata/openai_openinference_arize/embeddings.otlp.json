@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "52a636620d9350f4dc0a1506357badc9",
-              "spanId": "46ab6f1425084158",
+              "traceId": "f1dd0b175dff2c37738e11bfbcc5ef25",
+              "spanId": "cdc0beb9b7cd880f",
               "name": "OpenAI Embeddings",
               "kind": 1,
-              "startTimeUnixNano": "1780434774514000000",
-              "endTimeUnixNano": "1780434774645574750",
+              "startTimeUnixNano": "1781569369082000000",
+              "endTimeUnixNano": "1781569369285287542",
               "attributes": [
                 {
                   "key": "openinference.span.kind",
