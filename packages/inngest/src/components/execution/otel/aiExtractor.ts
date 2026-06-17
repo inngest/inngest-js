@@ -1,4 +1,5 @@
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
+import { isRecord } from "../../../helpers/types.ts";
 
 /**
  * AI metadata extracted from a span's attributes.
@@ -76,21 +77,14 @@ interface Mapping {
 const langfuseUsagePrefix = "__langfuse.usage_details.";
 
 /**
- * The `langfuse.observation.usage_details` JSON blob (e.g.
- * `{"input":17,"output":36,"total":53}`). Langfuse emits more counts (cached,
- * reasoning, …), but this extractor only reads the ones it tracks.
+ * The usage counts we lift out of the `langfuse.observation.usage_details` JSON
+ * blob (e.g. `{"input":17,"output":36,"total":53}`). Langfuse emits more counts
+ * (cached, reasoning, …), but this extractor only reads the ones it tracks.
  */
-interface LangfuseUsageDetails {
-  input?: number;
-  output?: number;
-  total?: number;
-}
-
-/** The usage counts we lift out of the Langfuse blob. */
 const langfuseUsageKeys = ["input", "output", "total"] as const;
 
 /**
- * Parses the {@link LangfuseUsageDetails} JSON blob and emits a synthetic
+ * Parses the `langfuse.observation.usage_details` JSON blob and emits a synthetic
  * scalar attribute for each count we track. Only `input`, `output`, and `total`
  * are emitted; the other counts are intentionally dropped since this extractor
  * tracks input, output, and total tokens alone.
@@ -109,15 +103,13 @@ const expandLangfuseUsageDetails = (
     return {};
   }
 
-  if (typeof parsed !== "object" || parsed === null) {
+  if (!isRecord(parsed)) {
     return {};
   }
 
-  const counts = parsed as LangfuseUsageDetails;
-
   const out: Record<string, AttributeValue> = {};
   for (const key of langfuseUsageKeys) {
-    const count = counts[key];
+    const count = parsed[key];
     if (typeof count === "number") {
       out[`${langfuseUsagePrefix}${key}`] = count;
     }
@@ -321,22 +313,22 @@ export const extractAIMetadataFromAttributes = (
   const metadata: AIMetadata = {};
 
   const model = candidates.model?.value;
-  if (typeof model === "string" && model !== "") {
+  if (typeof model === "string" && model) {
     metadata.model = model;
   }
 
   const responseModel = candidates.responseModel?.value;
-  if (typeof responseModel === "string" && responseModel !== "") {
+  if (typeof responseModel === "string" && responseModel) {
     metadata.responseModel = responseModel;
   }
 
   const system = candidates.system?.value;
-  if (typeof system === "string" && system !== "") {
+  if (typeof system === "string" && system) {
     metadata.system = system;
   }
 
   const responseId = candidates.responseId?.value;
-  if (typeof responseId === "string" && responseId !== "") {
+  if (typeof responseId === "string" && responseId) {
     metadata.responseId = responseId;
   }
 
