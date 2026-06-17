@@ -19,23 +19,89 @@ export interface AIMetadata {
  * numbers override higher numbers.
  */
 enum Convention {
-  Semconv = 1,
-  OpenInference = 2,
-  Vercel = 3,
+  Langfuse = 1,
+  Semconv = 2,
+  OpenInference = 3,
+  Vercel = 4,
 }
 
 type Field = keyof AIMetadata;
 
 interface Mapping {
-  field: Field;
+  /**
+   * The canonical {@link AIMetadata} field this attribute populates. Omitted
+   * for composite attributes that only carry an {@link Mapping.expand}.
+   */
+  field?: Field;
   convention: Convention;
+  /**
+   * Composite attributes (e.g. a JSON blob of token counts) provide an
+   * `expand` that explodes the raw value into synthetic scalar attributes,
+   * each re-matched against {@link keyFieldMap}.
+   */
+  expand?: (value: AttributeValue) => Record<string, AttributeValue>;
 }
+
+/**
+ * Prefix for the synthetic attributes produced by
+ * {@link expandLangfuseUsageDetails}, kept distinct from any real attribute
+ * namespace.
+ */
+const langfuseUsagePrefix = "__langfuse.usage_details.";
+
+/**
+ * Parses the `langfuse.observation.usage_details` JSON blob (e.g.
+ * `{"input":17,"output":36,"total":53}`) and emits a synthetic scalar
+ * attribute for each count we track. Only `input` is emitted; the other counts
+ * (output, total, cached, reasoning, …) are intentionally dropped since this
+ * extractor tracks input tokens alone.
+ */
+const expandLangfuseUsageDetails = (
+  value: AttributeValue,
+): Record<string, AttributeValue> => {
+  if (typeof value !== "string" || value === "") {
+    return {};
+  }
+
+  let counts: unknown;
+  try {
+    counts = JSON.parse(value);
+  } catch {
+    return {};
+  }
+
+  if (typeof counts !== "object" || counts === null) {
+    return {};
+  }
+
+  const input = (counts as Record<string, unknown>).input;
+  if (typeof input !== "number") {
+    return {};
+  }
+
+  return { [`${langfuseUsagePrefix}input`]: input };
+};
 
 /**
  * Maps a source attribute key to the canonical {@link AIMetadata} field it
  * populates and the convention it belongs to.
  */
 const keyFieldMap: Record<string, Mapping> = {
+  // Langfuse (`langfuse.*` telemetry). Langfuse reports token usage as a single
+  // JSON blob under `usage_details`; it is expanded into synthetic per-count
+  // attributes that are matched back through this map. Langfuse only emits a
+  // response model (not the requested model), which this extractor doesn't
+  // track, so no `model` mapping is registered here. Langfuse outranks the
+  // other conventions when several are present on one span.
+  "langfuse.observation.usage_details": {
+    convention: Convention.Langfuse,
+    expand: expandLangfuseUsageDetails,
+  },
+  [`${langfuseUsagePrefix}input`]: {
+    field: "inputTokens",
+    convention: Convention.Langfuse,
+  },
+
   // OpenTelemetry Semantic Conventions
   "gen_ai.request.model": { field: "model", convention: Convention.Semconv },
   "gen_ai.usage.input_tokens": {
@@ -83,6 +149,16 @@ export const extractAIMetadataFromAttributes = (
   // Track the highest-precedence (lowest convention) candidate seen per field.
   const candidates: Partial<Record<Field, Candidate>> = {};
 
+  const record = (mapping: Mapping, value: AttributeValue) => {
+    if (!mapping.field) {
+      return;
+    }
+    const existing = candidates[mapping.field];
+    if (!existing || mapping.convention < existing.convention) {
+      candidates[mapping.field] = { value, convention: mapping.convention };
+    }
+  };
+
   for (const [key, value] of Object.entries(attributes)) {
     if (value === undefined) {
       continue;
@@ -93,10 +169,21 @@ export const extractAIMetadataFromAttributes = (
       continue;
     }
 
-    const existing = candidates[mapping.field];
-    if (!existing || mapping.convention < existing.convention) {
-      candidates[mapping.field] = { value, convention: mapping.convention };
+    // Composite attribute: explode into synthetic children and match each back
+    // through the map.
+    if (mapping.expand) {
+      for (const [childKey, childValue] of Object.entries(
+        mapping.expand(value),
+      )) {
+        const childMapping = keyFieldMap[childKey];
+        if (childMapping) {
+          record(childMapping, childValue);
+        }
+      }
+      continue;
     }
+
+    record(mapping, value);
   }
 
   const metadata: AIMetadata = {};
