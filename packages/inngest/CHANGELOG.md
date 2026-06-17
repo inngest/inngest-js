@@ -1,5 +1,29 @@
 # inngest
 
+## 4.6.0
+
+### Minor Changes
+
+- [#1567](https://github.com/inngest/inngest-js/pull/1567) [`1c3ad876`](https://github.com/inngest/inngest-js/commit/1c3ad87606cea9441f2e01c4f44d2ed81cef8621) Thanks [@Linell](https://github.com/Linell)! - Deprecate `optimizeParallelism: false` — use `group.parallel({ mode: "race" })` for race semantics instead. Opting out prevents runs from resuming checkpointing after a `Promise.all`.
+
+- [#1568](https://github.com/inngest/inngest-js/pull/1568) [`bd6016c1`](https://github.com/inngest/inngest-js/commit/bd6016c18d135be04853f3fd72f5ba604ce9857c) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing OTel instrumented LLM calls
+
+### Patch Changes
+
+- [#1561](https://github.com/inngest/inngest-js/pull/1561) [`ba9874dc`](https://github.com/inngest/inngest-js/commit/ba9874dc4275592922ae5d9b1ea51a4ff60b2000) Thanks [@rhino1998](https://github.com/rhino1998)! - feat(experiments): Rename experiment_name -> experiment in metadata
+
+## 4.5.1
+
+### Patch Changes
+
+- [#1551](https://github.com/inngest/inngest-js/pull/1551) [`0af90c3c`](https://github.com/inngest/inngest-js/commit/0af90c3cc98680bed38c1c1ec02a5461d28ce228) Thanks [@rhino1998](https://github.com/rhino1998)! - fix: Add step attribution attributes to all extended trace spans
+
+- [#1556](https://github.com/inngest/inngest-js/pull/1556) [`5bd87775`](https://github.com/inngest/inngest-js/commit/5bd8777594a601e5cb08cd451fb47850ec9e8fe9) Thanks [@Linell](https://github.com/Linell)! - Update internal tracing values used for identifying checkpointed data.
+
+- [#1548](https://github.com/inngest/inngest-js/pull/1548) [`7be1cee3`](https://github.com/inngest/inngest-js/commit/7be1cee32b8451fac9a1b88ab67431be0851ce71) Thanks [@amh4r](https://github.com/amh4r)! - Fix unnecessary outgoing Durable Endpoint request
+
+- [#1511](https://github.com/inngest/inngest-js/pull/1511) [`79558be2`](https://github.com/inngest/inngest-js/commit/79558be210b784b95ea26b36d1f70798548e7707) Thanks [@Linell](https://github.com/Linell)! - Fix duplicate execution when response terminates early
+
 ## 4.5.0
 
 ### Minor Changes

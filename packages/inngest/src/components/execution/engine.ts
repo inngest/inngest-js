@@ -90,6 +90,12 @@ import {
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
+  type AIMetadata,
+  aggregate as aggregateAIMetadata,
+  toInngestAIMetadataValues,
+} from "./otel/aiExtractor.ts";
+import { metadataSpanProcessor } from "./otel/metadataProcessor.ts";
+import {
   buildSseMetadataEvent,
   prependToStream,
   type SseResponse,
@@ -306,6 +312,28 @@ class InngestExecutionEngine
                 runId: this.options.runId,
                 traceparent: this.options.headers[headerKeys.TraceParent],
                 tracestate: this.options.headers[headerKeys.TraceState],
+              });
+
+              // The metadata span processor is independent of the Extended
+              // Traces processor above.
+              metadataSpanProcessor.declareStartingSpan({
+                span,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                onAIMetadata: (aiMetadata) => {
+                  // Only attribute AI metadata to spans ending while a
+                  // step's userland code is executing;
+                  if (!this.state.executingStep) {
+                    return;
+                  }
+
+                  this.state.executingStepAIMetadata = this.state
+                    .executingStepAIMetadata
+                    ? aggregateAIMetadata(
+                        this.state.executingStepAIMetadata,
+                        aiMetadata,
+                      )
+                    : aiMetadata;
+                },
               });
 
               return this._start()
@@ -1662,6 +1690,12 @@ class InngestExecutionEngine
         );
     }
 
+    // Reset the per-step AI metadata accumulator. The metadata processor's
+    // sink (registered at run start) folds into it only while `executingStep`
+    // is set; an explicit reset here guards against residue from error paths
+    // that never reached this step's drain.
+    this.state.executingStepAIMetadata = undefined;
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
@@ -1697,6 +1731,15 @@ class InngestExecutionEngine
           clientProcessorMap
             .get(this.options.client)
             ?.clearStepExecution(this.rootSpanId);
+        }
+
+        // Drain the per-step AI metadata accumulator and attach it to the
+        // step's op.
+        const aiMetadata = this.state.executingStepAIMetadata;
+        this.state.executingStepAIMetadata = undefined;
+        const aiValues = aiMetadata && toInngestAIMetadataValues(aiMetadata);
+        if (aiValues) {
+          this.addMetadata(id, "inngest.ai", "step", "merge", aiValues);
         }
 
         if (store?.execution) {
@@ -3004,6 +3047,14 @@ export interface ExecutionState {
    * platforms.
    */
   executingStep?: Readonly<Omit<OutgoingOp, "id">>;
+
+  /**
+   * AI metadata accumulated from userland OTel spans that ended while the
+   * current step was executing, pushed by the metadata span processor's sink
+   * and drained into the step's outgoing op in the step's teardown. Only set
+   * while `executingStep` is.
+   */
+  executingStepAIMetadata?: AIMetadata;
 
   /**
    * A map of step IDs to their data, used to fill previously-completed steps

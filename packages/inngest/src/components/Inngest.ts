@@ -20,7 +20,11 @@ import {
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { formatLogMessage, type StructuredLogMessage } from "../helpers/log.ts";
+import {
+  formatLogMessage,
+  type StructuredLogMessage,
+  warnOnce,
+} from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
@@ -51,6 +55,7 @@ import {
   sendEventResponseSchema,
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
+import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -337,6 +342,16 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
 
+    // Warned here rather than per-function so internal SDK functions
+    // inheriting this setting don't each warn.
+    if (this.options.optimizeParallelism === false) {
+      warnOnce(
+        this[internalLoggerSymbol],
+        `optimize-parallelism-deprecated:${this.id}`,
+        '`optimizeParallelism: false` is deprecated; use `group.parallel({ mode: "race" }, ...)` for race semantics instead',
+      );
+    }
+
     this.middleware = [
       ...builtInMiddleware(this._logger),
       ...(middleware ?? []),
@@ -345,6 +360,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     for (const mw of this.middleware) {
       mw.onRegister?.({ client: this, fn: null });
     }
+
+    // Attach the read-only AI metadata span processor to whatever global OTel
+    // provider already exists. Idempotent across clients; only attaches once.
+    metadataSpanProcessor.attach();
 
     this._appVersion = appVersion;
   }
