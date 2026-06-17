@@ -205,12 +205,20 @@ export function buildTarget(
   )
     throw new Error(`step() was called without a value, but ${stepCtxReason}`);
 
+  const targetAttempt =
+    config.attempt !== undefined
+      ? (config.attempt ?? ctxAttempt)
+      : config.stepId === null
+        ? ctxAttempt
+        : undefined;
+
   if (config.spanId !== undefined) {
     return {
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
-      step_attempt: config.attempt ?? ctxAttempt,
+      step_attempt:
+        targetAttempt ?? (config.stepId === undefined ? ctxAttempt : undefined),
       span_id: config.spanId,
     };
   } else if (config.stepId !== undefined) {
@@ -218,7 +226,7 @@ export function buildTarget(
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
-      step_attempt: config.attempt ?? ctxAttempt,
+      step_attempt: targetAttempt,
     };
   } else if (config.runId !== undefined) {
     return {

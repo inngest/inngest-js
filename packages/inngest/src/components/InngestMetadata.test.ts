@@ -95,7 +95,20 @@ describe("buildTarget", () => {
 
     expect(target).toEqual({
       run_id: "other-run",
-      step_attempt: 1,
+      step_id: "custom-step",
+    });
+  });
+
+  test("does not leak context attempt into explicit step target", () => {
+    const target = buildTarget({ stepId: "custom-step" }, {
+      execution: {
+        ctx: { runId: "current-run", attempt: 1 },
+        executingStep: { id: "step-ctx" },
+      },
+    } as unknown as als.AsyncContext);
+
+    expect(target).toEqual({
+      run_id: "current-run",
       step_id: "custom-step",
     });
   });
