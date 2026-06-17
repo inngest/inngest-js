@@ -1,0 +1,16 @@
+[
+  {
+    "span": "ai.streamText.doStream",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "inputTokens": 11
+    }
+  },
+  {
+    "span": "ai.streamText",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "inputTokens": 11
+    }
+  }
+]

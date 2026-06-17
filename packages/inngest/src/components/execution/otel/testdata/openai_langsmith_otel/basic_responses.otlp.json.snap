@@ -1,0 +1,9 @@
+[
+  {
+    "span": "ChatOpenAI",
+    "metadata": {
+      "model": "gpt-5.4-nano",
+      "inputTokens": 17
+    }
+  }
+]
