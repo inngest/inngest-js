@@ -371,12 +371,11 @@ export class InngestSpanProcessor implements SpanProcessor {
 
       if (spanParentId === parentState.rootSpanId) {
         if (stepCtx) {
-          const seed = stepCtx.hashedStepId + ":" + String(stepCtx.attempt);
-          const newSpanId = deterministicSpanID(seed);
+          const newSpanId = deterministicSpanID(stepCtx.hashedStepId);
           trackDebug(
             "setting inngest.step.parentSpanId=%s (seed=%s) on span %s step %s index %d attempt %d",
             newSpanId,
-            seed,
+            stepCtx.hashedStepId,
             spanId,
             stepCtx.id,
             stepCtx.index,
