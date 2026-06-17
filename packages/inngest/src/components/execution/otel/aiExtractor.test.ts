@@ -13,9 +13,9 @@ import {
 /**
  * These fixtures are real OTLP/JSON spans captured from instrumented OpenAI SDK
  * calls, copied from the Inngest server-side extractor's test suite. Each
- * `<variant>.otlp.json` has a sibling `<variant>.otlp.json.out` golden that
- * records, per span, the metadata the server extracts. We assert only the
- * subset this extractor implements (`model` and `input_tokens`).
+ * `<variant>.otlp.json` has a sibling `<variant>.otlp.json.snap` Vitest file
+ * snapshot recording, per span, the metadata this extractor produces. Run
+ * `pnpm test -- -u` to regenerate the snapshots after intentional changes.
  */
 const testdataDir = join(dirname(fileURLToPath(import.meta.url)), "testdata");
 
@@ -82,63 +82,12 @@ const loadOtlpSpans = (fixturePath: string): OtlpSpan[] => {
   return spans;
 };
 
-/** The fields of a golden block this extractor is responsible for. */
-interface GoldenMetadata {
-  model?: string;
-  inputTokens?: number;
-}
-
-/**
- * Parse a golden `.out` file into one expected metadata entry per span, in
- * document order. Each block is `SPAN <name>` followed by either a JSON object
- * or the literal `no AI metadata extracted`. We keep only the two fields this
- * extractor produces, treating empty/zero values as absent (the server golden
- * always renders them, this extractor omits them).
- */
-const loadGolden = (goldenPath: string): GoldenMetadata[] => {
-  const lines = readFileSync(goldenPath, "utf8").split("\n");
-  const blocks: GoldenMetadata[] = [];
-
-  let body: string[] = [];
-  let inBlock = false;
-
-  const flush = () => {
-    if (!inBlock) return;
-    const text = body.join("\n").trim();
-    if (text === "" || text === "no AI metadata extracted") {
-      blocks.push({});
-    } else {
-      const parsed = JSON.parse(text) as {
-        model?: string;
-        input_tokens?: number;
-      };
-      blocks.push({
-        model: parsed.model || undefined,
-        inputTokens: parsed.input_tokens || undefined,
-      });
-    }
-    body = [];
-  };
-
-  for (const line of lines) {
-    if (line.startsWith("SPAN ")) {
-      flush();
-      inBlock = true;
-      continue;
-    }
-    if (inBlock) body.push(line);
-  }
-  flush();
-
-  return blocks;
-};
-
 const discoverFixtures = (): {
   name: string;
   jsonPath: string;
-  outPath: string;
+  snapPath: string;
 }[] => {
-  const out: { name: string; jsonPath: string; outPath: string }[] = [];
+  const out: { name: string; jsonPath: string; snapPath: string }[] = [];
   for (const dir of readdirSync(testdataDir, { withFileTypes: true })) {
     if (!dir.isDirectory()) continue;
     const dirPath = join(testdataDir, dir.name);
@@ -147,7 +96,7 @@ const discoverFixtures = (): {
       out.push({
         name: `${dir.name}/${file}`,
         jsonPath: join(dirPath, file),
-        outPath: join(dirPath, `${file}.out`),
+        snapPath: join(dirPath, `${file}.snap`),
       });
     }
   }
@@ -162,17 +111,20 @@ describe("extractAIMetadataFromAttributes", () => {
       expect(fixtures.length).toBeGreaterThan(0);
     });
 
-    for (const { name, jsonPath, outPath } of fixtures) {
-      test(name, () => {
+    for (const { name, jsonPath, snapPath } of fixtures) {
+      test(name, async () => {
         const spans = loadOtlpSpans(jsonPath);
-        const golden = loadGolden(outPath);
 
-        expect(spans.length).toBe(golden.length);
+        // One entry per span, in document order: the span name alongside the
+        // metadata this extractor produces for it.
+        const extracted = spans.map((span) => ({
+          span: span.name,
+          metadata: extractAIMetadataFromAttributes(span.attributes),
+        }));
 
-        spans.forEach((span, i) => {
-          const extracted = extractAIMetadataFromAttributes(span.attributes);
-          expect(extracted, `span ${i} (${span.name})`).toEqual(golden[i]);
-        });
+        await expect(
+          `${JSON.stringify(extracted, null, 2)}\n`,
+        ).toMatchFileSnapshot(snapPath);
       });
     }
   });
@@ -191,6 +143,32 @@ describe("extractAIMetadataFromAttributes", () => {
       "gen_ai.usage.input_tokens": 22,
     });
     expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
+  });
+
+  test("langfuse input tokens win over a co-present gen_ai count", () => {
+    const attributes = {
+      "gen_ai.response.model": "gpt-4.1-nano-another",
+      "gen_ai.usage.input_tokens": 100,
+      "langfuse.observation.model.name": "gpt-4.1-nano-2025-04-14",
+      "langfuse.observation.usage_details":
+        '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
+    };
+    // Order-independent: langfuse outranks semconv regardless of key order.
+    const expected = { inputTokens: 22 };
+    expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
+    expect(
+      extractAIMetadataFromAttributes(
+        Object.fromEntries(Object.entries(attributes).reverse()),
+      ),
+    ).toEqual(expected);
+  });
+
+  test("ignores a malformed langfuse usage_details blob", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "langfuse.observation.usage_details": "not json",
+      }),
+    ).toEqual({});
   });
 });
 
