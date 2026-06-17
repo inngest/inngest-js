@@ -81,6 +81,20 @@ pnpm proto              # Generate TypeScript from .proto files
 3. `pnpm test:types` must pass (TypeScript compilation)
 4. `pnpm build` must succeed
 
+### TypeScript Conventions
+
+- **Prefer existing type guards over inline checks + `as` casts.** Before writing
+  `typeof x === "object" && x !== null` followed by `x as SomeType`, look for a
+  shared guard (e.g. `isRecord` in `src/helpers/types.ts`) that narrows the type
+  without an unchecked cast. Avoid `as` casts generally — they assert shapes the
+  compiler can't verify.
+- **Prefer truthiness for "present and non-empty" — but not at the cost of
+  narrowing.** `if (value)` excludes both `undefined` and `""`, so an explicit
+  `!== ""` is usually redundant. However, when `value` is a wider union (e.g.
+  `AttributeValue`), keep the `typeof value === "string"` guard: it's what
+  narrows the union to `string` for the assignment. Write
+  `if (typeof value === "string" && value)`, not `if (value)`.
+
 ## Architecture Deep Dive
 
 ### Core Architectural Principles
