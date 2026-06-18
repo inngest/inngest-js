@@ -27,12 +27,13 @@ context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-// Request model (not response model) and input tokens only, mapped to the
-// server's snake_case `inngest.ai` schema.
+// Span kind, model, and input tokens only, mapped to the server's snake_case
+// `inngest.ai` schema. Content attributes on the span are never extracted.
 const expectedAIMetadata = {
   kind: "inngest.ai",
   scope: "step",
   values: {
+    span_kind: "LLM",
     input_tokens: 18,
     model: "gpt-5.4-nano",
   },
