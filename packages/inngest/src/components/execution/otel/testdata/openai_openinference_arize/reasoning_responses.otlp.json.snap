@@ -2,25 +2,15 @@
   {
     "span": "OpenAI Responses",
     "metadata": {
-      "openinference.span.kind": "LLM",
-      "llm.model_name": "gpt-5.4-nano-2026-03-17",
-      "input.value": "{\"model\":\"gpt-5.4-nano\",\"input\":\"What is 17 * 24? Think briefly.\",\"reasoning\":{\"effort\":\"low\"}}",
-      "input.mime_type": "application/json",
-      "llm.invocation_parameters": "{\"model\":\"gpt-5.4-nano\",\"reasoning\":{\"effort\":\"low\"}}",
-      "llm.system": "openai",
-      "llm.provider": "openai",
-      "llm.input_messages.0.message.role": "user",
-      "llm.input_messages.0.message.content": "What is 17 * 24? Think briefly.",
-      "output.value": "{\"id\":\"resp_0bb05c8bbda65b3a006a1f4755a630819ba81985eea7461451\",\"object\":\"response\",\"created_at\":1780434773,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1780434774,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_0bb05c8bbda65b3a006a1f4755fe30819bb696d24aa869d49e\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"17 × 24 = **408**.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"low\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":17,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":13,\"output_tokens_details\":{\"reasoning_tokens\":0},\"total_tokens\":30},\"user\":null,\"metadata\":{},\"output_text\":\"17 × 24 = **408**.\"}",
-      "output.mime_type": "application/json",
-      "llm.output_messages.0.message.role": "assistant",
-      "llm.output_messages.0.message.contents.0.message_content.type": "output_text",
-      "llm.output_messages.0.message.contents.0.message_content.text": "17 × 24 = **408**.",
-      "llm.token_count.completion": 13,
-      "llm.token_count.prompt": 17,
-      "llm.token_count.total": 30,
-      "llm.token_count.prompt_details.cache_read": 0,
-      "llm.token_count.completion_details.reasoning": 0
+      "spanKind": "LLM",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "provider": "openai",
+      "system": "openai",
+      "inputTokens": 17,
+      "outputTokens": 13,
+      "totalTokens": 30,
+      "cachedInputTokens": 0,
+      "reasoningTokens": 0
     }
   }
 ]
