@@ -7,7 +7,7 @@ import Debug from "debug";
 import { isRecord } from "../../../helpers/types.ts";
 import {
   type AIMetadata,
-  extractAIMetadataFromAttributes,
+  extractOpenInferenceAttributes,
 } from "./aiExtractor.ts";
 import { debugPrefix } from "./consts.ts";
 
@@ -277,7 +277,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
         return;
       }
 
-      const aiMetadata = extractAIMetadataFromAttributes(span.attributes);
+      const aiMetadata = extractOpenInferenceAttributes(span.attributes);
       if (Object.keys(aiMetadata).length === 0) {
         return;
       }
