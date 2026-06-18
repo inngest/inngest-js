@@ -1,6 +1,15 @@
 [
   {
     "span": "OpenAI Embeddings",
-    "metadata": {}
+    "metadata": {
+      "openinference.span.kind": "EMBEDDING",
+      "embedding.model_name": "text-embedding-3-small",
+      "input.value": "The quick brown fox jumps over the lazy dog.",
+      "input.mime_type": "text/plain",
+      "llm.system": "openai",
+      "llm.provider": "openai",
+      "embedding.embeddings.0.embedding.text": "The quick brown fox jumps over the lazy dog.",
+      "embedding.embeddings.0.embedding.vector": []
+    }
   }
 ]

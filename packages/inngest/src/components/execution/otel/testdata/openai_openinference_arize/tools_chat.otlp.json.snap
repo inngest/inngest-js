@@ -2,8 +2,30 @@
   {
     "span": "OpenAI Chat Completions",
     "metadata": {
-      "model": "gpt-4.1-nano-2025-04-14",
-      "inputTokens": 56
+      "openinference.span.kind": "LLM",
+      "llm.model_name": "gpt-4.1-nano-2025-04-14",
+      "input.value": "{\"model\":\"gpt-4.1-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"What is the weather in Paris? Use the tool.\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"description\":\"Get the current weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}}],\"tool_choice\":\"auto\"}",
+      "input.mime_type": "application/json",
+      "llm.invocation_parameters": "{\"model\":\"gpt-4.1-nano\",\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"description\":\"Get the current weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}}],\"tool_choice\":\"auto\"}",
+      "llm.system": "openai",
+      "llm.provider": "openai",
+      "llm.input_messages.0.message.role": "user",
+      "llm.input_messages.0.message.content": "What is the weather in Paris? Use the tool.",
+      "llm.tools.0.tool.json_schema": "{\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"description\":\"Get the current weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}}",
+      "output.value": "{\"id\":\"chatcmpl-DmQhoinvyDnFdBrj1SRTBp0tnSdXk\",\"object\":\"chat.completion\",\"created\":1780434772,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_u2pjsFzugXyY04mM1oDWyt3q\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\": \\\"Paris\\\"}\"}}],\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":56,\"completion_tokens\":30,\"total_tokens\":86,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"service_tier\":\"default\",\"system_fingerprint\":\"fp_86d7a15f4a\"}",
+      "output.mime_type": "application/json",
+      "llm.output_messages.0.message.role": "assistant",
+      "llm.output_messages.0.message.tool_calls.0.tool_call.id": "call_u2pjsFzugXyY04mM1oDWyt3q",
+      "llm.output_messages.0.message.tool_calls.0.tool_call.function.name": "get_weather",
+      "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments": "{\"city\": \"Paris\"}",
+      "llm.finish_reason": "tool_calls",
+      "llm.token_count.completion": 30,
+      "llm.token_count.prompt": 56,
+      "llm.token_count.total": 86,
+      "llm.token_count.prompt_details.cache_read": 0,
+      "llm.token_count.prompt_details.audio": 0,
+      "llm.token_count.completion_details.audio": 0,
+      "llm.token_count.completion_details.reasoning": 0
     }
   }
 ]

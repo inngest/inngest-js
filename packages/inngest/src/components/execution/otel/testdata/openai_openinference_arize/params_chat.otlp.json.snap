@@ -2,8 +2,29 @@
   {
     "span": "OpenAI Chat Completions",
     "metadata": {
-      "model": "gpt-4.1-nano-2025-04-14",
-      "inputTokens": 22
+      "openinference.span.kind": "LLM",
+      "llm.model_name": "gpt-4.1-nano-2025-04-14",
+      "input.value": "{\"model\":\"gpt-4.1-nano\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a terse assistant.\"},{\"role\":\"user\",\"content\":\"Name three primary colors.\"}],\"temperature\":0.7,\"top_p\":0.9,\"max_tokens\":64,\"frequency_penalty\":0.2,\"presence_penalty\":0.1,\"stop\":[\"\\n\\n\"],\"seed\":42}",
+      "input.mime_type": "application/json",
+      "llm.invocation_parameters": "{\"model\":\"gpt-4.1-nano\",\"temperature\":0.7,\"top_p\":0.9,\"max_tokens\":64,\"frequency_penalty\":0.2,\"presence_penalty\":0.1,\"stop\":[\"\\n\\n\"],\"seed\":42}",
+      "llm.system": "openai",
+      "llm.provider": "openai",
+      "llm.input_messages.0.message.role": "system",
+      "llm.input_messages.0.message.content": "You are a terse assistant.",
+      "llm.input_messages.1.message.role": "user",
+      "llm.input_messages.1.message.content": "Name three primary colors.",
+      "output.value": "{\"id\":\"chatcmpl-DmQhoJiZxT6BsgDEC6bwuLQchCIE7\",\"object\":\"chat.completion\",\"created\":1780434772,\"model\":\"gpt-4.1-nano-2025-04-14\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Red, blue, yellow.\",\"refusal\":null,\"annotations\":[]},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":22,\"completion_tokens\":6,\"total_tokens\":28,\"prompt_tokens_details\":{\"cached_tokens\":0,\"audio_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0,\"audio_tokens\":0,\"accepted_prediction_tokens\":0,\"rejected_prediction_tokens\":0}},\"service_tier\":\"default\",\"system_fingerprint\":\"fp_96f2a865f6\"}",
+      "output.mime_type": "application/json",
+      "llm.output_messages.0.message.role": "assistant",
+      "llm.output_messages.0.message.content": "Red, blue, yellow.",
+      "llm.finish_reason": "stop",
+      "llm.token_count.completion": 6,
+      "llm.token_count.prompt": 22,
+      "llm.token_count.total": 28,
+      "llm.token_count.prompt_details.cache_read": 0,
+      "llm.token_count.prompt_details.audio": 0,
+      "llm.token_count.completion_details.audio": 0,
+      "llm.token_count.completion_details.reasoning": 0
     }
   }
 ]
