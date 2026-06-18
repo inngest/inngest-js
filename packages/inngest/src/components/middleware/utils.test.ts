@@ -43,6 +43,16 @@ describe("stepTypeFromOpCode", () => {
     ).toBe("realtime.publish");
   });
 
+  test("StepPlanned with type 'step.ai.wrap' returns 'ai.wrap'", () => {
+    expect(
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        { type: "step.ai.wrap" },
+        logger,
+      ),
+    ).toBe("ai.wrap");
+  });
+
   test("StepPlanned with unknown type returns 'unknown'", () => {
     expect(
       stepTypeFromOpCode(
