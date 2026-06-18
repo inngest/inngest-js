@@ -1,5 +1,23 @@
 # inngest
 
+## 4.7.0
+
+### Minor Changes
+
+- [#1577](https://github.com/inngest/inngest-js/pull/1577) [`1bc2ac7c`](https://github.com/inngest/inngest-js/commit/1bc2ac7c1949a61e472334b832691e7dfd85290e) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing LLM calls instrumented with OTel by Langfuse
+
+- [#1547](https://github.com/inngest/inngest-js/pull/1547) [`04a79c95`](https://github.com/inngest/inngest-js/commit/04a79c95294e08e04a6dd5fdd1ba3d2fc70d014c) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add `sessions` to event payloads
+
+  Pass `sessions: { [sessionKey]: sessionId }` when sending events (`inngest.send()`, `step.sendEvent()`, `EventType.create()`) to group the runs they trigger into named sessions
+
+  - `step.invoke()` accepts an explicit `sessions` option
+  - `step.waitForEvent()` results carry the matched event's `sessions`
+  - Lifecycle events (`inngest/function.finished`, `.failed`, `.cancelled`) carry the sessions of the event they report on, so `onFailure` handlers stay in the same sessions
+
+### Patch Changes
+
+- [#1588](https://github.com/inngest/inngest-js/pull/1588) [`50a349b7`](https://github.com/inngest/inngest-js/commit/50a349b772d75b0f60060afb1188116e750fe7dd) Thanks [@rhino1998](https://github.com/rhino1998)! - fix(extended traces): Emit extended trace spans parented to the finalized step span
+
 ## 4.6.0
 
 ### Minor Changes
