@@ -106,20 +106,56 @@ export const extractOpenInferenceAttributes = (
 };
 
 /**
- * Aggregates two {@link OpenInferenceAttributes} bags into one, last-write-wins:
- * `b`'s keys overwrite `a`'s, and keys present in only one input survive.
+ * Key prefixes whose values are additive across the LLM calls in a single step
+ * (token counts and costs). Every other key uses last-write-wins. Matched as
+ * prefixes so the whole `*_details.*` subtree is covered, while non-additive
+ * numeric fields outside these namespaces (e.g. `reranker.top_k`,
+ * `document.score`) correctly stay last-write-wins.
+ */
+const SUMMED_KEY_PREFIXES = ["llm.token_count.", "llm.cost."];
+
+const isSummedKey = (key: string): boolean =>
+  SUMMED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
+
+/**
+ * Aggregates two {@link OpenInferenceAttributes} bags into one, folding a later
+ * call's attributes into an earlier accumulator for a single step.
  *
- * Unlike the previous curated aggregator, no value is summed or otherwise
- * combined — within a single step the most recently ended span's attributes are
- * authoritative for any key they both carry.
+ * - Token-count and cost keys ({@link SUMMED_KEY_PREFIXES}) are **summed**, so a
+ *   step that makes several LLM calls reports their combined usage. Values are
+ *   coerced with `Number` first (OTLP/JSON may encode int64 as a quoted
+ *   string); if either side isn't numeric the sum is abandoned and `b` wins.
+ * - Every other key is **last-write-wins** (`b` overwrites `a`). Note this is
+ *   per-key for the indexed `llm.input_messages.*` / `llm.output_messages.*` /
+ *   tool-call trees: a later call with fewer messages leaves an earlier call's
+ *   higher-index entries in place. These are debug/payload fields, so the mixed
+ *   result is acceptable; the summed usage fields are the authoritative signal.
  *
- * @param a - The earlier bag.
- * @param b - The later bag, whose keys win on conflict.
+ * @param a - The accumulator (earlier calls).
+ * @param b - The later bag, whose keys win on conflict (and add for sums).
  */
 export const aggregate = (
   a: OpenInferenceAttributes,
   b: OpenInferenceAttributes,
-): OpenInferenceAttributes => ({ ...a, ...b });
+): OpenInferenceAttributes => {
+  const out: OpenInferenceAttributes = { ...a };
+
+  for (const [key, bValue] of Object.entries(b)) {
+    const aValue = out[key];
+
+    if (aValue !== undefined && isSummedKey(key)) {
+      const sum = Number(aValue) + Number(bValue);
+      if (!Number.isNaN(sum)) {
+        out[key] = sum;
+        continue;
+      }
+    }
+
+    out[key] = bValue;
+  }
+
+  return out;
+};
 
 /**
  * The bag the server stamps as `inngest.ai` step metadata. Keys are already
