@@ -156,6 +156,7 @@ describe("extractAIMetadataFromAttributes", () => {
   test("ignores unmapped, content, and sensitive keys", () => {
     expect(
       extractAIMetadataFromAttributes({
+        "openinference.span.kind": "LLM",
         "input.value": "secret prompt",
         "output.value": "secret completion",
         "llm.input_messages.0.message.content": "secret",
@@ -163,35 +164,65 @@ describe("extractAIMetadataFromAttributes", () => {
         "llm.invocation_parameters": "{}",
         "http.method": "GET",
       }),
+    ).toEqual({ spanKind: "LLM" });
+  });
+
+  test("returns nothing for non-OpenInference spans", () => {
+    // Allowlisted but generic keys must not be captured when the
+    // openinference.span.kind marker is absent.
+    expect(
+      extractAIMetadataFromAttributes({
+        "user.id": "user-123",
+        "session.id": "session-456",
+        "tool.name": "search",
+        "llm.token_count.prompt": 17,
+      }),
+    ).toEqual({});
+  });
+
+  test("returns nothing when the span kind marker is empty", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "openinference.span.kind": "",
+        "llm.model_name": "gpt-4o",
+      }),
     ).toEqual({});
   });
 
   test("coerces quoted-string int64 counts to numbers", () => {
     expect(
-      extractAIMetadataFromAttributes({ "llm.token_count.prompt": "17" }),
-    ).toEqual({ inputTokens: 17 });
+      extractAIMetadataFromAttributes({
+        "openinference.span.kind": "LLM",
+        "llm.token_count.prompt": "17",
+      }),
+    ).toEqual({ spanKind: "LLM", inputTokens: 17 });
   });
 
   test("drops empty-string text fields", () => {
-    expect(extractAIMetadataFromAttributes({ "llm.model_name": "" })).toEqual(
-      {},
-    );
+    expect(
+      extractAIMetadataFromAttributes({
+        "openinference.span.kind": "LLM",
+        "llm.model_name": "",
+      }),
+    ).toEqual({ spanKind: "LLM" });
   });
 
   test("drops non-numeric values for numeric fields", () => {
     expect(
       extractAIMetadataFromAttributes({
+        "openinference.span.kind": "LLM",
         "llm.token_count.prompt": "not-a-number",
       }),
-    ).toEqual({});
+    ).toEqual({ spanKind: "LLM" });
   });
 
   test("drops undefined values", () => {
     expect(
       extractAIMetadataFromAttributes({
+        "openinference.span.kind": "LLM",
         "llm.model_name": undefined as unknown as AttributeValue,
       }),
-    ).toEqual({});
+    ).toEqual({ spanKind: "LLM" });
   });
 });
 
