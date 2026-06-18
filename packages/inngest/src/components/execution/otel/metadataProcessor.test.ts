@@ -91,9 +91,35 @@ describe("InngestMetadataSpanProcessor", () => {
       "llm.token_count.prompt": 42,
     });
 
-    expect(pushed).toEqual([
-      { "llm.model_name": "gpt-4.1-nano", "llm.token_count.prompt": 42 },
-    ]);
+    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 42 }]);
+  });
+
+  test("captures only allowlisted fields; content never reaches the sink", () => {
+    const { processor, tracer } = setup();
+    const { root, pushed } = declaredRoot(processor, tracer);
+
+    endChild(tracer, root, "llm", {
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 42,
+      "input.value": "secret prompt",
+      "llm.input_messages.0.message.content": "secret question",
+      "llm.invocation_parameters": "{}",
+    });
+
+    // Only the allowlisted signal reaches the sink; content is never captured.
+    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 42 }]);
+  });
+
+  test("does not call the sink when a span carries only content attributes", () => {
+    const { processor, tracer } = setup();
+    const { root, pushed } = declaredRoot(processor, tracer);
+
+    endChild(tracer, root, "llm", {
+      "input.value": "secret prompt",
+      "llm.input_messages.0.message.content": "secret question",
+    });
+
+    expect(pushed).toEqual([]);
   });
 
   test("pushes once per span; aggregation is the sink owner's job", () => {
@@ -110,8 +136,8 @@ describe("InngestMetadataSpanProcessor", () => {
     });
 
     expect(pushed).toEqual([
-      { "llm.model_name": "gpt-4.1-nano", "llm.token_count.prompt": 10 },
-      { "llm.model_name": "gpt-4.1-mini", "llm.token_count.prompt": 5 },
+      { model: "gpt-4.1-nano", inputTokens: 10 },
+      { model: "gpt-4.1-mini", inputTokens: 5 },
     ]);
   });
 
@@ -139,9 +165,7 @@ describe("InngestMetadataSpanProcessor", () => {
     });
     mid.end();
 
-    expect(pushed).toEqual([
-      { "llm.model_name": "gpt-4.1-nano", "llm.token_count.prompt": 7 },
-    ]);
+    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 7 }]);
   });
 
   test("ignores spans that are not part of a declared run", () => {

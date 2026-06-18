@@ -4,20 +4,20 @@ import { fileURLToPath } from "node:url";
 import { SemanticConventions } from "@arizeai/openinference-semantic-conventions";
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
-import type { OpenInferenceAttributes } from "./aiExtractor.ts";
+import type { AIMetadata } from "./aiExtractor.ts";
 import {
   aggregate,
-  extractOpenInferenceAttributes,
-  OPENINFERENCE_ROOTS,
+  extractAIMetadataFromAttributes,
+  FIELD_SPECS,
   toInngestAIMetadataValues,
 } from "./aiExtractor.ts";
 
 /**
  * These fixtures are real OTLP/JSON spans captured from instrumented OpenAI SDK
- * calls, copied from the Inngest server-side extractor's test suite. Each
- * `<variant>.otlp.json` has a sibling `<variant>.otlp.json.snap` Vitest file
- * snapshot recording, per span, the metadata this extractor produces. Run
- * `pnpm test -- -u` to regenerate the snapshots after intentional changes.
+ * calls. Each `<variant>.otlp.json` has a sibling `<variant>.otlp.json.snap`
+ * Vitest file snapshot recording, per span, the canonical metadata this
+ * extractor produces. Run `pnpm test -- -u` to regenerate the snapshots after
+ * intentional changes.
  */
 const testdataDir = join(dirname(fileURLToPath(import.meta.url)), "testdata");
 
@@ -105,7 +105,7 @@ const discoverFixtures = (): {
   return out;
 };
 
-describe("extractOpenInferenceAttributes", () => {
+describe("extractAIMetadataFromAttributes", () => {
   describe("captured OTLP fixtures", () => {
     const fixtures = discoverFixtures();
 
@@ -118,10 +118,10 @@ describe("extractOpenInferenceAttributes", () => {
         const spans = loadOtlpSpans(jsonPath);
 
         // One entry per span, in document order: the span name alongside the
-        // OpenInference attributes this extractor captures for it.
+        // canonical metadata this extractor produces for it.
         const extracted = spans.map((span) => ({
           span: span.name,
-          metadata: extractOpenInferenceAttributes(span.attributes),
+          metadata: extractAIMetadataFromAttributes(span.attributes),
         }));
 
         await expect(
@@ -131,51 +131,64 @@ describe("extractOpenInferenceAttributes", () => {
     }
   });
 
-  test("returns empty object when no OpenInference attributes are present", () => {
+  test("maps allowlisted OpenInference keys to canonical fields", () => {
     expect(
-      extractOpenInferenceAttributes({
+      extractAIMetadataFromAttributes({
+        "openinference.span.kind": "LLM",
+        "llm.model_name": "gpt-4.1-nano",
+        "llm.provider": "openai",
+        "llm.token_count.prompt": 17,
+        "llm.token_count.completion": 41,
+        "llm.token_count.total": 58,
+        "reranker.top_k": 5,
+      }),
+    ).toEqual({
+      spanKind: "LLM",
+      model: "gpt-4.1-nano",
+      provider: "openai",
+      inputTokens: 17,
+      outputTokens: 41,
+      totalTokens: 58,
+      rerankerTopK: 5,
+    });
+  });
+
+  test("ignores unmapped, content, and sensitive keys", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "input.value": "secret prompt",
+        "output.value": "secret completion",
+        "llm.input_messages.0.message.content": "secret",
+        "llm.tools.0.tool.json_schema": "{}",
+        "llm.invocation_parameters": "{}",
         "http.method": "GET",
-        "service.name": "worker",
       }),
     ).toEqual({});
   });
 
-  test("captures bare roots and nested/indexed keys verbatim", () => {
+  test("coerces quoted-string int64 counts to numbers", () => {
     expect(
-      extractOpenInferenceAttributes({
-        "openinference.span.kind": "LLM",
-        "llm.model_name": "gpt-4.1-nano",
-        "llm.token_count.prompt": 22,
-        "llm.input_messages.0.message.role": "user",
-        "input.value": "hello",
-        metadata: '{"k":"v"}',
-        "http.method": "GET",
-      }),
-    ).toEqual({
-      "openinference.span.kind": "LLM",
-      "llm.model_name": "gpt-4.1-nano",
-      "llm.token_count.prompt": 22,
-      "llm.input_messages.0.message.role": "user",
-      "input.value": "hello",
-      metadata: '{"k":"v"}',
-    });
+      extractAIMetadataFromAttributes({ "llm.token_count.prompt": "17" }),
+    ).toEqual({ inputTokens: 17 });
   });
 
-  test("does not match keys that merely share a root prefix string", () => {
-    // `inputs` / `llms` share leading characters with roots but are distinct
-    // namespaces; only an exact root or a `<root>.` child should match.
+  test("drops empty-string text fields", () => {
+    expect(extractAIMetadataFromAttributes({ "llm.model_name": "" })).toEqual(
+      {},
+    );
+  });
+
+  test("drops non-numeric values for numeric fields", () => {
     expect(
-      extractOpenInferenceAttributes({
-        inputs: "x",
-        "llms.foo": "y",
-        "userspace.id": "z",
+      extractAIMetadataFromAttributes({
+        "llm.token_count.prompt": "not-a-number",
       }),
     ).toEqual({});
   });
 
   test("drops undefined values", () => {
     expect(
-      extractOpenInferenceAttributes({
+      extractAIMetadataFromAttributes({
         "llm.model_name": undefined as unknown as AttributeValue,
       }),
     ).toEqual({});
@@ -183,86 +196,37 @@ describe("extractOpenInferenceAttributes", () => {
 });
 
 describe("aggregate", () => {
-  test("last write wins on conflicting non-summed keys", () => {
-    const a: OpenInferenceAttributes = {
-      "llm.model_name": "gpt-4.1-nano",
-      "openinference.span.kind": "LLM",
+  test("sums token-count and cost fields across calls", () => {
+    const a: AIMetadata = {
+      inputTokens: 10,
+      totalTokens: 15,
+      totalCost: 0.001,
     };
-    const b: OpenInferenceAttributes = {
-      "llm.model_name": "gpt-4o",
-      "input.value": "second call",
+    const b: AIMetadata = {
+      inputTokens: 7,
+      totalTokens: 12,
+      totalCost: 0.002,
     };
     expect(aggregate(a, b)).toEqual({
-      "llm.model_name": "gpt-4o",
-      "openinference.span.kind": "LLM",
-      "input.value": "second call",
+      inputTokens: 17,
+      totalTokens: 27,
+      totalCost: 0.003,
     });
   });
 
-  test("sums token-count and cost keys across calls", () => {
-    const a: OpenInferenceAttributes = {
-      "llm.token_count.prompt": 10,
-      "llm.token_count.total": 15,
-      "llm.cost.total": 0.001,
-    };
-    const b: OpenInferenceAttributes = {
-      "llm.token_count.prompt": 7,
-      "llm.token_count.total": 12,
-      "llm.cost.total": 0.002,
-    };
-    expect(aggregate(a, b)).toEqual({
-      "llm.token_count.prompt": 17,
-      "llm.token_count.total": 27,
-      "llm.cost.total": 0.003,
-    });
-  });
-
-  test("sums prompt/completion detail subtrees", () => {
+  test("last-write-wins for non-summed fields", () => {
     expect(
       aggregate(
-        { "llm.token_count.completion_details.reasoning": 3 },
-        { "llm.token_count.completion_details.reasoning": 4 },
+        { model: "gpt-4.1-nano", spanKind: "LLM", rerankerTopK: 5 },
+        { model: "gpt-4o", rerankerTopK: 3 },
       ),
-    ).toEqual({ "llm.token_count.completion_details.reasoning": 7 });
+    ).toEqual({ model: "gpt-4o", spanKind: "LLM", rerankerTopK: 3 });
   });
 
-  test("coerces quoted-string int64 counts before summing", () => {
-    expect(
-      aggregate(
-        { "llm.token_count.prompt": "10" },
-        { "llm.token_count.prompt": "7" },
-      ),
-    ).toEqual({ "llm.token_count.prompt": 17 });
-  });
-
-  test("falls back to last-write-wins when a summed value is non-numeric", () => {
-    expect(
-      aggregate(
-        { "llm.token_count.prompt": 10 },
-        { "llm.token_count.prompt": "not-a-number" },
-      ),
-    ).toEqual({ "llm.token_count.prompt": "not-a-number" });
-  });
-
-  test("keeps a summed key present in only one input", () => {
-    expect(
-      aggregate(
-        { "llm.token_count.prompt": 10 },
-        { "llm.model_name": "gpt-4o" },
-      ),
-    ).toEqual({ "llm.token_count.prompt": 10, "llm.model_name": "gpt-4o" });
-  });
-
-  test("does not sum non-additive numeric fields", () => {
-    expect(aggregate({ "reranker.top_k": 5 }, { "reranker.top_k": 3 })).toEqual(
-      { "reranker.top_k": 3 },
-    );
-  });
-
-  test("keeps keys present in only one input", () => {
-    expect(aggregate({ "input.value": "a" }, { "output.value": "b" })).toEqual({
-      "input.value": "a",
-      "output.value": "b",
+  test("keeps fields present in only one input", () => {
+    expect(aggregate({ inputTokens: 10 }, { model: "gpt-4o" })).toEqual({
+      inputTokens: 10,
+      model: "gpt-4o",
     });
   });
 
@@ -272,12 +236,14 @@ describe("aggregate", () => {
 });
 
 describe("toInngestAIMetadataValues", () => {
-  test("passes the bag through verbatim", () => {
-    const bag: OpenInferenceAttributes = {
-      "llm.model_name": "gpt-4o",
-      "llm.token_count.prompt": 42,
-    };
-    expect(toInngestAIMetadataValues(bag)).toEqual(bag);
+  test("maps canonical fields onto the server's snake_case schema", () => {
+    expect(
+      toInngestAIMetadataValues({
+        model: "gpt-4o",
+        inputTokens: 42,
+        rerankerTopK: 5,
+      }),
+    ).toEqual({ model: "gpt-4o", input_tokens: 42, reranker_top_k: 5 });
   });
 
   test("returns undefined when there is nothing to emit", () => {
@@ -285,24 +251,25 @@ describe("toInngestAIMetadataValues", () => {
   });
 });
 
-describe("OPENINFERENCE_ROOTS", () => {
-  test("covers every namespace root in the OpenInference spec", () => {
-    // Derive the top-level root of every attribute-key constant the published
-    // semantic-conventions package exposes, and assert our hand-maintained
-    // root list covers them all. A new namespace in the spec fails here rather
-    // than silently dropping attributes.
-    const roots = new Set<string>(OPENINFERENCE_ROOTS);
-    const missing = new Set<string>();
+describe("FIELD_SPECS", () => {
+  test("every source key is a published OpenInference semantic convention", () => {
+    // Guards the allowlist against typos / spec renames: each source must be a
+    // real attribute-key value exported by the semantic-conventions package.
+    const known = new Set<string>(
+      Object.values(SemanticConventions).filter(
+        (value) => typeof value === "string",
+      ) as string[],
+    );
 
-    for (const value of Object.values(SemanticConventions)) {
-      if (typeof value !== "string") continue;
-      const dot = value.indexOf(".");
-      const root = dot === -1 ? value : value.slice(0, dot);
-      if (!roots.has(root)) {
-        missing.add(root);
-      }
-    }
+    const unknownSources = FIELD_SPECS.map((spec) => spec.source).filter(
+      (source) => !known.has(source),
+    );
 
-    expect([...missing]).toEqual([]);
+    expect(unknownSources).toEqual([]);
+  });
+
+  test("each canonical field is mapped at most once", () => {
+    const fields = FIELD_SPECS.map((spec) => spec.field);
+    expect(new Set(fields).size).toBe(fields.length);
   });
 });

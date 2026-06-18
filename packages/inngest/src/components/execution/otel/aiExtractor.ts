@@ -1,170 +1,322 @@
-import type { Attributes, AttributeValue } from "@opentelemetry/api";
+import type { Attributes } from "@opentelemetry/api";
 
 /**
- * A loosely-typed bag of OpenInference span attributes.
+ * Canonical AI metadata extracted from a span's OpenInference attributes.
  *
- * This captures *every* attribute a span
- * carries under an OpenInference namespace, keys verbatim, values in their
- * native OTel {@link AttributeValue} shape. The set of keys is open-ended
- * (OpenInference uses indexed/nested keys like
- * `llm.input_messages.0.message.role`), so there is no per-key schema — new and
- * indexed keys flow through untouched.
+ * The fields below are an explicit **allowlist**: only these are ever read from
+ * a span (see {@link FIELD_SPECS}). Anything not mapped — prompt/response
+ * content, messages, tool calls, embeddings, and other potentially-sensitive or
+ * bulky payloads — is never captured in the first place, so there is no
+ * separate redaction step. A field is present only when the span carried its
+ * source attribute.
  *
- * A key is only present when the span carried it; absent attributes are
- * omitted.
+ * Token-count and cost fields are summed across the LLM calls in a step; every
+ * other field is last-write-wins (see {@link aggregate}).
  */
-export type OpenInferenceAttributes = Record<string, AttributeValue>;
+export interface AIMetadata {
+  // Identity & classification (last-write-wins).
+  spanKind?: string;
+  model?: string;
+  provider?: string;
+  system?: string;
+  finishReason?: string;
+
+  // Correlation / identity (last-write-wins).
+  sessionId?: string;
+  userId?: string;
+  agentName?: string;
+  graphNodeId?: string;
+  graphNodeName?: string;
+  graphNodeParentId?: string;
+
+  // Prompt provenance (last-write-wins).
+  promptVendor?: string;
+  promptId?: string;
+  promptUrl?: string;
+  promptTemplateVersion?: string;
+
+  // Token usage (summed).
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  cacheInputTokens?: number;
+  inputAudioTokens?: number;
+  reasoningTokens?: number;
+  outputAudioTokens?: number;
+
+  // Cost (summed).
+  inputCost?: number;
+  outputCost?: number;
+  totalCost?: number;
+  inputTokenCost?: number;
+  outputTokenCost?: number;
+  cachedInputCost?: number;
+  cacheWriteCost?: number;
+  cacheInputCost?: number;
+  inputAudioCost?: number;
+  reasoningCost?: number;
+  outputAudioCost?: number;
+
+  // Embedding (last-write-wins).
+  embeddingModel?: string;
+
+  // Reranker (last-write-wins).
+  rerankerModel?: string;
+  rerankerTopK?: number;
+}
 
 /**
- * The convention-agnostic name the metadata pipeline (span processor, engine)
- * uses for the bag it carries. Those layers don't care that the payload happens
- * to be OpenInference attributes, so they refer to it as `AIMetadata`.
+ * How a field's raw attribute value is coerced and how repeated occurrences
+ * across the LLM calls in one step combine:
+ * - `text`   — string, last-write-wins
+ * - `number` — numeric, last-write-wins
+ * - `sum`    — numeric, summed
  */
-export type AIMetadata = OpenInferenceAttributes;
+type Combine = "text" | "number" | "sum";
+
+interface FieldSpec {
+  /** The canonical {@link AIMetadata} field this populates. */
+  field: keyof AIMetadata;
+  /** The source OpenInference attribute key. */
+  source: string;
+  combine: Combine;
+}
 
 /**
- * Top-level OpenInference attribute namespace roots.
- *
- * An attribute belongs to OpenInference when its key equals one of these roots
- * or sits beneath it (`<root>.…`). Roots — rather than the full constant list —
- * are matched so the entire indexed/nested tree under a namespace (e.g.
- * `llm.input_messages.0.message.contents.0.message_content.text`) is captured
- * without enumerating every key, and so attributes added by future
- * OpenInference versions are picked up automatically.
- *
- * This list is the authoritative spec surface as of
- * `@arizeai/openinference-semantic-conventions`; `aiExtractor.test.ts` asserts
- * it stays in sync with that package (a devDependency), so a new namespace in
- * the spec fails the suite rather than silently dropping attributes.
+ * The allowlist: every OpenInference attribute we capture, mapped to its
+ * canonical field. Anything not listed here (content, sensitive payloads,
+ * unknown keys) is ignored. `aiExtractor.test.ts` asserts each `source` is a
+ * published `@arizeai/openinference-semantic-conventions` key, so a spec rename
+ * fails the suite rather than silently dropping a field.
  */
-export const OPENINFERENCE_ROOTS = [
-  "openinference",
-  "llm",
-  "message",
-  "message_content",
-  "tool",
-  "tool_call",
-  "document",
-  "retrieval",
-  "reranker",
-  "embedding",
-  "prompt",
-  "input",
-  "output",
-  "image",
-  "audio",
-  "tag",
-  "metadata",
-  "graph",
-  "agent",
-  "user",
-  "session",
+export const FIELD_SPECS: readonly FieldSpec[] = [
+  // Identity & classification.
+  { field: "spanKind", source: "openinference.span.kind", combine: "text" },
+  { field: "model", source: "llm.model_name", combine: "text" },
+  { field: "provider", source: "llm.provider", combine: "text" },
+  { field: "system", source: "llm.system", combine: "text" },
+  { field: "finishReason", source: "llm.finish_reason", combine: "text" },
+
+  // Correlation / identity.
+  { field: "sessionId", source: "session.id", combine: "text" },
+  { field: "userId", source: "user.id", combine: "text" },
+  { field: "agentName", source: "agent.name", combine: "text" },
+  { field: "graphNodeId", source: "graph.node.id", combine: "text" },
+  { field: "graphNodeName", source: "graph.node.name", combine: "text" },
+  {
+    field: "graphNodeParentId",
+    source: "graph.node.parent_id",
+    combine: "text",
+  },
+
+  // Prompt provenance.
+  { field: "promptVendor", source: "prompt.vendor", combine: "text" },
+  { field: "promptId", source: "prompt.id", combine: "text" },
+  { field: "promptUrl", source: "prompt.url", combine: "text" },
+  {
+    field: "promptTemplateVersion",
+    source: "llm.prompt_template.version",
+    combine: "text",
+  },
+
+  // Token usage.
+  { field: "inputTokens", source: "llm.token_count.prompt", combine: "sum" },
+  {
+    field: "outputTokens",
+    source: "llm.token_count.completion",
+    combine: "sum",
+  },
+  { field: "totalTokens", source: "llm.token_count.total", combine: "sum" },
+  {
+    field: "cachedInputTokens",
+    source: "llm.token_count.prompt_details.cache_read",
+    combine: "sum",
+  },
+  {
+    field: "cacheWriteTokens",
+    source: "llm.token_count.prompt_details.cache_write",
+    combine: "sum",
+  },
+  {
+    field: "cacheInputTokens",
+    source: "llm.token_count.prompt_details.cache_input",
+    combine: "sum",
+  },
+  {
+    field: "inputAudioTokens",
+    source: "llm.token_count.prompt_details.audio",
+    combine: "sum",
+  },
+  {
+    field: "reasoningTokens",
+    source: "llm.token_count.completion_details.reasoning",
+    combine: "sum",
+  },
+  {
+    field: "outputAudioTokens",
+    source: "llm.token_count.completion_details.audio",
+    combine: "sum",
+  },
+
+  // Cost.
+  { field: "inputCost", source: "llm.cost.prompt", combine: "sum" },
+  { field: "outputCost", source: "llm.cost.completion", combine: "sum" },
+  { field: "totalCost", source: "llm.cost.total", combine: "sum" },
+  {
+    field: "inputTokenCost",
+    source: "llm.cost.prompt_details.input",
+    combine: "sum",
+  },
+  {
+    field: "outputTokenCost",
+    source: "llm.cost.completion_details.output",
+    combine: "sum",
+  },
+  {
+    field: "cachedInputCost",
+    source: "llm.cost.prompt_details.cache_read",
+    combine: "sum",
+  },
+  {
+    field: "cacheWriteCost",
+    source: "llm.cost.prompt_details.cache_write",
+    combine: "sum",
+  },
+  {
+    field: "cacheInputCost",
+    source: "llm.cost.prompt_details.cache_input",
+    combine: "sum",
+  },
+  {
+    field: "inputAudioCost",
+    source: "llm.cost.prompt_details.audio",
+    combine: "sum",
+  },
+  {
+    field: "reasoningCost",
+    source: "llm.cost.completion_details.reasoning",
+    combine: "sum",
+  },
+  {
+    field: "outputAudioCost",
+    source: "llm.cost.completion_details.audio",
+    combine: "sum",
+  },
+
+  // Embedding / reranker.
+  { field: "embeddingModel", source: "embedding.model_name", combine: "text" },
+  { field: "rerankerModel", source: "reranker.model_name", combine: "text" },
+  { field: "rerankerTopK", source: "reranker.top_k", combine: "number" },
 ] as const;
 
-const openInferenceRootSet = new Set<string>(OPENINFERENCE_ROOTS);
-
-/**
- * Whether an attribute key belongs to an OpenInference namespace: it is either
- * a bare root (e.g. `metadata`) or sits beneath one (e.g. `llm.token_count.…`).
- */
-const isOpenInferenceKey = (key: string): boolean => {
-  const dot = key.indexOf(".");
-  const root = dot === -1 ? key : key.slice(0, dot);
-  return openInferenceRootSet.has(root);
+/** Assigns onto an {@link AIMetadata}, narrowing the mixed string/number value. */
+const setField = (
+  metadata: AIMetadata,
+  field: keyof AIMetadata,
+  value: string | number,
+): void => {
+  (metadata as Record<string, string | number>)[field] = value;
 };
 
 /**
- * Extracts every OpenInference attribute from a span's attributes into a loose
- * bag, preserving keys and native values verbatim.
+ * Extracts canonical {@link AIMetadata} from a span's attributes.
  *
- * Capture is namespace-based: any attribute under a known OpenInference root
- * (see {@link OPENINFERENCE_ROOTS}) is included, which covers the indexed
- * message/tool/document trees and any keys newer OpenInference versions add.
- *
- * Note that payload-bearing keys such as `input.value` / `output.value` carry
- * full prompt and completion content; callers that forward this bag should be
- * mindful of size and sensitive data.
+ * Only the allowlisted {@link FIELD_SPECS} are read; every other attribute is
+ * ignored. Numeric fields are coerced with `Number` (OTLP/JSON may encode int64
+ * as a quoted string) and dropped if not a number; text fields are dropped when
+ * empty.
  *
  * @param attributes - The span attributes, as exposed by
  * `ReadableSpan.attributes`.
  */
-export const extractOpenInferenceAttributes = (
+export const extractAIMetadataFromAttributes = (
   attributes: Attributes,
-): OpenInferenceAttributes => {
-  const out: OpenInferenceAttributes = {};
+): AIMetadata => {
+  const metadata: AIMetadata = {};
 
-  for (const [key, value] of Object.entries(attributes)) {
+  for (const spec of FIELD_SPECS) {
+    const value = attributes[spec.source];
     if (value === undefined) {
       continue;
     }
-    if (isOpenInferenceKey(key)) {
-      out[key] = value;
-    }
-  }
 
-  return out;
-};
-
-/**
- * Key prefixes whose values are additive across the LLM calls in a single step
- * (token counts and costs). Every other key uses last-write-wins. Matched as
- * prefixes so the whole `*_details.*` subtree is covered, while non-additive
- * numeric fields outside these namespaces (e.g. `reranker.top_k`,
- * `document.score`) correctly stay last-write-wins.
- */
-const SUMMED_KEY_PREFIXES = ["llm.token_count.", "llm.cost."];
-
-const isSummedKey = (key: string): boolean =>
-  SUMMED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
-
-/**
- * Aggregates two {@link OpenInferenceAttributes} bags into one, folding a later
- * call's attributes into an earlier accumulator for a single step.
- *
- * - Token-count and cost keys ({@link SUMMED_KEY_PREFIXES}) are **summed**, so a
- *   step that makes several LLM calls reports their combined usage. Values are
- *   coerced with `Number` first (OTLP/JSON may encode int64 as a quoted
- *   string); if either side isn't numeric the sum is abandoned and `b` wins.
- * - Every other key is **last-write-wins** (`b` overwrites `a`). Note this is
- *   per-key for the indexed `llm.input_messages.*` / `llm.output_messages.*` /
- *   tool-call trees: a later call with fewer messages leaves an earlier call's
- *   higher-index entries in place. These are debug/payload fields, so the mixed
- *   result is acceptable; the summed usage fields are the authoritative signal.
- *
- * @param a - The accumulator (earlier calls).
- * @param b - The later bag, whose keys win on conflict (and add for sums).
- */
-export const aggregate = (
-  a: OpenInferenceAttributes,
-  b: OpenInferenceAttributes,
-): OpenInferenceAttributes => {
-  const out: OpenInferenceAttributes = { ...a };
-
-  for (const [key, bValue] of Object.entries(b)) {
-    const aValue = out[key];
-
-    if (aValue !== undefined && isSummedKey(key)) {
-      const sum = Number(aValue) + Number(bValue);
-      if (!Number.isNaN(sum)) {
-        out[key] = sum;
-        continue;
+    if (spec.combine === "text") {
+      const text = typeof value === "string" ? value : String(value);
+      if (text !== "") {
+        setField(metadata, spec.field, text);
+      }
+    } else {
+      const num = Number(value);
+      if (!Number.isNaN(num)) {
+        setField(metadata, spec.field, num);
       }
     }
+  }
 
-    out[key] = bValue;
+  return metadata;
+};
+
+/**
+ * Aggregates two {@link AIMetadata} values, folding a later call's metadata into
+ * an earlier accumulator for a single step.
+ *
+ * - Token-count and cost fields (`combine: "sum"`) are **summed**, so a step
+ *   that makes several LLM calls reports their combined usage.
+ * - Every other field is **last-write-wins** (`b` overwrites `a`).
+ *
+ * A field is present in the result only when at least one input supplies it.
+ *
+ * @param a - The accumulator (earlier calls).
+ * @param b - The later metadata, whose values win on conflict (and add for sums).
+ */
+export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
+  const out: AIMetadata = { ...a };
+
+  for (const spec of FIELD_SPECS) {
+    const bValue = b[spec.field];
+    if (bValue === undefined) {
+      continue;
+    }
+
+    if (spec.combine === "sum") {
+      const aValue = out[spec.field];
+      setField(
+        out,
+        spec.field,
+        (typeof aValue === "number" ? aValue : 0) + (bValue as number),
+      );
+    } else {
+      setField(out, spec.field, bValue);
+    }
   }
 
   return out;
 };
 
+/** Converts a canonical camelCase field name to the server's snake_case key. */
+const toSnakeCase = (field: string): string =>
+  field.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+
 /**
- * The bag the server stamps as `inngest.ai` step metadata. Keys are already
- * canonical OpenInference attribute names, so the bag is returned as-is — except
- * an empty bag becomes `undefined`, so callers can skip stamping entirely. This
- * is the seam at which any future server-bound filtering (e.g. dropping the
- * large `input.value` / `output.value` payloads) would live.
+ * Maps an {@link AIMetadata} value onto the server's `inngest.ai` metadata
+ * values, converting each canonical camelCase field to snake_case (e.g.
+ * `inputTokens` → `input_tokens`). Returns `undefined` when there is nothing to
+ * emit so callers can skip stamping metadata entirely.
  */
 export const toInngestAIMetadataValues = (
-  metadata: OpenInferenceAttributes,
-): OpenInferenceAttributes | undefined =>
-  Object.keys(metadata).length === 0 ? undefined : metadata;
+  metadata: AIMetadata,
+): Record<string, unknown> | undefined => {
+  const entries = Object.entries(metadata);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const values: Record<string, unknown> = {};
+  for (const [field, value] of entries) {
+    values[toSnakeCase(field)] = value;
+  }
+
+  return values;
+};
