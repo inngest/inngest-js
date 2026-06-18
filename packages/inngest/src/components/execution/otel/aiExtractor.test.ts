@@ -1,12 +1,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SemanticConventions } from "@arizeai/openinference-semantic-conventions";
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
-import type { AIMetadata } from "./aiExtractor.ts";
+import type { OpenInferenceAttributes } from "./aiExtractor.ts";
 import {
   aggregate,
-  extractAIMetadataFromAttributes,
+  extractOpenInferenceAttributes,
+  OPENINFERENCE_ROOTS,
   toInngestAIMetadataValues,
 } from "./aiExtractor.ts";
 
@@ -103,7 +105,7 @@ const discoverFixtures = (): {
   return out;
 };
 
-describe("extractAIMetadataFromAttributes", () => {
+describe("extractOpenInferenceAttributes", () => {
   describe("captured OTLP fixtures", () => {
     const fixtures = discoverFixtures();
 
@@ -116,10 +118,10 @@ describe("extractAIMetadataFromAttributes", () => {
         const spans = loadOtlpSpans(jsonPath);
 
         // One entry per span, in document order: the span name alongside the
-        // metadata this extractor produces for it.
+        // OpenInference attributes this extractor captures for it.
         const extracted = spans.map((span) => ({
           span: span.name,
-          metadata: extractAIMetadataFromAttributes(span.attributes),
+          metadata: extractOpenInferenceAttributes(span.attributes),
         }));
 
         await expect(
@@ -129,96 +131,118 @@ describe("extractAIMetadataFromAttributes", () => {
     }
   });
 
-  test("returns empty object when no AI attributes are present", () => {
-    expect(extractAIMetadataFromAttributes({ "http.method": "GET" })).toEqual(
-      {},
-    );
+  test("returns empty object when no OpenInference attributes are present", () => {
+    expect(
+      extractOpenInferenceAttributes({
+        "http.method": "GET",
+        "service.name": "worker",
+      }),
+    ).toEqual({});
   });
 
-  test("prefers semconv over vercel when both are present", () => {
-    const extracted = extractAIMetadataFromAttributes({
-      "ai.model.id": "vercel-model",
-      "gen_ai.request.model": "semconv-model",
-      "ai.usage.inputTokens": 10,
-      "gen_ai.usage.input_tokens": 22,
+  test("captures bare roots and nested/indexed keys verbatim", () => {
+    expect(
+      extractOpenInferenceAttributes({
+        "openinference.span.kind": "LLM",
+        "llm.model_name": "gpt-4.1-nano",
+        "llm.token_count.prompt": 22,
+        "llm.input_messages.0.message.role": "user",
+        "input.value": "hello",
+        metadata: '{"k":"v"}',
+        "http.method": "GET",
+      }),
+    ).toEqual({
+      "openinference.span.kind": "LLM",
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 22,
+      "llm.input_messages.0.message.role": "user",
+      "input.value": "hello",
+      metadata: '{"k":"v"}',
     });
-    expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
   });
 
-  test("langfuse input tokens win over a co-present gen_ai count", () => {
-    const attributes = {
-      "gen_ai.response.model": "gpt-4.1-nano-another",
-      "gen_ai.usage.input_tokens": 100,
-      "langfuse.observation.model.name": "gpt-4.1-nano-2025-04-14",
-      "langfuse.observation.usage_details":
-        '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
-    };
-    // Order-independent: langfuse outranks semconv regardless of key order.
-    const expected = { inputTokens: 22 };
-    expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
+  test("does not match keys that merely share a root prefix string", () => {
+    // `inputs` / `llms` share leading characters with roots but are distinct
+    // namespaces; only an exact root or a `<root>.` child should match.
     expect(
-      extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse()),
-      ),
-    ).toEqual(expected);
+      extractOpenInferenceAttributes({
+        inputs: "x",
+        "llms.foo": "y",
+        "userspace.id": "z",
+      }),
+    ).toEqual({});
   });
 
-  test("ignores a malformed langfuse usage_details blob", () => {
+  test("drops undefined values", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "langfuse.observation.usage_details": "not json",
+      extractOpenInferenceAttributes({
+        "llm.model_name": undefined as unknown as AttributeValue,
       }),
     ).toEqual({});
   });
 });
 
 describe("aggregate", () => {
-  test("sums input tokens and keeps the first model", () => {
-    const a: AIMetadata = { model: "gpt-4.1-nano", inputTokens: 10 };
-    const b: AIMetadata = { model: "gpt-4o", inputTokens: 22 };
-    expect(aggregate(a, b)).toEqual({ model: "gpt-4.1-nano", inputTokens: 32 });
-  });
-
-  test("falls back to the second model when the first is absent", () => {
-    expect(
-      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 }),
-    ).toEqual({ model: "gpt-4o", inputTokens: 8 });
-  });
-
-  test("treats a missing input token count as zero", () => {
-    expect(aggregate({ model: "a", inputTokens: 7 }, { model: "b" })).toEqual({
-      model: "a",
-      inputTokens: 7,
-    });
-    expect(aggregate({ model: "a" }, { model: "b", inputTokens: 4 })).toEqual({
-      model: "a",
-      inputTokens: 4,
+  test("last write wins on conflicting keys", () => {
+    const a: OpenInferenceAttributes = {
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 10,
+    };
+    const b: OpenInferenceAttributes = {
+      "llm.model_name": "gpt-4o",
+      "llm.token_count.completion": 5,
+    };
+    expect(aggregate(a, b)).toEqual({
+      "llm.model_name": "gpt-4o",
+      "llm.token_count.prompt": 10,
+      "llm.token_count.completion": 5,
     });
   });
 
-  test("omits fields absent from both inputs", () => {
+  test("keeps keys present in only one input", () => {
+    expect(aggregate({ "input.value": "a" }, { "output.value": "b" })).toEqual({
+      "input.value": "a",
+      "output.value": "b",
+    });
+  });
+
+  test("returns an empty object when both inputs are empty", () => {
     expect(aggregate({}, {})).toEqual({});
-    expect(aggregate({ model: "a" }, {})).toEqual({ model: "a" });
   });
 });
 
 describe("toInngestAIMetadataValues", () => {
-  test("maps both fields onto the server's snake_case schema", () => {
-    expect(
-      toInngestAIMetadataValues({ model: "gpt-4o", inputTokens: 42 }),
-    ).toEqual({ model: "gpt-4o", input_tokens: 42 });
-  });
-
-  test("omits absent fields rather than zero-valuing them", () => {
-    expect(toInngestAIMetadataValues({ model: "gpt-4o" })).toEqual({
-      model: "gpt-4o",
-    });
-    expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
-      input_tokens: 7,
-    });
+  test("passes the bag through verbatim", () => {
+    const bag: OpenInferenceAttributes = {
+      "llm.model_name": "gpt-4o",
+      "llm.token_count.prompt": 42,
+    };
+    expect(toInngestAIMetadataValues(bag)).toEqual(bag);
   });
 
   test("returns undefined when there is nothing to emit", () => {
     expect(toInngestAIMetadataValues({})).toBeUndefined();
+  });
+});
+
+describe("OPENINFERENCE_ROOTS", () => {
+  test("covers every namespace root in the OpenInference spec", () => {
+    // Derive the top-level root of every attribute-key constant the published
+    // semantic-conventions package exposes, and assert our hand-maintained
+    // root list covers them all. A new namespace in the spec fails here rather
+    // than silently dropping attributes.
+    const roots = new Set<string>(OPENINFERENCE_ROOTS);
+    const missing = new Set<string>();
+
+    for (const value of Object.values(SemanticConventions)) {
+      if (typeof value !== "string") continue;
+      const dot = value.indexOf(".");
+      const root = dot === -1 ? value : value.slice(0, dot);
+      if (!roots.has(root)) {
+        missing.add(root);
+      }
+    }
+
+    expect([...missing]).toEqual([]);
   });
 });

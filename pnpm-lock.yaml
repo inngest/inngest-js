@@ -186,6 +186,9 @@ importers:
       '@arethetypeswrong/cli':
         specifier: ^0.18.2
         version: 0.18.2
+      '@arizeai/openinference-semantic-conventions':
+        specifier: ^2.5.0
+        version: 2.5.0
       '@inngest/test':
         specifier: workspace:^
         version: link:../test
@@ -600,6 +603,9 @@ packages:
   '@arethetypeswrong/core@0.18.2':
     resolution: {integrity: sha512-GiwTmBFOU1/+UVNqqCGzFJYfBXEytUkiI+iRZ6Qx7KmUVtLm00sYySkfe203C9QtPG11yOz1ZaMek8dT/xnlgg==}
     engines: {node: '>=20'}
+
+  '@arizeai/openinference-semantic-conventions@2.5.0':
+    resolution: {integrity: sha512-4ZeSwiFX3YxB0WSE6x568wM4PVHiYmz3yiOxic6WGKVrE/KIGggMFP/eqUNQhikBKP68IDV0qiILlZAIYnheAQ==}
 
   '@babel/code-frame@7.23.5':
     resolution: {integrity: sha512-CgH3s1a96LipHCmSUmYFPwY7MNx8C3avkq7i4Wl3cfa662ldtUe4VM1TPXX70pfmrlWTb6jLqTYrZyT2ZTJBgA==}
@@ -5260,6 +5266,7 @@ packages:
   inngest@3.42.3:
     resolution: {integrity: sha512-jhN0jIKFnzB+zuYElKhzJ0MHVvl0AbhjPo2qcWpwjapT+t6jIV3/wqOCP0sGgMVbeluGqC6YxewJInlBTJ933A==}
     engines: {node: '>=20'}
+    deprecated: 'CRITICAL SECURITY: upgrade to >=3.54.0'
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
       '@vercel/node': '>=2.15.9'
@@ -5297,6 +5304,7 @@ packages:
   inngest@3.44.1:
     resolution: {integrity: sha512-bmWor6JlqXVR00m4KsbwTFB/QywBeshjl7W3DfSsf6bFfWkalGzq2AaNyTk6tDFJdZoZJGL1b2Plqy5ZGejQfw==}
     engines: {node: '>=20'}
+    deprecated: 'CRITICAL SECURITY: upgrade to >=3.54.0'
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
       '@vercel/node': '>=2.15.9'
@@ -7904,6 +7912,8 @@ snapshots:
       semver: 7.8.0
       typescript: 5.6.1-rc
       validate-npm-package-name: 5.0.1
+
+  '@arizeai/openinference-semantic-conventions@2.5.0': {}
 
   '@babel/code-frame@7.23.5':
     dependencies:

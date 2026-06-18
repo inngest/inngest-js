@@ -68,8 +68,8 @@ describe("InngestMetadataSpanProcessor", () => {
     // An AI span exercises the processor's read path; assert it neither adds
     // nor removes attributes relative to what the caller set.
     const aiInput = {
-      "gen_ai.request.model": "gpt-4.1-nano",
-      "gen_ai.usage.input_tokens": 42,
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 42,
     };
     const aiChild = tracer.startSpan(
       "llm",
@@ -87,11 +87,13 @@ describe("InngestMetadataSpanProcessor", () => {
     const { root, pushed } = declaredRoot(processor, tracer);
 
     endChild(tracer, root, "llm", {
-      "gen_ai.request.model": "gpt-4.1-nano",
-      "gen_ai.usage.input_tokens": 42,
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 42,
     });
 
-    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 42 }]);
+    expect(pushed).toEqual([
+      { "llm.model_name": "gpt-4.1-nano", "llm.token_count.prompt": 42 },
+    ]);
   });
 
   test("pushes once per span; aggregation is the sink owner's job", () => {
@@ -99,17 +101,17 @@ describe("InngestMetadataSpanProcessor", () => {
     const { root, pushed } = declaredRoot(processor, tracer);
 
     endChild(tracer, root, "llm-1", {
-      "gen_ai.request.model": "gpt-4.1-nano",
-      "gen_ai.usage.input_tokens": 10,
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 10,
     });
     endChild(tracer, root, "llm-2", {
-      "gen_ai.request.model": "gpt-4.1-mini",
-      "gen_ai.usage.input_tokens": 5,
+      "llm.model_name": "gpt-4.1-mini",
+      "llm.token_count.prompt": 5,
     });
 
     expect(pushed).toEqual([
-      { model: "gpt-4.1-nano", inputTokens: 10 },
-      { model: "gpt-4.1-mini", inputTokens: 5 },
+      { "llm.model_name": "gpt-4.1-nano", "llm.token_count.prompt": 10 },
+      { "llm.model_name": "gpt-4.1-mini", "llm.token_count.prompt": 5 },
     ]);
   });
 
@@ -132,12 +134,14 @@ describe("InngestMetadataSpanProcessor", () => {
       trace.setSpan(context.active(), root),
     );
     endChild(tracer, mid, "llm", {
-      "gen_ai.request.model": "gpt-4.1-nano",
-      "gen_ai.usage.input_tokens": 7,
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 7,
     });
     mid.end();
 
-    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 7 }]);
+    expect(pushed).toEqual([
+      { "llm.model_name": "gpt-4.1-nano", "llm.token_count.prompt": 7 },
+    ]);
   });
 
   test("ignores spans that are not part of a declared run", () => {
@@ -148,8 +152,8 @@ describe("InngestMetadataSpanProcessor", () => {
     // are tracked, so their AI attributes are never pushed anywhere.
     const orphan = tracer.startSpan("orphan");
     endChild(tracer, orphan, "orphan-child", {
-      "gen_ai.request.model": "gpt-4.1-nano",
-      "gen_ai.usage.input_tokens": 99,
+      "llm.model_name": "gpt-4.1-nano",
+      "llm.token_count.prompt": 99,
     });
     orphan.end();
 
