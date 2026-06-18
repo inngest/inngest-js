@@ -63,6 +63,21 @@ export const createProvider = async (
   }
 };
 
+export function warnDeprecatedCreateProviderBehaviour(
+  behaviour: Extract<Behaviour, "auto" | "createProvider">,
+): void {
+  if (behaviour === "auto") {
+    console.warn(
+      "`extendedTracesMiddleware()` falling back to creating an OpenTelemetry provider is deprecated. Use `@inngest/otel` instead.",
+    );
+    return;
+  }
+
+  console.warn(
+    '`extendedTracesMiddleware({ behaviour: "createProvider" })` is deprecated. Use `@inngest/otel` instead.',
+  );
+}
+
 /**
  * Attempts to extend the existing OTel provider with our processor. Returns true
  * if the provider was extended, false if it was not.
@@ -75,7 +90,7 @@ export const extendProvider = (
   if (!globalProvider) {
     if (behaviour !== "auto") {
       console.warn(
-        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
+        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Use `@inngest/otel/node` as a Node preload, or make sure that the provider is created and imported before the middleware is used.',
       );
     }
 
