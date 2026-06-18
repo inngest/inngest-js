@@ -2,7 +2,20 @@
   {
     "span": "OpenAI Chat Completions",
     "metadata": {
-      "model": "gpt-4.1-nano"
+      "openinference.span.kind": "LLM",
+      "llm.model_name": "gpt-4.1-nano",
+      "input.value": "{\"model\":\"gpt-4.1-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"Count to five.\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true}}",
+      "input.mime_type": "application/json",
+      "llm.invocation_parameters": "{\"model\":\"gpt-4.1-nano\",\"stream\":true,\"stream_options\":{\"include_usage\":true}}",
+      "llm.system": "openai",
+      "llm.provider": "openai",
+      "llm.input_messages.0.message.role": "user",
+      "llm.input_messages.0.message.content": "Count to five.",
+      "output.value": "One, two, three, four, five.",
+      "output.mime_type": "text/plain",
+      "llm.output_messages.0.message.content": "One, two, three, four, five.",
+      "llm.output_messages.0.message.role": "assistant",
+      "llm.finish_reason": "stop"
     }
   }
 ]
