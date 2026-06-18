@@ -173,3 +173,34 @@ function hasAiMetadata(metadata: { kind: string }[]) {
   }
   return false;
 }
+
+test("disable AI metadata", async () => {
+  const state = createState();
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    aiMetadata: false,
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn-1",
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      await step.run("my-step", simulateOpenAICall);
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  // No AI metadata
+  const steps = await waitForTraceSteps(await state.waitForRunId());
+  for (const step of steps) {
+    expect(getAIMetadata(step)).toEqual([]);
+  }
+});

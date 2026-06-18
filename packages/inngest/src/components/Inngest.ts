@@ -142,6 +142,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private readonly _logger: Logger;
 
   /**
+   * Whether this client should collect AI metadata from OpenTelemetry spans.
+   *
+   * @internal
+   */
+  readonly aiMetadataEnabled: boolean;
+
+  /**
    * Logger for SDK internal messages. Falls back to the user's `logger` if
    * `internalLogger` is not provided in client options.
    *
@@ -330,6 +337,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     this.id = id;
+    this.aiMetadataEnabled = this.options.aiMetadata !== false;
     this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
@@ -364,7 +372,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     // Attach the read-only AI metadata span processor to whatever global OTel
     // provider already exists. Idempotent across clients; only attaches once.
-    metadataSpanProcessor.attach();
+    if (this.aiMetadataEnabled) {
+      metadataSpanProcessor.attach();
+    }
 
     this._appVersion = appVersion;
   }
