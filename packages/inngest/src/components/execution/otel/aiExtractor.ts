@@ -85,6 +85,13 @@ interface FieldSpec {
 }
 
 /**
+ * The attribute every OpenInference span carries to declare its kind (`LLM`,
+ * `CHAIN`, `TOOL`, …). We use its presence as the discriminator for "is this an
+ * OpenInference span?".
+ */
+const OPENINFERENCE_SPAN_KIND = "openinference.span.kind";
+
+/**
  * The allowlist: every OpenInference attribute we capture, mapped to its
  * canonical field. Anything not listed here (content, sensitive payloads,
  * unknown keys) is ignored. `aiExtractor.test.ts` asserts each `source` is a
@@ -93,7 +100,7 @@ interface FieldSpec {
  */
 export const FIELD_SPECS: readonly FieldSpec[] = [
   // Identity & classification.
-  { field: "spanKind", source: "openinference.span.kind", combine: "text" },
+  { field: "spanKind", source: OPENINFERENCE_SPAN_KIND, combine: "text" },
   { field: "model", source: "llm.model_name", combine: "text" },
   { field: "provider", source: "llm.provider", combine: "text" },
   { field: "system", source: "llm.system", combine: "text" },
@@ -223,6 +230,9 @@ const setField = (
 /**
  * Extracts canonical {@link AIMetadata} from a span's attributes.
  *
+ * Returns an empty object unless the span is an OpenInference span — detected
+ * by the presence of a non-empty {@link OPENINFERENCE_SPAN_KIND} attribute.
+ *
  * Only the allowlisted {@link FIELD_SPECS} are read; every other attribute is
  * ignored. Numeric fields are coerced with `Number` (OTLP/JSON may encode int64
  * as a quoted string) and dropped if not a number; text fields are dropped when
@@ -235,6 +245,13 @@ export const extractAIMetadataFromAttributes = (
   attributes: Attributes,
 ): AIMetadata => {
   const metadata: AIMetadata = {};
+
+  // Gate on the OpenInference marker: without it, this isn't an OpenInference
+  // span and its attributes must not be mined for AI metadata.
+  const spanKind = attributes[OPENINFERENCE_SPAN_KIND];
+  if (typeof spanKind !== "string" || spanKind === "") {
+    return metadata;
+  }
 
   for (const spec of FIELD_SPECS) {
     const value = attributes[spec.source];
