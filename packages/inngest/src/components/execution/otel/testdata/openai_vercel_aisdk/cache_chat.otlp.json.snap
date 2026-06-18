@@ -1,0 +1,46 @@
+[
+  {
+    "span": "ai.generateText.doGenerate",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "system": "openai.chat",
+      "responseId": "chatcmpl-DrBrxZaLAohSzytpjuElSDvbE0a1S",
+      "inputTokens": 2239,
+      "outputTokens": 1,
+      "totalTokens": 2240
+    }
+  },
+  {
+    "span": "ai.generateText",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "system": "openai.chat",
+      "inputTokens": 2239,
+      "outputTokens": 1,
+      "totalTokens": 2240
+    }
+  },
+  {
+    "span": "ai.generateText.doGenerate",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "system": "openai.chat",
+      "responseId": "chatcmpl-DrBrxfDhpflYHItQYi67qqh1qKBIa",
+      "inputTokens": 2239,
+      "outputTokens": 1,
+      "totalTokens": 2240
+    }
+  },
+  {
+    "span": "ai.generateText",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "system": "openai.chat",
+      "inputTokens": 2239,
+      "outputTokens": 1,
+      "totalTokens": 2240
+    }
+  }
+]

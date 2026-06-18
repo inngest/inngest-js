@@ -5,10 +5,10 @@
       "model": "gpt-4.1-nano",
       "responseModel": "gpt-4.1-nano-2025-04-14",
       "system": "openai",
-      "responseId": "chatcmpl-DmQgMTBrf7SFrIb1VMoKSIbKkIcBf",
+      "responseId": "chatcmpl-DrBr2Rq2QohIZSHpQZggjEIGFCnek",
       "inputTokens": 56,
-      "outputTokens": 14,
-      "totalTokens": 70
+      "outputTokens": 30,
+      "totalTokens": 86
     }
   }
 ]

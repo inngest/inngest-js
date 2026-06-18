@@ -6,8 +6,8 @@
       "responseModel": "claude-sonnet-4-6",
       "system": "anthropic",
       "inputTokens": 52,
-      "outputTokens": 500,
-      "totalTokens": 552
+      "outputTokens": 450,
+      "totalTokens": 502
     }
   }
 ]

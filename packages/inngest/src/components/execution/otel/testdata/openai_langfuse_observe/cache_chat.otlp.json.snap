@@ -1,0 +1,20 @@
+[
+  {
+    "span": "OpenAI.chat",
+    "metadata": {
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "inputTokens": 191,
+      "outputTokens": 1,
+      "totalTokens": 2240
+    }
+  },
+  {
+    "span": "OpenAI.chat",
+    "metadata": {
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "inputTokens": 191,
+      "outputTokens": 1,
+      "totalTokens": 2240
+    }
+  }
+]

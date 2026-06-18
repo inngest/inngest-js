@@ -5,10 +5,10 @@
       "model": "gpt-4.1-nano",
       "responseModel": "gpt-4.1-nano-2025-04-14",
       "system": "openai.chat",
-      "responseId": "chatcmpl-DmRo58DlkgVkA2eN9sgElNFLVmm97",
+      "responseId": "chatcmpl-DrBruw0ipxM6NO9pr53HGKTeUDGsv",
       "inputTokens": 11,
-      "outputTokens": 10,
-      "totalTokens": 21
+      "outputTokens": 14,
+      "totalTokens": 25
     }
   },
   {
@@ -17,8 +17,8 @@
       "model": "gpt-4.1-nano",
       "system": "openai.chat",
       "inputTokens": 11,
-      "outputTokens": 10,
-      "totalTokens": 21
+      "outputTokens": 14,
+      "totalTokens": 25
     }
   }
 ]

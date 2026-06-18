@@ -5,8 +5,8 @@
       "responseModel": "gpt-5.4-nano-2026-03-17",
       "system": "openai",
       "inputTokens": 17,
-      "outputTokens": 51,
-      "totalTokens": 68
+      "outputTokens": 40,
+      "totalTokens": 57
     }
   }
 ]
