@@ -299,7 +299,7 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
       setField(
         out,
         spec.field,
-        (typeof aValue === "number" ? aValue : 0) + (bValue as number),
+        (typeof aValue === "number" ? aValue : 0) + Number(bValue),
       );
     } else {
       setField(out, spec.field, bValue);
