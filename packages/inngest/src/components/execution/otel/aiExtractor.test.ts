@@ -183,20 +183,80 @@ describe("extractOpenInferenceAttributes", () => {
 });
 
 describe("aggregate", () => {
-  test("last write wins on conflicting keys", () => {
+  test("last write wins on conflicting non-summed keys", () => {
     const a: OpenInferenceAttributes = {
       "llm.model_name": "gpt-4.1-nano",
-      "llm.token_count.prompt": 10,
+      "openinference.span.kind": "LLM",
     };
     const b: OpenInferenceAttributes = {
       "llm.model_name": "gpt-4o",
-      "llm.token_count.completion": 5,
+      "input.value": "second call",
     };
     expect(aggregate(a, b)).toEqual({
       "llm.model_name": "gpt-4o",
-      "llm.token_count.prompt": 10,
-      "llm.token_count.completion": 5,
+      "openinference.span.kind": "LLM",
+      "input.value": "second call",
     });
+  });
+
+  test("sums token-count and cost keys across calls", () => {
+    const a: OpenInferenceAttributes = {
+      "llm.token_count.prompt": 10,
+      "llm.token_count.total": 15,
+      "llm.cost.total": 0.001,
+    };
+    const b: OpenInferenceAttributes = {
+      "llm.token_count.prompt": 7,
+      "llm.token_count.total": 12,
+      "llm.cost.total": 0.002,
+    };
+    expect(aggregate(a, b)).toEqual({
+      "llm.token_count.prompt": 17,
+      "llm.token_count.total": 27,
+      "llm.cost.total": 0.003,
+    });
+  });
+
+  test("sums prompt/completion detail subtrees", () => {
+    expect(
+      aggregate(
+        { "llm.token_count.completion_details.reasoning": 3 },
+        { "llm.token_count.completion_details.reasoning": 4 },
+      ),
+    ).toEqual({ "llm.token_count.completion_details.reasoning": 7 });
+  });
+
+  test("coerces quoted-string int64 counts before summing", () => {
+    expect(
+      aggregate(
+        { "llm.token_count.prompt": "10" },
+        { "llm.token_count.prompt": "7" },
+      ),
+    ).toEqual({ "llm.token_count.prompt": 17 });
+  });
+
+  test("falls back to last-write-wins when a summed value is non-numeric", () => {
+    expect(
+      aggregate(
+        { "llm.token_count.prompt": 10 },
+        { "llm.token_count.prompt": "not-a-number" },
+      ),
+    ).toEqual({ "llm.token_count.prompt": "not-a-number" });
+  });
+
+  test("keeps a summed key present in only one input", () => {
+    expect(
+      aggregate(
+        { "llm.token_count.prompt": 10 },
+        { "llm.model_name": "gpt-4o" },
+      ),
+    ).toEqual({ "llm.token_count.prompt": 10, "llm.model_name": "gpt-4o" });
+  });
+
+  test("does not sum non-additive numeric fields", () => {
+    expect(aggregate({ "reranker.top_k": 5 }, { "reranker.top_k": 3 })).toEqual(
+      { "reranker.top_k": 3 },
+    );
   });
 
   test("keeps keys present in only one input", () => {
