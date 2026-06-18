@@ -5,7 +5,9 @@
       "responseModel": "gpt-5.4-nano-2026-03-17",
       "inputTokens": 42,
       "outputTokens": 211,
-      "totalTokens": 295
+      "totalTokens": 295,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 42
     }
   }
 ]

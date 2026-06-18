@@ -8,7 +8,9 @@
       "responseId": "chatcmpl-DrBs68ShlhujNjnFypB1xKq8Q9G1r",
       "inputTokens": 56,
       "outputTokens": 30,
-      "totalTokens": 86
+      "totalTokens": 86,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   }
 ]

@@ -7,7 +7,9 @@
       "system": "anthropic",
       "inputTokens": 52,
       "outputTokens": 450,
-      "totalTokens": 502
+      "totalTokens": 502,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 0
     }
   }
 ]

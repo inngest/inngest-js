@@ -8,7 +8,9 @@
       "responseId": "resp_0b898006b71f980e006a30976c7ae8819a9f9dfe79dd711f39",
       "inputTokens": 17,
       "outputTokens": 46,
-      "totalTokens": 63
+      "totalTokens": 63,
+      "cacheReadTokens": 0,
+      "reasoningTokens": 0
     }
   }
 ]

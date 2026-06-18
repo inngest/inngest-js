@@ -8,7 +8,9 @@
       "responseId": "chatcmpl-DrBrxZaLAohSzytpjuElSDvbE0a1S",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
     }
   },
   {
@@ -18,7 +20,9 @@
       "system": "openai.chat",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
     }
   },
   {
@@ -30,7 +34,9 @@
       "responseId": "chatcmpl-DrBrxfDhpflYHItQYi67qqh1qKBIa",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
     }
   },
   {
@@ -40,7 +46,9 @@
       "system": "openai.chat",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
     }
   }
 ]

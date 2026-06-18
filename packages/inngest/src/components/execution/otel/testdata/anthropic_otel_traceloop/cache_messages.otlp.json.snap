@@ -7,7 +7,9 @@
       "system": "anthropic",
       "inputTokens": 13,
       "outputTokens": 4,
-      "totalTokens": 17
+      "totalTokens": 17,
+      "cacheReadTokens": 0,
+      "cacheCreationTokens": 2463
     }
   },
   {
@@ -18,7 +20,9 @@
       "system": "anthropic",
       "inputTokens": 3,
       "outputTokens": 4,
-      "totalTokens": 7
+      "totalTokens": 7,
+      "cacheReadTokens": 2463,
+      "cacheCreationTokens": 10
     }
   }
 ]

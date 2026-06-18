@@ -6,7 +6,9 @@
       "system": "openai",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
     }
   },
   {
@@ -16,7 +18,9 @@
       "system": "openai",
       "inputTokens": 2239,
       "outputTokens": 1,
-      "totalTokens": 2240
+      "totalTokens": 2240,
+      "cacheReadTokens": 2048,
+      "reasoningTokens": 0
     }
   }
 ]
