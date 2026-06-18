@@ -39,7 +39,7 @@ export interface ExtendedTracesMiddlewareOptions {
    * - `"auto"`: Attempt to extend an existing provider, and if that fails,
    *   create a new one using the deprecated provider creation path.
    * - `"createProvider"`: Create a new OpenTelemetry provider.
-   *   Deprecated. Use `@inngest/otel/node` as a Node preload and
+   *   Deprecated. Use @inngest/otel and
    *   `"extendProvider"` instead.
    * - `"extendProvider"`: Attempt to extend an existing provider.
    * - `"off"`: Do nothing.
@@ -138,7 +138,7 @@ export const extendedTracesMiddleware = ({
       }
 
       console.warn(
-        "unable to extend provider, Extended Traces middleware will not work. Use `@inngest/otel/node` as a Node preload, or make sure that the provider is created and imported before the middleware is used.",
+        "unable to extend provider, Extended Traces middleware will not work. Use @inngest/otel, or make sure that the provider is created and imported before the middleware is used.",
       );
 
       break;
