@@ -6,12 +6,10 @@ import type { Attributes } from "@opentelemetry/api";
  * The fields below are an explicit **allowlist**: only these are ever read from
  * a span (see {@link FIELD_SPECS}). Anything not mapped — prompt/response
  * content, messages, tool calls, embeddings, and other potentially-sensitive or
- * bulky payloads — is never captured in the first place, so there is no
- * separate redaction step. A field is present only when the span carried its
- * source attribute.
+ * bulky payloads — is not captured.
  *
- * Token-count and cost fields are summed across the LLM calls in a step; every
- * other field is last-write-wins (see {@link aggregate}).
+ * For each category, we describe how we handle aggregation of multiple
+ * AIMetadata.
  */
 export interface AIMetadata {
   // Identity & classification (last-write-wins).
@@ -92,11 +90,11 @@ interface FieldSpec {
 const OPENINFERENCE_SPAN_KIND = "openinference.span.kind";
 
 /**
- * The allowlist: every OpenInference attribute we capture, mapped to its
- * canonical field. Anything not listed here (content, sensitive payloads,
- * unknown keys) is ignored. `aiExtractor.test.ts` asserts each `source` is a
- * published `@arizeai/openinference-semantic-conventions` key, so a spec rename
- * fails the suite rather than silently dropping a field.
+ * Every OpenInference attribute we capture, mapped to its
+ * canonical field.
+ *
+ * Anything not listed here (content, sensitive payloads,
+ * unknown keys) is ignored.
  */
 export const FIELD_SPECS: readonly FieldSpec[] = [
   // Identity & classification.
@@ -228,10 +226,9 @@ const setField = (
 };
 
 /**
- * Extracts canonical {@link AIMetadata} from a span's attributes.
+ * Extracts {@link AIMetadata} from a span's attributes.
  *
- * Returns an empty object unless the span is an OpenInference span — detected
- * by the presence of a non-empty {@link OPENINFERENCE_SPAN_KIND} attribute.
+ * Returns an empty object unless the span is an OpenInference span.
  *
  * Only the allowlisted {@link FIELD_SPECS} are read; every other attribute is
  * ignored. Numeric fields are coerced with `Number` (OTLP/JSON may encode int64
