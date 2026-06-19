@@ -39,6 +39,7 @@
 
 export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
+export type { InngestApi } from "./api/api";
 export { experiment } from "./components/ExperimentStrategies.ts";
 export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
@@ -56,8 +57,10 @@ export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
 export type {
+  GroupExperiment,
   GroupTools,
   GroupToolsDeps,
+  ParallelOptions,
 } from "./components/InngestGroupTools";
 export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
@@ -91,6 +94,7 @@ export type {
 export type {
   ExclusiveKeys,
   IsStringLiteral,
+  MaybePromise,
   SendEventPayload,
   StrictUnion,
   StrictUnionHelper,
