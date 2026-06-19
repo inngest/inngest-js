@@ -28,7 +28,7 @@ const sendEmail = createDefer(
   async ({ event, step }) => {
     event.data.to; // typed from `schema`
     event.data.body;
-  },
+  }
 );
 ```
 
@@ -53,7 +53,7 @@ const orderPlaced = inngest.createFunction(
   { id: "order-placed", triggers: { event: "order/placed" } },
   async ({ defer }) => {
     defer("send", { function: sendEmail, data: { to: "a@b.com", body: "hi" } });
-  },
+  }
 );
 ```
 
@@ -95,6 +95,8 @@ The backend records each `DeferAdd` against the parent run as it arrives. The de
 
 On replay, the executor sends back a `defers` map of hashed step IDs it has already received. The SDK uses `priorDefers` to skip re-emitting them.
 
+The `transformDeferInput` middleware hook runs against `data` after schema validation, just before the op is buffered. Use it for serialization or encryption. Returning an empty `defers` array drops the call silently.
+
 ## Todo
 
 ### Known gaps (correctness)
@@ -119,5 +121,3 @@ Net-new capabilities. None affect correctness of the current API.
 - **Support aborting a `defer` call.** -- A `DeferAbort` opcode is reserved on the backend but the SDK doesn't yet emit it. Needs a user-facing API (e.g. `const { abort } = defer("id", { function, data })`) and the matching opcode emission.
 
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
-
-- **Middleware hook** -- We need a hook to make encryption and serialization work (e.g. `transformDeferInput`).
