@@ -33,6 +33,7 @@ export namespace GeminiAiAdapter {
     | "gemini-2.5-pro"
     | "gemini-2.5-flash"
     | "gemini-2.5-flash-lite-preview-06-17"
+    | "gemini-3-pro-preview"
     | "text-embedding-004"
     | "aqa";
 
