@@ -14,7 +14,7 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
     if (!apiKey) {
       throw new Error(
         "OPENAI_API_KEY environment variable is required for smoke tests. " +
-          "Copy .env.example to .env and add your API key."
+          "Copy .env.example to .env and add your API key.",
       );
     }
   });
@@ -437,10 +437,10 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
           const parsed = JSON.parse(jsonText);
           expect(typeof parsed.value).toBe("number");
           expect(parsed.left === null || typeof parsed.left === "object").toBe(
-            true
+            true,
           );
           expect(
-            parsed.right === null || typeof parsed.right === "object"
+            parsed.right === null || typeof parsed.right === "object",
           ).toBe(true);
         }
       }
@@ -497,7 +497,7 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
           const parsed = JSON.parse(jsonText);
           expect("email" in parsed).toBe(true);
           expect(
-            parsed.email === null || typeof parsed.email === "string"
+            parsed.email === null || typeof parsed.email === "string",
           ).toBe(true);
         }
       }
@@ -872,7 +872,7 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
           await responseRetry.json();
 
         funcCall = resultRetry.output.find(
-          (i) => i.type === "function_call"
+          (i) => i.type === "function_call",
         ) as OpenAiResponsesApi.FunctionCallItem | undefined;
 
         if (funcCall) {
@@ -978,7 +978,7 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
       const result1: OpenAiResponsesApi.Response = await response1.json();
 
       const funcCall = result1.output.find(
-        (i) => i.type === "function_call"
+        (i) => i.type === "function_call",
       ) as OpenAiResponsesApi.FunctionCallItem | undefined;
 
       if (funcCall) {
@@ -1140,7 +1140,7 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
           // Verify citations exist if provided
           if (textPart.annotations && Array.isArray(textPart.annotations)) {
             const hasCitation = textPart.annotations.some(
-              (a) => a.type === "url_citation"
+              (a) => a.type === "url_citation",
             );
             // Allow zero citations in edge cases, but prefer presence
             expect(hasCitation === true || hasCitation === false).toBe(true);
@@ -1279,7 +1279,7 @@ describe("OpenAI Responses Adapter Smoke Tests", () => {
         typeof result.usage.output_tokens_details.reasoning_tokens === "number"
       ) {
         expect(
-          result.usage.output_tokens_details.reasoning_tokens
+          result.usage.output_tokens_details.reasoning_tokens,
         ).toBeGreaterThanOrEqual(0);
       }
     });

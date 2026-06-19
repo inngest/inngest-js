@@ -71,7 +71,7 @@ export interface AiAdapter {
     /**
      * The input to pass to the model.
      */
-    body: this["~types"]["input"]
+    body: this["~types"]["input"],
   ) => void;
 }
 
@@ -120,7 +120,7 @@ export namespace AiAdapter {
    */
   export type ModelCreator<
     TInput extends unknown[],
-    TOutput extends AiAdapter
+    TOutput extends AiAdapter,
   > = (...args: TInput) => TOutput;
 }
 
