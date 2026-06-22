@@ -1,10 +1,12 @@
 import { isFiniteNumber, isRecord } from "../helpers/types.ts";
+import type { ExperimentRef } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
 const scoreKind = "inngest.score" as const;
+const experimentKind = "inngest.experiment" as const;
 const maxKindByteLength = 128;
 const maxScoreNameByteLength = maxKindByteLength;
 
@@ -16,6 +18,36 @@ export type ScoreOptions = {
   name: string;
   value: ScoreValue;
 };
+
+export type ScoreExperimentOptions = ScoreOptions & {
+  experiment: ExperimentRef;
+};
+
+/**
+ * The client `score` API. Call it directly to write a live score for a run or
+ * step; use `.experiment(...)` to attach a score to a `group.experiment()`
+ * variant.
+ */
+export interface ClientScore {
+  /**
+   * Write a live score for a run or a specific run step. Explicit targets win;
+   * otherwise the current run or step is inferred from the execution context.
+   * For standalone durable score writes, prefer `step.score()`.
+   */
+  (options: ScoreOptions): Promise<void>;
+
+  /**
+   * Attach a score to a previously-selected experiment variant, using the
+   * `experiment` ref returned by `group.experiment()`. Writes the score and the
+   * experiment attribution together so they co-locate on one row.
+   *
+   * **Call at the function-body level** (outside any `step.run()` callback), or
+   * pass an explicit `runId`, so the write is run-scoped and attaches to the
+   * experiment. Calling inside `step.run()` without `runId` produces a
+   * step-scoped write the experiment detail backend never surfaces.
+   */
+  experiment(options: ScoreExperimentOptions): Promise<void>;
+}
 
 export type ScoreStepTool = (
   memoizationId: string,
@@ -136,6 +168,56 @@ export async function sendStepScore(
     },
     { [options.name]: { value: options.value } },
     `${scoreKind}`,
+    "merge",
+  );
+}
+
+function validateExperimentRef(
+  experiment: unknown,
+): asserts experiment is ExperimentRef {
+  if (!isRecord(experiment)) {
+    throw new Error("experiment must be an object");
+  }
+  for (const field of ["experimentName", "variant"] as const) {
+    if (
+      typeof experiment[field] !== "string" ||
+      (experiment[field] as string).trim().length === 0
+    ) {
+      throw new Error(`experiment.${field} must be a non-empty string`);
+    }
+  }
+}
+
+export async function sendScoreExperiment(
+  client: Inngest,
+  options: ScoreExperimentOptions,
+): Promise<void> {
+  validateSendScoreOptions(options);
+  validateExperimentRef(options.experiment);
+
+  const target = { runId: options.runId, stepId: options.stepId };
+
+  // Write the experiment attribution first, then the score. These are two
+  // non-atomic metadata writes; if the second fails, attribution-without-score
+  // is the benign state the system already produces (it's exactly what
+  // `group.experiment()` leaves after selecting a variant but before scoring).
+  // Writing the score first would instead risk a bare, unattributed score that
+  // never surfaces in the experiment view.
+  await performOp(
+    client,
+    target,
+    {
+      experiment_name: options.experiment.experimentName,
+      variant: options.experiment.variant,
+    },
+    experimentKind,
+    "merge",
+  );
+  await performOp(
+    client,
+    target,
+    { [options.name]: { value: options.value } },
+    scoreKind,
     "merge",
   );
 }

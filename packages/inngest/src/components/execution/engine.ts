@@ -5,6 +5,7 @@ import { z } from "zod/v3";
 
 import {
   defaultMaxRetries,
+  deferExperimentKey,
   ExecutionVersion,
   headerKeys,
   internalEvents,
@@ -1968,7 +1969,9 @@ class InngestExecutionEngine
       // Fail without retries. The event data won't change so there's no point
       // in retrying. This matches what we do for normal triggers.
       throw new NonRetriableError(
-        `defer handler "${fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
+        `defer handler "${fn.id(
+          this.options.client.id,
+        )}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
   }
@@ -2418,7 +2421,9 @@ class InngestExecutionEngine
           { run_id: this.fnArg.runId },
           ErrCode.NESTING_STEPS,
           {
-            message: `Nested step tooling detected in "${opId.displayName ?? opId.id}"`,
+            message: `Nested step tooling detected in "${
+              opId.displayName ?? opId.id
+            }"`,
             explanation:
               "Nesting step.* calls is not supported. This warning may also appear if steps are separated by regular async calls, which is fine.",
             action:
@@ -2663,7 +2668,7 @@ class InngestExecutionEngine
    * schema mismatch) are logged and the call is silently skipped.
    */
   private buildDefer(stepHandler: StepHandler): DeferFn {
-    return (idOrOptions, { function: deferFn, data }) => {
+    return (idOrOptions, { function: deferFn, data, experiment }) => {
       const log = this.options.client[internalLoggerSymbol];
       const runId = this.fnArg.runId;
 
@@ -2699,8 +2704,15 @@ class InngestExecutionEngine
           input = result.value ?? data;
         }
 
+        // The experiment ref rides in a reserved input key the receiver strips
+        // before the handler runs; set after schema validation so it can't trip it.
+        const finalInput =
+          experiment && isRecord(input)
+            ? { ...input, [deferExperimentKey]: experiment }
+            : input;
+
         void stepHandler({
-          args: [idOrOptions, input],
+          args: [idOrOptions, finalInput],
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,
             mode: StepMode.Sync,
@@ -3241,7 +3253,9 @@ function resolveStepIdCollision({
   }
 
   throw new UnreachableError(
-    `Could not resolve step ID collision for "${baseId}" after ${stepsMap.size + 1} attempts`,
+    `Could not resolve step ID collision for "${baseId}" after ${
+      stepsMap.size + 1
+    } attempts`,
   );
 }
 

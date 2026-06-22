@@ -7,11 +7,54 @@ import {
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { createScorer } from "../../../experimental.ts";
+import { createScorer, type ExperimentRef } from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
+
+test("scorer targets the attached experiment", async () => {
+  const parentState = createState({});
+  const client = new Inngest({ id: randomSuffix(testFileName), isDev: true });
+  const eventName = randomSuffix("evt");
+
+  const scorer = createScorer(client, { id: "s" }, async () => ({
+    name: "rizz",
+    value: 100,
+  }));
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: { event: eventName } },
+    async ({ defer, runId }) => {
+      parentState.runId = runId;
+      defer("s", {
+        function: scorer,
+        data: {},
+        experiment: { experimentName: "exp", variant: "control" },
+      });
+    },
+  );
+  await createTestApp({ client, functions: [fn, scorer], serve: createServer });
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+
+  const meta = await getRunMetadata(await parentState.waitForRunId());
+  expect(meta).toEqual(
+    expect.arrayContaining([
+      {
+        kind: "inngest.experiment",
+        scope: "run",
+        updatedAt: expect.any(String),
+        values: { experiment_name: "exp", variant: "control" },
+      },
+      {
+        kind: "inngest.score.rizz",
+        scope: "run",
+        updatedAt: expect.any(String),
+        values: { value: 100 },
+      },
+    ]),
+  );
+});
 
 test("success", async () => {
   const parentState = createState({});
@@ -32,7 +75,7 @@ test("success", async () => {
       expectTypeOf(event.data).not.toBeAny();
       expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
       expectTypeOf(parents).toEqualTypeOf<
-        [{ fnSlug: string; runId: string }]
+        [{ fnSlug: string; runId: string; experiment?: ExperimentRef }]
       >();
       scorerState.event = event;
       scorerState.parents = parents;

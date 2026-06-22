@@ -283,6 +283,76 @@ describe("step.score validation", () => {
   });
 });
 
+describe("client.score.experiment", () => {
+  const exp = { experimentName: "checkout-flow", variant: "control" };
+
+  test("rejects a missing/blank experiment ref", async () => {
+    const client = new Inngest({ id: "app" });
+    await expect(
+      client.score.experiment({ name: "rating", value: 1 } as never),
+    ).rejects.toThrow("experiment must be an object");
+    await expect(
+      client.score.experiment({
+        experiment: { experimentName: "", variant: "control" },
+        name: "rating",
+        value: 1,
+      }),
+    ).rejects.toThrow("experiment.experimentName must be a non-empty string");
+  });
+
+  test("reuses score validation for name/value", async () => {
+    const client = new Inngest({ id: "app" });
+    await expect(
+      client.score.experiment({ experiment: exp, name: "", value: 1 }),
+    ).rejects.toThrow("score name must be a non-empty string");
+  });
+
+  test("writes experiment + score to the same target", async () => {
+    const client = new Inngest({ id: "app" });
+    const calls: Array<{
+      target: unknown;
+      kind: string;
+      values: Record<string, unknown>;
+    }> = [];
+    // updateMetadata is the single API sink performOp falls back to off-step.
+    vi.spyOn(
+      client as unknown as {
+        updateMetadata: (a: {
+          target: unknown;
+          metadata: Array<{ kind: string; values: Record<string, unknown> }>;
+        }) => Promise<void>;
+      },
+      "updateMetadata",
+    ).mockImplementation(async ({ target, metadata }) => {
+      calls.push({
+        target,
+        kind: metadata[0]!.kind,
+        values: metadata[0]!.values,
+      });
+    });
+
+    await client.score.experiment({
+      experiment: exp,
+      runId: "run_1",
+      name: "user-rating",
+      value: 0.9,
+    });
+
+    expect(calls).toHaveLength(2);
+    const score = calls.find((c) => c.kind === "inngest.score");
+    const experiment = calls.find((c) => c.kind === "inngest.experiment");
+    // Score uses the constant kind with the name nested under values.
+    expect(score?.values).toEqual({ "user-rating": { value: 0.9 } });
+    expect(experiment?.values).toEqual({
+      experiment_name: "checkout-flow",
+      variant: "control",
+    });
+    // Same run-scoped target → merges into one ClickHouse row.
+    expect(calls[0]!.target).toEqual(calls[1]!.target);
+    expect(calls[0]!.target).toMatchObject({ run_id: "run_1" });
+  });
+});
+
 describe("scoreMiddleware", () => {
   test("score is only present as a step tool if the middleware is used", () => {
     const inngestWithoutMiddleware = new Inngest({

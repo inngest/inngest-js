@@ -43,11 +43,17 @@ export function createScorer<
     async (ctx) => {
       const result = await handler(ctx);
       if (result) {
+        const parent = ctx.parents[0];
         await ctx.step.run("score", async () => {
-          await client.score({
-            runId: ctx.parents[0].runId,
-            ...result,
-          });
+          if (parent.experiment) {
+            await client.score.experiment({
+              experiment: parent.experiment,
+              runId: parent.runId,
+              ...result,
+            });
+          } else {
+            await client.score({ runId: parent.runId, ...result });
+          }
         });
       }
       return result;
