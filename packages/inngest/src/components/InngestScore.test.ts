@@ -78,20 +78,20 @@ describe("client.score validation", () => {
       client.score({
         runId: "run",
         stepId: "step",
-        name: "x".repeat(115),
+        name: "x".repeat(129),
         value: 1,
       }),
-    ).rejects.toThrow("score name must be 114 bytes or fewer");
+    ).rejects.toThrow("score name must be 128 bytes or fewer");
 
-    // 60 × "é" = 120 UTF-8 bytes, under the 114-char limit but over the byte cap.
+    // 60 × "é" = 130 UTF-8 bytes, under the 128-char limit but over the byte cap.
     await expect(
       client.score({
         runId: "run",
         stepId: "step",
-        name: "é".repeat(60),
+        name: "é".repeat(65),
         value: 1,
       }),
-    ).rejects.toThrow("score name must be 114 bytes or fewer");
+    ).rejects.toThrow("score name must be 128 bytes or fewer");
 
     await expect(
       client.score({
@@ -136,7 +136,7 @@ describe("client.score validation", () => {
     ).rejects.toThrow("No run context available");
   });
 
-  test("emits inngest.score.<name> kind with value-keyed payload", async () => {
+  test("emits inngest.score kind with <name>.value-keyed payload", async () => {
     const client = new Inngest({ id: "app" });
     const spy = vi
       .fn<
@@ -161,9 +161,9 @@ describe("client.score validation", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]?.[0]?.metadata).toEqual([
       {
-        kind: "inngest.score.click-through rate (variant A)!",
+        kind: "inngest.score",
         op: "merge",
-        values: { value: 0.23 },
+        values: { "click-through rate (variant A)!": { value: 0.23 } },
       },
     ]);
   });
@@ -186,9 +186,9 @@ describe("client.score validation", () => {
 
     expect(spy.mock.calls[0]?.[0]?.metadata).toEqual([
       {
-        kind: "inngest.score.pass",
+        kind: "inngest.score",
         op: "merge",
-        values: { value: true },
+        values: { pass: { value: true } },
       },
     ]);
   });
@@ -228,17 +228,17 @@ describe("step.score validation", () => {
 
     expect(() =>
       validateStepScoreOptions({
-        name: "x".repeat(115),
+        name: "x".repeat(129),
         value: 1,
       }),
-    ).toThrow("score name must be 114 bytes or fewer");
+    ).toThrow("score name must be 128 bytes or fewer");
 
     expect(() =>
       validateStepScoreOptions({
-        name: "é".repeat(60),
+        name: "é".repeat(65),
         value: 1,
       }),
-    ).toThrow("score name must be 114 bytes or fewer");
+    ).toThrow("score name must be 128 bytes or fewer");
 
     expect(() =>
       validateStepScoreOptions({

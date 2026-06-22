@@ -4,11 +4,9 @@ import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
-// Server caps the full kind at 128 bytes; "inngest.score." is 14 bytes, so the
-// user-supplied suffix can be up to 114 UTF-8 bytes.
-const scoreKindPrefix = "inngest.score." as const;
+const scoreKind = "inngest.score" as const;
 const maxKindByteLength = 128;
-const maxScoreNameByteLength = maxKindByteLength - scoreKindPrefix.length;
+const maxScoreNameByteLength = maxKindByteLength;
 
 type ScoreValue = number | boolean;
 
@@ -116,8 +114,8 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { value: options.value },
-    `${scoreKindPrefix}${options.name}`,
+    { [options.name]: { value: options.value } },
+    `${scoreKind}`,
     "merge",
   );
 }
@@ -136,8 +134,8 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { value: options.value },
-    `${scoreKindPrefix}${options.name}`,
+    { [options.name]: { value: options.value } },
+    `${scoreKind}`,
     "merge",
   );
 }
