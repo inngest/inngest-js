@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SemanticConventions } from "@arizeai/openinference-semantic-conventions";
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
 import { describe, expect, test } from "vitest";
 import type { AIMetadata } from "./aiExtractor.ts";
@@ -133,135 +132,158 @@ describe("extractAIMetadataFromAttributes", () => {
     }
   });
 
-  test("maps allowlisted OpenInference keys to canonical fields", () => {
+  test("maps allowlisted gen_ai keys to canonical fields", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "openinference.span.kind": "LLM",
-        "llm.model_name": "gpt-4.1-nano",
-        "llm.provider": "openai",
-        "llm.token_count.prompt": 17,
-        "llm.token_count.completion": 41,
-        "llm.token_count.total": 58,
-        "reranker.top_k": 5,
+        "gen_ai.request.model": "gpt-4.1-nano",
+        "gen_ai.response.model": "gpt-4.1-nano-2025-04-14",
+        "gen_ai.provider.name": "openai",
+        "gen_ai.response.id": "chatcmpl-abc",
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 41,
+        "gen_ai.usage.total_tokens": 58,
       }),
     ).toEqual({
-      spanKind: "LLM",
-      model: "gpt-4.1-nano",
+      requestModel: "gpt-4.1-nano",
+      responseModel: "gpt-4.1-nano-2025-04-14",
       provider: "openai",
+      responseId: "chatcmpl-abc",
       inputTokens: 17,
       outputTokens: 41,
       totalTokens: 58,
-      rerankerTopK: 5,
     });
+  });
+
+  test("reports only the provider-supplied total; never derives one", () => {
+    // With input + output but no total, the total field is simply absent.
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 41,
+      }),
+    ).toEqual({ inputTokens: 17, outputTokens: 41 });
+  });
+
+  test("extracts request parameters", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.temperature": 0.7,
+        "gen_ai.request.top_p": 0.9,
+        "gen_ai.request.max_tokens": 64,
+        "gen_ai.request.frequency_penalty": 0.2,
+        "gen_ai.request.presence_penalty": 0.1,
+        "gen_ai.request.seed": 42,
+      }),
+    ).toEqual({
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 64,
+      frequencyPenalty: 0.2,
+      presencePenalty: 0.1,
+      seed: 42,
+    });
+  });
+
+  test("keeps a zero-valued temperature rather than dropping it", () => {
+    expect(
+      extractAIMetadataFromAttributes({ "gen_ai.request.temperature": 0 }),
+    ).toEqual({ temperature: 0 });
   });
 
   test("ignores unmapped, content, and sensitive keys", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "openinference.span.kind": "LLM",
-        "input.value": "secret prompt",
-        "output.value": "secret completion",
-        "llm.input_messages.0.message.content": "secret",
-        "llm.tools.0.tool.json_schema": "{}",
-        "llm.invocation_parameters": "{}",
+        "gen_ai.operation.name": "chat",
+        "gen_ai.prompt": "secret prompt",
+        "gen_ai.completion": "secret completion",
+        "gen_ai.input.messages": "secret",
         "http.method": "GET",
+        "gen_ai.usage.input_tokens": 17,
       }),
-    ).toEqual({ spanKind: "LLM" });
-  });
-
-  test("returns nothing for non-OpenInference spans", () => {
-    // Allowlisted but generic keys must not be captured when the
-    // openinference.span.kind marker is absent.
-    expect(
-      extractAIMetadataFromAttributes({
-        "user.id": "user-123",
-        "session.id": "session-456",
-        "tool.name": "search",
-        "llm.token_count.prompt": 17,
-      }),
-    ).toEqual({});
-  });
-
-  test("returns nothing when the span kind marker is empty", () => {
-    expect(
-      extractAIMetadataFromAttributes({
-        "openinference.span.kind": "",
-        "llm.model_name": "gpt-4o",
-      }),
-    ).toEqual({});
+    ).toEqual({ inputTokens: 17 });
   });
 
   test("coerces quoted-string int64 counts to numbers", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "openinference.span.kind": "LLM",
-        "llm.token_count.prompt": "17",
+        "gen_ai.usage.input_tokens": "17",
       }),
-    ).toEqual({ spanKind: "LLM", inputTokens: 17 });
+    ).toEqual({ inputTokens: 17 });
   });
 
   test("drops empty-string text fields", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "openinference.span.kind": "LLM",
-        "llm.model_name": "",
+        "gen_ai.request.model": "",
       }),
-    ).toEqual({ spanKind: "LLM" });
+    ).toEqual({});
   });
 
   test("drops non-numeric values for numeric fields", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "openinference.span.kind": "LLM",
-        "llm.token_count.prompt": "not-a-number",
-        "llm.token_count.completion": true,
-        "llm.token_count.total": "",
+        "gen_ai.usage.input_tokens": "not-a-number",
+        "gen_ai.usage.output_tokens": true,
+        "gen_ai.usage.total_tokens": "",
       }),
-    ).toEqual({ spanKind: "LLM" });
+    ).toEqual({});
   });
 
   test("drops undefined values", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "openinference.span.kind": "LLM",
-        "llm.model_name": undefined,
+        "gen_ai.request.model": undefined,
       }),
-    ).toEqual({ spanKind: "LLM" });
+    ).toEqual({});
   });
 });
 
 describe("aggregate", () => {
-  test("sums token-count and cost fields across calls", () => {
+  test("sums token-count fields across calls", () => {
     const a: AIMetadata = {
       inputTokens: 10,
-      totalTokens: 15,
-      totalCost: 0.001,
+      outputTokens: 4,
+      totalTokens: 14,
     };
     const b: AIMetadata = {
       inputTokens: 7,
+      outputTokens: 5,
       totalTokens: 12,
-      totalCost: 0.002,
     };
     expect(aggregate(a, b)).toEqual({
       inputTokens: 17,
-      totalTokens: 27,
-      totalCost: 0.003,
+      outputTokens: 9,
+      totalTokens: 26,
     });
   });
 
   test("last-write-wins for non-summed fields", () => {
     expect(
       aggregate(
-        { model: "gpt-4.1-nano", spanKind: "LLM", rerankerTopK: 5 },
-        { model: "gpt-4o", rerankerTopK: 3 },
+        { requestModel: "gpt-4.1-nano", provider: "openai", responseId: "a" },
+        { requestModel: "gpt-4o", responseId: "b" },
       ),
-    ).toEqual({ model: "gpt-4o", spanKind: "LLM", rerankerTopK: 3 });
+    ).toEqual({ requestModel: "gpt-4o", provider: "openai", responseId: "b" });
+  });
+
+  test("replaces request parameters rather than summing them", () => {
+    expect(
+      aggregate(
+        { temperature: 0.7, maxTokens: 64, topP: 0.9 },
+        { temperature: 0.1, maxTokens: 32, seed: 42 },
+      ),
+    ).toEqual({
+      temperature: 0.1,
+      maxTokens: 32,
+      topP: 0.9,
+      seed: 42,
+    });
   });
 
   test("keeps fields present in only one input", () => {
-    expect(aggregate({ inputTokens: 10 }, { model: "gpt-4o" })).toEqual({
+    expect(aggregate({ inputTokens: 10 }, { requestModel: "gpt-4o" })).toEqual({
       inputTokens: 10,
-      model: "gpt-4o",
+      requestModel: "gpt-4o",
     });
   });
 
@@ -274,11 +296,41 @@ describe("toInngestAIMetadataValues", () => {
   test("maps canonical fields onto the server's snake_case schema", () => {
     expect(
       toInngestAIMetadataValues({
-        model: "gpt-4o",
+        requestModel: "gpt-4o",
+        responseModel: "gpt-4o-2024-08-06",
+        provider: "openai",
+        responseId: "chatcmpl-abc",
         inputTokens: 42,
-        rerankerTopK: 5,
+        outputTokens: 8,
+        totalTokens: 50,
+        cacheReadTokens: 30,
+        cacheCreationTokens: 12,
+        reasoningTokens: 4,
+        temperature: 0.7,
+        topP: 0.9,
+        maxTokens: 64,
+        frequencyPenalty: 0.2,
+        presencePenalty: 0.1,
+        seed: 42,
       }),
-    ).toEqual({ model: "gpt-4o", input_tokens: 42, reranker_top_k: 5 });
+    ).toEqual({
+      request_model: "gpt-4o",
+      response_model: "gpt-4o-2024-08-06",
+      provider: "openai",
+      response_id: "chatcmpl-abc",
+      input_tokens: 42,
+      output_tokens: 8,
+      total_tokens: 50,
+      cache_read_tokens: 30,
+      cache_creation_tokens: 12,
+      reasoning_tokens: 4,
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 64,
+      frequency_penalty: 0.2,
+      presence_penalty: 0.1,
+      seed: 42,
+    });
   });
 
   test("returns undefined when there is nothing to emit", () => {
@@ -287,20 +339,14 @@ describe("toInngestAIMetadataValues", () => {
 });
 
 describe("FIELD_SPECS", () => {
-  test("every source key is a published OpenInference semantic convention", () => {
-    // Guards the allowlist against typos / spec renames: each source must be a
-    // real attribute-key value exported by the semantic-conventions package.
-    const known = new Set<string>(
-      Object.values(SemanticConventions).filter(
-        (value) => typeof value === "string",
-      ) as string[],
+  test("every source key is a gen_ai.* semantic convention attribute", () => {
+    // Guards the allowlist against typos: every source must live in the
+    // OpenTelemetry GenAI (`gen_ai.*`) namespace.
+    const nonGenAi = FIELD_SPECS.map((spec) => spec.source).filter(
+      (source) => !source.startsWith("gen_ai."),
     );
 
-    const unknownSources = FIELD_SPECS.map((spec) => spec.source).filter(
-      (source) => !known.has(source),
-    );
-
-    expect(unknownSources).toEqual([]);
+    expect(nonGenAi).toEqual([]);
   });
 
   test("each canonical field is mapped at most once", () => {
