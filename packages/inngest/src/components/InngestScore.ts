@@ -134,7 +134,7 @@ export async function sendStepScore(
         options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: {value: options.value }},
+    { [options.name]: { value: options.value } },
     `${scoreKind}`,
     "merge",
   );
