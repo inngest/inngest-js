@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { internalEvents } from "../helpers/consts.ts";
+import { deferExperimentKey, internalEvents } from "../helpers/consts.ts";
 import { UnreachableError } from "../helpers/errors.ts";
 import { type Marker, markerKey } from "../helpers/marker.ts";
 import { isRecord } from "../helpers/types.ts";
@@ -7,6 +7,7 @@ import type {
   ApplyAllMiddlewareCtxExtensions,
   ApplyAllMiddlewareStepExtensions,
   BaseContext,
+  ExperimentRef,
   FunctionConfig,
   Handler,
 } from "../types.ts";
@@ -26,6 +27,21 @@ import type { Middleware } from "./middleware/index.ts";
 const idDenyRegex = /['\\\n\r]/;
 
 /**
+ * Validates the reserved experiment-ref input key into an `ExperimentRef`, or
+ * `undefined` when it's absent or malformed.
+ */
+function parseExperimentRef(value: unknown): ExperimentRef | undefined {
+  if (
+    isRecord(value) &&
+    typeof value.experimentName === "string" &&
+    typeof value.variant === "string"
+  ) {
+    return { experimentName: value.experimentName, variant: value.variant };
+  }
+  return undefined;
+}
+
+/**
  * Strips our `_inngest` metadata off an event's `data` in place and returns the
  * parent routing metadata extracted from it.
  */
@@ -33,7 +49,7 @@ function stripInngestMetadata(event: {
   data?: Record<string, unknown>;
 }): DeferredFunction.Parent {
   const data = event.data ?? {};
-  const { _inngest, ...input } = data;
+  const { _inngest, [deferExperimentKey]: experiment, ...input } = data;
 
   if (!isRecord(_inngest)) {
     throw new UnreachableError("deferred event is missing _inngest metadata");
@@ -56,6 +72,7 @@ function stripInngestMetadata(event: {
   return {
     fnSlug: parent_fn_slug,
     runId: parent_run_id,
+    experiment: parseExperimentRef(experiment),
   };
 }
 
@@ -183,6 +200,7 @@ export namespace DeferredFunction {
   export type Parent = {
     fnSlug: string;
     runId: string;
+    experiment?: ExperimentRef;
   };
 }
 

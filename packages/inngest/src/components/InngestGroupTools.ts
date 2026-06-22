@@ -1,5 +1,5 @@
 import type { IsNever } from "../helpers/types.ts";
-import type { StepOptionsOrId } from "../types.ts";
+import type { ExperimentRef, StepOptionsOrId } from "../types.ts";
 import {
   type AsyncContext,
   getAsyncCtxSync,
@@ -128,19 +128,6 @@ export interface ExperimentOptions<
 }
 
 /**
- * Options for `group.experiment()` when `withVariant` is true, which causes
- * the return type to include both the result and the selected variant name.
- */
-export interface ExperimentOptionsWithVariant<
-  TVariants extends Record<string, () => unknown>,
-> extends ExperimentOptions<TVariants> {
-  /**
-   * When true, the return value includes the variant name alongside the result.
-   */
-  withVariant: true;
-}
-
-/**
  * Computes the return type of an experiment based on variant callbacks.
  *
  * When `TConstraint` is `never`, the return type is inferred as the union of
@@ -164,30 +151,17 @@ export interface ExperimentMetadataValues {
   variant_weights?: Record<string, number>;
 }
 
-/**
- * Overloaded interface for `group.experiment()`.
- */
+/** Run an A/B experiment; returns the result, the selected variant, and a
+ *  replay-stable handle for scoring the experiment later. */
 export interface GroupExperiment {
-  /**
-   * Run an A/B experiment that selects and executes a variant. Returns both
-   * the result and the selected variant name.
-   */
-  <TVariants extends Record<string, () => unknown>>(
-    idOrOptions: StepOptionsOrId,
-    options: ExperimentOptionsWithVariant<TVariants>,
-  ): Promise<{
-    result: VariantResult<never, TVariants>;
-    variant: string;
-  }>;
-
-  /**
-   * Run an A/B experiment that selects and executes a variant. Returns only
-   * the variant callback's result.
-   */
   <TVariants extends Record<string, () => unknown>>(
     idOrOptions: StepOptionsOrId,
     options: ExperimentOptions<TVariants>,
-  ): Promise<VariantResult<never, TVariants>>;
+  ): Promise<{
+    result: VariantResult<never, TVariants>;
+    variant: string;
+    experimentRef: ExperimentRef;
+  }>;
 }
 
 /**
@@ -277,7 +251,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
-    const { variants, select, withVariant } = options;
+    const { variants, select } = options;
     const variantNames = Object.keys(variants);
 
     if (variantNames.length === 0) {
@@ -427,11 +401,11 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
       );
     }
 
-    if (withVariant) {
-      return { result, variant: selectedVariant };
-    }
-
-    return result;
+    return {
+      result,
+      variant: selectedVariant,
+      experimentRef: { experimentName: stepOpts.id, variant: selectedVariant },
+    };
   }) as GroupExperiment;
 
   return { parallel, experiment };

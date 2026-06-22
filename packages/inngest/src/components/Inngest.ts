@@ -57,7 +57,13 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
-import { type ScoreOptions, sendScore } from "./InngestScore.ts";
+import {
+  type ClientScore,
+  type ScoreExperimentOptions,
+  type ScoreOptions,
+  sendScore,
+  sendScoreExperiment,
+} from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
@@ -314,15 +320,17 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
-   * Write a live score for a run or a specific run step.
-   *
-   * Explicit targets win. Otherwise, the current run or step is inferred from
-   * the execution context.
+   * Write scores. Call directly to write a live score for a run or step; use
+   * `inngest.score.experiment(...)` to attach a score to a `group.experiment()`
+   * variant.
    *
    * For standalone durable score writes, prefer `step.score()`.
    */
-  public async score(options: ScoreOptions): Promise<void> {
-    await sendScore(this, options);
+  get score(): ClientScore {
+    return Object.assign((options: ScoreOptions) => sendScore(this, options), {
+      experiment: (options: ScoreExperimentOptions) =>
+        sendScoreExperiment(this, options),
+    });
   }
 
   /**

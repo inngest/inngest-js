@@ -462,7 +462,7 @@ describe("group.experiment() core flow", () => {
       }),
     );
 
-    expect(result).toBe("old-result");
+    expect(result).toEqual(expect.objectContaining({ result: "old-result" }));
     expect(memoizedStepRun).toHaveBeenCalledTimes(1);
   });
 
@@ -496,51 +496,25 @@ describe("group.experiment() core flow", () => {
 // ====================================================================
 
 describe("group.experiment() return shapes", () => {
-  test("returns variant result by default", async () => {
+  test("returns result, variant, and a stable experimentRef", async () => {
     const { group, run } = createHarness();
 
-    const result = await run(() =>
-      group.experiment("exp", {
+    const out = await run(() =>
+      group.experiment("checkout-flow", {
         variants: {
-          a: () => {
+          control: () => {
             fakeStepCall();
-            return "result-a";
-          },
-          b: () => {
-            fakeStepCall();
-            return "result-b";
+            return "c";
           },
         },
-        select: experiment.fixed("a"),
+        select: experiment.fixed("control"),
       }),
     );
 
-    expect(result).toBe("result-a");
-  });
-
-  test("returns { result, variant } when withVariant is true", async () => {
-    const { group, run } = createHarness();
-
-    const result = await run(() =>
-      group.experiment("exp", {
-        variants: {
-          a: () => {
-            fakeStepCall();
-            return "result-a";
-          },
-          b: () => {
-            fakeStepCall();
-            return "result-b";
-          },
-        },
-        select: experiment.fixed("b"),
-        withVariant: true,
-      }),
-    );
-
-    expect(result).toEqual({
-      result: "result-b",
-      variant: "b",
+    expect(out).toEqual({
+      result: "c",
+      variant: "control",
+      experimentRef: { experimentName: "checkout-flow", variant: "control" },
     });
   });
 });
@@ -553,7 +527,7 @@ describe("group.experiment() edge cases", () => {
   test("single variant — selection runs and returns result", async () => {
     const { group, run } = createHarness();
 
-    const result = await run(() =>
+    const out = await run(() =>
       group.experiment("single", {
         variants: {
           only: () => {
@@ -565,7 +539,7 @@ describe("group.experiment() edge cases", () => {
       }),
     );
 
-    expect(result).toBe("only-result");
+    expect(out.result).toBe("only-result");
   });
 
   test("custom returning invalid variant throws NonRetriableError", async () => {
