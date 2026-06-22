@@ -1,68 +1,69 @@
 import type { Attributes } from "@opentelemetry/api";
 
 /**
- * Canonical AI metadata extracted from a span's OpenInference attributes.
+ * Canonical AI metadata extracted from a span's OpenTelemetry GenAI semantic
+ * convention (`gen_ai.*`) attributes.
  *
  * The fields below are an explicit **allowlist**: only these are ever read from
  * a span (see {@link FIELD_SPECS}). Anything not mapped — prompt/response
- * content, messages, tool calls, embeddings, and other potentially-sensitive or
- * bulky payloads — is not captured.
+ * content, messages, tool calls, embeddings payloads, and other
+ * potentially-sensitive or bulky attributes — is not captured.
  *
- * For each category, we describe how we handle aggregation of multiple
- * AIMetadata.
+ * For each category we describe how multiple AIMetadata values are aggregated
+ * (see {@link aggregate}).
  */
 export interface AIMetadata {
   // Identity & classification (last-write-wins).
-  spanKind?: string;
-  model?: string;
+
+  /** The requested model, e.g. `gpt-4.1-nano`. */
+  requestModel?: string;
+  /**
+   * The model that actually served the request. This is often a dated snapshot
+   * of the requested {@link AIMetadata.requestModel} (e.g.
+   * `gpt-4.1-nano-2025-04-14`).
+   */
+  responseModel?: string;
+  /** The AI provider that served the request (e.g. `openai`) */
   provider?: string;
-  system?: string;
-  finishReason?: string;
-
-  // Correlation / identity (last-write-wins).
-  sessionId?: string;
-  userId?: string;
-  agentName?: string;
-  graphNodeId?: string;
-  graphNodeName?: string;
-  graphNodeParentId?: string;
-
-  // Prompt provenance (last-write-wins).
-  promptVendor?: string;
-  promptId?: string;
-  promptUrl?: string;
-  promptTemplateVersion?: string;
+  /** The provider's identifier for the response, e.g. `chatcmpl-...`. */
+  responseId?: string;
 
   // Token usage (summed).
+
+  /** The number of input tokens consumed by the request. */
   inputTokens?: number;
+  /** The number of output tokens produced by the response. */
   outputTokens?: number;
+  /** The total tokens consumed, as reported by the provider. */
   totalTokens?: number;
-  cachedInputTokens?: number;
-  cacheWriteTokens?: number;
-  cacheInputTokens?: number;
-  inputAudioTokens?: number;
+  /**
+   * Cached input tokens read from the prompt cache. Providers differ on
+   * accounting. OpenAI's cached tokens are a subset of
+   * {@link AIMetadata.inputTokens}, Anthropic's are additive. Callers must
+   * not assume a single relationship.
+   */
+  cacheReadTokens?: number;
+  /** Tokens written to the prompt cache. */
+  cacheCreationTokens?: number;
+  /** Reasoning/thinking tokens, when the emitter reports them separately. */
   reasoningTokens?: number;
-  outputAudioTokens?: number;
 
-  // Cost (summed).
-  inputCost?: number;
-  outputCost?: number;
-  totalCost?: number;
-  inputTokenCost?: number;
-  outputTokenCost?: number;
-  cachedInputCost?: number;
-  cacheWriteCost?: number;
-  cacheInputCost?: number;
-  inputAudioCost?: number;
-  reasoningCost?: number;
-  outputAudioCost?: number;
+  // Request / inference parameters (last-write-wins). These describe the
+  // request the caller made, not the response, and are stored raw as the
+  // emitter reports them.
 
-  // Embedding (last-write-wins).
-  embeddingModel?: string;
-
-  // Reranker (last-write-wins).
-  rerankerModel?: string;
-  rerankerTopK?: number;
+  /** Sampling temperature requested, e.g. `0.7`. */
+  temperature?: number;
+  /** Nucleus sampling probability mass requested (`top_p`), e.g. `0.9`. */
+  topP?: number;
+  /** Upper bound on tokens to generate (`max_tokens`). */
+  maxTokens?: number;
+  /** Frequency penalty requested. */
+  frequencyPenalty?: number;
+  /** Presence penalty requested. */
+  presencePenalty?: number;
+  /** Sampling seed requested, when the emitter reports it. */
+  seed?: number;
 }
 
 type ValueType = "text" | "number";
@@ -89,7 +90,7 @@ type TextField = FieldsWithValue<string>;
 type NumberField = FieldsWithValue<number>;
 
 interface BaseFieldSpec {
-  /** The source OpenInference attribute key. */
+  /** The source `gen_ai.*` attribute key. */
   source: string;
   valueType: ValueType;
   merge: MergeStrategy;
@@ -108,9 +109,7 @@ interface NumberFieldSpec extends BaseFieldSpec {
   valueType: "number";
 }
 
-type NumberFieldOptions = {
-  merge?: MergeStrategy;
-};
+type FieldSpec = TextFieldSpec | NumberFieldSpec;
 
 function textField(field: TextField, source: string): TextFieldSpec {
   return {
@@ -124,7 +123,7 @@ function textField(field: TextField, source: string): TextFieldSpec {
 function numberField(
   field: NumberField,
   source: string,
-  { merge = "sum" }: NumberFieldOptions = {},
+  merge: MergeStrategy,
 ): NumberFieldSpec {
   return {
     field,
@@ -135,73 +134,43 @@ function numberField(
 }
 
 /**
- * The attribute every OpenInference span carries to declare its kind (`LLM`,
- * `CHAIN`, `TOOL`, …). We use its presence as the discriminator for "is this an
- * OpenInference span?".
- */
-const OPENINFERENCE_SPAN_KIND = "openinference.span.kind";
-
-/**
- * Every OpenInference attribute we capture, mapped to its
- * canonical field.
+ * Every `gen_ai.*` attribute we capture, mapped to its canonical field.
  *
- * Anything not listed here (content, sensitive payloads,
+ * Anything not listed here (prompt/response content, messages, tool calls,
  * unknown keys) is ignored.
  */
 export const FIELD_SPECS = [
   // Identity & classification.
-  textField("spanKind", OPENINFERENCE_SPAN_KIND),
-  textField("model", "llm.model_name"),
-  textField("provider", "llm.provider"),
-  textField("system", "llm.system"),
-  textField("finishReason", "llm.finish_reason"),
-
-  // Correlation / identity.
-  textField("sessionId", "session.id"),
-  textField("userId", "user.id"),
-  textField("agentName", "agent.name"),
-  textField("graphNodeId", "graph.node.id"),
-  textField("graphNodeName", "graph.node.name"),
-  textField("graphNodeParentId", "graph.node.parent_id"),
-
-  // Prompt provenance.
-  textField("promptVendor", "prompt.vendor"),
-  textField("promptId", "prompt.id"),
-  textField("promptUrl", "prompt.url"),
-  textField("promptTemplateVersion", "llm.prompt_template.version"),
+  textField("requestModel", "gen_ai.request.model"),
+  textField("responseModel", "gen_ai.response.model"),
+  textField("provider", "gen_ai.provider.name"),
+  textField("responseId", "gen_ai.response.id"),
 
   // Token usage.
-  numberField("inputTokens", "llm.token_count.prompt"),
-  numberField("outputTokens", "llm.token_count.completion"),
-  numberField("totalTokens", "llm.token_count.total"),
-  numberField("cachedInputTokens", "llm.token_count.prompt_details.cache_read"),
-  numberField("cacheWriteTokens", "llm.token_count.prompt_details.cache_write"),
-  numberField("cacheInputTokens", "llm.token_count.prompt_details.cache_input"),
-  numberField("inputAudioTokens", "llm.token_count.prompt_details.audio"),
+  numberField("inputTokens", "gen_ai.usage.input_tokens", "sum"),
+  numberField("outputTokens", "gen_ai.usage.output_tokens", "sum"),
+  numberField("totalTokens", "gen_ai.usage.total_tokens", "sum"),
+  numberField("cacheReadTokens", "gen_ai.usage.cache_read.input_tokens", "sum"),
   numberField(
-    "reasoningTokens",
-    "llm.token_count.completion_details.reasoning",
+    "cacheCreationTokens",
+    "gen_ai.usage.cache_creation.input_tokens",
+    "sum",
   ),
-  numberField("outputAudioTokens", "llm.token_count.completion_details.audio"),
+  numberField("reasoningTokens", "gen_ai.usage.reasoning.output_tokens", "sum"),
 
-  // Cost.
-  numberField("inputCost", "llm.cost.prompt"),
-  numberField("outputCost", "llm.cost.completion"),
-  numberField("totalCost", "llm.cost.total"),
-  numberField("inputTokenCost", "llm.cost.prompt_details.input"),
-  numberField("outputTokenCost", "llm.cost.completion_details.output"),
-  numberField("cachedInputCost", "llm.cost.prompt_details.cache_read"),
-  numberField("cacheWriteCost", "llm.cost.prompt_details.cache_write"),
-  numberField("cacheInputCost", "llm.cost.prompt_details.cache_input"),
-  numberField("inputAudioCost", "llm.cost.prompt_details.audio"),
-  numberField("reasoningCost", "llm.cost.completion_details.reasoning"),
-  numberField("outputAudioCost", "llm.cost.completion_details.audio"),
-
-  // Embedding / reranker.
-  textField("embeddingModel", "embedding.model_name"),
-  textField("rerankerModel", "reranker.model_name"),
-  numberField("rerankerTopK", "reranker.top_k", { merge: "replace" }),
-] as const;
+  // Request / inference parameters. These describe the request, not a quantity,
+  // so they replace rather than sum when a step makes several calls.
+  numberField("temperature", "gen_ai.request.temperature", "replace"),
+  numberField("topP", "gen_ai.request.top_p", "replace"),
+  numberField("maxTokens", "gen_ai.request.max_tokens", "replace"),
+  numberField(
+    "frequencyPenalty",
+    "gen_ai.request.frequency_penalty",
+    "replace",
+  ),
+  numberField("presencePenalty", "gen_ai.request.presence_penalty", "replace"),
+  numberField("seed", "gen_ai.request.seed", "replace"),
+] as const satisfies readonly FieldSpec[];
 
 function parseNumericAttribute(value: unknown): number | undefined {
   if (typeof value === "number") {
@@ -219,12 +188,13 @@ function parseNumericAttribute(value: unknown): number | undefined {
 /**
  * Extracts {@link AIMetadata} from a span's attributes.
  *
- * Returns an empty object unless the span is an OpenInference span.
- *
  * Only the allowlisted {@link FIELD_SPECS} are read. Every other attribute is
  * ignored. Numeric fields accept numbers and quoted numeric strings and are
  * otherwise dropped, as OTLP/JSON may encode int64 as a quoted string. Text
  * fields are dropped when empty.
+ *
+ * Returns an empty object for spans carrying no recognised `gen_ai.*`
+ * attributes.
  *
  * @param attributes - The span attributes, as exposed by
  * `ReadableSpan.attributes`.
@@ -233,13 +203,6 @@ export const extractAIMetadataFromAttributes = (
   attributes: Attributes,
 ): AIMetadata => {
   const metadata: AIMetadata = {};
-
-  // Gate on the OpenInference marker: without it, this isn't an OpenInference
-  // span and its attributes must not be mined for AI metadata.
-  const spanKind = attributes[OPENINFERENCE_SPAN_KIND];
-  if (typeof spanKind !== "string" || spanKind === "") {
-    return metadata;
-  }
 
   for (const spec of FIELD_SPECS) {
     const value = attributes[spec.source];
@@ -267,9 +230,9 @@ export const extractAIMetadataFromAttributes = (
  * Aggregates two {@link AIMetadata} values, folding a later call's metadata into
  * an earlier accumulator for a single step.
  *
- * - Token-count and cost fields (`merge: "sum"`) are **summed**, so a step
- *   that makes several LLM calls reports their combined usage.
- * - Every other field uses `merge: "replace"` (`b` overwrites `a`).
+ * - Token-count fields (`merge: "sum"`) are **summed**, so a step that makes
+ *   several LLM calls reports their combined usage.
+ * - Every other field uses `merge: "replace"` (`b` overwrites `a`)
  *
  * A field is present in the result only when at least one input supplies it.
  *
@@ -280,29 +243,24 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
   const out: AIMetadata = { ...a };
 
   for (const spec of FIELD_SPECS) {
-    if (spec.merge === "sum") {
+    if (spec.valueType === "number") {
       const bValue = b[spec.field];
       if (bValue === undefined) {
         continue;
       }
 
-      const aValue = out[spec.field];
-      out[spec.field] = (aValue ?? 0) + bValue;
-    } else if (spec.merge === "replace") {
-      // We split the following block, despite identical content to get strong typing.
-      if (spec.valueType === "number") {
-        const bValue = b[spec.field];
-        if (bValue === undefined) {
-          continue;
-        }
-        out[spec.field] = bValue;
-      } else if (spec.valueType === "text") {
-        const bValue = b[spec.field];
-        if (bValue === undefined) {
-          continue;
-        }
+      if (spec.merge === "sum") {
+        out[spec.field] = (out[spec.field] ?? 0) + bValue;
+      } else {
         out[spec.field] = bValue;
       }
+    } else if (spec.valueType === "text") {
+      // Text fields are always replace.
+      const bValue = b[spec.field];
+      if (bValue === undefined) {
+        continue;
+      }
+      out[spec.field] = bValue;
     }
   }
 
