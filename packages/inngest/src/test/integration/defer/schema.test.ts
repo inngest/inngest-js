@@ -53,7 +53,7 @@ test("schema validation succeeds", async () => {
       defer("foo", { function: foo, data: { msg } });
 
       // Assert that the static type is correct (we don't want `data` to be
-      // `any`)
+      // `Record<string, any>`)
       expectTypeOf<
         Parameters<typeof defer<typeof foo>>[1]["data"]
       >().not.toBeAny();
@@ -287,6 +287,63 @@ test("defer without schema defaults to any", async () => {
   await parentState.waitForRunComplete();
   await deferState.waitForRunComplete();
   expect(deferState.eventData).toEqual({ key: "value" });
+});
+
+test("non-object data logs and skips defer", async () => {
+  const state = createState({
+    deferHandlerReached: false,
+  });
+
+  const logger = spyLogger();
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    logger,
+  });
+  const eventName = randomSuffix("evt");
+  const foo = createDefer(client, { id: "foo" }, async () => {
+    state.deferHandlerReached = true;
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId }) => {
+      state.runId = runId;
+
+      // Bypass static types to exercise the runtime guard.
+      defer("foo", { function: foo, data: "nope" as never });
+
+      // Assert that the static type is correct
+      expectTypeOf<
+        Parameters<typeof defer<typeof foo>>[1]["data"]
+      >().not.toBeAny();
+      expectTypeOf<
+        Parameters<typeof defer<typeof foo>>[1]["data"]
+      >().toEqualTypeOf<Record<string, any>>();
+    },
+  );
+  await createTestApp({
+    client,
+    functions: [fn, foo],
+    serve: createServer,
+  });
+
+  await client.send({ name: eventName, data: {} });
+  await state.waitForRunComplete();
+
+  // Wait long enough to give the defer handler a chance to run (it shouldn't)
+  await sleep(2000);
+  expect(state.deferHandlerReached).toBe(false);
+
+  expect(logger.error).toHaveBeenCalledWith(
+    expect.objectContaining({
+      runId: state.runId,
+    }),
+    "defer skipped: data must be an object",
+  );
 });
 
 test("mixed defer functions: with and without schema", () => {

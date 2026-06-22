@@ -519,16 +519,18 @@ export type WithInvocation<T extends EventPayload> = Simplify<
  * against the function's schema. The data type is inferred from the function's
  * schema.
  */
+type DeferData<TFn extends DeferredFunction.Any> = TFn extends DeferredFunction<
+  StandardSchemaV1<infer D extends Record<string, unknown>>
+>
+  ? D
+  : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+    Record<string, any>;
+
 export type DeferFn = <TFn extends DeferredFunction.Any>(
   id: string,
   options: {
     function: TFn;
-    data: TFn extends DeferredFunction<
-      StandardSchemaV1<infer D extends Record<string, unknown>>
-    >
-      ? D
-      : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
-        Record<string, any>;
+    data: DeferData<NoInfer<TFn>>;
   },
 ) => void;
 
