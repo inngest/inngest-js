@@ -49,22 +49,24 @@ interface OtlpSpan {
   attributes: Attributes;
 }
 
+interface OtlpTraceRequest {
+  resourceSpans?: {
+    scopeSpans?: {
+      spans?: {
+        name: string;
+        attributes?: { key: string; value: OtlpAnyValue }[];
+      }[];
+    }[];
+  }[];
+}
+
 /**
  * Parse an OTLP/JSON `ExportTraceServiceRequest` fixture into a flat list of
  * spans (in document order), each with its attributes converted to the
  * `Attributes` record shape the SDK exposes via `ReadableSpan.attributes`.
  */
 const loadOtlpSpans = (fixturePath: string): OtlpSpan[] => {
-  const req = JSON.parse(readFileSync(fixturePath, "utf8")) as {
-    resourceSpans?: {
-      scopeSpans?: {
-        spans?: {
-          name: string;
-          attributes?: { key: string; value: OtlpAnyValue }[];
-        }[];
-      }[];
-    }[];
-  };
+  const req: OtlpTraceRequest = JSON.parse(readFileSync(fixturePath, "utf8"));
 
   const spans: OtlpSpan[] = [];
   for (const rs of req.resourceSpans ?? []) {
@@ -212,6 +214,8 @@ describe("extractAIMetadataFromAttributes", () => {
       extractAIMetadataFromAttributes({
         "openinference.span.kind": "LLM",
         "llm.token_count.prompt": "not-a-number",
+        "llm.token_count.completion": true,
+        "llm.token_count.total": "",
       }),
     ).toEqual({ spanKind: "LLM" });
   });
@@ -220,7 +224,7 @@ describe("extractAIMetadataFromAttributes", () => {
     expect(
       extractAIMetadataFromAttributes({
         "openinference.span.kind": "LLM",
-        "llm.model_name": undefined as unknown as AttributeValue,
+        "llm.model_name": undefined,
       }),
     ).toEqual({ spanKind: "LLM" });
   });
