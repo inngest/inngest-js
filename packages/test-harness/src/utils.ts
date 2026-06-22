@@ -68,7 +68,7 @@ const traceOutputSchema = z.object({
         error: z
           .object({
             message: z.string(),
-            name: z.string(),
+            name: z.string().nullable(),
           })
           .nullable(),
       })
@@ -287,9 +287,9 @@ export class BaseState {
     });
   }
 
-  async waitForRunComplete(): Promise<unknown> {
+  async waitForRunComplete(timeout?: number): Promise<unknown> {
     const runId = await this.waitForRunId();
-    const result = await fetchRunResult(runId);
+    const result = await fetchRunResult(runId, timeout);
     if (result.error) {
       throw new Error(
         `Expected run ${runId} to complete, but it errored: ${JSON.stringify(result.error)}`,
@@ -298,9 +298,9 @@ export class BaseState {
     return result.data;
   }
 
-  async waitForRunFailed(): Promise<unknown> {
+  async waitForRunFailed(timeout?: number): Promise<unknown> {
     const runId = await this.waitForRunId();
-    const result = await fetchRunResult(runId);
+    const result = await fetchRunResult(runId, timeout);
     if (!result.error) {
       throw new Error(
         `Expected run ${runId} to fail, but it completed with: ${JSON.stringify(result.data)}`,

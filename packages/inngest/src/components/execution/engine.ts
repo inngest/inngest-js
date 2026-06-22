@@ -17,7 +17,10 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { isDeferredFunction } from "../../helpers/marker.ts";
+import {
+  isDeferredFunction,
+  isStaleDispatchError,
+} from "../../helpers/marker.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -87,6 +90,12 @@ import {
 } from "./InngestExecution.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+import {
+  type AIMetadata,
+  aggregate as aggregateAIMetadata,
+  toInngestAIMetadataValues,
+} from "./otel/aiExtractor.ts";
+import { metadataSpanProcessor } from "./otel/metadataProcessor.ts";
 import {
   buildSseMetadataEvent,
   prependToStream,
@@ -306,6 +315,30 @@ class InngestExecutionEngine
                 tracestate: this.options.headers[headerKeys.TraceState],
               });
 
+              if (this.options.client.aiMetadataEnabled) {
+                // The metadata span processor is independent of the Extended
+                // Traces processor above.
+                metadataSpanProcessor.declareStartingSpan({
+                  span,
+                  traceparent: this.options.headers[headerKeys.TraceParent],
+                  onAIMetadata: (aiMetadata) => {
+                    // Only attribute AI metadata to spans ending while a
+                    // step's userland code is executing;
+                    if (!this.state.executingStep) {
+                      return;
+                    }
+
+                    this.state.executingStepAIMetadata = this.state
+                      .executingStepAIMetadata
+                      ? aggregateAIMetadata(
+                          this.state.executingStepAIMetadata,
+                          aiMetadata,
+                        )
+                      : aiMetadata;
+                  },
+                });
+              }
+
               return this._start()
                 .then((result) => {
                   this.devDebug("result:", result);
@@ -475,9 +508,15 @@ class InngestExecutionEngine
             runId: this.fnArg.runId,
             fnId: internalFnId,
             queueItemId,
+            requestId: this.options.requestId,
+            generationId: this.options.generationId,
+            requestStartedAt: this.options.requestStartedAt,
             steps,
           }),
-        CHECKPOINT_RETRY_OPTIONS,
+        {
+          ...CHECKPOINT_RETRY_OPTIONS,
+          shouldRetry: (err) => !isStaleDispatchError(err),
+        },
       );
     } else {
       throw new Error(
@@ -841,6 +880,29 @@ class InngestExecutionEngine
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
+        // When this request started as a retry attempt (attempt > 0), return
+        // the successful step to the executor without running any more user
+        // code in this request. In non-checkpoint mode, each step's first
+        // invocation arrives in a fresh request with attempt=0 from the
+        // executor, so subsequent steps get a full retry budget. Continuing
+        // execution here would mean any later step inherits the in-flight
+        // attempt counter, exhausting its retries.
+        const startedAsRetry = (this.options.data?.attempt ?? 0) > 0;
+        if (startedAsRetry && resume) {
+          delete this.state.executingStep;
+
+          // We need to interrupt and respond, rather than checkpointing and
+          // resuming. This is necessary because we need the attempt counter to
+          // reset. If the attempt counter doesn't reset, then we'll miss
+          // retries if the next step errors.
+          //
+          // We can't just reset the attempt counter to 0 within the SDK because
+          // the Executor's attempt counter is still >0. If the next step errors
+          // then we'll respond with the error and the Executor will incorrectly
+          // think the next step has already retried.
+          return stepRanHandler(stepResult);
+        }
+
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
         // Clear `executingStep` immediately after resuming, before any await.
@@ -878,6 +940,21 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
+          // The Inngest Server told us that the corresponding queue item is
+          // stale, so we need to interrupt to avoid running more steps. If we
+          // don't interrupt then we risk duplicate execution, since the same
+          // steps could be executed across multiple requests
+          if (isStaleDispatchError(err)) {
+            this.devDebug("stale dispatch detected; halting execution");
+            return {
+              type: "function-rejected" as const,
+              ctx: this.fnArg,
+              ops: {},
+              error: serializeError(err),
+              retriable: false,
+            };
+          }
+
           // If checkpointing fails for any reason, fall back to returning
           // ALL buffered steps to the executor via the normal async flow.
           // The executor persists completed steps and rediscovers any
@@ -1166,7 +1243,7 @@ class InngestExecutionEngine
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result event.
-        if (!this.streamTools.activated) {
+        if (this.options.isDurableEndpoint && !this.streamTools.activated) {
           this.postCheckpointStream();
         }
 
@@ -1194,7 +1271,7 @@ class InngestExecutionEngine
           await this.streamEnd();
         }
 
-        if (!this.streamTools.activated) {
+        if (this.options.isDurableEndpoint && !this.streamTools.activated) {
           this.postCheckpointStream();
         }
 
@@ -1617,6 +1694,12 @@ class InngestExecutionEngine
         );
     }
 
+    // Reset the per-step AI metadata accumulator. The metadata processor's
+    // sink (registered at run start) folds into it only while `executingStep`
+    // is set; an explicit reset here guards against residue from error paths
+    // that never reached this step's drain.
+    this.state.executingStepAIMetadata = undefined;
+
     let interval: GoInterval | undefined;
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
@@ -1652,6 +1735,15 @@ class InngestExecutionEngine
           clientProcessorMap
             .get(this.options.client)
             ?.clearStepExecution(this.rootSpanId);
+        }
+
+        // Drain the per-step AI metadata accumulator and attach it to the
+        // step's op.
+        const aiMetadata = this.state.executingStepAIMetadata;
+        this.state.executingStepAIMetadata = undefined;
+        const aiValues = aiMetadata && toInngestAIMetadataValues(aiMetadata);
+        if (aiValues) {
+          this.addMetadata(id, "inngest.ai", "step", "merge", aiValues);
         }
 
         if (store?.execution) {
@@ -2963,6 +3055,14 @@ export interface ExecutionState {
    * platforms.
    */
   executingStep?: Readonly<Omit<OutgoingOp, "id">>;
+
+  /**
+   * AI metadata accumulated from userland OTel spans that ended while the
+   * current step was executing, pushed by the metadata span processor's sink
+   * and drained into the step's outgoing op in the step's teardown. Only set
+   * while `executingStep` is.
+   */
+  executingStepAIMetadata?: AIMetadata;
 
   /**
    * A map of step IDs to their data, used to fill previously-completed steps

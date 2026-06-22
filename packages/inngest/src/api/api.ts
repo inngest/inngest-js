@@ -2,6 +2,7 @@ import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
 import type { ExecutionVersion } from "../helpers/consts.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
+import { type Marker, markerKey } from "../helpers/marker.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
 import {
@@ -22,6 +23,20 @@ import {
 } from "./schema.ts";
 
 type FetchT = typeof fetch;
+
+/**
+ * Thrown when the executor has already requeued the current run. Returning
+ * buffered ops after this would let the executor memoize them as canonical and
+ * chain the next dispatch off this dead invocation, producing duplicates.
+ */
+export class StaleDispatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StaleDispatchError";
+  }
+
+  readonly [markerKey]: Marker = { kind: "StaleDispatchError" };
+}
 
 const realtimeSubscriptionTokenSchema = z.object({
   jwt: z.string(),
@@ -538,12 +553,18 @@ export class InngestApi {
     runId: string;
     fnId: string;
     queueItemId: string;
+    generationId: number | undefined;
+    requestId: string | undefined;
+    requestStartedAt: number | undefined;
     steps: OutgoingOp[];
   }): Promise<void> {
     const body = JSON.stringify({
       run_id: args.runId,
       fn_id: args.fnId,
       qi_id: args.queueItemId,
+      request_id: args.requestId,
+      generation_id: args.generationId,
+      request_started_at: args.requestStartedAt,
       steps: args.steps,
       ts: new Date().valueOf(),
     });
@@ -563,6 +584,14 @@ export class InngestApi {
     }
 
     const res = result.value;
+    // 409 means the executor has already requeued. Halt rather than returning
+    // buffered ops, which would let the executor memoize them as canonical and
+    // chain the next dispatch off this dead invocation. See EXE-1552.
+    if (res.status === 409) {
+      throw new StaleDispatchError(
+        `Stale dispatch: checkpoint returned 409 (run ${args.runId})`,
+      );
+    }
     if (!res.ok) {
       throw new Error(
         `Failed to checkpoint async: ${res.status} ${

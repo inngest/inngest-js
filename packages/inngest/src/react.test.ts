@@ -4,6 +4,7 @@ import { realtime, staticSchema } from "./index.ts";
 import {
   type ClientSubscriptionToken,
   getClientSubscriptionToken,
+  type UseRealtimeOptions,
   type UseRealtimeResult,
   useRealtime,
 } from "./react.ts";
@@ -80,6 +81,22 @@ describe("react exports", () => {
       key: string;
       apiBaseUrl?: string;
     }>();
+  });
+
+  test("useRealtime accepts client subscription tokens with channel and topics", () => {
+    const channel = agentChat({ threadId: "thread-1" });
+    const token: ClientSubscriptionToken = {
+      key: "token",
+      apiBaseUrl: "http://localhost:8288/",
+    };
+
+    const options = {
+      channel,
+      topics: ["status"] as const,
+      token,
+    } satisfies UseRealtimeOptions<ChatInstance, readonly ["status"]>;
+
+    expectTypeOf(options.token).toEqualTypeOf<ClientSubscriptionToken>();
   });
 });
 

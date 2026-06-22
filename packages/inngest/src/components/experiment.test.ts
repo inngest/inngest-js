@@ -825,7 +825,7 @@ describe("group.experiment() metadata", () => {
       "step",
       "merge",
       expect.objectContaining({
-        experiment_name: "checkout-flow",
+        name: "checkout-flow",
         variant: "control",
         selection_strategy: "fixed",
         available_variants: ["control", "treatment"],
@@ -906,7 +906,8 @@ describe("group.experiment() metadata", () => {
       "step",
       "merge",
       expect.objectContaining({
-        message: expect.stringContaining("null/undefined"),
+        "sdk.group.experiment.nullishBucket":
+          expect.stringContaining("null/undefined"),
       }),
     );
   });
@@ -988,7 +989,7 @@ describe("group.experiment() metadata", () => {
     );
     const values = call![4] as Record<string, unknown>;
 
-    expect(values.experiment_name).toBe("full-meta");
+    expect(values.name).toBe("full-meta");
     expect(values.variant).toBeDefined();
     expect(["control", "treatment"]).toContain(values.variant);
     expect(values.selection_strategy).toBe("weighted");

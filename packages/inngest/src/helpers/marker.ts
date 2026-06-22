@@ -1,3 +1,4 @@
+import type { StaleDispatchError } from "../api/api.ts";
 import type { DeferredFunction } from "../components/DeferredFunction.ts";
 
 /**
@@ -7,7 +8,7 @@ import type { DeferredFunction } from "../components/DeferredFunction.ts";
 export const markerKey = "~inngest" as const;
 
 export type Marker = {
-  kind?: "deferredFunction";
+  kind?: "DeferredFunction" | "StaleDispatchError";
 };
 
 function getMarker(value: unknown): Marker | undefined {
@@ -24,5 +25,11 @@ function getMarker(value: unknown): Marker | undefined {
 export function isDeferredFunction(
   value: unknown,
 ): value is DeferredFunction.Any {
-  return getMarker(value)?.kind === "deferredFunction";
+  return getMarker(value)?.kind === "DeferredFunction";
+}
+
+export function isStaleDispatchError(
+  value: unknown,
+): value is StaleDispatchError {
+  return getMarker(value)?.kind === "StaleDispatchError";
 }

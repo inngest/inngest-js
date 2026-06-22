@@ -170,10 +170,10 @@ export const anyContext = {
   event: anyEvent,
   events: [anyEvent],
   group: expect.any(Object),
-  jobId: expect.toBeOneOf([expect.any(String), undefined]),
+  jobId: expect.any(String),
   logger: expect.any(Object),
   maxAttempts: expect.any(Number),
-  requestId: expect.toBeOneOf([expect.any(String), undefined]),
+  requestId: expect.any(String),
   runId: expect.any(String),
   step: expect.any(Object),
 };

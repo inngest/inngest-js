@@ -993,6 +993,7 @@ export class InngestCommHandler<
           events: [event],
           maxAttempts: fn.opts.retries ?? defaultMaxRetries,
         },
+        isDurableEndpoint: true,
         runId,
         headers: {},
         reqArgs: args,
@@ -2198,6 +2199,8 @@ export class InngestCommHandler<
     requestInfo?: InngestExecutionOptions["requestInfo"];
     mwInstances?: Middleware.BaseMiddleware[];
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+    const requestStartedAt = Date.now();
+
     if (!fn) {
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
@@ -2249,6 +2252,17 @@ export class InngestCommHandler<
         "getting request ID for execution",
         headerKeys.RequestId,
       );
+
+      const rawGenerationId = await actions.headers(
+        "getting generation ID for execution",
+        headerKeys.GenerationId,
+      );
+      const parsedGenerationId = Number(rawGenerationId);
+      const generationId =
+        rawGenerationId && Number.isInteger(parsedGenerationId)
+          ? parsedGenerationId
+          : undefined;
+
       const jobId = await actions.headers(
         "getting job ID for execution",
         headerKeys.InngestJobId,
@@ -2296,7 +2310,15 @@ export class InngestCommHandler<
             jobId: jobId ?? undefined,
           },
           internalFnId: ctx?.fn_id,
+
+          // Rely on `forceExecution` to know if this is a Durable Endpoint in
+          // async mode.
+          isDurableEndpoint: forceExecution,
+
           queueItemId: ctx?.qi_id,
+          requestId: requestId ?? undefined,
+          generationId: generationId ?? undefined,
+          requestStartedAt,
           stepState,
           priorDefers: defers,
           requestedRunStep,
