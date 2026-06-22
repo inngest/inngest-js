@@ -1920,6 +1920,23 @@ describe("runFn", () => {
             },
           );
         });
+
+        test("onFailure event has received-side meta sessions", () => {
+          inngest.createFunction(
+            {
+              id: "test",
+              triggers: [{ event: "test" }],
+              onFailure: ({ event }) => {
+                expectTypeOf(event.meta).toEqualTypeOf<
+                  { sessions?: Record<string, string> } | undefined
+                >();
+              },
+            },
+            () => {
+              // no-op
+            },
+          );
+        });
       });
     });
 

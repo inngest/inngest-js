@@ -314,27 +314,29 @@ class InngestExecutionEngine
                 tracestate: this.options.headers[headerKeys.TraceState],
               });
 
-              // The metadata span processor is independent of the Extended
-              // Traces processor above.
-              metadataSpanProcessor.declareStartingSpan({
-                span,
-                traceparent: this.options.headers[headerKeys.TraceParent],
-                onAIMetadata: (aiMetadata) => {
-                  // Only attribute AI metadata to spans ending while a
-                  // step's userland code is executing;
-                  if (!this.state.executingStep) {
-                    return;
-                  }
+              if (this.options.client.aiMetadataEnabled) {
+                // The metadata span processor is independent of the Extended
+                // Traces processor above.
+                metadataSpanProcessor.declareStartingSpan({
+                  span,
+                  traceparent: this.options.headers[headerKeys.TraceParent],
+                  onAIMetadata: (aiMetadata) => {
+                    // Only attribute AI metadata to spans ending while a
+                    // step's userland code is executing;
+                    if (!this.state.executingStep) {
+                      return;
+                    }
 
-                  this.state.executingStepAIMetadata = this.state
-                    .executingStepAIMetadata
-                    ? aggregateAIMetadata(
-                        this.state.executingStepAIMetadata,
-                        aiMetadata,
-                      )
-                    : aiMetadata;
-                },
-              });
+                    this.state.executingStepAIMetadata = this.state
+                      .executingStepAIMetadata
+                      ? aggregateAIMetadata(
+                          this.state.executingStepAIMetadata,
+                          aiMetadata,
+                        )
+                      : aiMetadata;
+                  },
+                });
+              }
 
               return this._start()
                 .then((result) => {

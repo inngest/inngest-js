@@ -26,6 +26,7 @@ import {
   warnOnce,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -139,6 +140,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private _cachedFetch?: FetchT;
 
   private readonly _logger: Logger;
+
+  /**
+   * Whether this client should collect AI metadata from OpenTelemetry spans.
+   *
+   * @internal
+   */
+  readonly aiMetadataEnabled: boolean;
 
   /**
    * Logger for SDK internal messages. Falls back to the user's `logger` if
@@ -329,6 +337,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     this.id = id;
+    this.aiMetadataEnabled = this.options.aiMetadata !== false;
     this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
@@ -363,7 +372,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     // Attach the read-only AI metadata span processor to whatever global OTel
     // provider already exists. Idempotent across clients; only attaches once.
-    metadataSpanProcessor.attach();
+    if (this.aiMetadataEnabled) {
+      metadataSpanProcessor.attach();
+    }
 
     this._appVersion = appVersion;
   }
@@ -925,12 +936,22 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     // filled by the event server so is safe, and adding here fixes Next.js
     // server action cache issues.
     payloads = payloads.map((p) => {
+      const {
+        sessions: _sessions,
+        ctx: _ctx,
+        ...rest
+      } = p as typeof p & {
+        sessions?: unknown;
+        ctx?: unknown;
+      };
+
       return {
-        ...p,
+        ...rest,
         // Always generate an idempotency ID for an event for retries
         id: p.id,
         ts: p.ts || nowMillis,
         data: p.data || {},
+        meta: normalizeEventMeta(p.meta),
       };
     });
 
