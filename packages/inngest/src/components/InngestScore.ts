@@ -197,13 +197,12 @@ export async function sendScoreExperiment(
 
   const target = { runId: options.runId, stepId: options.stepId };
 
-  await performOp(
-    client,
-    target,
-    { [options.name]: { value: options.value } },
-    scoreKind,
-    "merge",
-  );
+  // Write the experiment attribution first, then the score. These are two
+  // non-atomic metadata writes; if the second fails, attribution-without-score
+  // is the benign state the system already produces (it's exactly what
+  // `group.experiment()` leaves after selecting a variant but before scoring).
+  // Writing the score first would instead risk a bare, unattributed score that
+  // never surfaces in the experiment view.
   await performOp(
     client,
     target,
@@ -212,6 +211,13 @@ export async function sendScoreExperiment(
       variant: options.experiment.variant,
     },
     experimentKind,
+    "merge",
+  );
+  await performOp(
+    client,
+    target,
+    { [options.name]: { value: options.value } },
+    scoreKind,
     "merge",
   );
 }

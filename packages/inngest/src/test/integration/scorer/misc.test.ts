@@ -7,7 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { createScorer } from "../../../experimental.ts";
+import { createScorer, type ExperimentRef } from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 
@@ -75,7 +75,7 @@ test("success", async () => {
       expectTypeOf(event.data).not.toBeAny();
       expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
       expectTypeOf(parents).toEqualTypeOf<
-        [{ fnSlug: string; runId: string }]
+        [{ fnSlug: string; runId: string; experiment?: ExperimentRef }]
       >();
       scorerState.event = event;
       scorerState.parents = parents;

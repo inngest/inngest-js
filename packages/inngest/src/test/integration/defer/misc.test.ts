@@ -471,7 +471,7 @@ test("propagates experiment ref to the deferred run", async () => {
   await client.send({ name: eventName, data: {} });
   await childState.waitForRunComplete();
 
-  expect(childState.parents[0].experiment).toEqual({
+  expect(childState.parents[0]!.experiment).toEqual({
     experimentName: "checkout-flow",
     variant: "control",
   });
