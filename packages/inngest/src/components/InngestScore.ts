@@ -114,7 +114,7 @@ export async function sendScore(
       runId: options.runId,
       stepId: options.stepId,
     },
-    { [options.name]: {value: options.value }},
+    { [options.name]: { value: options.value } },
     `${scoreKind}`,
     "merge",
   );
