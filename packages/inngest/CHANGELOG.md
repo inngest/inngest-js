@@ -1,5 +1,63 @@
 # inngest
 
+## 4.7.0
+
+### Minor Changes
+
+- [#1577](https://github.com/inngest/inngest-js/pull/1577) [`1bc2ac7c`](https://github.com/inngest/inngest-js/commit/1bc2ac7c1949a61e472334b832691e7dfd85290e) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing LLM calls instrumented with OTel by Langfuse
+
+- [#1547](https://github.com/inngest/inngest-js/pull/1547) [`04a79c95`](https://github.com/inngest/inngest-js/commit/04a79c95294e08e04a6dd5fdd1ba3d2fc70d014c) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add `sessions` to event payloads
+
+### Patch Changes
+
+- [#1588](https://github.com/inngest/inngest-js/pull/1588) [`50a349b7`](https://github.com/inngest/inngest-js/commit/50a349b772d75b0f60060afb1188116e750fe7dd) Thanks [@rhino1998](https://github.com/rhino1998)! - fix(extended traces): Emit extended trace spans parented to the finalized step span
+
+## 4.6.0
+
+### Minor Changes
+
+- [#1567](https://github.com/inngest/inngest-js/pull/1567) [`1c3ad876`](https://github.com/inngest/inngest-js/commit/1c3ad87606cea9441f2e01c4f44d2ed81cef8621) Thanks [@Linell](https://github.com/Linell)! - Deprecate `optimizeParallelism: false` — use `group.parallel({ mode: "race" })` for race semantics instead. Opting out prevents runs from resuming checkpointing after a `Promise.all`.
+
+- [#1568](https://github.com/inngest/inngest-js/pull/1568) [`bd6016c1`](https://github.com/inngest/inngest-js/commit/bd6016c18d135be04853f3fd72f5ba604ce9857c) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing OTel instrumented LLM calls
+
+### Patch Changes
+
+- [#1561](https://github.com/inngest/inngest-js/pull/1561) [`ba9874dc`](https://github.com/inngest/inngest-js/commit/ba9874dc4275592922ae5d9b1ea51a4ff60b2000) Thanks [@rhino1998](https://github.com/rhino1998)! - feat(experiments): Rename experiment_name -> experiment in metadata
+
+## 4.5.1
+
+### Patch Changes
+
+- [#1551](https://github.com/inngest/inngest-js/pull/1551) [`0af90c3c`](https://github.com/inngest/inngest-js/commit/0af90c3cc98680bed38c1c1ec02a5461d28ce228) Thanks [@rhino1998](https://github.com/rhino1998)! - fix: Add step attribution attributes to all extended trace spans
+
+- [#1556](https://github.com/inngest/inngest-js/pull/1556) [`5bd87775`](https://github.com/inngest/inngest-js/commit/5bd8777594a601e5cb08cd451fb47850ec9e8fe9) Thanks [@Linell](https://github.com/Linell)! - Update internal tracing values used for identifying checkpointed data.
+
+- [#1548](https://github.com/inngest/inngest-js/pull/1548) [`7be1cee3`](https://github.com/inngest/inngest-js/commit/7be1cee32b8451fac9a1b88ab67431be0851ce71) Thanks [@amh4r](https://github.com/amh4r)! - Fix unnecessary outgoing Durable Endpoint request
+
+- [#1511](https://github.com/inngest/inngest-js/pull/1511) [`79558be2`](https://github.com/inngest/inngest-js/commit/79558be210b784b95ea26b36d1f70798548e7707) Thanks [@Linell](https://github.com/Linell)! - Fix duplicate execution when response terminates early
+
+## 4.5.0
+
+### Minor Changes
+
+- [#1522](https://github.com/inngest/inngest-js/pull/1522) [`ebeb4516`](https://github.com/inngest/inngest-js/commit/ebeb4516037015c0e6f1d417be55009f4a64fb89) Thanks [@Linell](https://github.com/Linell)! - Bump minimum `@opentelemetry/auto-instrumentations-node` to `0.75.0` to address
+  [GHSA-q7rr-3cgh-j5r3](https://github.com/advisories/GHSA-q7rr-3cgh-j5r3) in the
+  transitive `@opentelemetry/sdk-node` / `@opentelemetry/exporter-prometheus` packages.
+
+  Note that upstream `auto-instrumentations-node@0.72.0` dropped bundled Fastify,
+  instrumentation, so if you relied on it for tracing your Fastify routes, add
+  `@opentelemetry/instrumentation-fastify` directly.
+
+### Patch Changes
+
+- [#1540](https://github.com/inngest/inngest-js/pull/1540) [`10dad398`](https://github.com/inngest/inngest-js/commit/10dad39891b99303d75576c7c53cd8339dac53f5) Thanks [@amh4r](https://github.com/amh4r)! - Fix attempt count not resetting during checkpointing
+
+- [#1544](https://github.com/inngest/inngest-js/pull/1544) [`f1ee6f34`](https://github.com/inngest/inngest-js/commit/f1ee6f3464705b2c80c0f03ff9e4483296cc60e4) Thanks [@jacobheric](https://github.com/jacobheric)! - Allow `useRealtime` to accept direct client subscription tokens from `getClientSubscriptionToken()` when `channel` and `topics` are provided as hook options, and avoid reconnecting solely because an inline token factory or token object gets a new render identity.
+
+- [#1506](https://github.com/inngest/inngest-js/pull/1506) [`342a7369`](https://github.com/inngest/inngest-js/commit/342a7369b757c5dd34f009eabcb6642cd207a721) Thanks [@amh4r](https://github.com/amh4r)! - Add option to disable unauthed PUT requests
+
+- [#1518](https://github.com/inngest/inngest-js/pull/1518) [`fd71a95b`](https://github.com/inngest/inngest-js/commit/fd71a95bc2a5a1cbc20ae8d80a97a6e12955ce9c) Thanks [@Linell](https://github.com/Linell)! - Fix RetryAfterError not respected
+
 ## 4.4.0
 
 ### Minor Changes

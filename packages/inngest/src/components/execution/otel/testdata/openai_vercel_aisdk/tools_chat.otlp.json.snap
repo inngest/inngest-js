@@ -1,0 +1,16 @@
+[
+  {
+    "span": "ai.generateText.doGenerate",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "inputTokens": 56
+    }
+  },
+  {
+    "span": "ai.generateText",
+    "metadata": {
+      "model": "gpt-4.1-nano",
+      "inputTokens": 56
+    }
+  }
+]

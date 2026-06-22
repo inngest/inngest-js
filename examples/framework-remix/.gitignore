@@ -6,6 +6,4 @@ node_modules
 .output
 
 /build/
-/public/build
-/api/index.js
-/api/index.js.map
+.react-router/

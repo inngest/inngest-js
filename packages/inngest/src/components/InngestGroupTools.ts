@@ -157,7 +157,7 @@ export type VariantResult<
  * Metadata values stored alongside the experiment step for UI rendering.
  */
 export interface ExperimentMetadataValues {
-  experiment_name: string;
+  name: string;
   variant: string;
   selection_strategy: string;
   available_variants: string[];
@@ -336,7 +336,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
             "step",
             "merge",
             {
-              experiment_name: stepOpts.id,
+              name: stepOpts.id,
               variant: result,
               selection_strategy: select.__experimentConfig.strategy,
               available_variants: variantNames,
@@ -353,7 +353,7 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
               "step",
               "merge",
               {
-                message:
+                "sdk.group.experiment.nullishBucket":
                   "experiment.bucket() received a null/undefined value; " +
                   'hashing empty string "" for variant selection',
               },

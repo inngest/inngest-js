@@ -233,19 +233,27 @@ async function startExampleServer(
 
 async function registerExample(exampleServerPort: number): Promise<void> {
   console.log("Registering...");
+  const origin = `http://localhost:${exampleServerPort}`;
   try {
-    const registerRes = await fetch(
-      `http://localhost:${exampleServerPort}/api/inngest`,
-      {
-        method: "PUT",
-      },
-    );
+    // `Origin` matches the example server's own host so frameworks that enforce
+    // a same-origin check on state-changing requests (e.g. Astro's default
+    // `createOriginCheckMiddleware`) don't reject the PUT as cross-site.
+    const registerRes = await fetch(`${origin}/api/inngest`, {
+      method: "PUT",
+      headers: { Origin: origin },
+    });
 
     console.log(
       "Register response:",
       registerRes.status,
       registerRes.statusText,
     );
+
+    if (!registerRes.ok) {
+      throw new Error(
+        `Register failed: ${registerRes.status} ${registerRes.statusText}`,
+      );
+    }
   } catch (err) {
     console.error("Failed to register example", err);
     throw err;

@@ -17,6 +17,7 @@ export type MetadataKind =
   | "inngest.experiment"
   | "inngest.score"
   | "inngest.warnings"
+  | "inngest.ai"
   | `userland.${string}`;
 
 /**

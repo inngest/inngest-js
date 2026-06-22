@@ -20,8 +20,13 @@ import {
 } from "../helpers/env.ts";
 import { type ErrCode, fixEventKeyMissingSteps } from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { formatLogMessage, type StructuredLogMessage } from "../helpers/log.ts";
+import {
+  formatLogMessage,
+  type StructuredLogMessage,
+  warnOnce,
+} from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -51,6 +56,7 @@ import {
   sendEventResponseSchema,
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
+import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -135,6 +141,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private _cachedFetch?: FetchT;
 
   private readonly _logger: Logger;
+
+  /**
+   * Whether this client should collect AI metadata from OpenTelemetry spans.
+   *
+   * @internal
+   */
+  readonly aiMetadataEnabled: boolean;
 
   /**
    * Logger for SDK internal messages. Falls back to the user's `logger` if
@@ -343,6 +356,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     this.id = id;
+    this.aiMetadataEnabled = this.options.aiMetadata !== false;
     this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
@@ -356,6 +370,16 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
 
+    // Warned here rather than per-function so internal SDK functions
+    // inheriting this setting don't each warn.
+    if (this.options.optimizeParallelism === false) {
+      warnOnce(
+        this[internalLoggerSymbol],
+        `optimize-parallelism-deprecated:${this.id}`,
+        '`optimizeParallelism: false` is deprecated; use `group.parallel({ mode: "race" }, ...)` for race semantics instead',
+      );
+    }
+
     this.middleware = [
       ...builtInMiddleware(this._logger),
       ...(middleware ?? []),
@@ -363,6 +387,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     for (const mw of this.middleware) {
       mw.onRegister?.({ client: this, fn: null });
+    }
+
+    // Attach the read-only AI metadata span processor to whatever global OTel
+    // provider already exists. Idempotent across clients; only attaches once.
+    if (this.aiMetadataEnabled) {
+      metadataSpanProcessor.attach();
     }
 
     this._appVersion = appVersion;
@@ -925,12 +955,22 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     // filled by the event server so is safe, and adding here fixes Next.js
     // server action cache issues.
     payloads = payloads.map((p) => {
+      const {
+        sessions: _sessions,
+        ctx: _ctx,
+        ...rest
+      } = p as typeof p & {
+        sessions?: unknown;
+        ctx?: unknown;
+      };
+
       return {
-        ...p,
+        ...rest,
         // Always generate an idempotency ID for an event for retries
         id: p.id,
         ts: p.ts || nowMillis,
         data: p.data || {},
+        meta: normalizeEventMeta(p.meta),
       };
     });
 

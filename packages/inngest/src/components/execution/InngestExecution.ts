@@ -138,6 +138,21 @@ export interface InngestExecutionOptions {
   queueItemId?: string;
 
   /**
+   * Unique identifier for each execution request
+   */
+  requestId?: string;
+
+  /**
+   * Incrementing ID used to denote the generation in which this job was queued
+   */
+  generationId?: number;
+
+  /**
+   * Time the SDK starts handling an execution request. Format is unix millis.
+   */
+  requestStartedAt?: number;
+
+  /**
    * Headers to be sent with any request to Inngest during this execution.
    */
   headers: Record<string, string>;
@@ -153,6 +168,14 @@ export interface InngestExecutionOptions {
    * @default "main"
    */
   handlerKind?: "main" | "failure" | "defer";
+
+  /**
+   * Whether this execution is part of a Durable Endpoint flow. Could be either
+   * sync mode (request not from Inngest) or async mode (request from Inngest).
+   *
+   * @default false
+   */
+  isDurableEndpoint?: boolean;
 
   disableImmediateExecution?: boolean;
 

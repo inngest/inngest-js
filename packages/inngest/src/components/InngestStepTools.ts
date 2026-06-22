@@ -4,6 +4,7 @@ import { z } from "zod/v3";
 
 import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -14,12 +15,14 @@ import type {
 import {
   type ApplyAllMiddlewareTransforms,
   type Context,
+  type EventMeta,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type OutgoingOp,
+  type ReceivedEventMeta,
   type SendEventOutput,
   StepMode,
   StepOpCode,
@@ -940,10 +943,14 @@ export const createStepTools = <
         );
       }
 
-      const { _type, function: fn, data, v, timeout } = parsedFnOpts.data;
-      const payload = { data, v } satisfies MinimalEventPayload;
+      const { _type, function: fn, data, v, meta, timeout } = parsedFnOpts.data;
+      const payload = {
+        data,
+        v,
+        meta: normalizeEventMeta(meta),
+      } satisfies MinimalEventPayload;
       const opts: {
-        payload: MinimalEventPayload;
+        payload: typeof payload;
         function_id: string;
         timeout?: string;
       } = {
@@ -1179,6 +1186,11 @@ export const group: GroupTools = {
 export const invokePayloadSchema = z.object({
   data: z.record(z.any()).optional(),
   v: z.string().optional(),
+  meta: z
+    .object({
+      sessions: z.record(z.any()).optional(),
+    })
+    .optional(),
 });
 
 type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
@@ -1188,6 +1200,15 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
     Omit<TriggerEventFromFunction<TFunction>, "id"> & {
+      /**
+       * Event meta shared with the invoked run.
+       *
+       * Meta is not inherited from the calling run; pass `meta.sessions`
+       * explicitly to group the invoked run. Values are normalized to strings
+       * before sending, as with `inngest.send()`.
+       */
+      meta?: EventMeta;
+
       /**
        * The step function will wait for the invocation to finish for a maximum
        * of this time, at which point the retured promise will be rejected
@@ -1286,7 +1307,14 @@ type WaitForEventResult<TOpts> =
       StandardSchemaV1<infer TData extends Record<string, unknown>>
     >;
   }
-    ? { name: TName; data: TData; id: string; ts: number; v?: string } | null
+    ? {
+        name: TName;
+        data: TData;
+        id: string;
+        ts: number;
+        v?: string;
+        meta?: ReceivedEventMeta;
+      } | null
     : // Case 2: event is an EventType without a schema
       TOpts extends {
           event: EventType<infer TName extends string, undefined>;
@@ -1298,6 +1326,7 @@ type WaitForEventResult<TOpts> =
           id: string;
           ts: number;
           v?: string;
+          meta?: ReceivedEventMeta;
         } | null
       : // Case 3: event is a string with schema (spread EventType)
         TOpts extends {
@@ -1312,6 +1341,7 @@ type WaitForEventResult<TOpts> =
             id: string;
             ts: number;
             v?: string;
+            meta?: ReceivedEventMeta;
           } | null
         : // Case 4: event is just a string
           TOpts extends { event: infer TName extends string }
@@ -1322,6 +1352,7 @@ type WaitForEventResult<TOpts> =
               id: string;
               ts: number;
               v?: string;
+              meta?: ReceivedEventMeta;
             } | null
           : EventPayload | null;
 

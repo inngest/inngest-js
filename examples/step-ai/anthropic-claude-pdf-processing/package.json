@@ -10,7 +10,7 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "inngest": "3.32.4"
+    "inngest": "^3.54.0"
   },
   "license": "MIT",
   "description": "",

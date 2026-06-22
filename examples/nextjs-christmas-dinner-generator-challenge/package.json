@@ -11,7 +11,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@langchain/community": "^0.3.11",
+    "@langchain/community": "^1.1.18",
     "@langchain/core": "^0.3.17",
     "@langchain/openai": "^0.3.11",
     "@neondatabase/serverless": "^0.10.4",
