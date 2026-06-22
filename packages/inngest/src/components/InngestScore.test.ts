@@ -188,7 +188,7 @@ describe("client.score validation", () => {
       {
         kind: "inngest.score",
         op: "merge",
-        values: { pass: {value: true} },
+        values: { pass: { value: true } },
       },
     ]);
   });
