@@ -1121,6 +1121,17 @@ export interface ClientOptions {
   optimizeParallelism?: boolean;
 
   /**
+   * Automatically extract AI metadata from OpenTelemetry spans created while
+   * steps run, then attach that metadata to the step.
+   *
+   * This only controls the SDK's built-in AI metadata extraction. It does not
+   * affect Extended Traces.
+   *
+   * @default true
+   */
+  aiMetadata?: boolean;
+
+  /**
    * Whether or not to use checkpointing by default for executions of functions
    * created using this client.
    *
