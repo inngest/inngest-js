@@ -163,7 +163,7 @@ describe("client.score validation", () => {
       {
         kind: "inngest.score",
         op: "merge",
-        values: { "click-through rate (variant A)!": {value: 0.23} },
+        values: { "click-through rate (variant A)!": { value: 0.23 } },
       },
     ]);
   });
