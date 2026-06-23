@@ -25,6 +25,11 @@ export interface AIMetadata {
   responseModel?: string;
   /** The AI provider that served the request (e.g. `openai`) */
   provider?: string;
+  /**
+   * The kind of operation performed, e.g. `chat`, `text_completion`,
+   * `embeddings`. Last-write-wins across calls.
+   */
+  operationName?: string;
   /** The provider's identifier for the response, e.g. `chatcmpl-...`. */
   responseId?: string;
   /**
@@ -183,6 +188,7 @@ export const FIELD_SPECS = [
   // `gen_ai.system` is the deprecated predecessor of `gen_ai.provider.name`;
   // the canonical key wins when both are present on a span.
   textField("provider", "gen_ai.provider.name", ["gen_ai.system"]),
+  textField("operationName", "gen_ai.operation.name"),
   textField("responseId", "gen_ai.response.id"),
   stringListField("finishReasons", "gen_ai.response.finish_reasons"),
 

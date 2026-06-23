@@ -138,6 +138,7 @@ describe("extractAIMetadataFromAttributes", () => {
         "gen_ai.request.model": "gpt-4.1-nano",
         "gen_ai.response.model": "gpt-4.1-nano-2025-04-14",
         "gen_ai.provider.name": "openai",
+        "gen_ai.operation.name": "chat",
         "gen_ai.response.id": "chatcmpl-abc",
         "gen_ai.usage.input_tokens": 17,
         "gen_ai.usage.output_tokens": 41,
@@ -147,10 +148,25 @@ describe("extractAIMetadataFromAttributes", () => {
       requestModel: "gpt-4.1-nano",
       responseModel: "gpt-4.1-nano-2025-04-14",
       provider: "openai",
+      operationName: "chat",
       responseId: "chatcmpl-abc",
       inputTokens: 17,
       outputTokens: 41,
       totalTokens: 58,
+    });
+  });
+
+  describe("operationName", () => {
+    test("reads gen_ai.operation.name", () => {
+      expect(
+        extractAIMetadataFromAttributes({ "gen_ai.operation.name": "chat" }),
+      ).toEqual({ operationName: "chat" });
+    });
+
+    test("drops an empty gen_ai.operation.name", () => {
+      expect(
+        extractAIMetadataFromAttributes({ "gen_ai.operation.name": "" }),
+      ).toEqual({});
     });
   });
 
@@ -243,7 +259,7 @@ describe("extractAIMetadataFromAttributes", () => {
   test("ignores unmapped, content, and sensitive keys", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "gen_ai.operation.name": "chat",
+        "gen_ai.tool.name": "search",
         "gen_ai.prompt": "secret prompt",
         "gen_ai.completion": "secret completion",
         "gen_ai.input.messages": "secret",
@@ -355,6 +371,7 @@ describe("toInngestAIMetadataValues", () => {
         requestModel: "gpt-4o",
         responseModel: "gpt-4o-2024-08-06",
         provider: "openai",
+        operationName: "chat",
         responseId: "chatcmpl-abc",
         finishReasons: ["stop"],
         inputTokens: 42,
@@ -374,6 +391,7 @@ describe("toInngestAIMetadataValues", () => {
       request_model: "gpt-4o",
       response_model: "gpt-4o-2024-08-06",
       provider: "openai",
+      operation_name: "chat",
       response_id: "chatcmpl-abc",
       finish_reasons: ["stop"],
       input_tokens: 42,

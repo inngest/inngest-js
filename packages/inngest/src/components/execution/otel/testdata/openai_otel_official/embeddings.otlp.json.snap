@@ -5,6 +5,7 @@
       "requestModel": "text-embedding-3-small",
       "responseModel": "text-embedding-3-small",
       "provider": "openai",
+      "operationName": "embeddings",
       "inputTokens": 10
     }
   }

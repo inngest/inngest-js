@@ -5,6 +5,7 @@
       "requestModel": "claude-sonnet-4-6",
       "responseModel": "claude-sonnet-4-6",
       "provider": "anthropic",
+      "operationName": "chat",
       "finishReasons": [
         "stop"
       ],

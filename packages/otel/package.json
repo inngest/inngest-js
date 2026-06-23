@@ -1,6 +1,6 @@
 {
   "name": "@inngest/otel",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "OpenTelemetry instrumentation helpers for Inngest",
   "type": "module",
   "publishConfig": {
@@ -17,13 +17,30 @@
   },
   "exports": {
     "./node": {
-      "types": "./node.d.ts",
-      "import": "./node.js"
+      "types": {
+        "import": "./node.d.mts",
+        "require": "./node.d.cts"
+      },
+      "import": "./node.mjs",
+      "require": "./node.cjs"
+    },
+    "./node.cjs": {
+      "types": "./node.d.cts",
+      "require": "./node.cjs",
+      "default": "./node.cjs"
+    },
+    "./node.mjs": {
+      "types": "./node.d.mts",
+      "import": "./node.mjs",
+      "default": "./node.mjs"
     }
   },
   "files": [
-    "*.js",
+    "*.cjs",
+    "*.mjs",
     "*.d.ts",
+    "*.d.cts",
+    "*.d.mts",
     "*.map",
     "CHANGELOG.md",
     "LICENSE.md",
@@ -44,11 +61,13 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.75.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.62.2",
     "@opentelemetry/context-async-hooks": "^2.7.1",
-    "@opentelemetry/instrumentation": "^0.217.0",
+    "@opentelemetry/instrumentation": "^0.203.0",
     "@opentelemetry/sdk-trace-base": "^2.7.1",
-    "@traceloop/instrumentation-anthropic": "^0.20.0",
+    "@traceloop/instrumentation-anthropic": "^0.27.0",
+    "@traceloop/instrumentation-google-generativeai": "^0.27.0",
+    "@traceloop/instrumentation-openai": "^0.27.0",
     "debug": "^4.3.4"
   },
   "devDependencies": {
