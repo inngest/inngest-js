@@ -1,5 +1,11 @@
 # inngest
 
+## 4.11.0
+
+### Minor Changes
+
+- [#1601](https://github.com/inngest/inngest-js/pull/1601) [`2b800c73`](https://github.com/inngest/inngest-js/commit/2b800c73cba6a2ff106517d2cd406628b7240c72) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing operation name for AI Metadata Extraction
+
 ## 4.10.0
 
 ### Minor Changes
