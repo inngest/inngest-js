@@ -1,5 +1,13 @@
 # inngest
 
+## 4.9.0
+
+### Minor Changes
+
+- [#1594](https://github.com/inngest/inngest-js/pull/1594) [`124e55f8`](https://github.com/inngest/inngest-js/commit/124e55f8d159af9145a073c9756a6281da60185b) Thanks [@scottnuma](https://github.com/scottnuma)! - Expand AI step metadata extraction to more OTel GenAI span attributes. The SDK now records additional model, provider, response id, token, and request parameter fields from OTel GenAI spans while continuing to ignore prompt and response content.
+
+  This removes the previous metadata extraction for Open Inference, Vercel AI SDK-specific, and Langfuse-specific span attributes.
+
 ## 4.8.0
 
 ### Minor Changes
