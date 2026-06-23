@@ -7,7 +7,10 @@ import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { GenAIInstrumentation } from "@traceloop/instrumentation-google-generativeai";
 import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
+import Debug from "debug";
 import { type MaybeError, toError } from "./types.ts";
+
+const debug = Debug("inngest:otel:instrumentTracing");
 
 let isTraceInstrumentationHookRegistered = false;
 let isTraceInstrumentationStarted = false;
@@ -32,12 +35,14 @@ export function instrumentTracing(): void {
   const instrumented = registerTraceInstrumentations();
   if (instrumented instanceof Error) {
     isTraceInstrumentationStarted = false;
+    debug("unable to register trace instrumentations", instrumented);
     return;
   }
 
   const provider = ensureTraceProvider();
   if (provider instanceof Error) {
     isTraceInstrumentationStarted = false;
+    debug("unable to initialize provider", provider);
   }
 }
 
@@ -64,8 +69,10 @@ export function registerNodeTraceInstrumentationHook(): void {
     // drop-in replacement. See:
     // https://nodejs.org/api/module.html#customization-hooks
     register("@opentelemetry/instrumentation/hook.mjs", import.meta.url);
-  } catch {
+  } catch (e) {
+    const err = toError(e);
     isTraceInstrumentationHookRegistered = false;
+    debug("failed to register trace instrumentation hook:", err);
   }
 }
 
@@ -81,6 +88,7 @@ function registerTraceInstrumentations(): MaybeError<void> {
     });
   } catch (e) {
     const err = toError(e);
+    debug("failed to register trace instrumentations:", err);
     return err;
   }
 }
@@ -98,6 +106,7 @@ function ensureTraceProvider(): MaybeError<void> {
     );
   } catch (e) {
     const err = toError(e);
+    debug("failed to initialize provider:", err);
     return err;
   }
 }

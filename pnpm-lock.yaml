@@ -452,9 +452,6 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: ^2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-node':
-        specifier: ^2.0.0
-        version: 2.7.1(@opentelemetry/api@1.9.0)
       '@traceloop/instrumentation-anthropic':
         specifier: ^0.27.0
         version: 0.27.0
@@ -464,7 +461,13 @@ importers:
       '@traceloop/instrumentation-openai':
         specifier: ^0.27.0
         version: 0.27.0
+      debug:
+        specifier: ^4.3.4
+        version: 4.4.3
     devDependencies:
+      '@types/debug':
+        specifier: ^4.1.12
+        version: 4.1.12
       '@types/node':
         specifier: ~24.3.0
         version: 24.3.0

@@ -65,12 +65,13 @@
     "@opentelemetry/context-async-hooks": "^2.7.1",
     "@opentelemetry/instrumentation": "^0.203.0",
     "@opentelemetry/sdk-trace-base": "^2.7.1",
-    "@opentelemetry/sdk-trace-node": "^2.0.0",
     "@traceloop/instrumentation-anthropic": "^0.27.0",
     "@traceloop/instrumentation-google-generativeai": "^0.27.0",
-    "@traceloop/instrumentation-openai": "^0.27.0"
+    "@traceloop/instrumentation-openai": "^0.27.0",
+    "debug": "^4.3.4"
   },
   "devDependencies": {
+    "@types/debug": "^4.1.12",
     "@types/node": "~24.3.0",
     "tsdown": "^0.15.4",
     "typescript": "^5.9.2"
