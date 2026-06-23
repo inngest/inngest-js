@@ -1682,7 +1682,7 @@ class InngestExecutionEngine
 
     this.devDebug(`executing step "${id}"`);
 
-    if (this.rootSpanId && this.options.checkpointingConfig) {
+    if (this.rootSpanId) {
       clientProcessorMap
         .get(this.options.client)
         ?.declareStepExecution(
@@ -1731,7 +1731,7 @@ class InngestExecutionEngine
 
         this.state.executingStep = undefined;
 
-        if (this.rootSpanId && this.options.checkpointingConfig) {
+        if (this.rootSpanId) {
           clientProcessorMap
             .get(this.options.client)
             ?.clearStepExecution(this.rootSpanId);
