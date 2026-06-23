@@ -5,6 +5,8 @@ import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-ho
 import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
+import { GenAIInstrumentation } from "@traceloop/instrumentation-google-generativeai";
+import { OpenAIInstrumentation } from "@traceloop/instrumentation-openai";
 import Debug from "debug";
 import { type MaybeError, toError } from "./types.ts";
 
@@ -80,6 +82,8 @@ function registerTraceInstrumentations(): MaybeError<void> {
       instrumentations: [
         ...getNodeAutoInstrumentations(),
         new AnthropicInstrumentation(),
+        new GenAIInstrumentation(),
+        new OpenAIInstrumentation(),
       ],
     });
   } catch (e) {
