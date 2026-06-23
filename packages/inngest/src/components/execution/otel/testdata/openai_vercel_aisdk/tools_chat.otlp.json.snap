@@ -6,6 +6,9 @@
       "responseModel": "gpt-4.1-nano-2025-04-14",
       "provider": "openai.chat",
       "responseId": "chatcmpl-DrBrthIp6Qs0mY9a1VKXPa8s03XKf",
+      "finishReasons": [
+        "tool-calls"
+      ],
       "inputTokens": 56,
       "outputTokens": 30
     }

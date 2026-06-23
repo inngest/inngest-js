@@ -27,6 +27,11 @@ export interface AIMetadata {
   provider?: string;
   /** The provider's identifier for the response, e.g. `chatcmpl-...`. */
   responseId?: string;
+  /**
+   * Why generation stopped, as reported by the provider, e.g. `["stop"]`,
+   * `["length"]`, or `["tool_calls"]`. Last-write-wins across calls.
+   */
+  finishReasons?: string[];
 
   // Token usage (summed).
 
@@ -66,7 +71,7 @@ export interface AIMetadata {
   seed?: number;
 }
 
-type ValueType = "text" | "number";
+type ValueType = "text" | "number" | "stringList";
 type MergeStrategy = "replace" | "sum";
 
 /**
@@ -88,6 +93,7 @@ type FieldsWithValue<TValue> = {
 
 type TextField = FieldsWithValue<string>;
 type NumberField = FieldsWithValue<number>;
+type StringListField = FieldsWithValue<string[]>;
 
 interface BaseFieldSpec {
   /** The canonical (preferred) source `gen_ai.*` attribute key. */
@@ -116,7 +122,14 @@ interface NumberFieldSpec extends BaseFieldSpec {
   valueType: "number";
 }
 
-type FieldSpec = TextFieldSpec | NumberFieldSpec;
+interface StringListFieldSpec extends BaseFieldSpec {
+  /** The canonical {@link AIMetadata} field this populates. */
+  field: StringListField;
+  valueType: "stringList";
+  merge: "replace";
+}
+
+type FieldSpec = TextFieldSpec | NumberFieldSpec | StringListFieldSpec;
 
 function textField(
   field: TextField,
@@ -145,6 +158,18 @@ function numberField(
   };
 }
 
+function stringListField(
+  field: StringListField,
+  source: string,
+): StringListFieldSpec {
+  return {
+    field,
+    source,
+    valueType: "stringList",
+    merge: "replace",
+  };
+}
+
 /**
  * Every `gen_ai.*` attribute we capture, mapped to its canonical field.
  *
@@ -159,6 +184,7 @@ export const FIELD_SPECS = [
   // the canonical key wins when both are present on a span.
   textField("provider", "gen_ai.provider.name", ["gen_ai.system"]),
   textField("responseId", "gen_ai.response.id"),
+  stringListField("finishReasons", "gen_ai.response.finish_reasons"),
 
   // Token usage.
   numberField("inputTokens", "gen_ai.usage.input_tokens", "sum"),
@@ -200,12 +226,26 @@ function parseNumericAttribute(value: unknown): number | undefined {
 }
 
 /**
+ * Coerces an attribute to a list of non-empty strings, or `undefined` when it
+ * yields none. OTLP arrays may carry non-string or empty entries; those are
+ * dropped, and an array that reduces to nothing is treated as absent.
+ */
+function parseStringListAttribute(value: unknown): string[] | undefined {
+  const items = Array.isArray(value) ? value : [value];
+  const strings = items.filter(
+    (item): item is string => typeof item === "string" && item !== "",
+  );
+  return strings.length > 0 ? strings : undefined;
+}
+
+/**
  * Extracts {@link AIMetadata} from a span's attributes.
  *
  * Only the allowlisted {@link FIELD_SPECS} are read. Every other attribute is
  * ignored. Numeric fields accept numbers and quoted numeric strings and are
  * otherwise dropped, as OTLP/JSON may encode int64 as a quoted string. Text
- * fields are dropped when empty.
+ * fields are dropped when empty. String-list fields keep only non-empty string
+ * entries and are dropped when none remain.
  *
  * Returns an empty object for spans carrying no recognised `gen_ai.*`
  * attributes.
@@ -233,6 +273,12 @@ export const extractAIMetadataFromAttributes = (
         const text = typeof value === "string" ? value : String(value);
         if (text !== "") {
           metadata[spec.field] = text;
+          break;
+        }
+      } else if (spec.valueType === "stringList") {
+        const list = parseStringListAttribute(value);
+        if (list !== undefined) {
+          metadata[spec.field] = list;
           break;
         }
       } else {
@@ -278,6 +324,13 @@ export const aggregate = (a: AIMetadata, b: AIMetadata): AIMetadata => {
       }
     } else if (spec.valueType === "text") {
       // Text fields are always replace.
+      const bValue = b[spec.field];
+      if (bValue === undefined) {
+        continue;
+      }
+      out[spec.field] = bValue;
+    } else {
+      // String-list fields are always replace.
       const bValue = b[spec.field];
       if (bValue === undefined) {
         continue;

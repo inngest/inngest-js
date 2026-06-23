@@ -5,6 +5,9 @@
       "requestModel": "claude-sonnet-4-6",
       "responseModel": "claude-sonnet-4-6",
       "provider": "anthropic",
+      "finishReasons": [
+        "stop"
+      ],
       "inputTokens": 13,
       "outputTokens": 4,
       "totalTokens": 17,
@@ -19,6 +22,9 @@
       "requestModel": "claude-sonnet-4-6",
       "responseModel": "claude-sonnet-4-6",
       "provider": "anthropic",
+      "finishReasons": [
+        "stop"
+      ],
       "inputTokens": 3,
       "outputTokens": 4,
       "totalTokens": 7,

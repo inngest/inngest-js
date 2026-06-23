@@ -5,7 +5,10 @@
       "requestModel": "gpt-4.1-nano",
       "responseModel": "gpt-4.1-nano-2025-04-14",
       "provider": "openai",
-      "responseId": "chatcmpl-DrBrdQ2FLoMqEewTueUxqUnAaRTTA"
+      "responseId": "chatcmpl-DrBrdQ2FLoMqEewTueUxqUnAaRTTA",
+      "finishReasons": [
+        "stop"
+      ]
     }
   }
 ]
