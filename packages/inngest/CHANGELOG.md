@@ -1,5 +1,19 @@
 # inngest
 
+## 4.10.0
+
+### Minor Changes
+
+- [#1599](https://github.com/inngest/inngest-js/pull/1599) [`c02cc265`](https://github.com/inngest/inngest-js/commit/c02cc265bfe73ead0a761c80ddcad52393193649) Thanks [@scottnuma](https://github.com/scottnuma)! - Support deprecated `gen_ai.system` for AI Metadata Extraction
+
+- [#1600](https://github.com/inngest/inngest-js/pull/1600) [`2462e875`](https://github.com/inngest/inngest-js/commit/2462e875c01b43f9b24a386d5cc7655fc64be37e) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing finish reasons for AI Metadata Extraction
+
+### Patch Changes
+
+- [#1605](https://github.com/inngest/inngest-js/pull/1605) [`cd18ed18`](https://github.com/inngest/inngest-js/commit/cd18ed1843ab2696b87778c0e947ad7d77f7feaf) Thanks [@Linell](https://github.com/Linell)! - Suppress unnecessary warning log for inngest.experiment.score.
+
+- [#1602](https://github.com/inngest/inngest-js/pull/1602) [`e2e89ead`](https://github.com/inngest/inngest-js/commit/e2e89ead7475cec06693d4357b920820a1687ecf) Thanks [@amh4r](https://github.com/amh4r)! - Fix Extended Traces not appearing when checkpointing disabled
+
 ## 4.9.0
 
 ### Minor Changes
