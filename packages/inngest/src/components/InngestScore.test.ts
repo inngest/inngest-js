@@ -27,7 +27,7 @@ describe("client.score validation", () => {
     const client = new Inngest({ id: "app" });
 
     await expect(
-      client.score(undefined as unknown as ScoreOptions)
+      client.score(undefined as unknown as ScoreOptions),
     ).rejects.toThrow("score options must be an object");
 
     await expect(
@@ -36,7 +36,7 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "accuracy",
         value: 1,
-      })
+      }),
     ).rejects.toThrow("runId must be a non-empty string");
 
     await expect(
@@ -45,7 +45,7 @@ describe("client.score validation", () => {
         stepId: "",
         name: "accuracy",
         value: 1,
-      })
+      }),
     ).rejects.toThrow("stepId must be a non-empty string");
 
     await expect(
@@ -53,7 +53,7 @@ describe("client.score validation", () => {
         runId: "run",
         stepId: "step",
         value: 1,
-      } as unknown as ScoreOptions)
+      } as unknown as ScoreOptions),
     ).rejects.toThrow("score name must be a non-empty string");
 
     await expect(
@@ -62,7 +62,7 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "",
         value: 1,
-      })
+      }),
     ).rejects.toThrow("score name must be a non-empty string");
 
     await expect(
@@ -71,7 +71,7 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "   ",
         value: 1,
-      })
+      }),
     ).rejects.toThrow("score name must be a non-empty string");
 
     await expect(
@@ -80,7 +80,7 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "x".repeat(129),
         value: 1,
-      })
+      }),
     ).rejects.toThrow("score name must be 128 bytes or fewer");
 
     // 60 × "é" = 130 UTF-8 bytes, under the 128-char limit but over the byte cap.
@@ -90,7 +90,7 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "é".repeat(65),
         value: 1,
-      })
+      }),
     ).rejects.toThrow("score name must be 128 bytes or fewer");
 
     await expect(
@@ -99,9 +99,9 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "foo\nbar",
         value: 1,
-      })
+      }),
     ).rejects.toThrow(
-      "score name must not contain control characters or single quotes"
+      "score name must not contain control characters or single quotes",
     );
 
     await expect(
@@ -110,9 +110,9 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "it's-broken",
         value: 1,
-      })
+      }),
     ).rejects.toThrow(
-      "score name must not contain control characters or single quotes"
+      "score name must not contain control characters or single quotes",
     );
 
     await expect(
@@ -121,7 +121,7 @@ describe("client.score validation", () => {
         stepId: "step",
         name: "accuracy",
         value: Number.NaN,
-      })
+      }),
     ).rejects.toThrow("finite number or boolean");
   });
 
@@ -132,7 +132,7 @@ describe("client.score validation", () => {
       client.score({
         name: "accuracy",
         value: 1,
-      } satisfies ScoreOptions)
+      } satisfies ScoreOptions),
     ).rejects.toThrow("No run context available");
   });
 
@@ -201,7 +201,7 @@ describe("step.score validation", () => {
         runId: "",
         name: "accuracy",
         value: 1,
-      })
+      }),
     ).toThrow("runId must be a non-empty string");
 
     expect(() =>
@@ -209,60 +209,60 @@ describe("step.score validation", () => {
         stepId: "",
         name: "accuracy",
         value: 1,
-      })
+      }),
     ).toThrow("stepId must be a non-empty string");
 
     expect(() =>
       validateStepScoreOptions({
         name: "",
         value: 1,
-      })
+      }),
     ).toThrow("score name must be a non-empty string");
 
     expect(() =>
       validateStepScoreOptions({
         name: "   ",
         value: 1,
-      })
+      }),
     ).toThrow("score name must be a non-empty string");
 
     expect(() =>
       validateStepScoreOptions({
         name: "x".repeat(129),
         value: 1,
-      })
+      }),
     ).toThrow("score name must be 128 bytes or fewer");
 
     expect(() =>
       validateStepScoreOptions({
         name: "é".repeat(65),
         value: 1,
-      })
+      }),
     ).toThrow("score name must be 128 bytes or fewer");
 
     expect(() =>
       validateStepScoreOptions({
         name: "foo\tbar",
         value: 1,
-      })
+      }),
     ).toThrow(
-      "score name must not contain control characters or single quotes"
+      "score name must not contain control characters or single quotes",
     );
 
     expect(() =>
       validateStepScoreOptions({
         name: "it's-broken",
         value: 1,
-      })
+      }),
     ).toThrow(
-      "score name must not contain control characters or single quotes"
+      "score name must not contain control characters or single quotes",
     );
 
     expect(() =>
       validateStepScoreOptions({
         name: "accuracy",
         value: Number.POSITIVE_INFINITY,
-      })
+      }),
     ).toThrow("finite number or boolean");
   });
 
@@ -271,14 +271,14 @@ describe("step.score validation", () => {
       validateStepScoreOptions({
         name: "accuracy",
         value: true,
-      } satisfies ScoreOptions)
+      } satisfies ScoreOptions),
     ).not.toThrow();
 
     expect(() =>
       validateStepScoreOptions({
         name: "click-through rate (variant A)!",
         value: 0.23,
-      } satisfies ScoreOptions)
+      } satisfies ScoreOptions),
     ).not.toThrow();
   });
 });
@@ -289,21 +289,21 @@ describe("client.score.experiment", () => {
   test("rejects a missing/blank experiment ref", async () => {
     const client = new Inngest({ id: "app" });
     await expect(
-      client.score.experiment({ name: "rating", value: 1 } as never)
+      client.score.experiment({ name: "rating", value: 1 } as never),
     ).rejects.toThrow("experiment must be an object");
     await expect(
       client.score.experiment({
         experiment: { experimentName: "", variant: "control" },
         name: "rating",
         value: 1,
-      })
+      }),
     ).rejects.toThrow("experiment.experimentName must be a non-empty string");
   });
 
   test("reuses score validation for name/value", async () => {
     const client = new Inngest({ id: "app" });
     await expect(
-      client.score.experiment({ experiment: exp, name: "", value: 1 })
+      client.score.experiment({ experiment: exp, name: "", value: 1 }),
     ).rejects.toThrow("score name must be a non-empty string");
   });
 
@@ -322,7 +322,7 @@ describe("client.score.experiment", () => {
           metadata: Array<{ kind: string; values: Record<string, unknown> }>;
         }) => Promise<void>;
       },
-      "updateMetadata"
+      "updateMetadata",
     ).mockImplementation(async ({ target, metadata }) => {
       calls.push({
         target,
@@ -364,7 +364,7 @@ describe("scoreMiddleware", () => {
       { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "score">>(false);
-      }
+      },
     );
 
     const inngestWithMiddleware = new Inngest({
@@ -379,7 +379,7 @@ describe("scoreMiddleware", () => {
         assertType<HasProperty<typeof step, "score">>(true);
         assertType<ExperimentalStepTools[typeof scoreSymbol]>(step.score);
         assertType<KnownKeys<typeof step>>("score");
-      }
+      },
     );
   });
 });

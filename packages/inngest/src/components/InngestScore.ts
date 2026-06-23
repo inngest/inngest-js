@@ -52,7 +52,7 @@ export interface ClientScore {
 
 export type ScoreStepTool = (
   memoizationId: string,
-  options: ScoreOptions
+  options: ScoreOptions,
 ) => Promise<void>;
 
 export const scoreSymbol = Symbol.for("inngest.step.score");
@@ -78,7 +78,7 @@ function validateIdField({
 
 function validateScoreFields(
   options: unknown,
-  requiredTargetIds: readonly ("runId" | "stepId")[]
+  requiredTargetIds: readonly ("runId" | "stepId")[],
 ): asserts options is {
   runId?: unknown;
   stepId?: unknown;
@@ -107,14 +107,14 @@ function validateScoreFields(
   // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional — rejecting control chars and single quotes in user-supplied names
   if (/[\x00-\x1f\x7f']/.test(options.name)) {
     throw new Error(
-      "score name must not contain control characters or single quotes"
+      "score name must not contain control characters or single quotes",
     );
   }
 
   const nameByteLength = new TextEncoder().encode(options.name).length;
   if (nameByteLength > maxScoreNameByteLength) {
     throw new Error(
-      `score name must be ${maxScoreNameByteLength} bytes or fewer in UTF-8 (got ${nameByteLength})`
+      `score name must be ${maxScoreNameByteLength} bytes or fewer in UTF-8 (got ${nameByteLength})`,
     );
   }
 
@@ -124,20 +124,20 @@ function validateScoreFields(
 }
 
 function validateSendScoreOptions(
-  options: unknown
+  options: unknown,
 ): asserts options is ScoreOptions {
   validateScoreFields(options, []);
 }
 
 export function validateStepScoreOptions(
-  options: unknown
+  options: unknown,
 ): asserts options is ScoreOptions {
   validateScoreFields(options, []);
 }
 
 export async function sendScore(
   client: Inngest,
-  options: ScoreOptions
+  options: ScoreOptions,
 ): Promise<void> {
   validateSendScoreOptions(options);
 
@@ -149,13 +149,13 @@ export async function sendScore(
     },
     { [options.name]: { value: options.value } },
     `${scoreKind}`,
-    "merge"
+    "merge",
   );
 }
 
 export async function sendStepScore(
   client: Inngest,
-  options: ScoreOptions
+  options: ScoreOptions,
 ): Promise<void> {
   validateStepScoreOptions(options);
 
@@ -164,17 +164,17 @@ export async function sendStepScore(
     {
       // Omitted stepId means run scope and null keeps current-run lookup intact.
       runId:
-        options.stepId === undefined ? options.runId ?? null : options.runId,
+        options.stepId === undefined ? (options.runId ?? null) : options.runId,
       stepId: options.stepId,
     },
     { [options.name]: { value: options.value } },
     `${scoreKind}`,
-    "merge"
+    "merge",
   );
 }
 
 function validateExperimentRef(
-  experiment: unknown
+  experiment: unknown,
 ): asserts experiment is ExperimentRef {
   if (!isRecord(experiment)) {
     throw new Error("experiment must be an object");
@@ -191,7 +191,7 @@ function validateExperimentRef(
 
 export async function sendScoreExperiment(
   client: Inngest,
-  options: ScoreExperimentOptions
+  options: ScoreExperimentOptions,
 ): Promise<void> {
   validateSendScoreOptions(options);
   validateExperimentRef(options.experiment);
@@ -212,14 +212,14 @@ export async function sendScoreExperiment(
       variant: options.experiment.variant,
     } satisfies Pick<ExperimentMetadataValues, "name" | "variant">,
     experimentKind,
-    "merge"
+    "merge",
   );
   await performOp(
     client,
     target,
     { [options.name]: { value: options.value } },
     scoreKind,
-    "merge"
+    "merge",
   );
 }
 
@@ -232,7 +232,7 @@ export const scoreMiddleware = () => {
     }
 
     override transformFunctionInput(
-      arg: Middleware.TransformFunctionInputArgs
+      arg: Middleware.TransformFunctionInputArgs,
     ): Middleware.TransformFunctionInputArgs & {
       ctx: {
         step: {
