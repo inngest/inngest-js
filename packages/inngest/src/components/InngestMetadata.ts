@@ -330,7 +330,9 @@ export async function performOp(
 
   const isInsideRun = !!ctx?.execution;
   const isInsideStep = !!ctx?.execution?.executingStep;
-  if (isInsideRun && !isInsideStep) {
+  const isScoreOrExperimentWrite =
+    kind === "inngest.score" || kind === "inngest.experiment";
+  if (isInsideRun && !isInsideStep && !isScoreOrExperimentWrite) {
     client[internalLoggerSymbol].warn(
       "metadata.update() called outside of a step; this metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
     );
