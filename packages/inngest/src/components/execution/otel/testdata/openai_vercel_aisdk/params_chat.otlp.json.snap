@@ -6,6 +6,9 @@
       "responseModel": "gpt-4.1-nano-2025-04-14",
       "provider": "openai.chat",
       "responseId": "chatcmpl-DrBrtFuAQlLXg4oa4L76UUtX9ck0t",
+      "finishReasons": [
+        "stop"
+      ],
       "inputTokens": 22,
       "outputTokens": 6,
       "temperature": 0.7,
