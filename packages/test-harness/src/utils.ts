@@ -76,6 +76,43 @@ const traceOutputSchema = z.object({
   }),
 });
 
+const runMetadataEntrySchema = z.object({
+  scope: z.string(),
+  kind: z.string(),
+  values: z.record(z.unknown()),
+  updatedAt: z.string(),
+});
+
+export type RunMetadata = z.infer<typeof runMetadataEntrySchema>;
+
+export type TraceMetadataNode = {
+  name: string;
+  stepID: string | null;
+  spanID: string;
+  metadata: RunMetadata[];
+  childrenSpans: TraceMetadataNode[];
+};
+
+const traceMetadataNodeSchema: z.ZodType<TraceMetadataNode, z.ZodTypeDef, unknown> = z.lazy(() =>
+  z.object({
+    name: z.string(),
+    stepID: z.string().nullable(),
+    spanID: z.string(),
+    metadata: z.array(runMetadataEntrySchema).optional().default([]),
+    childrenSpans: z.array(traceMetadataNodeSchema).optional().default([]),
+  }),
+);
+
+const runTraceMetadataSchema = z.object({
+  data: z.object({
+    run: z
+      .object({
+        trace: traceMetadataNodeSchema.nullable(),
+      })
+      .nullable(),
+  }),
+});
+
 /**
  * Fetch the trace status and output ID for a run via the Dev Server's GQL API.
  * Uses `run.trace.status` instead of `run.status` because the top-level status
@@ -147,6 +184,66 @@ async function fetchTraceOutput(outputID: string): Promise<RunResult> {
     }
   }
   return { data: null };
+}
+
+/**
+ * Fetch root and step trace metadata for assertions against visible spans.
+ */
+export async function getRunTraceMetadata(
+  runId: string,
+): Promise<TraceMetadataNode> {
+  const res = await fetch(`${DEV_SERVER_URL}/v0/gql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `fragment TraceMetadataFields on RunTraceSpan {
+        name
+        stepID
+        spanID
+        metadata {
+          scope
+          kind
+          values
+          updatedAt
+        }
+      }
+
+      query ($runId: String!) {
+        run(runID: $runId) {
+          trace(preview: true) {
+            ...TraceMetadataFields
+            childrenSpans {
+              ...TraceMetadataFields
+              childrenSpans {
+                ...TraceMetadataFields
+              }
+            }
+          }
+        }
+      }`,
+      variables: { runId },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  const parsed = runTraceMetadataSchema.parse(await res.json());
+  const trace = parsed.data.run?.trace;
+  if (!trace) {
+    throw new Error(`Run ${runId} has no trace metadata`);
+  }
+  return trace;
+}
+
+/**
+ * Fetch the metadata entries attached to a run's root trace. Returns the
+ * raw list as the Dev Server reports it (e.g. `inngest.score`,
+ * `inngest.usage`). Use to assert that side-effects like `client.score()`
+ * landed on the expected run.
+ */
+export async function getRunMetadata(runId: string): Promise<RunMetadata[]> {
+  const trace = await getRunTraceMetadata(runId);
+  return trace.metadata;
 }
 
 async function fetchRunResult(

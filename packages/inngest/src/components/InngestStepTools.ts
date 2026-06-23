@@ -49,6 +49,12 @@ import {
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import {
+  type ScoreStepTool,
+  scoreSymbol,
+  sendStepScore,
+  validateStepScoreOptions,
+} from "./InngestScore.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
@@ -420,6 +426,24 @@ export const createStepTools = <
         });
       },
     };
+  };
+
+  const createStepScoreWrapper: ScoreStepTool = async (
+    memoizationId,
+    options,
+  ) => {
+    if (!client["experimentalScoreEnabled"]) {
+      // This is a config error, so retrying the function cannot fix it
+      throw new NonRetriableError(
+        'step.score() is experimental. Enable it by adding scoreMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
+
+    validateStepScoreOptions(options);
+
+    await tools.run(memoizationId, async () => {
+      await sendStepScore(client, options);
+    });
   };
 
   /**
@@ -972,6 +996,8 @@ export const createStepTools = <
   (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
     memoizationId: string,
   ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
+  (tools as unknown as ExperimentalStepTools)[scoreSymbol] =
+    createStepScoreWrapper;
 
   // Attach a step.run variant with opts.type = "group.experiment" for use by
   // group.experiment(). The symbol keeps it off the public `step` surface.
@@ -1035,6 +1061,7 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
 
 export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
   [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
+  [scoreSymbol]: ScoreStepTool;
 };
 
 export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
