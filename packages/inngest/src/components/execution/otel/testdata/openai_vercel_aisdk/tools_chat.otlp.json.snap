@@ -1,0 +1,16 @@
+[
+  {
+    "span": "ai.generateText.doGenerate",
+    "metadata": {
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "responseId": "chatcmpl-DrBrthIp6Qs0mY9a1VKXPa8s03XKf",
+      "inputTokens": 56,
+      "outputTokens": 30
+    }
+  },
+  {
+    "span": "ai.generateText",
+    "metadata": {}
+  }
+]

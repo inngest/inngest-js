@@ -1,0 +1,16 @@
+[
+  {
+    "span": "ai.generateText.doGenerate",
+    "metadata": {
+      "requestModel": "gpt-5.4-nano",
+      "responseModel": "gpt-5.4-nano-2026-03-17",
+      "responseId": "resp_01dd5d400c40c9ef006a30976041748199a7658d39393c5fd9",
+      "inputTokens": 17,
+      "outputTokens": 40
+    }
+  },
+  {
+    "span": "ai.generateText",
+    "metadata": {}
+  }
+]

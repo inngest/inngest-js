@@ -1,0 +1,10 @@
+[
+  {
+    "span": "ai.embed.doEmbed",
+    "metadata": {}
+  },
+  {
+    "span": "ai.embed",
+    "metadata": {}
+  }
+]
