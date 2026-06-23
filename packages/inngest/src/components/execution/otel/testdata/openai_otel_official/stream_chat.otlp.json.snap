@@ -2,8 +2,11 @@
   {
     "span": "chat gpt-4.1-nano",
     "metadata": {
-      "model": "gpt-4.1-nano",
-      "inputTokens": 11
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "responseId": "chatcmpl-DrBr3uruHirhUsB9574xMBlIPvKi2",
+      "inputTokens": 11,
+      "outputTokens": 10
     }
   }
 ]

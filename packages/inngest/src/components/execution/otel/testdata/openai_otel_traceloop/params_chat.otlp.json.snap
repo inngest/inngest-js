@@ -2,8 +2,18 @@
   {
     "span": "chat gpt-4.1-nano",
     "metadata": {
-      "model": "gpt-4.1-nano",
-      "inputTokens": 22
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "provider": "openai",
+      "responseId": "chatcmpl-DrBrcL88UfT4NHRfP1xcL1UtpKZSP",
+      "inputTokens": 22,
+      "outputTokens": 6,
+      "totalTokens": 28,
+      "temperature": 0.7,
+      "topP": 0.9,
+      "maxTokens": 64,
+      "frequencyPenalty": 0.2,
+      "presencePenalty": 0.1
     }
   }
 ]

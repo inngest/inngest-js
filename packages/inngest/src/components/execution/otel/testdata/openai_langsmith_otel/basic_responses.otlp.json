@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "06a138a3871df73327665d4d136f6b66",
-              "spanId": "4f2424ce1858dadc",
+              "traceId": "79ce76c66b35ba7682993920edfe0808",
+              "spanId": "3331616d29e2e8c9",
               "name": "ChatOpenAI",
               "kind": 1,
-              "startTimeUnixNano": "1780441342111000000",
-              "endTimeUnixNano": "1780441343233000000",
+              "startTimeUnixNano": "1781569388370000000",
+              "endTimeUnixNano": "1781569389164000000",
               "attributes": [
                 {
                   "key": "langsmith.traceable",
@@ -138,13 +138,13 @@
                 {
                   "key": "langsmith.usage_metadata",
                   "value": {
-                    "stringValue": "{\"input_tokens\":17,\"output_tokens\":35,\"total_tokens\":52,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}"
+                    "stringValue": "{\"input_tokens\":17,\"output_tokens\":46,\"total_tokens\":63,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}"
                   }
                 },
                 {
                   "key": "langsmith.metadata.usage_metadata",
                   "value": {
-                    "stringValue": "{\"input_tokens\":17,\"output_tokens\":35,\"total_tokens\":52,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}"
+                    "stringValue": "{\"input_tokens\":17,\"output_tokens\":46,\"total_tokens\":63,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}"
                   }
                 },
                 {
@@ -156,13 +156,13 @@
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 35
+                    "intValue": 46
                   }
                 },
                 {
                   "key": "gen_ai.usage.total_tokens",
                   "value": {
-                    "intValue": 52
+                    "intValue": 63
                   }
                 },
                 {
@@ -174,7 +174,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "resp_076af25434275e80006a1f60fe34c081989e65e074eb0213b3"
+                    "stringValue": "resp_0b898006b71f980e006a30976c7ae8819a9f9dfe79dd711f39"
                   }
                 },
                 {
@@ -198,7 +198,7 @@
                 {
                   "key": "gen_ai.completion",
                   "value": {
-                    "stringValue": "{\"id\":\"resp_076af25434275e80006a1f60fe34c081989e65e074eb0213b3\",\"object\":\"response\",\"created_at\":1780441342,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1780441343,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_076af25434275e80006a1f60fea038819884f1d36b93ad64af\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"In a moonlit meadow, a gentle unicorn tucked in the stars one by one, humming a lullaby until the whole night felt safe enough to sleep.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"none\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"user\":null,\"metadata\":{},\"output_text\":\"In a moonlit meadow, a gentle unicorn tucked in the stars one by one, humming a lullaby until the whole night felt safe enough to sleep.\",\"usage_metadata\":{\"input_tokens\":17,\"output_tokens\":35,\"total_tokens\":52,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}}"
+                    "stringValue": "{\"id\":\"resp_0b898006b71f980e006a30976c7ae8819a9f9dfe79dd711f39\",\"object\":\"response\",\"created_at\":1781569388,\"status\":\"completed\",\"background\":false,\"billing\":{\"payer\":\"developer\"},\"completed_at\":1781569389,\"error\":null,\"frequency_penalty\":0,\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"model\":\"gpt-5.4-nano-2026-03-17\",\"moderation\":null,\"output\":[{\"id\":\"msg_0b898006b71f980e006a30976cb634819a823c88f7f4dadef0\",\"type\":\"message\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"In the quiet hush of midnight, a gentle unicorn tiptoed through moonlit meadows, sprinkling stardust on sleepy flowers until the whole world yawned softly and fell into a peaceful dream.\"}],\"phase\":\"final_answer\",\"role\":\"assistant\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"none\",\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"store\":true,\"temperature\":1,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tools\":[],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"user\":null,\"metadata\":{},\"output_text\":\"In the quiet hush of midnight, a gentle unicorn tiptoed through moonlit meadows, sprinkling stardust on sleepy flowers until the whole world yawned softly and fell into a peaceful dream.\",\"usage_metadata\":{\"input_tokens\":17,\"output_tokens\":46,\"total_tokens\":63,\"input_token_details\":{\"cache_read\":0},\"output_token_details\":{\"reasoning\":0}}}"
                   }
                 }
               ],

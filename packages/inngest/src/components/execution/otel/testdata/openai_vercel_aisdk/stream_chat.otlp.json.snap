@@ -2,15 +2,15 @@
   {
     "span": "ai.streamText.doStream",
     "metadata": {
-      "model": "gpt-4.1-nano",
-      "inputTokens": 11
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "responseId": "chatcmpl-DrBruw0ipxM6NO9pr53HGKTeUDGsv",
+      "inputTokens": 11,
+      "outputTokens": 14
     }
   },
   {
     "span": "ai.streamText",
-    "metadata": {
-      "model": "gpt-4.1-nano",
-      "inputTokens": 11
-    }
+    "metadata": {}
   }
 ]
