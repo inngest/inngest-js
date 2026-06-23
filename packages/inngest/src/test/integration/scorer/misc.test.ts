@@ -46,7 +46,7 @@ test("scorer targets the attached experiment", async () => {
         kind: "inngest.experiment",
         scope: "run",
         updatedAt: expect.any(String),
-        values: { experiment_name: "exp", variant: "control" },
+        values: { name: "exp", variant: "control" },
       },
       {
         kind: "inngest.score",
