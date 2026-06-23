@@ -4,6 +4,7 @@ import { type GeminiAiAdapter } from "./adapters/gemini.js";
 import { type GrokAiAdapter } from "./adapters/grok.js";
 import { type OpenAiAiAdapter } from "./adapters/openai.js";
 import { type AzureOpenAiAiAdapter } from "./adapters/azure-openai.js";
+import { type TzafonAiAdapter } from "./adapters/tzafon.js";
 
 /**
  * An AI model, defining the I/O format and typing, and how to call the model.
@@ -112,7 +113,8 @@ export namespace AiAdapter {
     | "anthropic"
     | "gemini"
     | "grok"
-    | "azure-openai";
+    | "azure-openai"
+    | "tzafon";
 
   /**
    * A function that creates a model that adheres to an existng AI adapter
@@ -134,6 +136,7 @@ const adapters = {
   gemini: null as unknown as GeminiAiAdapter,
   grok: null as unknown as GrokAiAdapter,
   "azure-openai": null as unknown as AzureOpenAiAiAdapter,
+  tzafon: null as unknown as TzafonAiAdapter,
 } satisfies Record<AiAdapter.Format, AiAdapter>;
 
 /**

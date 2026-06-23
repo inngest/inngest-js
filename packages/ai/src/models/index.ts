@@ -4,4 +4,5 @@ export * from "./openai.js";
 export * from "./azure-openai.js";
 export * from "./deepseek.js";
 export * from "./grok.js";
+export * from "./tzafon.js";
 export * from "./openai-responses.js";
