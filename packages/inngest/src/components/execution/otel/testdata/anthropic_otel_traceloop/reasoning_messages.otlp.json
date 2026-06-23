@@ -24,7 +24,7 @@
           {
             "key": "telemetry.sdk.version",
             "value": {
-              "stringValue": "2.7.1"
+              "stringValue": "2.8.0"
             }
           }
         ],
@@ -33,22 +33,22 @@
       "scopeSpans": [
         {
           "scope": {
-            "name": "@traceloop/instrumentation-openai",
+            "name": "@traceloop/instrumentation-anthropic",
             "version": "0.27.0"
           },
           "spans": [
             {
-              "traceId": "d7548edc012ab32e69e0077fafef798e",
-              "spanId": "f80c103b412415ae",
-              "name": "chat gpt-4.1-nano",
+              "traceId": "97f7a4d5ac2d3a29f2adef92975eb793",
+              "spanId": "d22b1d952f042f4f",
+              "name": "chat claude-sonnet-4-6",
               "kind": 3,
-              "startTimeUnixNano": "1781569360317000000",
-              "endTimeUnixNano": "1781569360997310291",
+              "startTimeUnixNano": "1781569302068000000",
+              "endTimeUnixNano": "1781569308711093750",
               "attributes": [
                 {
                   "key": "gen_ai.provider.name",
                   "value": {
-                    "stringValue": "openai"
+                    "stringValue": "anthropic"
                   }
                 },
                 {
@@ -60,73 +60,25 @@
                 {
                   "key": "gen_ai.request.model",
                   "value": {
-                    "stringValue": "gpt-4.1-nano"
+                    "stringValue": "claude-sonnet-4-6"
                   }
                 },
                 {
                   "key": "gen_ai.request.max_tokens",
                   "value": {
-                    "intValue": 64
-                  }
-                },
-                {
-                  "key": "gen_ai.request.temperature",
-                  "value": {
-                    "doubleValue": 0.7
-                  }
-                },
-                {
-                  "key": "gen_ai.request.top_p",
-                  "value": {
-                    "doubleValue": 0.9
-                  }
-                },
-                {
-                  "key": "gen_ai.request.frequency_penalty",
-                  "value": {
-                    "doubleValue": 0.2
-                  }
-                },
-                {
-                  "key": "gen_ai.request.presence_penalty",
-                  "value": {
-                    "doubleValue": 0.1
+                    "intValue": 4096
                   }
                 },
                 {
                   "key": "gen_ai.input.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"system\",\"parts\":[{\"type\":\"text\",\"content\":\"You are a terse assistant.\"}]},{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Name three primary colors.\"}]}]"
+                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Reason step by step before giving your final answer.\"}]}]"
                   }
                 },
                 {
                   "key": "gen_ai.response.model",
                   "value": {
-                    "stringValue": "gpt-4.1-nano-2025-04-14"
-                  }
-                },
-                {
-                  "key": "gen_ai.response.id",
-                  "value": {
-                    "stringValue": "chatcmpl-DrBrcL88UfT4NHRfP1xcL1UtpKZSP"
-                  }
-                },
-                {
-                  "key": "gen_ai.usage.total_tokens",
-                  "value": {
-                    "intValue": 28
-                  }
-                },
-                {
-                  "key": "gen_ai.usage.output_tokens",
-                  "value": {
-                    "intValue": 6
-                  }
-                },
-                {
-                  "key": "gen_ai.usage.input_tokens",
-                  "value": {
-                    "intValue": 22
+                    "stringValue": "claude-sonnet-4-6"
                   }
                 },
                 {
@@ -142,9 +94,39 @@
                   }
                 },
                 {
+                  "key": "gen_ai.usage.total_tokens",
+                  "value": {
+                    "intValue": 502
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": 450
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": 52
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_creation.input_tokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
                   "key": "gen_ai.output.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"Red, blue, yellow.\"}]}]"
+                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"reasoning\",\"content\":\"Let me define variables:\\n- Let the ball cost x dollars\\n- The bat costs x + 1.00 dollars (since the bat costs $1.00 more than the ball)\\n\\nTogether they cost $1.10:\\nx + (x + 1.00) = 1.10\\n2x + 1.00 = 1.10\\n2x = 0.10\\nx = 0.05\\n\\nThe ball costs $0.05 (5 cents).\\n\\nLet me verify: Ball = $0.05, Bat = $1.05, Total = $1.10 ✓\\nAnd $1.05 - $0.05 = $1.00 ✓\"},{\"type\":\"text\",\"content\":\"## Setting Up the Problem\\n\\nLet me define the variable:\\n- Let the **ball** cost = **x** dollars\\n- Then the **bat** costs = **x + $1.00** dollars (since it costs $1.00 more)\\n\\n## Solving the Equation\\n\\nTheir combined cost is $1.10:\\n\\n$$x + (x + 1.00) = 1.10$$\\n\\n$$2x + 1.00 = 1.10$$\\n\\n$$2x = 0.10$$\\n\\n$$x = 0.05$$\\n\\n## Verification\\n\\n- Ball = **$0.05**\\n- Bat = **$1.05**\\n- Difference: $1.05 − $0.05 = **$1.00** ✓\\n- Total: $1.05 + $0.05 = **$1.10** ✓\\n\\n## Answer\\n\\nThe ball costs **$0.05 (5 cents)**.\\n\\n> **Note:** The intuitive answer of $0.10 is a common mistake — if the ball were $0.10, the bat would be $1.10, making the total $1.20, not $1.10.\"}]}]"
                   }
                 }
               ],

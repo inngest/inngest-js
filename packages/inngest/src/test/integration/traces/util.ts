@@ -3,13 +3,13 @@ import { trace } from "@opentelemetry/api";
 import { z } from "zod/v3";
 
 /**
- * Emits the span shape `@opentelemetry/instrumentation-openai` produces for a
- * chat completion, without needing the OpenAI SDK or an API key: a wrapper
- * span containing a `gen_ai.*`-attributed span.
+ * Emits the span shape an OpenTelemetry GenAI LLM instrumentation produces for
+ * a chat completion, without needing an SDK or an API key: a wrapper span
+ * containing a `gen_ai.*`-attributed span.
  *
- * The response model and output tokens are deliberately present even though
- * the metadata processor doesn't extract them; tests assert they don't leak
- * into step metadata.
+ * Prompt/response content is deliberately present even though the metadata
+ * processor never extracts it (it's not on the allowlist); tests assert it
+ * doesn't leak into step metadata.
  */
 export function simulateOpenAICall(): string {
   const tracer = trace.getTracer("@opentelemetry/instrumentation-openai");
@@ -22,9 +22,13 @@ export function simulateOpenAICall(): string {
             "gen_ai.operation.name": "chat",
             "gen_ai.request.model": "gpt-5.4-nano",
             "gen_ai.response.model": "gpt-5.4-nano-2026-03-17",
-            "gen_ai.system": "openai",
+            "gen_ai.provider.name": "openai",
             "gen_ai.usage.input_tokens": 18,
             "gen_ai.usage.output_tokens": 39,
+            // Content attributes that must never reach step metadata.
+            "gen_ai.prompt": "secret prompt",
+            "gen_ai.completion": "secret completion",
+            "gen_ai.input.messages": "secret",
           },
         },
         (span) => {

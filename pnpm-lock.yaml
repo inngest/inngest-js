@@ -5260,6 +5260,7 @@ packages:
   inngest@3.42.3:
     resolution: {integrity: sha512-jhN0jIKFnzB+zuYElKhzJ0MHVvl0AbhjPo2qcWpwjapT+t6jIV3/wqOCP0sGgMVbeluGqC6YxewJInlBTJ933A==}
     engines: {node: '>=20'}
+    deprecated: 'CRITICAL SECURITY: upgrade to >=3.54.0'
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
       '@vercel/node': '>=2.15.9'
@@ -5297,6 +5298,7 @@ packages:
   inngest@3.44.1:
     resolution: {integrity: sha512-bmWor6JlqXVR00m4KsbwTFB/QywBeshjl7W3DfSsf6bFfWkalGzq2AaNyTk6tDFJdZoZJGL1b2Plqy5ZGejQfw==}
     engines: {node: '>=20'}
+    deprecated: 'CRITICAL SECURITY: upgrade to >=3.54.0'
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
       '@vercel/node': '>=2.15.9'

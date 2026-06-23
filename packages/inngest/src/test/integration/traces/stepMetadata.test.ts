@@ -27,14 +27,19 @@ context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-// Request model (not response model) and input tokens only, mapped to the
-// server's snake_case `inngest.ai` schema.
+// The fields the extractor lifts from `simulateOpenAICall`'s span, mapped to
+// the server's snake_case `inngest.ai` schema. `gen_ai.operation.name` is not
+// extracted, content attributes are never extracted, and `total_tokens` is
+// absent because the span carries no provider total (we never derive one).
 const expectedAIMetadata = {
   kind: "inngest.ai",
   scope: "step",
   values: {
+    request_model: "gpt-5.4-nano",
+    response_model: "gpt-5.4-nano-2026-03-17",
+    provider: "openai",
     input_tokens: 18,
-    model: "gpt-5.4-nano",
+    output_tokens: 39,
   },
 };
 
@@ -105,12 +110,14 @@ matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
     return step.name === "my-step" && hasAiMetadata(step.metadata);
   });
 
+  // Two calls in one step aggregate: token counts sum; model/system are kept.
   expect(getAIMetadata(step)).toEqual([
     {
       ...expectedAIMetadata,
       values: {
         ...expectedAIMetadata.values,
         input_tokens: 2 * expectedAIMetadata.values.input_tokens,
+        output_tokens: 2 * expectedAIMetadata.values.output_tokens,
       },
     },
   ]);
@@ -173,3 +180,34 @@ function hasAiMetadata(metadata: { kind: string }[]) {
   }
   return false;
 }
+
+test("disable AI metadata", async () => {
+  const state = createState();
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    aiMetadata: false,
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const fn = client.createFunction(
+    {
+      id: "fn-1",
+      retries: 0,
+      triggers: [{ event: eventName }],
+    },
+    async ({ runId, step }) => {
+      state.runId = runId;
+      await step.run("my-step", simulateOpenAICall);
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  await state.waitForRunComplete();
+
+  // No AI metadata
+  const steps = await waitForTraceSteps(await state.waitForRunId());
+  for (const step of steps) {
+    expect(getAIMetadata(step)).toEqual([]);
+  }
+});

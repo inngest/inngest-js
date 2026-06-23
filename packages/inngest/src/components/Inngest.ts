@@ -26,6 +26,7 @@ import {
   warnOnce,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -62,6 +63,13 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import {
+  type ClientScore,
+  type ScoreExperimentOptions,
+  type ScoreOptions,
+  sendScore,
+  sendScoreExperiment,
+} from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
@@ -141,6 +149,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private readonly _logger: Logger;
 
   /**
+   * Whether this client should collect AI metadata from OpenTelemetry spans.
+   *
+   * @internal
+   */
+  readonly aiMetadataEnabled: boolean;
+
+  /**
    * Logger for SDK internal messages. Falls back to the user's `logger` if
    * `internalLogger` is not provided in client options.
    *
@@ -164,6 +179,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * Flag set by metadataMiddleware to enable step.metadata()
    */
   protected experimentalMetadataEnabled = false;
+
+  /**
+   * @internal
+   * Flag set by scoreMiddleware to enable step.score().
+   */
+  protected experimentalScoreEnabled = false;
 
   /**
    * A dummy Inngest function used in Durable Endpoints. This is necessary
@@ -312,6 +333,20 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
+   * Write scores. Call directly to write a live score for a run or step; use
+   * `inngest.score.experiment(...)` to attach a score to a `group.experiment()`
+   * variant.
+   *
+   * For standalone durable score writes, prefer `step.score()`.
+   */
+  get score(): ClientScore {
+    return Object.assign((options: ScoreOptions) => sendScore(this, options), {
+      experiment: (options: ScoreExperimentOptions) =>
+        sendScoreExperiment(this, options),
+    });
+  }
+
+  /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
    *
@@ -329,6 +364,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     }
 
     this.id = id;
+    this.aiMetadataEnabled = this.options.aiMetadata !== false;
     this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
@@ -363,7 +399,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     // Attach the read-only AI metadata span processor to whatever global OTel
     // provider already exists. Idempotent across clients; only attaches once.
-    metadataSpanProcessor.attach();
+    if (this.aiMetadataEnabled) {
+      metadataSpanProcessor.attach();
+    }
 
     this._appVersion = appVersion;
   }
@@ -925,12 +963,22 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     // filled by the event server so is safe, and adding here fixes Next.js
     // server action cache issues.
     payloads = payloads.map((p) => {
+      const {
+        sessions: _sessions,
+        ctx: _ctx,
+        ...rest
+      } = p as typeof p & {
+        sessions?: unknown;
+        ctx?: unknown;
+      };
+
       return {
-        ...p,
+        ...rest,
         // Always generate an idempotency ID for an event for retries
         id: p.id,
         ts: p.ts || nowMillis,
         data: p.data || {},
+        meta: normalizeEventMeta(p.meta),
       };
     });
 

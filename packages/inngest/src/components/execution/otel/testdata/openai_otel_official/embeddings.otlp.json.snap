@@ -2,7 +2,9 @@
   {
     "span": "embeddings text-embedding-3-small",
     "metadata": {
-      "model": "text-embedding-3-small",
+      "requestModel": "text-embedding-3-small",
+      "responseModel": "text-embedding-3-small",
+      "provider": "openai",
       "inputTokens": 10
     }
   }

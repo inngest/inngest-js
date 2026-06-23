@@ -1,5 +1,53 @@
 # inngest
 
+## 4.10.0
+
+### Minor Changes
+
+- [#1599](https://github.com/inngest/inngest-js/pull/1599) [`c02cc265`](https://github.com/inngest/inngest-js/commit/c02cc265bfe73ead0a761c80ddcad52393193649) Thanks [@scottnuma](https://github.com/scottnuma)! - Support deprecated `gen_ai.system` for AI Metadata Extraction
+
+- [#1600](https://github.com/inngest/inngest-js/pull/1600) [`2462e875`](https://github.com/inngest/inngest-js/commit/2462e875c01b43f9b24a386d5cc7655fc64be37e) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing finish reasons for AI Metadata Extraction
+
+### Patch Changes
+
+- [#1605](https://github.com/inngest/inngest-js/pull/1605) [`cd18ed18`](https://github.com/inngest/inngest-js/commit/cd18ed1843ab2696b87778c0e947ad7d77f7feaf) Thanks [@Linell](https://github.com/Linell)! - Suppress unnecessary warning log for inngest.experiment.score.
+
+- [#1602](https://github.com/inngest/inngest-js/pull/1602) [`e2e89ead`](https://github.com/inngest/inngest-js/commit/e2e89ead7475cec06693d4357b920820a1687ecf) Thanks [@amh4r](https://github.com/amh4r)! - Fix Extended Traces not appearing when checkpointing disabled
+
+## 4.9.0
+
+### Minor Changes
+
+- [#1594](https://github.com/inngest/inngest-js/pull/1594) [`124e55f8`](https://github.com/inngest/inngest-js/commit/124e55f8d159af9145a073c9756a6281da60185b) Thanks [@scottnuma](https://github.com/scottnuma)! - Expand AI step metadata extraction to more OTel GenAI span attributes. The SDK now records additional model, provider, response id, token, and request parameter fields from OTel GenAI spans while continuing to ignore prompt and response content.
+
+  This removes the previous metadata extraction for Open Inference, Vercel AI SDK-specific, and Langfuse-specific span attributes.
+
+## 4.8.0
+
+### Minor Changes
+
+- [#1595](https://github.com/inngest/inngest-js/pull/1595) [`aa315c7e`](https://github.com/inngest/inngest-js/commit/aa315c7ec9b99a69a7f85720e2805991b3e23841) Thanks [@amh4r](https://github.com/amh4r)! - Add opt-out for AI metadata extraction
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental createScorer function
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental scoring primitives for writing run- and step-scoped `inngest.score` metadata via `inngest.score()` and `scoreMiddleware()`-gated `step.score()`.
+
+### Patch Changes
+
+- [#1592](https://github.com/inngest/inngest-js/pull/1592) [`748c6cc4`](https://github.com/inngest/inngest-js/commit/748c6cc4fb167af9223c2b87d6c6543245d1428b) Thanks [@amh4r](https://github.com/amh4r)! - Deprecate Extended Traces provider creation. `behaviour: "createProvider"` and the `"auto"` fallback remain functional, but now direct users to preload `@inngest/otel/node` and extend that provider instead.
+
+## 4.7.0
+
+### Minor Changes
+
+- [#1577](https://github.com/inngest/inngest-js/pull/1577) [`1bc2ac7c`](https://github.com/inngest/inngest-js/commit/1bc2ac7c1949a61e472334b832691e7dfd85290e) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing LLM calls instrumented with OTel by Langfuse
+
+- [#1547](https://github.com/inngest/inngest-js/pull/1547) [`04a79c95`](https://github.com/inngest/inngest-js/commit/04a79c95294e08e04a6dd5fdd1ba3d2fc70d014c) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add `sessions` to event payloads
+
+### Patch Changes
+
+- [#1588](https://github.com/inngest/inngest-js/pull/1588) [`50a349b7`](https://github.com/inngest/inngest-js/commit/50a349b772d75b0f60060afb1188116e750fe7dd) Thanks [@rhino1998](https://github.com/rhino1998)! - fix(extended traces): Emit extended trace spans parented to the finalized step span
+
 ## 4.6.0
 
 ### Minor Changes

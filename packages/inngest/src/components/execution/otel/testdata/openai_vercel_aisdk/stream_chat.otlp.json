@@ -37,13 +37,13 @@
           },
           "spans": [
             {
-              "traceId": "86ad0e32f8b26362a2abbdb974c8245d",
-              "spanId": "ca90fc393d731f06",
-              "parentSpanId": "509f73aacf02b9ab",
+              "traceId": "0b8a61a735436e0472ed88981a0268bb",
+              "spanId": "5a6578653fbe60ff",
+              "parentSpanId": "e4efde893c908549",
               "name": "ai.streamText.doStream",
               "kind": 1,
-              "startTimeUnixNano": "1780439005452000000",
-              "endTimeUnixNano": "1780439005814374208",
+              "startTimeUnixNano": "1781569378113000000",
+              "endTimeUnixNano": "1781569378396824750",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -96,19 +96,19 @@
                 {
                   "key": "ai.response.msToFirstChunk",
                   "value": {
-                    "doubleValue": 255.30229199999985
+                    "doubleValue": 222.59050000000025
                   }
                 },
                 {
                   "key": "ai.response.msToFinish",
                   "value": {
-                    "doubleValue": 361.19070899999997
+                    "doubleValue": 282.85904100000016
                   }
                 },
                 {
                   "key": "ai.response.avgOutputTokensPerSecond",
                   "value": {
-                    "doubleValue": 27.686204962708498
+                    "doubleValue": 49.49461735607027
                   }
                 },
                 {
@@ -120,7 +120,7 @@
                 {
                   "key": "ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmRo58DlkgVkA2eN9sgElNFLVmm97"
+                    "stringValue": "chatcmpl-DrBruw0ipxM6NO9pr53HGKTeUDGsv"
                   }
                 },
                 {
@@ -132,7 +132,7 @@
                 {
                   "key": "ai.response.timestamp",
                   "value": {
-                    "stringValue": "2026-06-02T22:23:25.000Z"
+                    "stringValue": "2026-06-16T00:22:58.000Z"
                   }
                 },
                 {
@@ -156,13 +156,13 @@
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": 10
+                    "intValue": 14
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": 10
+                    "intValue": 14
                   }
                 },
                 {
@@ -174,7 +174,7 @@
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": 21
+                    "intValue": 25
                   }
                 },
                 {
@@ -204,7 +204,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmRo58DlkgVkA2eN9sgElNFLVmm97"
+                    "stringValue": "chatcmpl-DrBruw0ipxM6NO9pr53HGKTeUDGsv"
                   }
                 },
                 {
@@ -222,13 +222,13 @@
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 10
+                    "intValue": 14
                   }
                 },
                 {
                   "key": "ai.response.text",
                   "value": {
-                    "stringValue": "One, two, three, four, five."
+                    "stringValue": "1, 2, 3, 4, 5."
                   }
                 },
                 {
@@ -245,18 +245,18 @@
                     {
                       "key": "ai.response.msToFirstChunk",
                       "value": {
-                        "doubleValue": 255.30229199999985
+                        "doubleValue": 222.59050000000025
                       }
                     }
                   ],
                   "name": "ai.stream.firstChunk",
-                  "timeUnixNano": "1780439005707539625",
+                  "timeUnixNano": "1781569378335705542",
                   "droppedAttributesCount": 0
                 },
                 {
                   "attributes": [],
                   "name": "ai.stream.finish",
-                  "timeUnixNano": "1780439005813300666",
+                  "timeUnixNano": "1781569378395935958",
                   "droppedAttributesCount": 0
                 }
               ],
@@ -269,12 +269,12 @@
               "flags": 257
             },
             {
-              "traceId": "86ad0e32f8b26362a2abbdb974c8245d",
-              "spanId": "509f73aacf02b9ab",
+              "traceId": "0b8a61a735436e0472ed88981a0268bb",
+              "spanId": "e4efde893c908549",
               "name": "ai.streamText",
               "kind": 1,
-              "startTimeUnixNano": "1780439005449000000",
-              "endTimeUnixNano": "1780439005814908417",
+              "startTimeUnixNano": "1781569378110000000",
+              "endTimeUnixNano": "1781569378397950958",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -321,7 +321,7 @@
                 {
                   "key": "ai.response.text",
                   "value": {
-                    "stringValue": "One, two, three, four, five."
+                    "stringValue": "1, 2, 3, 4, 5."
                   }
                 },
                 {
@@ -351,13 +351,13 @@
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": 10
+                    "intValue": 14
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": 10
+                    "intValue": 14
                   }
                 },
                 {
@@ -369,7 +369,7 @@
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": 21
+                    "intValue": 25
                   }
                 },
                 {

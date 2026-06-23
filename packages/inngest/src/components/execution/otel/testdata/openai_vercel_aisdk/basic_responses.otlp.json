@@ -37,13 +37,13 @@
           },
           "spans": [
             {
-              "traceId": "d069bf14279b319a53e31f48db2e135e",
-              "spanId": "8b66b60781e335a3",
-              "parentSpanId": "60d37a7b3ae50b38",
+              "traceId": "bc5edd37d1361bbc513ef87819fee533",
+              "spanId": "633d60571f08cccb",
+              "parentSpanId": "94a90602b3306588",
               "name": "ai.generateText.doGenerate",
               "kind": 1,
-              "startTimeUnixNano": "1780439002130000000",
-              "endTimeUnixNano": "1780439003458481583",
+              "startTimeUnixNano": "1781569376144000000",
+              "endTimeUnixNano": "1781569377088026250",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -108,13 +108,13 @@
                 {
                   "key": "ai.response.text",
                   "value": {
-                    "stringValue": "In the hush of night, a gentle unicorn trotted through a moonlit field, sprinkling stardust on every sleeping blanket until the whole world drifted peacefully into dreams."
+                    "stringValue": "Under a quilt of starlight, a gentle unicorn tiptoed through the moonlit meadow, sprinkling sleepy sparkles that turned every softly snoring leaf into a dream."
                   }
                 },
                 {
                   "key": "ai.response.id",
                   "value": {
-                    "stringValue": "resp_0e56d5c95850276a006a1f57da3d60819a8974cbbffaedd001"
+                    "stringValue": "resp_01dd5d400c40c9ef006a30976041748199a7658d39393c5fd9"
                   }
                 },
                 {
@@ -126,13 +126,13 @@
                 {
                   "key": "ai.response.timestamp",
                   "value": {
-                    "stringValue": "2026-06-02T22:23:22.000Z"
+                    "stringValue": "2026-06-16T00:22:56.000Z"
                   }
                 },
                 {
                   "key": "ai.response.providerMetadata",
                   "value": {
-                    "stringValue": "{\"openai\":{\"responseId\":\"resp_0e56d5c95850276a006a1f57da3d60819a8974cbbffaedd001\",\"serviceTier\":\"default\"}}"
+                    "stringValue": "{\"openai\":{\"responseId\":\"resp_01dd5d400c40c9ef006a30976041748199a7658d39393c5fd9\",\"serviceTier\":\"default\"}}"
                   }
                 },
                 {
@@ -204,7 +204,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "resp_0e56d5c95850276a006a1f57da3d60819a8974cbbffaedd001"
+                    "stringValue": "resp_01dd5d400c40c9ef006a30976041748199a7658d39393c5fd9"
                   }
                 },
                 {
@@ -237,12 +237,12 @@
               "flags": 257
             },
             {
-              "traceId": "d069bf14279b319a53e31f48db2e135e",
-              "spanId": "60d37a7b3ae50b38",
+              "traceId": "bc5edd37d1361bbc513ef87819fee533",
+              "spanId": "94a90602b3306588",
               "name": "ai.generateText",
               "kind": 1,
-              "startTimeUnixNano": "1780439002129000000",
-              "endTimeUnixNano": "1780439003459391417",
+              "startTimeUnixNano": "1781569376143000000",
+              "endTimeUnixNano": "1781569377091373875",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -295,13 +295,13 @@
                 {
                   "key": "ai.response.text",
                   "value": {
-                    "stringValue": "In the hush of night, a gentle unicorn trotted through a moonlit field, sprinkling stardust on every sleeping blanket until the whole world drifted peacefully into dreams."
+                    "stringValue": "Under a quilt of starlight, a gentle unicorn tiptoed through the moonlit meadow, sprinkling sleepy sparkles that turned every softly snoring leaf into a dream."
                   }
                 },
                 {
                   "key": "ai.response.providerMetadata",
                   "value": {
-                    "stringValue": "{\"openai\":{\"responseId\":\"resp_0e56d5c95850276a006a1f57da3d60819a8974cbbffaedd001\",\"serviceTier\":\"default\"}}"
+                    "stringValue": "{\"openai\":{\"responseId\":\"resp_01dd5d400c40c9ef006a30976041748199a7658d39393c5fd9\",\"serviceTier\":\"default\"}}"
                   }
                 },
                 {

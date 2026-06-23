@@ -146,6 +146,11 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
+
+  /**
+   * Meta from the original triggering event, used to group runs.
+   */
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -185,6 +190,11 @@ export type FinishedEventPayload = {
         result: unknown;
       }
   );
+
+  /**
+   * Meta from the original triggering event, used to group runs.
+   */
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -198,6 +208,11 @@ export type CancelledEventPayload = {
     run_id: string;
     correlation_id?: string;
   };
+
+  /**
+   * Meta from the original triggering event, used to group runs.
+   */
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -514,8 +529,20 @@ export type DeferFn = <TFn extends DeferredFunction.Any>(
       ? D
       : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
         Record<string, any>;
+    /** Attribute the deferred scorer's result to this experiment variant. */
+    experiment?: ExperimentRef;
   },
 ) => void;
+
+/**
+ * A replay-stable handle to a selected experiment variant, returned by
+ * `group.experiment()`. Pass it to `inngest.score.experiment()` or
+ * `defer(id, { experiment })` to attribute a later score to this variant.
+ */
+export type ExperimentRef = {
+  experimentName: string;
+  variant: string;
+};
 
 /**
  * Base context object, omitting any extras that may be added by middleware or
@@ -657,6 +684,11 @@ export interface MinimalEventPayload<TData = any> {
    * (optional)
    */
   v?: string;
+
+  /**
+   * Event meta shared across runs triggered by this event.
+   */
+  meta?: EventMeta;
 }
 
 /**
@@ -685,6 +717,52 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
    */
   ts?: number;
 }
+
+/**
+ * Primitive values accepted for event session IDs when sending an
+ * event. Numbers are normalized to strings before sending.
+ *
+ * @public
+ */
+export type EventSessionValue = string | number;
+
+/**
+ * Session meta accepted when sending an event. Values are normalized to
+ * strings before sending; received events carry `Record<string, string>`.
+ *
+ * @public
+ */
+export type EventSessions = Record<string, EventSessionValue>;
+
+/**
+ * Event meta accepted when sending an event.
+ *
+ * @public
+ */
+export type EventMeta = {
+  /**
+   * Session meta used to group runs triggered by this event.
+   *
+   * Keys are session keys, values are session IDs. Values are
+   * normalized to strings before the event is sent.
+   */
+  sessions?: EventSessions;
+};
+
+/**
+ * Event meta received by a function handler.
+ *
+ * @public
+ */
+export type ReceivedEventMeta = {
+  /**
+   * Session meta used to group runs triggered by this event.
+   *
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
+};
 
 export const sendEventResponseSchema = z.object({
   /**
@@ -1053,6 +1131,17 @@ export interface ClientOptions {
    * @default true
    */
   optimizeParallelism?: boolean;
+
+  /**
+   * Automatically extract AI metadata from OpenTelemetry spans created while
+   * steps run, then attach that metadata to the step.
+   *
+   * This only controls the SDK's built-in AI metadata extraction. It does not
+   * affect Extended Traces.
+   *
+   * @default true
+   */
+  aiMetadata?: boolean;
 
   /**
    * Whether or not to use checkpointing by default for executions of functions

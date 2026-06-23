@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "5fa9cc39f91b335b4742b5c3f4a88095",
-              "spanId": "484a067e0b14ea01",
+              "traceId": "11db093acd07b3edf3fb0a5e0ec5ec60",
+              "spanId": "a6b5626e2a6f6e66",
               "name": "chat gpt-4.1-nano",
               "kind": 3,
-              "startTimeUnixNano": "1780434681024000000",
-              "endTimeUnixNano": "1780434681695641292",
+              "startTimeUnixNano": "1781569322549000000",
+              "endTimeUnixNano": "1781569323835238292",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",
@@ -132,7 +132,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmQgLKk5KeV2yWFNlpzOVrmXErHfC"
+                    "stringValue": "chatcmpl-DrBr1MuPKdHPsQKsEJiGPeor6ptxv"
                   }
                 },
                 {
