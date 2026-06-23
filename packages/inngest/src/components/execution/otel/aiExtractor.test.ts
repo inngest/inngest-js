@@ -216,6 +216,30 @@ describe("extractAIMetadataFromAttributes", () => {
     ).toEqual({ temperature: 0 });
   });
 
+  test("extracts finish reasons as a list of strings", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.response.finish_reasons": ["stop", "tool_calls"],
+      }),
+    ).toEqual({ finishReasons: ["stop", "tool_calls"] });
+  });
+
+  test("drops empty and non-string finish-reason entries", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.response.finish_reasons": ["", "stop"],
+      }),
+    ).toEqual({ finishReasons: ["stop"] });
+  });
+
+  test("drops finish reasons when the list reduces to nothing", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.response.finish_reasons": [],
+      }),
+    ).toEqual({});
+  });
+
   test("ignores unmapped, content, and sensitive keys", () => {
     expect(
       extractAIMetadataFromAttributes({
@@ -313,6 +337,12 @@ describe("aggregate", () => {
     });
   });
 
+  test("replaces finish reasons rather than concatenating them", () => {
+    expect(
+      aggregate({ finishReasons: ["stop"] }, { finishReasons: ["tool_calls"] }),
+    ).toEqual({ finishReasons: ["tool_calls"] });
+  });
+
   test("returns an empty object when both inputs are empty", () => {
     expect(aggregate({}, {})).toEqual({});
   });
@@ -326,6 +356,7 @@ describe("toInngestAIMetadataValues", () => {
         responseModel: "gpt-4o-2024-08-06",
         provider: "openai",
         responseId: "chatcmpl-abc",
+        finishReasons: ["stop"],
         inputTokens: 42,
         outputTokens: 8,
         totalTokens: 50,
@@ -344,6 +375,7 @@ describe("toInngestAIMetadataValues", () => {
       response_model: "gpt-4o-2024-08-06",
       provider: "openai",
       response_id: "chatcmpl-abc",
+      finish_reasons: ["stop"],
       input_tokens: 42,
       output_tokens: 8,
       total_tokens: 50,
