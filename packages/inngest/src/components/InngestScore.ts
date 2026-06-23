@@ -1,6 +1,7 @@
 import { isFiniteNumber, isRecord } from "../helpers/types.ts";
 import type { ExperimentRef } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
+import type { ExperimentMetadataValues } from "./InngestGroupTools.ts";
 import { performOp } from "./InngestMetadata.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
@@ -207,9 +208,9 @@ export async function sendScoreExperiment(
     client,
     target,
     {
-      experiment_name: options.experiment.experimentName,
+      name: options.experiment.experimentName,
       variant: options.experiment.variant,
-    },
+    } satisfies Pick<ExperimentMetadataValues, "name" | "variant">,
     experimentKind,
     "merge",
   );

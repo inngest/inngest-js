@@ -344,7 +344,7 @@ describe("client.score.experiment", () => {
     // Score uses the constant kind with the name nested under values.
     expect(score?.values).toEqual({ "user-rating": { value: 0.9 } });
     expect(experiment?.values).toEqual({
-      experiment_name: "checkout-flow",
+      name: "checkout-flow",
       variant: "control",
     });
     // Same run-scoped target → merges into one ClickHouse row.
