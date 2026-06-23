@@ -195,6 +195,48 @@ describe("buildTarget", () => {
   });
 });
 
+describe('"lost on retries" warning at function-body level', () => {
+  const clientAtBodyLevel = () => {
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: { ctx: { runId: "run-1" } },
+    } as unknown as als.AsyncContext);
+
+    const client = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      middleware: [experimental.scoreMiddleware()],
+    });
+    vi.spyOn(
+      client as unknown as { updateMetadata: () => Promise<void> },
+      "updateMetadata",
+    ).mockResolvedValue(undefined);
+    vi.spyOn(client[internalLoggerSymbol], "warn").mockImplementation(() => {});
+    return client;
+  };
+
+  test("inngest.score.experiment() does not warn b/c it's meant to run here", async () => {
+    const client = clientAtBodyLevel();
+
+    await client.score.experiment({
+      name: "satisfaction",
+      value: 1,
+      experiment: { experimentName: "summary-strategy", variant: "concise" },
+    });
+
+    expect(client[internalLoggerSymbol].warn).not.toHaveBeenCalled();
+  });
+
+  test("userland metadata.update() still warns", async () => {
+    const client = clientAtBodyLevel();
+
+    await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
+
+    expect(client[internalLoggerSymbol].warn).toHaveBeenCalledWith(
+      expect.stringContaining("may be lost on retries"),
+    );
+  });
+});
+
 describe("MetadataBuilder.update", () => {
   test("batches updates when execution context supports metadata", async () => {
     const addMetadata = vi.fn(() => true);
