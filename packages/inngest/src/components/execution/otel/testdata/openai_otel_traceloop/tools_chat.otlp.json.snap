@@ -5,6 +5,7 @@
       "requestModel": "gpt-4.1-nano",
       "responseModel": "gpt-4.1-nano-2025-04-14",
       "provider": "openai",
+      "operationName": "chat",
       "responseId": "chatcmpl-DrBrdE6062DJuFbeqgRecOx9OQ3WK",
       "finishReasons": [
         "tool_call"

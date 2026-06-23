@@ -28,13 +28,14 @@ context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 const testFileName = testNameFromFileUrl(import.meta.url);
 
 // The fields the extractor lifts from `simulateOpenAICall`'s span, mapped to
-// the server's snake_case `inngest.ai` schema. `gen_ai.operation.name` is not
-// extracted, content attributes are never extracted, and `total_tokens` is
-// absent because the span carries no provider total (we never derive one).
+// the server's snake_case `inngest.ai` schema. Content attributes are never
+// extracted, and `total_tokens` is absent because the span carries no provider
+// total (we never derive one).
 const expectedAIMetadata = {
   kind: "inngest.ai",
   scope: "step",
   values: {
+    operation_name: "chat",
     request_model: "gpt-5.4-nano",
     response_model: "gpt-5.4-nano-2026-03-17",
     provider: "openai",
