@@ -1,5 +1,19 @@
 # inngest
 
+## 4.8.0
+
+### Minor Changes
+
+- [#1595](https://github.com/inngest/inngest-js/pull/1595) [`aa315c7e`](https://github.com/inngest/inngest-js/commit/aa315c7ec9b99a69a7f85720e2805991b3e23841) Thanks [@amh4r](https://github.com/amh4r)! - Add opt-out for AI metadata extraction
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental createScorer function
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental scoring primitives for writing run- and step-scoped `inngest.score` metadata via `inngest.score()` and `scoreMiddleware()`-gated `step.score()`.
+
+### Patch Changes
+
+- [#1592](https://github.com/inngest/inngest-js/pull/1592) [`748c6cc4`](https://github.com/inngest/inngest-js/commit/748c6cc4fb167af9223c2b87d6c6543245d1428b) Thanks [@amh4r](https://github.com/amh4r)! - Deprecate Extended Traces provider creation. `behaviour: "createProvider"` and the `"auto"` fallback remain functional, but now direct users to preload `@inngest/otel/node` and extend that provider instead.
+
 ## 4.7.0
 
 ### Minor Changes
