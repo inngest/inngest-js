@@ -154,6 +154,32 @@ describe("extractAIMetadataFromAttributes", () => {
     });
   });
 
+  describe("provider", () => {
+    test("reads the deprecated gen_ai.system when the canonical key is absent", () => {
+      expect(
+        extractAIMetadataFromAttributes({ "gen_ai.system": "anthropic" }),
+      ).toEqual({ provider: "anthropic" });
+    });
+
+    test("prefers gen_ai.provider.name over the deprecated gen_ai.system", () => {
+      expect(
+        extractAIMetadataFromAttributes({
+          "gen_ai.provider.name": "openai",
+          "gen_ai.system": "anthropic",
+        }),
+      ).toEqual({ provider: "openai" });
+    });
+
+    test("falls back to gen_ai.system when the canonical key is empty", () => {
+      expect(
+        extractAIMetadataFromAttributes({
+          "gen_ai.provider.name": "",
+          "gen_ai.system": "anthropic",
+        }),
+      ).toEqual({ provider: "anthropic" });
+    });
+  });
+
   test("reports only the provider-supplied total; never derives one", () => {
     // With input + output but no total, the total field is simply absent.
     expect(
@@ -342,9 +368,10 @@ describe("FIELD_SPECS", () => {
   test("every source key is a gen_ai.* semantic convention attribute", () => {
     // Guards the allowlist against typos: every source must live in the
     // OpenTelemetry GenAI (`gen_ai.*`) namespace.
-    const nonGenAi = FIELD_SPECS.map((spec) => spec.source).filter(
-      (source) => !source.startsWith("gen_ai."),
-    );
+    const nonGenAi = FIELD_SPECS.flatMap((spec) => [
+      spec.source,
+      ...(spec.fallbackSources ?? []),
+    ]).filter((source) => !source.startsWith("gen_ai."));
 
     expect(nonGenAi).toEqual([]);
   });

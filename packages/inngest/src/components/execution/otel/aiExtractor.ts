@@ -90,8 +90,15 @@ type TextField = FieldsWithValue<string>;
 type NumberField = FieldsWithValue<number>;
 
 interface BaseFieldSpec {
-  /** The source `gen_ai.*` attribute key. */
+  /** The canonical (preferred) source `gen_ai.*` attribute key. */
   source: string;
+  /**
+   * Deprecated source keys to read when {@link BaseFieldSpec.source} is absent
+   * or carries no usable value, in descending precedence. The preferred
+   * {@link BaseFieldSpec.source} always wins when it supplies a value; these are
+   * only consulted as fallbacks.
+   */
+  fallbackSources?: readonly string[];
   valueType: ValueType;
   merge: MergeStrategy;
 }
@@ -111,10 +118,15 @@ interface NumberFieldSpec extends BaseFieldSpec {
 
 type FieldSpec = TextFieldSpec | NumberFieldSpec;
 
-function textField(field: TextField, source: string): TextFieldSpec {
+function textField(
+  field: TextField,
+  source: string,
+  fallbackSources?: readonly string[],
+): TextFieldSpec {
   return {
     field,
     source,
+    fallbackSources,
     valueType: "text",
     merge: "replace",
   };
@@ -143,7 +155,9 @@ export const FIELD_SPECS = [
   // Identity & classification.
   textField("requestModel", "gen_ai.request.model"),
   textField("responseModel", "gen_ai.response.model"),
-  textField("provider", "gen_ai.provider.name"),
+  // `gen_ai.system` is the deprecated predecessor of `gen_ai.provider.name`;
+  // the canonical key wins when both are present on a span.
+  textField("provider", "gen_ai.provider.name", ["gen_ai.system"]),
   textField("responseId", "gen_ai.response.id"),
 
   // Token usage.
@@ -205,20 +219,28 @@ export const extractAIMetadataFromAttributes = (
   const metadata: AIMetadata = {};
 
   for (const spec of FIELD_SPECS) {
-    const value = attributes[spec.source];
-    if (value === undefined) {
-      continue;
-    }
+    // Read the canonical key first, then any deprecated fallbacks in order,
+    // taking the first that yields a usable value.
+    const sources = [spec.source, ...(spec.fallbackSources ?? [])];
 
-    if (spec.valueType === "text") {
-      const text = typeof value === "string" ? value : String(value);
-      if (text !== "") {
-        metadata[spec.field] = text;
+    for (const source of sources) {
+      const value = attributes[source];
+      if (value === undefined) {
+        continue;
       }
-    } else {
-      const num = parseNumericAttribute(value);
-      if (num !== undefined) {
-        metadata[spec.field] = num;
+
+      if (spec.valueType === "text") {
+        const text = typeof value === "string" ? value : String(value);
+        if (text !== "") {
+          metadata[spec.field] = text;
+          break;
+        }
+      } else {
+        const num = parseNumericAttribute(value);
+        if (num !== undefined) {
+          metadata[spec.field] = num;
+          break;
+        }
       }
     }
   }
