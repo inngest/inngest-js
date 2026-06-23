@@ -454,9 +454,14 @@ test("propagates experiment ref to the deferred run", async () => {
   const client = new Inngest({ id: randomSuffix(testFileName), isDev: true });
   const eventName = randomSuffix("evt");
 
-  const child = createDefer(client, { id: "child" }, async ({ parents }) => {
-    childState.parents = parents;
-  });
+  const child = createDefer(
+    client,
+    { id: "child" },
+    async ({ parents, runId }) => {
+      childState.runId = runId;
+      childState.parents = parents;
+    },
+  );
   const fn = client.createFunction(
     { id: "fn", retries: 0, triggers: { event: eventName } },
     async ({ defer }) => {

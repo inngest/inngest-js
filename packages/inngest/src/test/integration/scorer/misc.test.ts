@@ -15,13 +15,14 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 
 test("scorer targets the attached experiment", async () => {
   const parentState = createState({});
+  const scorerState = createState({});
   const client = new Inngest({ id: randomSuffix(testFileName), isDev: true });
   const eventName = randomSuffix("evt");
 
-  const scorer = createScorer(client, { id: "s" }, async () => ({
-    name: "rizz",
-    value: 100,
-  }));
+  const scorer = createScorer(client, { id: "s" }, async ({ runId }) => {
+    scorerState.runId = runId;
+    return { name: "rizz", value: 100 };
+  });
   const fn = client.createFunction(
     { id: "fn", retries: 0, triggers: { event: eventName } },
     async ({ defer, runId }) => {
@@ -36,6 +37,7 @@ test("scorer targets the attached experiment", async () => {
   await createTestApp({ client, functions: [fn, scorer], serve: createServer });
   await client.send({ name: eventName, data: {} });
   await parentState.waitForRunComplete();
+  await scorerState.waitForRunComplete();
 
   const meta = await getRunMetadata(await parentState.waitForRunId());
   expect(meta).toEqual(
@@ -47,10 +49,10 @@ test("scorer targets the attached experiment", async () => {
         values: { experiment_name: "exp", variant: "control" },
       },
       {
-        kind: "inngest.score.rizz",
+        kind: "inngest.score",
         scope: "run",
         updatedAt: expect.any(String),
-        values: { value: 100 },
+        values: { rizz: { value: 100 } },
       },
     ]),
   );
@@ -127,10 +129,10 @@ test("success", async () => {
   expect(metadata).toEqual(
     expect.arrayContaining([
       {
-        kind: "inngest.score.verbosity",
+        kind: "inngest.score",
         scope: "run",
         updatedAt: expect.any(String),
-        values: { value: 2 },
+        values: { verbosity: { value: 2 } },
       },
     ]),
   );

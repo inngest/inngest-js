@@ -160,11 +160,10 @@ describe("client.score", async () => {
   });
 
   test("non-existent step", async () => {
-    // Error when scoring a step that doesn't exist
+    // Scoring a step that doesn't exist is a silent no-op: the deterministic
+    // span path stores it against an orphan ref that never surfaces.
 
-    const state = createState({
-      error: null as unknown,
-    });
+    const state = createState({});
 
     const client = new Inngest({
       checkpointing: true,
@@ -182,34 +181,24 @@ describe("client.score", async () => {
       async ({ runId, step }) => {
         state.runId = runId;
         await step.run("my-step", async () => {
-          try {
-            await client.score({
-              name: "step_score",
-              runId,
-              stepId: "non-existent",
-              value: 2,
-            });
-          } catch (err) {
-            state.error = err;
-            throw err;
-          }
+          await client.score({
+            name: "step_score",
+            runId,
+            stepId: "non-existent",
+            value: 2,
+          });
         });
       },
     );
     await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName, data: {} });
-    const output = await state.waitForRunFailed();
-    expect(output).toEqual({
-      message: "Failed to update metadata: Unable to find metadata target",
-      name: "Error",
-    });
+    await state.waitForRunComplete();
+    const trace = await getRunTraceMetadata(await state.waitForRunId());
 
-    expect(state.error).toBeInstanceOf(Error);
-    const error = state.error as Error;
-    expect(error.message).toEqual(
-      "Failed to update metadata: Unable to find metadata target",
-    );
+    // The orphan score does not surface on the run or the real step.
+    expectNoScoreValue(trace.metadata, "step_score");
+    expectNoScoreValue(findSpanByName(trace, "my-step").metadata, "step_score");
   });
 });
 
@@ -267,11 +256,10 @@ describe("step.score", async () => {
   });
 
   test("non-existent step", async () => {
-    // Error when scoring a step that doesn't exist
+    // Scoring a step that doesn't exist is a silent no-op: the deterministic
+    // span path stores it against an orphan ref that never surfaces.
 
-    const state = createState({
-      error: null as unknown,
-    });
+    const state = createState({});
 
     const client = new Inngest({
       checkpointing: true,
@@ -290,31 +278,21 @@ describe("step.score", async () => {
         state.runId = runId;
         await step.run("my-step", () => {});
 
-        try {
-          await step.score("step-score", {
-            name: "step_score",
-            stepId: "non-existent",
-            value: 2,
-          });
-        } catch (err) {
-          state.error = err;
-          throw err;
-        }
+        await step.score("step-score", {
+          name: "step_score",
+          stepId: "non-existent",
+          value: 2,
+        });
       },
     );
     await createTestApp({ client, functions: [fn], serve: createServer });
 
     await client.send({ name: eventName, data: {} });
-    const output = await state.waitForRunFailed();
-    expect(output).toEqual({
-      message: "Failed to update metadata: Unable to find metadata target",
-      name: "Error",
-    });
+    await state.waitForRunComplete();
+    const trace = await getRunTraceMetadata(await state.waitForRunId());
 
-    expect(state.error).toBeInstanceOf(Error);
-    const error = state.error as Error;
-    expect(error.message).toEqual(
-      "Failed to update metadata: Unable to find metadata target",
-    );
+    // The orphan score does not surface on the run or the real step.
+    expectNoScoreValue(trace.metadata, "step_score");
+    expectNoScoreValue(findSpanByName(trace, "my-step").metadata, "step_score");
   });
 });
