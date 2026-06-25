@@ -22,6 +22,8 @@ runs:
 
     - uses: actions/setup-node@v4
       with:
+        # TODO (EXE-1981): Unpin this. We had to pin it due to networking
+        # issues.
         node-version: "24.16.0"
         cache: pnpm
         registry-url: "https://registry.npmjs.org"

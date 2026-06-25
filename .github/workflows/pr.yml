@@ -41,6 +41,9 @@ jobs:
         nodeVersion:
           - 20
           - 22
+
+          # TODO (EXE-1981): Unpin this. We had to pin it due to networking
+          # issues.
           - "24.16.0"
     steps:
       - uses: actions/checkout@v3
