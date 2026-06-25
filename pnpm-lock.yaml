@@ -309,6 +309,9 @@ importers:
       tsdown:
         specifier: ^0.15.4
         version: 0.15.4(@arethetypeswrong/core@0.18.2)(typescript@5.9.2)
+      tsx:
+        specifier: ^3.12.7
+        version: 3.12.7
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
@@ -471,9 +474,6 @@ importers:
       tsdown:
         specifier: ^0.15.4
         version: 0.15.4(@arethetypeswrong/core@0.18.2)(typescript@5.9.2)
-      tsx:
-        specifier: ^3.12.7
-        version: 3.12.7
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
@@ -5334,9 +5334,6 @@ packages:
   get-tsconfig@4.10.1:
     resolution: {integrity: sha512-auHyJ4AgMz7vgS8Hp3N6HXSmlMdUyhSUrfBF16w153rxtLIEOE+HGqaBppczZvnHLqQJfiHotCYpNhl0lUROFQ==}
 
-  get-tsconfig@4.7.0:
-    resolution: {integrity: sha512-pmjiZ7xtB8URYm74PlGJozDNyhvsVLUcpBa8DZBG3bWHwaHa9bPiRpiSfovw+fjhwONSCWKRyk+JQHEGZmMrzw==}
-
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
@@ -8709,7 +8706,7 @@ snapshots:
   '@esbuild-kit/cjs-loader@2.4.2':
     dependencies:
       '@esbuild-kit/core-utils': 3.1.0
-      get-tsconfig: 4.7.0
+      get-tsconfig: 4.10.1
 
   '@esbuild-kit/core-utils@3.1.0':
     dependencies:
@@ -8719,7 +8716,7 @@ snapshots:
   '@esbuild-kit/esm-loader@2.5.5':
     dependencies:
       '@esbuild-kit/core-utils': 3.1.0
-      get-tsconfig: 4.7.0
+      get-tsconfig: 4.10.1
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
@@ -14030,10 +14027,6 @@ snapshots:
       get-intrinsic: 1.2.0
 
   get-tsconfig@4.10.1:
-    dependencies:
-      resolve-pkg-maps: 1.0.0
-
-  get-tsconfig@4.7.0:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
