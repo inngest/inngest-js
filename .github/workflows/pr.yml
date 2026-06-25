@@ -47,7 +47,9 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.nodeVersion }}
+          # TODO (EXE-1981): Unpin this. We had to pin it due to networking
+          # issues in Node 24.17.0.
+          node-version: ${{ matrix.nodeVersion == 24 && '24.16.0' || matrix.nodeVersion }}
       - run: |
           node --version
           npm --version
@@ -240,6 +242,7 @@ jobs:
       - run: pnpm run type-check
       - run: pnpm run lint
       - run: pnpm run format:check
+      - run: pnpm run test
       - run: pnpm run build
 
   "test_test":
