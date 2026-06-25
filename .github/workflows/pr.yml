@@ -38,24 +38,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - nodeVersion: 20
-            setupNodeVersion: 20
-          - nodeVersion: 22
-            setupNodeVersion: 22
-
-          # Keep the check name as "inngest: Runtime tests (24)" for branch
-          # protection while pinning the installed patch version.
-          - nodeVersion: 24
-            # TODO (EXE-1981): Unpin this. We had to pin it due to networking
-            # issues.
-            setupNodeVersion: "24.16.0"
+        nodeVersion:
+          - 20
+          - 22
+          - 24
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.setupNodeVersion }}
+          # TODO (EXE-1981): Unpin this. We had to pin it due to networking
+          # issues in Node 24.17.0.
+          node-version: ${{ matrix.nodeVersion == 24 && '24.16.0' || matrix.nodeVersion }}
       - run: |
           node --version
           npm --version
