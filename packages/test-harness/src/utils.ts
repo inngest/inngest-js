@@ -38,7 +38,15 @@ export async function waitFor<T>(
     await sleep(200);
   }
 
-  throw lastError;
+  // Surface the timeout context while preserving the underlying cause. The
+  // original message is kept verbatim in the text so callers asserting on it
+  // (e.g. "runId not set yet") still match, but the real failure — often an
+  // unstable dev server connection — is no longer hidden behind a bare rethrow.
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`waitFor timed out after ${timeout}ms; last error: ${detail}`, {
+    cause: lastError,
+  });
 }
 
 type RunResult =
