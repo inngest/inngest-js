@@ -93,7 +93,11 @@ export type TraceMetadataNode = {
   childrenSpans: TraceMetadataNode[];
 };
 
-const traceMetadataNodeSchema: z.ZodType<TraceMetadataNode, z.ZodTypeDef, unknown> = z.lazy(() =>
+const traceMetadataNodeSchema: z.ZodType<
+  TraceMetadataNode,
+  z.ZodTypeDef,
+  unknown
+> = z.lazy(() =>
   z.object({
     name: z.string(),
     stepID: z.string().nullable(),
@@ -280,7 +284,7 @@ export class BaseState {
 
   async waitForRunId(): Promise<string> {
     return waitFor(async () => {
-      if (this.runId === null) {
+      if (this.runId === null || this.runId === undefined) {
         throw new Error("runId not set yet");
       }
       return this.runId;
