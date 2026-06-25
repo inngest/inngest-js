@@ -1990,7 +1990,15 @@ export class InngestCommHandler<
         if (this.client.mode === "cloud") {
           const validationResult = await signatureValidation;
           if (!validationResult.success) {
-            this.client[internalLoggerSymbol].error(
+            // Debug level instead of error because Inngest Cloud sometimes
+            // probes this endpoint to deduce the correct signing key.
+            //
+            // The primary example is the Vercel integration. The Vercel
+            // deployment webhook event gives us a URL to sync but can't tell us
+            // which Inngest environment it's for. So Inngest Cloud tries signs
+            // a GET request with each possible signing key until it gets a 200
+            // response.
+            this.client[internalLoggerSymbol].debug(
               {
                 err: validationResult.err,
                 method,
