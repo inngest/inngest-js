@@ -38,7 +38,15 @@ export async function waitFor<T>(
     await sleep(200);
   }
 
-  throw lastError;
+  // Surface the timeout context while preserving the underlying cause. The
+  // original message is kept verbatim in the text so callers asserting on it
+  // (e.g. "runId not set yet") still match, but the real failure — often an
+  // unstable dev server connection — is no longer hidden behind a bare rethrow.
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`waitFor timed out after ${timeout}ms; last error: ${detail}`, {
+    cause: lastError,
+  });
 }
 
 type RunResult =
@@ -93,7 +101,11 @@ export type TraceMetadataNode = {
   childrenSpans: TraceMetadataNode[];
 };
 
-const traceMetadataNodeSchema: z.ZodType<TraceMetadataNode, z.ZodTypeDef, unknown> = z.lazy(() =>
+const traceMetadataNodeSchema: z.ZodType<
+  TraceMetadataNode,
+  z.ZodTypeDef,
+  unknown
+> = z.lazy(() =>
   z.object({
     name: z.string(),
     stepID: z.string().nullable(),
@@ -280,7 +292,7 @@ export class BaseState {
 
   async waitForRunId(): Promise<string> {
     return waitFor(async () => {
-      if (this.runId === null) {
+      if (this.runId === null || this.runId === undefined) {
         throw new Error("runId not set yet");
       }
       return this.runId;

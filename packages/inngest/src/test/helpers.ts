@@ -2018,6 +2018,15 @@ export const eventRunWithName = async (
     }
 
     if (run) {
+      // A run matched by name but with no `id` means the dev server returned a
+      // malformed/truncated response (e.g. a transport-level failure further up
+      // the stack).
+      if (!run.id) {
+        throw new Error(
+          `Found run for event "${eventId}" with function name "${name}", but it had no id: ${JSON.stringify(run)}`,
+        );
+      }
+
       return run.id;
     }
 
