@@ -2697,41 +2697,13 @@ class InngestExecutionEngine
           return noopHandle;
         }
 
-        const { schema } = deferFn;
         const deferFnSlug = deferFn.id(this.options.client.id);
         const stepOptions = getStepOptions(idOrOptions);
         const hashedId = _internals.hashId(stepOptions.id);
 
-        let input: Record<string, unknown> = data;
-        if (schema) {
-          const result = schema["~standard"].validate(data);
-          if (result instanceof Promise) {
-            log.error(
-              { runId },
-              "defer() requires a synchronous schema validator. The defer call was skipped.",
-            );
-            return noopHandle;
-          }
-          if (result.issues) {
-            log.error(
-              { runId, issues: result.issues },
-              "defer skipped: schema validation failed",
-            );
-            return noopHandle;
-          }
-          input = result.value ?? data;
-        }
-
-        // The experiment ref rides in a reserved input key the receiver strips
-        // before the handler runs; set after schema validation so it can't trip it.
-        const finalInput =
-          experiment && isRecord(input)
-            ? { ...input, [deferExperimentKey]: experiment }
-            : input;
-
         void stepHandler({
-          args: [stepOptions, finalInput],
-          defer: { fn: deferFn, data: finalInput },
+          args: [stepOptions, data],
+          defer: { fn: deferFn, data, experiment },
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,
             mode: StepMode.Sync,
@@ -2823,7 +2795,14 @@ class InngestExecutionEngine
       data: input,
     });
 
-    return { ...op, opts: { ...op.opts, input: prepared.data } };
+    // The experiment ref rides in a reserved input key the receiver strips
+    // before the handler runs; add it after validation + middleware so the
+    // schema can't strip it and middleware can't observe it.
+    const finalInput = defer.experiment
+      ? { ...prepared.data, [deferExperimentKey]: defer.experiment }
+      : prepared.data;
+
+    return { ...op, opts: { ...op.opts, input: finalInput } };
   }
 
   /**
