@@ -22,7 +22,7 @@ runs:
 
     - uses: actions/setup-node@v4
       with:
-        node-version: lts/*
+        node-version: "24.16.0"
         cache: pnpm
         registry-url: "https://registry.npmjs.org"
 

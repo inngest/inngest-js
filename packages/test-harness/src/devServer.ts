@@ -26,7 +26,7 @@ export async function startDevServer(): Promise<void> {
     devServerProcess = spawn(
       "npx",
       [
-        "inngest-cli@1.31.0",
+        "inngest-cli@latest",
         "dev",
         "--no-discovery",
         "--no-poll",
