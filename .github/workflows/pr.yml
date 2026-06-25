@@ -240,6 +240,7 @@ jobs:
       - run: pnpm run type-check
       - run: pnpm run lint
       - run: pnpm run format:check
+      - run: pnpm run test
       - run: pnpm run build
 
   "test_test":

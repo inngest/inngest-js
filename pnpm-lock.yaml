@@ -309,9 +309,6 @@ importers:
       tsdown:
         specifier: ^0.15.4
         version: 0.15.4(@arethetypeswrong/core@0.18.2)(typescript@5.9.2)
-      tsx:
-        specifier: ^3.12.7
-        version: 3.12.7
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
@@ -474,6 +471,9 @@ importers:
       tsdown:
         specifier: ^0.15.4
         version: 0.15.4(@arethetypeswrong/core@0.18.2)(typescript@5.9.2)
+      tsx:
+        specifier: ^3.12.7
+        version: 3.12.7
       typescript:
         specifier: ^5.9.2
         version: 5.9.2

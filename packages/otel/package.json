@@ -7,6 +7,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
+    "test": "vitest run",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "type-check": "tsc --noEmit",
     "lint": "biome lint .",
@@ -42,6 +43,7 @@
     "*.d.cts",
     "*.d.mts",
     "*.map",
+    "_virtual/**",
     "CHANGELOG.md",
     "LICENSE.md",
     "README.md"

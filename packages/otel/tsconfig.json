@@ -26,5 +26,5 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["./src/**/*", "./tsdown.config.ts"]
+  "include": ["./src/**/*", "./tests/**/*", "./tsdown.config.ts"]
 }

@@ -25,5 +25,6 @@ Run these checks after changes:
 pnpm -C packages/otel run type-check
 pnpm -C packages/otel run lint
 pnpm -C packages/otel run format:check
+pnpm -C packages/otel run test
 pnpm -C packages/otel run build
 ```
