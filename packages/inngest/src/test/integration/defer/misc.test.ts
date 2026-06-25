@@ -480,3 +480,48 @@ test("propagates experiment ref to the deferred run", async () => {
     variant: "control",
   });
 });
+
+test("propagates experiment ref alongside a stripping schema", async () => {
+  // A schema that strips unknown keys must not drop the reserved experiment
+  // ref: it rides outside the validated payload, so both the schema data and
+  // the experiment attribution reach the deferred run.
+  const childState = createState({
+    eventData: null as Record<string, unknown> | null,
+    parents: null as unknown as {
+      fnSlug: string;
+      runId: string;
+      experiment?: { experimentName: string; variant: string };
+    }[],
+  });
+  const client = new Inngest({ id: randomSuffix(testFileName), isDev: true });
+  const eventName = randomSuffix("evt");
+
+  const child = createDefer(
+    client,
+    { id: "child", schema: z.object({ msg: z.string() }) },
+    async ({ event, parents, runId }) => {
+      childState.runId = runId;
+      childState.eventData = event.data;
+      childState.parents = parents;
+    },
+  );
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: { event: eventName } },
+    async ({ defer }) => {
+      defer("c", {
+        function: child,
+        data: { msg: "hello" },
+        experiment: { experimentName: "checkout-flow", variant: "control" },
+      });
+    },
+  );
+  await createTestApp({ client, functions: [fn, child], serve: createServer });
+  await client.send({ name: eventName, data: {} });
+  await childState.waitForRunComplete();
+
+  expect(childState.eventData).toEqual({ msg: "hello" });
+  expect(childState.parents[0]!.experiment).toEqual({
+    experimentName: "checkout-flow",
+    variant: "control",
+  });
+});

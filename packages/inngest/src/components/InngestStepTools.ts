@@ -17,6 +17,7 @@ import {
   type Context,
   type EventMeta,
   type EventPayload,
+  type ExperimentRef,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
@@ -188,6 +189,7 @@ export type StepHandler = (info: {
   defer?: {
     fn: DeferredFunction.Any;
     data: Record<string, unknown>;
+    experiment?: ExperimentRef;
   };
   matchOp: MatchOpFn;
   opts?: StepToolOptions;
