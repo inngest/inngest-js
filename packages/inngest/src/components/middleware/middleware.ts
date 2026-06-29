@@ -1,4 +1,4 @@
-import type { Jsonify } from "../../helpers/jsonify.ts";
+import type { Jsonify, JsonValue } from "../../helpers/jsonify.ts";
 import type { MaybePromise } from "../../helpers/types.ts";
 import type {
   Context,
@@ -35,9 +35,17 @@ export namespace Middleware {
 
   /**
    * Default transform. Applies the same transform as `JSON.stringify`.
+   *
+   * Inputs that are already JSON values are passed through untouched.
+   * `Jsonify` is idempotent on such types, so this is the same result, but it
+   * avoids re-instantiating the recursive `Jsonify` on an already-jsonified
+   * type. That matters when middleware stack: each middleware's default
+   * transform wraps the previous one's output, and nesting `Jsonify<Jsonify<…>>`
+   * could exceed TypeScript's instantiation depth and silently degrade an
+   * object with optional properties to `{}`.
    */
   export interface DefaultStaticTransform extends StaticTransform {
-    Out: Jsonify<this["In"]>;
+    Out: [this["In"]] extends [JsonValue] ? this["In"] : Jsonify<this["In"]>;
   }
 
   /**
