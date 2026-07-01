@@ -16,7 +16,6 @@ import type {
   IsLiteral,
   IsNever,
   IsUnknown,
-  KnownKeys,
   Simplify,
 } from "./types.ts";
 
@@ -37,15 +36,20 @@ type JsonifyList<T extends UnknownArray> = T extends readonly []
       ? []
       : Array<T[number] extends NotJsonable ? null : Jsonify<T[number]>>;
 
-type FilterJsonableKeys<T extends object> = {
-  [Key in keyof T]: T[Key] extends NotJsonable ? never : Key;
-}[keyof T];
-
 /**
 JSON serialize objects (not including arrays) and classes.
+
+Keys are filtered via an `as` clause on the same mapped type that produces
+the result, rather than via a separate `Pick<T, ...>` step. Computing the
+key filter as its own generic alias and then feeding it into `Pick` loses
+the per-key correlation between a key and its value when `T` is itself the
+output of a prior homomorphic mapped type (e.g. a re-entrant `Jsonify`
+call) — TS then widens every property's indexed-access value to the union
+of all properties' values. Filtering keys inline keeps `Key` and `T[Key]`
+correlated throughout.
 */
 export type JsonifyObject<T extends object> = {
-  [Key in keyof Pick<T, FilterJsonableKeys<T>>]: Jsonify<T[Key]>;
+  [Key in keyof T as T[Key] extends NotJsonable ? never : Key]: Jsonify<T[Key]>;
 };
 
 /**
@@ -160,41 +164,43 @@ type BaseKeyFilter<Type, Key extends keyof Type> = Key extends symbol
         : Key;
 
 /**
-Returns the required keys.
+Returns `true` if the key should be treated as required (i.e. not a union
+with `undefined`).
 */
-type FilterDefinedKeys<T extends object> = Exclude<
-  {
-    [Key in keyof T]: IsAny<T[Key]> extends true
-      ? Key
-      : IsUnknown<T[Key]> extends true
-        ? Key
-        : undefined extends T[Key]
-          ? never
-          : T[Key] extends undefined
-            ? never
-            : BaseKeyFilter<T, Key>;
-  }[keyof T],
-  undefined
->;
+type IsDefinedKey<T, Key extends keyof T> = IsAny<T[Key]> extends true
+  ? true
+  : IsUnknown<T[Key]> extends true
+    ? true
+    : undefined extends T[Key]
+      ? false
+      : T[Key] extends undefined
+        ? false
+        : true;
 
 /**
-Returns the optional keys.
+Returns `true` if the key should be treated as optional (i.e. a union with
+`undefined`, but not `any`/`unknown`).
 */
-type FilterOptionalKeys<T extends object> = Exclude<
-  {
-    [Key in keyof T]: IsAny<T[Key]> extends true
-      ? never
-      : undefined extends T[Key]
-        ? T[Key] extends undefined
-          ? never
-          : BaseKeyFilter<T, Key>
-        : never;
-  }[keyof T],
-  undefined
->;
+type IsOptionalKey<T, Key extends keyof T> = IsAny<T[Key]> extends true
+  ? false
+  : undefined extends T[Key]
+    ? T[Key] extends undefined
+      ? false
+      : true
+    : false;
 
 /**
 For an object T, if it has any properties that are a union with `undefined`, make those into optional properties instead.
+
+Keys are filtered via `as` clauses on the same two mapped types that
+produce the result, rather than via separate `FilterDefinedKeys`/
+`FilterOptionalKeys` generics fed into `Pick<T, ...>`. Computing the key
+filter as its own generic alias and then feeding it into `Pick` loses the
+per-key correlation between a key and its value when `T` is itself the
+output of a prior homomorphic mapped type (e.g. a re-entrant `Jsonify`
+call) — TS then widens every property's indexed-access value to the union
+of all properties' values. Filtering keys inline keeps `Key` and `T[Key]`
+correlated throughout.
 
 @example
 ```
@@ -213,10 +219,14 @@ type OptionalizedUser = UndefinedToOptional<User>;
 export type UndefinedToOptional<T extends object> = Simplify<
   {
     // Property is not a union with `undefined`, keep it as-is.
-    [Key in keyof Pick<T, FilterDefinedKeys<T>>]: T[Key];
+    [Key in keyof T as IsDefinedKey<T, Key> extends true
+      ? BaseKeyFilter<T, Key>
+      : never]: T[Key];
   } & {
     // Property _is_ a union with defined value. Set as optional (via `?`) and remove `undefined` from the union.
-    [Key in keyof Pick<T, FilterOptionalKeys<T>>]?: Exclude<T[Key], undefined>;
+    [Key in keyof T as IsOptionalKey<T, Key> extends true
+      ? BaseKeyFilter<T, Key>
+      : never]?: Exclude<T[Key], undefined>;
   }
 >;
 
@@ -275,6 +285,17 @@ const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 
 {@link https://github.com/Microsoft/TypeScript/issues/1897#issuecomment-710744173}
 */
+
+/**
+Isolates the known (literal) keys of `T`, mirroring `KnownKeys`, but filters
+inline via an `as` clause on this same homomorphic mapped type rather than
+computing the key union separately and feeding it into `Pick<T, ...>`,
+keeping `Key` and `T[Key]` correlated on re-entrant `Jsonify` calls.
+*/
+type PickKnownKeys<T> = {
+  [Key in keyof T as IsLiteral<Key, Key, never>]: T[Key];
+};
+
 export type Jsonify<T> = IsAny<T> extends true
   ? // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
@@ -315,7 +336,7 @@ export type Jsonify<T> = IsAny<T> extends true
                                   // mapped type and we need to process the
                                   // generic and known keys separately
                                   JsonifyObject<
-                                    UndefinedToOptional<Pick<T, KnownKeys<T>>>
+                                    UndefinedToOptional<PickKnownKeys<T>>
                                   >
                               >
                           : never; // Otherwise any other non-object is removed

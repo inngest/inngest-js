@@ -106,6 +106,35 @@ describe("Jsonify", () => {
       assertType<IsEqual<Actual["foo"]["foo"], boolean>>(true);
       assertType<IsAny<Actual["foo"]["bar"]>>(true);
     });
+
+    test("Jsonify<Jsonify<T>> is stable for a mapped type with a known key holding an array of optional-property objects", () => {
+      interface Foo {
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
+        [x: string]: any;
+        items: { id: string; label?: string }[];
+      }
+
+      type Once = Jsonify<Foo>;
+      type Twice = Jsonify<Once>;
+
+      assertType<IsEqual<Once, Twice>>(true);
+      assertType<IsEqual<Twice["items"][number]["id"], string>>(true);
+    });
+  });
+
+  // Regression test: `UndefinedToOptional` previously didn't handle being
+  // re-applied to its own prior output correctly, so re-entrant `Jsonify`
+  // calls collapsed array elements with optional properties down to `{}`.
+  // See: inngest-js#1532, inngest/inngest#4483, inngest-js#1613.
+  describe("#1532", () => {
+    test("Jsonify<Jsonify<T>> is stable for nested optional properties inside an array", () => {
+      type Widget = { media: { mediaId: string; label?: string }[] };
+      type Once = Jsonify<Widget>;
+      type Twice = Jsonify<Once>;
+
+      assertType<IsEqual<Once, Twice>>(true);
+      assertType<IsEqual<Twice["media"][number]["mediaId"], string>>(true);
+    });
   });
 
   describe("#537", () => {
