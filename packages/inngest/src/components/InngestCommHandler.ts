@@ -1398,7 +1398,9 @@ export class InngestCommHandler<
       const method = await actions.method("starting streaming response");
 
       if (method === "POST") {
-        const { stream, finalize } = await createStream();
+        const { stream, finalize } = await createStream({
+          logger: this.client[internalLoggerSymbol],
+        });
 
         /**
          * Errors are handled by `handleAction` here to ensure that an
