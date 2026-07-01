@@ -1,5 +1,11 @@
 # @inngest/otel
 
+## 0.2.1
+
+### Patch Changes
+
+- [#1611](https://github.com/inngest/inngest-js/pull/1611) [`d9241672`](https://github.com/inngest/inngest-js/commit/d92416725089c0489e3829c9b90b2ba92c8c3062) Thanks [@amh4r](https://github.com/amh4r)! - fix: missing module when loaded in CommonJS app
+
 ## 0.2.0
 
 ### Minor Changes

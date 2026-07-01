@@ -1,6 +1,6 @@
 {
   "name": "@inngest/otel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "OpenTelemetry instrumentation helpers for Inngest",
   "type": "module",
   "publishConfig": {
