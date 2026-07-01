@@ -42,27 +42,49 @@ export const createStream = (opts?: {
 
   return new Promise(async (resolve, reject) => {
     try {
+      let closed = false;
+      let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+
       const stream = new ReadableStream({
         start(controller) {
           const encoder = new TextEncoder();
 
-          const heartbeat = setInterval(() => {
-            controller.enqueue(encoder.encode(value));
+          heartbeatTimer = setInterval(() => {
+            if (closed) return;
+            try {
+              controller.enqueue(encoder.encode(value));
+            } catch {
+              // Controller was closed between the guard and the enqueue; ignore.
+              closed = true;
+              clearInterval(heartbeatTimer);
+            }
           }, interval);
 
           const finalize = (data: unknown) => {
-            clearInterval(heartbeat);
+            clearInterval(heartbeatTimer);
 
             // `data` may be a `Promise`. If it is, we need to wait for it to
             // resolve before sending it. To support this elegantly we'll always
             // assume it's a promise and handle that case.
-            void Promise.resolve(data).then((resolvedData) => {
-              controller.enqueue(encoder.encode(stringify(resolvedData)));
-              controller.close();
-            });
+            void Promise.resolve(data)
+              .then((resolvedData) => {
+                if (closed) return;
+                closed = true;
+                controller.enqueue(encoder.encode(stringify(resolvedData)));
+                controller.close();
+              })
+              .catch(() => {
+                // Stream was already closed by the time the final value resolved.
+              });
           };
 
           passFinalize(finalize);
+        },
+        cancel() {
+          // Consumer closed the stream (e.g. upstream proxy disconnect).
+          // Mark closed so the heartbeat self-cancels without throwing.
+          closed = true;
+          clearInterval(heartbeatTimer);
         },
       });
 
