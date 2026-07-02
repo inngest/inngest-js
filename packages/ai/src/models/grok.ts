@@ -39,7 +39,9 @@ export namespace Grok {
     | "grok-2"
     | "grok-2-latest"
     | "grok-3"
-    | "grok-3-latest";
+    | "grok-3-latest"
+    | "grok-4"
+    | "grok-4-latest";
 
   /**
    * Options for creating a Gemini model.
