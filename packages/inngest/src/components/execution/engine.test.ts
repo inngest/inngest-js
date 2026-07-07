@@ -838,4 +838,298 @@ describe("Execution engine checkpoint retry behavior", () => {
       });
     });
   });
+
+  // When a step in AsyncCheckpointing runs longer than the in-progress
+  // threshold (1s), the SDK fires a fire-and-forget leading-edge
+  // `StepPlanned` (zero-length span at startMs − 1ms) so the executor can
+  // show an in-progress span. On completion a normal `StepRun` with the full
+  // span follows; the server's last-fragment-wins merge (by start_time, where
+  // the −1ms guarantees a strict ordering) means the `StepRun` overrides
+  // every attribute of the `StepPlanned`.
+  describe("Execution engine in-progress step", () => {
+    const inProgressOpts = {
+      stepMode: StepMode.AsyncCheckpointing as const,
+      checkpointingConfig: { bufferedSteps: 1, maxRuntime: 0, maxInterval: 0 },
+      extraPartialOptions: {
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+      },
+    };
+
+    // Resolvable Promise helper — separate from the SDK's deferred utility
+    // so failures here don't depend on internal helpers.
+    const defer = <T>() => {
+      let resolve!: (v: T) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+
+    // Steps from all flushed checkpoint payloads.
+    const buffered = (mock: ReturnType<typeof vi.fn>) =>
+      mock.mock.calls.flatMap((call) => call[0]?.steps ?? []);
+
+    // Leading-edge `StepPlanned` ops across all checkpoint payloads. The
+    // leading-edge POST shares `checkpointStepsAsync` with buffer flushes;
+    // it's identifiable as the only source of `StepPlanned` ops here.
+    const planned = (mock: ReturnType<typeof vi.fn>) =>
+      buffered(mock).filter(
+        (s: { op: StepOpCode }) => s.op === StepOpCode.StepPlanned,
+      );
+
+    // Assert the trailing op starts exactly 1ms (1e6 ns) after the leading
+    // `StepPlanned`. Epoch-ns values (~1.7e18) exceed Number.MAX_SAFE_INTEGER,
+    // so each carries up to ~256ns of float error — allow a tolerance far
+    // below the 1ms offset.
+    const expectLeadingOffset = (trailingA: number, plannedA: number) => {
+      expect(Math.abs(trailingA - plannedA - 1_000_000)).toBeLessThan(10_000);
+    };
+
+    test("short step → no leading-edge POST", async () => {
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const { result } = await runExecution({
+        mockApi: {
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => "a");
+        },
+        ...inProgressOpts,
+      });
+
+      expect(planned(mockCheckpointStepsAsync)).toEqual([]);
+      // Short step: data ships via the normal flow (buffer flush or
+      // step-ran result, depending on bufferedSteps). Either way, no
+      // leading-edge POST.
+      const stepFromResult =
+        result.type === "step-ran"
+          ? [(result as { step: { op: StepOpCode } }).step]
+          : result.type === "steps-found"
+            ? (result as ExecutionResults["steps-found"]).steps
+            : [];
+      const allSteps = [
+        ...stepFromResult,
+        ...buffered(mockCheckpointStepsAsync),
+      ];
+      const stepRuns = allSteps.filter((s) => s.op === StepOpCode.StepRun);
+      expect(stepRuns.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("long step → leading StepPlanned 1ms early, trailing StepRun is a normal full span", async () => {
+      const stepBody = defer<string>();
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const setup = setupExecution({
+        mockApi: {
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => stepBody.promise);
+        },
+        ...inProgressOpts,
+      });
+
+      const execPromise = setup.execution.start();
+
+      // Cross the threshold; leading-edge POST should fire.
+      await vi.advanceTimersByTimeAsync(1500);
+      const plannedOps = planned(mockCheckpointStepsAsync);
+      expect(plannedOps).toHaveLength(1);
+      const plannedOp = plannedOps[0]! as {
+        op: StepOpCode;
+        opts?: Record<string, unknown>;
+        timing: { a: number; b: number };
+      };
+      // Wire convention: zero-length span at `a`.
+      expect(plannedOp.timing.b).toBe(0);
+      expect(plannedOp.timing.a).toBeGreaterThan(0);
+
+      stepBody.resolve("a");
+      await advanceThroughRetries();
+      await execPromise;
+
+      // Trailing StepRun should be in the checkpoint buffer flush.
+      const allSteps = buffered(mockCheckpointStepsAsync);
+      const runs = allSteps.filter((s) => s.op === StepOpCode.StepRun);
+      expect(runs).toHaveLength(1);
+      const run = runs[0]!;
+      // Normal full span: starts at the step's true start, carries the
+      // real duration.
+      expect(run.timing.b).toBeGreaterThan(0);
+      // The leading StepPlanned starts exactly 1ms (1e6 ns) earlier — the
+      // merge tiebreak that lets the StepRun's attributes win server-side.
+      expectLeadingOffset(run.timing.a, plannedOp.timing.a);
+      // Only the one leading-edge StepPlanned ever shipped — no fallback
+      // pushed onto the checkpoint buffer.
+      expect(planned(mockCheckpointStepsAsync)).toHaveLength(1);
+    });
+
+    // The leading POST is fire-and-forget: failure must not change the
+    // trailing op or push anything extra onto the checkpoint buffer.
+    test.each([
+      ["rejects", () => Promise.reject(new Error("executor offline"))],
+      ["hangs", () => new Promise<never>(() => {})],
+    ])(
+      "long step + leading POST %s → trailing StepRun unchanged",
+      async (_label, failureMode) => {
+        const stepBody = defer<string>();
+        // Fail only the leading-edge POST (the call carrying a
+        // `StepPlanned`); normal buffer flushes succeed.
+        const mockCheckpointStepsAsync = vi
+          .fn()
+          .mockImplementation((args: { steps?: { op: StepOpCode }[] }) =>
+            args.steps?.some((s) => s.op === StepOpCode.StepPlanned)
+              ? failureMode()
+              : Promise.resolve(undefined),
+          );
+
+        const setup = setupExecution({
+          mockApi: {
+            checkpointStepsAsync: mockCheckpointStepsAsync,
+          },
+          handler: async ({ step }) => {
+            await step.run("a", () => stepBody.promise);
+          },
+          ...inProgressOpts,
+        });
+
+        const execPromise = setup.execution.start();
+        await vi.advanceTimersByTimeAsync(1500);
+        const plannedOps = planned(mockCheckpointStepsAsync) as {
+          timing: { a: number };
+        }[];
+        expect(plannedOps).toHaveLength(1);
+
+        stepBody.resolve("a");
+        await advanceThroughRetries();
+        await execPromise;
+
+        // No fallback StepPlanned buffered; the trailing StepRun is a
+        // normal full span, identical to the success case.
+        expect(planned(mockCheckpointStepsAsync)).toHaveLength(1);
+        const runs = buffered(mockCheckpointStepsAsync).filter(
+          (s) => s.op === StepOpCode.StepRun,
+        );
+        expect(runs).toHaveLength(1);
+        expect(runs[0]!.timing.b).toBeGreaterThan(0);
+        expectLeadingOffset(runs[0]!.timing.a, plannedOps[0]!.timing.a);
+      },
+    );
+
+    test("long step that throws → StepError carries a normal full span", async () => {
+      const stepBody = defer<string>();
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const setup = setupExecution({
+        mockApi: {
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => stepBody.promise);
+        },
+        ...inProgressOpts,
+      });
+
+      const execPromise = setup.execution.start();
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(planned(mockCheckpointStepsAsync)).toHaveLength(1);
+
+      stepBody.reject(new NonRetriableError("nope"));
+      await advanceThroughRetries();
+      const result = await execPromise;
+
+      // Failed steps don't go through the checkpoint buffer — the error
+      // op rides back to the executor on the execution result (step-ran).
+      expect(result.type).toBe("step-ran");
+      const stepRan = result as {
+        type: "step-ran";
+        step: { op: StepOpCode; timing: { a: number; b: number } };
+      };
+      expect([StepOpCode.StepError, StepOpCode.StepFailed]).toContain(
+        stepRan.step.op,
+      );
+      // Normal full span — the error op is not collapsed or marked.
+      expect(stepRan.step.timing.b).toBeGreaterThan(0);
+      expect(stepRan.step.timing.a).toBeGreaterThan(0);
+      const plannedOp = planned(mockCheckpointStepsAsync)[0]! as {
+        timing: { a: number };
+      };
+      expectLeadingOffset(stepRan.step.timing.a, plannedOp.timing.a);
+    });
+
+    test("two sequential long step.runs → independent trackers, no cross-talk", async () => {
+      const aBody = defer<string>();
+      const bBody = defer<string>();
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const setup = setupExecution({
+        mockApi: {
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => aBody.promise);
+          await step.run("b", () => bBody.promise);
+        },
+        ...inProgressOpts,
+      });
+
+      // Auto-resolve each body after the leading-edge timer has fired,
+      // avoiding brittle manual interleaving with the engine's generator
+      // loop. Each body waits ~1.5s of fake time before resolving.
+      setTimeout(() => aBody.resolve("a"), 3000);
+      setTimeout(() => bBody.resolve("b"), 6000);
+
+      const execPromise = setup.execution.start();
+      // Drive timers far enough to cover both step bodies + grace.
+      for (let i = 0; i < 30; i++) {
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      await execPromise;
+
+      // Two distinct leading-edge POSTs, one per step.
+      const plannedOps = planned(mockCheckpointStepsAsync);
+      expect(plannedOps).toHaveLength(2);
+      const plannedNames = plannedOps.map(
+        (s: { displayName?: string }) => s.displayName,
+      );
+      expect(plannedNames).toEqual(expect.arrayContaining(["a", "b"]));
+
+      // Two distinct trailing StepRuns, both normal full spans.
+      const allBuffered = buffered(mockCheckpointStepsAsync);
+      const runs = allBuffered.filter((s) => s.op === StepOpCode.StepRun);
+      expect(runs).toHaveLength(2);
+      const runNames = runs.map((r) => r.displayName);
+      expect(runNames).toEqual(expect.arrayContaining(["a", "b"]));
+      for (const r of runs) {
+        expect(r.timing.b).toBeGreaterThan(0);
+      }
+    });
+
+    test("non-checkpointing mode → no leading-edge POST", async () => {
+      const stepBody = defer<string>();
+      const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+      const setup = setupExecution({
+        mockApi: {
+          checkpointStepsAsync: mockCheckpointStepsAsync,
+        },
+        handler: async ({ step }) => {
+          await step.run("a", () => stepBody.promise);
+        },
+        stepMode: StepMode.Async,
+      });
+
+      const execPromise = setup.execution.start();
+      await vi.advanceTimersByTimeAsync(1500);
+      stepBody.resolve("a");
+      await advanceThroughRetries();
+      await execPromise;
+
+      expect(planned(mockCheckpointStepsAsync)).toEqual([]);
+    });
+  });
 });
