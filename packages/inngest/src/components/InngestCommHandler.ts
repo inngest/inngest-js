@@ -1946,6 +1946,12 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
+                // `RetryAfter` travels as a header, but finality does not:
+                // a `RunError` op carries `noRetry` on its serialized error,
+                // so no `NoRetry` header here.
+                ...(typeof result.retryAfter === "string"
+                  ? { [headerKeys.RetryAfter]: result.retryAfter }
+                  : {}),
               },
               body: stringify(steps),
               version,

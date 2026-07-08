@@ -1,5 +1,4 @@
-import { type OutgoingOp, StepMode } from "../../types.ts";
-import type { MatchOpFn, StepToolOptions } from "../InngestStepTools.ts";
+import { type OutgoingOp, StepOpCode } from "../../types.ts";
 
 /**
  * Buffer for opcode-only sync ops (e.g. `DeferAdd`). These ops need to be
@@ -54,6 +53,37 @@ export class LazyOps {
   }
 
   /**
+   * Remove a still-buffered op by hashed id, returning whether it was found.
+   * `pushedIds` is untouched, so a later push of the same id still surfaces
+   * as a duplicate.
+   */
+  remove(id: string): boolean {
+    const index = this.buffer.findIndex((op) => op.id === id);
+    if (index === -1) {
+      return false;
+    }
+    this.buffer.splice(index, 1);
+    return true;
+  }
+
+  /**
+   * Put previously drained ops back at the front of the buffer so they ship
+   * on the next outbound message. Used when the message carrying a drain
+   * fails to send. Re-registers ids in `pushedIds` — a no-op for ops that
+   * came from this instance's own `drain()`, but it preserves the invariant
+   * `hasId()` relies on (every buffered id is tracked) for any caller.
+   */
+  restore(ops: OutgoingOp[]): void {
+    if (ops.length === 0) {
+      return;
+    }
+    this.buffer = [...ops, ...this.buffer];
+    for (const op of ops) {
+      this.pushedIds.add(op.id);
+    }
+  }
+
+  /**
    * Record that an id has been observed in this execution without buffering
    * an op for it. Used to consume a `priorDefers` replay match so that
    * subsequent encounters of the same id surface as duplicates.
@@ -64,12 +94,29 @@ export class LazyOps {
 }
 
 /**
- * True when a step being registered is an opcode-only sync op (no local
- * handler, sync mode).
+ * Drop any `DeferAdd` whose `DeferAbort` is in the same outbound batch. The
+ * executor processes a batch's ops concurrently, so a co-batched pair can
+ * race and the abort can land first and error. The abort still ships: the
+ * add may have already landed via a checkpoint whose failure was only
+ * client-visible (see `restore()`), so "the add never shipped" is not
+ * knowable locally — and an abort whose add truly never shipped is a
+ * tolerated no-op on every backend ingestion path.
  */
-export function isLazyOp(
-  opts: StepToolOptions | undefined,
-  opId: ReturnType<MatchOpFn>,
-): boolean {
-  return !opts?.fn && opId.mode === StepMode.Sync;
+export function sanitizeOutgoingOps(ops: OutgoingOp[]): OutgoingOp[] {
+  const abortedTargets = new Set<string>();
+  for (const op of ops) {
+    if (op.op === StepOpCode.DeferAbort) {
+      const target = op.opts?.target_hashed_id;
+      if (typeof target === "string") {
+        abortedTargets.add(target);
+      }
+    }
+  }
+  if (abortedTargets.size === 0) {
+    return ops;
+  }
+
+  return ops.filter(
+    (op) => !(op.op === StepOpCode.DeferAdd && abortedTargets.has(op.id)),
+  );
 }

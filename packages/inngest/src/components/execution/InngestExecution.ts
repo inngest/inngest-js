@@ -31,7 +31,15 @@ export interface ExecutionResults {
   "function-resolved": { data: unknown };
   "step-ran": { step: OutgoingOp; retriable?: boolean | string };
   "function-rejected": { error: unknown; retriable: boolean | string };
-  "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
+  "steps-found": {
+    steps: [OutgoingOp, ...OutgoingOp[]];
+
+    /**
+     * Set when an error op in this batch was a `RetryAfterError`; sent as the
+     * `Retry-After` header on the 206 response.
+     */
+    retryAfter?: string;
+  };
   "step-not-found": {
     step: OutgoingOp;
     foundSteps: BasicFoundStep[];

@@ -1,116 +1,135 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { InngestApi } from "../../api/api.ts";
+import { type InngestApi, StaleDispatchError } from "../../api/api.ts";
+import { createDefer } from "../../experimental.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
+import type { Logger } from "../../middleware/logger.ts";
 import { createClient } from "../../test/helpers.ts";
-import { StepMode, StepOpCode } from "../../types.ts";
+import {
+  type DeferFn,
+  type DeferHandle,
+  type OutgoingOp,
+  StepMode,
+  StepOpCode,
+} from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import type { MetadataUpdate } from "../InngestMetadata.ts";
 import type { GenericStepTools } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
-import type { ExecutionResults } from "./InngestExecution.ts";
+import { RetryAfterError } from "../RetryAfterError.ts";
+import { _internals } from "./engine.ts";
+import type { ExecutionResult, ExecutionResults } from "./InngestExecution.ts";
+import { sanitizeOutgoingOps } from "./lazyOps.ts";
+
+const mockEvent = { name: "test/event", data: { foo: "bar" } };
+
+// Mock timers to speed up tests (avoid actual backoff delays)
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+
+afterEach(() => {
+  vi.runOnlyPendingTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+/**
+ * Helper to advance timers through all retry delays.
+ * retryWithBackoff uses: baseDelay * 2^(attempt-1) + jitter
+ * With 5 attempts and 100ms base, max total delay is ~1.5-3s
+ */
+const advanceThroughRetries = async () => {
+  // Advance through potential retry delays (generous to cover jitter)
+  for (let i = 0; i < 10; i++) {
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+};
+
+/**
+ * Helper to reduce test setup duplication. Creates a client with a mocked
+ * inngestApi, wraps the handler in an InngestFunction, and builds the
+ * execution. Returns the execution plus the mocks for assertions.
+ */
+const setupExecution = ({
+  mockApi,
+  handler,
+  stepMode,
+  checkpointingConfig,
+  internalLogger,
+  extraPartialOptions = {},
+}: {
+  mockApi: Partial<InngestApi>;
+  handler: (ctx: {
+    step: GenericStepTools;
+    defer: DeferFn;
+  }) => Promise<unknown>;
+  stepMode: StepMode;
+  checkpointingConfig?: {
+    bufferedSteps: number;
+    maxRuntime: number;
+    maxInterval: number;
+  };
+  internalLogger?: Logger;
+  extraPartialOptions?: Record<string, unknown>;
+}) => {
+  const client = createClient({
+    id: "test",
+    ...(internalLogger ? { internalLogger } : {}),
+  });
+
+  (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi =
+    mockApi as InngestApi;
+
+  const fn = new InngestFunction(
+    client,
+    { id: "test-fn", triggers: [{ event: "test/event" }] },
+    handler as unknown as Parameters<typeof client.createFunction>[1],
+  );
+
+  const syncOptions =
+    stepMode === StepMode.Sync
+      ? {
+          createResponse: async (data: unknown) => ({
+            status: 200,
+            body: JSON.stringify(data),
+            headers: {},
+            version: ExecutionVersion.V2,
+          }),
+        }
+      : {};
+
+  const execution = fn["createExecution"]({
+    partialOptions: {
+      client,
+      data: fromPartial({ event: mockEvent, runId: "test-run-id" }),
+      runId: "test-run-id",
+      stepState: {},
+      stepCompletionOrder: [],
+      reqArgs: [],
+      headers: {},
+      stepMode,
+      ...(checkpointingConfig ? { checkpointingConfig } : {}),
+      ...syncOptions,
+      ...extraPartialOptions,
+    },
+  });
+
+  return { execution, client, fn };
+};
+
+/**
+ * Shorthand: create execution, start it, advance timers, return result.
+ */
+const runExecution = async (...args: Parameters<typeof setupExecution>) => {
+  const setup = setupExecution(...args);
+  const executionPromise = setup.execution.start();
+  await advanceThroughRetries();
+  const result = await executionPromise;
+  return { ...setup, result };
+};
 
 describe("Execution engine checkpoint retry behavior", () => {
-  const mockEvent = { name: "test/event", data: { foo: "bar" } };
-
-  // Mock timers to speed up tests (avoid actual backoff delays)
-  beforeEach(() => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  /**
-   * Helper to advance timers through all retry delays.
-   * retryWithBackoff uses: baseDelay * 2^(attempt-1) + jitter
-   * With 5 attempts and 100ms base, max total delay is ~1.5-3s
-   */
-  const advanceThroughRetries = async () => {
-    // Advance through potential retry delays (generous to cover jitter)
-    for (let i = 0; i < 10; i++) {
-      await vi.advanceTimersByTimeAsync(1000);
-    }
-  };
-
-  /**
-   * Helper to reduce test setup duplication. Creates a client with a mocked
-   * inngestApi, wraps the handler in an InngestFunction, and builds the
-   * execution. Returns the execution plus the mocks for assertions.
-   */
-  const setupExecution = ({
-    mockApi,
-    handler,
-    stepMode,
-    checkpointingConfig,
-    extraPartialOptions = {},
-  }: {
-    mockApi: Partial<InngestApi>;
-    handler: (ctx: { step: GenericStepTools }) => Promise<unknown>;
-    stepMode: StepMode;
-    checkpointingConfig?: {
-      bufferedSteps: number;
-      maxRuntime: number;
-      maxInterval: number;
-    };
-    extraPartialOptions?: Record<string, unknown>;
-  }) => {
-    const client = createClient({ id: "test" });
-
-    (client as unknown as { inngestApi: Partial<InngestApi> }).inngestApi =
-      mockApi as InngestApi;
-
-    const fn = new InngestFunction(
-      client,
-      { id: "test-fn", triggers: [{ event: "test/event" }] },
-      handler as unknown as Parameters<typeof client.createFunction>[1],
-    );
-
-    const syncOptions =
-      stepMode === StepMode.Sync
-        ? {
-            createResponse: async (data: unknown) => ({
-              status: 200,
-              body: JSON.stringify(data),
-              headers: {},
-              version: ExecutionVersion.V2,
-            }),
-          }
-        : {};
-
-    const execution = fn["createExecution"]({
-      partialOptions: {
-        client,
-        data: fromPartial({ event: mockEvent }),
-        runId: "test-run-id",
-        stepState: {},
-        stepCompletionOrder: [],
-        reqArgs: [],
-        headers: {},
-        stepMode,
-        ...(checkpointingConfig ? { checkpointingConfig } : {}),
-        ...syncOptions,
-        ...extraPartialOptions,
-      },
-    });
-
-    return { execution, client, fn };
-  };
-
-  /**
-   * Shorthand: create execution, start it, advance timers, return result.
-   */
-  const runExecution = async (...args: Parameters<typeof setupExecution>) => {
-    const setup = setupExecution(...args);
-    const executionPromise = setup.execution.start();
-    await advanceThroughRetries();
-    const result = await executionPromise;
-    return { ...setup, result };
-  };
-
   describe("StepMode.Sync (Durable Endpoints)", () => {
     describe("checkpointNewRun (first checkpoint)", () => {
       test("retries on transient failure and succeeds", async () => {
@@ -836,6 +855,606 @@ describe("Execution engine checkpoint retry behavior", () => {
         name: "NonRetriableError",
         message: "permanent",
       });
+    });
+  });
+});
+
+describe("defer abort", () => {
+  const targetHash = _internals.hashId("x");
+  const abortOpId = _internals.hashId(`${targetHash}:abort`);
+  const abortOpts = {
+    target_hashed_id: targetHash,
+    fn_slug: "test-target",
+    id: "x",
+  };
+
+  const makeTarget = () =>
+    createDefer(createClient({ id: "test" }), { id: "target" }, async () => {});
+
+  const spyLogger = (): Logger => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  });
+
+  /**
+   * Narrow a result to its `steps-found` steps, failing the test if it's any
+   * other result type.
+   */
+  const stepsOf = (result: ExecutionResult): OutgoingOp[] => {
+    expect(result.type).toBe("steps-found");
+    return result.type === "steps-found" ? result.steps : [];
+  };
+
+  const opsOfType = (steps: OutgoingOp[], op: StepOpCode) =>
+    steps.filter((step) => step.op === op);
+
+  const asyncCheckpointingOptions = {
+    queueItemId: "queue-item-123",
+    internalFnId: "internal-fn-456",
+  };
+
+  describe("sanitizeOutgoingOps", () => {
+    const add: OutgoingOp = {
+      id: targetHash,
+      op: StepOpCode.DeferAdd,
+      opts: { fn_slug: "test-target", input: {} },
+    };
+    const abort: OutgoingOp = {
+      id: abortOpId,
+      op: StepOpCode.DeferAbort,
+      opts: abortOpts,
+    };
+    const other: OutgoingOp = { id: "other", op: StepOpCode.StepRun };
+
+    test("drops a co-batched add but keeps its abort", () => {
+      expect(sanitizeOutgoingOps([add, other, abort])).toEqual([other, abort]);
+    });
+
+    test("keeps an abort whose add is not in the batch", () => {
+      expect(sanitizeOutgoingOps([other, abort])).toEqual([other, abort]);
+    });
+
+    test("keeps an add whose abort is not in the batch", () => {
+      expect(sanitizeOutgoingOps([add, other])).toEqual([add, other]);
+    });
+
+    test("keeps an add targeted by no abort in the batch", () => {
+      const otherAdd: OutgoingOp = {
+        id: _internals.hashId("y"),
+        op: StepOpCode.DeferAdd,
+      };
+      expect(sanitizeOutgoingOps([otherAdd, abort])).toEqual([otherAdd, abort]);
+    });
+  });
+
+  test("abort of a still-buffered defer cancels the add and still ships the abort", async () => {
+    const target = makeTarget();
+
+    const { result } = await runExecution({
+      mockApi: {},
+      handler: async ({ defer }) => {
+        const ref = defer("x", { function: target, data: {} });
+        ref.abort();
+        return "done";
+      },
+      stepMode: StepMode.Async,
+    });
+
+    const steps = stepsOf(result);
+    expect(steps).toContainEqual(
+      expect.objectContaining({
+        id: abortOpId,
+        op: StepOpCode.DeferAbort,
+        opts: abortOpts,
+      }),
+    );
+    expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(0);
+    expect(opsOfType(steps, StepOpCode.RunComplete)).toHaveLength(1);
+  });
+
+  test("abort after the add has shipped goes in a later message", async () => {
+    const target = makeTarget();
+    const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+    const { result } = await runExecution({
+      mockApi: { checkpointStepsAsync: mockCheckpointStepsAsync },
+      handler: async ({ defer, step }) => {
+        const ref = defer("x", { function: target, data: {} });
+        await step.run("a", () => "ok");
+        ref.abort();
+        return "done";
+      },
+      stepMode: StepMode.AsyncCheckpointing,
+      checkpointingConfig: { bufferedSteps: 1, maxRuntime: 0, maxInterval: 0 },
+      extraPartialOptions: asyncCheckpointingOptions,
+    });
+
+    // The add shipped with the step's checkpoint.
+    expect(mockCheckpointStepsAsync).toHaveBeenCalledTimes(1);
+    expect(mockCheckpointStepsAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        steps: expect.arrayContaining([
+          expect.objectContaining({ op: StepOpCode.DeferAdd }),
+        ]),
+      }),
+    );
+    expect(mockCheckpointStepsAsync).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        steps: expect.arrayContaining([
+          expect.objectContaining({ op: StepOpCode.DeferAbort }),
+        ]),
+      }),
+    );
+
+    // The abort ships in the terminal message, never alongside its add.
+    const steps = stepsOf(result);
+    expect(steps).toContainEqual(
+      expect.objectContaining({
+        id: abortOpId,
+        op: StepOpCode.DeferAbort,
+        opts: abortOpts,
+      }),
+    );
+    expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(0);
+  });
+
+  test("abort of a defer created inside step.run ships with the step result", async () => {
+    const target = makeTarget();
+    const mockCheckpointStepsAsync = vi.fn().mockResolvedValue(undefined);
+
+    const { result } = await runExecution({
+      mockApi: { checkpointStepsAsync: mockCheckpointStepsAsync },
+      handler: async ({ defer, step }) => {
+        let ref: DeferHandle | undefined;
+        await step.run("a", () => {
+          ref = defer("x", { function: target, data: {} });
+          return "ok";
+        });
+        ref?.abort();
+        return "done";
+      },
+      stepMode: StepMode.AsyncCheckpointing,
+      checkpointingConfig: { bufferedSteps: 5, maxRuntime: 0, maxInterval: 0 },
+      extraPartialOptions: asyncCheckpointingOptions,
+    });
+
+    const steps = stepsOf(result);
+    expect(steps).toContainEqual(expect.objectContaining({ displayName: "a" }));
+    expect(opsOfType(steps, StepOpCode.DeferAbort)).toHaveLength(1);
+    expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(0);
+    expect(opsOfType(steps, StepOpCode.RunComplete)).toHaveLength(1);
+  });
+
+  describe("replay", () => {
+    test("re-ships an abort whose target is abortable", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          const ref = defer("x", { function: target, data: {} });
+          ref.abort();
+          return "done";
+        },
+        stepMode: StepMode.Async,
+        extraPartialOptions: {
+          priorDefers: { [targetHash]: { abortable: true } },
+        },
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(0);
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          id: abortOpId,
+          op: StepOpCode.DeferAbort,
+          opts: abortOpts,
+        }),
+      );
+    });
+
+    test("ships an abort when the prior entry has no abortable field (old executor)", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          const ref = defer("x", { function: target, data: {} });
+          ref.abort();
+          return "done";
+        },
+        stepMode: StepMode.Async,
+        extraPartialOptions: { priorDefers: { [targetHash]: {} } },
+      });
+
+      expect(opsOfType(stepsOf(result), StepOpCode.DeferAbort)).toHaveLength(1);
+    });
+
+    test("skips an abort whose target is no longer abortable", async () => {
+      const target = makeTarget();
+      const internalLogger = spyLogger();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          const ref = defer("x", { function: target, data: {} });
+          ref.abort();
+          return "done";
+        },
+        stepMode: StepMode.Async,
+        internalLogger,
+        extraPartialOptions: {
+          priorDefers: { [targetHash]: { abortable: false } },
+        },
+      });
+
+      // Nothing to ship, so the result stays a plain resolution.
+      expect(result.type).toBe("function-resolved");
+      // Debug, not warn: correct code replays its abort on every callback of
+      // the run, so this path must not spam warnings.
+      expect(internalLogger.debug).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "x", runId: "test-run-id" }),
+        "defer abort skipped: defer is no longer abortable",
+      );
+      expect(internalLogger.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  test("a duplicate defer's handle is a logging no-op", async () => {
+    const target = makeTarget();
+    const internalLogger = spyLogger();
+
+    const { result } = await runExecution({
+      mockApi: {},
+      handler: async ({ defer }) => {
+        defer("x", { function: target, data: {} });
+        const dup = defer("x", { function: target, data: {} });
+        dup.abort();
+        return "done";
+      },
+      stepMode: StepMode.Async,
+      internalLogger,
+    });
+
+    // The original add survives; the duplicate's abort ships nothing.
+    const steps = stepsOf(result);
+    expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+    expect(opsOfType(steps, StepOpCode.DeferAbort)).toHaveLength(0);
+    expect(internalLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "test-run-id", id: "x" }),
+      "defer abort skipped: the defer call was skipped",
+    );
+  });
+
+  test("double abort ships one op and logs the second", async () => {
+    const target = makeTarget();
+    const internalLogger = spyLogger();
+
+    const { result } = await runExecution({
+      mockApi: {},
+      handler: async ({ defer }) => {
+        const ref = defer("x", { function: target, data: {} });
+        ref.abort();
+        ref.abort();
+        return "done";
+      },
+      stepMode: StepMode.Async,
+      internalLogger,
+    });
+
+    expect(opsOfType(stepsOf(result), StepOpCode.DeferAbort)).toHaveLength(1);
+    expect(internalLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "x", runId: "test-run-id" }),
+      "defer abort skipped: already aborted",
+    );
+  });
+
+  test("re-adding an aborted defer warns and skips", async () => {
+    const target = makeTarget();
+    const internalLogger = spyLogger();
+
+    const { result } = await runExecution({
+      mockApi: {},
+      handler: async ({ defer }) => {
+        const ref = defer("x", { function: target, data: {} });
+        ref.abort();
+        defer("x", { function: target, data: {} });
+        return "done";
+      },
+      stepMode: StepMode.Async,
+      internalLogger,
+    });
+
+    const steps = stepsOf(result);
+    expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(0);
+    expect(opsOfType(steps, StepOpCode.DeferAbort)).toHaveLength(1);
+    expect(internalLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "x", runId: "test-run-id" }),
+      "defer skipped: duplicate ID within run",
+    );
+  });
+
+  describe("a failed checkpoint must not drop buffered lazy ops", () => {
+    test("top-level defer survives into the fallback response", async () => {
+      const target = makeTarget();
+      const mockCheckpointStepsAsync = vi
+        .fn()
+        .mockRejectedValue(new Error("Checkpoint service unavailable"));
+
+      const { result } = await runExecution({
+        mockApi: { checkpointStepsAsync: mockCheckpointStepsAsync },
+        handler: async ({ defer, step }) => {
+          defer("x", { function: target, data: {} });
+          await step.run("seq-1", () => "r1");
+          return "done";
+        },
+        stepMode: StepMode.AsyncCheckpointing,
+        checkpointingConfig: {
+          bufferedSteps: 1,
+          maxRuntime: 0,
+          maxInterval: 0,
+        },
+        extraPartialOptions: asyncCheckpointingOptions,
+      });
+
+      expect(mockCheckpointStepsAsync).toHaveBeenCalled();
+
+      const steps = stepsOf(result);
+      expect(steps).toContainEqual(
+        expect.objectContaining({ displayName: "seq-1" }),
+      );
+      expect(steps).toContainEqual(
+        expect.objectContaining({ id: targetHash, op: StepOpCode.DeferAdd }),
+      );
+    });
+
+    test("defer inside step.run survives into the fallback response", async () => {
+      const target = makeTarget();
+      const mockCheckpointStepsAsync = vi
+        .fn()
+        .mockRejectedValue(new Error("Checkpoint service unavailable"));
+
+      const { result } = await runExecution({
+        mockApi: { checkpointStepsAsync: mockCheckpointStepsAsync },
+        handler: async ({ defer, step }) => {
+          await step.run("seq-1", () => {
+            defer("x", { function: target, data: {} });
+            return "r1";
+          });
+          return "done";
+        },
+        stepMode: StepMode.AsyncCheckpointing,
+        checkpointingConfig: {
+          bufferedSteps: 1,
+          maxRuntime: 0,
+          maxInterval: 0,
+        },
+        extraPartialOptions: asyncCheckpointingOptions,
+      });
+
+      expect(mockCheckpointStepsAsync).toHaveBeenCalled();
+
+      const steps = stepsOf(result);
+      expect(steps).toContainEqual(
+        expect.objectContaining({ displayName: "seq-1" }),
+      );
+      expect(steps).toContainEqual(
+        expect.objectContaining({ id: targetHash, op: StepOpCode.DeferAdd }),
+      );
+    });
+  });
+
+  describe("terminal errors carrying lazy ops", () => {
+    test("ships RunError without noRetry for a plain retryable rejection", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          defer("x", { function: target, data: {} });
+          throw new Error("boom");
+        },
+        stepMode: StepMode.Async,
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          op: StepOpCode.RunError,
+          error: expect.objectContaining({ name: "Error", message: "boom" }),
+        }),
+      );
+      expect(steps).not.toContainEqual(
+        expect.objectContaining({
+          error: expect.objectContaining({ noRetry: true }),
+        }),
+      );
+      expect(result).not.toHaveProperty("retryAfter");
+    });
+
+    test("preserves RetryAfterError timing through the steps-found conversion", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          defer("x", { function: target, data: {} });
+          throw new RetryAfterError("later", "30s");
+        },
+        stepMode: StepMode.Async,
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(opsOfType(steps, StepOpCode.RunError)).toHaveLength(1);
+      expect(steps).not.toContainEqual(
+        expect.objectContaining({
+          error: expect.objectContaining({ noRetry: true }),
+        }),
+      );
+      expect(result).toMatchObject({ type: "steps-found", retryAfter: "30" });
+    });
+
+    test("preserves NonRetriableError finality through the steps-found conversion", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          defer("x", { function: target, data: {} });
+          throw new NonRetriableError("nope");
+        },
+        stepMode: StepMode.Async,
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          op: StepOpCode.RunError,
+          error: expect.objectContaining({
+            name: "NonRetriableError",
+            noRetry: true,
+          }),
+        }),
+      );
+      expect(result).not.toHaveProperty("retryAfter");
+    });
+
+    test("marks noRetry when the final attempt rejects with a retryable error", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          defer("x", { function: target, data: {} });
+          throw new Error("boom");
+        },
+        stepMode: StepMode.Async,
+        extraPartialOptions: {
+          data: fromPartial({
+            event: mockEvent,
+            runId: "test-run-id",
+            attempt: 2,
+            maxAttempts: 3,
+          }),
+        },
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          op: StepOpCode.RunError,
+          error: expect.objectContaining({ noRetry: true }),
+        }),
+      );
+    });
+
+    test("lazy ops survive an underlying handler throw during function-resolved", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer }) => {
+          defer("x", { function: target, data: {} });
+          return "done";
+        },
+        stepMode: StepMode.AsyncCheckpointing,
+        extraPartialOptions: {
+          ...asyncCheckpointingOptions,
+          createResponse: async () => {
+            throw new Error("response transform failed");
+          },
+        },
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(opsOfType(steps, StepOpCode.RunError)).toHaveLength(1);
+    });
+
+    test("ships StepFailed alongside a buffered DeferAdd for a NonRetriableError thrown in step.run", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer, step }) => {
+          defer("x", { function: target, data: {} });
+          await step.run("will-fail", () => {
+            throw new NonRetriableError("nope");
+          });
+        },
+        stepMode: StepMode.Async,
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          displayName: "will-fail",
+          op: StepOpCode.StepFailed,
+        }),
+      );
+    });
+
+    test("ships StepError with retryAfter alongside a buffered DeferAdd for a RetryAfterError thrown in step.run", async () => {
+      const target = makeTarget();
+
+      const { result } = await runExecution({
+        mockApi: {},
+        handler: async ({ defer, step }) => {
+          defer("x", { function: target, data: {} });
+          await step.run("will-fail", () => {
+            throw new RetryAfterError("later", "30s");
+          });
+        },
+        stepMode: StepMode.Async,
+      });
+
+      const steps = stepsOf(result);
+      expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
+      expect(steps).toContainEqual(
+        expect.objectContaining({
+          displayName: "will-fail",
+          op: StepOpCode.StepError,
+        }),
+      );
+      expect(result).toMatchObject({ type: "steps-found", retryAfter: "30" });
+    });
+
+    test("drops buffered lazy ops when the flush hits a stale dispatch error", async () => {
+      const target = makeTarget();
+      const mockCheckpointStepsAsync = vi
+        .fn()
+        .mockRejectedValue(new StaleDispatchError("stale dispatch"));
+
+      const { result } = await runExecution({
+        mockApi: { checkpointStepsAsync: mockCheckpointStepsAsync },
+        handler: async ({ defer, step }) => {
+          defer("x", { function: target, data: {} });
+          await step.run("seq-1", () => "result-1");
+          return "done";
+        },
+        stepMode: StepMode.AsyncCheckpointing,
+        checkpointingConfig: {
+          bufferedSteps: 1,
+          maxRuntime: 0,
+          maxInterval: 0,
+        },
+        extraPartialOptions: asyncCheckpointingOptions,
+      });
+
+      expect(mockCheckpointStepsAsync).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        type: "function-rejected",
+        ops: {},
+        retriable: false,
+      });
+      expect(result).not.toHaveProperty("steps");
     });
   });
 });

@@ -28,7 +28,7 @@ const sendEmail = createDefer(
   async ({ event, step }) => {
     event.data.to; // typed from `schema`
     event.data.body;
-  },
+  }
 );
 ```
 
@@ -53,13 +53,13 @@ const orderPlaced = inngest.createFunction(
   { id: "order-placed", triggers: { event: "order/placed" } },
   async ({ defer }) => {
     defer("send", { function: sendEmail, data: { to: "a@b.com", body: "hi" } });
-  },
+  }
 );
 ```
 
 The first argument is a unique ID, similar to what we do for steps. However, unlike steps, `defer` IDs must be unique within a run: we don't do the same "add implicit index to dedupe" trick that we do for steps. We can't do that because `defer` can be run in `step.run`, so the implicit index would change when reentering the function.
 
-The `data` type is inferred from `function.schema`. `defer` is sync and fire-and-forget: it returns `void` and execution continues immediately.
+The `data` type is inferred from `function.schema`. `defer` is sync and fire-and-forget: execution continues immediately. It returns a handle whose `abort()` cancels the deferred run from later in the same run.
 
 It also works inside `step.run()`:
 
@@ -89,7 +89,9 @@ A defer function is one Inngest function in the backend. Multiple parent functio
 
 ## Implementation
 
-`defer` emits a `DeferAdd` opcode. Because it's fire-and-forget, the op has no natural moment to ship; the SDK buffers it (a "lazy op") and ships it on the next outbound message: a checkpoint, a step result, or `RunComplete`. See `ARCHITECTURE.md` for the buffering rationale and drain sites.
+`defer` emits a `DeferAdd` opcode. Because it's fire-and-forget, the op has no natural moment to ship; the SDK buffers it (a "lazy op") and ships it on the next outbound message: a checkpoint, a step result, or the terminal `RunComplete` / `RunError` op. See `ARCHITECTURE.md` for the buffering rationale and drain sites.
+
+When the function rejects with ops still buffered, they ride a `[DeferAdd, ..., RunError]` batch. The executor persists defer ops (priority-grouped) before handling the terminal op, and owns the retry decision for `RunError`. `RunError` is only ever emitted alongside buffered lazy ops; plain rejections keep the classic `function-rejected` response, so older executors (which hard-fail on the unknown opcode) are only ever exposed to it when defers — which require the same backend version — are in play.
 
 The backend records each `DeferAdd` against the parent run as it arrives. The deferred run isn't started immediately: when the parent run finalizes, the backend emits one `inngest/deferred.schedule` event per recorded defer, and that event triggers the matching defer function.
 
@@ -102,9 +104,7 @@ On replay, the executor sends back a `defers` map of hashed step IDs it has alre
 These silently drop user `defer()` calls in specific code paths. Fix before
 removing the experimental label.
 
-- **Preserve buffered defer ops on checkpoint network failure** -- `checkpoint()` drains `state.lazyOps` at the top, then calls the checkpointing API. If the API call exhausts retries and throws, the drained ops are local to `checkpoint()` and lost (`attemptCheckpointAndResume`'s catch block only restores `checkpointingStepBuffer`). User-visible effect: a transient backend hiccup silently drops the user's `defer()` calls. Fix direction: drain in the caller and re-buffer on failure, or have `checkpoint()` restore drained ops on throw.
-
-- **Preserve buffered defer ops on sync-mode terminal rejection** -- Mirrors the async-mode fix but on the sync (durable-endpoint) code path. The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops alongside the terminal error op (or via a final checkpoint if a `checkpointedRun` exists).
+- **Preserve buffered defer ops on sync-mode (durable endpoints) terminal rejection** -- The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops via a final checkpoint if a `checkpointedRun` exists. Note `RunError` cannot close this gap: it's async request/response only — both checkpoint ingestion paths reject it (absent from the backend's `opcodeSyncMap`), so the fix needs backend support. The async-mode equivalent (checkpoint network failure) is fixed: `checkpoint()` restores drained ops on throw and the failure fallback routes through `attachLazyOps`, which now ships them alongside `RunError`.
 
 ### Future features (additive)
 
@@ -115,8 +115,6 @@ Net-new capabilities. None affect correctness of the current API.
 - **Support `onFailure`** -- We may add it later.
 
 - **Support `batchEvents`** -- We may add it later. We haven't decided if deferred runs should be restricted to a single parent run. To do that, we may need to implicitly add a key. We'll revisit this decision later.
-
-- **Support aborting a `defer` call.** -- A `DeferAbort` opcode is reserved on the backend but the SDK doesn't yet emit it. Needs a user-facing API (e.g. `const { abort } = defer("id", { function, data })`) and the matching opcode emission.
 
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
 
