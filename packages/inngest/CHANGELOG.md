@@ -1,5 +1,19 @@
 # inngest
 
+## 4.12.0
+
+### Minor Changes
+
+- [#1376](https://github.com/inngest/inngest-js/pull/1376) [`525a6743`](https://github.com/inngest/inngest-js/commit/525a6743d0c58dd77dce857e5d7c9294eab639d3) Thanks [@gwax](https://github.com/gwax)! - Add streaming support to `inngest/sveltekit` serve handlers.
+
+### Patch Changes
+
+- [#1620](https://github.com/inngest/inngest-js/pull/1620) [`08ef03b9`](https://github.com/inngest/inngest-js/commit/08ef03b9b7a1188c99a3ded1f8439a7591fab317) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Fix run hangs on parallel steps when optimizeParallelism is off
+
+- [#1615](https://github.com/inngest/inngest-js/pull/1615) [`9b5ea64c`](https://github.com/inngest/inngest-js/commit/9b5ea64cfb918729451ee2e32db3fdc89b29e8b1) Thanks [@Linell](https://github.com/Linell)! - Fix a crash when using `serve({ streaming: true })` and the client disconnects before a run completes
+
+- [#1618](https://github.com/inngest/inngest-js/pull/1618) [`922e2024`](https://github.com/inngest/inngest-js/commit/922e202415b5d100f4f1608d59d953af9c7b8123) Thanks [@Linell](https://github.com/Linell)! - Fix `step.run` and `step.invoke` output types collapsing to `{}` for objects with optional properties when using two or more middleware
+
 ## 4.11.0
 
 ### Minor Changes
