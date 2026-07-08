@@ -346,25 +346,27 @@ describe("EXE-1135: Default to optimized parallelism", () => {
   });
 
   describe("execution version selection", () => {
-    const sdkDecidesRequestBody = {
+    const requestBody = (version: number) => ({
       event: { name: "test/event", data: {} },
       events: [{ name: "test/event", data: {} }],
       steps: {},
       ctx: { run_id: "run-123", attempt: 0 },
-      version: -1, // SDK decides
-    };
+      version,
+    });
 
     const createHandler = (
       client: ReturnType<typeof createClient>,
       fn: ReturnType<ReturnType<typeof createClient>["createFunction"]>,
+      bodyVersion: number = -1,
     ) => {
-      const bodyStr = JSON.stringify(sdkDecidesRequestBody);
+      const body = requestBody(bodyVersion);
+      const bodyStr = JSON.stringify(body);
       return new InngestCommHandler({
         frameworkName: "test",
         client,
         functions: [fn],
         handler: () => ({
-          body: () => sdkDecidesRequestBody,
+          body: () => body,
           headers: (key: string) =>
             key.toLowerCase() === "content-length"
               ? bodyStr.length.toString()
@@ -386,24 +388,35 @@ describe("EXE-1135: Default to optimized parallelism", () => {
       {
         fnOpt: undefined,
         clientOpt: undefined,
+        bodyVersion: -1,
         expectedVersion: ExecutionVersion.V2,
         desc: "default",
       },
       {
         fnOpt: false,
         clientOpt: undefined,
+        bodyVersion: -1,
         expectedVersion: ExecutionVersion.V1,
         desc: "function opt-out",
       },
       {
         fnOpt: undefined,
         clientOpt: false,
+        bodyVersion: -1,
         expectedVersion: ExecutionVersion.V1,
         desc: "client opt-out",
       },
+      // The SDK should keep opt-out runs on V1 based on optimizeParallelism
+      {
+        fnOpt: false,
+        clientOpt: undefined,
+        bodyVersion: 2,
+        expectedVersion: ExecutionVersion.V1,
+        desc: "opt-out with incoming V2",
+      },
     ])(
       "uses V$expectedVersion with $desc",
-      async ({ fnOpt, clientOpt, expectedVersion }) => {
+      async ({ fnOpt, clientOpt, bodyVersion, expectedVersion }) => {
         const client = createClient({
           id: "test",
           isDev: true,
@@ -418,7 +431,7 @@ describe("EXE-1135: Default to optimized parallelism", () => {
           async () => "done",
         );
 
-        const handler = createHandler(client, fn);
+        const handler = createHandler(client, fn, bodyVersion);
         const response = (await handler.createHandler()()) as {
           headers: Record<string, string>;
         };
