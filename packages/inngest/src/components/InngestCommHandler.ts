@@ -2214,15 +2214,10 @@ export class InngestCommHandler<
       headerReqVersion,
       this.client[internalLoggerSymbol],
     );
-    const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
 
     // Handle opting out of optimized parallelism
-    if (
-      version === ExecutionVersion.V2 &&
-      sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.() === false
-    ) {
+    if (fn.fn["shouldOptimizeParallelism"]?.() === false) {
       version = ExecutionVersion.V1;
     }
 
