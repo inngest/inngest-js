@@ -27,14 +27,20 @@ context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
-// Request model (not response model) and input tokens only, mapped to the
-// server's snake_case `inngest.ai` schema.
+// The fields the extractor lifts from `simulateOpenAICall`'s span, mapped to
+// the server's snake_case `inngest.ai` schema. Content attributes are never
+// extracted, and `total_tokens` is absent because the span carries no provider
+// total (we never derive one).
 const expectedAIMetadata = {
   kind: "inngest.ai",
   scope: "step",
   values: {
+    operation_name: "chat",
+    request_model: "gpt-5.4-nano",
+    response_model: "gpt-5.4-nano-2026-03-17",
+    provider: "openai",
     input_tokens: 18,
-    model: "gpt-5.4-nano",
+    output_tokens: 39,
   },
 };
 
@@ -105,12 +111,14 @@ matrixCheckpointing("multiple AI calls in a step", async (checkpointing) => {
     return step.name === "my-step" && hasAiMetadata(step.metadata);
   });
 
+  // Two calls in one step aggregate: token counts sum; model/system are kept.
   expect(getAIMetadata(step)).toEqual([
     {
       ...expectedAIMetadata,
       values: {
         ...expectedAIMetadata.values,
         input_tokens: 2 * expectedAIMetadata.values.input_tokens,
+        output_tokens: 2 * expectedAIMetadata.values.output_tokens,
       },
     },
   ]);

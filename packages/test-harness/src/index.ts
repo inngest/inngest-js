@@ -12,10 +12,12 @@ export {
   registerApp,
   waitForFunctions,
 } from "./testApp.ts";
-
+export type { RunMetadata, TraceMetadataNode } from "./utils.ts";
 export {
   BaseState,
   createState,
+  getRunMetadata,
+  getRunTraceMetadata,
   randomSuffix,
   sleep,
   testNameFromFileUrl,

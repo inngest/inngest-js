@@ -7,15 +7,16 @@ import type { AIMetadata } from "./aiExtractor.ts";
 import {
   aggregate,
   extractAIMetadataFromAttributes,
+  FIELD_SPECS,
   toInngestAIMetadataValues,
 } from "./aiExtractor.ts";
 
 /**
  * These fixtures are real OTLP/JSON spans captured from instrumented OpenAI SDK
- * calls, copied from the Inngest server-side extractor's test suite. Each
- * `<variant>.otlp.json` has a sibling `<variant>.otlp.json.snap` Vitest file
- * snapshot recording, per span, the metadata this extractor produces. Run
- * `pnpm test -- -u` to regenerate the snapshots after intentional changes.
+ * calls. Each `<variant>.otlp.json` has a sibling `<variant>.otlp.json.snap`
+ * Vitest file snapshot recording, per span, the canonical metadata this
+ * extractor produces. Run `pnpm test -- -u` to regenerate the snapshots after
+ * intentional changes.
  */
 const testdataDir = join(dirname(fileURLToPath(import.meta.url)), "testdata");
 
@@ -47,22 +48,24 @@ interface OtlpSpan {
   attributes: Attributes;
 }
 
+interface OtlpTraceRequest {
+  resourceSpans?: {
+    scopeSpans?: {
+      spans?: {
+        name: string;
+        attributes?: { key: string; value: OtlpAnyValue }[];
+      }[];
+    }[];
+  }[];
+}
+
 /**
  * Parse an OTLP/JSON `ExportTraceServiceRequest` fixture into a flat list of
  * spans (in document order), each with its attributes converted to the
  * `Attributes` record shape the SDK exposes via `ReadableSpan.attributes`.
  */
 const loadOtlpSpans = (fixturePath: string): OtlpSpan[] => {
-  const req = JSON.parse(readFileSync(fixturePath, "utf8")) as {
-    resourceSpans?: {
-      scopeSpans?: {
-        spans?: {
-          name: string;
-          attributes?: { key: string; value: OtlpAnyValue }[];
-        }[];
-      }[];
-    }[];
-  };
+  const req: OtlpTraceRequest = JSON.parse(readFileSync(fixturePath, "utf8"));
 
   const spans: OtlpSpan[] = [];
   for (const rs of req.resourceSpans ?? []) {
@@ -116,7 +119,7 @@ describe("extractAIMetadataFromAttributes", () => {
         const spans = loadOtlpSpans(jsonPath);
 
         // One entry per span, in document order: the span name alongside the
-        // metadata this extractor produces for it.
+        // canonical metadata this extractor produces for it.
         const extracted = spans.map((span) => ({
           span: span.name,
           metadata: extractAIMetadataFromAttributes(span.attributes),
@@ -129,96 +132,302 @@ describe("extractAIMetadataFromAttributes", () => {
     }
   });
 
-  test("returns empty object when no AI attributes are present", () => {
-    expect(extractAIMetadataFromAttributes({ "http.method": "GET" })).toEqual(
-      {},
-    );
-  });
-
-  test("prefers semconv over vercel when both are present", () => {
-    const extracted = extractAIMetadataFromAttributes({
-      "ai.model.id": "vercel-model",
-      "gen_ai.request.model": "semconv-model",
-      "ai.usage.inputTokens": 10,
-      "gen_ai.usage.input_tokens": 22,
-    });
-    expect(extracted).toEqual({ model: "semconv-model", inputTokens: 22 });
-  });
-
-  test("langfuse input tokens win over a co-present gen_ai count", () => {
-    const attributes = {
-      "gen_ai.response.model": "gpt-4.1-nano-another",
-      "gen_ai.usage.input_tokens": 100,
-      "langfuse.observation.model.name": "gpt-4.1-nano-2025-04-14",
-      "langfuse.observation.usage_details":
-        '{"input":22,"output":6,"total":28,"input_cached_tokens":5}',
-    };
-    // Order-independent: langfuse outranks semconv regardless of key order.
-    const expected = { inputTokens: 22 };
-    expect(extractAIMetadataFromAttributes(attributes)).toEqual(expected);
-    expect(
-      extractAIMetadataFromAttributes(
-        Object.fromEntries(Object.entries(attributes).reverse()),
-      ),
-    ).toEqual(expected);
-  });
-
-  test("ignores a malformed langfuse usage_details blob", () => {
+  test("maps allowlisted gen_ai keys to canonical fields", () => {
     expect(
       extractAIMetadataFromAttributes({
-        "langfuse.observation.usage_details": "not json",
+        "gen_ai.request.model": "gpt-4.1-nano",
+        "gen_ai.response.model": "gpt-4.1-nano-2025-04-14",
+        "gen_ai.provider.name": "openai",
+        "gen_ai.operation.name": "chat",
+        "gen_ai.response.id": "chatcmpl-abc",
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 41,
+        "gen_ai.usage.total_tokens": 58,
+      }),
+    ).toEqual({
+      requestModel: "gpt-4.1-nano",
+      responseModel: "gpt-4.1-nano-2025-04-14",
+      provider: "openai",
+      operationName: "chat",
+      responseId: "chatcmpl-abc",
+      inputTokens: 17,
+      outputTokens: 41,
+      totalTokens: 58,
+    });
+  });
+
+  describe("operationName", () => {
+    test("reads gen_ai.operation.name", () => {
+      expect(
+        extractAIMetadataFromAttributes({ "gen_ai.operation.name": "chat" }),
+      ).toEqual({ operationName: "chat" });
+    });
+
+    test("drops an empty gen_ai.operation.name", () => {
+      expect(
+        extractAIMetadataFromAttributes({ "gen_ai.operation.name": "" }),
+      ).toEqual({});
+    });
+  });
+
+  describe("provider", () => {
+    test("reads the deprecated gen_ai.system when the canonical key is absent", () => {
+      expect(
+        extractAIMetadataFromAttributes({ "gen_ai.system": "anthropic" }),
+      ).toEqual({ provider: "anthropic" });
+    });
+
+    test("prefers gen_ai.provider.name over the deprecated gen_ai.system", () => {
+      expect(
+        extractAIMetadataFromAttributes({
+          "gen_ai.provider.name": "openai",
+          "gen_ai.system": "anthropic",
+        }),
+      ).toEqual({ provider: "openai" });
+    });
+
+    test("falls back to gen_ai.system when the canonical key is empty", () => {
+      expect(
+        extractAIMetadataFromAttributes({
+          "gen_ai.provider.name": "",
+          "gen_ai.system": "anthropic",
+        }),
+      ).toEqual({ provider: "anthropic" });
+    });
+  });
+
+  test("reports only the provider-supplied total; never derives one", () => {
+    // With input + output but no total, the total field is simply absent.
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.usage.input_tokens": 17,
+        "gen_ai.usage.output_tokens": 41,
+      }),
+    ).toEqual({ inputTokens: 17, outputTokens: 41 });
+  });
+
+  test("extracts request parameters", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.temperature": 0.7,
+        "gen_ai.request.top_p": 0.9,
+        "gen_ai.request.max_tokens": 64,
+        "gen_ai.request.frequency_penalty": 0.2,
+        "gen_ai.request.presence_penalty": 0.1,
+        "gen_ai.request.seed": 42,
+      }),
+    ).toEqual({
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 64,
+      frequencyPenalty: 0.2,
+      presencePenalty: 0.1,
+      seed: 42,
+    });
+  });
+
+  test("keeps a zero-valued temperature rather than dropping it", () => {
+    expect(
+      extractAIMetadataFromAttributes({ "gen_ai.request.temperature": 0 }),
+    ).toEqual({ temperature: 0 });
+  });
+
+  test("extracts finish reasons as a list of strings", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.response.finish_reasons": ["stop", "tool_calls"],
+      }),
+    ).toEqual({ finishReasons: ["stop", "tool_calls"] });
+  });
+
+  test("drops empty and non-string finish-reason entries", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.response.finish_reasons": ["", "stop"],
+      }),
+    ).toEqual({ finishReasons: ["stop"] });
+  });
+
+  test("drops finish reasons when the list reduces to nothing", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.response.finish_reasons": [],
+      }),
+    ).toEqual({});
+  });
+
+  test("ignores unmapped, content, and sensitive keys", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.tool.name": "search",
+        "gen_ai.prompt": "secret prompt",
+        "gen_ai.completion": "secret completion",
+        "gen_ai.input.messages": "secret",
+        "http.method": "GET",
+        "gen_ai.usage.input_tokens": 17,
+      }),
+    ).toEqual({ inputTokens: 17 });
+  });
+
+  test("coerces quoted-string int64 counts to numbers", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.usage.input_tokens": "17",
+      }),
+    ).toEqual({ inputTokens: 17 });
+  });
+
+  test("drops empty-string text fields", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.model": "",
+      }),
+    ).toEqual({});
+  });
+
+  test("drops non-numeric values for numeric fields", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.usage.input_tokens": "not-a-number",
+        "gen_ai.usage.output_tokens": true,
+        "gen_ai.usage.total_tokens": "",
+      }),
+    ).toEqual({});
+  });
+
+  test("drops undefined values", () => {
+    expect(
+      extractAIMetadataFromAttributes({
+        "gen_ai.request.model": undefined,
       }),
     ).toEqual({});
   });
 });
 
 describe("aggregate", () => {
-  test("sums input tokens and keeps the first model", () => {
-    const a: AIMetadata = { model: "gpt-4.1-nano", inputTokens: 10 };
-    const b: AIMetadata = { model: "gpt-4o", inputTokens: 22 };
-    expect(aggregate(a, b)).toEqual({ model: "gpt-4.1-nano", inputTokens: 32 });
-  });
-
-  test("falls back to the second model when the first is absent", () => {
-    expect(
-      aggregate({ inputTokens: 5 }, { model: "gpt-4o", inputTokens: 3 }),
-    ).toEqual({ model: "gpt-4o", inputTokens: 8 });
-  });
-
-  test("treats a missing input token count as zero", () => {
-    expect(aggregate({ model: "a", inputTokens: 7 }, { model: "b" })).toEqual({
-      model: "a",
+  test("sums token-count fields across calls", () => {
+    const a: AIMetadata = {
+      inputTokens: 10,
+      outputTokens: 4,
+      totalTokens: 14,
+    };
+    const b: AIMetadata = {
       inputTokens: 7,
-    });
-    expect(aggregate({ model: "a" }, { model: "b", inputTokens: 4 })).toEqual({
-      model: "a",
-      inputTokens: 4,
+      outputTokens: 5,
+      totalTokens: 12,
+    };
+    expect(aggregate(a, b)).toEqual({
+      inputTokens: 17,
+      outputTokens: 9,
+      totalTokens: 26,
     });
   });
 
-  test("omits fields absent from both inputs", () => {
+  test("last-write-wins for non-summed fields", () => {
+    expect(
+      aggregate(
+        { requestModel: "gpt-4.1-nano", provider: "openai", responseId: "a" },
+        { requestModel: "gpt-4o", responseId: "b" },
+      ),
+    ).toEqual({ requestModel: "gpt-4o", provider: "openai", responseId: "b" });
+  });
+
+  test("replaces request parameters rather than summing them", () => {
+    expect(
+      aggregate(
+        { temperature: 0.7, maxTokens: 64, topP: 0.9 },
+        { temperature: 0.1, maxTokens: 32, seed: 42 },
+      ),
+    ).toEqual({
+      temperature: 0.1,
+      maxTokens: 32,
+      topP: 0.9,
+      seed: 42,
+    });
+  });
+
+  test("keeps fields present in only one input", () => {
+    expect(aggregate({ inputTokens: 10 }, { requestModel: "gpt-4o" })).toEqual({
+      inputTokens: 10,
+      requestModel: "gpt-4o",
+    });
+  });
+
+  test("replaces finish reasons rather than concatenating them", () => {
+    expect(
+      aggregate({ finishReasons: ["stop"] }, { finishReasons: ["tool_calls"] }),
+    ).toEqual({ finishReasons: ["tool_calls"] });
+  });
+
+  test("returns an empty object when both inputs are empty", () => {
     expect(aggregate({}, {})).toEqual({});
-    expect(aggregate({ model: "a" }, {})).toEqual({ model: "a" });
   });
 });
 
 describe("toInngestAIMetadataValues", () => {
-  test("maps both fields onto the server's snake_case schema", () => {
+  test("maps canonical fields onto the server's snake_case schema", () => {
     expect(
-      toInngestAIMetadataValues({ model: "gpt-4o", inputTokens: 42 }),
-    ).toEqual({ model: "gpt-4o", input_tokens: 42 });
-  });
-
-  test("omits absent fields rather than zero-valuing them", () => {
-    expect(toInngestAIMetadataValues({ model: "gpt-4o" })).toEqual({
-      model: "gpt-4o",
-    });
-    expect(toInngestAIMetadataValues({ inputTokens: 7 })).toEqual({
-      input_tokens: 7,
+      toInngestAIMetadataValues({
+        requestModel: "gpt-4o",
+        responseModel: "gpt-4o-2024-08-06",
+        provider: "openai",
+        operationName: "chat",
+        responseId: "chatcmpl-abc",
+        finishReasons: ["stop"],
+        inputTokens: 42,
+        outputTokens: 8,
+        totalTokens: 50,
+        cacheReadTokens: 30,
+        cacheCreationTokens: 12,
+        reasoningTokens: 4,
+        temperature: 0.7,
+        topP: 0.9,
+        maxTokens: 64,
+        frequencyPenalty: 0.2,
+        presencePenalty: 0.1,
+        seed: 42,
+      }),
+    ).toEqual({
+      request_model: "gpt-4o",
+      response_model: "gpt-4o-2024-08-06",
+      provider: "openai",
+      operation_name: "chat",
+      response_id: "chatcmpl-abc",
+      finish_reasons: ["stop"],
+      input_tokens: 42,
+      output_tokens: 8,
+      total_tokens: 50,
+      cache_read_tokens: 30,
+      cache_creation_tokens: 12,
+      reasoning_tokens: 4,
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 64,
+      frequency_penalty: 0.2,
+      presence_penalty: 0.1,
+      seed: 42,
     });
   });
 
   test("returns undefined when there is nothing to emit", () => {
     expect(toInngestAIMetadataValues({})).toBeUndefined();
+  });
+});
+
+describe("FIELD_SPECS", () => {
+  test("every source key is a gen_ai.* semantic convention attribute", () => {
+    // Guards the allowlist against typos: every source must live in the
+    // OpenTelemetry GenAI (`gen_ai.*`) namespace.
+    const nonGenAi = FIELD_SPECS.flatMap((spec) => [
+      spec.source,
+      ...(spec.fallbackSources ?? []),
+    ]).filter((source) => !source.startsWith("gen_ai."));
+
+    expect(nonGenAi).toEqual([]);
+  });
+
+  test("each canonical field is mapped at most once", () => {
+    const fields = FIELD_SPECS.map((spec) => spec.field);
+    expect(new Set(fields).size).toBe(fields.length);
   });
 });

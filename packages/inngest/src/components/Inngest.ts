@@ -63,6 +63,13 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import {
+  type ClientScore,
+  type ScoreExperimentOptions,
+  type ScoreOptions,
+  sendScore,
+  sendScoreExperiment,
+} from "./InngestScore.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 import { step } from "./InngestStepTools.ts";
 import { buildWrapSendEventChain, Middleware } from "./middleware/index.ts";
@@ -172,6 +179,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * Flag set by metadataMiddleware to enable step.metadata()
    */
   protected experimentalMetadataEnabled = false;
+
+  /**
+   * @internal
+   * Flag set by scoreMiddleware to enable step.score().
+   */
+  protected experimentalScoreEnabled = false;
 
   /**
    * A dummy Inngest function used in Durable Endpoints. This is necessary
@@ -317,6 +330,20 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       );
     }
     return new UnscopedMetadataBuilder(this);
+  }
+
+  /**
+   * Write scores. Call directly to write a live score for a run or step; use
+   * `inngest.score.experiment(...)` to attach a score to a `group.experiment()`
+   * variant.
+   *
+   * For standalone durable score writes, prefer `step.score()`.
+   */
+  get score(): ClientScore {
+    return Object.assign((options: ScoreOptions) => sendScore(this, options), {
+      experiment: (options: ScoreExperimentOptions) =>
+        sendScoreExperiment(this, options),
+    });
   }
 
   /**

@@ -1398,7 +1398,9 @@ export class InngestCommHandler<
       const method = await actions.method("starting streaming response");
 
       if (method === "POST") {
-        const { stream, finalize } = await createStream();
+        const { stream, finalize } = await createStream({
+          logger: this.client[internalLoggerSymbol],
+        });
 
         /**
          * Errors are handled by `handleAction` here to ensure that an
@@ -2212,15 +2214,10 @@ export class InngestCommHandler<
       headerReqVersion,
       this.client[internalLoggerSymbol],
     );
-    const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
 
     // Handle opting out of optimized parallelism
-    if (
-      version === ExecutionVersion.V2 &&
-      sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.() === false
-    ) {
+    if (fn.fn["shouldOptimizeParallelism"]?.() === false) {
       version = ExecutionVersion.V1;
     }
 

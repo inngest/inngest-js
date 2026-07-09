@@ -37,13 +37,13 @@
           },
           "spans": [
             {
-              "traceId": "9edeb6fd65fbf296ee80462bcd4e808c",
-              "spanId": "cf9915d84a388691",
-              "parentSpanId": "505c2c6eb0771b4c",
+              "traceId": "44497cb36fb5f36de951c785f510fee7",
+              "spanId": "dc95a3817cbbc4aa",
+              "parentSpanId": "80c4fc1e9d07e751",
               "name": "ai.generateText.doGenerate",
               "kind": 1,
-              "startTimeUnixNano": "1780439004465000000",
-              "endTimeUnixNano": "1780439005443235291",
+              "startTimeUnixNano": "1781569377528000000",
+              "endTimeUnixNano": "1781569378103159084",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -126,13 +126,13 @@
                 {
                   "key": "ai.response.toolCalls",
                   "value": {
-                    "stringValue": "[{\"toolCallId\":\"call_ZkWrmkxIUp5GS5Oij0RZHM6W\",\"toolName\":\"get_weather\",\"input\":\"{\\\"city\\\":\\\"Paris\\\"}\"}]"
+                    "stringValue": "[{\"toolCallId\":\"call_t623cUrhKnjGe0oSUgUSfscn\",\"toolName\":\"get_weather\",\"input\":\"{\\\"city\\\": \\\"Paris\\\"}\"}]"
                   }
                 },
                 {
                   "key": "ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmRo4ru2GBGYvimObCx5jGYZ8uk0r"
+                    "stringValue": "chatcmpl-DrBrthIp6Qs0mY9a1VKXPa8s03XKf"
                   }
                 },
                 {
@@ -144,7 +144,7 @@
                 {
                   "key": "ai.response.timestamp",
                   "value": {
-                    "stringValue": "2026-06-02T22:23:24.000Z"
+                    "stringValue": "2026-06-16T00:22:57.000Z"
                   }
                 },
                 {
@@ -174,13 +174,13 @@
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": 14
+                    "intValue": 30
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": 14
+                    "intValue": 30
                   }
                 },
                 {
@@ -192,7 +192,7 @@
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": 70
+                    "intValue": 86
                   }
                 },
                 {
@@ -222,7 +222,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmRo4ru2GBGYvimObCx5jGYZ8uk0r"
+                    "stringValue": "chatcmpl-DrBrthIp6Qs0mY9a1VKXPa8s03XKf"
                   }
                 },
                 {
@@ -240,7 +240,7 @@
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 14
+                    "intValue": 30
                   }
                 }
               ],
@@ -255,12 +255,12 @@
               "flags": 257
             },
             {
-              "traceId": "9edeb6fd65fbf296ee80462bcd4e808c",
-              "spanId": "505c2c6eb0771b4c",
+              "traceId": "44497cb36fb5f36de951c785f510fee7",
+              "spanId": "80c4fc1e9d07e751",
               "name": "ai.generateText",
               "kind": 1,
-              "startTimeUnixNano": "1780439004465000000",
-              "endTimeUnixNano": "1780439005444689750",
+              "startTimeUnixNano": "1781569377527000000",
+              "endTimeUnixNano": "1781569378103776375",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -313,7 +313,7 @@
                 {
                   "key": "ai.response.toolCalls",
                   "value": {
-                    "stringValue": "[{\"toolCallId\":\"call_ZkWrmkxIUp5GS5Oij0RZHM6W\",\"toolName\":\"get_weather\",\"input\":\"{\\\"city\\\":\\\"Paris\\\"}\"}]"
+                    "stringValue": "[{\"toolCallId\":\"call_t623cUrhKnjGe0oSUgUSfscn\",\"toolName\":\"get_weather\",\"input\":\"{\\\"city\\\": \\\"Paris\\\"}\"}]"
                   }
                 },
                 {
@@ -343,13 +343,13 @@
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": 14
+                    "intValue": 30
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": 14
+                    "intValue": 30
                   }
                 },
                 {
@@ -361,7 +361,7 @@
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": 70
+                    "intValue": 86
                   }
                 },
                 {

@@ -529,8 +529,20 @@ export type DeferFn = <TFn extends DeferredFunction.Any>(
       ? D
       : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
         Record<string, any>;
+    /** Attribute the deferred scorer's result to this experiment variant. */
+    experiment?: ExperimentRef;
   },
 ) => void;
+
+/**
+ * A replay-stable handle to a selected experiment variant, returned by
+ * `group.experiment()`. Pass it to `inngest.score.experiment()` or
+ * `defer(id, { experiment })` to attribute a later score to this variant.
+ */
+export type ExperimentRef = {
+  experimentName: string;
+  variant: string;
+};
 
 /**
  * Base context object, omitting any extras that may be added by middleware or

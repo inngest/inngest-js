@@ -91,7 +91,35 @@ describe("InngestMetadataSpanProcessor", () => {
       "gen_ai.usage.input_tokens": 42,
     });
 
-    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 42 }]);
+    expect(pushed).toEqual([{ requestModel: "gpt-4.1-nano", inputTokens: 42 }]);
+  });
+
+  test("captures only allowlisted fields; content never reaches the sink", () => {
+    const { processor, tracer } = setup();
+    const { root, pushed } = declaredRoot(processor, tracer);
+
+    endChild(tracer, root, "llm", {
+      "gen_ai.request.model": "gpt-4.1-nano",
+      "gen_ai.usage.input_tokens": 42,
+      "gen_ai.prompt": "secret prompt",
+      "gen_ai.input.messages": "secret question",
+      "gen_ai.completion": "secret completion",
+    });
+
+    // Only the allowlisted signal reaches the sink; content is never captured.
+    expect(pushed).toEqual([{ requestModel: "gpt-4.1-nano", inputTokens: 42 }]);
+  });
+
+  test("does not call the sink when a span carries only content attributes", () => {
+    const { processor, tracer } = setup();
+    const { root, pushed } = declaredRoot(processor, tracer);
+
+    endChild(tracer, root, "llm", {
+      "gen_ai.prompt": "secret prompt",
+      "gen_ai.input.messages": "secret question",
+    });
+
+    expect(pushed).toEqual([]);
   });
 
   test("pushes once per span; aggregation is the sink owner's job", () => {
@@ -108,8 +136,8 @@ describe("InngestMetadataSpanProcessor", () => {
     });
 
     expect(pushed).toEqual([
-      { model: "gpt-4.1-nano", inputTokens: 10 },
-      { model: "gpt-4.1-mini", inputTokens: 5 },
+      { requestModel: "gpt-4.1-nano", inputTokens: 10 },
+      { requestModel: "gpt-4.1-mini", inputTokens: 5 },
     ]);
   });
 
@@ -137,7 +165,7 @@ describe("InngestMetadataSpanProcessor", () => {
     });
     mid.end();
 
-    expect(pushed).toEqual([{ model: "gpt-4.1-nano", inputTokens: 7 }]);
+    expect(pushed).toEqual([{ requestModel: "gpt-4.1-nano", inputTokens: 7 }]);
   });
 
   test("ignores spans that are not part of a declared run", () => {

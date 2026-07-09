@@ -95,7 +95,20 @@ describe("buildTarget", () => {
 
     expect(target).toEqual({
       run_id: "other-run",
-      step_attempt: 1,
+      step_id: "custom-step",
+    });
+  });
+
+  test("does not leak context attempt into explicit step target", () => {
+    const target = buildTarget({ stepId: "custom-step" }, {
+      execution: {
+        ctx: { runId: "current-run", attempt: 1 },
+        executingStep: { id: "step-ctx" },
+      },
+    } as unknown as als.AsyncContext);
+
+    expect(target).toEqual({
+      run_id: "current-run",
       step_id: "custom-step",
     });
   });
@@ -179,6 +192,48 @@ describe("buildTarget", () => {
         step_attempt: 2,
       });
     });
+  });
+});
+
+describe('"lost on retries" warning at function-body level', () => {
+  const clientAtBodyLevel = () => {
+    vi.spyOn(als, "getAsyncCtx").mockResolvedValue({
+      execution: { ctx: { runId: "run-1" } },
+    } as unknown as als.AsyncContext);
+
+    const client = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      middleware: [experimental.scoreMiddleware()],
+    });
+    vi.spyOn(
+      client as unknown as { updateMetadata: () => Promise<void> },
+      "updateMetadata",
+    ).mockResolvedValue(undefined);
+    vi.spyOn(client[internalLoggerSymbol], "warn").mockImplementation(() => {});
+    return client;
+  };
+
+  test("inngest.score.experiment() does not warn b/c it's meant to run here", async () => {
+    const client = clientAtBodyLevel();
+
+    await client.score.experiment({
+      name: "satisfaction",
+      value: 1,
+      experiment: { experimentName: "summary-strategy", variant: "concise" },
+    });
+
+    expect(client[internalLoggerSymbol].warn).not.toHaveBeenCalled();
+  });
+
+  test("userland metadata.update() still warns", async () => {
+    const client = clientAtBodyLevel();
+
+    await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
+
+    expect(client[internalLoggerSymbol].warn).toHaveBeenCalledWith(
+      expect.stringContaining("may be lost on retries"),
+    );
   });
 });
 

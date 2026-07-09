@@ -1,5 +1,61 @@
 # inngest
 
+## 4.12.0
+
+### Minor Changes
+
+- [#1376](https://github.com/inngest/inngest-js/pull/1376) [`525a6743`](https://github.com/inngest/inngest-js/commit/525a6743d0c58dd77dce857e5d7c9294eab639d3) Thanks [@gwax](https://github.com/gwax)! - Add streaming support to `inngest/sveltekit` serve handlers.
+
+### Patch Changes
+
+- [#1620](https://github.com/inngest/inngest-js/pull/1620) [`08ef03b9`](https://github.com/inngest/inngest-js/commit/08ef03b9b7a1188c99a3ded1f8439a7591fab317) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Fix run hangs on parallel steps when optimizeParallelism is off
+
+- [#1615](https://github.com/inngest/inngest-js/pull/1615) [`9b5ea64c`](https://github.com/inngest/inngest-js/commit/9b5ea64cfb918729451ee2e32db3fdc89b29e8b1) Thanks [@Linell](https://github.com/Linell)! - Fix a crash when using `serve({ streaming: true })` and the client disconnects before a run completes
+
+- [#1618](https://github.com/inngest/inngest-js/pull/1618) [`922e2024`](https://github.com/inngest/inngest-js/commit/922e202415b5d100f4f1608d59d953af9c7b8123) Thanks [@Linell](https://github.com/Linell)! - Fix `step.run` and `step.invoke` output types collapsing to `{}` for objects with optional properties when using two or more middleware
+
+## 4.11.0
+
+### Minor Changes
+
+- [#1601](https://github.com/inngest/inngest-js/pull/1601) [`2b800c73`](https://github.com/inngest/inngest-js/commit/2b800c73cba6a2ff106517d2cd406628b7240c72) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing operation name for AI Metadata Extraction
+
+## 4.10.0
+
+### Minor Changes
+
+- [#1599](https://github.com/inngest/inngest-js/pull/1599) [`c02cc265`](https://github.com/inngest/inngest-js/commit/c02cc265bfe73ead0a761c80ddcad52393193649) Thanks [@scottnuma](https://github.com/scottnuma)! - Support deprecated `gen_ai.system` for AI Metadata Extraction
+
+- [#1600](https://github.com/inngest/inngest-js/pull/1600) [`2462e875`](https://github.com/inngest/inngest-js/commit/2462e875c01b43f9b24a386d5cc7655fc64be37e) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing finish reasons for AI Metadata Extraction
+
+### Patch Changes
+
+- [#1605](https://github.com/inngest/inngest-js/pull/1605) [`cd18ed18`](https://github.com/inngest/inngest-js/commit/cd18ed1843ab2696b87778c0e947ad7d77f7feaf) Thanks [@Linell](https://github.com/Linell)! - Suppress unnecessary warning log for inngest.experiment.score.
+
+- [#1602](https://github.com/inngest/inngest-js/pull/1602) [`e2e89ead`](https://github.com/inngest/inngest-js/commit/e2e89ead7475cec06693d4357b920820a1687ecf) Thanks [@amh4r](https://github.com/amh4r)! - Fix Extended Traces not appearing when checkpointing disabled
+
+## 4.9.0
+
+### Minor Changes
+
+- [#1594](https://github.com/inngest/inngest-js/pull/1594) [`124e55f8`](https://github.com/inngest/inngest-js/commit/124e55f8d159af9145a073c9756a6281da60185b) Thanks [@scottnuma](https://github.com/scottnuma)! - Expand AI step metadata extraction to more OTel GenAI span attributes. The SDK now records additional model, provider, response id, token, and request parameter fields from OTel GenAI spans while continuing to ignore prompt and response content.
+
+  This removes the previous metadata extraction for Open Inference, Vercel AI SDK-specific, and Langfuse-specific span attributes.
+
+## 4.8.0
+
+### Minor Changes
+
+- [#1595](https://github.com/inngest/inngest-js/pull/1595) [`aa315c7e`](https://github.com/inngest/inngest-js/commit/aa315c7ec9b99a69a7f85720e2805991b3e23841) Thanks [@amh4r](https://github.com/amh4r)! - Add opt-out for AI metadata extraction
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental createScorer function
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental scoring primitives for writing run- and step-scoped `inngest.score` metadata via `inngest.score()` and `scoreMiddleware()`-gated `step.score()`.
+
+### Patch Changes
+
+- [#1592](https://github.com/inngest/inngest-js/pull/1592) [`748c6cc4`](https://github.com/inngest/inngest-js/commit/748c6cc4fb167af9223c2b87d6c6543245d1428b) Thanks [@amh4r](https://github.com/amh4r)! - Deprecate Extended Traces provider creation. `behaviour: "createProvider"` and the `"auto"` fallback remain functional, but now direct users to preload `@inngest/otel/node` and extend that provider instead.
+
 ## 4.7.0
 
 ### Minor Changes

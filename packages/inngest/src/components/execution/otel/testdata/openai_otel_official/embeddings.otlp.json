@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "0b86fbb2f288e32732346596c4b82208",
-              "spanId": "b84f6c806ad61910",
+              "traceId": "cf524eddbd6e4f954e43c27845b15b6d",
+              "spanId": "196bc934b8e74de2",
               "name": "embeddings text-embedding-3-small",
               "kind": 3,
-              "startTimeUnixNano": "1780434684168000000",
-              "endTimeUnixNano": "1780434685114472500",
+              "startTimeUnixNano": "1781569327089000000",
+              "endTimeUnixNano": "1781569327482735125",
               "attributes": [
                 {
                   "key": "gen_ai.operation.name",

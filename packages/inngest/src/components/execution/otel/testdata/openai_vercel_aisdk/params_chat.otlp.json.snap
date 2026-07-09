@@ -2,15 +2,24 @@
   {
     "span": "ai.generateText.doGenerate",
     "metadata": {
-      "model": "gpt-4.1-nano",
-      "inputTokens": 22
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "provider": "openai.chat",
+      "responseId": "chatcmpl-DrBrtFuAQlLXg4oa4L76UUtX9ck0t",
+      "finishReasons": [
+        "stop"
+      ],
+      "inputTokens": 22,
+      "outputTokens": 6,
+      "temperature": 0.7,
+      "topP": 0.9,
+      "maxTokens": 64,
+      "frequencyPenalty": 0.2,
+      "presencePenalty": 0.1
     }
   },
   {
     "span": "ai.generateText",
-    "metadata": {
-      "model": "gpt-4.1-nano",
-      "inputTokens": 22
-    }
+    "metadata": {}
   }
 ]

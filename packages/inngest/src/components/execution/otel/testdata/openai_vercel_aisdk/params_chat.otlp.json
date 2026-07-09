@@ -37,13 +37,13 @@
           },
           "spans": [
             {
-              "traceId": "52aa4f38f796c9a3780be9ba873bfa11",
-              "spanId": "211eb7bc464ce3c0",
-              "parentSpanId": "ba4b176174f9fa9e",
+              "traceId": "aa51020563f3dcd749dd8d009cdf5b6d",
+              "spanId": "3ac28ddfb5285626",
+              "parentSpanId": "0aff06eda23db76f",
               "name": "ai.generateText.doGenerate",
               "kind": 1,
-              "startTimeUnixNano": "1780439003460000000",
-              "endTimeUnixNano": "1780439004464254666",
+              "startTimeUnixNano": "1781569377092000000",
+              "endTimeUnixNano": "1781569377526149250",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -204,7 +204,7 @@
                 {
                   "key": "ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmRo36qp18PR3bwmtZfTN9ElKOUVx"
+                    "stringValue": "chatcmpl-DrBrtFuAQlLXg4oa4L76UUtX9ck0t"
                   }
                 },
                 {
@@ -216,7 +216,7 @@
                 {
                   "key": "ai.response.timestamp",
                   "value": {
-                    "stringValue": "2026-06-02T22:23:23.000Z"
+                    "stringValue": "2026-06-16T00:22:57.000Z"
                   }
                 },
                 {
@@ -294,7 +294,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmRo36qp18PR3bwmtZfTN9ElKOUVx"
+                    "stringValue": "chatcmpl-DrBrtFuAQlLXg4oa4L76UUtX9ck0t"
                   }
                 },
                 {
@@ -327,12 +327,12 @@
               "flags": 257
             },
             {
-              "traceId": "52aa4f38f796c9a3780be9ba873bfa11",
-              "spanId": "ba4b176174f9fa9e",
+              "traceId": "aa51020563f3dcd749dd8d009cdf5b6d",
+              "spanId": "0aff06eda23db76f",
               "name": "ai.generateText",
               "kind": 1,
-              "startTimeUnixNano": "1780439003460000000",
-              "endTimeUnixNano": "1780439004464672625",
+              "startTimeUnixNano": "1781569377092000000",
+              "endTimeUnixNano": "1781569377526591084",
               "attributes": [
                 {
                   "key": "operation.name",

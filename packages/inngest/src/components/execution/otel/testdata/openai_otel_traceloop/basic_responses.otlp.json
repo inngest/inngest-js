@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "95f970e7f520e050c7e1f34e277e3a2b",
-              "spanId": "aea64bcf48bb7064",
+              "traceId": "72e70df6c6d81487f256268c8b957d7e",
+              "spanId": "7e40627ff782f3d9",
               "name": "chat gpt-5.4-nano",
               "kind": 3,
-              "startTimeUnixNano": "1780434766783000000",
-              "endTimeUnixNano": "1780434768163572417",
+              "startTimeUnixNano": "1781569359201000000",
+              "endTimeUnixNano": "1781569360316421042",
               "attributes": [
                 {
                   "key": "gen_ai.provider.name",
@@ -78,7 +78,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "resp_0ba2819472261845006a1f474f066c819983ffb0a8d045e3d5"
+                    "stringValue": "resp_0bd56df113f7e736006a30974f58008198a1e6e04b34495b9d"
                   }
                 },
                 {
@@ -90,13 +90,13 @@
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": 44
+                    "intValue": 43
                   }
                 },
                 {
                   "key": "gen_ai.usage.total_tokens",
                   "value": {
-                    "intValue": 61
+                    "intValue": 60
                   }
                 },
                 {
@@ -114,7 +114,7 @@
                 {
                   "key": "gen_ai.output.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"Once upon a moonlit night, a gentle unicorn trotted through a field of glowing daisies, sprinkling stardust with every step until the whole sky yawned into dream-filled sleep.\"}]}]"
+                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"Under a moonlit sky, a gentle unicorn tiptoed through the quiet meadow, sprinkling stardust on sleepy flowers until the night itself yawned contentedly and everything dreamed softly.\"}]}]"
                   }
                 }
               ],

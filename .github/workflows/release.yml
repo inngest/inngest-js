@@ -99,6 +99,9 @@ jobs:
       - run: pnpm build
         if: matrix.package != 'inngest'
 
+      - run: pnpm run test
+        if: matrix.package == 'otel'
+
       - name: Prerelease PR
         run: |
           export TAG=pr-${{ github.event.pull_request.number }}

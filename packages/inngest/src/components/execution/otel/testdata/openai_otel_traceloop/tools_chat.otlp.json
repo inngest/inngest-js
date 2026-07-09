@@ -38,12 +38,12 @@
           },
           "spans": [
             {
-              "traceId": "d764d92d0b17bbf599738c8a3480ed4d",
-              "spanId": "673d6c3726c46220",
+              "traceId": "6fdab9d72e9459db2c2768daa0282b45",
+              "spanId": "28b8f13cacafcb3a",
               "name": "chat gpt-4.1-nano",
               "kind": 3,
-              "startTimeUnixNano": "1780434768648000000",
-              "endTimeUnixNano": "1780434769285008375",
+              "startTimeUnixNano": "1781569360998000000",
+              "endTimeUnixNano": "1781569361709927041",
               "attributes": [
                 {
                   "key": "gen_ai.provider.name",
@@ -84,7 +84,7 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "chatcmpl-DmQhkWBiDrfqwzKv6CFoRu2DACmfB"
+                    "stringValue": "chatcmpl-DrBrdE6062DJuFbeqgRecOx9OQ3WK"
                   }
                 },
                 {
@@ -120,7 +120,7 @@
                 {
                   "key": "gen_ai.output.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"tool_call\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"call_LHX7eZPJ3MbyWgBdg4Pk9idO\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\"}}]}]"
+                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"tool_call\",\"parts\":[{\"type\":\"tool_call\",\"id\":\"call_ewvtql7bYtkdDFoMYcjnlkP1\",\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\"}}]}]"
                   }
                 }
               ],

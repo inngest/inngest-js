@@ -231,6 +231,13 @@ export enum internalEvents {
   DeferredSchedule = "inngest/deferred.schedule",
 }
 
+/**
+ * Reserved input key that carries the `defer(id, { experiment })` ref to the
+ * deferred run; the receiver strips it before the handler or schema validation
+ * see the data.
+ */
+export const deferExperimentKey = "_inngestExperiment";
+
 export const logPrefix: string = "[Inngest]";
 
 export const debugPrefix = "inngest";
