@@ -187,58 +187,19 @@ test("defer in step", async () => {
   await deferState.waitForRunComplete();
 });
 
-matrixCheckpointing("defer at end of function", async (checkpointing) => {
-  // Ensure that we respond with `[DeferAdd, RunComplete]` opcodes when
-  // encountering a defer at the end of the function. This is necessary because
-  // the Executor errors when it only receives a `[DeferAdd]` opcode response.
-  //
-  // While this test might seem like overkill, we added it because we
-  // encountered a regression.
-
-  const parentState = createState({ requestCount: 0 });
-  const deferState = createState({});
-
-  const client = new Inngest({
-    id: randomSuffix(testFileName),
-    isDev: true,
-    checkpointing,
-  });
-  const eventName = randomSuffix("evt");
-  const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
-    deferState.runId = runId;
-  });
-  const fn = client.createFunction(
-    {
-      id: "fn",
-      retries: 0,
-      triggers: { event: eventName },
-    },
-    async ({ defer, runId }) => {
-      parentState.runId = runId;
-      parentState.requestCount++;
-      defer("foo", { function: foo, data: {} });
-    },
-  );
-  await createTestApp({
-    client,
-    functions: [fn, foo],
-    serve: createServer,
-  });
-
-  await client.send({ name: eventName, data: {} });
-  await parentState.waitForRunComplete();
-  await deferState.waitForRunComplete();
-  expect(parentState.requestCount).toBe(1);
-});
-
 matrixCheckpointing(
-  "defer fires when parent throws after defer() call",
+  "defer at end of successful function",
   async (checkpointing) => {
-    // Ensure that `defer()` still works even if an error is thrown immediately
-    // after it
+    // Ensure that we respond with `[DeferAdd, RunComplete]` opcodes when
+    // encountering a defer at the end of the function. This is necessary
+    // because the Executor errors when it only receives a `[DeferAdd]` opcode
+    // response.
+    //
+    // While this test might seem like overkill, we added it because we
+    // encountered a regression.
 
+    const parentState = createState({ requestCount: 0 });
     const deferState = createState({});
-    const parentState = createState({});
 
     const client = new Inngest({
       id: randomSuffix(testFileName),
@@ -257,6 +218,51 @@ matrixCheckpointing(
       },
       async ({ defer, runId }) => {
         parentState.runId = runId;
+        parentState.requestCount++;
+        defer("foo", { function: foo, data: {} });
+      },
+    );
+    await createTestApp({
+      client,
+      functions: [fn, foo],
+      serve: createServer,
+    });
+
+    await client.send({ name: eventName, data: {} });
+    await parentState.waitForRunComplete();
+    await deferState.waitForRunComplete();
+    expect(parentState.requestCount).toBe(1);
+  },
+);
+
+matrixCheckpointing(
+  "defer at end of failed function",
+  async (checkpointing) => {
+    // Ensure that we respond with `[DeferAdd, RunError]` opcodes when the
+    // function throws immediately after a defer with no retries remaining. The
+    // defer must still fire even though the run fails.
+
+    const parentState = createState({ requestCount: 0 });
+    const deferState = createState({});
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      checkpointing,
+    });
+    const eventName = randomSuffix("evt");
+    const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
+      deferState.runId = runId;
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ defer, runId }) => {
+        parentState.runId = runId;
+        parentState.requestCount++;
         defer("foo", { function: foo, data: {} });
         throw new Error("oh no");
       },
@@ -268,8 +274,67 @@ matrixCheckpointing(
     });
 
     await client.send({ name: eventName, data: {} });
-    await parentState.waitForRunFailed();
+    const error = await parentState.waitForRunFailed();
+    expect(error).toMatchObject({ message: "oh no" });
     await deferState.waitForRunComplete();
+    expect(parentState.requestCount).toBe(1);
+  },
+);
+
+matrixCheckpointing(
+  "defer at end of errored function",
+  async (checkpointing) => {
+    // Ensure that we respond with `[DeferAdd, RunError]` opcodes when the
+    // function throws immediately after a defer but still has retries
+    // remaining. The run must complete on retry and the defer must fire
+    // exactly once, since the retry re-encounters the memoized defer.
+    //
+    // We added this test because a regression reported the function-level
+    // error as a `StepError` opcode, creating a false step in traces.
+
+    const parentState = createState({ requestCount: 0 });
+    const deferState = createState({ counter: 0 });
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      checkpointing,
+    });
+    const eventName = randomSuffix("evt");
+    const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
+      deferState.runId = runId;
+      deferState.counter++;
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 1,
+        triggers: { event: eventName },
+      },
+      async ({ attempt, defer, runId }) => {
+        parentState.runId = runId;
+        parentState.requestCount++;
+        defer("foo", { function: foo, data: {} });
+
+        if (attempt === 0) {
+          throw new Error("oh no");
+        }
+      },
+    );
+    await createTestApp({
+      client,
+      functions: [fn, foo],
+      serve: createServer,
+    });
+
+    await client.send({ name: eventName, data: {} });
+    await parentState.waitForRunComplete();
+    await deferState.waitForRunComplete();
+    expect(parentState.requestCount).toBe(2);
+
+    // Wait long enough to give a 2nd defer a chance to trigger (it shouldn't)
+    await sleep(5000);
+    expect(deferState.counter).toBe(1);
   },
 );
 

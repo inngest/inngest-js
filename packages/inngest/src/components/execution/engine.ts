@@ -435,6 +435,9 @@ class InngestExecutionEngine
         return result;
       }
 
+      // Intentionally no `attachLazyOps`: the backend's checkpoint ingestion
+      // rejects `RunError`, so buffered defer ops are dropped here. Known
+      // gap; see defer.md "Known gaps (correctness)".
       if (this.options.stepMode === StepMode.Sync) {
         return this.transformOutput({ error });
       }
@@ -2752,6 +2755,7 @@ class InngestExecutionEngine
         // collide with a user calling `defer("x:abort", ...)`.
         id: _internals.hashId(`${targetHashedId}:abort`),
         op: StepOpCode.DeferAbort,
+        name: id,
         displayName: id,
         opts: { target_hashed_id: targetHashedId, fn_slug: fnSlug, id },
         data: null,
