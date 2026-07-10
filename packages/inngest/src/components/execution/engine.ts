@@ -33,6 +33,7 @@ import {
   retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { stringify } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import {
   isRecord,
@@ -916,7 +917,7 @@ class InngestExecutionEngine
         // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
-          data: stepResult.data,
+          data: stepToResume.data,
         });
       }
 
@@ -2848,7 +2849,14 @@ class InngestExecutionEngine
       );
     }
 
-    const data = undefinedToNull(resultOp.data);
+    // Simulate a round trip. If we don't do this, then `step.run` can return
+    // non-JSON when it checkpointed. This is problematic because reentering the
+    // function would result in a different return value (e.g. retrying after a
+    // later error).
+    //
+    // Note that serializer middleware will still run after this. So serializers
+    // like "Date object preserver" will continue to work.
+    const data = JSON.parse(stringify(undefinedToNull(resultOp.data)));
 
     userlandStep.data = data;
     userlandStep.timing = resultOp.timing;
