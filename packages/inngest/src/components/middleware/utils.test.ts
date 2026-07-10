@@ -71,6 +71,12 @@ describe("stepTypeFromOpCode", () => {
     );
   });
 
+  test("WaitForSignal returns 'waitForSignal'", () => {
+    expect(
+      stepTypeFromOpCode(StepOpCode.WaitForSignal, undefined, logger),
+    ).toBe("waitForSignal");
+  });
+
   test("AiGateway with type 'step.ai.infer' returns 'ai.infer'", () => {
     expect(
       stepTypeFromOpCode(

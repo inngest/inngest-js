@@ -47,7 +47,9 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.nodeVersion }}
+          # TODO (EXE-1981): Unpin this. We had to pin it due to networking
+          # issues in Node 24.17.0.
+          node-version: ${{ matrix.nodeVersion == 24 && '24.16.0' || matrix.nodeVersion }}
       - run: |
           node --version
           npm --version
@@ -93,7 +95,7 @@ jobs:
       - name: Check publishing types health
         id: typescheck
         continue-on-error: true
-        run: pnpm dlx @arethetypeswrong/cli inngest.tgz
+        run: pnpm exec attw inngest.tgz
 
       - name: Fail if any checks failed
         if: steps.publint.outcome != 'success' || steps.typescheck.outcome != 'success'
@@ -224,6 +226,24 @@ jobs:
           build: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+
+  "otel_checks":
+    name: "otel: Checks"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/otel
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: true
+          build: false
+      - run: pnpm run type-check
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run test
+      - run: pnpm run build
 
   "test_test":
     name: "test: Test"

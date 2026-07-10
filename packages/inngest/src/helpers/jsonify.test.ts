@@ -108,6 +108,35 @@ describe("Jsonify", () => {
     });
   });
 
+  // The property-access assertions are the real guards here: the `IsEqual`
+  // assertions pass even on broken variants because the deferred aliases
+  // compare equal before resolution.
+  describe("#1532", () => {
+    test("re-applying Jsonify to an object with optional properties is a no-op", () => {
+      type Widget = { media: { mediaId: string; label?: string }[] };
+
+      type Once = Jsonify<Widget>;
+      type Twice = Jsonify<Once>;
+
+      assertType<IsEqual<Once, Twice>>(true);
+      assertType<IsEqual<Twice["media"][number]["mediaId"], string>>(true);
+    });
+
+    test("re-applying Jsonify to a mapped type with optional properties is a no-op", () => {
+      interface Foo {
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
+        [x: string]: any;
+        items: { id: string; label?: string }[];
+      }
+
+      type Once = Jsonify<Foo>;
+      type Twice = Jsonify<Once>;
+
+      assertType<IsEqual<Once, Twice>>(true);
+      assertType<IsEqual<Twice["items"][number]["id"], string>>(true);
+    });
+  });
+
   describe("#537", () => {
     describe("nested { name: string; } object is preserved", () => {
       test("when nullable", () => {

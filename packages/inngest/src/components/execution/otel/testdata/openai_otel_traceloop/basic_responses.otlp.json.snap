@@ -1,0 +1,18 @@
+[
+  {
+    "span": "chat gpt-5.4-nano",
+    "metadata": {
+      "requestModel": "gpt-5.4-nano",
+      "responseModel": "gpt-5.4-nano-2026-03-17",
+      "provider": "openai",
+      "operationName": "chat",
+      "responseId": "resp_0bd56df113f7e736006a30974f58008198a1e6e04b34495b9d",
+      "finishReasons": [
+        "stop"
+      ],
+      "inputTokens": 17,
+      "outputTokens": 43,
+      "totalTokens": 60
+    }
+  }
+]

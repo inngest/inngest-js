@@ -1,5 +1,143 @@
 # inngest
 
+## 4.12.0
+
+### Minor Changes
+
+- [#1376](https://github.com/inngest/inngest-js/pull/1376) [`525a6743`](https://github.com/inngest/inngest-js/commit/525a6743d0c58dd77dce857e5d7c9294eab639d3) Thanks [@gwax](https://github.com/gwax)! - Add streaming support to `inngest/sveltekit` serve handlers.
+
+### Patch Changes
+
+- [#1620](https://github.com/inngest/inngest-js/pull/1620) [`08ef03b9`](https://github.com/inngest/inngest-js/commit/08ef03b9b7a1188c99a3ded1f8439a7591fab317) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Fix run hangs on parallel steps when optimizeParallelism is off
+
+- [#1615](https://github.com/inngest/inngest-js/pull/1615) [`9b5ea64c`](https://github.com/inngest/inngest-js/commit/9b5ea64cfb918729451ee2e32db3fdc89b29e8b1) Thanks [@Linell](https://github.com/Linell)! - Fix a crash when using `serve({ streaming: true })` and the client disconnects before a run completes
+
+- [#1618](https://github.com/inngest/inngest-js/pull/1618) [`922e2024`](https://github.com/inngest/inngest-js/commit/922e202415b5d100f4f1608d59d953af9c7b8123) Thanks [@Linell](https://github.com/Linell)! - Fix `step.run` and `step.invoke` output types collapsing to `{}` for objects with optional properties when using two or more middleware
+
+## 4.11.0
+
+### Minor Changes
+
+- [#1601](https://github.com/inngest/inngest-js/pull/1601) [`2b800c73`](https://github.com/inngest/inngest-js/commit/2b800c73cba6a2ff106517d2cd406628b7240c72) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing operation name for AI Metadata Extraction
+
+## 4.10.0
+
+### Minor Changes
+
+- [#1599](https://github.com/inngest/inngest-js/pull/1599) [`c02cc265`](https://github.com/inngest/inngest-js/commit/c02cc265bfe73ead0a761c80ddcad52393193649) Thanks [@scottnuma](https://github.com/scottnuma)! - Support deprecated `gen_ai.system` for AI Metadata Extraction
+
+- [#1600](https://github.com/inngest/inngest-js/pull/1600) [`2462e875`](https://github.com/inngest/inngest-js/commit/2462e875c01b43f9b24a386d5cc7655fc64be37e) Thanks [@scottnuma](https://github.com/scottnuma)! - Support parsing finish reasons for AI Metadata Extraction
+
+### Patch Changes
+
+- [#1605](https://github.com/inngest/inngest-js/pull/1605) [`cd18ed18`](https://github.com/inngest/inngest-js/commit/cd18ed1843ab2696b87778c0e947ad7d77f7feaf) Thanks [@Linell](https://github.com/Linell)! - Suppress unnecessary warning log for inngest.experiment.score.
+
+- [#1602](https://github.com/inngest/inngest-js/pull/1602) [`e2e89ead`](https://github.com/inngest/inngest-js/commit/e2e89ead7475cec06693d4357b920820a1687ecf) Thanks [@amh4r](https://github.com/amh4r)! - Fix Extended Traces not appearing when checkpointing disabled
+
+## 4.9.0
+
+### Minor Changes
+
+- [#1594](https://github.com/inngest/inngest-js/pull/1594) [`124e55f8`](https://github.com/inngest/inngest-js/commit/124e55f8d159af9145a073c9756a6281da60185b) Thanks [@scottnuma](https://github.com/scottnuma)! - Expand AI step metadata extraction to more OTel GenAI span attributes. The SDK now records additional model, provider, response id, token, and request parameter fields from OTel GenAI spans while continuing to ignore prompt and response content.
+
+  This removes the previous metadata extraction for Open Inference, Vercel AI SDK-specific, and Langfuse-specific span attributes.
+
+## 4.8.0
+
+### Minor Changes
+
+- [#1595](https://github.com/inngest/inngest-js/pull/1595) [`aa315c7e`](https://github.com/inngest/inngest-js/commit/aa315c7ec9b99a69a7f85720e2805991b3e23841) Thanks [@amh4r](https://github.com/amh4r)! - Add opt-out for AI metadata extraction
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental createScorer function
+
+- [#1521](https://github.com/inngest/inngest-js/pull/1521) [`a69ec0e2`](https://github.com/inngest/inngest-js/commit/a69ec0e25acbf5c3a45b547ccf9d4d6819580a86) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental scoring primitives for writing run- and step-scoped `inngest.score` metadata via `inngest.score()` and `scoreMiddleware()`-gated `step.score()`.
+
+### Patch Changes
+
+- [#1592](https://github.com/inngest/inngest-js/pull/1592) [`748c6cc4`](https://github.com/inngest/inngest-js/commit/748c6cc4fb167af9223c2b87d6c6543245d1428b) Thanks [@amh4r](https://github.com/amh4r)! - Deprecate Extended Traces provider creation. `behaviour: "createProvider"` and the `"auto"` fallback remain functional, but now direct users to preload `@inngest/otel/node` and extend that provider instead.
+
+## 4.7.0
+
+### Minor Changes
+
+- [#1577](https://github.com/inngest/inngest-js/pull/1577) [`1bc2ac7c`](https://github.com/inngest/inngest-js/commit/1bc2ac7c1949a61e472334b832691e7dfd85290e) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing LLM calls instrumented with OTel by Langfuse
+
+- [#1547](https://github.com/inngest/inngest-js/pull/1547) [`04a79c95`](https://github.com/inngest/inngest-js/commit/04a79c95294e08e04a6dd5fdd1ba3d2fc70d014c) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add `sessions` to event payloads
+
+### Patch Changes
+
+- [#1588](https://github.com/inngest/inngest-js/pull/1588) [`50a349b7`](https://github.com/inngest/inngest-js/commit/50a349b772d75b0f60060afb1188116e750fe7dd) Thanks [@rhino1998](https://github.com/rhino1998)! - fix(extended traces): Emit extended trace spans parented to the finalized step span
+
+## 4.6.0
+
+### Minor Changes
+
+- [#1567](https://github.com/inngest/inngest-js/pull/1567) [`1c3ad876`](https://github.com/inngest/inngest-js/commit/1c3ad87606cea9441f2e01c4f44d2ed81cef8621) Thanks [@Linell](https://github.com/Linell)! - Deprecate `optimizeParallelism: false` — use `group.parallel({ mode: "race" })` for race semantics instead. Opting out prevents runs from resuming checkpointing after a `Promise.all`.
+
+- [#1568](https://github.com/inngest/inngest-js/pull/1568) [`bd6016c1`](https://github.com/inngest/inngest-js/commit/bd6016c18d135be04853f3fd72f5ba604ce9857c) Thanks [@scottnuma](https://github.com/scottnuma)! - Add metadata to steps containing OTel instrumented LLM calls
+
+### Patch Changes
+
+- [#1561](https://github.com/inngest/inngest-js/pull/1561) [`ba9874dc`](https://github.com/inngest/inngest-js/commit/ba9874dc4275592922ae5d9b1ea51a4ff60b2000) Thanks [@rhino1998](https://github.com/rhino1998)! - feat(experiments): Rename experiment_name -> experiment in metadata
+
+## 4.5.1
+
+### Patch Changes
+
+- [#1551](https://github.com/inngest/inngest-js/pull/1551) [`0af90c3c`](https://github.com/inngest/inngest-js/commit/0af90c3cc98680bed38c1c1ec02a5461d28ce228) Thanks [@rhino1998](https://github.com/rhino1998)! - fix: Add step attribution attributes to all extended trace spans
+
+- [#1556](https://github.com/inngest/inngest-js/pull/1556) [`5bd87775`](https://github.com/inngest/inngest-js/commit/5bd8777594a601e5cb08cd451fb47850ec9e8fe9) Thanks [@Linell](https://github.com/Linell)! - Update internal tracing values used for identifying checkpointed data.
+
+- [#1548](https://github.com/inngest/inngest-js/pull/1548) [`7be1cee3`](https://github.com/inngest/inngest-js/commit/7be1cee32b8451fac9a1b88ab67431be0851ce71) Thanks [@amh4r](https://github.com/amh4r)! - Fix unnecessary outgoing Durable Endpoint request
+
+- [#1511](https://github.com/inngest/inngest-js/pull/1511) [`79558be2`](https://github.com/inngest/inngest-js/commit/79558be210b784b95ea26b36d1f70798548e7707) Thanks [@Linell](https://github.com/Linell)! - Fix duplicate execution when response terminates early
+
+## 4.5.0
+
+### Minor Changes
+
+- [#1522](https://github.com/inngest/inngest-js/pull/1522) [`ebeb4516`](https://github.com/inngest/inngest-js/commit/ebeb4516037015c0e6f1d417be55009f4a64fb89) Thanks [@Linell](https://github.com/Linell)! - Bump minimum `@opentelemetry/auto-instrumentations-node` to `0.75.0` to address
+  [GHSA-q7rr-3cgh-j5r3](https://github.com/advisories/GHSA-q7rr-3cgh-j5r3) in the
+  transitive `@opentelemetry/sdk-node` / `@opentelemetry/exporter-prometheus` packages.
+
+  Note that upstream `auto-instrumentations-node@0.72.0` dropped bundled Fastify,
+  instrumentation, so if you relied on it for tracing your Fastify routes, add
+  `@opentelemetry/instrumentation-fastify` directly.
+
+### Patch Changes
+
+- [#1540](https://github.com/inngest/inngest-js/pull/1540) [`10dad398`](https://github.com/inngest/inngest-js/commit/10dad39891b99303d75576c7c53cd8339dac53f5) Thanks [@amh4r](https://github.com/amh4r)! - Fix attempt count not resetting during checkpointing
+
+- [#1544](https://github.com/inngest/inngest-js/pull/1544) [`f1ee6f34`](https://github.com/inngest/inngest-js/commit/f1ee6f3464705b2c80c0f03ff9e4483296cc60e4) Thanks [@jacobheric](https://github.com/jacobheric)! - Allow `useRealtime` to accept direct client subscription tokens from `getClientSubscriptionToken()` when `channel` and `topics` are provided as hook options, and avoid reconnecting solely because an inline token factory or token object gets a new render identity.
+
+- [#1506](https://github.com/inngest/inngest-js/pull/1506) [`342a7369`](https://github.com/inngest/inngest-js/commit/342a7369b757c5dd34f009eabcb6642cd207a721) Thanks [@amh4r](https://github.com/amh4r)! - Add option to disable unauthed PUT requests
+
+- [#1518](https://github.com/inngest/inngest-js/pull/1518) [`fd71a95b`](https://github.com/inngest/inngest-js/commit/fd71a95bc2a5a1cbc20ae8d80a97a6e12955ce9c) Thanks [@Linell](https://github.com/Linell)! - Fix RetryAfterError not respected
+
+## 4.4.0
+
+### Minor Changes
+
+- [#1508](https://github.com/inngest/inngest-js/pull/1508) [`4771b424`](https://github.com/inngest/inngest-js/commit/4771b42402f9e2f435417b65f4e5a38e54e398af) Thanks [@amh4r](https://github.com/amh4r)! - Add experimental support for deferred functions
+
+### Patch Changes
+
+- [#1512](https://github.com/inngest/inngest-js/pull/1512) [`be675a3d`](https://github.com/inngest/inngest-js/commit/be675a3d3c2a39b415ded8db5e2626e22b941760) Thanks [@amh4r](https://github.com/amh4r)! - Fix waitForSignal not in middleware StepType union
+
+- [#1513](https://github.com/inngest/inngest-js/pull/1513) [`cbad05c3`](https://github.com/inngest/inngest-js/commit/cbad05c3052de84defe36797c23eb0da295022fb) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Standardize variant naming to `variant` instead of `variant_selected`
+
+- [#1516](https://github.com/inngest/inngest-js/pull/1516) [`1bca44a8`](https://github.com/inngest/inngest-js/commit/1bca44a8293d6d44e93266fbe3e8dd4dc7e0fa73) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Add Request ID & Job ID to context and logs
+
+## 4.3.0
+
+### Minor Changes
+
+- [#1504](https://github.com/inngest/inngest-js/pull/1504) [`5c8f50e1`](https://github.com/inngest/inngest-js/commit/5c8f50e102dcdcaf2e7d42b66972cc4bffb84e72) Thanks [@scottnuma](https://github.com/scottnuma)! - Accept `Temporal.Duration`, `Temporal.Instant`, and `Temporal.ZonedDateTime` (and their `*Like` variants) wherever a timeout or sleep duration is taken: `step.sleep()`, `step.waitForEvent()`, `step.waitForSignal()`, `step.invoke()`, and function-level `cancelOn` timeouts. Durations are treated as relative waits; instants and zoned date-times as absolute deadlines.
+
+### Patch Changes
+
+- [#1480](https://github.com/inngest/inngest-js/pull/1480) [`60cda73f`](https://github.com/inngest/inngest-js/commit/60cda73f255a6fb1f014f6eb3c3541be19940154) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Fix Connect shutdown getting stuck when a late lease-extension ACK recreates a stale in-flight lease entry after request completion or lease loss
+
 ## 4.2.6
 
 ### Patch Changes

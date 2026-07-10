@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "lib": ["ES2022"],
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "outDir": "./dist",
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "./",
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "target": "ES2022",
+    "types": ["node"],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["./src/**/*", "./tests/**/*", "./tsdown.config.ts"]
+}

@@ -101,7 +101,7 @@ export const getStepTools = (
         runId: "run",
         stepState: {},
         stepCompletionOrder: [],
-        isFailureHandler: false,
+        handlerKind: "main",
         requestedRunStep: undefined,
         timer: new ServerTiming(client[internalLoggerSymbol]),
         disableImmediateExecution: false,
@@ -150,7 +150,7 @@ export const runFnWithStack = async (
       runId: "run",
       stepState,
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
-      isFailureHandler: Boolean(opts?.onFailure),
+      handlerKind: opts?.onFailure ? "failure" : "main",
       requestedRunStep: opts?.runStep,
       timer: new ServerTiming(fn["client"][internalLoggerSymbol]),
       disableImmediateExecution: opts?.disableImmediateExecution,
@@ -2018,6 +2018,15 @@ export const eventRunWithName = async (
     }
 
     if (run) {
+      // A run matched by name but with no `id` means the dev server returned a
+      // malformed/truncated response (e.g. a transport-level failure further up
+      // the stack).
+      if (!run.id) {
+        throw new Error(
+          `Found run for event "${eventId}" with function name "${name}", but it had no id: ${JSON.stringify(run)}`,
+        );
+      }
+
       return run.id;
     }
 

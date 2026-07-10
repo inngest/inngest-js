@@ -30,6 +30,7 @@ import {
   undefinedToNull,
 } from "../helpers/functions.ts";
 import { warnOnce } from "../helpers/log.ts";
+import { isDeferredFunction } from "../helpers/marker.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
@@ -77,6 +78,15 @@ import {
   InngestFunction,
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
+
+/**
+ * An entry in the function registry, tracking which config ID maps to which
+ * function and what kind of handler it is (main, failure, or defer).
+ */
+interface FnRegistryEntry {
+  fn: InngestFunction.Any;
+  handlerKind: "main" | "failure" | "defer";
+}
 
 // A response object for when an internal server error occurs. When that
 // happens, we don't to leak any internal details to the client.
@@ -408,6 +418,16 @@ export class InngestCommHandler<
   protected readonly streaming: RegisterOptions["streaming"];
 
   /**
+   * Whether unauthenticated `PUT` (sync) requests are accepted. Set via the
+   * `enableUnauthedSync` serve option or `INNGEST_ENABLE_UNAUTHED_SYNC` env
+   * var; serve option wins. Only applies in cloud mode.
+   *
+   * `undefined` here means "unset" — the env var is consulted at request
+   * time so it picks up dynamic values in edge environments.
+   */
+  protected readonly enableUnauthedSync: boolean | undefined;
+
+  /**
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
    */
@@ -419,10 +439,7 @@ export class InngestCommHandler<
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<
-    string,
-    { fn: InngestFunction.Any; onFailure: boolean }
-  > = {};
+  private readonly fns: Record<string, FnRegistryEntry> = {};
 
   private env: Env = getProcessEnv();
 
@@ -482,32 +499,41 @@ export class InngestCommHandler<
       );
     }
 
-    this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
-    >((acc, fn) => {
+    // Build the id -> entry registry. Each main fn contributes either a
+    // single `main` entry or, when it has `onFailure`, a `main` + `failure`
+    // pair; each `DeferredFunction` (created via `createDefer`) contributes
+    // a single `defer` entry.
+    const entries: Record<string, FnRegistryEntry> = {};
+    for (const fn of this.rawFns) {
+      const isDefer = isDeferredFunction(fn);
+      const mainId = fn.id(this.client.id);
+      const failureId = `${mainId}${InngestFunction.failureSuffix}`;
+
       const configs = fn["getConfig"]({
         baseUrl: new URL("https://example.com"),
         appPrefix: this.client.id,
       });
 
-      const fns = configs.reduce((acc, { id }, index) => {
-        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
-      }, {});
-
-      // biome-ignore lint/complexity/noForEach: intentional
-      configs.forEach(({ id }) => {
-        if (acc[id]) {
+      for (const { id } of configs) {
+        if (entries[id]) {
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
           );
         }
-      });
 
-      return {
-        ...acc,
-        ...fns,
-      };
-    }, {});
+        let handlerKind: FnRegistryEntry["handlerKind"];
+        if (isDefer) {
+          handlerKind = "defer";
+        } else if (id === failureId) {
+          handlerKind = "failure";
+        } else {
+          handlerKind = "main";
+        }
+
+        entries[id] = { fn, handlerKind };
+      }
+    }
+    this.fns = entries;
 
     this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
 
@@ -532,6 +558,8 @@ export class InngestCommHandler<
       .parse(
         options.streaming || parseAsBoolean(this.env[envKeys.InngestStreaming]),
       );
+
+    this.enableUnauthedSync = options.enableUnauthedSync;
 
     // Early validation for environments where process.env is available (Node.js).
     // Edge environments will skip this and validate at request time instead.
@@ -965,13 +993,14 @@ export class InngestCommHandler<
           events: [event],
           maxAttempts: fn.opts.retries ?? defaultMaxRetries,
         },
+        isDurableEndpoint: true,
         runId,
         headers: {},
         reqArgs: args,
         stepCompletionOrder: [],
         stepState: {},
         disableImmediateExecution: false,
-        isFailureHandler: false,
+        handlerKind: "main",
         acceptsSse,
         timer,
         createResponse: (data: unknown) =>
@@ -1369,7 +1398,9 @@ export class InngestCommHandler<
       const method = await actions.method("starting streaming response");
 
       if (method === "POST") {
-        const { stream, finalize } = await createStream();
+        const { stream, finalize } = await createStream({
+          logger: this.client[internalLoggerSymbol],
+        });
 
         /**
          * Errors are handled by `handleAction` here to ensure that an
@@ -1575,46 +1606,68 @@ export class InngestCommHandler<
     try {
       let url = await actions.url("starting to handle request");
 
+      // PUT (sync) is the only request method the SDK accepts without a valid
+      // signature. Opting out via `enableUnauthedSync: false` (or the
+      // `INNGEST_ENABLE_UNAUTHED_SYNC` env var) closes that gap by requiring a
+      // signature on every request in cloud mode. Serve option wins over env;
+      // both default to enabled.
+      //
+      // We'll eventually remove this, always authing all requests in cloud
+      // mode.
+      const enableUnauthedSync =
+        this.enableUnauthedSync ??
+        parseAsBoolean(this.env[envKeys.InngestEnableUnauthedSync]) ??
+        true;
+
+      if (this.client.mode === "cloud" && !enableUnauthedSync) {
+        const sigCheck = await signatureValidation;
+        if (!sigCheck.success) {
+          this.client[internalLoggerSymbol].error(
+            {
+              err: sigCheck.err,
+              method,
+            },
+            "Signature validation failed",
+          );
+
+          // Response shape matches existing in-band PUT signature failures
+          // so opted-out callers can't be fingerprinted.
+          return unauthorizedResponse;
+        }
+      }
+
       if (method === "POST" || forceExecution) {
         if (!forceExecution && isMissingBody) {
           this.client[internalLoggerSymbol].error(
             "Missing body when executing, possibly due to missing request body middleware",
           );
 
-          return {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: stringify({ message: "Unauthorized" }),
-            version: undefined,
-          };
+          return unauthorizedResponse;
         }
 
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
           this.client[internalLoggerSymbol].error(
-            { err: validationResult.err },
+            {
+              err: validationResult.err,
+              method,
+            },
             "Signature validation failed",
           );
 
-          return {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: stringify({ message: "Unauthorized" }),
-            version: undefined,
-          };
+          return unauthorizedResponse;
         }
 
-        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
+        let fn: FnRegistryEntry | undefined;
         let fnId: string | undefined;
 
         if (forceExecution) {
           fn =
             fns?.length && fns[0]
-              ? { fn: fns[0], onFailure: false }
+              ? {
+                  fn: fns[0],
+                  handlerKind: "main" as const,
+                }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
 
@@ -1940,18 +1993,14 @@ export class InngestCommHandler<
           const validationResult = await signatureValidation;
           if (!validationResult.success) {
             this.client[internalLoggerSymbol].error(
-              { err: validationResult.err },
+              {
+                err: validationResult.err,
+                method,
+              },
               "Signature validation failed",
             );
 
-            return {
-              status: 401,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify({ message: "Unauthorized" }),
-              version: undefined,
-            };
+            return unauthorizedResponse;
           }
         }
 
@@ -2029,16 +2078,15 @@ export class InngestCommHandler<
           const sigCheck = await signatureValidation;
 
           if (!sigCheck.success) {
-            return {
-              status: 401,
-              body: stringify({
-                code: "sig_verification_failed",
-              }),
-              headers: {
-                "Content-Type": "application/json",
+            this.client[internalLoggerSymbol].error(
+              {
+                err: sigCheck.err,
+                method,
               },
-              version: undefined,
-            };
+              "Signature validation failed",
+            );
+
+            return unauthorizedResponse;
           }
 
           const res = inBandSyncRequestBodySchema.safeParse(body);
@@ -2147,12 +2195,14 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: { fn: InngestFunction.Any; onFailure: boolean };
+    fn: FnRegistryEntry;
     forceExecution: boolean;
     headerReqVersion?: ExecutionVersion;
     requestInfo?: InngestExecutionOptions["requestInfo"];
     mwInstances?: Middleware.BaseMiddleware[];
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+    const requestStartedAt = Date.now();
+
     if (!fn) {
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
@@ -2164,15 +2214,10 @@ export class InngestCommHandler<
       headerReqVersion,
       this.client[internalLoggerSymbol],
     );
-    const { sdkDecided } = immediateFnData;
     let version = ExecutionVersion.V2;
 
     // Handle opting out of optimized parallelism
-    if (
-      version === ExecutionVersion.V2 &&
-      sdkDecided &&
-      fn.fn["shouldOptimizeParallelism"]?.() === false
-    ) {
+    if (fn.fn["shouldOptimizeParallelism"]?.() === false) {
       version = ExecutionVersion.V1;
     }
 
@@ -2199,7 +2244,26 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const { event, events, steps, ctx } = anyFnData.value;
+      const { defers, event, events, steps, ctx } = anyFnData.value;
+      const requestId = await actions.headers(
+        "getting request ID for execution",
+        headerKeys.RequestId,
+      );
+
+      const rawGenerationId = await actions.headers(
+        "getting generation ID for execution",
+        headerKeys.GenerationId,
+      );
+      const parsedGenerationId = Number(rawGenerationId);
+      const generationId =
+        rawGenerationId && Number.isInteger(parsedGenerationId)
+          ? parsedGenerationId
+          : undefined;
+
+      const jobId = await actions.headers(
+        "getting job ID for execution",
+        headerKeys.InngestJobId,
+      );
 
       const stepState = Object.entries(steps ?? {}).reduce<
         InngestExecutionOptions["stepState"]
@@ -2239,13 +2303,24 @@ export class InngestCommHandler<
             runId: ctx?.run_id || "",
             attempt: ctx?.attempt ?? 0,
             maxAttempts: ctx?.max_attempts,
+            requestId: requestId ?? undefined,
+            jobId: jobId ?? undefined,
           },
           internalFnId: ctx?.fn_id,
+
+          // Rely on `forceExecution` to know if this is a Durable Endpoint in
+          // async mode.
+          isDurableEndpoint: forceExecution,
+
           queueItemId: ctx?.qi_id,
+          requestId: requestId ?? undefined,
+          generationId: generationId ?? undefined,
+          requestStartedAt,
           stepState,
+          priorDefers: defers,
           requestedRunStep,
           timer,
-          isFailureHandler: fn.onFailure,
+          handlerKind: fn.handlerKind,
           disableImmediateExecution: ctx?.disable_immediate_execution,
           stepCompletionOrder: ctx?.stack?.stack ?? [],
           reqArgs,
@@ -2263,7 +2338,7 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = this.rawFns.reduce<FunctionConfig[]>(
       (acc, fn) => [
         ...acc,
         ...fn["getConfig"]({ baseUrl: url, appPrefix: this.client.id }),
@@ -2936,3 +3011,12 @@ export interface HandlerResponseWithErrors
     key: string,
   ) => Promise<string | undefined>;
 }
+
+const unauthorizedResponse = {
+  status: 401,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: stringify({ message: "Unauthorized" }),
+  version: undefined,
+} as const satisfies ActionResponse;

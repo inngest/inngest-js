@@ -1,0 +1,20 @@
+[
+  {
+    "span": "ai.streamText.doStream",
+    "metadata": {
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "provider": "openai.chat",
+      "responseId": "chatcmpl-DrBruw0ipxM6NO9pr53HGKTeUDGsv",
+      "finishReasons": [
+        "stop"
+      ],
+      "inputTokens": 11,
+      "outputTokens": 14
+    }
+  },
+  {
+    "span": "ai.streamText",
+    "metadata": {}
+  }
+]

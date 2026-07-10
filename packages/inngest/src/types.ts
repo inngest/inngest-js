@@ -11,6 +11,7 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
+import type { DeferredFunction } from "./components/DeferredFunction.ts";
 import type { Inngest } from "./components/Inngest.ts";
 import type { InngestEndpointAdapter } from "./components/InngestEndpointAdapter.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
@@ -145,6 +146,11 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
+
+  /**
+   * Meta from the original triggering event, used to group runs.
+   */
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -184,6 +190,11 @@ export type FinishedEventPayload = {
         result: unknown;
       }
   );
+
+  /**
+   * Meta from the original triggering event, used to group runs.
+   */
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -197,6 +208,11 @@ export type CancelledEventPayload = {
     run_id: string;
     correlation_id?: string;
   };
+
+  /**
+   * Meta from the original triggering event, used to group runs.
+   */
+  meta?: ReceivedEventMeta;
 };
 
 /**
@@ -266,6 +282,9 @@ export enum StepOpCode {
 
   RunComplete = "RunComplete",
   DiscoveryRequest = "DiscoveryRequest",
+
+  DeferAdd = "DeferAdd",
+  DeferAbort = "DeferAbort",
 }
 
 /**
@@ -490,12 +509,56 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Context extension that exposes `defer` on every handler.
+ *
+ * `defer(id, { function, data })` emits a `DeferAdd` opcode that triggers the
+ * referenced defer function (created via `createDefer`) with `data` validated
+ * against the function's schema. The data type is inferred from the function's
+ * schema.
+ */
+export type DeferFn = <TFn extends DeferredFunction.Any>(
+  id: string,
+  options: {
+    function: TFn;
+    data: TFn extends DeferredFunction<
+      StandardSchemaV1<infer D extends Record<string, unknown>>
+    >
+      ? D
+      : // biome-ignore lint/suspicious/noExplicitAny: no schema = any
+        Record<string, any>;
+    /** Attribute the deferred scorer's result to this experiment variant. */
+    experiment?: ExperimentRef;
+  },
+) => void;
+
+/**
+ * A replay-stable handle to a selected experiment variant, returned by
+ * `group.experiment()`. Pass it to `inngest.score.experiment()` or
+ * `defer(id, { experiment })` to attribute a later score to this variant.
+ */
+export type ExperimentRef = {
+  experimentName: string;
+  variant: string;
+};
+
+/**
  * Base context object, omitting any extras that may be added by middleware or
  * function configuration.
  *
  * @public
  */
 export type BaseContext<TClient extends Inngest.Any> = {
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * Fire-and-forget a typed deferred function. See {@link DeferFn}.
+   */
+  defer: DeferFn;
+
   /**
    * The event data present in the payload.
    */
@@ -506,6 +569,17 @@ export type BaseContext<TClient extends Inngest.Any> = {
    * The run ID for the current function execution
    */
   runId: string;
+
+  /**
+   * The request ID for this individual outbound SDK invocation, if provided by
+   * the executor.
+   */
+  requestId?: string;
+
+  /**
+   * The stable job ID for this invocation, if provided by the executor.
+   */
+  jobId?: string;
 
   step: ReturnType<typeof createStepTools<TClient>>;
 
@@ -610,6 +684,11 @@ export interface MinimalEventPayload<TData = any> {
    * (optional)
    */
   v?: string;
+
+  /**
+   * Event meta shared across runs triggered by this event.
+   */
+  meta?: EventMeta;
 }
 
 /**
@@ -638,6 +717,52 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
    */
   ts?: number;
 }
+
+/**
+ * Primitive values accepted for event session IDs when sending an
+ * event. Numbers are normalized to strings before sending.
+ *
+ * @public
+ */
+export type EventSessionValue = string | number;
+
+/**
+ * Session meta accepted when sending an event. Values are normalized to
+ * strings before sending; received events carry `Record<string, string>`.
+ *
+ * @public
+ */
+export type EventSessions = Record<string, EventSessionValue>;
+
+/**
+ * Event meta accepted when sending an event.
+ *
+ * @public
+ */
+export type EventMeta = {
+  /**
+   * Session meta used to group runs triggered by this event.
+   *
+   * Keys are session keys, values are session IDs. Values are
+   * normalized to strings before the event is sent.
+   */
+  sessions?: EventSessions;
+};
+
+/**
+ * Event meta received by a function handler.
+ *
+ * @public
+ */
+export type ReceivedEventMeta = {
+  /**
+   * Session meta used to group runs triggered by this event.
+   *
+   * Always a map of strings when received; number IDs given when
+   * sending are normalized to strings.
+   */
+  sessions?: Record<string, string>;
+};
 
 export const sendEventResponseSchema = z.object({
   /**
@@ -1001,9 +1126,22 @@ export interface ClientOptions {
    * to settle before resolving. Use `group.parallel()` for `Promise.race()`
    * semantics.
    *
+   * @deprecated Use `group.parallel({ mode: "race" })` for race semantics
+   * instead.
    * @default true
    */
   optimizeParallelism?: boolean;
+
+  /**
+   * Automatically extract AI metadata from OpenTelemetry spans created while
+   * steps run, then attach that metadata to the step.
+   *
+   * This only controls the SDK's built-in AI metadata extraction. It does not
+   * affect Extended Traces.
+   *
+   * @default true
+   */
+  aiMetadata?: boolean;
 
   /**
    * Whether or not to use checkpointing by default for executions of functions
@@ -1210,6 +1348,27 @@ export interface RegisterOptions {
    * Defaults to `false`.
    */
   streaming?: true | false;
+
+  /**
+   * Controls whether unauthenticated `PUT` (app sync) requests are accepted.
+   * When `true`, syncs will only work via our REST API, UI, or third-party
+   * integrations (e.g. Vercel).
+   *
+   * Equivalent to setting the `INNGEST_ENABLE_UNAUTHED_SYNC` env var. The serve
+   * option takes precedence over the env var.
+   *
+   * Only applies in cloud mode; dev mode is unaffected.
+   *
+   * Unauthed `PUT` requests are an intentional feature and not a critical
+   * security risk, but disabling them is good defense in depth. An unauthed
+   * `PUT` request simply tells the SDK to sync itself, but does not control
+   * where the SDK sends its outgoing request (it's always to the Inngest API).
+   * This was added to enable the "sync from CI" use case, but that's now
+   * fulfilled by the Inngest API.
+   *
+   * @default true
+   */
+  enableUnauthedSync?: boolean;
 }
 
 /**

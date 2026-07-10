@@ -326,6 +326,7 @@ export interface GatewayExecutorRequestData {
   userTraceCtx: Uint8Array;
   runId: string;
   leaseId: string;
+  jobId: string;
 }
 
 export interface WorkerRequestAckData {
@@ -1170,6 +1171,7 @@ function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
     userTraceCtx: new Uint8Array(0),
     runId: "",
     leaseId: "",
+    jobId: "",
   };
 }
 
@@ -1213,6 +1215,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     }
     if (message.leaseId !== "") {
       writer.uint32(106).string(message.leaseId);
+    }
+    if (message.jobId !== "") {
+      writer.uint32(114).string(message.jobId);
     }
     return writer;
   },
@@ -1328,6 +1333,14 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
           message.leaseId = reader.string();
           continue;
         }
+        case 14: {
+          if (tag !== 114) {
+            break;
+          }
+
+          message.jobId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1352,6 +1365,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
       runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
       leaseId: isSet(object.leaseId) ? globalThis.String(object.leaseId) : "",
+      jobId: isSet(object.jobId) ? globalThis.String(object.jobId) : "",
     };
   },
 
@@ -1396,6 +1410,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.leaseId !== "") {
       obj.leaseId = message.leaseId;
     }
+    if (message.jobId !== "") {
+      obj.jobId = message.jobId;
+    }
     return obj;
   },
 
@@ -1417,6 +1434,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     message.runId = object.runId ?? "";
     message.leaseId = object.leaseId ?? "";
+    message.jobId = object.jobId ?? "";
     return message;
   },
 };

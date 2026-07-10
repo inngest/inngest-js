@@ -231,6 +231,119 @@ describe("useRealtime runtime behavior", () => {
     await hook.unmount();
   });
 
+  test("accepts direct client subscription tokens when channel and topics are provided", async () => {
+    const sub = createControlledSubscription();
+    mockedSubscribe.mockResolvedValue(sub.subscription);
+
+    const hook = await renderUseRealtime({
+      channel: "test-channel",
+      topics: ["status"],
+      token: {
+        key: "abc",
+        apiBaseUrl: "http://localhost:8288/",
+      },
+      reconnect: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockedSubscribe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: "test-channel",
+          topics: ["status"],
+          key: "abc",
+          apiBaseUrl: "http://localhost:8288/",
+        }),
+      );
+      expect(hook.getLatest()?.connectionStatus).toBe("open");
+    });
+
+    await hook.unmount();
+  });
+
+  test("does not reconnect when an inline token factory changes identity on render", async () => {
+    const sub = createControlledSubscription();
+    mockedSubscribe.mockResolvedValue(sub.subscription);
+    let latest: UseRealtimeResult | null = null;
+    let renderer: ReactTestRenderer | undefined;
+
+    const Harness = () => {
+      latest = useRealtime({
+        channel: "test-channel",
+        topics: ["status"],
+        token: async () => ({
+          key: "abc",
+          apiBaseUrl: "http://localhost:8288/",
+        }),
+        reconnect: false,
+      });
+      return null;
+    };
+
+    await act(async () => {
+      renderer = create(React.createElement(Harness));
+    });
+
+    await vi.waitFor(() => {
+      expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+      expect(latest?.connectionStatus).toBe("open");
+    });
+
+    await act(async () => {
+      await sub.push(makeDataMessage("status", { message: "hello" }));
+    });
+
+    await vi.waitFor(() => {
+      expect(latest?.messages.byTopic["status"]).toBeDefined();
+    });
+    expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  test("does not reconnect when an inline client token object changes identity on render", async () => {
+    const sub = createControlledSubscription();
+    mockedSubscribe.mockResolvedValue(sub.subscription);
+    let latest: UseRealtimeResult | null = null;
+    let renderer: ReactTestRenderer | undefined;
+
+    const Harness = () => {
+      latest = useRealtime({
+        channel: "test-channel",
+        topics: ["status"],
+        token: {
+          key: "abc",
+          apiBaseUrl: "http://localhost:8288/",
+        },
+        reconnect: false,
+      });
+      return null;
+    };
+
+    await act(async () => {
+      renderer = create(React.createElement(Harness));
+    });
+
+    await vi.waitFor(() => {
+      expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+      expect(latest?.connectionStatus).toBe("open");
+    });
+
+    await act(async () => {
+      await sub.push(makeDataMessage("status", { message: "hello" }));
+    });
+
+    await vi.waitFor(() => {
+      expect(latest?.messages.byTopic["status"]).toBeDefined();
+    });
+    expect(mockedSubscribe).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
   test("pauses while hidden and resumes when visible again", async () => {
     const visibility = installFakeDocument("hidden");
     const sub = createControlledSubscription();

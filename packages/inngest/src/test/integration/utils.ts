@@ -166,11 +166,14 @@ const anyEvent = {
 
 export const anyContext = {
   attempt: expect.any(Number),
+  defer: expect.any(Function),
   event: anyEvent,
   events: [anyEvent],
   group: expect.any(Object),
+  jobId: expect.any(String),
   logger: expect.any(Object),
   maxAttempts: expect.any(Number),
+  requestId: expect.any(String),
   runId: expect.any(String),
   step: expect.any(Object),
 };
@@ -241,4 +244,13 @@ export function matrixCheckpointing(
       test(`checkpointing: ${checkpointing}`, () => fn(checkpointing));
     }
   });
+}
+
+export function spyLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
 }
