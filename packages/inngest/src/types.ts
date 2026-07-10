@@ -522,10 +522,8 @@ export type DeferHandle = {
    * effective, misuse logs via the internal logger and no-ops, and it never
    * throws into the surrounding handler.
    *
-   * Caveat: calling this inside a `step.run` closure is at-most-once. If the
-   * attempt fails after the closure ran but before the abort shipped, the
-   * retried execution memoizes the step and never re-runs the closure, so
-   * the abort is lost and the deferred work executes.
+   * Caveat: an abort only takes effect if its message ships — one emitted
+   * by a final attempt that crashes before responding is lost.
    */
   abort: () => void;
 };
