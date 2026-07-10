@@ -1,5 +1,11 @@
 # inngest
 
+## 4.12.1
+
+### Patch Changes
+
+- [#1622](https://github.com/inngest/inngest-js/pull/1622) [`0706a1f5`](https://github.com/inngest/inngest-js/commit/0706a1f51316e0748b3b24c0e9bca864233e75c0) Thanks [@amh4r](https://github.com/amh4r)! - Fix step.run not JSON-serializing during checkpointing
+
 ## 4.12.0
 
 ### Minor Changes
