@@ -270,7 +270,7 @@ const handler: WorkflowHandler = async ({ step }) => {
 
 onResult: (ops) => {
   // ops = [{
-  //   id: "error",
+  //   id: "error:0",
   //   op: "StepError",
   //   error: {
   //     name: "Error",
@@ -305,7 +305,7 @@ const handler: WorkflowHandler = async ({ step }) => {
 
 onResult: (ops) => {
   // ops = [{
-  //   id: "error",
+  //   id: "error:0",
   //   op: "StepError",
   //   error: {
   //     name: "RetryAfterError",
@@ -338,7 +338,7 @@ const handler: WorkflowHandler = async ({ step }) => {
 
 onResult: (ops) => {
   // ops = [{
-  //   id: "error",
+  //   id: "error:0",
   //   op: "StepFailed",
   //   error: {
   //     name: "NonRetriableError",
@@ -420,26 +420,26 @@ onResult: (ops) => {
 
 ## Function Failure
 
-When the workflow handler throws an unhandled error (not inside a step), `onResult` receives either `StepError` or `StepFailed` depending on the error type:
+When the workflow handler throws an unhandled error (not inside a step), `onResult` receives either `StepError` or `StepFailed` depending on the error type. The op id is `error:<attempt>`, keeping failure ops unique across retries:
 
 ```typescript
 // Retriable failure (regular Error)
 const handler: WorkflowHandler = async () => {
   throw new Error("Something broke");
 };
-// onResult: [{ id: "error", op: "StepError", error: { message: "Something broke", ... } }]
+// onResult: [{ id: "error:0", op: "StepError", error: { message: "Something broke", ... } }]
 
 // Non-retriable failure (NonRetriableError)
 const handler: WorkflowHandler = async () => {
   throw new NonRetriableError("Bad request");
 };
-// onResult: [{ id: "error", op: "StepFailed", error: { message: "Bad request", ... } }]
+// onResult: [{ id: "error:0", op: "StepFailed", error: { message: "Bad request", ... } }]
 
 // Retry after specific duration
 const handler: WorkflowHandler = async () => {
   throw new RetryAfterError("Slow down", "1m");
 };
-// onResult: [{ id: "error", op: "StepError", error: { ... }, opts: { retryAfter: "1m" } }]
+// onResult: [{ id: "error:0", op: "StepError", error: { ... }, opts: { retryAfter: "1m" } }]
 ```
 
 ---
