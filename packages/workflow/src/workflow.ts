@@ -51,7 +51,7 @@ export async function run(
 
   const events = (input.events ?? [input.event]) as [
     EventPayload,
-    ...EventPayload[,
+    ...EventPayload[],
   ];
 
   const allowedTools = options.allowedStepTools;
