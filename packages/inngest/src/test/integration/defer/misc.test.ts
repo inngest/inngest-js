@@ -8,7 +8,7 @@ import {
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { createDefer } from "../../../experimental.ts";
-import { Inngest } from "../../../index.ts";
+import { Inngest, NonRetriableError, RetryAfterError } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import { matrixCheckpointing, spyLogger } from "../utils.ts";
 
@@ -331,6 +331,117 @@ matrixCheckpointing(
     await parentState.waitForRunComplete();
     await deferState.waitForRunComplete();
     expect(parentState.requestCount).toBe(2);
+
+    // Wait long enough to give a 2nd defer a chance to trigger (it shouldn't)
+    await sleep(5000);
+    expect(deferState.counter).toBe(1);
+  },
+);
+
+matrixCheckpointing(
+  "NonRetriableError after defer fails without retrying",
+  async (checkpointing) => {
+    // A NonRetriableError thrown at the function level after a defer must
+    // fail the run without consuming remaining retries, and the defer must
+    // still fire exactly once.
+
+    const parentState = createState({ requestCount: 0 });
+    const deferState = createState({ counter: 0 });
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      checkpointing,
+    });
+    const eventName = randomSuffix("evt");
+    const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
+      deferState.runId = runId;
+      deferState.counter++;
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 1,
+        triggers: { event: eventName },
+      },
+      async ({ defer, runId }) => {
+        parentState.runId = runId;
+        parentState.requestCount++;
+        defer("foo", { function: foo, data: {} });
+        throw new NonRetriableError("permanent failure");
+      },
+    );
+    await createTestApp({
+      client,
+      functions: [fn, foo],
+      serve: createServer,
+    });
+
+    await client.send({ name: eventName, data: {} });
+    const error = await parentState.waitForRunFailed();
+    expect(error).toMatchObject({ message: "permanent failure" });
+    await deferState.waitForRunComplete();
+
+    // Wait long enough for a retry to have happened (it shouldn't)
+    await sleep(5000);
+    expect(parentState.requestCount).toBe(1);
+    expect(deferState.counter).toBe(1);
+  },
+);
+
+matrixCheckpointing(
+  "RetryAfterError after defer delays the retry",
+  async (checkpointing) => {
+    // A RetryAfterError thrown at the function level after a defer must delay
+    // the retry by the given duration, and the defer must fire exactly once
+    // across attempts.
+
+    const parentState = createState({ attemptTimes: [] as number[] });
+    const deferState = createState({ counter: 0 });
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      checkpointing,
+    });
+    const eventName = randomSuffix("evt");
+    const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
+      deferState.runId = runId;
+      deferState.counter++;
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 1,
+        triggers: { event: eventName },
+      },
+      async ({ attempt, defer, runId }) => {
+        parentState.runId = runId;
+        parentState.attemptTimes.push(Date.now());
+        defer("foo", { function: foo, data: {} });
+
+        if (attempt === 0) {
+          throw new RetryAfterError("rate limited", "5s");
+        }
+      },
+    );
+    await createTestApp({
+      client,
+      functions: [fn, foo],
+      serve: createServer,
+    });
+
+    await client.send({ name: eventName, data: {} });
+    await parentState.waitForRunComplete();
+    await deferState.waitForRunComplete();
+
+    expect(parentState.attemptTimes).toHaveLength(2);
+
+    // The dev server runs with `--retry-interval 1`, so a retry that ignored
+    // the Retry-After would land ~1s after the failure
+    const retryDelay =
+      parentState.attemptTimes[1]! - parentState.attemptTimes[0]!;
+    expect(retryDelay).toBeGreaterThanOrEqual(4000);
 
     // Wait long enough to give a 2nd defer a chance to trigger (it shouldn't)
     await sleep(5000);
