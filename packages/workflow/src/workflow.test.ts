@@ -154,6 +154,25 @@ describe("run", () => {
     expect(ops).toHaveLength(1);
     expect(ops![0].op).toBe(StepOpCode.StepFailed);
   });
+
+  it("should emit unique ids for failure ops across attempts", async () => {
+    const handler: WorkflowHandler = async () => {
+      throw new Error("boom");
+    };
+
+    const ids: string[] = [];
+    for (const attempt of [0, 1]) {
+      await run(handler, {
+        input: makeInput({ attempt }),
+        onResult: async (result) => {
+          ids.push(result[0].id);
+        },
+      });
+    }
+
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });
 
 describe("readInput", () => {

@@ -51,7 +51,7 @@ export async function run(
 
   const events = (input.events ?? [input.event]) as [
     EventPayload,
-    ...EventPayload[,
+    ...EventPayload[],
   ];
 
   const allowedTools = options.allowedStepTools;
@@ -110,7 +110,7 @@ export async function run(
         ? StepOpCode.StepFailed
         : StepOpCode.StepError;
       resultOps = [{
-        id: "error",
+        id: `error:${input.attempt}`,
         op,
         error: result.error,
         ...(typeof result.retriable === "string"
@@ -121,7 +121,7 @@ export async function run(
     }
     case "step-not-found":
       resultOps = [{
-        id: "error",
+        id: result.step.id,
         op: StepOpCode.StepFailed,
         error: { message: `Step not found: ${result.step.id}` },
       }];
