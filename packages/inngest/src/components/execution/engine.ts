@@ -13,6 +13,7 @@ import {
 import {
   deserializeError,
   ErrCode,
+  type SerializedError,
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
@@ -129,6 +130,13 @@ function errorMessage(error: unknown): string {
  * Placeholder step ID used when completing a checkpointed run.
  */
 const RUN_COMPLETE_STEP_ID = "complete";
+
+/**
+ * Marks the synthetic rejection op shipped by `attachLazyOps` so an
+ * error-discovery replay can distinguish it from a failed user step named
+ * `RUN_COMPLETE_STEP_ID` and short-circuit instead of re-running user code.
+ */
+const RUN_REJECTION_MARKER = "__inngestRunRejection";
 
 const STEP_NOT_FOUND_MAX_FOUND_STEPS = 25;
 
@@ -379,6 +387,17 @@ class InngestExecutionEngine
    * Starts execution of the user's function and the core loop.
    */
   private async _start(): Promise<ExecutionResult> {
+    const priorRejection = this.memoizedRunRejection();
+    if (priorRejection) {
+      return {
+        type: "function-rejected",
+        ctx: this.fnArg,
+        ops: this.ops,
+        error: priorRejection,
+        retriable: false,
+      };
+    }
+
     // Set up a deferred promise that handleStreamActivated resolves to return
     // the SSE Response early while the core loop keeps running.
     if (this.options.stepMode === StepMode.Sync && this.options.acceptsSse) {
@@ -2011,6 +2030,27 @@ class InngestExecutionEngine
   }
 
   /**
+   * Returns the prior function-level rejection when this request is the
+   * executor's error-discovery replay of a `RUN_REJECTION_MARKER` op.
+   */
+  private memoizedRunRejection(): SerializedError | undefined {
+    const value = this.options.stepState[hashId(RUN_COMPLETE_STEP_ID)]?.error;
+    const marked =
+      typeof value === "object" &&
+      value !== null &&
+      (value as { data?: Record<string, unknown> }).data?.[
+        RUN_REJECTION_MARKER
+      ] === true;
+
+    if (!marked) {
+      return undefined;
+    }
+
+    const { data: _, ...error } = value as Record<string, unknown>;
+    return serializeError(error);
+  }
+
+  /**
    * Drain buffered lazy ops (e.g. `DeferAdd` from `defer()`) and merge them
    * into `result` so they ship in the same outbound message. Lazy ops are
    * fire-and-forget and have no natural shipping moment, so each terminal code
@@ -2066,7 +2106,11 @@ class InngestExecutionEngine
             {
               op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
               id: hashId(RUN_COMPLETE_STEP_ID),
-              error: result.error,
+              // `data` is the only error field the executor echoes verbatim.
+              error: {
+                ...serializeError(result.error),
+                data: { [RUN_REJECTION_MARKER]: true },
+              },
             },
           ],
           ...retryAfter,
