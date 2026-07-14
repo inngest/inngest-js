@@ -136,6 +136,34 @@ test("NonRetriableError thrown inside step.run sets X-Inngest-No-Retry header", 
   expect(res.headers.get(headerKeys.RetryAfter)).toBeNull();
 });
 
+test("RetryAfterError with a buffered defer ships StepError with only a Retry-After header", async () => {
+  const { url, fnId } = await startServerWithDeferThatThrows(
+    new RetryAfterError("rate limited", 600_000),
+  );
+
+  const res = await fetch(`${url}?fnId=${fnId}&stepId=step`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stepExecBody()),
+  });
+
+  expect(res.status).toBe(206);
+  expect(res.headers.get(headerKeys.RetryAfter)).toBe("600");
+  // Never set on a terminal-error 206: finality travels via the opcode
+  // (`StepFailed` vs `StepError`), not a transport-level header.
+  expect(res.headers.get(headerKeys.NoRetry)).toBeNull();
+
+  const ops = await res.json();
+  expect(ops).toContainEqual(expect.objectContaining({ op: "DeferAdd" }));
+  expect(ops).toContainEqual(
+    expect.objectContaining({
+      op: "StepError",
+      error: expect.objectContaining({ name: "RetryAfterError" }),
+    }),
+  );
+  expect(ops).not.toContainEqual(expect.objectContaining({ op: "StepFailed" }));
+});
+
 test("NonRetriableError with a buffered defer ships StepFailed with no retry headers", async () => {
   const { url, fnId } = await startServerWithDeferThatThrows(
     new NonRetriableError("permanent failure"),

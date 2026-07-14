@@ -1946,6 +1946,9 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
+                ...(result.retryAfter
+                  ? { [headerKeys.RetryAfter]: result.retryAfter }
+                  : {}),
               },
               body: stringify(steps),
               version,
