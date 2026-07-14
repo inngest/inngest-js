@@ -31,7 +31,10 @@ export interface ExecutionResults {
   "function-resolved": { data: unknown };
   "step-ran": { step: OutgoingOp; retriable?: boolean | string };
   "function-rejected": { error: unknown; retriable: boolean | string };
-  "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
+  "steps-found": {
+    steps: [OutgoingOp, ...OutgoingOp[]];
+    retryAfter?: string;
+  };
   "step-not-found": {
     step: OutgoingOp;
     foundSteps: BasicFoundStep[];

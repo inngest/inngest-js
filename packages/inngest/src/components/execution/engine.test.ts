@@ -1351,6 +1351,7 @@ describe("defer abort", () => {
         }),
       );
       expect(opsOfType(steps, StepOpCode.StepFailed)).toHaveLength(0);
+      expect(result).not.toHaveProperty("retryAfter");
     });
 
     test("ships StepError for a RetryAfterError rejection", async () => {
@@ -1369,6 +1370,7 @@ describe("defer abort", () => {
       expect(opsOfType(steps, StepOpCode.DeferAdd)).toHaveLength(1);
       expect(opsOfType(steps, StepOpCode.StepError)).toHaveLength(1);
       expect(opsOfType(steps, StepOpCode.StepFailed)).toHaveLength(0);
+      expect(result).toMatchObject({ retryAfter: "30" });
     });
 
     test("preserves NonRetriableError finality through the steps-found conversion", async () => {
@@ -1391,6 +1393,7 @@ describe("defer abort", () => {
           error: expect.objectContaining({ name: "NonRetriableError" }),
         }),
       );
+      expect(result).not.toHaveProperty("retryAfter");
     });
 
     test("ships StepFailed when the final attempt rejects with a retryable error", async () => {

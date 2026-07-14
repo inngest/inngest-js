@@ -2022,6 +2022,12 @@ class InngestExecutionEngine
       return result;
     }
 
+    const retryAfter =
+      (result.type === "function-rejected" || result.type === "step-ran") &&
+      typeof result.retriable === "string"
+        ? { retryAfter: result.retriable }
+        : {};
+
     switch (result.type) {
       // Convert terminal results into `steps-found` so the lazy ops ride
       // alongside `RunComplete` / the terminal error op. This lets the executor
@@ -2046,9 +2052,9 @@ class InngestExecutionEngine
       // A `function-rejected` response body has no slot for step ops, so the
       // rejection rides as a synthetic step-level error op instead. Finality
       // travels via the opcode: `StepFailed` finalizes, `StepError` retries.
-      // Unlike the plain rejection path, this loses `RetryAfterError`'s delay
-      // (there's no `Retry-After` header here and no op field for it), so the
-      // executor falls back to its default backoff.
+      // `RetryAfterError`'s delay can't ride the op, so it travels as
+      // `retryAfter`, which the comm handler emits as a `Retry-After` header
+      // on the 206.
       case "function-rejected": {
         const isFinal = result.retriable === false;
         return {
@@ -2063,6 +2069,7 @@ class InngestExecutionEngine
               error: result.error,
             },
           ],
+          ...retryAfter,
         };
       }
 
@@ -2080,6 +2087,7 @@ class InngestExecutionEngine
           ctx: result.ctx,
           ops: result.ops,
           steps: [result.step, ...lazyOps],
+          ...retryAfter,
         };
       }
 
