@@ -378,6 +378,58 @@ matrixCheckpointing(
 );
 
 matrixCheckpointing(
+  "error-discovery replay does not re-run the handler",
+  async (checkpointing) => {
+    // A rejection shipped alongside a buffered defer rides a
+    // `[DeferAdd, StepFailed]` batch, which the executor memoizes and replays
+    // for error discovery. The SDK must detect the memoized rejection and
+    // short-circuit instead of re-running user code, so the handler executes
+    // exactly once.
+
+    const parentState = createState({ requestCount: 0 });
+    const deferState = createState({});
+
+    const client = new Inngest({
+      id: randomSuffix(testFileName),
+      isDev: true,
+      checkpointing,
+    });
+    const eventName = randomSuffix("evt");
+    const foo = createDefer(client, { id: "foo" }, async ({ runId }) => {
+      deferState.runId = runId;
+    });
+    const fn = client.createFunction(
+      {
+        id: "fn",
+        retries: 0,
+        triggers: { event: eventName },
+      },
+      async ({ defer, runId }) => {
+        parentState.runId = runId;
+        parentState.requestCount++;
+        defer("foo", { function: foo, data: {} });
+        throw new Error("oh no");
+      },
+    );
+    await createTestApp({
+      client,
+      functions: [fn, foo],
+      serve: createServer,
+    });
+
+    await client.send({ name: eventName, data: {} });
+    const error = await parentState.waitForRunFailed();
+    expect(error).toMatchObject({ message: "oh no" });
+    await deferState.waitForRunComplete();
+
+    // Wait long enough for the error-discovery replay to have re-run the
+    // handler (it shouldn't)
+    await sleep(5000);
+    expect(parentState.requestCount).toBe(1);
+  },
+);
+
+matrixCheckpointing(
   "RetryAfterError after defer delays the retry",
   async (checkpointing) => {
     // A RetryAfterError thrown at the function level after a defer must delay
