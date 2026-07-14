@@ -1,6 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { randomSuffix, testNameFromFileUrl } from "@inngest/test-harness";
 import { afterEach, expect, test } from "vitest";
+import { createDefer } from "../../experimental.ts";
 import { headerKeys } from "../../helpers/consts.ts";
 import { Inngest, NonRetriableError, RetryAfterError } from "../../index.ts";
 import { createServer } from "../../node.ts";
@@ -52,6 +53,42 @@ async function startServerWithStepThatThrows(
   };
 }
 
+async function startServerWithDeferThatThrows(
+  err: Error,
+): Promise<{ url: string; fnId: string }> {
+  const appId = randomSuffix(testFileName);
+
+  const client = new Inngest({ id: appId, isDev: true });
+  const target = createDefer(client, { id: "target" }, async () => {});
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ defer }) => {
+      defer("x", { function: target, data: {} });
+      throw err;
+    },
+  );
+
+  const servePath = "/api/inngest";
+  const server = createServer({ client, functions: [fn, target], servePath });
+  cleanup = () =>
+    new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
+
+  const port = await new Promise<number>((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, () => {
+      server.removeListener("error", reject);
+      resolve((server.address() as AddressInfo).port);
+    });
+  });
+
+  return {
+    url: `http://localhost:${port}${servePath}`,
+    fnId: `${appId}-fn`,
+  };
+}
+
 function stepExecBody() {
   return {
     ctx: {
@@ -97,4 +134,29 @@ test("NonRetriableError thrown inside step.run sets X-Inngest-No-Retry header", 
   expect(res.status).toBe(206);
   expect(res.headers.get(headerKeys.NoRetry)).toBe("true");
   expect(res.headers.get(headerKeys.RetryAfter)).toBeNull();
+});
+
+test("NonRetriableError with a buffered defer ships StepFailed with no retry headers", async () => {
+  const { url, fnId } = await startServerWithDeferThatThrows(
+    new NonRetriableError("permanent failure"),
+  );
+
+  const res = await fetch(`${url}?fnId=${fnId}&stepId=step`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stepExecBody()),
+  });
+
+  expect(res.status).toBe(206);
+  expect(res.headers.get(headerKeys.NoRetry)).toBeNull();
+  expect(res.headers.get(headerKeys.RetryAfter)).toBeNull();
+
+  const ops = await res.json();
+  expect(ops).toContainEqual(expect.objectContaining({ op: "DeferAdd" }));
+  expect(ops).toContainEqual(
+    expect.objectContaining({
+      op: "StepFailed",
+      error: expect.objectContaining({ name: "NonRetriableError" }),
+    }),
+  );
 });

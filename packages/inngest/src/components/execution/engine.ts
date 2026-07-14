@@ -8,7 +8,6 @@ import {
   deferExperimentKey,
   ExecutionVersion,
   headerKeys,
-  internalEvents,
 } from "../../helpers/consts.ts";
 
 import {
@@ -44,6 +43,7 @@ import {
   type APIStepPayload,
   type Context,
   type DeferFn,
+  type DeferHandle,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -89,7 +89,7 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
-import { isLazyOp, LazyOps } from "./lazyOps.ts";
+import { LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 import {
   type AIMetadata,
@@ -385,7 +385,11 @@ class InngestExecutionEngine
       this.earlyStreamResponse = createDeferredPromise<ExecutionResult>();
     }
 
-    const coreLoop = this.runCoreLoop();
+    // Sole point where `step-ran` results pick up buffered lazy ops
+    // (becoming `steps-found`).
+    const coreLoop = this.runCoreLoop().then((result) =>
+      result.type === "step-ran" ? this.attachLazyOps(result) : result,
+    );
 
     if (this.earlyStreamResponse) {
       // Suppress: if earlyStreamResponse wins the race and coreLoop later
@@ -453,6 +457,15 @@ class InngestExecutionEngine
       steps = [...steps, ...lazyOps];
     }
 
+    try {
+      await this.sendCheckpoint(steps);
+    } catch (err) {
+      this.state.lazyOps.restore(lazyOps);
+      throw err;
+    }
+  }
+
+  private async sendCheckpoint(steps: OutgoingOp[]): Promise<void> {
     if (this.options.stepMode === StepMode.Sync) {
       if (!this.state.checkpointedRun) {
         // We have to start the run
@@ -947,6 +960,11 @@ class InngestExecutionEngine
           // steps could be executed across multiple requests
           if (isStaleDispatchError(err)) {
             this.devDebug("stale dispatch detected; halting execution");
+            // Unlike the fallback below, deliberately no `attachLazyOps`:
+            // this invocation has been superseded, so shipping restored lazy
+            // ops would let the executor memoize a dead invocation's payload
+            // as canonical. The live dispatch re-executes from the last
+            // checkpoint and regenerates the same ops.
             return {
               type: "function-rejected" as const,
               ctx: this.fnArg,
@@ -967,13 +985,13 @@ class InngestExecutionEngine
 
           const buffered = this.state.checkpointingStepBuffer;
 
-          if (buffered.length) {
-            return {
+          if (isNonEmpty(buffered)) {
+            return this.attachLazyOps({
               type: "steps-found" as const,
               ctx: this.fnArg,
               ops: this.ops,
-              steps: buffered as [OutgoingOp, ...OutgoingOp[]],
-            };
+              steps: buffered,
+            });
           }
 
           return;
@@ -1298,24 +1316,7 @@ class InngestExecutionEngine
           return maybeReturnNewSteps();
         }
 
-        // If the step's handler buffered any lazy ops (e.g. `defer` calls),
-        // ship them alongside the step result instead of losing them in the
-        // `step-ran` → single-op response.
-        if (this.state.lazyOps.length === 0) {
-          return stepRanHandler(stepResult);
-        }
-
-        const transformed = await stepRanHandler(stepResult);
-        if (transformed.type !== "step-ran") {
-          return transformed;
-        }
-
-        return this.attachLazyOps({
-          type: "steps-found",
-          ctx: transformed.ctx,
-          ops: transformed.ops,
-          steps: [transformed.step],
-        });
+        return stepRanHandler(stepResult);
       },
 
       /**
@@ -1351,22 +1352,18 @@ class InngestExecutionEngine
       {
         "": commonCheckpointHandler,
         "function-resolved": async (checkpoint, i) => {
-          // Capture buffered lazy ops up front so the underlying handler's
-          // `maybeReturnNewSteps` doesn't ship them as a standalone
-          // `steps-found` batch — we want to bundle them with the final
-          // response (alongside `RunComplete` or any newly-discovered
-          // real steps) so the executor doesn't need an extra round-trip.
-          const lazyOps = this.state.lazyOps.drain();
-
           const output = await asyncHandlers["function-resolved"](
             checkpoint,
             i,
           );
 
+          // The underlying handler folds buffered lazy ops in via
+          // `attachLazyOps`, so a still-`function-resolved` output means none
+          // were buffered. Bundle buffered step results with the final
+          // response so the executor doesn't need an extra round-trip.
           if (output?.type === "function-resolved") {
             const steps = [
               ...this.state.checkpointingStepBuffer,
-              ...lazyOps,
               {
                 op: StepOpCode.RunComplete,
                 id: hashId(RUN_COMPLETE_STEP_ID),
@@ -1384,14 +1381,18 @@ class InngestExecutionEngine
             }
           }
 
-          if (output?.type === "steps-found" && lazyOps.length) {
-            return {
-              ...output,
-              steps: [...output.steps, ...lazyOps] as [
-                OutgoingOp,
-                ...OutgoingOp[],
-              ],
-            };
+          if (
+            output?.type === "steps-found" &&
+            this.state.checkpointingStepBuffer.length
+          ) {
+            const steps = [
+              ...this.state.checkpointingStepBuffer,
+              ...output.steps,
+            ];
+
+            if (isNonEmpty(steps)) {
+              return { ...output, steps };
+            }
           }
 
           return output;
@@ -1416,7 +1417,9 @@ class InngestExecutionEngine
             }
           }
 
-          return await this.transformOutput({ error: checkpoint.error });
+          return this.attachLazyOps(
+            this.transformOutput({ error: checkpoint.error }),
+          );
         },
         "step-not-found": asyncHandlers["step-not-found"],
         "steps-found": async ({ steps }) => {
@@ -2013,12 +2016,9 @@ class InngestExecutionEngine
    * fire-and-forget and have no natural shipping moment, so each terminal code
    * path must ship them or they're silently dropped.
    */
-  private attachLazyOps(
-    result: ExecutionResult,
-    extras: readonly OutgoingOp[] = [],
-  ): ExecutionResult {
+  private attachLazyOps(result: ExecutionResult): ExecutionResult {
     const lazyOps = this.state.lazyOps.drain();
-    if (lazyOps.length === 0 && extras.length === 0) {
+    if (!isNonEmpty(lazyOps)) {
       return result;
     }
 
@@ -2028,39 +2028,41 @@ class InngestExecutionEngine
       // finalize in one round-trip instead of replaying just to receive
       // terminal data.
       case "function-resolved": {
-        const steps: OutgoingOp[] = [
-          ...extras,
-          ...lazyOps,
-          {
-            op: StepOpCode.RunComplete,
-            id: hashId(RUN_COMPLETE_STEP_ID),
-            data: undefinedToNull(result.data),
-          },
-        ];
         return {
           type: "steps-found",
           ctx: result.ctx,
           ops: result.ops,
-          steps: steps as [OutgoingOp, ...OutgoingOp[]],
+          steps: [
+            ...lazyOps,
+            {
+              op: StepOpCode.RunComplete,
+              id: hashId(RUN_COMPLETE_STEP_ID),
+              data: undefinedToNull(result.data),
+            },
+          ],
         };
       }
 
+      // A `function-rejected` response body has no slot for step ops, so the
+      // rejection rides as a synthetic step-level error op instead. Finality
+      // travels via the opcode: `StepFailed` finalizes, `StepError` retries.
+      // Unlike the plain rejection path, this loses `RetryAfterError`'s delay
+      // (there's no `Retry-After` header here and no op field for it), so the
+      // executor falls back to its default backoff.
       case "function-rejected": {
         const isFinal = result.retriable === false;
-        const steps: OutgoingOp[] = [
-          ...extras,
-          ...lazyOps,
-          {
-            op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
-            id: hashId(RUN_COMPLETE_STEP_ID),
-            error: result.error,
-          },
-        ];
         return {
           type: "steps-found",
           ctx: result.ctx,
           ops: result.ops,
-          steps: steps as [OutgoingOp, ...OutgoingOp[]],
+          steps: [
+            ...lazyOps,
+            {
+              op: isFinal ? StepOpCode.StepFailed : StepOpCode.StepError,
+              id: hashId(RUN_COMPLETE_STEP_ID),
+              error: result.error,
+            },
+          ],
         };
       }
 
@@ -2068,16 +2070,22 @@ class InngestExecutionEngine
       case "steps-found": {
         return {
           ...result,
-          steps: [...result.steps, ...extras, ...lazyOps] as [
-            OutgoingOp,
-            ...OutgoingOp[],
-          ],
+          steps: [...result.steps, ...lazyOps],
         };
       }
 
-      // `step-ran` / `step-not-found` / `change-mode` carry a single op or no
-      // ops; there's no slot to attach lazy ops or extras. Re-buffer the
-      // drained ops so they ship on the next outbound message.
+      case "step-ran": {
+        return {
+          type: "steps-found",
+          ctx: result.ctx,
+          ops: result.ops,
+          steps: [result.step, ...lazyOps],
+        };
+      }
+
+      // `step-not-found` / `change-mode` carry a single op or no ops; there's
+      // no slot to attach lazy ops. Re-buffer the drained ops so they ship on
+      // the next outbound message.
       default:
         for (const op of lazyOps) {
           this.state.lazyOps.push(op);
@@ -2115,7 +2123,6 @@ class InngestExecutionEngine
 
     const state: ExecutionState = {
       stepState: this.options.stepState,
-      priorDefers: this.options.priorDefers ?? {},
       stepsToFulfill,
       steps: new Map(),
       loop,
@@ -2131,7 +2138,7 @@ class InngestExecutionEngine
         return this.state.remainingStepsToBeSeen.size === 0;
       },
       checkpointingStepBuffer: [],
-      lazyOps: new LazyOps(),
+      lazyOps: new LazyOps(this.options.priorDefers ?? {}),
       metadata: new Map(),
     };
 
@@ -2365,44 +2372,6 @@ class InngestExecutionEngine
     }): Promise<unknown> => {
       const stepOptions = getStepOptions(args[0]);
       const opId = matchOp(stepOptions, ...args.slice(1));
-
-      // Opcode-only sync ops (e.g. `DeferAdd`) are fire-and-forget and
-      // not user-addressable as steps: they have no handler, no
-      // memoization, and shouldn't fire any step middleware (`wrapStep`,
-      // `transformStepInput`, `onStepStart`, etc.). Buffer the op for
-      // lazy shipment and return; the core loop, middleware pipeline,
-      // and `state.steps` are all bypassed. See `ARCHITECTURE.md`.
-      if (isLazyOp(opts, opId)) {
-        const hashedId = _internals.hashId(opId.id);
-        if (this.state.lazyOps.hasId(hashedId)) {
-          // defer.md: "defer IDs must be unique within a run". Skip the
-          // duplicate and warn so the user can spot the bug — silently
-          // shipping two ops with identical hashed ids relies on backend
-          // dedup and hides the mistake.
-          this.options.client[internalLoggerSymbol].warn(
-            { runId: this.fnArg.runId, id: opId.userland?.id ?? opId.id },
-            "defer skipped: duplicate ID within run",
-          );
-          return;
-        }
-        if (this.state.priorDefers[hashedId]) {
-          // Replay: this id was already shipped in a prior execution.  Silently
-          // skip, but mark it as seen so a later call with the same id (a real
-          // duplicate) is detected and warned about above.
-          this.state.lazyOps.markSeen(hashedId);
-          return;
-        }
-        this.state.lazyOps.push({
-          id: hashedId,
-          op: opId.op,
-          name: opId.name,
-          displayName: opId.displayName ?? opId.id,
-          opts: opId.opts,
-          userland: opId.userland,
-          data: null,
-        });
-        return;
-      }
 
       if (this.state.executingStep) {
         /**
@@ -2653,25 +2622,130 @@ class InngestExecutionEngine
     };
 
     const baseTools = createStepTools(this.options.client, this, stepHandler);
-    const defer = this.buildDefer(stepHandler);
+    const defer = this.buildDefer();
 
     return { step: baseTools, defer };
+  }
+
+  /**
+   * Register a lazy op (e.g. `DeferAdd`), buffering it for shipment on the
+   * next outbound wire message. Synchronous, so callers like `defer()` know
+   * the outcome before returning to user code.
+   *
+   * The dedupe/replay decision itself lives in `LazyOps.register`.
+   */
+  private registerLazyOp(opId: Omit<HashedOp, "data" | "error" | "mode">): {
+    outcome: "pushed" | "duplicate" | "replay-skip";
+    hashedId: string;
+  } {
+    const hashedId = _internals.hashId(opId.id);
+    const outcome = this.state.lazyOps.register({
+      id: hashedId,
+      op: opId.op,
+      name: opId.name,
+      displayName: opId.displayName ?? opId.id,
+      opts: opId.opts,
+      userland: opId.userland,
+      data: null,
+    });
+
+    if (outcome === "duplicate") {
+      // Warn so the user can spot the bug — silently shipping two ops with
+      // identical hashed ids relies on backend dedup and hides the mistake.
+      this.options.client[internalLoggerSymbol].warn(
+        { runId: this.fnArg.runId, id: opId.userland?.id ?? opId.id },
+        "defer skipped: duplicate ID within run",
+      );
+    }
+
+    return { outcome, hashedId };
+  }
+
+  /**
+   * Log an error from a fire-and-forget path (`defer()` / `abort()`). The
+   * internal logger can be user-supplied, so it can't be trusted not to
+   * throw — and these paths must never throw into the user's handler.
+   */
+  private safeLogError(fields: Record<string, unknown>, message: string) {
+    try {
+      this.options.client[internalLoggerSymbol].error(fields, message);
+    } catch {
+      // The logger itself threw; nothing trustworthy left to report with.
+    }
+  }
+
+  /**
+   * Emit a `DeferAbort` for a previously registered `defer()` call. Like
+   * `defer()` itself it's sync, fire-and-forget, and idempotent: every no-op
+   * path logs via the internal logger and it never throws into user code.
+   */
+  private abortDefer({
+    targetHashedId,
+    fnSlug,
+    id,
+  }: {
+    targetHashedId: string;
+    fnSlug: string;
+    id: string;
+  }): void {
+    const log = this.options.client[internalLoggerSymbol];
+    const runId = this.fnArg.runId;
+
+    try {
+      const outcome = this.state.lazyOps.abort(targetHashedId, {
+        // Namespaced on the target's hash (not the userland id) so it can't
+        // collide with a user calling `defer("x:abort", ...)`.
+        id: _internals.hashId(`${targetHashedId}:abort`),
+        op: StepOpCode.DeferAbort,
+        name: id,
+        displayName: id,
+        opts: { target_hashed_id: targetHashedId, fn_slug: fnSlug, id },
+        data: null,
+      });
+
+      if (outcome === "already-aborted") {
+        log.warn({ runId, id }, "defer abort skipped: already aborted");
+      } else if (outcome === "not-abortable") {
+        log.debug(
+          { runId, id },
+          "defer abort skipped: defer is no longer abortable",
+        );
+      }
+    } catch (err) {
+      this.safeLogError(
+        { runId, id, err },
+        "defer abort skipped: unexpected error",
+      );
+    }
   }
 
   /**
    * Build the `defer(idOrOptions, { function, data })` method exposed on
    * every handler context. Validates `data` against the target function's
    * schema (if any) and emits a `DeferAdd` opcode that routes to the
-   * target's companion function slug.
+   * target's companion function slug. Returns a handle whose `abort()`
+   * cancels the deferred run (see `abortDefer` above).
    *
    * `defer()` is fire-and-forget: a misuse should not derail the user's
    * handler. Validation failures (wrong function, async schema validator,
-   * schema mismatch) are logged and the call is silently skipped.
+   * schema mismatch) are logged and the call is silently skipped, in which
+   * case the returned handle is a logging no-op.
    */
-  private buildDefer(stepHandler: StepHandler): DeferFn {
+  private buildDefer(): DeferFn {
     return (idOrOptions, { function: deferFn, data, experiment }) => {
       const log = this.options.client[internalLoggerSymbol];
       const runId = this.fnArg.runId;
+
+      const skippedHandle: DeferHandle = {
+        abort: () => {
+          try {
+            log.warn(
+              { runId, id: idOrOptions },
+              "defer abort skipped: the defer call was skipped",
+            );
+          } catch {}
+        },
+      };
 
       try {
         if (!isDeferredFunction(deferFn)) {
@@ -2679,7 +2753,7 @@ class InngestExecutionEngine
             { runId },
             "defer skipped: function not created via createDefer",
           );
-          return;
+          return skippedHandle;
         }
 
         const { schema } = deferFn;
@@ -2693,14 +2767,14 @@ class InngestExecutionEngine
               { runId },
               "defer() requires a synchronous schema validator. The defer call was skipped.",
             );
-            return;
+            return skippedHandle;
           }
           if (result.issues) {
             log.error(
               { runId, issues: result.issues },
               "defer skipped: schema validation failed",
             );
-            return;
+            return skippedHandle;
           }
           input = result.value ?? data;
         }
@@ -2712,24 +2786,35 @@ class InngestExecutionEngine
             ? { ...input, [deferExperimentKey]: experiment }
             : input;
 
-        void stepHandler({
-          args: [idOrOptions, finalInput],
-          matchOp: (stepOptions, inputArg) => ({
-            id: stepOptions.id,
-            mode: StepMode.Sync,
-            op: StepOpCode.DeferAdd,
-            name: stepOptions.name ?? stepOptions.id,
-            displayName: stepOptions.name ?? stepOptions.id,
-            opts: { fn_slug: deferFnSlug, input: inputArg },
-            userland: { id: stepOptions.id },
-          }),
-        }).catch((err: unknown) => {
-          log.error({ runId, err }, "defer skipped: unexpected error");
+        const stepOptions = getStepOptions(idOrOptions);
+        const { outcome, hashedId } = this.registerLazyOp({
+          id: stepOptions.id,
+          op: StepOpCode.DeferAdd,
+          name: stepOptions.name ?? stepOptions.id,
+          displayName: stepOptions.name ?? stepOptions.id,
+          opts: { fn_slug: deferFnSlug, input: finalInput },
+          userland: { id: stepOptions.id },
         });
+
+        if (outcome === "duplicate") {
+          return skippedHandle;
+        }
+
+        // A replay-skipped add still gets a live handle: the target shipped
+        // in a prior execution and `abortDefer` resolves it via `priorDefers`.
+        return {
+          abort: () =>
+            this.abortDefer({
+              targetHashedId: hashedId,
+              fnSlug: deferFnSlug,
+              id: stepOptions.id,
+            }),
+        };
       } catch (err) {
         // Fire-and-forget: a misbehaving schema validator, malformed args, or
         // any other unexpected throw must not derail the surrounding handler.
-        log.error({ runId, err }, "defer skipped: unexpected error");
+        this.safeLogError({ runId, err }, "defer skipped: unexpected error");
+        return skippedHandle;
       }
     };
   }
@@ -3079,14 +3164,6 @@ export interface ExecutionState {
   stepState: Record<string, MemoizedOp>;
 
   /**
-   * Hashed defer step IDs the backend has already received. Used to skip
-   * re-emitting `DeferAdd` ops on replay. Defer ops aren't memoized like
-   * normal steps (they have no result), so this lives separately from
-   * `stepState`.
-   */
-  priorDefers: Record<string, unknown>;
-
-  /**
    * The number of steps we expect to fulfil based on the state passed from the
    * Executor.
    */
@@ -3176,7 +3253,8 @@ export interface ExecutionState {
 
   /**
    * Buffer for opcode-only sync ops (e.g. `DeferAdd`) awaiting shipment
-   * on the next outbound wire message. See `ARCHITECTURE.md` and
+   * on the next outbound wire message, and owner of the defer
+   * dedupe/replay/abort-idempotency decisions. See `ARCHITECTURE.md` and
    * `lazyOps.ts` for the rationale.
    */
   lazyOps: LazyOps;

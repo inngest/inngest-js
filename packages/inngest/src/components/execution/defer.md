@@ -32,11 +32,11 @@ const sendEmail = createDefer(
 );
 ```
 
-A defer function is a `DeferredFunction` (a subclass of `InngestFunction`) with its own retries, concurrency, and step state. It's triggered implicitly by `inngest/deferred.schedule` filtered to its own ID, so users don't wire triggers manually. Pass it to `serve({ functions: [...] })` alongside regular functions; the comm handler identifies it via `instanceof DeferredFunction` and registers it with `handlerKind: "defer"`.
+A defer function is a `DeferredFunction` (a subclass of `InngestFunction`) with its own retries, concurrency, and step state. It's triggered implicitly by `inngest/deferred.schedule` filtered to its own ID, so users don't wire triggers manually. Pass it to `serve({ functions: [...] })` alongside regular functions; the comm handler identifies it via `isDeferredFunction()` (a marker check that, unlike `instanceof`, survives duplicate SDK copies) and registers it with `handlerKind: "defer"`.
 
 `createDefer` is a pure function rather than a method on the Inngest client because we don't yet want to commit to a client-method signature; we may move it later.
 
-`createDefer` mirrors `inngest.createFunction` with three differences:
+`createDefer` mirrors `inngest.createFunction` with these differences:
 
 - The client is the first positional arg.
 - `triggers` is not accepted.
@@ -59,7 +59,7 @@ const orderPlaced = inngest.createFunction(
 
 The first argument is a unique ID, similar to what we do for steps. However, unlike steps, `defer` IDs must be unique within a run: we don't do the same "add implicit index to dedupe" trick that we do for steps. We can't do that because `defer` can be run in `step.run`, so the implicit index would change when reentering the function.
 
-The `data` type is inferred from `function.schema`. `defer` is sync and fire-and-forget: it returns `void` and execution continues immediately.
+The `data` type is inferred from `function.schema`. `defer` is sync and fire-and-forget: execution continues immediately. It returns a handle whose `abort()` cancels the deferred run (see "Aborting").
 
 It also works inside `step.run()`:
 
@@ -68,6 +68,22 @@ await step.run("notify", async () => {
   defer("send", { function: sendEmail, data: { ... } });
 });
 ```
+
+## Aborting
+
+`defer(...)` returns a handle whose `abort()` cancels the deferred run from later in the same run:
+
+```ts
+const handle = defer("send", { function: sendEmail, data: { ... } });
+// ...later, possibly inside a step.run()...
+handle.abort();
+```
+
+Like `defer` itself, `abort()` is sync, fire-and-forget, and never throws into the handler: misuse (double abort, aborting a defer whose call was skipped) logs via the internal logger and no-ops. Any abort that ships before the parent run finalizes is guaranteed effective. The caveat: an abort only takes effect if its message ships, so one emitted by a final attempt that crashes before responding is lost.
+
+`abort()` emits a `DeferAbort` opcode, buffered like `DeferAdd`. Aborting a defer whose add is still buffered drops the add locally, but the abort ships anyway: the executor can dispatch a request with a stale `defers` map, so "the add never shipped" isn't knowable locally, and unknown-target aborts are a tolerated backend no-op. A `DeferAdd` and the `DeferAbort` targeting it never ship in the same message (see `ARCHITECTURE.md`).
+
+On replay, each `defers` entry carries `{ abortable?: boolean }`. A handle from a replay-skipped `defer(...)` is still live; `abort()` on a target marked `abortable: false` is skipped and logged.
 
 ## Schemas
 
@@ -81,7 +97,7 @@ Without a schema, `data` falls back to `Record<string, any>`.
 
 `defer(...)` is fire-and-forget, so a misuse should not derail the surrounding handler. When `defer(...)` rejects a call, the SDK logs an error via the internal logger and the call is silently skipped; the parent run continues normally and no `DeferAdd` op is emitted. The defer handler does not fire.
 
-Receiver-side schema failures (the deferred run reading invalid `event.data`) are not in this category: they fail the deferred run itself, with normal retry semantics.
+Receiver-side schema failures (the deferred run reading invalid `event.data`) are not in this category: they fail the deferred run itself with a `NonRetriableError` — the event data won't change, so retrying is pointless.
 
 ## Sharing across parents
 
@@ -93,7 +109,7 @@ A defer function is one Inngest function in the backend. Multiple parent functio
 
 The backend records each `DeferAdd` against the parent run as it arrives. The deferred run isn't started immediately: when the parent run finalizes, the backend emits one `inngest/deferred.schedule` event per recorded defer, and that event triggers the matching defer function.
 
-On replay, the executor sends back a `defers` map of hashed step IDs it has already received. The SDK uses `priorDefers` to skip re-emitting them.
+On replay, the executor sends back a `defers` map keyed by the hashed step IDs it has already received, with values like `{ abortable?: boolean }`. The SDK uses it (`priorDefers`) to skip re-emitting adds and to gate `abort()`.
 
 ## Todo
 
@@ -102,9 +118,7 @@ On replay, the executor sends back a `defers` map of hashed step IDs it has alre
 These silently drop user `defer()` calls in specific code paths. Fix before
 removing the experimental label.
 
-- **Preserve buffered defer ops on checkpoint network failure** -- `checkpoint()` drains `state.lazyOps` at the top, then calls the checkpointing API. If the API call exhausts retries and throws, the drained ops are local to `checkpoint()` and lost (`attemptCheckpointAndResume`'s catch block only restores `checkpointingStepBuffer`). User-visible effect: a transient backend hiccup silently drops the user's `defer()` calls. Fix direction: drain in the caller and re-buffer on failure, or have `checkpoint()` restore drained ops on throw.
-
-- **Preserve buffered defer ops on sync-mode terminal rejection** -- Mirrors the async-mode fix but on the sync (durable-endpoint) code path. The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops alongside the terminal error op (or via a final checkpoint if a `checkpointedRun` exists).
+- **Preserve buffered defer ops on sync-mode (durable endpoints) terminal rejection** -- The non-SSE final rejection branch returns `transformOutput({error})` directly without checkpointing, so any buffered defer ops are dropped. Fix: drain and ship lazy ops via a final checkpoint if a `checkpointedRun` exists; the sync checkpoint path has no slot for ops on a terminal rejection, so this needs backend support.
 
 ### Future features (additive)
 
@@ -115,8 +129,6 @@ Net-new capabilities. None affect correctness of the current API.
 - **Support `onFailure`** -- We may add it later.
 
 - **Support `batchEvents`** -- We may add it later. We haven't decided if deferred runs should be restricted to a single parent run. To do that, we may need to implicitly add a key. We'll revisit this decision later.
-
-- **Support aborting a `defer` call.** -- A `DeferAbort` opcode is reserved on the backend but the SDK doesn't yet emit it. Needs a user-facing API (e.g. `const { abort } = defer("id", { function, data })`) and the matching opcode emission.
 
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
 
