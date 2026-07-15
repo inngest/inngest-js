@@ -44,6 +44,7 @@ import {
   type APIStepPayload,
   type Context,
   type DeferFn,
+  type DeferHandle,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -2672,6 +2673,7 @@ class InngestExecutionEngine
     return (idOrOptions, { function: deferFn, data, experiment }) => {
       const log = this.options.client[internalLoggerSymbol];
       const runId = this.fnArg.runId;
+      const noopHandle: DeferHandle = { abort: () => {} };
 
       try {
         if (!isDeferredFunction(deferFn)) {
@@ -2679,11 +2681,13 @@ class InngestExecutionEngine
             { runId },
             "defer skipped: function not created via createDefer",
           );
-          return;
+          return noopHandle;
         }
 
         const { schema } = deferFn;
         const deferFnSlug = deferFn.id(this.options.client.id);
+        const stepOptions = getStepOptions(idOrOptions);
+        const hashedId = _internals.hashId(stepOptions.id);
 
         let input: unknown = data;
         if (schema) {
@@ -2693,14 +2697,14 @@ class InngestExecutionEngine
               { runId },
               "defer() requires a synchronous schema validator. The defer call was skipped.",
             );
-            return;
+            return noopHandle;
           }
           if (result.issues) {
             log.error(
               { runId, issues: result.issues },
               "defer skipped: schema validation failed",
             );
-            return;
+            return noopHandle;
           }
           input = result.value ?? data;
         }
@@ -2713,7 +2717,7 @@ class InngestExecutionEngine
             : input;
 
         void stepHandler({
-          args: [idOrOptions, finalInput],
+          args: [stepOptions, finalInput],
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,
             mode: StepMode.Sync,
@@ -2726,10 +2730,53 @@ class InngestExecutionEngine
         }).catch((err: unknown) => {
           log.error({ runId, err }, "defer skipped: unexpected error");
         });
+
+        return {
+          abort: () => {
+            try {
+              if (this.state.priorDefers[hashedId]?.abortable === false) {
+                return;
+              }
+
+              const abortId = `${hashedId}:abort`;
+              if (this.state.lazyOps.hasId(_internals.hashId(abortId))) {
+                return;
+              }
+
+              void stepHandler({
+                args: [{ id: abortId, name: stepOptions.name }, null],
+                matchOp: (abortStepOptions) => ({
+                  id: abortStepOptions.id,
+                  mode: StepMode.Sync,
+                  op: StepOpCode.DeferAbort,
+                  name: stepOptions.name ?? stepOptions.id,
+                  displayName: stepOptions.name ?? stepOptions.id,
+                  opts: {
+                    target_hashed_id: hashedId,
+                    fn_slug: deferFnSlug,
+                    id: stepOptions.id,
+                  },
+                  userland: { id: stepOptions.id },
+                }),
+              }).catch((err: unknown) => {
+                log.error(
+                  { runId, err },
+                  "defer abort skipped: unexpected error",
+                );
+              });
+            } catch (err) {
+              log.error(
+                { runId, err },
+                "defer abort skipped: unexpected error",
+              );
+            }
+          },
+        };
       } catch (err) {
         // Fire-and-forget: a misbehaving schema validator, malformed args, or
         // any other unexpected throw must not derail the surrounding handler.
         log.error({ runId, err }, "defer skipped: unexpected error");
+        return noopHandle;
       }
     };
   }
@@ -3084,7 +3131,7 @@ export interface ExecutionState {
    * normal steps (they have no result), so this lives separately from
    * `stepState`.
    */
-  priorDefers: Record<string, unknown>;
+  priorDefers: Record<string, { abortable?: boolean }>;
 
   /**
    * The number of steps we expect to fulfil based on the state passed from the

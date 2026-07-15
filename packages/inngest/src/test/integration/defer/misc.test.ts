@@ -149,13 +149,14 @@ describe("defer ID collision", async () => {
   }
 });
 
-test("defer in step", async () => {
+matrixCheckpointing("defer in step", async (checkpointing) => {
   // Can call `defer` within a step
 
   const parentState = createState({});
   const deferState = createState({});
 
   const client = new Inngest({
+    checkpointing,
     id: randomSuffix(testFileName),
     isDev: true,
   });
