@@ -1,5 +1,11 @@
 # inngest
 
+## 4.13.0
+
+### Minor Changes
+
+- [#1630](https://github.com/inngest/inngest-js/pull/1630) [`7b5907e4`](https://github.com/inngest/inngest-js/commit/7b5907e44f9662cd64c45ede8802d0d2d42dc8c3) Thanks [@Linell](https://github.com/Linell)! - Added support for aborting deferred runs via defer().abort()
+
 ## 4.12.1
 
 ### Patch Changes
