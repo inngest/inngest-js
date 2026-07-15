@@ -1,13 +1,15 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
+import { createDefer } from "../../experimental.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
-import { StepMode, StepOpCode } from "../../types.ts";
+import { type Context, StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
 import type { MetadataUpdate } from "../InngestMetadata.ts";
 import type { GenericStepTools } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
+import { _internals } from "./engine.ts";
 import type { ExecutionResults } from "./InngestExecution.ts";
 
 describe("Execution engine checkpoint retry behavior", () => {
@@ -49,7 +51,7 @@ describe("Execution engine checkpoint retry behavior", () => {
     extraPartialOptions = {},
   }: {
     mockApi: Partial<InngestApi>;
-    handler: (ctx: { step: GenericStepTools }) => Promise<unknown>;
+    handler: (ctx: Context.Any & { step: GenericStepTools }) => unknown;
     stepMode: StepMode;
     checkpointingConfig?: {
       bufferedSteps: number;
@@ -98,6 +100,42 @@ describe("Execution engine checkpoint retry behavior", () => {
     });
 
     return { execution, client, fn };
+  };
+
+  const runDeferExecution = async ({
+    handler,
+    priorDefers,
+  }: {
+    handler: (
+      ctx: Context.Any,
+      deferFn: ReturnType<typeof createDefer>,
+    ) => unknown;
+    priorDefers?: Record<string, { abortable?: boolean }>;
+  }) => {
+    const client = createClient({ id: "test" });
+    const deferFn = createDefer(client, { id: "foo" }, async () => {});
+    const fn = client.createFunction(
+      { id: "test-fn", triggers: [{ event: "test/event" }] },
+      (ctx) => handler(ctx, deferFn),
+    );
+
+    const execution = fn["createExecution"]({
+      partialOptions: {
+        client,
+        data: fromPartial({ event: mockEvent }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.AsyncCheckpointing,
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+        priorDefers,
+      },
+    });
+
+    return await execution.start();
   };
 
   /**
@@ -283,6 +321,49 @@ describe("Execution engine checkpoint retry behavior", () => {
       const stepsFound = result as ExecutionResults["steps-found"];
       expect(stepsFound.steps).toHaveLength(1);
       expect(stepsFound.steps[0]!.data).toBe("result");
+    });
+
+    describe("defer abort lazy ops", () => {
+      test("immediate abort reports only DeferAbort for the defer", async () => {
+        const result = await runDeferExecution({
+          handler: ({ defer }, deferFn) => {
+            const { abort } = defer("foo", { function: deferFn, data: {} });
+            abort();
+            return "done";
+          },
+        });
+
+        expect(result.type).toBe("steps-found");
+        const stepsFound = result as ExecutionResults["steps-found"];
+        const deferOps = stepsFound.steps.filter(
+          (step) =>
+            step.op === StepOpCode.DeferAdd ||
+            step.op === StepOpCode.DeferAbort,
+        );
+
+        expect(deferOps).toHaveLength(1);
+        expect(deferOps[0]).toMatchObject({
+          op: StepOpCode.DeferAbort,
+          opts: { target_hashed_id: _internals.hashId("foo") },
+        });
+      });
+
+      test("abort noops when the prior defer is not abortable", async () => {
+        const result = await runDeferExecution({
+          priorDefers: { [_internals.hashId("foo")]: { abortable: false } },
+          handler: ({ defer }, deferFn) => {
+            const { abort } = defer("foo", { function: deferFn, data: {} });
+            abort();
+            return "done";
+          },
+        });
+
+        expect(result.type).toBe("steps-found");
+        const stepsFound = result as ExecutionResults["steps-found"];
+        expect(
+          stepsFound.steps.some((step) => step.op === StepOpCode.DeferAbort),
+        ).toBe(false);
+      });
     });
 
     test("flushes buffered steps before returning parallel steps to executor", async () => {

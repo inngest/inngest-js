@@ -512,12 +512,26 @@ export type WithInvocation<T extends EventPayload> = Simplify<
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
+ * Handle returned by `defer(...)`, scoped to that call's deferred run.
+ */
+export type DeferHandle = {
+  /**
+   * Cancel the deferred run. Sync and fire-and-forget. If the executor marks
+   * the defer as no longer abortable, this is a no-op.
+   */
+  abort: () => void;
+};
+
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * Context extension that exposes `defer` on every handler.
  *
  * `defer(id, { function, data })` emits a `DeferAdd` opcode that triggers the
  * referenced defer function (created via `createDefer`) with `data` validated
  * against the function's schema. The data type is inferred from the function's
- * schema.
+ * schema. Returns a {@link DeferHandle} that can cancel the deferred run.
  */
 export type DeferFn = <TFn extends DeferredFunction.Any>(
   id: string,
@@ -532,7 +546,7 @@ export type DeferFn = <TFn extends DeferredFunction.Any>(
     /** Attribute the deferred scorer's result to this experiment variant. */
     experiment?: ExperimentRef;
   },
-) => void;
+) => DeferHandle;
 
 /**
  * A replay-stable handle to a selected experiment variant, returned by

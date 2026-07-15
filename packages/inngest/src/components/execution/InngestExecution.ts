@@ -123,7 +123,7 @@ export interface InngestExecutionOptions {
    * tracks which ones it has already received so the SDK can avoid
    * re-emitting them on replay.
    */
-  priorDefers?: Record<string, unknown>;
+  priorDefers?: Record<string, { abortable?: boolean }>;
 
   stepCompletionOrder: string[];
   stepMode: StepMode;

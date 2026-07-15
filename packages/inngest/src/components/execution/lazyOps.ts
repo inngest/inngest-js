@@ -1,4 +1,4 @@
-import { type OutgoingOp, StepMode } from "../../types.ts";
+import { type OutgoingOp, StepMode, StepOpCode } from "../../types.ts";
 import type { MatchOpFn, StepToolOptions } from "../InngestStepTools.ts";
 
 /**
@@ -49,6 +49,17 @@ export class LazyOps {
    * Buffer an op for later shipment.
    */
   push(op: OutgoingOp): void {
+    if (op.op === StepOpCode.DeferAbort) {
+      // If there's a matching DeferAdd op, remove it. We don't want to report
+      // the same defer with DeferAdd and DeferAbort in the same request.
+      this.buffer = this.buffer.filter((buffered) => {
+        return !(
+          buffered.op === StepOpCode.DeferAdd &&
+          buffered.id === op.opts?.target_hashed_id
+        );
+      });
+    }
+
     this.buffer.push(op);
     this.pushedIds.add(op.id);
   }
