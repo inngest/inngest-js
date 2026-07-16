@@ -580,6 +580,14 @@ export type BaseContext<TClient extends Inngest.Any> = {
   events: AsTuple<Simplify<EventPayload>>;
 
   /**
+   * The run's effective sessions, aggregated from its triggering event(s).
+   *
+   * By default these are propagated onto events emitted during the run via
+   * `step.sendEvent`, so child runs stay grouped in the same sessions.
+   */
+  sessions?: Record<string, string>;
+
+  /**
    * The run ID for the current function execution
    */
   runId: string;
@@ -761,6 +769,17 @@ export type EventMeta = {
    * normalized to strings before the event is sent.
    */
   sessions?: EventSessions;
+
+  /**
+   * Sessions propagated from the run that emitted this event. Stamped
+   * automatically from `ctx.sessions`; carried as a separate layer from manual
+   * {@link EventMeta.sessions} and merged server-side.
+   *
+   * Not intended to be set by hand.
+   *
+   * @internal
+   */
+  propagatedSessions?: EventSessions;
 };
 
 /**
