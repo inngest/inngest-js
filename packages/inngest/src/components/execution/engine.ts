@@ -33,7 +33,7 @@ import {
   retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
-import { aggregateMetadata } from "../../helpers/sessions.ts";
+import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
 import { stringify } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import {
@@ -2167,7 +2167,7 @@ class InngestExecutionEngine
       // Best-effort: session grouping must never crash a run, so a failure here
       // degrades to no propagation rather than throwing.
       try {
-        fnArg.sessions = aggregateMetadata(fnArg.events ?? []);
+        fnArg.sessions = reduceEventsToPropagatedSessions(fnArg.events ?? []);
       } catch {
         fnArg.sessions = undefined;
       }

@@ -118,7 +118,7 @@ export const compareUtf8 = (a: string, b: string): number => {
  * Reduces a run's triggering events to `≤5` deterministic sessions that
  * become the propagated sessions.
  */
-export const aggregateMetadata = (
+export const reduceEventsToPropagatedSessions = (
   // Accepts the send-time EventMeta shape (numeric ids permitted) since that is
   // how a run's triggering events are statically typed; ids are canonicalized
   // to strings below, so received string ids pass through unchanged.
