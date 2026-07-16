@@ -1,48 +1,63 @@
 import { describe, expect, test } from "vitest";
-import { aggregateMetadata, compareUtf8 } from "./sessions.ts";
+import { reduceEventsToPropagatedSessions, compareUtf8 } from "./sessions.ts";
 
 /** Build a triggering event carrying the given session map. */
 const evt = (sessions?: Record<string, string>) => ({ meta: { sessions } });
 
-describe("aggregateMetadata", () => {
+describe("reduceEventsToPropagatedSessions", () => {
   test("single event, single session passes through", () => {
-    expect(aggregateMetadata([evt({ a: "1" })])).toEqual({ a: "1" });
+    expect(reduceEventsToPropagatedSessions([evt({ a: "1" })])).toEqual({
+      a: "1",
+    });
   });
 
   test("no events / no sessions yields an empty map (no-run safety)", () => {
-    expect(aggregateMetadata([])).toEqual({});
-    expect(aggregateMetadata([evt(undefined)])).toEqual({});
-    expect(aggregateMetadata([evt({})])).toEqual({});
-    expect(aggregateMetadata([{ meta: null }])).toEqual({});
+    expect(reduceEventsToPropagatedSessions([])).toEqual({});
+    expect(reduceEventsToPropagatedSessions([evt(undefined)])).toEqual({});
+    expect(reduceEventsToPropagatedSessions([evt({})])).toEqual({});
+    expect(reduceEventsToPropagatedSessions([{ meta: null }])).toEqual({});
   });
 
   test("batch unions sessions across all triggering events", () => {
-    expect(aggregateMetadata([evt({ a: "1" }), evt({ b: "2" })])).toEqual({
+    expect(
+      reduceEventsToPropagatedSessions([evt({ a: "1" }), evt({ b: "2" })]),
+    ).toEqual({
       a: "1",
       b: "2",
     });
   });
 
   test("exact (key,id) duplicate across the batch dedupes", () => {
-    expect(aggregateMetadata([evt({ a: "1" }), evt({ a: "1" })])).toEqual({
+    expect(
+      reduceEventsToPropagatedSessions([evt({ a: "1" }), evt({ a: "1" })]),
+    ).toEqual({
       a: "1",
     });
   });
 
   test("a key with conflicting ids across the batch is dropped entirely", () => {
-    expect(aggregateMetadata([evt({ a: "1" }), evt({ a: "2" })])).toEqual({});
+    expect(
+      reduceEventsToPropagatedSessions([evt({ a: "1" }), evt({ a: "2" })]),
+    ).toEqual({});
   });
 
   test("only the conflicting key is dropped; the rest survive", () => {
     expect(
-      aggregateMetadata([evt({ a: "1", b: "9" }), evt({ a: "2" })]),
+      reduceEventsToPropagatedSessions([
+        evt({ a: "1", b: "9" }),
+        evt({ a: "2" }),
+      ]),
     ).toEqual({ b: "9" });
   });
 
   test("a duplicate id does not mask a genuine conflict", () => {
     // ids seen for `a` are {1, 2} even though (a,1) appears twice.
     expect(
-      aggregateMetadata([evt({ a: "1" }), evt({ a: "1" }), evt({ a: "2" })]),
+      reduceEventsToPropagatedSessions([
+        evt({ a: "1" }),
+        evt({ a: "1" }),
+        evt({ a: "2" }),
+      ]),
     ).toEqual({});
   });
 
@@ -52,14 +67,16 @@ describe("aggregateMetadata", () => {
     const numericEvt = {
       meta: { sessions: { a: 1 } },
     } as unknown as ReturnType<typeof evt>;
-    expect(aggregateMetadata([numericEvt, evt({ a: "1" })])).toEqual({
+    expect(
+      reduceEventsToPropagatedSessions([numericEvt, evt({ a: "1" })]),
+    ).toEqual({
       a: "1",
     });
   });
 
   test("more than five keys truncate to the first five by key", () => {
     const events = [evt({ a: "1", b: "1", c: "1", d: "1", e: "1", f: "1" })];
-    expect(aggregateMetadata(events)).toEqual({
+    expect(reduceEventsToPropagatedSessions(events)).toEqual({
       a: "1",
       b: "1",
       c: "1",
@@ -76,7 +93,7 @@ describe("aggregateMetadata", () => {
       evt({ a: "1", b: "1", c: "1", d: "1", e: "1", f: "1" }),
       evt({ a: "2" }),
     ];
-    expect(aggregateMetadata(events)).toEqual({
+    expect(reduceEventsToPropagatedSessions(events)).toEqual({
       b: "1",
       c: "1",
       d: "1",
@@ -100,7 +117,7 @@ describe("aggregateMetadata", () => {
         "\u{1F600}": "x",
       }),
     ];
-    const got = aggregateMetadata(events);
+    const got = reduceEventsToPropagatedSessions(events);
     expect(Object.keys(got).sort()).toEqual(["1", "2", "3", "4", "￿"]);
     expect(got).not.toHaveProperty("\u{1F600}");
   });
@@ -109,7 +126,7 @@ describe("aggregateMetadata", () => {
     // Received events are JSON-parsed, which makes __proto__ an own property
     // (unlike an object literal, which would invoke the prototype setter).
     const sessions = JSON.parse('{"__proto__":"1"}') as Record<string, string>;
-    const got = aggregateMetadata([{ meta: { sessions } }]);
+    const got = reduceEventsToPropagatedSessions([{ meta: { sessions } }]);
     expect(Object.hasOwn(got, "__proto__")).toBe(true);
     expect(got["__proto__"]).toBe("1");
   });
