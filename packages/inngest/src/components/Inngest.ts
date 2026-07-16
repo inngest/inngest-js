@@ -118,6 +118,16 @@ type FetchT = typeof fetch;
  */
 export const internalLoggerSymbol = Symbol.for("inngest.internalLogger");
 
+/**
+ * Symbol for accessing whether session propagation is enabled on this client.
+ * @internal
+ */
+export const sessionPropagationSymbol = Symbol.for(
+  "inngest.sessionPropagation",
+);
+
+const SESSION_PROPAGATION_DEFAULT_ENABLED = false;
+
 export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
@@ -162,6 +172,15 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * @internal
    */
   readonly [internalLoggerSymbol]: Logger;
+
+  /**
+   * Whether session propagation is enabled for this client. Resolved from
+   * `sessionPropagation` constructor option, defaulting to
+   * {@link SESSION_PROPAGATION_DEFAULT_ENABLED}.
+   *
+   * @internal
+   */
+  readonly [sessionPropagationSymbol]: boolean;
 
   private localFns: InngestFunction.Any[] = [];
 
@@ -377,6 +396,15 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
+
+    // `sessionPropagation` is an internal, undocumented option intentionally
+    // kept off the public `ClientOptions` type, so it's read via a narrow cast.
+    const sessionPropagationOption = (
+      this.options as TClientOpts & { sessionPropagation?: boolean }
+    ).sessionPropagation;
+
+    this[sessionPropagationSymbol] =
+      sessionPropagationOption ?? SESSION_PROPAGATION_DEFAULT_ENABLED;
 
     // Warned here rather than per-function so internal SDK functions
     // inheriting this setting don't each warn.

@@ -14,6 +14,7 @@ import {
 import type { Logger } from "../middleware/logger.ts";
 import { createClient, nodeVersion } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
+import { sessionPropagationSymbol } from "./Inngest.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
 const testEvent: EventPayload = {
@@ -1396,5 +1397,38 @@ describe("inngest.realtime.publish", () => {
       // @ts-expect-error intentional invalid payload
       inngest.realtime.publish(ch.status, { message: 999 }),
     ).rejects.toThrow("Schema validation failed");
+  });
+});
+
+describe("sessionPropagation toggle", () => {
+  // `sessionPropagation` is an internal, undocumented option that is
+  // intentionally kept off the public `ClientOptions` type, so it's set via a
+  // narrow cast — the same way the SDK reads it internally.
+  const createWithSessionPropagation = (
+    sessionPropagation?: boolean,
+  ): Inngest.Any => {
+    const opts = { id: "test" } as ConstructorParameters<typeof Inngest>[0];
+
+    if (sessionPropagation !== undefined) {
+      (opts as { sessionPropagation?: boolean }).sessionPropagation =
+        sessionPropagation;
+    }
+
+    return new Inngest(opts);
+  };
+
+  test("defaults to false (dark-launch OFF) when the option is omitted", () => {
+    const inngest = createWithSessionPropagation();
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("is true when the internal option is set to true", () => {
+    const inngest = createWithSessionPropagation(true);
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("is false when the internal option is explicitly false", () => {
+    const inngest = createWithSessionPropagation(false);
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
 });
