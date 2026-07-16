@@ -39,6 +39,7 @@ import {
   type GetStepTools,
   type Inngest,
   internalLoggerSymbol,
+  sessionPropagationSymbol,
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -219,6 +220,32 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
   }
 
   return options;
+};
+
+/**
+ * Stamps the run's propagated sessions onto each outgoing `step.sendEvent`
+ * payload as the separate `meta.propagatedSessions` layer, so child runs stay
+ * grouped in the parent's sessions. The manual `meta.sessions` layer is left
+ * untouched — the server merges the two (manual wins per key).
+ *
+ * `sessions` is `ctx.sessions`, read at send time so a run-level override
+ * (mutating `ctx.sessions` in the handler) is reflected. When there is nothing
+ * to propagate the payload is returned unchanged.
+ */
+export const stampPropagatedSessions = (
+  payload: SendEventPayload,
+  sessions: Record<string, string> | undefined,
+): SendEventPayload => {
+  if (!sessions || Object.keys(sessions).length === 0) {
+    return payload;
+  }
+
+  const stamp = <T extends { meta?: EventMeta }>(p: T): T => ({
+    ...p,
+    meta: { ...p.meta, propagatedSessions: sessions },
+  });
+
+  return Array.isArray(payload) ? payload.map(stamp) : stamp(payload);
 };
 
 /**
@@ -499,10 +526,14 @@ export const createStepTools = <
         };
       },
       {
-        fn: (_ctx, _idOrOptions, payload) => {
+        fn: (ctx, _idOrOptions, payload) => {
           const fn = execution["options"]["fn"];
+          // Only stamp inherited sessions when the client-level toggle is on.
+          const payloadToSend = client[sessionPropagationSymbol]
+            ? stampPropagatedSessions(payload, ctx.sessions)
+            : payload;
           return client["_send"]({
-            payload,
+            payload: payloadToSend,
             headers: execution["options"]["headers"],
             fnMiddleware: fn.opts.middleware ?? [],
             fn,

@@ -33,6 +33,7 @@ import {
   retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { aggregateMetadata } from "../../helpers/sessions.ts";
 import { stringify } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import {
@@ -55,7 +56,7 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import { version } from "../../version.ts";
-import { internalLoggerSymbol } from "../Inngest.ts";
+import { internalLoggerSymbol, sessionPropagationSymbol } from "../Inngest.ts";
 import { createGroupTools } from "../InngestGroupTools.ts";
 import type {
   MetadataKind,
@@ -2155,6 +2156,22 @@ class InngestExecutionEngine
       group: createGroupTools({ experimentStepRun }),
       defer,
     } as unknown as Context.Any;
+
+    // Aggregate the run's triggering events into its propagated sessions in
+    // `ctx.sessions`
+    //
+    // Gated by the client-level session-propagation toggle so that,
+    // while disabled, `ctx.sessions` stays unset and no new surface appears
+    // on the handler context.
+    if (this.options.client[sessionPropagationSymbol]) {
+      // Best-effort: session grouping must never crash a run, so a failure here
+      // degrades to no propagation rather than throwing.
+      try {
+        fnArg.sessions = aggregateMetadata(fnArg.events ?? []);
+      } catch {
+        fnArg.sessions = undefined;
+      }
+    }
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.
