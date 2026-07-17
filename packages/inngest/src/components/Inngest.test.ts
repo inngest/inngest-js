@@ -1403,32 +1403,101 @@ describe("inngest.realtime.publish", () => {
 describe("sessionPropagation toggle", () => {
   // `sessionPropagation` is an internal, undocumented option that is
   // intentionally kept off the public `ClientOptions` type, so it's set via a
-  // narrow cast — the same way the SDK reads it internally.
-  const createWithSessionPropagation = (
-    sessionPropagation?: boolean,
-  ): Inngest.Any => {
+  // narrow cast — the same way the SDK reads it internally. `env` stubs
+  // `process.env` for the duration of construction, restoring it afterwards.
+  const createWithSessionPropagation = ({
+    option,
+    env,
+  }: {
+    option?: boolean;
+    env?: Record<string, string>;
+  } = {}): Inngest.Any => {
     const opts = { id: "test" } as ConstructorParameters<typeof Inngest>[0];
 
-    if (sessionPropagation !== undefined) {
-      (opts as { sessionPropagation?: boolean }).sessionPropagation =
-        sessionPropagation;
+    if (option !== undefined) {
+      (opts as { sessionPropagation?: boolean }).sessionPropagation = option;
     }
 
-    return new Inngest(opts);
+    let ogKeys: Record<string, string | undefined> = {};
+    if (env) {
+      ogKeys = Object.keys(env).reduce<Record<string, string | undefined>>(
+        (acc, key) => {
+          acc[key] = process.env[key];
+          process.env[key] = env[key];
+          return acc;
+        },
+        {},
+      );
+    }
+
+    try {
+      return new Inngest(opts);
+    } finally {
+      if (env) {
+        // biome-ignore lint/complexity/noForEach: intentional
+        Object.keys(ogKeys).forEach((key) => {
+          process.env[key] = ogKeys[key];
+        });
+      }
+    }
   };
 
-  test("defaults to false (dark-launch OFF) when the option is omitted", () => {
+  test("defaults to false (dark-launch OFF) when neither option nor env is set", () => {
     const inngest = createWithSessionPropagation();
     expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
 
   test("is true when the internal option is set to true", () => {
-    const inngest = createWithSessionPropagation(true);
+    const inngest = createWithSessionPropagation({ option: true });
     expect(inngest[sessionPropagationSymbol]).toBe(true);
   });
 
   test("is false when the internal option is explicitly false", () => {
-    const inngest = createWithSessionPropagation(false);
+    const inngest = createWithSessionPropagation({ option: false });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=true` enables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "true" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=1` enables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "1" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=false` disables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "false" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=0` disables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "0" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("option `true` overrides env `false`", () => {
+    const inngest = createWithSessionPropagation({
+      option: true,
+      env: { [envKeys.InngestSessionPropagation]: "false" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("option `false` overrides env `true`", () => {
+    const inngest = createWithSessionPropagation({
+      option: false,
+      env: { [envKeys.InngestSessionPropagation]: "true" },
+    });
     expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
 });
