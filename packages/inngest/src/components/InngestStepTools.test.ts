@@ -15,6 +15,7 @@ import { referenceFunction } from "./InngestFunctionReference.ts";
 import {
   createStepTools,
   stampPropagatedSessions,
+  stampPropagatedSessionsOnInvoke,
 } from "./InngestStepTools.ts";
 import { realtime } from "./realtime/index.ts";
 
@@ -1164,6 +1165,36 @@ describe("invoke", () => {
         });
       });
 
+      test("preserves a whole-field null sessions tombstone in the payload", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: { sessions: null },
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            payload: {
+              meta: { sessions: null },
+            },
+          },
+        });
+      });
+
+      test("rejects non-string propagated session values", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: {
+              propagated_sessions: {
+                conversation_id: true,
+              } as unknown as Record<string, string>,
+            },
+          }),
+        ).rejects.toThrowError("Invalid invocation options");
+      });
+
       test("omits meta from the payload if none given", async () => {
         const op = (await step.invoke("id", {
           function: fn,
@@ -1480,6 +1511,41 @@ describe("stampPropagatedSessions", () => {
     const payload = { name: "app/event", data: {} };
     stampPropagatedSessions(payload, sessions);
     expect(payload).toEqual({ name: "app/event", data: {} });
+  });
+});
+
+describe("stampPropagatedSessionsOnInvoke", () => {
+  const sessions = { conv_id: "123", org_id: "42" };
+
+  test("returns payload unchanged when there are no sessions", () => {
+    const payload = { data: {} };
+    expect(stampPropagatedSessionsOnInvoke(payload, undefined)).toBe(payload);
+    expect(stampPropagatedSessionsOnInvoke(payload, {})).toBe(payload);
+  });
+
+  test("stamps propagated_sessions onto the invoke payload", () => {
+    const payload = { data: { foo: "bar" } };
+    expect(stampPropagatedSessionsOnInvoke(payload, sessions)).toEqual({
+      data: { foo: "bar" },
+      meta: { propagated_sessions: sessions },
+    });
+  });
+
+  test("preserves the manual sessions layer alongside propagated", () => {
+    const payload = { data: {}, meta: { sessions: { conv_id: "manual" } } };
+    expect(stampPropagatedSessionsOnInvoke(payload, sessions)).toEqual({
+      data: {},
+      meta: {
+        sessions: { conv_id: "manual" },
+        propagated_sessions: sessions,
+      },
+    });
+  });
+
+  test("does not mutate the input payload", () => {
+    const payload = { data: {} };
+    stampPropagatedSessionsOnInvoke(payload, sessions);
+    expect(payload).toEqual({ data: {} });
   });
 });
 
