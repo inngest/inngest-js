@@ -980,6 +980,36 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
         ? ([payload] as [EventPayload])
         : [];
 
+    // Best-effort session propagation for bare `inngest.send()` calls made
+    // *inside* a run. Unlike `step.sendEvent`/`step.invoke` (which stamp
+    // synchronously from their direct `ctx`), a bare send has no `ctx`, so we
+    // read the ambient run context from AsyncLocalStorage.
+    //
+    // This is best-effort by construction: on runtimes without
+    // `node:async_hooks` the ALS store is empty and propagation silently no-ops.
+    //
+    // Outside a run there is no execution context, so nothing is stamped.
+    if (this[sessionPropagationSymbol]) {
+      const asyncCtx = await getAsyncCtx();
+
+      // Client-identity guard: only inherit when *this* client owns the
+      // ambient run. A bare send through a different client (possibly a
+      // different environment) must never pick up this run's sessions.
+      if (asyncCtx?.app === this) {
+        const sessions = asyncCtx.execution?.ctx.sessions;
+        if (sessions && Object.keys(sessions).length > 0) {
+          payloads = payloads.map((p) =>
+            // Leave payloads already stamped upstream by `step.sendEvent`
+            // authoritative; it stamps from its direct `ctx` before reaching
+            // `_send`.
+            p.meta?.propagatedSessions === undefined
+              ? { ...p, meta: { ...p.meta, propagatedSessions: sessions } }
+              : p,
+          );
+        }
+      }
+    }
+
     // Instantiate fresh middleware per send() call.
     const mwInstances = [...this.middleware, ...fnMiddleware].map(
       (Cls) => new Cls({ client: this }),
