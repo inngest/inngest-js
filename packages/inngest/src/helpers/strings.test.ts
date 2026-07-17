@@ -44,6 +44,39 @@ describe("timeStr", () => {
     expect(timeStr("1 day")).toEqual("1d");
   });
 
+  describe("sub-second durations are rounded up, never dropped (inngest-js#1619)", () => {
+    test("500ms rounds up to a valid non-empty duration", () => {
+      expect(timeStr(500)).toEqual("1s");
+    });
+
+    test('"500ms" ms-string rounds up the same as the equivalent number', () => {
+      expect(timeStr("500ms")).toEqual("1s");
+    });
+
+    test("999ms rounds up to 1s", () => {
+      expect(timeStr(999)).toEqual("1s");
+    });
+
+    test("1500ms preserves the sub-second remainder by rounding up, not truncating it away", () => {
+      expect(timeStr(1500)).toEqual("2s");
+    });
+
+    test("an exact whole-second value is unaffected by rounding", () => {
+      expect(timeStr(1000)).toEqual("1s");
+    });
+
+    test("a sub-second remainder on a larger duration rounds the whole value up", () => {
+      // 1m5.5s -> previously floored to "1m5s", dropping 500ms.
+      expect(timeStr(65500)).toEqual("1m6s");
+    });
+
+    test("never returns an empty string for a positive duration", () => {
+      for (const value of [1, 10, 100, 500, 999, 1001, 1500]) {
+        expect(timeStr(value)).not.toEqual("");
+      }
+    });
+  });
+
   test("converts a date to an ISO string", () => {
     expect(timeStr(new Date(0))).toEqual("1970-01-01T00:00:00.000Z");
   });

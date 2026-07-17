@@ -128,6 +128,16 @@ export const timeStr = (
     milliseconds = input as number;
   }
 
+  // `periods`' smallest unit is whole seconds, so a sub-second remainder
+  // (e.g. the 500 in 1500ms, or the entirety of a 500ms duration) would
+  // otherwise be floored away by the reduce below -- silently shortening
+  // the sleep/timeout, or, for inputs under 1000ms, leaving the result as
+  // an empty (invalid) string. Round positive durations up to the nearest
+  // second so we never resolve in less time than requested and never emit
+  // "" for a positive duration. See inngest/inngest-js#1619.
+  const roundedMilliseconds =
+    milliseconds > 0 ? Math.ceil(milliseconds / second) * second : milliseconds;
+
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
       const numPeriods = Math.floor(num / period);
@@ -138,7 +148,7 @@ export const timeStr = (
 
       return [num, str];
     },
-    [milliseconds, ""],
+    [roundedMilliseconds, ""],
   );
 
   return timeStr as TimeStr;
