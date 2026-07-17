@@ -4,7 +4,10 @@ import { z } from "zod/v3";
 
 import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { normalizeEventMeta } from "../helpers/sessions.ts";
+import {
+  normalizeEventMeta,
+  warnIgnoredPropagatedSessions,
+} from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -29,6 +32,7 @@ import {
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
+  type WireEventMeta,
 } from "../types.ts";
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
@@ -39,7 +43,6 @@ import {
   type GetStepTools,
   type Inngest,
   internalLoggerSymbol,
-  sessionPropagationSymbol,
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
@@ -223,35 +226,14 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
 };
 
 /**
- * Stamps the run's propagated sessions onto each outgoing `step.sendEvent`
- * payload as the separate `meta.propagatedSessions` layer, so child runs stay
- * grouped in the parent's sessions. The manual `meta.sessions` layer is left
- * untouched — the server merges the two (manual wins per key).
- *
- * `sessions` is `ctx.sessions`, read at send time so a run-level override
- * (mutating `ctx.sessions` in the handler) is reflected. When there is nothing
- * to propagate the payload is returned unchanged.
- */
-export const stampPropagatedSessions = (
-  payload: SendEventPayload,
-  sessions: Record<string, string> | undefined,
-): SendEventPayload => {
-  if (!sessions || Object.keys(sessions).length === 0) {
-    return payload;
-  }
-
-  const stamp = <T extends { meta?: EventMeta }>(p: T): T => ({
-    ...p,
-    meta: { ...p.meta, propagatedSessions: sessions },
-  });
-
-  return Array.isArray(payload) ? payload.map(stamp) : stamp(payload);
-};
-
-/**
  * Stamps the run's propagated sessions onto a `step.invoke` payload as the
- * separate `meta.propagatedSessions` layer, mirroring
- * {@link stampPropagatedSessions} for `step.sendEvent`.
+ * separate `meta.propagatedSessions` layer, mirroring the stamp `_send`
+ * applies to event sends. The manual `meta.sessions` layer is left untouched —
+ * the server merges the two (manual wins per key).
+ *
+ * Core is the only writer of this layer: any user-supplied value was already
+ * dropped by `invokePayloadSchema` (zod strips unknown keys), so there is
+ * nothing to strip here.
  */
 export const stampPropagatedSessionsOnInvoke = (
   payload: MinimalEventPayload,
@@ -261,10 +243,11 @@ export const stampPropagatedSessionsOnInvoke = (
     return payload;
   }
 
-  return {
-    ...payload,
-    meta: { ...payload.meta, propagatedSessions: sessions },
+  const meta: WireEventMeta = {
+    ...payload.meta,
+    propagatedSessions: sessions,
   };
+  return { ...payload, meta };
 };
 
 /**
@@ -547,15 +530,20 @@ export const createStepTools = <
       {
         fn: (ctx, _idOrOptions, payload) => {
           const fn = execution["options"]["fn"];
-          // Only stamp inherited sessions when the client-level toggle is on.
-          const payloadToSend = client[sessionPropagationSymbol]
-            ? stampPropagatedSessions(payload, ctx.sessions)
-            : payload;
           return client["_send"]({
-            payload: payloadToSend,
+            payload,
             headers: execution["options"]["headers"],
             fnMiddleware: fn.opts.middleware ?? [],
             fn,
+            // Out-of-band propagation seed: `_send` is the single authority
+            // for the machine-stamped `meta.propagatedSessions` layer — it
+            // strips any user-supplied value from the payload, then stamps
+            // this (when the client toggle is on) before middleware runs.
+            // Passing the seed as an argument rather than pre-stamping the
+            // payload keeps a legitimate stamp distinguishable from user
+            // input. Read at send time so a run-level `ctx.sessions` override
+            // is reflected.
+            sessions: ctx.sessions,
           });
         },
       },
@@ -950,6 +938,16 @@ export const createStepTools = <
         >
       >
     >(({ id, name }, invokeOpts) => {
+      // The propagated layer is machine-managed: warn (once) about a
+      // user-supplied value before the parse below silently drops it —
+      // `invokePayloadSchema` has no `propagatedSessions` field and zod strips
+      // unknown keys.
+      const suppliedMeta = (invokeOpts as { meta?: WireEventMeta } | undefined)
+        ?.meta;
+      if (suppliedMeta?.propagatedSessions !== undefined) {
+        warnIgnoredPropagatedSessions(client[internalLoggerSymbol]);
+      }
+
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
       const optsSchema = invokePayloadSchema.extend({
@@ -1244,10 +1242,10 @@ export const invokePayloadSchema = z.object({
       // precise per-key errors; tightening them in zod would mask those behind
       // the generic invoke-options error.
       sessions: z.record(z.any()).nullable().optional(),
-      // Machine-stamped layer: string/number ids only, never tombstones.
-      propagatedSessions: z
-        .record(z.union([z.string(), z.number()]))
-        .optional(),
+      // `propagatedSessions` is deliberately absent: that layer is
+      // machine-stamped by the engine after this parse, and zod strips unknown
+      // keys — so a user-supplied value is dropped here (the invoke tool warns
+      // once before parsing).
     })
     .optional(),
 });

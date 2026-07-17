@@ -122,5 +122,6 @@ export type {
   StepOptions,
   StepOptionsOrId,
   TimeStr,
+  WireEventMeta,
 } from "./types";
 export { version } from "./version.ts";

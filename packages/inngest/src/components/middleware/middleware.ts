@@ -6,6 +6,7 @@ import type {
   JsonError,
   SendEventBaseOutput,
   StepOptions,
+  WireEventMeta,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -48,9 +49,17 @@ export namespace Middleware {
 
   /**
    * The argument passed to `transformSendEvent`.
+   *
+   * Events carry the wire meta shape: `meta.sessions` (manual, user-set) and
+   * `meta.propagatedSessions` (machine-stamped by core before this hook runs).
+   * Both layers are readable and mutable here; the server merges them (manual
+   * wins per key). Note both layers are client-supplied claims on the wire —
+   * apply policy (allowlists, redaction) to both.
    */
   export type TransformSendEventArgs = {
-    events: EventPayload<Record<string, unknown>>[];
+    events: (EventPayload<Record<string, unknown>> & {
+      meta?: WireEventMeta;
+    })[];
     readonly fn: DeepReadonly<InngestFunction.Any> | null;
   };
 

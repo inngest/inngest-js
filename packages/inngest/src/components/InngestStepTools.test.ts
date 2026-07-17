@@ -9,12 +9,15 @@ import {
   type StepTools,
   testClientId,
 } from "../test/helpers.ts";
-import { type InvocationResult, StepOpCode } from "../types.ts";
+import {
+  type InvocationResult,
+  StepOpCode,
+  type WireEventMeta,
+} from "../types.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
 import {
   createStepTools,
-  stampPropagatedSessions,
   stampPropagatedSessionsOnInvoke,
 } from "./InngestStepTools.ts";
 import { realtime } from "./realtime/index.ts";
@@ -1165,18 +1168,26 @@ describe("invoke", () => {
         });
       });
 
-      test("rejects non-string propagated session values", async () => {
-        await expect(
-          step.invoke("id", {
-            function: fn,
-            data: { foo: "foo" },
-            meta: {
-              propagatedSessions: {
-                conversation_id: true,
-              } as unknown as Record<string, string>,
-            },
-          }),
-        ).rejects.toThrowError("Invalid invocation options");
+      test("strips user-supplied propagatedSessions from the payload", async () => {
+        // The propagated layer is machine-managed: the schema has no
+        // `propagatedSessions` field and zod strips unknown keys, so a
+        // user-supplied value never reaches the wire.
+        const meta: WireEventMeta = {
+          sessions: { conversation_id: "manual" },
+          propagatedSessions: { conversation_id: "user" },
+        };
+
+        const op = (await step.invoke("id", {
+          function: fn,
+          data: { foo: "foo" },
+          meta,
+        })) as unknown as {
+          opts: { payload: { meta?: Record<string, unknown> } };
+        };
+
+        expect(op.opts.payload.meta).toEqual({
+          sessions: { conversation_id: "manual" },
+        });
       });
 
       test("omits meta from the payload if none given", async () => {
@@ -1443,61 +1454,6 @@ describe("invoke", () => {
   });
 });
 
-describe("stampPropagatedSessions", () => {
-  const sessions = { conv_id: "123", org_id: "42" };
-
-  test("returns payload unchanged when there are no sessions", () => {
-    const payload = { name: "app/event", data: {} };
-    expect(stampPropagatedSessions(payload, undefined)).toBe(payload);
-    expect(stampPropagatedSessions(payload, {})).toBe(payload);
-  });
-
-  test("stamps propagatedSessions onto a single payload", () => {
-    const payload = { name: "app/event", data: {} };
-    expect(stampPropagatedSessions(payload, sessions)).toEqual({
-      name: "app/event",
-      data: {},
-      meta: { propagatedSessions: sessions },
-    });
-  });
-
-  test("stamps each payload in an array", () => {
-    const result = stampPropagatedSessions(
-      [
-        { name: "app/a", data: {} },
-        { name: "app/b", data: {} },
-      ],
-      sessions,
-    );
-    expect(result).toEqual([
-      { name: "app/a", data: {}, meta: { propagatedSessions: sessions } },
-      { name: "app/b", data: {}, meta: { propagatedSessions: sessions } },
-    ]);
-  });
-
-  test("preserves the manual sessions layer alongside propagated", () => {
-    const payload = {
-      name: "app/event",
-      data: {},
-      meta: { sessions: { conv_id: "manual" } },
-    };
-    expect(stampPropagatedSessions(payload, sessions)).toEqual({
-      name: "app/event",
-      data: {},
-      meta: {
-        sessions: { conv_id: "manual" },
-        propagatedSessions: sessions,
-      },
-    });
-  });
-
-  test("does not mutate the input payload", () => {
-    const payload = { name: "app/event", data: {} };
-    stampPropagatedSessions(payload, sessions);
-    expect(payload).toEqual({ name: "app/event", data: {} });
-  });
-});
-
 describe("stampPropagatedSessionsOnInvoke", () => {
   const sessions = { conv_id: "123", org_id: "42" };
 
@@ -1533,26 +1489,24 @@ describe("stampPropagatedSessionsOnInvoke", () => {
   });
 });
 
-describe("step.sendEvent session propagation gating", () => {
-  // Drives the real sendEvent tool fn with a mocked client._send so we can
-  // assert what actually reaches the wire given the client-level toggle.
+describe("step.sendEvent session propagation", () => {
+  // The sendEvent tool passes `ctx.sessions` to `_send` as an out-of-band
+  // argument rather than pre-stamping the payload; `_send` is the single
+  // authority for the machine-stamped layer (strip + stamp + toggle gating,
+  // tested in Inngest.test.ts). Assert the tool forwards the seed and leaves
+  // the payload untouched.
   const runSendEvent = async (
-    enabled: boolean,
     ctxSessions: Record<string, string> | undefined,
   ) => {
-    const clientOpts = {
-      id: testClientId,
-      isDev: true,
-      // `sessionPropagation` is internal/undocumented (off the public
-      // ClientOptions), so it's set via the same cast the SDK reads it with.
-      sessionPropagation: enabled,
-    } as Parameters<typeof createClient>[0];
-    const client = createClient(clientOpts);
+    const client = createClient({ id: testClientId, isDev: true });
 
     const sendSpy = vi
       .spyOn(
         client as unknown as {
-          _send: (arg: { payload: unknown }) => Promise<unknown>;
+          _send: (arg: {
+            payload: unknown;
+            sessions?: Record<string, string>;
+          }) => Promise<unknown>;
         },
         "_send",
       )
@@ -1575,21 +1529,18 @@ describe("step.sendEvent session propagation gating", () => {
     await step.sendEvent("send-child", { name: "app/child", data: {} });
 
     expect(sendSpy).toHaveBeenCalledTimes(1);
-    return sendSpy.mock.calls[0]?.[0]?.payload;
+    return sendSpy.mock.calls[0]?.[0];
   };
 
-  test("stamps propagatedSessions from ctx.sessions when the toggle is on", async () => {
-    const payload = await runSendEvent(true, { conv_id: "p1" });
-    expect(payload).toEqual({
-      name: "app/child",
-      data: {},
-      meta: { propagatedSessions: { conv_id: "p1" } },
-    });
+  test("passes ctx.sessions to _send out-of-band without stamping the payload", async () => {
+    const arg = await runSendEvent({ conv_id: "p1" });
+    expect(arg?.payload).toEqual({ name: "app/child", data: {} });
+    expect(arg?.sessions).toEqual({ conv_id: "p1" });
   });
 
-  test("leaves the send untouched when the toggle is off", async () => {
-    // Even with ctx.sessions populated, an off toggle must not stamp.
-    const payload = await runSendEvent(false, { conv_id: "p1" });
-    expect(payload).toEqual({ name: "app/child", data: {} });
+  test("passes undefined sessions when the run has none", async () => {
+    const arg = await runSendEvent(undefined);
+    expect(arg?.payload).toEqual({ name: "app/child", data: {} });
+    expect(arg?.sessions).toBeUndefined();
   });
 });

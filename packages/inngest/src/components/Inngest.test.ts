@@ -1,6 +1,7 @@
 import type { Mock } from "vitest";
 import { literal } from "zod/v3";
 import { envKeys, headerKeys } from "../helpers/consts.ts";
+import { resetIgnoredPropagatedSessionsWarning } from "../helpers/sessions.ts";
 import type { IsAny, IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
@@ -13,8 +14,8 @@ import {
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
 import { createClient, nodeVersion } from "../test/helpers.ts";
-import type { SendEventResponse } from "../types.ts";
-import { sessionPropagationSymbol } from "./Inngest.ts";
+import type { SendEventResponse, WireEventMeta } from "../types.ts";
+import { internalLoggerSymbol, sessionPropagationSymbol } from "./Inngest.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
 const testEvent: EventPayload = {
@@ -767,6 +768,112 @@ describe("send", () => {
       });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("600");
+    });
+
+    describe("propagated sessions authority", () => {
+      // `_send` is the single writer of the machine-stamped
+      // `meta.propagatedSessions` layer: user-supplied values are stripped on
+      // every send path (with a one-time warning), and the out-of-band seed
+      // from `step.sendEvent` is stamped only when the client toggle is on —
+      // both before the middleware loop.
+      type SendArg = {
+        payload: unknown;
+        fn: null;
+        fnMiddleware: [];
+        sessions?: Record<string, string>;
+      };
+
+      const lastSentEvents = (): EventPayload[] => {
+        const call = (global.fetch as Mock).mock.calls.at(-1) as
+          | [string, { body: string }]
+          | undefined;
+        return JSON.parse(call?.[1]?.body ?? "[]") as EventPayload[];
+      };
+
+      const callSend = (client: unknown, arg: SendArg) =>
+        (client as { _send: (arg: SendArg) => Promise<unknown> })._send(arg);
+
+      test("strips user-supplied propagatedSessions and warns once", async () => {
+        resetIgnoredPropagatedSessionsWarning();
+        const inngest = createClient({ id: "test", isDev: true });
+        const warnSpy = vi
+          .spyOn(inngest[internalLoggerSymbol], "warn")
+          .mockImplementation(() => {});
+
+        const meta: WireEventMeta = {
+          sessions: { conv_id: "manual" },
+          propagatedSessions: { conv_id: "user" },
+        };
+        await inngest.send({ name: "test", data: {}, meta });
+
+        const [evt] = lastSentEvents();
+        expect(evt?.meta).toEqual({ sessions: { conv_id: "manual" } });
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+
+        // Once per process: a second strip does not warn again.
+        const meta2: WireEventMeta = { propagatedSessions: { a: "1" } };
+        await inngest.send({ name: "test", data: {}, meta: meta2 });
+        const [evt2] = lastSentEvents();
+        expect(evt2?.meta).toBeUndefined();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+      });
+
+      test("stamps the out-of-band seed when the toggle is on", async () => {
+        const inngest = createClient({
+          id: "test",
+          isDev: true,
+          sessionPropagation: true,
+        } as Parameters<typeof createClient>[0]);
+
+        await callSend(inngest, {
+          payload: { name: "test", data: {} },
+          fn: null,
+          fnMiddleware: [],
+          sessions: { conv_id: "p1" },
+        });
+
+        const [evt] = lastSentEvents();
+        expect(evt?.meta).toEqual({ propagatedSessions: { conv_id: "p1" } });
+      });
+
+      test("does not stamp when the toggle is off", async () => {
+        const inngest = createClient({ id: "test", isDev: true });
+
+        await callSend(inngest, {
+          payload: { name: "test", data: {} },
+          fn: null,
+          fnMiddleware: [],
+          sessions: { conv_id: "p1" },
+        });
+
+        const [evt] = lastSentEvents();
+        expect(evt?.meta).toBeUndefined();
+      });
+
+      test("a user value cannot masquerade as a stamp", async () => {
+        // Even mid-stamp, the user-supplied layer is stripped first: only the
+        // out-of-band seed reaches the wire.
+        const inngest = createClient({
+          id: "test",
+          isDev: true,
+          sessionPropagation: true,
+        } as Parameters<typeof createClient>[0]);
+
+        const userMeta: WireEventMeta = {
+          propagatedSessions: { conv_id: "user" },
+        };
+        await callSend(inngest, {
+          payload: { name: "test", data: {}, meta: userMeta },
+          fn: null,
+          fnMiddleware: [],
+          sessions: { conv_id: "real" },
+        });
+
+        const [evt] = lastSentEvents();
+        expect(evt?.meta).toEqual({
+          propagatedSessions: { conv_id: "real" },
+        });
+      });
     });
   });
 

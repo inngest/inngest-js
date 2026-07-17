@@ -778,23 +778,31 @@ export type EventMeta = {
    * normalized to strings before the event is sent.
    *
    * Follows RFC 7386 (JSON Merge Patch) against the inherited
-   * {@link EventMeta.propagatedSessions} layer: a `null` value cuts the
+   * {@link WireEventMeta.propagatedSessions} layer: a `null` value cuts the
    * inherited session of that key, and setting the whole field to `null`
    * clears all inherited sessions. Tombstones are consumed server-side and do
    * not count against the per-event session limit.
    */
   sessions?: EventSessions | null;
+};
 
+/**
+ * Event meta as carried on the wire, including machine-stamped layers.
+ *
+ * Only {@link EventMeta.sessions} is user input. The propagated layer is
+ * stamped by SDK core — user-supplied values are stripped on every send path —
+ * and is exposed on this type so middleware can read and mutate it before the
+ * server merges the two layers.
+ *
+ * @internal
+ */
+export type WireEventMeta = EventMeta & {
   /**
    * Sessions propagated from the run that emitted this event. Stamped
    * automatically from `ctx.sessions`; carried as a separate layer from manual
-   * {@link EventMeta.sessions} and merged server-side.
-   *
-   * Not intended to be set by hand.
-   *
-   * @internal
+   * {@link EventMeta.sessions} and merged server-side (manual wins per key).
    */
-  propagatedSessions?: EventSessions;
+  propagatedSessions?: Record<string, string>;
 };
 
 /**

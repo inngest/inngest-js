@@ -1,4 +1,4 @@
-import type { EventMeta, EventSessions } from "../types.ts";
+import type { EventMeta, EventSessions, WireEventMeta } from "../types.ts";
 
 /**
  * A normalized session layer as carried on the wire. Values are session-id
@@ -84,7 +84,7 @@ export const normalizeEventSessions = (
 };
 
 export const normalizeEventMeta = (
-  meta: EventMeta | null | undefined,
+  meta: WireEventMeta | null | undefined,
 ): NormalizedEventMeta | undefined => {
   if (meta === undefined || meta === null) {
     return undefined;
@@ -225,4 +225,34 @@ export const reduceEventsToPropagatedSessions = (
 
   // Object.fromEntries so keys like "__proto__" land as own properties.
   return Object.fromEntries(entries);
+};
+
+let warnedIgnoredPropagatedSessions = false;
+
+/**
+ * Warns, once per process, that a user-supplied `meta.propagatedSessions` was
+ * stripped. The propagated layer is machine-managed: accepting user values
+ * would create a second manual channel that bypasses "manual wins" merging and
+ * any middleware policy on `meta.sessions`, and would corrupt the server's
+ * manual-vs-inherited provenance.
+ */
+export const warnIgnoredPropagatedSessions = (logger: {
+  warn: (msg: string) => void;
+}): void => {
+  if (warnedIgnoredPropagatedSessions) {
+    return;
+  }
+  warnedIgnoredPropagatedSessions = true;
+  logger.warn(
+    "`meta.propagatedSessions` is machine-managed and was ignored; use `meta.sessions` to set sessions manually",
+  );
+};
+
+/**
+ * Test-only reset for the once-per-process warning above.
+ *
+ * @internal
+ */
+export const resetIgnoredPropagatedSessionsWarning = (): void => {
+  warnedIgnoredPropagatedSessions = false;
 };

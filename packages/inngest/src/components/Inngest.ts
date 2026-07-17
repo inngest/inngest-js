@@ -26,7 +26,10 @@ import {
   warnOnce,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
-import { normalizeEventMeta } from "../helpers/sessions.ts";
+import {
+  normalizeEventMeta,
+  warnIgnoredPropagatedSessions,
+} from "../helpers/sessions.ts";
 import { stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -54,6 +57,7 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   sendEventResponseSchema,
+  type WireEventMeta,
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
 import { metadataSpanProcessor } from "./execution/otel/metadataProcessor.ts";
@@ -944,11 +948,22 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     headers,
     fn,
     fnMiddleware,
+    sessions,
   }: {
     payload: SendEventPayload;
     headers?: Record<string, string>;
     fn: InngestFunction.Any | null;
     fnMiddleware: Middleware.Class[];
+
+    /**
+     * The run's propagation seed (`ctx.sessions`), passed out-of-band by
+     * `step.sendEvent`. `_send` is the single authority for the
+     * machine-stamped `meta.propagatedSessions` layer: any user-supplied
+     * value is stripped from every payload, then this seed is stamped (when
+     * the client toggle is on) — both before the middleware loop, which may
+     * read and mutate the stamped layer.
+     */
+    sessions?: Record<string, string>;
   }): Promise<SendEventOutput<TClientOpts>> {
     const nowMillis = new Date().getTime();
 
@@ -978,6 +993,39 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       : payload
         ? ([payload] as [EventPayload])
         : [];
+
+    // The propagated-sessions layer is machine-managed. Strip any
+    // user-supplied value on every send path — it would act as a second
+    // manual channel that bypasses "manual wins" merging and middleware
+    // policy on `meta.sessions`, and corrupt manual-vs-inherited provenance —
+    // then stamp the authoritative out-of-band seed. Both happen before the
+    // middleware loop, which is allowed to read and mutate the stamped layer.
+    let strippedPropagatedSessions = false;
+    payloads = payloads.map((p) => {
+      const meta = p.meta as WireEventMeta | undefined;
+      if (meta?.propagatedSessions === undefined) {
+        return p;
+      }
+      strippedPropagatedSessions = true;
+      const { propagatedSessions: _ignored, ...rest } = meta;
+      return { ...p, meta: rest };
+    });
+    if (strippedPropagatedSessions) {
+      warnIgnoredPropagatedSessions(this[internalLoggerSymbol]);
+    }
+    if (
+      this[sessionPropagationSymbol] &&
+      sessions &&
+      Object.keys(sessions).length > 0
+    ) {
+      payloads = payloads.map((p) => {
+        const meta: WireEventMeta = {
+          ...p.meta,
+          propagatedSessions: sessions,
+        };
+        return { ...p, meta };
+      });
+    }
 
     // Instantiate fresh middleware per send() call.
     const mwInstances = [...this.middleware, ...fnMiddleware].map(
