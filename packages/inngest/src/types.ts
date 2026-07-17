@@ -744,13 +744,22 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
  * Primitive values accepted for event session IDs when sending an
  * event. Numbers are normalized to strings before sending.
  *
+ * `null` is a tombstone (RFC 7386 JSON Merge Patch), not a session id: on the
+ * manual {@link EventMeta.sessions} layer it cuts the inherited (propagated)
+ * session of the same key. It is consumed server-side and never counts against
+ * the per-event session limit. Received events never carry `null` — see
+ * {@link ReceivedEventMeta}.
+ *
  * @public
  */
-export type EventSessionValue = string | number;
+export type EventSessionValue = string | number | null;
 
 /**
  * Session meta accepted when sending an event. Values are normalized to
  * strings before sending; received events carry `Record<string, string>`.
+ *
+ * A `null` value cuts the inherited session of that key; setting the whole
+ * field to `null` clears all inherited sessions (see {@link EventMeta.sessions}).
  *
  * @public
  */
@@ -767,8 +776,14 @@ export type EventMeta = {
    *
    * Keys are session keys, values are session IDs. Values are
    * normalized to strings before the event is sent.
+   *
+   * Follows RFC 7386 (JSON Merge Patch) against the inherited
+   * {@link EventMeta.propagatedSessions} layer: a `null` value cuts the
+   * inherited session of that key, and setting the whole field to `null`
+   * clears all inherited sessions. Tombstones are consumed server-side and do
+   * not count against the per-event session limit.
    */
-  sessions?: EventSessions;
+  sessions?: EventSessions | null;
 
   /**
    * Sessions propagated from the run that emitted this event. Stamped

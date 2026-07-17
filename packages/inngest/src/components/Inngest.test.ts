@@ -565,23 +565,33 @@ describe("send", () => {
       ).rejects.toThrowError("Event session keys cannot be empty");
     });
 
-    test("should reject event session values with unsupported runtime types", async () => {
+    test("should carry a null session tombstone through on the wire", async () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
+      const mockedFetch = vi.mocked(global.fetch);
+
+      // A null value is an RFC 7386 tombstone (cut the inherited key), not an
+      // invalid id — it is accepted and preserved so the server can consume it.
       await expect(
         inngest.send({
           name: "test.sessions",
           data: {},
           meta: {
-            sessions: { conversation_id: null } as unknown as Record<
-              string,
-              string
-            >,
+            sessions: { conversation_id: null, keep: "1" },
           },
         }),
-      ).rejects.toThrowError(
-        'Event session "conversation_id" must be a string or number',
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+
+      const body: Array<Record<string, unknown>> = JSON.parse(
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
+
+      expect((body[0]?.meta as Record<string, unknown>)?.sessions).toEqual({
+        conversation_id: null,
+        keep: "1",
+      });
     });
 
     test("should reject boolean event session values", async () => {
@@ -596,7 +606,7 @@ describe("send", () => {
           },
         }),
       ).rejects.toThrowError(
-        'Event session "active" must be a string or number',
+        'Event session "active" must be a string, number, or null',
       );
     });
 
