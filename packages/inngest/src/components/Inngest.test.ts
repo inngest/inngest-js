@@ -1401,10 +1401,15 @@ describe("inngest.realtime.publish", () => {
 });
 
 describe("sessionPropagation toggle", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   // `sessionPropagation` is an internal, undocumented option that is
   // intentionally kept off the public `ClientOptions` type, so it's set via a
-  // narrow cast — the same way the SDK reads it internally. `env` stubs
-  // `process.env` for the duration of construction, restoring it afterwards.
+  // narrow cast — the same way the SDK reads it internally. `env` is applied
+  // via `vi.stubEnv` and automatically restored after each test by
+  // `vi.unstubAllEnvs`, so there's no env-var bleed between tests.
   const createWithSessionPropagation = ({
     option,
     env,
@@ -1418,28 +1423,13 @@ describe("sessionPropagation toggle", () => {
       (opts as { sessionPropagation?: boolean }).sessionPropagation = option;
     }
 
-    let ogKeys: Record<string, string | undefined> = {};
     if (env) {
-      ogKeys = Object.keys(env).reduce<Record<string, string | undefined>>(
-        (acc, key) => {
-          acc[key] = process.env[key];
-          process.env[key] = env[key];
-          return acc;
-        },
-        {},
-      );
-    }
-
-    try {
-      return new Inngest(opts);
-    } finally {
-      if (env) {
-        // biome-ignore lint/complexity/noForEach: intentional
-        Object.keys(ogKeys).forEach((key) => {
-          process.env[key] = ogKeys[key];
-        });
+      for (const [key, value] of Object.entries(env)) {
+        vi.stubEnv(key, value);
       }
     }
+
+    return new Inngest(opts);
   };
 
   test("defaults to false (dark-launch OFF) when neither option nor env is set", () => {
