@@ -173,16 +173,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   readonly [internalLoggerSymbol]: Logger;
 
-  /**
-   * Whether session propagation is enabled for this client. Resolved with the
-   * precedence `sessionPropagation` constructor option >
-   * `INNGEST_SESSION_PROPAGATION` env var > {@link
-   * SESSION_PROPAGATION_DEFAULT_ENABLED}.
-   *
-   * @internal
-   */
-  readonly [sessionPropagationSymbol]: boolean;
-
   private localFns: InngestFunction.Any[] = [];
 
   /**
@@ -398,29 +388,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
 
-    // Session propagation is resolved with the precedence
-    // `sessionPropagation` option > `INNGEST_SESSION_PROPAGATION` env var >
-    // default, matching the SDK's `dev`-mode resolution order.
-    let sessionPropagation = SESSION_PROPAGATION_DEFAULT_ENABLED;
-
-    const sessionPropagationEnv = parseAsBoolean(
-      this._env[envKeys.InngestSessionPropagation],
-    );
-    if (sessionPropagationEnv !== undefined) {
-      sessionPropagation = sessionPropagationEnv;
-    }
-
-    // `sessionPropagation` is an internal, undocumented option intentionally
-    // kept off the public `ClientOptions` type, so it's read via a narrow cast.
-    const sessionPropagationOption = (
-      this.options as TClientOpts & { sessionPropagation?: boolean }
-    ).sessionPropagation;
-    if (sessionPropagationOption !== undefined) {
-      sessionPropagation = sessionPropagationOption;
-    }
-
-    this[sessionPropagationSymbol] = sessionPropagation;
-
     // Warned here rather than per-function so internal SDK functions
     // inheriting this setting don't each warn.
     if (this.options.optimizeParallelism === false) {
@@ -471,6 +438,43 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this._env = protectEnv({ ...this._env, ...env });
 
     return this;
+  }
+
+  /**
+   * Whether session propagation is enabled for this client. Resolved with the
+   * precedence `sessionPropagation` constructor option >
+   * `INNGEST_SESSION_PROPAGATION` env var > {@link
+   * SESSION_PROPAGATION_DEFAULT_ENABLED}.
+   *
+   * Resolved lazily on every access (mirroring {@link mode}) so that env vars
+   * populated after construction via {@link setEnvVars} — as happens in
+   * edge/serverless runtimes like Cloudflare Workers — are honored.
+   *
+   * @internal
+   */
+  get [sessionPropagationSymbol](): boolean {
+    // Session propagation is resolved with the precedence
+    // `sessionPropagation` option > `INNGEST_SESSION_PROPAGATION` env var >
+    // default, matching the SDK's `dev`-mode resolution order.
+    let sessionPropagation = SESSION_PROPAGATION_DEFAULT_ENABLED;
+
+    const sessionPropagationEnv = parseAsBoolean(
+      this._env[envKeys.InngestSessionPropagation],
+    );
+    if (sessionPropagationEnv !== undefined) {
+      sessionPropagation = sessionPropagationEnv;
+    }
+
+    // `sessionPropagation` is an internal, undocumented option intentionally
+    // kept off the public `ClientOptions` type, so it's read via a narrow cast.
+    const sessionPropagationOption = (
+      this.options as TClientOpts & { sessionPropagation?: boolean }
+    ).sessionPropagation;
+    if (sessionPropagationOption !== undefined) {
+      sessionPropagation = sessionPropagationOption;
+    }
+
+    return sessionPropagation;
   }
 
   get mode(): Mode {
