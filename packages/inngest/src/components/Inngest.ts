@@ -442,8 +442,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   /**
    * Whether session propagation is enabled for this client. Resolved with the
-   * precedence `sessionPropagation` constructor option >
-   * `INNGEST_SESSION_PROPAGATION` env var > {@link
+   * precedence `INNGEST_SESSION_PROPAGATION` env var > {@link
    * SESSION_PROPAGATION_DEFAULT_ENABLED}.
    *
    * Resolved lazily on every access (mirroring {@link mode}) so that env vars
@@ -454,8 +453,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   get [sessionPropagationSymbol](): boolean {
     // Session propagation is resolved with the precedence
-    // `sessionPropagation` option > `INNGEST_SESSION_PROPAGATION` env var >
-    // default, matching the SDK's `dev`-mode resolution order.
+    // `INNGEST_SESSION_PROPAGATION` env var > default, matching the SDK's
+    // `dev`-mode resolution order.
     let sessionPropagation = SESSION_PROPAGATION_DEFAULT_ENABLED;
 
     const sessionPropagationEnv = parseAsBoolean(
@@ -463,15 +462,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     );
     if (sessionPropagationEnv !== undefined) {
       sessionPropagation = sessionPropagationEnv;
-    }
-
-    // `sessionPropagation` is an internal, undocumented option intentionally
-    // kept off the public `ClientOptions` type, so it's read via a narrow cast.
-    const sessionPropagationOption = (
-      this.options as TClientOpts & { sessionPropagation?: boolean }
-    ).sessionPropagation;
-    if (sessionPropagationOption !== undefined) {
-      sessionPropagation = sessionPropagationOption;
     }
 
     return sessionPropagation;

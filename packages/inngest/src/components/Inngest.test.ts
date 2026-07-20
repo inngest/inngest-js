@@ -1405,23 +1405,17 @@ describe("sessionPropagation toggle", () => {
     vi.unstubAllEnvs();
   });
 
-  // `sessionPropagation` is an internal, undocumented option that is
-  // intentionally kept off the public `ClientOptions` type, so it's set via a
-  // narrow cast — the same way the SDK reads it internally. `env` is applied
-  // via `vi.stubEnv` and automatically restored after each test by
-  // `vi.unstubAllEnvs`, so there's no env-var bleed between tests.
+  // Session propagation is resolved from the `INNGEST_SESSION_PROPAGATION` env
+  // var (there's no public/internal client option yet — that arrives with
+  // client-side configuration). `env` is applied via `vi.stubEnv` and
+  // automatically restored after each test by `vi.unstubAllEnvs`, so there's no
+  // env-var bleed between tests.
   const createWithSessionPropagation = ({
-    option,
     env,
   }: {
-    option?: boolean;
     env?: Record<string, string>;
   } = {}): Inngest.Any => {
     const opts = { id: "test" } as ConstructorParameters<typeof Inngest>[0];
-
-    if (option !== undefined) {
-      (opts as { sessionPropagation?: boolean }).sessionPropagation = option;
-    }
 
     if (env) {
       for (const [key, value] of Object.entries(env)) {
@@ -1432,18 +1426,8 @@ describe("sessionPropagation toggle", () => {
     return new Inngest(opts);
   };
 
-  test("defaults to false (dark-launch OFF) when neither option nor env is set", () => {
+  test("defaults to false (dark-launch OFF) when env is not set", () => {
     const inngest = createWithSessionPropagation();
-    expect(inngest[sessionPropagationSymbol]).toBe(false);
-  });
-
-  test("is true when the internal option is set to true", () => {
-    const inngest = createWithSessionPropagation({ option: true });
-    expect(inngest[sessionPropagationSymbol]).toBe(true);
-  });
-
-  test("is false when the internal option is explicitly false", () => {
-    const inngest = createWithSessionPropagation({ option: false });
     expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
 
@@ -1471,22 +1455,6 @@ describe("sessionPropagation toggle", () => {
   test("`INNGEST_SESSION_PROPAGATION=0` disables propagation", () => {
     const inngest = createWithSessionPropagation({
       env: { [envKeys.InngestSessionPropagation]: "0" },
-    });
-    expect(inngest[sessionPropagationSymbol]).toBe(false);
-  });
-
-  test("option `true` overrides env `false`", () => {
-    const inngest = createWithSessionPropagation({
-      option: true,
-      env: { [envKeys.InngestSessionPropagation]: "false" },
-    });
-    expect(inngest[sessionPropagationSymbol]).toBe(true);
-  });
-
-  test("option `false` overrides env `true`", () => {
-    const inngest = createWithSessionPropagation({
-      option: false,
-      env: { [envKeys.InngestSessionPropagation]: "true" },
     });
     expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
