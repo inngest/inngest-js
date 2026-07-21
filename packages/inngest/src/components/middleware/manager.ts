@@ -156,7 +156,9 @@ export class MiddlewareManager {
 
     // Reverse the input→opts mapping for step kinds where the whole opts
     // object was wrapped as input (e.g. invoke, waitForEvent).
-    const opOpts = optsFromStepInput(stepType, stepInfo.input);
+    const opOpts = this.hasTransformStepInput
+      ? optsFromStepInput(stepType, stepInfo.input, input.opts)
+      : undefined;
 
     // Deferred handler pattern — actual handler set later based on memoization
     let actualHandler: (() => Promise<unknown>) | undefined;

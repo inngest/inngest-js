@@ -121,6 +121,48 @@ describe("stepTypeFromOpCode", () => {
       "fetch",
     );
   });
+
+  test("Sandbox returns the action-specific step type", () => {
+    expect(
+      stepTypeFromOpCode(
+        StepOpCode.Sandbox,
+        {
+          type: "step.sandbox.get",
+          sandbox: {
+            protocolVersion: 1,
+            action: "get",
+            input: [
+              {
+                sandboxId: "22222222-2222-4222-8222-222222222222",
+              },
+            ],
+          },
+        },
+        logger,
+      ),
+    ).toBe("step.sandbox.get");
+  });
+
+  test("Sandbox rejects mismatched type and action", () => {
+    expect(
+      stepTypeFromOpCode(
+        StepOpCode.Sandbox,
+        {
+          type: "step.sandbox.exec",
+          sandbox: {
+            protocolVersion: 1,
+            action: "get",
+            input: [
+              {
+                sandboxId: "22222222-2222-4222-8222-222222222222",
+              },
+            ],
+          },
+        },
+        logger,
+      ),
+    ).toBe("unknown");
+  });
 });
 
 describe("optsFromStepInput", () => {
@@ -150,6 +192,53 @@ describe("optsFromStepInput", () => {
   test("returns undefined when input[0] is not an object", () => {
     expect(optsFromStepInput("invoke", ["not-an-object"])).toBeUndefined();
     expect(optsFromStepInput("invoke", [null])).toBeUndefined();
+  });
+
+  test("reconstructs only Sandbox input within the original envelope", () => {
+    const originalOpts = {
+      type: "step.sandbox.exec",
+      experimentName: "experiment",
+      sandbox: {
+        protocolVersion: 1,
+        action: "exec",
+        target: {
+          sandboxId: "22222222-2222-4222-8222-222222222222",
+        },
+        input: [
+          {
+            command: ["/bin/true"],
+            timeoutMs: 1_000,
+          },
+        ],
+      },
+    };
+
+    expect(
+      optsFromStepInput(
+        "step.sandbox.exec",
+        [{ command: ["/bin/false"], timeoutMs: 2_000 }],
+        originalOpts,
+      ),
+    ).toEqual({
+      ...originalOpts,
+      sandbox: {
+        ...originalOpts.sandbox,
+        input: [
+          {
+            command: ["/bin/false"],
+            timeoutMs: 2_000,
+          },
+        ],
+      },
+    });
+
+    expect(() =>
+      optsFromStepInput(
+        "step.sandbox.exec",
+        [{ command: ["bin/false"], timeoutMs: 2_000 }],
+        originalOpts,
+      ),
+    ).toThrow("command must begin with an absolute executable path");
   });
 });
 

@@ -280,6 +280,8 @@ export enum StepOpCode {
   AiGateway = "AIGateway",
   Gateway = "Gateway",
 
+  Sandbox = "Sandbox",
+
   RunComplete = "RunComplete",
   DiscoveryRequest = "DiscoveryRequest",
 

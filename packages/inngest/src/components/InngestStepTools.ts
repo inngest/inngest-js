@@ -50,6 +50,12 @@ import {
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import {
+  createSandboxTools,
+  parseSandboxOperation,
+  type SandboxRawTool,
+  SandboxValidationError,
+} from "./InngestSandbox.ts";
+import {
   type ScoreStepTool,
   scoreSymbol,
   sendStepScore,
@@ -302,6 +308,12 @@ export const createStepTools = <
         op.opts = { ...op.opts, ...experimentContext };
       }
 
+      if (op.op === StepOpCode.Sandbox && op.opts?.parallelMode === "race") {
+        throw new SandboxValidationError(
+          "Sandbox operations cannot run with race parallelism",
+        );
+      }
+
       // Track that a step tool was invoked inside a variant callback
       const tracker = alsCtx?.experimentStepTracker;
       if (tracker) {
@@ -446,6 +458,23 @@ export const createStepTools = <
     });
   };
 
+  const sandboxRawTool = createTool<SandboxRawTool>(
+    ({ id, name }, operation) => {
+      const sandbox = parseSandboxOperation(operation);
+      return {
+        id,
+        mode: StepMode.Async,
+        op: StepOpCode.Sandbox,
+        displayName: name ?? id,
+        opts: {
+          type: `step.sandbox.${sandbox.action}`,
+          sandbox,
+        },
+        userland: { id },
+      };
+    },
+  );
+
   /**
    * Define the set of tools the user has access to for their step functions.
    *
@@ -453,6 +482,11 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * EXPERIMENTAL: Durable, executor-owned sandbox operations.
+     */
+    sandbox: createSandboxTools(() => sandboxRawTool),
+
     /**
      * Send one or many events to Inngest. Should always be used in place of
      * `inngest.send()` to ensure that the event send is successfully retried
@@ -1004,6 +1038,9 @@ export const createStepTools = <
   (tools as unknown as ExperimentStepTools)[experimentStepRunSymbol] =
     createStepRun("group.experiment");
 
+  (tools as unknown as SandboxStepTools)[sandboxStepToolSymbol] =
+    sandboxRawTool;
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -1073,6 +1110,12 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
   ) => Promise<unknown>;
 };
 
+export const sandboxStepToolSymbol = Symbol.for("inngest.step.sandbox");
+
+export type SandboxStepTools = GetStepTools<Inngest.Any> & {
+  [sandboxStepToolSymbol]: SandboxRawTool;
+};
+
 /**
  * A generic set of step tools that can be used without typing information about
  * the client used to create them.
@@ -1085,6 +1128,7 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
  * Inngest functions as well.
  */
 export const step: GenericStepTools = {
+  sandbox: createSandboxTools(() => getDeferredSandboxTooling()),
   // TODO Support `step.fetch` (this is already kinda half way deferred)
   fetch: null as unknown as GenericStepTools["fetch"],
   ai: {
@@ -1165,6 +1209,11 @@ const getDeferredGroupTooling = async (): Promise<GroupTools> => {
   }
 
   return ctx.execution.ctx.group;
+};
+
+const getDeferredSandboxTooling = async (): Promise<SandboxRawTool> => {
+  const tools = await getDeferredStepTooling();
+  return (tools as SandboxStepTools)[sandboxStepToolSymbol];
 };
 
 /**

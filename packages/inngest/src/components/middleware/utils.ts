@@ -3,6 +3,12 @@ import { isRecord } from "../../helpers/types";
 import type { Logger } from "../../middleware/logger";
 import { type SendEventBaseOutput, StepOpCode } from "../../types";
 import type { InngestFunction } from "../InngestFunction";
+import {
+  type SandboxStepType,
+  sandboxInputFromOpts,
+  sandboxOptsFromInput,
+  sandboxStepTypeFromOpts,
+} from "../InngestSandbox";
 import type { Middleware } from "./middleware";
 import type { ExtractLiteralStrings } from "./types";
 
@@ -98,6 +104,11 @@ export function stepTypeFromOpCode(
     }
   } else if (op === StepOpCode.Gateway) {
     return "fetch";
+  } else if (op === StepOpCode.Sandbox) {
+    const stepType = sandboxStepTypeFromOpts(opts);
+    if (stepType) {
+      return stepType;
+    }
   } else if (op === StepOpCode.InvokeFunction) {
     return "invoke";
   } else if (op === StepOpCode.StepPlanned) {
@@ -135,6 +146,9 @@ export function stepInputFromOpts(
   stepType: Middleware.StepType,
   opts?: Record<string, unknown>,
 ): unknown[] | undefined {
+  if (stepType.startsWith("step.sandbox.")) {
+    return sandboxInputFromOpts(opts);
+  }
   if (stepType === "invoke" || stepType === "waitForEvent") {
     return [opts];
   }
@@ -153,7 +167,15 @@ export function stepInputFromOpts(
 export function optsFromStepInput(
   stepType: Middleware.StepType,
   input: unknown[] | undefined,
+  originalOpts?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  if (stepType.startsWith("step.sandbox.")) {
+    return sandboxOptsFromInput(
+      stepType as SandboxStepType,
+      input,
+      originalOpts,
+    );
+  }
   if (input === undefined) {
     return undefined;
   }
