@@ -1192,6 +1192,20 @@ export interface ClientOptions {
   aiMetadata?: boolean;
 
   /**
+   * Whether events spawned during a run — via `step.sendEvent`, `step.invoke`,
+   * and `defer` — inherit the run's session metadata, so the resulting child
+   * runs stay grouped in the same sessions as their parent.
+   *
+   * Sessions set manually always take precedence. Setting a key to null will
+   * remove that session from propagated sessions.
+   *
+   * This option takes precedence over the `INNGEST_SESSION_PROPAGATION`
+   * environment variable, which in turn takes precedence over the SDK's
+   * default. When left unset, the feature is off by default.
+   */
+  sessionPropagation?: boolean;
+
+  /**
    * Whether or not to use checkpointing by default for executions of functions
    * created using this client.
    *
