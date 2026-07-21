@@ -14,6 +14,7 @@ import {
 import type { Logger } from "../middleware/logger.ts";
 import { createClient, nodeVersion } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
+import { sessionPropagationSymbol } from "./Inngest.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
 const testEvent: EventPayload = {
@@ -1396,5 +1397,65 @@ describe("inngest.realtime.publish", () => {
       // @ts-expect-error intentional invalid payload
       inngest.realtime.publish(ch.status, { message: 999 }),
     ).rejects.toThrow("Schema validation failed");
+  });
+});
+
+describe("sessionPropagation toggle", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // Session propagation is resolved from the `INNGEST_SESSION_PROPAGATION` env
+  // var (there's no public/internal client option yet — that arrives with
+  // client-side configuration). `env` is applied via `vi.stubEnv` and
+  // automatically restored after each test by `vi.unstubAllEnvs`, so there's no
+  // env-var bleed between tests.
+  const createWithSessionPropagation = ({
+    env,
+  }: {
+    env?: Record<string, string>;
+  } = {}): Inngest.Any => {
+    const opts = { id: "test" } as ConstructorParameters<typeof Inngest>[0];
+
+    if (env) {
+      for (const [key, value] of Object.entries(env)) {
+        vi.stubEnv(key, value);
+      }
+    }
+
+    return new Inngest(opts);
+  };
+
+  test("defaults to false (dark-launch OFF) when env is not set", () => {
+    const inngest = createWithSessionPropagation();
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=true` enables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "true" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=1` enables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "1" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=false` disables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "false" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("`INNGEST_SESSION_PROPAGATION=0` disables propagation", () => {
+    const inngest = createWithSessionPropagation({
+      env: { [envKeys.InngestSessionPropagation]: "0" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
 });

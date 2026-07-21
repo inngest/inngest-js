@@ -118,6 +118,16 @@ type FetchT = typeof fetch;
  */
 export const internalLoggerSymbol = Symbol.for("inngest.internalLogger");
 
+/**
+ * Symbol for accessing whether session propagation is enabled on this client.
+ * @internal
+ */
+export const sessionPropagationSymbol = Symbol.for(
+  "inngest.sessionPropagation",
+);
+
+const SESSION_PROPAGATION_DEFAULT_ENABLED = false;
+
 export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
@@ -428,6 +438,33 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this._env = protectEnv({ ...this._env, ...env });
 
     return this;
+  }
+
+  /**
+   * Whether session propagation is enabled for this client. Resolved with the
+   * precedence `INNGEST_SESSION_PROPAGATION` env var > {@link
+   * SESSION_PROPAGATION_DEFAULT_ENABLED}.
+   *
+   * Resolved lazily on every access (mirroring {@link mode}) so that env vars
+   * populated after construction via {@link setEnvVars} — as happens in
+   * edge/serverless runtimes like Cloudflare Workers — are honored.
+   *
+   * @internal
+   */
+  get [sessionPropagationSymbol](): boolean {
+    // Session propagation is resolved with the precedence
+    // `INNGEST_SESSION_PROPAGATION` env var > default, matching the SDK's
+    // `dev`-mode resolution order.
+    let sessionPropagation = SESSION_PROPAGATION_DEFAULT_ENABLED;
+
+    const sessionPropagationEnv = parseAsBoolean(
+      this._env[envKeys.InngestSessionPropagation],
+    );
+    if (sessionPropagationEnv !== undefined) {
+      sessionPropagation = sessionPropagationEnv;
+    }
+
+    return sessionPropagation;
   }
 
   get mode(): Mode {
