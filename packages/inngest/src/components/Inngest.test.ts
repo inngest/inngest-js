@@ -1405,9 +1405,11 @@ describe("sessionPropagation toggle", () => {
     vi.unstubAllEnvs();
   });
 
-  // Session propagation is resolved from the `INNGEST_SESSION_PROPAGATION` env
-  // var (there's no public/internal client option yet — that arrives with
-  // client-side configuration). `env` is applied via `vi.stubEnv` and
+  // Session propagation resolves with precedence: explicit `sessionPropagation`
+  // client option > `INNGEST_SESSION_PROPAGATION` env var > default. This block
+  // covers the env-var path and the default; the option path is exercised by
+  // the behavior tests (send/invoke/defer). Option-vs-env precedence lands with
+  // the public client-side toggle. `env` is applied via `vi.stubEnv` and
   // automatically restored after each test by `vi.unstubAllEnvs`, so there's no
   // env-var bleed between tests.
   const createWithSessionPropagation = ({
