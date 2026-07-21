@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { reduceEventsToPropagatedSessions, compareUtf8 } from "./sessions.ts";
+import { compareUtf8, reduceEventsToPropagatedSessions } from "./sessions.ts";
 
 /** Build a triggering event carrying the given session map. */
 const evt = (sessions?: Record<string, string>) => ({ meta: { sessions } });
