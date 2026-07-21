@@ -545,6 +545,21 @@ export type DeferFn = <TFn extends DeferredFunction.Any>(
         Record<string, any>;
     /** Attribute the deferred scorer's result to this experiment variant. */
     experiment?: ExperimentRef;
+    /**
+     * Event meta shared with the deferred run.
+     *
+     * By default the deferred run inherits the calling run's sessions: the
+     * `meta.propagatedSessions` layer is stamped automatically from
+     * `ctx.sessions`.
+     *
+     * Pass `meta.sessions` to add or override sessions on the deferred run; a
+     * `null` value cuts an inherited session (RFC 7386), and a whole-field
+     * `null` clears all inherited sessions. Values are normalized to strings
+     * before sending, as with `inngest.send()`.
+     *
+     * Inheritance can be disabled at the client level.
+     */
+    meta?: EventMeta;
   },
 ) => DeferHandle;
 

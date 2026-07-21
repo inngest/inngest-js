@@ -33,7 +33,10 @@ import {
   retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
-import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
+import {
+  normalizeEventMeta,
+  reduceEventsToPropagatedSessions,
+} from "../../helpers/sessions.ts";
 import { stringify } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import {
@@ -2712,7 +2715,7 @@ class InngestExecutionEngine
    * schema mismatch) are logged and the call is silently skipped.
    */
   private buildDefer(stepHandler: StepHandler): DeferFn {
-    return (idOrOptions, { function: deferFn, data, experiment }) => {
+    return (idOrOptions, { function: deferFn, data, experiment, meta }) => {
       const log = this.options.client[internalLoggerSymbol];
       const runId = this.fnArg.runId;
       const noopHandle: DeferHandle = { abort: () => {} };
@@ -2758,6 +2761,26 @@ class InngestExecutionEngine
             ? { ...input, [deferExperimentKey]: experiment }
             : input;
 
+        // Resolve the defer's session layers into the `meta` blob the deferred
+        // run inherits. The manual `meta.sessions` layer (tombstones preserved)
+        // is always normalized; the run's propagated sessions (`ctx.sessions`)
+        // are stamped as the separate `meta.propagatedSessions` layer, gated by
+        // the client toggle, mirroring `step.invoke`/`step.sendEvent`. The
+        // server folds the two at finalize.
+        let deferMeta: ReturnType<typeof normalizeEventMeta>;
+        try {
+          deferMeta = normalizeEventMeta(meta);
+        } catch (err) {
+          log.error({ runId, err }, "defer skipped: invalid meta.sessions");
+          return noopHandle;
+        }
+        if (this.options.client[sessionPropagationSymbol]) {
+          const propagated = this.fnArg.sessions;
+          if (propagated && Object.keys(propagated).length > 0) {
+            deferMeta = { ...deferMeta, propagatedSessions: propagated };
+          }
+        }
+
         void stepHandler({
           args: [stepOptions, finalInput],
           matchOp: (stepOptions, inputArg) => ({
@@ -2766,7 +2789,11 @@ class InngestExecutionEngine
             op: StepOpCode.DeferAdd,
             name: stepOptions.name ?? stepOptions.id,
             displayName: stepOptions.name ?? stepOptions.id,
-            opts: { fn_slug: deferFnSlug, input: inputArg },
+            opts: {
+              fn_slug: deferFnSlug,
+              input: inputArg,
+              ...(deferMeta ? { meta: deferMeta } : {}),
+            },
             userland: { id: stepOptions.id },
           }),
         }).catch((err: unknown) => {
