@@ -1390,10 +1390,12 @@ export interface RegisterOptions {
  * when validating config. We cannot add comments to Zod fields, so we just use
  * an extra type check to ensure it matches our exported expectations.
  */
+const executionScopeSchema = z.enum(["fn", "env", "account"]);
+
 const concurrencyOptionSchema = z.strictObject({
   limit: z.number(),
   key: z.string().optional(),
-  scope: z.enum(["fn", "env", "account"]).optional(),
+  scope: executionScopeSchema.optional(),
 });
 
 const _checkConcurrencySchemaAligns: IsEqual<
@@ -1701,6 +1703,7 @@ export const functionConfigSchema = z.strictObject({
   throttle: z
     .strictObject({
       key: z.string().optional(),
+      scope: executionScopeSchema.optional(),
       limit: z.number(),
       period: z.string().transform((x) => x as TimeStr),
       burst: z.number().optional(),
