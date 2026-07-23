@@ -1765,8 +1765,12 @@ export class InngestCommHandler<
           fn = this.fns[fnId];
         }
 
-        if (typeof fnId === "undefined" || !fn) {
+        if (typeof fnId === "undefined") {
           throw new Error("No function ID found in request");
+        } else if (!fn) {
+          throw new Error(
+            `Function "${fnId}" was not found in this app; is the app synced correctly?`,
+          );
         }
 
         // Always try and grab the step ID; in regular async flows this will be
