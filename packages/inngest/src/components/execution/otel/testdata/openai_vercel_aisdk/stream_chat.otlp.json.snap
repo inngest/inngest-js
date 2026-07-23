@@ -10,7 +10,8 @@
         "stop"
       ],
       "inputTokens": 11,
-      "outputTokens": 14
+      "outputTokens": 14,
+      "latencyMs": 283.82470703125
     }
   },
   {
