@@ -21,6 +21,16 @@ describe("stepTypeFromOpCode", () => {
     ).toBe("run");
   });
 
+  test("StepPlanned with type 'step.ai.wrap' returns 'ai.wrap'", () => {
+    expect(
+      stepTypeFromOpCode(
+        StepOpCode.StepPlanned,
+        { type: "step.ai.wrap" },
+        logger,
+      ),
+    ).toBe("ai.wrap");
+  });
+
   test("StepPlanned with type 'step.sendEvent' returns 'sendEvent'", () => {
     expect(
       stepTypeFromOpCode(
@@ -85,16 +95,6 @@ describe("stepTypeFromOpCode", () => {
         logger,
       ),
     ).toBe("ai.infer");
-  });
-
-  test("AiGateway with type 'step.ai.wrap' returns 'ai.wrap'", () => {
-    expect(
-      stepTypeFromOpCode(
-        StepOpCode.AiGateway,
-        { type: "step.ai.wrap" },
-        logger,
-      ),
-    ).toBe("ai.wrap");
   });
 
   test("AiGateway with unknown type returns 'unknown'", () => {
