@@ -1,4 +1,5 @@
 import type { Attributes } from "@opentelemetry/api";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 
 /**
  * Canonical AI metadata extracted from a span's OpenTelemetry GenAI semantic
@@ -74,9 +75,12 @@ export interface AIMetadata {
   presencePenalty?: number;
   /** Sampling seed requested, when the emitter reports it. */
   seed?: number;
+
+  // Span-derived metadata (summed). These are not reported by the provider, but are derived from the span itself.
+  // They are stored raw as the emitter reports them.
+  latencyMs?: number; // The latency of the request in milliseconds.
 }
 
-type ValueType = "text" | "number" | "stringList";
 type MergeStrategy = "replace" | "sum";
 
 /**
@@ -100,56 +104,88 @@ type TextField = FieldsWithValue<string>;
 type NumberField = FieldsWithValue<number>;
 type StringListField = FieldsWithValue<string[]>;
 
-interface BaseFieldSpec {
-  /** The canonical (preferred) source `gen_ai.*` attribute key. */
-  source: string;
+interface FieldSpecBase {
   /**
-   * Deprecated source keys to read when {@link BaseFieldSpec.source} is absent
-   * or carries no usable value, in descending precedence. The preferred
-   * {@link BaseFieldSpec.source} always wins when it supplies a value; these are
-   * only consulted as fallbacks.
+   * When true, this field's `compute` only runs once at least one
+   * non-optional field has already produced a value for the same span (see
+   * {@link extractAIMetadataFromSpan}). Marks fields whose value is defined
+   * for virtually any span regardless of whether it's AI-related (e.g.
+   * `latencyMs`, derived from span timing that every span has), so a lone
+   * optional field can't make an unrelated span look like it carries AI
+   * metadata.
    */
-  fallbackSources?: readonly string[];
-  valueType: ValueType;
+  optional?: boolean;
   merge: MergeStrategy;
 }
 
-interface TextFieldSpec extends BaseFieldSpec {
+interface TextFieldSpec extends FieldSpecBase {
   /** The canonical {@link AIMetadata} field this populates. */
   field: TextField;
   valueType: "text";
   merge: "replace";
+  /** Derives this field's value from the span. */
+  compute: (span: ReadableSpan) => string | undefined;
 }
 
-interface NumberFieldSpec extends BaseFieldSpec {
+interface NumberFieldSpec extends FieldSpecBase {
   /** The canonical {@link AIMetadata} field this populates. */
   field: NumberField;
   valueType: "number";
+  /** Derives this field's value from the span. */
+  compute: (span: ReadableSpan) => number | undefined;
 }
 
-interface StringListFieldSpec extends BaseFieldSpec {
+interface StringListFieldSpec extends FieldSpecBase {
   /** The canonical {@link AIMetadata} field this populates. */
   field: StringListField;
   valueType: "stringList";
   merge: "replace";
+  /** Derives this field's value from the span. */
+  compute: (span: ReadableSpan) => string[] | undefined;
 }
 
 type FieldSpec = TextFieldSpec | NumberFieldSpec | StringListFieldSpec;
 
+/**
+ * Reads the first source (the canonical key, then any fallbacks in order)
+ * that yields a non-empty value, coercing non-string attribute values to
+ * text.
+ */
+function readTextAttribute(
+  attributes: Attributes,
+  sources: readonly string[],
+): string | undefined {
+  for (const source of sources) {
+    const value = attributes[source];
+    if (value === undefined) {
+      continue;
+    }
+
+    const text = typeof value === "string" ? value : String(value);
+    if (text !== "") {
+      return text;
+    }
+  }
+
+  return undefined;
+}
+
+/** A field read out of one of the span's `gen_ai.*` attributes, as text. */
 function textField(
   field: TextField,
   source: string,
   fallbackSources?: readonly string[],
 ): TextFieldSpec {
+  const sources = [source, ...(fallbackSources ?? [])];
   return {
     field,
-    source,
-    fallbackSources,
     valueType: "text",
     merge: "replace",
+    compute: (span) => readTextAttribute(span.attributes, sources),
   };
 }
 
+/** A field read out of one of the span's `gen_ai.*` attributes, as a number. */
 function numberField(
   field: NumberField,
   source: string,
@@ -157,21 +193,44 @@ function numberField(
 ): NumberFieldSpec {
   return {
     field,
-    source,
     valueType: "number",
     merge,
+    compute: (span) => parseNumericAttribute(span.attributes[source]),
   };
 }
 
+/**
+ * A field read out of one of the span's `gen_ai.*` attributes, as a list of
+ * strings.
+ */
 function stringListField(
   field: StringListField,
   source: string,
 ): StringListFieldSpec {
   return {
     field,
-    source,
     valueType: "stringList",
     merge: "replace",
+    compute: (span) => parseStringListAttribute(span.attributes[source]),
+  };
+}
+
+/**
+ * A field derived from the span itself via custom logic (e.g. timing, kind,
+ * status), rather than a direct attribute read.
+ */
+function computedNumberField(
+  field: NumberField,
+  merge: MergeStrategy,
+  compute: (span: ReadableSpan) => number | undefined,
+  optional?: boolean,
+): NumberFieldSpec {
+  return {
+    field,
+    valueType: "number",
+    merge,
+    compute,
+    optional,
   };
 }
 
@@ -216,6 +275,20 @@ export const FIELD_SPECS = [
   ),
   numberField("presencePenalty", "gen_ai.request.presence_penalty", "replace"),
   numberField("seed", "gen_ai.request.seed", "replace"),
+
+  // Span-derived metadata. Not reported by the provider, but computed from the
+  // span's own start/end time. Marked optional: it resolves for virtually any
+  // span, so it must not by itself make an unrelated span look AI-related.
+  computedNumberField(
+    "latencyMs",
+    "sum",
+    (span) => {
+      const startMs = span.startTime[0] * 1000 + span.startTime[1] / 1e6;
+      const endMs = span.endTime[0] * 1000 + span.endTime[1] / 1e6;
+      return endMs - startMs;
+    },
+    true,
+  ),
 ] as const satisfies readonly FieldSpec[];
 
 function parseNumericAttribute(value: unknown): number | undefined {
@@ -245,55 +318,62 @@ function parseStringListAttribute(value: unknown): string[] | undefined {
 }
 
 /**
- * Extracts {@link AIMetadata} from a span's attributes.
+ * Extracts {@link AIMetadata} from a span.
  *
- * Only the allowlisted {@link FIELD_SPECS} are read. Every other attribute is
- * ignored. Numeric fields accept numbers and quoted numeric strings and are
- * otherwise dropped, as OTLP/JSON may encode int64 as a quoted string. Text
- * fields are dropped when empty. String-list fields keep only non-empty string
- * entries and are dropped when none remain.
+ * Only the allowlisted {@link FIELD_SPECS} are read; every other attribute or
+ * span field is ignored. Each spec derives its value from the span via its
+ * `compute` function — most read a `gen_ai.*` attribute (numeric fields
+ * accept numbers and quoted numeric strings, as OTLP/JSON may encode int64 as
+ * a quoted string; text and string-list fields are dropped when empty), but a
+ * field can define arbitrary custom logic instead (e.g. `latencyMs`, derived
+ * from the span's start/end time).
  *
- * Returns an empty object for spans carrying no recognised `gen_ai.*`
- * attributes.
+ * Fields marked {@link FieldSpecBase.optional} only run once at least one
+ * non-optional field has already produced a value, so a span carrying no
+ * recognised `gen_ai.*` attributes still yields an empty object rather than
+ * picking up e.g. `latencyMs` on its own.
  *
- * @param attributes - The span attributes, as exposed by
- * `ReadableSpan.attributes`.
+ * @param span - The span, as exposed by the OTel SDK's `ReadableSpan`.
  */
-export const extractAIMetadataFromAttributes = (
-  attributes: Attributes,
-): AIMetadata => {
+export const extractAIMetadataFromSpan = (span: ReadableSpan): AIMetadata => {
   const metadata: AIMetadata = {};
 
+  const applySpec = (spec: FieldSpec): void => {
+    if (spec.valueType === "text") {
+      const text = spec.compute(span);
+      if (text !== undefined && text !== "") {
+        metadata[spec.field] = text;
+      }
+    } else if (spec.valueType === "stringList") {
+      const list = spec.compute(span);
+      if (list !== undefined && list.length > 0) {
+        metadata[spec.field] = list;
+      }
+    } else {
+      const num = spec.compute(span);
+      if (num !== undefined && Number.isFinite(num)) {
+        metadata[spec.field] = num;
+      }
+    }
+  };
+
   for (const spec of FIELD_SPECS) {
-    // Read the canonical key first, then any deprecated fallbacks in order,
-    // taking the first that yields a usable value.
-    const sources = [spec.source, ...(spec.fallbackSources ?? [])];
+    if (!spec.optional) {
+      applySpec(spec);
+    }
+  }
 
-    for (const source of sources) {
-      const value = attributes[source];
-      if (value === undefined) {
-        continue;
-      }
+  // No non-optional field matched, so this isn't a span we recognise as
+  // AI-related. Skip optional fields entirely rather than let one (e.g.
+  // latencyMs, which resolves for virtually every span) make an unrelated
+  // span look like it carries AI metadata.
+  if (Object.keys(metadata).length === 0) {
+    return metadata;
+  }
 
-      if (spec.valueType === "text") {
-        const text = typeof value === "string" ? value : String(value);
-        if (text !== "") {
-          metadata[spec.field] = text;
-          break;
-        }
-      } else if (spec.valueType === "stringList") {
-        const list = parseStringListAttribute(value);
-        if (list !== undefined) {
-          metadata[spec.field] = list;
-          break;
-        }
-      } else {
-        const num = parseNumericAttribute(value);
-        if (num !== undefined) {
-          metadata[spec.field] = num;
-          break;
-        }
-      }
+  for (const spec of FIELD_SPECS) {
+    if (spec.optional) {
+      applySpec(spec);
     }
   }
 

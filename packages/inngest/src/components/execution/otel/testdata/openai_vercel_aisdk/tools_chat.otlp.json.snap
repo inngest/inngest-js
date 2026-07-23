@@ -10,7 +10,8 @@
         "tool-calls"
       ],
       "inputTokens": 56,
-      "outputTokens": 30
+      "outputTokens": 30,
+      "latencyMs": 575.1591796875
     }
   },
   {

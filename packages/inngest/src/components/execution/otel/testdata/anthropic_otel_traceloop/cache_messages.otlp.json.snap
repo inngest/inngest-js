@@ -14,7 +14,8 @@
       "totalTokens": 17,
       "cacheReadTokens": 0,
       "cacheCreationTokens": 2463,
-      "maxTokens": 16
+      "maxTokens": 16,
+      "latencyMs": 1224.886962890625
     }
   },
   {
@@ -32,7 +33,8 @@
       "totalTokens": 7,
       "cacheReadTokens": 2463,
       "cacheCreationTokens": 10,
-      "maxTokens": 16
+      "maxTokens": 16,
+      "latencyMs": 1118.367919921875
     }
   }
 ]

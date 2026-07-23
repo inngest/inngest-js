@@ -2,11 +2,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Attributes, AttributeValue } from "@opentelemetry/api";
+import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { describe, expect, test } from "vitest";
 import type { AIMetadata } from "./aiExtractor.ts";
 import {
   aggregate,
-  extractAIMetadataFromAttributes,
+  extractAIMetadataFromSpan,
   FIELD_SPECS,
   toInngestAIMetadataValues,
 } from "./aiExtractor.ts";
@@ -43,9 +44,22 @@ const unwrapOtlpValue = (v: OtlpAnyValue): AttributeValue | undefined => {
   return undefined;
 };
 
+/** An OTel `HrTime` tuple: `[seconds, remaining nanoseconds]`. */
+type HrTime = [number, number];
+
+/** Converts an OTLP/JSON `UnixNano` timestamp (a quoted int64) to an `HrTime`. */
+const unixNanoToHrTime = (unixNano: string): HrTime => {
+  const nanos = BigInt(unixNano);
+  const seconds = nanos / 1_000_000_000n;
+  const remainder = nanos % 1_000_000_000n;
+  return [Number(seconds), Number(remainder)];
+};
+
 interface OtlpSpan {
   name: string;
   attributes: Attributes;
+  startTime: HrTime;
+  endTime: HrTime;
 }
 
 interface OtlpTraceRequest {
@@ -54,6 +68,8 @@ interface OtlpTraceRequest {
       spans?: {
         name: string;
         attributes?: { key: string; value: OtlpAnyValue }[];
+        startTimeUnixNano?: string;
+        endTimeUnixNano?: string;
       }[];
     }[];
   }[];
@@ -61,8 +77,8 @@ interface OtlpTraceRequest {
 
 /**
  * Parse an OTLP/JSON `ExportTraceServiceRequest` fixture into a flat list of
- * spans (in document order), each with its attributes converted to the
- * `Attributes` record shape the SDK exposes via `ReadableSpan.attributes`.
+ * spans (in document order), each with its attributes and timing converted to
+ * the shape the SDK exposes via `ReadableSpan`.
  */
 const loadOtlpSpans = (fixturePath: string): OtlpSpan[] => {
   const req: OtlpTraceRequest = JSON.parse(readFileSync(fixturePath, "utf8"));
@@ -78,7 +94,12 @@ const loadOtlpSpans = (fixturePath: string): OtlpSpan[] => {
             attributes[attr.key] = value;
           }
         }
-        spans.push({ name: span.name, attributes });
+        spans.push({
+          name: span.name,
+          attributes,
+          startTime: unixNanoToHrTime(span.startTimeUnixNano ?? "0"),
+          endTime: unixNanoToHrTime(span.endTimeUnixNano ?? "0"),
+        });
       }
     }
   }
@@ -106,7 +127,22 @@ const discoverFixtures = (): {
   return out;
 };
 
-describe("extractAIMetadataFromAttributes", () => {
+/**
+ * Builds a fake `ReadableSpan` carrying just the fields
+ * {@link extractAIMetadataFromSpan} reads: attributes and timing. Defaults to
+ * a zero-length span (`latencyMs: 0`) unless explicit timing is given.
+ */
+const fakeSpan = (
+  attributes: Attributes,
+  timing?: { startTime: HrTime; endTime: HrTime },
+): ReadableSpan =>
+  ({
+    attributes,
+    startTime: timing?.startTime ?? [0, 0],
+    endTime: timing?.endTime ?? [0, 0],
+  }) as unknown as ReadableSpan;
+
+describe("extractAIMetadataFromSpan", () => {
   describe("captured OTLP fixtures", () => {
     const fixtures = discoverFixtures();
 
@@ -122,7 +158,7 @@ describe("extractAIMetadataFromAttributes", () => {
         // canonical metadata this extractor produces for it.
         const extracted = spans.map((span) => ({
           span: span.name,
-          metadata: extractAIMetadataFromAttributes(span.attributes),
+          metadata: extractAIMetadataFromSpan(fakeSpan(span.attributes, span)),
         }));
 
         await expect(
@@ -134,16 +170,18 @@ describe("extractAIMetadataFromAttributes", () => {
 
   test("maps allowlisted gen_ai keys to canonical fields", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.request.model": "gpt-4.1-nano",
-        "gen_ai.response.model": "gpt-4.1-nano-2025-04-14",
-        "gen_ai.provider.name": "openai",
-        "gen_ai.operation.name": "chat",
-        "gen_ai.response.id": "chatcmpl-abc",
-        "gen_ai.usage.input_tokens": 17,
-        "gen_ai.usage.output_tokens": 41,
-        "gen_ai.usage.total_tokens": 58,
-      }),
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.request.model": "gpt-4.1-nano",
+          "gen_ai.response.model": "gpt-4.1-nano-2025-04-14",
+          "gen_ai.provider.name": "openai",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.response.id": "chatcmpl-abc",
+          "gen_ai.usage.input_tokens": 17,
+          "gen_ai.usage.output_tokens": 41,
+          "gen_ai.usage.total_tokens": 58,
+        }),
+      ),
     ).toEqual({
       requestModel: "gpt-4.1-nano",
       responseModel: "gpt-4.1-nano-2025-04-14",
@@ -153,19 +191,22 @@ describe("extractAIMetadataFromAttributes", () => {
       inputTokens: 17,
       outputTokens: 41,
       totalTokens: 58,
+      latencyMs: 0,
     });
   });
 
   describe("operationName", () => {
     test("reads gen_ai.operation.name", () => {
       expect(
-        extractAIMetadataFromAttributes({ "gen_ai.operation.name": "chat" }),
-      ).toEqual({ operationName: "chat" });
+        extractAIMetadataFromSpan(
+          fakeSpan({ "gen_ai.operation.name": "chat" }),
+        ),
+      ).toEqual({ operationName: "chat", latencyMs: 0 });
     });
 
     test("drops an empty gen_ai.operation.name", () => {
       expect(
-        extractAIMetadataFromAttributes({ "gen_ai.operation.name": "" }),
+        extractAIMetadataFromSpan(fakeSpan({ "gen_ai.operation.name": "" })),
       ).toEqual({});
     });
   });
@@ -173,49 +214,57 @@ describe("extractAIMetadataFromAttributes", () => {
   describe("provider", () => {
     test("reads the deprecated gen_ai.system when the canonical key is absent", () => {
       expect(
-        extractAIMetadataFromAttributes({ "gen_ai.system": "anthropic" }),
-      ).toEqual({ provider: "anthropic" });
+        extractAIMetadataFromSpan(fakeSpan({ "gen_ai.system": "anthropic" })),
+      ).toEqual({ provider: "anthropic", latencyMs: 0 });
     });
 
     test("prefers gen_ai.provider.name over the deprecated gen_ai.system", () => {
       expect(
-        extractAIMetadataFromAttributes({
-          "gen_ai.provider.name": "openai",
-          "gen_ai.system": "anthropic",
-        }),
-      ).toEqual({ provider: "openai" });
+        extractAIMetadataFromSpan(
+          fakeSpan({
+            "gen_ai.provider.name": "openai",
+            "gen_ai.system": "anthropic",
+          }),
+        ),
+      ).toEqual({ provider: "openai", latencyMs: 0 });
     });
 
     test("falls back to gen_ai.system when the canonical key is empty", () => {
       expect(
-        extractAIMetadataFromAttributes({
-          "gen_ai.provider.name": "",
-          "gen_ai.system": "anthropic",
-        }),
-      ).toEqual({ provider: "anthropic" });
+        extractAIMetadataFromSpan(
+          fakeSpan({
+            "gen_ai.provider.name": "",
+            "gen_ai.system": "anthropic",
+          }),
+        ),
+      ).toEqual({ provider: "anthropic", latencyMs: 0 });
     });
   });
 
   test("reports only the provider-supplied total; never derives one", () => {
     // With input + output but no total, the total field is simply absent.
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.usage.input_tokens": 17,
-        "gen_ai.usage.output_tokens": 41,
-      }),
-    ).toEqual({ inputTokens: 17, outputTokens: 41 });
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.usage.input_tokens": 17,
+          "gen_ai.usage.output_tokens": 41,
+        }),
+      ),
+    ).toEqual({ inputTokens: 17, outputTokens: 41, latencyMs: 0 });
   });
 
   test("extracts request parameters", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.request.temperature": 0.7,
-        "gen_ai.request.top_p": 0.9,
-        "gen_ai.request.max_tokens": 64,
-        "gen_ai.request.frequency_penalty": 0.2,
-        "gen_ai.request.presence_penalty": 0.1,
-        "gen_ai.request.seed": 42,
-      }),
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.request.temperature": 0.7,
+          "gen_ai.request.top_p": 0.9,
+          "gen_ai.request.max_tokens": 64,
+          "gen_ai.request.frequency_penalty": 0.2,
+          "gen_ai.request.presence_penalty": 0.1,
+          "gen_ai.request.seed": 42,
+        }),
+      ),
     ).toEqual({
       temperature: 0.7,
       topP: 0.9,
@@ -223,84 +272,122 @@ describe("extractAIMetadataFromAttributes", () => {
       frequencyPenalty: 0.2,
       presencePenalty: 0.1,
       seed: 42,
+      latencyMs: 0,
     });
   });
 
   test("keeps a zero-valued temperature rather than dropping it", () => {
     expect(
-      extractAIMetadataFromAttributes({ "gen_ai.request.temperature": 0 }),
-    ).toEqual({ temperature: 0 });
+      extractAIMetadataFromSpan(fakeSpan({ "gen_ai.request.temperature": 0 })),
+    ).toEqual({ temperature: 0, latencyMs: 0 });
   });
 
   test("extracts finish reasons as a list of strings", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.response.finish_reasons": ["stop", "tool_calls"],
-      }),
-    ).toEqual({ finishReasons: ["stop", "tool_calls"] });
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.response.finish_reasons": ["stop", "tool_calls"],
+        }),
+      ),
+    ).toEqual({ finishReasons: ["stop", "tool_calls"], latencyMs: 0 });
   });
 
   test("drops empty and non-string finish-reason entries", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.response.finish_reasons": ["", "stop"],
-      }),
-    ).toEqual({ finishReasons: ["stop"] });
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.response.finish_reasons": ["", "stop"],
+        }),
+      ),
+    ).toEqual({ finishReasons: ["stop"], latencyMs: 0 });
   });
 
   test("drops finish reasons when the list reduces to nothing", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.response.finish_reasons": [],
-      }),
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.response.finish_reasons": [],
+        }),
+      ),
     ).toEqual({});
   });
 
   test("ignores unmapped, content, and sensitive keys", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.tool.name": "search",
-        "gen_ai.prompt": "secret prompt",
-        "gen_ai.completion": "secret completion",
-        "gen_ai.input.messages": "secret",
-        "http.method": "GET",
-        "gen_ai.usage.input_tokens": 17,
-      }),
-    ).toEqual({ inputTokens: 17 });
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.tool.name": "search",
+          "gen_ai.prompt": "secret prompt",
+          "gen_ai.completion": "secret completion",
+          "gen_ai.input.messages": "secret",
+          "http.method": "GET",
+          "gen_ai.usage.input_tokens": 17,
+        }),
+      ),
+    ).toEqual({ inputTokens: 17, latencyMs: 0 });
   });
 
   test("coerces quoted-string int64 counts to numbers", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.usage.input_tokens": "17",
-      }),
-    ).toEqual({ inputTokens: 17 });
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.usage.input_tokens": "17",
+        }),
+      ),
+    ).toEqual({ inputTokens: 17, latencyMs: 0 });
   });
 
   test("drops empty-string text fields", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.request.model": "",
-      }),
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.request.model": "",
+        }),
+      ),
     ).toEqual({});
   });
 
   test("drops non-numeric values for numeric fields", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.usage.input_tokens": "not-a-number",
-        "gen_ai.usage.output_tokens": true,
-        "gen_ai.usage.total_tokens": "",
-      }),
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.usage.input_tokens": "not-a-number",
+          "gen_ai.usage.output_tokens": true,
+          "gen_ai.usage.total_tokens": "",
+        }),
+      ),
     ).toEqual({});
   });
 
   test("drops undefined values", () => {
     expect(
-      extractAIMetadataFromAttributes({
-        "gen_ai.request.model": undefined,
-      }),
+      extractAIMetadataFromSpan(
+        fakeSpan({
+          "gen_ai.request.model": undefined,
+        }),
+      ),
     ).toEqual({});
+  });
+
+  describe("latencyMs", () => {
+    test("computes the span's duration from its start/end time", () => {
+      expect(
+        extractAIMetadataFromSpan(
+          fakeSpan(
+            { "gen_ai.request.model": "gpt-4.1-nano" },
+            { startTime: [10, 0], endTime: [10, 500_000_000] },
+          ),
+        ),
+      ).toEqual({ requestModel: "gpt-4.1-nano", latencyMs: 500 });
+    });
+
+    test("is never populated on its own, without a recognised gen_ai attribute", () => {
+      expect(
+        extractAIMetadataFromSpan(
+          fakeSpan({}, { startTime: [0, 0], endTime: [10, 0] }),
+        ),
+      ).toEqual({});
+    });
   });
 });
 
@@ -359,6 +446,12 @@ describe("aggregate", () => {
     ).toEqual({ finishReasons: ["tool_calls"] });
   });
 
+  test("sums latencyMs across calls", () => {
+    expect(aggregate({ latencyMs: 100 }, { latencyMs: 50 })).toEqual({
+      latencyMs: 150,
+    });
+  });
+
   test("returns an empty object when both inputs are empty", () => {
     expect(aggregate({}, {})).toEqual({});
   });
@@ -386,6 +479,7 @@ describe("toInngestAIMetadataValues", () => {
         frequencyPenalty: 0.2,
         presencePenalty: 0.1,
         seed: 42,
+        latencyMs: 123,
       }),
     ).toEqual({
       request_model: "gpt-4o",
@@ -406,6 +500,7 @@ describe("toInngestAIMetadataValues", () => {
       frequency_penalty: 0.2,
       presence_penalty: 0.1,
       seed: 42,
+      latency_ms: 123,
     });
   });
 
@@ -415,19 +510,15 @@ describe("toInngestAIMetadataValues", () => {
 });
 
 describe("FIELD_SPECS", () => {
-  test("every source key is a gen_ai.* semantic convention attribute", () => {
-    // Guards the allowlist against typos: every source must live in the
-    // OpenTelemetry GenAI (`gen_ai.*`) namespace.
-    const nonGenAi = FIELD_SPECS.flatMap((spec) => [
-      spec.source,
-      ...(spec.fallbackSources ?? []),
-    ]).filter((source) => !source.startsWith("gen_ai."));
-
-    expect(nonGenAi).toEqual([]);
-  });
-
   test("each canonical field is mapped at most once", () => {
     const fields = FIELD_SPECS.map((spec) => spec.field);
     expect(new Set(fields).size).toBe(fields.length);
+  });
+
+  test("only latencyMs is optional", () => {
+    const optionalFields = FIELD_SPECS.filter((spec) => spec.optional).map(
+      (spec) => spec.field,
+    );
+    expect(optionalFields).toEqual(["latencyMs"]);
   });
 });
