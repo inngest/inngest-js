@@ -1,5 +1,11 @@
 # inngest
 
+## 4.13.1
+
+### Patch Changes
+
+- [#1649](https://github.com/inngest/inngest-js/pull/1649) [`690c0544`](https://github.com/inngest/inngest-js/commit/690c0544ac5742ae7eabe7ba2145f57286cb89cf) Thanks [@Linell](https://github.com/Linell)! - More informative errors for invalid functions
+
 ## 4.13.0
 
 ### Minor Changes
