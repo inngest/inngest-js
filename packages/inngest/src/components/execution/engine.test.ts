@@ -933,10 +933,8 @@ describe("step.invoke session propagation", () => {
     const client = createClient({
       id: "test",
       isDev: true,
-      // `sessionPropagation` is internal/undocumented (off the public
-      // ClientOptions), so it's set via the same cast the SDK reads it with.
       sessionPropagation: enabled,
-    } as Parameters<typeof createClient>[0]);
+    });
 
     const target = new InngestFunction(
       client,

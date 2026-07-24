@@ -453,14 +453,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * @internal
    */
   get [sessionPropagationSymbol](): boolean {
-    // An explicit boolean option wins outright (like `isDev` in `mode`); it is
-    // internal/undocumented, so it lives off the public `ClientOptions` type
-    // and is read via a cast.
-    const sessionPropagationOption = (
-      this.options as { sessionPropagation?: unknown }
-    ).sessionPropagation;
-    if (typeof sessionPropagationOption === "boolean") {
-      return sessionPropagationOption;
+    // An explicit boolean option wins outright (like `isDev` in `mode`).
+    if (typeof this.options.sessionPropagation === "boolean") {
+      return this.options.sessionPropagation;
     }
 
     // Otherwise fall back to the env var, then the default.
