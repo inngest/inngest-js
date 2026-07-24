@@ -1,6 +1,45 @@
-import { test } from "vitest";
+import { expect, expectTypeOf, test } from "vitest";
 import { Inngest } from "../Inngest.ts";
 import { Middleware } from "./middleware.ts";
+
+test("isStepType narrows stepInfo to the matching step type", () => {
+  const stepInfo = {
+    stepType: "invoke" as Middleware.StepType,
+  };
+
+  if (Middleware.isStepType(stepInfo, "invoke")) {
+    expect(stepInfo.stepType).toBe("invoke");
+    expectTypeOf(stepInfo.stepType).toEqualTypeOf<"invoke">();
+  } else {
+    throw new Error("expected isStepType to match");
+  }
+
+  expect(Middleware.isStepType(stepInfo, "sendEvent")).toBe(false);
+});
+
+test("isStepType accepts open-union members not declared on StepType", () => {
+  // `StepType` is an open union; the guard must work for step types that do
+  // not yet exist as declared members, without a breaking change.
+  const stepInfo = { stepType: "group.parallel" as Middleware.StepType };
+
+  expect(Middleware.isStepType(stepInfo, "group.parallel")).toBe(true);
+
+  if (Middleware.isStepType(stepInfo, "group.parallel")) {
+    expectTypeOf(stepInfo.stepType).toEqualTypeOf<"group.parallel">();
+  }
+});
+
+test("isStepType preserves extra fields on the narrowed type", () => {
+  const stepInfo = {
+    stepType: "invoke" as Middleware.StepType,
+    hashedId: "abc",
+  };
+
+  if (Middleware.isStepType(stepInfo, "invoke")) {
+    expectTypeOf(stepInfo.hashedId).toEqualTypeOf<string>();
+    expectTypeOf(stepInfo.stepType).toEqualTypeOf<"invoke">();
+  }
+});
 
 test("stepOutputTransform does not affect step.invoke return type", () => {
   interface PreserveDate extends Middleware.StaticTransform {

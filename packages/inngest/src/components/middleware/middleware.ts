@@ -279,6 +279,30 @@ export namespace Middleware {
   };
 
   /**
+   * Narrows a `stepInfo` to a specific {@link StepType}, for use in step-scoped
+   * hooks (e.g. `transformStepInput`) that need to act on one kind of step:
+   *
+   * ```ts
+   * async transformStepInput(arg) {
+   *   if (!Middleware.isStepType(arg.stepInfo, "invoke")) return arg;
+   *   // arg.stepInfo.stepType is narrowed to "invoke" here
+   *   return arg;
+   * }
+   * ```
+   *
+   * This is a positive equality check, never an exhaustive match, so it works
+   * for step types that do not yet exist in {@link StepType} (which is an open
+   * union and may gain members without a breaking change) — e.g.
+   * `isStepType(stepInfo, "group.parallel")`.
+   */
+  export function isStepType<
+    S extends Pick<StepInfo, "stepType">,
+    const T extends StepType,
+  >(stepInfo: S, stepType: T): stepInfo is S & { stepType: T } {
+    return stepInfo.stepType === stepType;
+  }
+
+  /**
    * Base class for creating middleware. Extend this class to create custom
    * middleware with hooks for step execution.
    */
