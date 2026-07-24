@@ -1,3 +1,4 @@
+import type { Context as OtelContext } from "@opentelemetry/api";
 import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
@@ -168,6 +169,15 @@ export interface FoundStep extends HashedOp {
    * the OutgoingOp so that checkpoint payloads include metadata.
    */
   metadata?: OutgoingOp["metadata"];
+
+  /**
+   * The OTel context that was active when step.run() was called. Captured so
+   * that third-party context entries (e.g. Langfuse propagateAttributes) set
+   * via context.with() are restored when the step callback is executed by
+   * executeStep, which runs from the engine's core loop rather than from
+   * within the original context.with() scope.
+   */
+  otelCtx?: OtelContext;
 }
 
 export type MatchOpFn<

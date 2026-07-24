@@ -1,4 +1,4 @@
-import { trace } from "@opentelemetry/api";
+import { context as otelContext, trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
@@ -1706,7 +1706,16 @@ class InngestExecutionEngine
 
     // `fn` already has middleware-transformed args baked in via `fnArgs` (i.e.
     // the `transformStepInput` middleware hook already ran).
-    const actualHandler = () => runAsPromise(fn);
+    //
+    // Restore the OTel context that was active when step.run() was called.
+    // executeStep runs from the engine's core loop, which is outside any
+    // context.with() scope the user set up around step.run() (e.g. Langfuse's
+    // propagateAttributes). Without this restore, third-party ALS-backed
+    // context entries (user.id, session.id, etc.) are absent from the spans
+    // created inside the step callback (see #1436).
+    const capturedOtelCtx = foundStep.otelCtx ?? otelContext.active();
+    const actualHandler = () =>
+      otelContext.with(capturedOtelCtx, () => runAsPromise(fn));
 
     await this.middlewareManager.onMemoizationEnd();
     await this.middlewareManager.onStepStart(stepInfo);
@@ -2498,6 +2507,10 @@ class InngestExecutionEngine
         input: stepState?.input,
 
         fn: opts?.fn ? () => opts.fn?.(this.fnArg, ...fnArgs) : undefined,
+        // Snapshot the active OTel context so executeStep can restore it when
+        // it runs the step callback from the core loop (which is outside any
+        // context.with() scope the user may have set up around step.run).
+        otelCtx: opts?.fn ? otelContext.active() : undefined,
         promise,
         fulfilled: isFulfilled,
         hasStepState: Boolean(stepState),
