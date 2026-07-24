@@ -920,3 +920,97 @@ describe("Execution engine checkpoint retry behavior", () => {
     });
   });
 });
+
+describe("step.invoke session propagation", () => {
+  // Drives a real execution whose handler calls `step.invoke`, then inspects
+  // the emitted InvokeFunction op to assert the engine's central stamp: the
+  // run's `ctx.sessions` (aggregated from triggering events) is attached to the
+  // invoke payload as `meta.propagatedSessions`, gated by the client toggle.
+  const runInvoke = async (
+    enabled: boolean,
+    manualMeta?: Record<string, unknown>,
+  ) => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      // `sessionPropagation` is internal/undocumented (off the public
+      // ClientOptions), so it's set via the same cast the SDK reads it with.
+      sessionPropagation: enabled,
+    } as Parameters<typeof createClient>[0]);
+
+    const target = new InngestFunction(
+      client,
+      { id: "target-fn", triggers: [{ event: "target/event" }] },
+      () => "target-result",
+    );
+
+    const fn = new InngestFunction(
+      client,
+      { id: "caller-fn", triggers: [{ event: "test/event" }] },
+      async ({ step }: Context.Any & { step: GenericStepTools }) => {
+        await step.invoke("inv", {
+          function: target,
+          data: { foo: "bar" },
+          ...(manualMeta ? { meta: manualMeta } : {}),
+        });
+        return "done";
+      },
+    );
+
+    // Two triggering events carrying sessions — exercises the run-level
+    // aggregation that produces `ctx.sessions`.
+    const events = [
+      { name: "test/event", data: {}, meta: { sessions: { conv_id: "p1" } } },
+      { name: "test/event", data: {}, meta: { sessions: { org_id: "42" } } },
+    ];
+
+    const execution = fn["createExecution"]({
+      partialOptions: {
+        client,
+        data: fromPartial({ event: events[0], events }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.AsyncCheckpointing,
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+      },
+    });
+
+    const result = await execution.start();
+    expect(result.type).toBe("steps-found");
+    const stepsFound = result as ExecutionResults["steps-found"];
+    const invokeOp = stepsFound.steps.find(
+      (s) => s.op === StepOpCode.InvokeFunction,
+    );
+    expect(invokeOp).toBeDefined();
+    return (invokeOp?.opts as { payload?: { meta?: Record<string, unknown> } })
+      ?.payload;
+  };
+
+  test("stamps propagatedSessions from ctx.sessions when the toggle is on", async () => {
+    const payload = await runInvoke(true);
+    expect(payload?.meta?.propagatedSessions).toEqual({
+      conv_id: "p1",
+      org_id: "42",
+    });
+  });
+
+  test("does not stamp when the toggle is off", async () => {
+    const payload = await runInvoke(false);
+    expect(payload?.meta).toBeUndefined();
+  });
+
+  test("keeps the manual sessions layer distinct from propagated", async () => {
+    const payload = await runInvoke(true, { sessions: { conv_id: "manual" } });
+    // Manual and propagated travel as separate layers; the server merges them
+    // (manual wins). The SDK must not merge them itself.
+    expect(payload?.meta?.sessions).toEqual({ conv_id: "manual" });
+    expect(payload?.meta?.propagatedSessions).toEqual({
+      conv_id: "p1",
+      org_id: "42",
+    });
+  });
+});

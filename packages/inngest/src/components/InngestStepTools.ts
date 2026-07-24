@@ -249,6 +249,25 @@ export const stampPropagatedSessions = (
 };
 
 /**
+ * Stamps the run's propagated sessions onto a `step.invoke` payload as the
+ * separate `meta.propagatedSessions` layer, mirroring
+ * {@link stampPropagatedSessions} for `step.sendEvent`.
+ */
+export const stampPropagatedSessionsOnInvoke = (
+  payload: MinimalEventPayload,
+  sessions: Record<string, string> | undefined,
+): MinimalEventPayload => {
+  if (!sessions || Object.keys(sessions).length === 0) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    meta: { ...payload.meta, propagatedSessions: sessions },
+  };
+};
+
+/**
  * Suffix used to namespace steps that are automatically indexed.
  */
 export const STEP_INDEXING_SUFFIX = ":";
@@ -1219,7 +1238,16 @@ export const invokePayloadSchema = z.object({
   v: z.string().optional(),
   meta: z
     .object({
-      sessions: z.record(z.any()).optional(),
+      // Manual layer: RFC 7386 patch — a whole-field `null` clears all
+      // inherited sessions, so it must parse. Values stay loose here because
+      // `normalizeEventSessions` validates them right after the parse with
+      // precise per-key errors; tightening them in zod would mask those behind
+      // the generic invoke-options error.
+      sessions: z.record(z.any()).nullable().optional(),
+      // Machine-stamped layer: string/number ids only, never tombstones.
+      propagatedSessions: z
+        .record(z.union([z.string(), z.number()]))
+        .optional(),
     })
     .optional(),
 });
@@ -1234,9 +1262,16 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
       /**
        * Event meta shared with the invoked run.
        *
-       * Meta is not inherited from the calling run; pass `meta.sessions`
-       * explicitly to group the invoked run. Values are normalized to strings
-       * before sending, as with `inngest.send()`.
+       * By default the invoked run inherits the calling run's sessions. The
+       * `meta.propagatedSessions` layer is stamped automatically from
+       * `ctx.sessions`.
+       *
+       * Pass `meta.sessions` to add or override sessions on the invocation.
+       *
+       * Inheritance can be disabled at the client level.
+       *
+       * Values are normalized to strings before sending, as with
+       * `inngest.send()`.
        */
       meta?: EventMeta;
 

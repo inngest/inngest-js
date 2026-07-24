@@ -51,6 +51,7 @@ import {
   type Handler,
   type HashedOp,
   jsonErrorSchema,
+  type MinimalEventPayload,
   type OutgoingOp,
   StepMode,
   StepOpCode,
@@ -72,6 +73,7 @@ import {
   getStepOptions,
   STEP_INDEXING_SUFFIX,
   type StepHandler,
+  stampPropagatedSessionsOnInvoke,
 } from "../InngestStepTools.ts";
 import { MiddlewareManager } from "../middleware/index.ts";
 import type { Middleware } from "../middleware/middleware.ts";
@@ -2383,6 +2385,29 @@ class InngestExecutionEngine
     }): Promise<unknown> => {
       const stepOptions = getStepOptions(args[0]);
       const opId = matchOp(stepOptions, ...args.slice(1));
+
+      // Central stamp for `step.invoke`: attach the run's propagated sessions
+      // (`ctx.sessions`) onto the invocation payload as the separate
+      // `meta.propagatedSessions` layer, mirroring `step.sendEvent`.
+      //
+      // Done here — before middleware and memoization — so
+      // `transformStepInput` sees the propagated layer and the server merges the
+      // two layers (manual wins).
+      //
+      // The invoke tool's `matchOp` has no `ctx`, so the stamp lives in the engine
+      // where `this.fnArg` is in scope, avoiding an ALS read on the send path.
+      //
+      // Gated by the client-level session-propagation toggle.
+      if (
+        opId.op === StepOpCode.InvokeFunction &&
+        this.options.client[sessionPropagationSymbol] &&
+        opId.opts?.payload
+      ) {
+        opId.opts.payload = stampPropagatedSessionsOnInvoke(
+          opId.opts.payload as MinimalEventPayload,
+          this.fnArg.sessions,
+        );
+      }
 
       // Opcode-only sync ops (e.g. `DeferAdd`) are fire-and-forget and
       // not user-addressable as steps: they have no handler, no
