@@ -14,6 +14,8 @@ import {
 import type { Logger } from "../middleware/logger.ts";
 import { createClient, nodeVersion } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
+import type { AsyncContext } from "./execution/als.ts";
+import { getAsyncLocalStorage } from "./execution/als.ts";
 import { sessionPropagationSymbol } from "./Inngest.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
@@ -1469,5 +1471,144 @@ describe("sessionPropagation toggle", () => {
       env: { [envKeys.InngestSessionPropagation]: "0" },
     });
     expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+});
+
+describe("session propagation (bare inngest.send)", () => {
+  const originalFetch = global.fetch;
+
+  const setFetch = () => {
+    return vi.fn((_url: string, opts: { body: string }) => {
+      const ids = (JSON.parse(opts.body) as EventPayload[]).map(
+        () => "test-id",
+      );
+      const json = { status: 200, ids };
+      return Promise.resolve({
+        status: 200,
+        json: () => Promise.resolve(json),
+        text: () => Promise.resolve(JSON.stringify(json)),
+      });
+    }) as unknown as typeof fetch;
+  };
+
+  beforeAll(() => {
+    Object.defineProperties(global, {
+      fetch: { value: setFetch(), configurable: true },
+    });
+  });
+
+  beforeEach(() => {
+    (global.fetch as Mock).mockClear();
+  });
+
+  afterAll(() => {
+    Object.defineProperties(global, {
+      fetch: { value: originalFetch, configurable: true },
+    });
+  });
+
+  const createClientWithPropagation = (
+    sessionPropagation: boolean,
+  ): Inngest.Any =>
+    createClient({
+      id: "test",
+      eventKey: testEventKey,
+      // Internal, undocumented option kept off the public `ClientOptions` type.
+      ...({ sessionPropagation } as { sessionPropagation: boolean }),
+    });
+
+  /**
+   * Run `fn` as if it were executing inside a run owned by `app`, with the
+   * given `ctx.sessions`, by seeding the AsyncLocalStorage store the same way
+   * the execution engine does.
+   */
+  const runInAmbientRun = async <T>(
+    app: Inngest.Like,
+    sessions: Record<string, string> | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    const als = await getAsyncLocalStorage();
+    const store = {
+      app,
+      execution: {
+        instance: {} as never,
+        ctx: { sessions } as never,
+      },
+    } as AsyncContext;
+    return als.run(store, fn);
+  };
+
+  /** The `propagatedSessions` of the single event in the last fetch call. */
+  const sentPropagatedSessions = () => {
+    const call = (global.fetch as Mock).mock.calls.at(-1);
+    const payloads = JSON.parse(call?.[1].body as string) as EventPayload[];
+    return payloads[0]?.meta?.propagatedSessions;
+  };
+
+  test("stamps ctx.sessions onto a bare send inside a run", async () => {
+    const inngest = createClientWithPropagation(true);
+
+    await runInAmbientRun(inngest, { conv: "123" }, () =>
+      inngest.send({ name: "test", data: {} }),
+    );
+
+    expect(sentPropagatedSessions()).toEqual({ conv: "123" });
+  });
+
+  test("does not stamp when sent outside a run", async () => {
+    const inngest = createClientWithPropagation(true);
+
+    await inngest.send({ name: "test", data: {} });
+
+    expect(sentPropagatedSessions()).toBeUndefined();
+  });
+
+  test("does not stamp when the run is owned by a different client", async () => {
+    const runningClient = createClientWithPropagation(true);
+    const sendingClient = createClientWithPropagation(true);
+
+    // The ambient run belongs to `runningClient`; the send is made through a
+    // different client, so it must not inherit the run's sessions.
+    await runInAmbientRun(runningClient, { conv: "123" }, () =>
+      sendingClient.send({ name: "test", data: {} }),
+    );
+
+    expect(sentPropagatedSessions()).toBeUndefined();
+  });
+
+  test("does not stamp when propagation is disabled", async () => {
+    const inngest = createClientWithPropagation(false);
+
+    await runInAmbientRun(inngest, { conv: "123" }, () =>
+      inngest.send({ name: "test", data: {} }),
+    );
+
+    expect(sentPropagatedSessions()).toBeUndefined();
+  });
+
+  test("does not stamp when ctx.sessions is empty", async () => {
+    const inngest = createClientWithPropagation(true);
+
+    await runInAmbientRun(inngest, {}, () =>
+      inngest.send({ name: "test", data: {} }),
+    );
+
+    expect(sentPropagatedSessions()).toBeUndefined();
+  });
+
+  test("leaves an already-stamped payload untouched", async () => {
+    const inngest = createClientWithPropagation(true);
+
+    // A payload arriving with `propagatedSessions` already set (e.g. stamped
+    // upstream by `step.sendEvent`) must remain authoritative.
+    await runInAmbientRun(inngest, { conv: "123" }, () =>
+      inngest.send({
+        name: "test",
+        data: {},
+        meta: { propagatedSessions: { fromStep: "abc" } },
+      }),
+    );
+
+    expect(sentPropagatedSessions()).toEqual({ fromStep: "abc" });
   });
 });
