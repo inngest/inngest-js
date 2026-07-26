@@ -39,6 +39,53 @@ describe("ConnectionCore request processing", () => {
       );
       expect(acks.length).toBe(1);
     });
+
+    test("skips request when request socket is no longer open", async () => {
+      const handleExecutionRequest = vi.fn(async () => new Uint8Array(0));
+      const { ws, logger } = await connectAndReady({
+        callbacks: { handleExecutionRequest },
+      });
+
+      ws.readyState = MockWebSocket.CLOSED;
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      expect(
+        ws.getSentMessagesOfType(GatewayMessageType.WORKER_REQUEST_ACK),
+      ).toHaveLength(0);
+      expect(handleExecutionRequest).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Received request on non-active WebSocket, skipping",
+      );
+    });
+
+    test("skips request when sending ACK throws", async () => {
+      const handleExecutionRequest = vi.fn(async () => new Uint8Array(0));
+      const { ws, logger } = await connectAndReady({
+        callbacks: { handleExecutionRequest },
+      });
+
+      ws.send = () => {
+        throw new Error("closed socket");
+      };
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      expect(handleExecutionRequest).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Failed to send request ACK, skipping request",
+      );
+    });
   });
 
   describe("WORKER_REPLY sent after execution", () => {
@@ -139,6 +186,123 @@ describe("ConnectionCore request processing", () => {
       await flushMicrotasks();
 
       expect(onBufferResponse).toHaveBeenCalledWith("req-1", responseBytes);
+    });
+
+    test("buffers response when active connection is not open", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+      const onBufferResponse = vi.fn();
+
+      const { ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+          onBufferResponse,
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      ws.readyState = MockWebSocket.CLOSED;
+
+      const responseBytes = new Uint8Array([4, 5, 6]);
+      resolveExecution!(responseBytes);
+      await flushMicrotasks();
+
+      expect(onBufferResponse).toHaveBeenCalledWith("req-1", responseBytes);
+      expect(
+        ws.getSentMessagesOfType(GatewayMessageType.WORKER_REPLY),
+      ).toHaveLength(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Cannot send worker reply, buffering response",
+      );
+    });
+
+    test("buffers response when sending reply throws", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+      const onBufferResponse = vi.fn();
+
+      const { ws, logger } = await connectAndReady({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+          onBufferResponse,
+        },
+      });
+
+      ws.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      const originalSend = ws.send.bind(ws);
+      ws.send = (data: Uint8Array) => {
+        const msg = ConnectMessage.decode(data);
+        if (msg.kind === GatewayMessageType.WORKER_REPLY) {
+          throw new Error("closed socket");
+        }
+        originalSend(data);
+      };
+
+      const responseBytes = new Uint8Array([4, 5, 6]);
+      resolveExecution!(responseBytes);
+      await flushMicrotasks();
+
+      expect(onBufferResponse).toHaveBeenCalledWith("req-1", responseBytes);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Failed to send worker reply, buffering response",
+      );
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-1" }),
+        "Execution error",
+      );
+    });
+
+    test("skips executor requests received on a draining connection", async () => {
+      const handleExecutionRequest = vi.fn(async () => new Uint8Array(0));
+
+      const fetchMock = vi.fn();
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-1" }),
+      );
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-2" }),
+      );
+      global.fetch = fetchMock;
+
+      const helpers = createTestCore({
+        callbacks: { handleExecutionRequest },
+      });
+
+      const startPromise = helpers.core.start();
+      await flushMicrotasks();
+      const ws1 = MockWebSocket.instances[0]!;
+      await driveHandshake(ws1);
+      await startPromise;
+
+      ws1.sendGatewayClosing();
+      await flushMicrotasks();
+
+      ws1.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      expect(
+        ws1.getSentMessagesOfType(GatewayMessageType.WORKER_REQUEST_ACK),
+      ).toHaveLength(0);
+      expect(handleExecutionRequest).not.toHaveBeenCalled();
     });
   });
 
