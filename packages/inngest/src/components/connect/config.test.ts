@@ -1,11 +1,79 @@
-import { describe, expect, test, vi } from "vitest";
+import { context, trace } from "@opentelemetry/api";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import type { Logger } from "../../middleware/logger.ts";
 import { GatewayExecutorRequestData } from "../../proto/src/components/connect/protobuf/connect.ts";
+import {
+  ExtendedTracesBehavior,
+  ExtendedTracesReadinessReason,
+  OTelSetupPath,
+  SendEventsReadinessReason,
+} from "../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { createClient } from "../../test/helpers.ts";
+import { extendedTracesMiddleware } from "../execution/otel/middleware.ts";
+import { sdkFeatureObservations } from "../sdkFeatureObservations.ts";
 import { prepareConnectionConfig } from "./config.ts";
 
 describe("prepareConnectionConfig", () => {
+  afterEach(() => {
+    trace.disable();
+    context.disable();
+  });
+
+  test("includes SDK feature observations in Connect app configuration", async () => {
+    const client = createClient({ id: "test", isDev: true });
+    const fn = client.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "ok",
+    );
+
+    const { connectionData } = await prepareConnectionConfig(
+      [{ client, functions: [fn] }],
+      client,
+    );
+
+    expect(connectionData.apps[0]?.featureObservations).toEqual(
+      await sdkFeatureObservations.get(client),
+    );
+    expect(
+      connectionData.apps[0]?.featureObservations.find((obs) => obs.sendEvents)
+        ?.sendEvents?.readinessReason,
+    ).toBe(SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY);
+  });
+
+  test("waits for async Extended Traces setup before Connect app configuration", async () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
+    });
+    const fn = client.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "ok",
+    );
+
+    const { connectionData } = await prepareConnectionConfig(
+      [{ client, functions: [fn] }],
+      client,
+    );
+
+    expect(
+      connectionData.apps[0]?.featureObservations.find(
+        (obs) => obs.extendedTraces,
+      )?.extendedTraces,
+    ).toEqual({
+      readinessReason:
+        ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_READY,
+      config: {
+        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_AUTO,
+      },
+      otelSetup: expect.objectContaining({
+        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+        spanProcessorAdded: true,
+      }),
+    });
+  });
+
   test("binds Connect proto request and job IDs to function logger context", async () => {
     const childLogger: Logger = {
       debug: vi.fn(),
@@ -40,7 +108,7 @@ describe("prepareConnectionConfig", () => {
       },
     );
 
-    const { requestHandlers } = prepareConnectionConfig(
+    const { requestHandlers } = await prepareConnectionConfig(
       [{ client, functions: [fn] }],
       client,
     );

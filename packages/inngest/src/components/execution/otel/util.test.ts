@@ -1,7 +1,11 @@
 import { type TracerProvider, trace } from "@opentelemetry/api";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import {
+  OTelProviderSource,
+  OTelSetupPath,
+} from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { InngestSpanProcessor } from "./processor.ts";
-import { extendProvider } from "./util.ts";
+import { createProvider, extendProvider } from "./util.ts";
 
 // Simulate a provider with `addSpanProcessor` (like NodeTracerProvider or
 // OTel SDK v1 BasicTracerProvider — v2 removed this method from the class).
@@ -135,5 +139,23 @@ describe("extendProvider", () => {
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
+  });
+});
+
+describe("createProvider", () => {
+  afterEach(() => {
+    trace.disable();
+  });
+
+  test("reports legacy SDK provider source", async () => {
+    const result = await createProvider("auto", []);
+
+    expect(result.success).toBe(true);
+    expect(result.setup).toEqual(
+      expect.objectContaining({
+        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+        providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+      }),
+    );
   });
 });

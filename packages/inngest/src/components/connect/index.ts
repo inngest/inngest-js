@@ -141,7 +141,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       envName,
       connectionData,
       requestHandlers,
-    } = prepareConnectionConfig(this.options.apps, this.inngest);
+    } = await prepareConnectionConfig(this.options.apps, this.inngest);
 
     // Create and initialize the strategy
     this.strategy = await createStrategy(

@@ -4,9 +4,10 @@ import type {
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import { isRecord } from "../../../helpers/types.ts";
+import type { OTelSetup } from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { type AIMetadata, extractAIMetadataFromSpan } from "./aiExtractor.ts";
 import { debugPrefix } from "./consts.ts";
+import { attemptProviderExtension } from "./provider.ts";
 
 const processorDevDebug = Debug(`${debugPrefix}:InngestMetadataSpanProcessor`);
 
@@ -16,95 +17,6 @@ const processorDevDebug = Debug(`${debugPrefix}:InngestMetadataSpanProcessor`);
  * step-attribution of the pushed values.
  */
 export type AIMetadataSink = (metadata: AIMetadata) => void;
-
-/**
- * Resolve the currently-registered global OTel tracer provider, unwrapping
- * the `ProxyTracerProvider` wrapper that `trace.getTracerProvider()` returns.
- * Returns `undefined` when no provider is registered.
- */
-const getGlobalProvider = (): object | undefined => {
-  const globalProvider = trace.getTracerProvider();
-  if (!globalProvider) {
-    return undefined;
-  }
-
-  const existingProvider =
-    "getDelegate" in globalProvider &&
-    typeof globalProvider.getDelegate === "function"
-      ? globalProvider.getDelegate()
-      : globalProvider;
-
-  return existingProvider ?? undefined;
-};
-
-/**
- * Attempts to add the given span processor to the given OTel provider.
- * Returns `true` if the processor was attached, `false` if the provider could
- * not be extended.
- *
- * It handles both OTel SDK v1 (`addSpanProcessor()`) and v2 (internal
- * `_spanProcessors` array).
- *
- * This intentionally duplicates the attach logic inside `extendProvider`
- * (`util.ts`) to avoid imports with instrumentation side effects.
- */
-const attachToProvider = (
-  provider: object,
-  processor: SpanProcessor,
-): boolean => {
-  // OTel SDK v1 exposes addSpanProcessor() on BasicTracerProvider.
-  if (
-    "addSpanProcessor" in provider &&
-    typeof (provider as { addSpanProcessor?: unknown }).addSpanProcessor ===
-      "function"
-  ) {
-    (
-      provider as unknown as {
-        addSpanProcessor: (p: SpanProcessor) => void;
-      }
-    ).addSpanProcessor(processor);
-    return true;
-  }
-
-  // OTel SDK v2 removed addSpanProcessor() — span processors are constructor-only.
-  // No public API exists to add processors post-construction (OTel issue #5299),
-  // so push into the internal _spanProcessors array.
-  // These fields are TypeScript `private` (not #private), so accessible at runtime.
-  const spanProcessors = getInternalSpanProcessors(provider);
-  if (spanProcessors) {
-    spanProcessors.push(processor);
-    return true;
-  }
-
-  return false;
-};
-
-/**
- * Extract the internal span processors array from a BasicTracerProvider.
- * Returns the mutable array if accessible, undefined otherwise.
- *
- * BasicTracerProvider._activeSpanProcessor is a MultiSpanProcessor,
- * which holds a _spanProcessors: SpanProcessor[] array.
- * Both are TypeScript `private` (not ES #private), so accessible at runtime.
- *
- * Wrapped in try/catch because this accesses internal OTel fields that may
- * change — must never crash the host app.
- */
-function getInternalSpanProcessors(provider: unknown): unknown[] | undefined {
-  if (!isRecord(provider)) {
-    return undefined;
-  }
-
-  try {
-    const active = provider._activeSpanProcessor;
-    if (!isRecord(active)) return undefined;
-
-    const arr = active._spanProcessors;
-    return Array.isArray(arr) ? arr : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Builds the `#spanSinks` key for a span. Span IDs are only guaranteed unique
@@ -156,30 +68,29 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
   });
 
   /**
-   * Latches once this processor has been attached to a global OTel provider, so
-   * {@link attach} can never push it into a provider's processor list twice
-   * (which would double-process every span and double-count tokens).
+   * Stores the most recent provider setup attempt. Once `spanProcessorAdded` is
+   * true, {@link attach} can never push this processor into a provider's
+   * processor list twice (which would double-process every span and
+   * double-count tokens).
    */
-  #attached = false;
+  #attachSetup: OTelSetup | undefined;
 
   /**
    * Idempotently attach this processor to the global OTel provider that already
    * exists, so it begins receiving span lifecycle events.
    */
-  attach(): void {
-    if (this.#attached) {
-      return;
+  attach(): OTelSetup {
+    if (this.#attachSetup?.spanProcessorAdded) {
+      return this.#attachSetup;
     }
 
-    const provider = getGlobalProvider();
-    if (!provider) {
-      return;
-    }
-
-    if (attachToProvider(provider, this)) {
-      this.#attached = true;
+    const setup = attemptProviderExtension({ processor: this });
+    this.#attachSetup = setup;
+    if (setup.spanProcessorAdded) {
       processorDevDebug("attached to global OTel provider");
     }
+
+    return setup;
   }
 
   /**
@@ -197,7 +108,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
   }): void {
     // If this processor is not attached to a  provider, we don't need to
     // declare starting spans.
-    if (!this.#attached) {
+    if (!this.#attachSetup?.spanProcessorAdded) {
       return;
     }
 

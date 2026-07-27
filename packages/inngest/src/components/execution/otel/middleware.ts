@@ -1,7 +1,12 @@
 import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
+import type { OTelSetup } from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { version } from "../../../version.ts";
 import { Middleware } from "../../middleware/middleware.ts";
+import {
+  behaviourToExtendedTracesBehavior,
+  sdkFeatureObservations,
+} from "../../sdkFeatureObservations.ts";
 import { clientProcessorMap } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
@@ -84,6 +89,18 @@ export const extendedTracesMiddleware = ({
 
   let processor: InngestSpanProcessor | undefined;
   let processorReady: Promise<void> | undefined;
+  let setup: OTelSetup | undefined;
+  const registeredClients = new Set<Middleware.OnRegisterArgs["client"]>();
+  const configuredBehavior = behaviourToExtendedTracesBehavior(behaviour);
+
+  function refreshRegisteredClientObservations(): void {
+    for (const client of registeredClients) {
+      sdkFeatureObservations.extendedTraces.replace(client, {
+        behavior: configuredBehavior,
+        setup,
+      });
+    }
+  }
 
   switch (behaviour) {
     case "auto": {
@@ -91,12 +108,15 @@ export const extendedTracesMiddleware = ({
       if (extended.success) {
         devDebug("extended existing provider");
         processor = extended.processor;
+        setup = extended.setup;
         break;
       }
 
+      setup = extended.setup;
       warnDeprecatedCreateProviderBehaviour(behaviour);
       processorReady = createProvider(behaviour, instrumentations).then(
         (created) => {
+          setup = created.setup;
           if (created.success) {
             devDebug("created new provider");
             processor = created.processor;
@@ -106,6 +126,7 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
+          refreshRegisteredClientObservations();
         },
       );
 
@@ -115,6 +136,7 @@ export const extendedTracesMiddleware = ({
       warnDeprecatedCreateProviderBehaviour(behaviour);
       processorReady = createProvider(behaviour, instrumentations).then(
         (created) => {
+          setup = created.setup;
           if (created.success) {
             devDebug("created new provider");
             processor = created.processor;
@@ -124,6 +146,7 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
+          refreshRegisteredClientObservations();
         },
       );
 
@@ -134,9 +157,11 @@ export const extendedTracesMiddleware = ({
       if (extended.success) {
         devDebug("extended existing provider");
         processor = extended.processor;
+        setup = extended.setup;
         break;
       }
 
+      setup = extended.setup;
       console.warn(
         "unable to extend provider, Extended Traces middleware will not work. Use @inngest/otel, or make sure that the provider is created and imported before the middleware is used.",
       );
@@ -162,6 +187,12 @@ export const extendedTracesMiddleware = ({
      * client.
      */
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
+      registeredClients.add(client);
+      sdkFeatureObservations.extendedTraces.replace(client, {
+        behavior: configuredBehavior,
+        setup,
+      });
+
       // Set the logger for our otel processors and exporters.
       // If this is called multiple times, only the first call is set.
       devDebug(
@@ -172,6 +203,8 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       } else if (processorReady) {
+        sdkFeatureObservations.addPending(client, processorReady);
+
         // Provider creation is async; register the processor once it resolves.
         processorReady
           .then(() => {

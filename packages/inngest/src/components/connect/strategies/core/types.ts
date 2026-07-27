@@ -5,6 +5,7 @@ import type {
   GatewayExecutorRequestData,
   SDKResponse,
 } from "../../../../proto/src/components/connect/protobuf/connect.ts";
+import type { FeatureObservation } from "../../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import type { Inngest } from "../../../Inngest.ts";
 import type {
   ConnectDebugState,
@@ -31,6 +32,7 @@ export interface ConnectionEstablishData {
     appName: string;
     appVersion?: string;
     functions: Uint8Array;
+    featureObservations: FeatureObservation[];
   }[];
 }
 
