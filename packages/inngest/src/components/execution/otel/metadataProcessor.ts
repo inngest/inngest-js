@@ -5,10 +5,7 @@ import type {
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
 import { isRecord } from "../../../helpers/types.ts";
-import {
-  type AIMetadata,
-  extractAIMetadataFromAttributes,
-} from "./aiExtractor.ts";
+import { type AIMetadata, extractAIMetadataFromSpan } from "./aiExtractor.ts";
 import { debugPrefix } from "./consts.ts";
 
 const processorDevDebug = Debug(`${debugPrefix}:InngestMetadataSpanProcessor`);
@@ -277,7 +274,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
         return;
       }
 
-      const aiMetadata = extractAIMetadataFromAttributes(span.attributes);
+      const aiMetadata = extractAIMetadataFromSpan(span);
       if (Object.keys(aiMetadata).length === 0) {
         return;
       }

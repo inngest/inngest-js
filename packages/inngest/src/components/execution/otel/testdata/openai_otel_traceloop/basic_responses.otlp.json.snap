@@ -12,7 +12,8 @@
       ],
       "inputTokens": 17,
       "outputTokens": 43,
-      "totalTokens": 60
+      "totalTokens": 60,
+      "latencyMs": 1115.421142578125
     }
   }
 ]

@@ -16,7 +16,8 @@
       "topP": 0.9,
       "maxTokens": 64,
       "frequencyPenalty": 0.2,
-      "presencePenalty": 0.1
+      "presencePenalty": 0.1,
+      "latencyMs": 1286.23828125
     }
   }
 ]

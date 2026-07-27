@@ -9,7 +9,8 @@
       "responseId": "chatcmpl-DrBrdQ2FLoMqEewTueUxqUnAaRTTA",
       "finishReasons": [
         "stop"
-      ]
+      ],
+      "latencyMs": 263.97802734375
     }
   }
 ]

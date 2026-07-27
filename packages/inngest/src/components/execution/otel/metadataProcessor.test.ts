@@ -91,7 +91,13 @@ describe("InngestMetadataSpanProcessor", () => {
       "gen_ai.usage.input_tokens": 42,
     });
 
-    expect(pushed).toEqual([{ requestModel: "gpt-4.1-nano", inputTokens: 42 }]);
+    expect(pushed).toEqual([
+      {
+        requestModel: "gpt-4.1-nano",
+        inputTokens: 42,
+        latencyMs: expect.any(Number),
+      },
+    ]);
   });
 
   test("captures only allowlisted fields; content never reaches the sink", () => {
@@ -107,7 +113,13 @@ describe("InngestMetadataSpanProcessor", () => {
     });
 
     // Only the allowlisted signal reaches the sink; content is never captured.
-    expect(pushed).toEqual([{ requestModel: "gpt-4.1-nano", inputTokens: 42 }]);
+    expect(pushed).toEqual([
+      {
+        requestModel: "gpt-4.1-nano",
+        inputTokens: 42,
+        latencyMs: expect.any(Number),
+      },
+    ]);
   });
 
   test("does not call the sink when a span carries only content attributes", () => {
@@ -136,8 +148,16 @@ describe("InngestMetadataSpanProcessor", () => {
     });
 
     expect(pushed).toEqual([
-      { requestModel: "gpt-4.1-nano", inputTokens: 10 },
-      { requestModel: "gpt-4.1-mini", inputTokens: 5 },
+      {
+        requestModel: "gpt-4.1-nano",
+        inputTokens: 10,
+        latencyMs: expect.any(Number),
+      },
+      {
+        requestModel: "gpt-4.1-mini",
+        inputTokens: 5,
+        latencyMs: expect.any(Number),
+      },
     ]);
   });
 
@@ -165,7 +185,13 @@ describe("InngestMetadataSpanProcessor", () => {
     });
     mid.end();
 
-    expect(pushed).toEqual([{ requestModel: "gpt-4.1-nano", inputTokens: 7 }]);
+    expect(pushed).toEqual([
+      {
+        requestModel: "gpt-4.1-nano",
+        inputTokens: 7,
+        latencyMs: expect.any(Number),
+      },
+    ]);
   });
 
   test("ignores spans that are not part of a declared run", () => {

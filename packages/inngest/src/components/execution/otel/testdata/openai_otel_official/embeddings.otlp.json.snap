@@ -6,7 +6,8 @@
       "responseModel": "text-embedding-3-small",
       "provider": "openai",
       "operationName": "embeddings",
-      "inputTokens": 10
+      "inputTokens": 10,
+      "latencyMs": 393.735107421875
     }
   }
 ]
