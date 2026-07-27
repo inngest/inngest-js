@@ -93,9 +93,6 @@ export function stepTypeFromOpCode(
     if (opts?.type === "step.ai.infer") {
       return "ai.infer";
     }
-    if (opts?.type === "step.ai.wrap") {
-      return "ai.wrap";
-    }
   } else if (op === StepOpCode.Gateway) {
     return "fetch";
   } else if (op === StepOpCode.InvokeFunction) {
@@ -103,6 +100,9 @@ export function stepTypeFromOpCode(
   } else if (op === StepOpCode.StepPlanned) {
     if (opts?.type === undefined) {
       return "run";
+    }
+    if (opts?.type === "step.ai.wrap") {
+      return "ai.wrap";
     }
     if (opts?.type === "step.sendEvent") {
       return "sendEvent";
