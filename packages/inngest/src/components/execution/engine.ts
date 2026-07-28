@@ -2167,9 +2167,12 @@ class InngestExecutionEngine
       // Best-effort: session grouping must never crash a run, so a failure here
       // degrades to no propagation rather than throwing.
       try {
-        fnArg.sessions = reduceEventsToPropagatedSessions(fnArg.events ?? []);
+        const sessions = reduceEventsToPropagatedSessions(fnArg.events ?? []);
+        if (Object.keys(sessions).length > 0) {
+          fnArg.sessions = sessions;
+        }
       } catch {
-        fnArg.sessions = undefined;
+        // Best-effort: leave `ctx.sessions` absent on failure.
       }
     }
 
