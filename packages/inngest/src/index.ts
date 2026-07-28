@@ -59,6 +59,48 @@ export type {
   GroupTools,
   GroupToolsDeps,
 } from "./components/InngestGroupTools";
+export type {
+  DurableSandbox,
+  DurableSandboxProcess,
+  DurableSandboxTools,
+  Sandbox,
+  SandboxAction,
+  SandboxClient,
+  SandboxCommandOptions,
+  SandboxCommandOutputMetadata,
+  SandboxCommandResult,
+  SandboxCreateOptions,
+  SandboxDestroyResult,
+  SandboxDuration,
+  SandboxErrorCode,
+  SandboxErrorDetail,
+  SandboxFileDownloadOptions,
+  SandboxFileUploadOptions,
+  SandboxFileUploadResult,
+  SandboxListOptions,
+  SandboxListResult,
+  SandboxLogStreamOptions,
+  SandboxOutputChunk,
+  SandboxPageInfo,
+  SandboxProcess,
+  SandboxProcessListResult,
+  SandboxProcessOutput,
+  SandboxProcessOutputOptions,
+  SandboxProcessRef,
+  SandboxProcessResource,
+  SandboxProcessSignalOptions,
+  SandboxProcessStartOptions,
+  SandboxProcessState,
+  SandboxProcessWaitOptions,
+  SandboxRef,
+  SandboxResource,
+  SandboxResources,
+  SandboxStatus,
+} from "./components/InngestSandbox.ts";
+export {
+  SandboxError,
+  SandboxValidationError,
+} from "./components/InngestSandbox.ts";
 export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";

@@ -63,6 +63,7 @@ import {
   type MetadataBuilder,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import { createSandboxClient, type SandboxClient } from "./InngestSandbox.ts";
 import {
   type ClientScore,
   type ScoreExperimentOptions,
@@ -144,6 +145,14 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * change the `name` property instead.
    */
   public readonly id: string;
+
+  /**
+   * Direct, non-durable access to sandbox REST APIs.
+   *
+   * Use `step.sandbox` inside an Inngest function when the operation should be
+   * durably memoized by the executor.
+   */
+  public readonly sandboxes: SandboxClient;
 
   /**
    * Stores the options so we can remember explicit settings the user has
@@ -387,6 +396,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     this._logger = logger ?? new ConsoleLogger();
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
+    this.sandboxes = createSandboxClient({
+      baseUrl: () => this.apiBaseUrl,
+      apiKey: () => this.signingKey,
+      headers: () => this.headers,
+      fetch: () => this.fetch,
+    });
 
     // Warned here rather than per-function so internal SDK functions
     // inheriting this setting don't each warn.
