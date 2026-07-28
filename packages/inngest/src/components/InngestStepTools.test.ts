@@ -1490,14 +1490,11 @@ describe("step.sendEvent session propagation gating", () => {
     enabled: boolean,
     ctxSessions: Record<string, string> | undefined,
   ) => {
-    const clientOpts = {
+    const client = createClient({
       id: testClientId,
       isDev: true,
-      // `sessionPropagation` is internal/undocumented (off the public
-      // ClientOptions), so it's set via the same cast the SDK reads it with.
       sessionPropagation: enabled,
-    } as Parameters<typeof createClient>[0];
-    const client = createClient(clientOpts);
+    });
 
     const sendSpy = vi
       .spyOn(

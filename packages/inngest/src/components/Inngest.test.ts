@@ -1407,17 +1407,22 @@ describe("sessionPropagation toggle", () => {
 
   // Session propagation resolves with precedence: explicit `sessionPropagation`
   // client option > `INNGEST_SESSION_PROPAGATION` env var > default. This block
-  // covers the env-var path and the default; the option path is exercised by
-  // the behavior tests (send/invoke/defer). Option-vs-env precedence lands with
-  // the public client-side toggle. `env` is applied via `vi.stubEnv` and
-  // automatically restored after each test by `vi.unstubAllEnvs`, so there's no
-  // env-var bleed between tests.
+  // covers all three levels, including option-vs-env precedence in both
+  // directions. `env` is applied via `vi.stubEnv` and automatically restored
+  // after each test by `vi.unstubAllEnvs`, so there's no env-var bleed between
+  // tests.
   const createWithSessionPropagation = ({
     env,
+    sessionPropagation,
   }: {
     env?: Record<string, string>;
+    sessionPropagation?: boolean;
   } = {}): Inngest.Any => {
-    const opts = { id: "test" } as ConstructorParameters<typeof Inngest>[0];
+    const opts: ConstructorParameters<typeof Inngest>[0] = { id: "test" };
+
+    if (typeof sessionPropagation === "boolean") {
+      opts.sessionPropagation = sessionPropagation;
+    }
 
     if (env) {
       for (const [key, value] of Object.entries(env)) {
@@ -1457,6 +1462,32 @@ describe("sessionPropagation toggle", () => {
   test("`INNGEST_SESSION_PROPAGATION=0` disables propagation", () => {
     const inngest = createWithSessionPropagation({
       env: { [envKeys.InngestSessionPropagation]: "0" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("`sessionPropagation: true` option enables propagation", () => {
+    const inngest = createWithSessionPropagation({ sessionPropagation: true });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("`sessionPropagation: false` option disables propagation", () => {
+    const inngest = createWithSessionPropagation({ sessionPropagation: false });
+    expect(inngest[sessionPropagationSymbol]).toBe(false);
+  });
+
+  test("`sessionPropagation: true` option overrides a conflicting env var", () => {
+    const inngest = createWithSessionPropagation({
+      sessionPropagation: true,
+      env: { [envKeys.InngestSessionPropagation]: "false" },
+    });
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
+  });
+
+  test("`sessionPropagation: false` option overrides a conflicting env var", () => {
+    const inngest = createWithSessionPropagation({
+      sessionPropagation: false,
+      env: { [envKeys.InngestSessionPropagation]: "true" },
     });
     expect(inngest[sessionPropagationSymbol]).toBe(false);
   });
