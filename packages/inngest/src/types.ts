@@ -582,8 +582,9 @@ export type BaseContext<TClient extends Inngest.Any> = {
   /**
    * The run's effective sessions, aggregated from its triggering event(s).
    *
-   * By default these are propagated onto events emitted during the run via
-   * `step.sendEvent`, so child runs stay grouped in the same sessions.
+   * When session propagation is active, these are propagated onto events
+   * emitted during the run via `step.sendEvent`, so child runs stay grouped
+   * in the same sessions.
    */
   sessions?: Record<string, string>;
 
