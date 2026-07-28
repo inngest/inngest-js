@@ -772,13 +772,14 @@ export type EventMeta = {
   sessions?: EventSessions;
 
   /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
    * Sessions propagated from the run that emitted this event. Stamped
    * automatically from `ctx.sessions`; carried as a separate layer from manual
-   * {@link EventMeta.sessions} and merged server-side.
+   * {@link EventMeta.sessions} and merged server-side (manual wins per key).
    *
    * Not intended to be set by hand.
-   *
-   * @internal
    */
   propagated_sessions?: EventSessions;
 };
