@@ -783,3 +783,28 @@ describe("staticSchema", () => {
     });
   });
 });
+
+describe("ctx.sessions", () => {
+  test("is present and typed on the triggers-path context", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn", triggers: [{ event: "user/created" }] },
+      (ctx) => {
+        expectTypeOf(ctx.sessions).not.toBeAny();
+        expectTypeOf(ctx.sessions).toEqualTypeOf<
+          Record<string, string> | undefined
+        >();
+      },
+    );
+  });
+
+  test("is writable, so a handler can override what gets propagated", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn", triggers: [{ event: "user/created" }] },
+      (ctx) => {
+        ctx.sessions = { conversation_id: "conv_123" };
+      },
+    );
+  });
+});
