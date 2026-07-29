@@ -242,7 +242,14 @@ export const stampPropagatedSessions = (
 
   const stamp = <T extends { meta?: EventMeta }>(p: T): T => ({
     ...p,
-    meta: { ...p.meta, propagated_sessions: sessions },
+    meta: {
+      ...p.meta,
+
+      // Clone so that mutating one event's sessions in middleware doesn't
+      // inadvertently mutate every other event's sessions, or `ctx.sessions`
+      // itself.
+      propagated_sessions: { ...sessions },
+    },
   });
 
   return Array.isArray(payload) ? payload.map(stamp) : stamp(payload);
