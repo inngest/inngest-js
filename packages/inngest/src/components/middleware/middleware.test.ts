@@ -41,6 +41,49 @@ test("isStepType preserves extra fields on the narrowed type", () => {
   }
 });
 
+test("isStepType narrows transformStepInput's arg", () => {
+  const seen: string[] = [];
+
+  class MW extends Middleware.BaseMiddleware {
+    readonly id = "test";
+
+    override transformStepInput(
+      arg: Middleware.TransformStepInputArgs,
+    ): Middleware.TransformStepInputArgs {
+      expectTypeOf(arg.stepInfo.stepType).toEqualTypeOf<Middleware.StepType>();
+
+      if (!Middleware.isStepType(arg.stepInfo, "invoke")) {
+        return arg;
+      }
+
+      expectTypeOf(arg.stepInfo.stepType).toEqualTypeOf<"invoke">();
+
+      // The rest of `stepInfo` is untouched by the narrowing.
+      expectTypeOf(arg.stepInfo.hashedId).toEqualTypeOf<string>();
+      expectTypeOf(arg.stepInfo.memoized).toEqualTypeOf<boolean>();
+
+      seen.push(arg.stepInfo.stepType);
+      return arg;
+    }
+  }
+
+  const client = new Inngest({ id: "test", middleware: [MW] });
+  const mw = new MW({ client });
+
+  const arg = (stepType: Middleware.StepType) =>
+    ({
+      fn: {} as Middleware.TransformStepInputArgs["fn"],
+      stepInfo: { hashedId: "abc", memoized: false, stepType },
+      stepOptions: { id: "my-step" },
+      input: [],
+    }) satisfies Middleware.TransformStepInputArgs;
+
+  mw.transformStepInput(arg("invoke"));
+  mw.transformStepInput(arg("run"));
+
+  expect(seen).toEqual(["invoke"]);
+});
+
 test("stepOutputTransform does not affect step.invoke return type", () => {
   interface PreserveDate extends Middleware.StaticTransform {
     Out: this["In"] extends Date ? Date : this["In"];
