@@ -9,6 +9,7 @@ import { promises as fsPromises } from "fs";
 import * as path from "path";
 
 const pollInterval = 1000; // 1 second
+const INNGEST_CLI_VERSION = "1.27.0";
 
 async function checkServerReady(
   apiUrl: string,
@@ -171,35 +172,47 @@ async function startDevServer(
   exampleServerPort: number,
   examplePath: string,
 ): Promise<void> {
-  const serverProcess = startProcess(
-    "npx",
-    [
-      "--yes",
-      "--ignore-scripts=false",
-      "inngest-cli@latest",
-      "dev",
-      "--port",
-      devServerPort.toString(),
-      "--no-discovery",
-      "--no-poll",
-      "--retry-interval",
-      "1",
-      "--log-level",
-      "trace",
-      "--sdk-url",
-      `http://localhost:${exampleServerPort}/api/inngest`,
-    ],
-    {
-      env: { ...process.env, DO_NOT_TRACK: "1" },
-      cwd: examplePath,
-      detached: true,
-      stdio: "inherit",
-    },
-  );
+  const cliArgs = [
+    "--yes",
+    "--ignore-scripts=false",
+    `inngest-cli@${INNGEST_CLI_VERSION}`,
+    "dev",
+    "--port",
+    devServerPort.toString(),
+    "--no-discovery",
+    "--no-poll",
+    "--retry-interval",
+    "1",
+    "--log-level",
+    "trace",
+    "--sdk-url",
+    `http://localhost:${exampleServerPort}/api/inngest`,
+  ];
+  const spawnOpts = {
+    env: { ...process.env, DO_NOT_TRACK: "1" },
+    cwd: examplePath,
+    detached: true,
+    stdio: "inherit" as const,
+  };
 
+  const serverProcess = startProcess("npx", cliArgs, spawnOpts);
   serverProcess.unref();
 
-  return checkServerReady(`http://localhost:${devServerPort}`, 60000);
+  try {
+    await checkServerReady(`http://localhost:${devServerPort}`, 60000);
+  } catch (err) {
+    // If the dev server failed to start (likely postinstall download was killed),
+    // retry once. The binary should already be cached from the first attempt.
+    console.warn(
+      "Dev server failed to start on first attempt, retrying...",
+      err,
+    );
+
+    const retryProcess = startProcess("npx", cliArgs, spawnOpts);
+    retryProcess.unref();
+
+    await checkServerReady(`http://localhost:${devServerPort}`, 60000);
+  }
 }
 
 async function startExampleServer(
