@@ -178,9 +178,11 @@ describe("normalizePropagatedSessions", () => {
   });
 
   test("rejects a per-key null, since the layer carries no tombstones", () => {
-    expect(() => normalizePropagatedSessions({ a: null })).toThrow(
-      /must be a string or number/,
-    );
+    expect(() =>
+      // @ts-expect-error the type forbids tombstones here; this guards the
+      // runtime path against JS callers and payloads rebuilt from untyped data
+      normalizePropagatedSessions({ a: null }),
+    ).toThrow(/must be a string or number/);
   });
 
   test("drops whole-field null rather than preserving it", () => {

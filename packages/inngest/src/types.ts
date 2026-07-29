@@ -767,6 +767,28 @@ export type EventSessionValue = string | number | null;
 export type EventSessions = Record<string, EventSessionValue>;
 
 /**
+ * Primitive values accepted for session IDs on the propagated layer. Unlike
+ * {@link EventSessionValue} this excludes `null`: the propagated layer is the
+ * base that manual tombstones are applied *against*, so it carries session ids
+ * only and a `null` there is meaningless.
+ *
+ * @public
+ */
+export type PropagatedEventSessionValue = Exclude<EventSessionValue, null>;
+
+/**
+ * Session meta on the propagated layer — see
+ * {@link EventMeta.propagated_sessions}. Same shape as {@link EventSessions} but
+ * without tombstones.
+ *
+ * @public
+ */
+export type PropagatedEventSessions = Record<
+  string,
+  PropagatedEventSessionValue
+>;
+
+/**
  * Event meta accepted when sending an event.
  *
  * @public
@@ -796,7 +818,7 @@ export type EventMeta = {
    *
    * Not intended to be set by hand.
    */
-  propagated_sessions?: EventSessions;
+  propagated_sessions?: PropagatedEventSessions;
 };
 
 /**

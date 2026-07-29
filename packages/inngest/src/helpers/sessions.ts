@@ -1,4 +1,8 @@
-import type { EventMeta, EventSessions } from "../types.ts";
+import type {
+  EventMeta,
+  EventSessions,
+  PropagatedEventSessions,
+} from "../types.ts";
 
 /**
  * A normalized session layer as carried on the wire. Values are session-id
@@ -99,7 +103,7 @@ export const normalizeManualSessions = (
  * formality.
  */
 export const normalizePropagatedSessions = (
-  sessions: EventSessions | null | undefined,
+  sessions: PropagatedEventSessions | null | undefined,
 ): Record<string, string> | undefined =>
   // The "propagated" layer never returns tombstones, so narrow the value type.
   normalizeSessions(sessions, "propagated") as
