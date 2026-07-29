@@ -6,10 +6,14 @@ import type { MatchOpFn, StepToolOptions } from "../InngestStepTools.ts";
  * buffered until the next outbound wire message (e.g. checkpointing a
  * `step.run`).
  *
+ * Entries are promises: `defer()` reserves membership synchronously, while
+ * async preparation (schema validation + `transformDeferInput`) settles later.
+ * `drain()` awaits the prepared ops.
+ *
  * The engine owns shipping. This helper owns the buffer.
  */
 export class LazyOps {
-  private buffer: OutgoingOp[] = [];
+  private buffer: Promise<OutgoingOp | null>[] = [];
 
   // Tracks every id pushed during this execution, including those already
   // drained. `buffer` alone can't answer "have we seen this id?" once a
@@ -18,7 +22,7 @@ export class LazyOps {
   private pushedIds: Set<string> = new Set();
 
   /**
-   * Number of ops waiting to ship.
+   * Number of ops waiting to ship, including those still preparing.
    */
   get length(): number {
     return this.buffer.length;
@@ -33,35 +37,41 @@ export class LazyOps {
   }
 
   /**
-   * Take ownership of buffered ops and clear the buffer. Callers ship them on
-   * whichever wire message comes next.
+   * Take ownership of buffered ops and clear the buffer, waiting for pending
+   * entries to settle. Entries that resolve `null` are dropped.
+   *
+   * A `DeferAdd` whose matching `DeferAbort` is in the same batch is dropped:
+   * we don't want to report the same defer with `DeferAdd` and `DeferAbort`
+   * in the same request. Entries settle async, so this dedup happens here
+   * rather than at push time.
    */
-  drain(): OutgoingOp[] {
+  async drain(): Promise<OutgoingOp[]> {
     if (this.buffer.length === 0) {
       return [];
     }
-    const ops = this.buffer;
+    const pending = this.buffer;
     this.buffer = [];
-    return ops;
+    const ops = (await Promise.all(pending)).filter(
+      (op): op is OutgoingOp => op !== null,
+    );
+    const abortedIds = new Set(
+      ops
+        .filter((op) => op.op === StepOpCode.DeferAbort)
+        .map((op) => op.opts?.target_hashed_id),
+    );
+    return ops.filter(
+      (op) => !(op.op === StepOpCode.DeferAdd && abortedIds.has(op.id)),
+    );
   }
 
   /**
-   * Buffer an op for later shipment.
+   * Buffer an op for later shipment. Reserve the id synchronously so duplicate
+   * detection does not depend on `ready` having settled. `ready` must never
+   * reject; resolve `null` to skip.
    */
-  push(op: OutgoingOp): void {
-    if (op.op === StepOpCode.DeferAbort) {
-      // If there's a matching DeferAdd op, remove it. We don't want to report
-      // the same defer with DeferAdd and DeferAbort in the same request.
-      this.buffer = this.buffer.filter((buffered) => {
-        return !(
-          buffered.op === StepOpCode.DeferAdd &&
-          buffered.id === op.opts?.target_hashed_id
-        );
-      });
-    }
-
-    this.buffer.push(op);
-    this.pushedIds.add(op.id);
+  push(id: string, ready: OutgoingOp | Promise<OutgoingOp | null>): void {
+    this.buffer.push(Promise.resolve(ready));
+    this.pushedIds.add(id);
   }
 
   /**

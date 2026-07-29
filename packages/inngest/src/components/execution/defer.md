@@ -28,7 +28,7 @@ const sendEmail = createDefer(
   async ({ event, step }) => {
     event.data.to; // typed from `schema`
     event.data.body;
-  },
+  }
 );
 ```
 
@@ -53,7 +53,7 @@ const orderPlaced = inngest.createFunction(
   { id: "order-placed", triggers: { event: "order/placed" } },
   async ({ defer }) => {
     defer("send", { function: sendEmail, data: { to: "a@b.com", body: "hi" } });
-  },
+  }
 );
 ```
 
@@ -73,7 +73,7 @@ await step.run("notify", async () => {
 
 `schema` is optional (`StandardSchemaV1`). When present, `data` is validated at the call site and again on the receiver side. The receiver-side check catches serialization round-trips that change the shape (e.g. `Date` becoming an ISO string). The same schema types `event.data` in the handler.
 
-Call-site validation must be synchronous because `defer(...)` itself is sync. If the schema's `validate` returns a Promise, the SDK logs the error and skips the call (see "Error handling"). Receiver-side validation is async, so async validators work there.
+Call-site validation runs asynchronously after the op is buffered (`defer(...)` itself stays sync), so async validators are supported. A failure logs an error and drops the op before it ships (see "Error handling").
 
 Without a schema, `data` falls back to `Record<string, any>`.
 
@@ -95,6 +95,8 @@ The backend records each `DeferAdd` against the parent run as it arrives. The de
 
 On replay, the executor sends back a `defers` map of hashed step IDs it has already received. The SDK uses `priorDefers` to skip re-emitting them.
 
+The `transformDeferInput` middleware hook runs against `data` after schema validation. Use it for serialization or encryption. The op is buffered synchronously at `defer(...)`, while validation and middleware settle asynchronously; drain waits for that preparation before shipping. This avoids miss-on-finish races, but a slow or hung validator/middleware can delay parent checkpoint/finalization (no timeout today).
+
 ## Todo
 
 ### Known gaps (correctness)
@@ -110,8 +112,6 @@ removing the experimental label.
 
 Net-new capabilities. None affect correctness of the current API.
 
-- **Support async call-site validation** -- `defer()` itself must stay sync (fire-and-forget, no `await` at the call site), so we can't `await schema.validate(data)` inline. Maybe we can attach the pending validation promise to the buffered lazy op and await it at drain time, before the op is reported. A failure should reject the run the same way a sync validation failure does today.
-
 - **Support `onFailure`** -- We may add it later.
 
 - **Support `batchEvents`** -- We may add it later. We haven't decided if deferred runs should be restricted to a single parent run. To do that, we may need to implicitly add a key. We'll revisit this decision later.
@@ -119,5 +119,3 @@ Net-new capabilities. None affect correctness of the current API.
 - **Support aborting a `defer` call.** -- A `DeferAbort` opcode is reserved on the backend but the SDK doesn't yet emit it. Needs a user-facing API (e.g. `const { abort } = defer("id", { function, data })`) and the matching opcode emission.
 
 - **Support starting a deferred run immediately.** -- Today the deferred run starts only when the parent run finalizes. We may want an opt-in path (e.g. `defer("id", { function, data }).now()`).
-
-- **Middleware hook** -- We need a hook to make encryption and serialization work (e.g. `transformDeferInput`).

@@ -74,6 +74,59 @@ test("schema validation succeeds", async () => {
   expect(deferState.eventData).toEqual({ msg: "hello" });
 });
 
+test("async schema validator succeeds in parent function", async () => {
+  const parentState = createState({});
+  const deferState = createState({
+    eventData: null as Record<string, unknown> | null,
+  });
+
+  const asyncSchema: StandardSchemaV1<Record<string, unknown>> = {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: async (value) => {
+        await sleep(10);
+        return { value: value as Record<string, unknown> };
+      },
+    },
+  };
+
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const eventName = randomSuffix("evt");
+  const foo = createDefer(
+    client,
+    { id: "foo", schema: asyncSchema },
+    async ({ event, runId }) => {
+      deferState.runId = runId;
+      deferState.eventData = event.data;
+    },
+  );
+  const fn = client.createFunction(
+    {
+      id: "fn",
+      retries: 0,
+      triggers: { event: eventName },
+    },
+    async ({ defer, runId }) => {
+      parentState.runId = runId;
+      defer("foo", { function: foo, data: { msg: "hello" } });
+    },
+  );
+  await createTestApp({
+    client,
+    functions: [fn, foo],
+    serve: createServer,
+  });
+
+  await client.send({ name: eventName, data: {} });
+  await parentState.waitForRunComplete();
+  await deferState.waitForRunComplete();
+  expect(deferState.eventData).toEqual({ msg: "hello" });
+});
+
 test("re-encountered defer does not trigger new deferred run", async () => {
   // When a deferred function is re-encountered (e.g. function re-entry), it
   // should not trigger a new deferred run

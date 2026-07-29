@@ -17,6 +17,7 @@ import {
   type Context,
   type EventMeta,
   type EventPayload,
+  type ExperimentRef,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
@@ -30,6 +31,7 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
 } from "../types.ts";
+import type { DeferredFunction } from "./DeferredFunction.ts";
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
@@ -183,9 +185,14 @@ export type MatchOpFn<
 ) => Omit<HashedOp, "data" | "error">;
 
 export type StepHandler = (info: {
+  args: [StepOptionsOrId, ...unknown[]];
+  defer?: {
+    fn: DeferredFunction.Any;
+    data: Record<string, unknown>;
+    experiment?: ExperimentRef;
+  };
   matchOp: MatchOpFn;
   opts?: StepToolOptions;
-  args: [StepOptionsOrId, ...unknown[]];
 }) => Promise<unknown>;
 
 export interface StepToolOptions<

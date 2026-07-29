@@ -1,6 +1,7 @@
 import { timeStr } from "../../helpers/strings.ts";
 import type { Logger } from "../../middleware/logger.ts";
 import type { Context, StepOpCode } from "../../types.ts";
+import type { DeferredFunction } from "../DeferredFunction.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import type { Middleware } from "./middleware.ts";
@@ -30,6 +31,11 @@ export interface ApplyToStepInput {
   memoized: boolean;
 }
 
+export interface ApplyToDeferInput {
+  deferFn: DeferredFunction.Any;
+  data: Record<string, unknown>;
+}
+
 export interface PreparedStep {
   entryPoint: () => Promise<unknown>;
 
@@ -50,6 +56,10 @@ export interface PreparedStep {
   stepInfo: Middleware.StepInfo;
 }
 
+export interface PreparedDefer {
+  data: Record<string, unknown>;
+}
+
 /**
  * Manages middleware. Hides middleware complexity from elsewhere in the
  * codebase. Not for for public use.
@@ -63,6 +73,12 @@ export class MiddlewareManager {
    * optimization.
    */
   private readonly hasTransformStepInput: boolean;
+
+  /**
+   * Whether any middleware defines `transformDeferInput`. Used for perf
+   * optimization.
+   */
+  private readonly hasTransformDeferInput: boolean;
 
   /**
    * Whether memoization has ended. Used for idempotency, since memoization must
@@ -95,6 +111,9 @@ export class MiddlewareManager {
 
     this.hasTransformStepInput = middleware.some((mw) =>
       Boolean(mw?.transformStepInput),
+    );
+    this.hasTransformDeferInput = middleware.some((mw) =>
+      Boolean(mw?.transformDeferInput),
     );
   }
 
@@ -177,6 +196,21 @@ export class MiddlewareManager {
       setActualHandler,
       stepInfo,
     };
+  }
+
+  /**
+   * Runs `transformDeferInput` middleware.
+   */
+  async applyToDefer(input: ApplyToDeferInput): Promise<PreparedDefer> {
+    if (!this.hasTransformDeferInput) {
+      return { data: input.data };
+    }
+
+    const transformed = await this.transformDeferInput(
+      input.deferFn,
+      input.data,
+    );
+    return { data: transformed.data };
   }
 
   private buildStepInfo(opts: StepInfoOptions): Middleware.StepInfo {
@@ -280,6 +314,29 @@ export class MiddlewareManager {
     for (const mw of this.middleware) {
       if (mw?.transformStepInput) {
         result = await mw.transformStepInput(result);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Apply transformDeferInput middleware in forward order.
+   * Each middleware builds on the previous result.
+   */
+  private async transformDeferInput(
+    deferFn: DeferredFunction.Any,
+    data: Record<string, unknown>,
+  ): Promise<Middleware.TransformDeferInputArgs> {
+    let result: Middleware.TransformDeferInputArgs = {
+      fn: this.fn,
+      deferFn,
+      data,
+    };
+
+    for (const mw of this.middleware) {
+      if (mw?.transformDeferInput) {
+        result = await mw.transformDeferInput(result);
       }
     }
 
