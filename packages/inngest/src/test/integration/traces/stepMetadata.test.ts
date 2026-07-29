@@ -30,8 +30,9 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 // The fields the extractor lifts from `simulateOpenAICall`'s span, mapped to
 // the server's snake_case `inngest.ai` schema. Content attributes are never
 // extracted, and `total_tokens` is absent because the span carries no provider
-// total (we never derive one). `latency_ms` is derived from span timing, so
-// its exact value is non-deterministic and only asserted to be a number.
+// total (we never derive one). `latency_ms` is derived from span timing and
+// `estimated_cost` is derived by Dev Server from the model and token metadata,
+// so their exact values are only asserted to be numbers.
 const expectedAIMetadata = {
   kind: "inngest.ai",
   scope: "step",
@@ -43,6 +44,7 @@ const expectedAIMetadata = {
     input_tokens: 18,
     output_tokens: 39,
     latency_ms: expect.any(Number),
+    estimated_cost: expect.any(Number),
   },
 };
 
