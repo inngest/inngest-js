@@ -2,6 +2,7 @@ import type {
   EventMeta,
   EventSessions,
   PropagatedEventSessions,
+  ReceivedEventMeta,
 } from "../types.ts";
 
 /**
@@ -186,10 +187,10 @@ export const compareUtf8 = (a: string, b: string): number => {
  * become the propagated sessions.
  */
 export const reduceEventsToPropagatedSessions = (
-  // Accepts the send-time EventMeta shape (numeric ids permitted) since that is
-  // how a run's triggering events are statically typed; ids are canonicalized
-  // to strings below, so received string ids pass through unchanged.
-  events: ReadonlyArray<{ meta?: EventMeta | null }>,
+  // A run's triggering events are received events, so this takes the received
+  // shape: session ids are already strings, and tombstones have been consumed
+  // server-side.
+  events: ReadonlyArray<{ meta?: ReceivedEventMeta | null }>,
 ): Record<string, string> => {
   // Group the sessions by key
 
@@ -202,13 +203,21 @@ export const reduceEventsToPropagatedSessions = (
       continue;
     }
     for (const [key, id] of Object.entries(sessions)) {
+      // These events come off the executor's request body, so the received
+      // invariants (non-empty keys, string ids, tombstones already consumed)
+      // are the server's promise rather than something the type system
+      // enforces here. Each guard below defends that boundary, and each one
+      // prevents a *silent* wrong answer rather than a loud failure:
+      //
+      // - an empty key is rejected at ingest, so it should never appear;
+      // - a `null` id is a tombstone the server should already have consumed,
+      //   and `String(null)` would propagate the literal id `"null"`;
+      // - a numeric id would make `1` and `"1"` dedupe as two distinct ids,
+      //   dropping the key below as a false conflict.
       if (!key) {
-        continue; // defensive: the server rejects empty keys at ingest
+        continue;
       }
-      if (id === null) {
-        // A run's triggering events are already-resolved (received) events, so
-        // their sessions never hold tombstones; guard defensively since the
-        // send-time EventSessionValue type now admits null.
+      if (id === null || id === undefined) {
         continue;
       }
       let ids = idsByKey.get(key);
@@ -216,9 +225,6 @@ export const reduceEventsToPropagatedSessions = (
         ids = new Set();
         idsByKey.set(key, ids);
       }
-      // Canonicalize to string so a numeric id and its string form dedupe
-      // rather than register as a conflict (ids are already strings when
-      // received; this guards against runtime type violations).
       ids.add(String(id));
     }
   }

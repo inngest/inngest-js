@@ -56,6 +56,7 @@ import {
   jsonErrorSchema,
   type MinimalEventPayload,
   type OutgoingOp,
+  type ReceivedEventMeta,
   StepMode,
   StepOpCode,
 } from "../../types.ts";
@@ -2172,7 +2173,18 @@ class InngestExecutionEngine
       // Best-effort: session grouping must never crash a run, so a failure here
       // degrades to no propagation rather than throwing.
       try {
-        const sessions = reduceEventsToPropagatedSessions(fnArg.events ?? []);
+        // These are received events, but `BaseContext.event`/`events` type them
+        // with the send-time `EventMeta` — a long-standing mismatch with the
+        // triggers-based context, which resolves to `ReceivedEventMeta` for the
+        // same runtime value. Narrowing `BaseContext` would break anyone
+        // *constructing* a context (e.g. `@inngest/test`), so it is left for a
+        // major; assert the received shape here instead. The reducer still
+        // guards these values at runtime, since they arrive off the wire.
+        const sessions = reduceEventsToPropagatedSessions(
+          (fnArg.events ?? []) as ReadonlyArray<{
+            meta?: ReceivedEventMeta | null;
+          }>,
+        );
         if (Object.keys(sessions).length > 0) {
           fnArg.sessions = sessions;
         }
