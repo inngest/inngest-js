@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   compareUtf8,
   normalizeEventMeta,
-  normalizeEventSessions,
+  normalizeManualSessions,
+  normalizePropagatedSessions,
   reduceEventsToPropagatedSessions,
 } from "./sessions.ts";
 
@@ -166,39 +167,52 @@ describe("compareUtf8", () => {
   });
 });
 
-describe("normalizeEventSessions (tombstones)", () => {
+describe("normalizePropagatedSessions", () => {
   test("normalizes string/number ids, absent when empty", () => {
-    expect(normalizeEventSessions({ a: "1", b: 2 }, false)).toEqual({
+    expect(normalizePropagatedSessions({ a: "1", b: 2 })).toEqual({
       a: "1",
       b: "2",
     });
-    expect(normalizeEventSessions(undefined, false)).toBeUndefined();
-    expect(normalizeEventSessions({}, false)).toBeUndefined();
+    expect(normalizePropagatedSessions(undefined)).toBeUndefined();
+    expect(normalizePropagatedSessions({})).toBeUndefined();
   });
 
-  test("rejects null on the propagated layer (allowCut: false)", () => {
-    expect(() => normalizeEventSessions({ a: null }, false)).toThrow(
+  test("rejects a per-key null, since the layer carries no tombstones", () => {
+    expect(() => normalizePropagatedSessions({ a: null })).toThrow(
       /must be a string or number/,
     );
-    // Whole-field null on the propagated layer is dropped, not preserved.
-    expect(normalizeEventSessions(null, false)).toBeUndefined();
   });
 
-  test("manual layer preserves a per-key null tombstone", () => {
-    expect(normalizeEventSessions({ conv_id: null, keep: "1" }, true)).toEqual({
+  test("drops whole-field null rather than preserving it", () => {
+    expect(normalizePropagatedSessions(null)).toBeUndefined();
+  });
+});
+
+describe("normalizeManualSessions (tombstones)", () => {
+  test("normalizes string/number ids, absent when empty", () => {
+    expect(normalizeManualSessions({ a: "1", b: 2 })).toEqual({
+      a: "1",
+      b: "2",
+    });
+    expect(normalizeManualSessions(undefined)).toBeUndefined();
+    expect(normalizeManualSessions({})).toBeUndefined();
+  });
+
+  test("preserves a per-key null tombstone", () => {
+    expect(normalizeManualSessions({ conv_id: null, keep: "1" })).toEqual({
       conv_id: null,
       keep: "1",
     });
   });
 
-  test("manual layer preserves whole-field null (clear all)", () => {
-    expect(normalizeEventSessions(null, true)).toBeNull();
+  test("preserves whole-field null (clear all)", () => {
+    expect(normalizeManualSessions(null)).toBeNull();
   });
 
-  test("manual layer still rejects non-string/number/null values", () => {
+  test("still rejects non-string/number/null values", () => {
     expect(() =>
       // @ts-expect-error runtime guard for a value the type forbids
-      normalizeEventSessions({ a: true }, true),
+      normalizeManualSessions({ a: true }),
     ).toThrow(/must be a string, number, or null/);
   });
 });

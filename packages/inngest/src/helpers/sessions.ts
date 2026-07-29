@@ -8,26 +8,20 @@ import type { EventMeta, EventSessions } from "../types.ts";
 type NormalizedSessions = Record<string, string | null>;
 
 /**
- * Validates event sessions and normalizes their values to strings, matching
- * the shape stored by the Inngest server.
- *
- * When `allowCut` is `true` (the manual layer), `null` values are preserved as
- * RFC 7386 tombstones rather than rejected, and a whole-field `null` is
- * preserved (as `null`) to mean "clear all inherited sessions". Tombstones are
- * consumed server-side and never count against the per-event session limit.
- * When `allowCut` is `false` (the propagated layer) `null` values are rejected
- * and a whole-field `null` is dropped, since it is machine-stamped and carries
- * no tombstones. The flag is required so each call site declares which side of
- * this trust boundary it is on rather than relying on a default.
+ * Validates event sessions and normalizes their values to strings, matching the
+ * shape stored by the Inngest server. Shared by the two layer-specific entry
+ * points below; `layer` selects how `null` is treated.
  *
  * Returns `undefined` if no sessions were given (an absent field, or an empty
  * object — an empty RFC 7386 patch leaves the inherited layer untouched);
  * returns `null` for a preserved "clear all" tombstone.
  */
-export const normalizeEventSessions = (
+const normalizeSessions = (
   sessions: EventSessions | null | undefined,
-  allowCut: boolean,
+  layer: "manual" | "propagated",
 ): NormalizedSessions | null | undefined => {
+  const allowCut = layer === "manual";
+
   if (sessions === undefined) {
     return undefined;
   }
@@ -83,6 +77,35 @@ export const normalizeEventSessions = (
   return Object.fromEntries(normalized);
 };
 
+/**
+ * Normalizes the manual `meta.sessions` layer, which is user-authored and so
+ * admits RFC 7386 tombstones: a `null` value is preserved as a per-key cut of
+ * the inherited session, and a whole-field `null` is preserved (as `null`) to
+ * mean "clear all inherited sessions". Tombstones are consumed server-side and
+ * never count against the per-event session limit.
+ */
+export const normalizeManualSessions = (
+  sessions: EventSessions | null | undefined,
+): NormalizedSessions | null | undefined =>
+  normalizeSessions(sessions, "manual");
+
+/**
+ * Normalizes the `meta.propagated_sessions` layer, which is machine-stamped from
+ * `ctx.sessions` and carries no tombstones — so `null` values are rejected and a
+ * whole-field `null` is dropped. The layer is typed `@internal`, but a hand-set
+ * value can still reach here (a direct `inngest.send()` is never stamped, and
+ * `step.sendEvent` leaves the payload untouched when there is nothing to
+ * propagate), so the rejection is a real trust boundary rather than a
+ * formality.
+ */
+export const normalizePropagatedSessions = (
+  sessions: EventSessions | null | undefined,
+): Record<string, string> | undefined =>
+  // The "propagated" layer never returns tombstones, so narrow the value type.
+  normalizeSessions(sessions, "propagated") as
+    | Record<string, string>
+    | undefined;
+
 export const normalizeEventMeta = (
   meta: EventMeta | null | undefined,
 ): NormalizedEventMeta | undefined => {
@@ -93,12 +116,9 @@ export const normalizeEventMeta = (
     throw new Error("Event meta must be an object");
   }
 
-  // The manual layer preserves tombstones (`allowCut`); the propagated layer is
-  // machine-stamped and rejects them.
-  const sessions = normalizeEventSessions(meta.sessions, true);
-  const propagatedSessions = normalizeEventSessions(
+  const sessions = normalizeManualSessions(meta.sessions);
+  const propagatedSessions = normalizePropagatedSessions(
     meta.propagated_sessions,
-    false,
   );
   if (sessions === undefined && propagatedSessions === undefined) {
     return undefined;
@@ -111,8 +131,7 @@ export const normalizeEventMeta = (
     out.sessions = sessions;
   }
   if (propagatedSessions !== undefined) {
-    // Propagated never carries tombstones; narrow away the `null` value type.
-    out.propagated_sessions = propagatedSessions as Record<string, string>;
+    out.propagated_sessions = propagatedSessions;
   }
 
   return out;
