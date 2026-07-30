@@ -105,6 +105,7 @@ const resultForOperation = (
         protocolVersion: 1,
         action: "process.list",
         processes: [processRef],
+        page: { cursor: "next-process-page", hasMore: true, limit: 25 },
         fetchedAt: now,
       };
     case "process.get":
@@ -172,21 +173,26 @@ describe("step.sandbox", () => {
       environment: { "1_NUMERIC": "also-allowed" },
       cwd: "/workspace",
     });
-    const processes = await created.processes.list("process-list");
+    const processes = await created.processes.list("process-list", {
+      cursor: "process-cursor",
+      limit: 25,
+    });
     await created.processes.get("process-get", processId);
     await process.signal("signal", { signal: 15, includeChildren: true });
     const waited = await process.wait("wait", { timeout: "5s" });
     const output = await process.getOutput("output", { tailBytes: 123 });
     const destroyed = await created.destroy("destroy");
 
-    expect(created.toJSON()).toEqual(sandboxRef);
-    expect(JSON.parse(JSON.stringify(created))).toEqual(sandboxRef);
+    expect(created).toMatchObject(sandboxRef);
     expect(Object.isFrozen(created)).toBe(true);
     expect(Object.isFrozen(created.resources)).toBe(true);
     expect(Object.isFrozen(created.commands)).toBe(true);
+    expect("attach" in tools).toBe(false);
+    expect("toJSON" in created).toBe(false);
+    expect("toJSON" in process).toBe(false);
     expect("refresh" in created).toBe(false);
     expect("refresh" in process).toBe(false);
-    expect(listed.items[0]?.toJSON()).toEqual(sandboxRef);
+    expect(listed.items[0]).toMatchObject(sandboxRef);
     expect(fetched?.id).toBe(sandboxId);
     expect(command).toEqual({
       stdout: new Uint8Array([111, 107, 10]),
@@ -194,12 +200,17 @@ describe("step.sandbox", () => {
       exitCode: 0,
       output: { truncated: false },
     });
-    expect(waited.toJSON()).toMatchObject({
+    expect(waited).toMatchObject({
       id: processId,
       state: "KILLED",
       terminationSignal: 15,
     });
-    expect(processes.items[0]?.toJSON()).toEqual(processRef);
+    expect(processes.items[0]).toMatchObject(processRef);
+    expect(processes.page).toEqual({
+      cursor: "next-process-page",
+      hasMore: true,
+      limit: 25,
+    });
     expect(processes.fetchedAt).toBe(now);
     expect(Object.isFrozen(waited)).toBe(true);
     expect(Object.isFrozen(waited.command)).toBe(true);
@@ -236,7 +247,7 @@ describe("step.sandbox", () => {
     });
     expect(operations[5]).toMatchObject({
       action: "process.list",
-      input: [],
+      input: [{ cursor: "process-cursor", limit: 25 }],
     });
     expect(operations[7]).toMatchObject({
       action: "process.signal",
@@ -249,8 +260,17 @@ describe("step.sandbox", () => {
   });
 
   test("validates Simcity limits without imposing identifier-style env keys", async () => {
-    const rawTool = vi.fn<SandboxRawTool>();
-    const sandbox = createSandboxTools(() => rawTool).attach(sandboxRef);
+    const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
+      resultForOperation(operation),
+    );
+    const sandbox = await createSandboxTools(() => rawTool).get(
+      "get-sandbox",
+      sandboxId,
+    );
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    rawTool.mockClear();
 
     await expect(
       sandbox.commands.run("exec", {
@@ -291,7 +311,7 @@ describe("step.sandbox", () => {
           command: processRef.command,
         });
         await process.signal("signal", { signal: 15 });
-        return process.toJSON();
+        return process.id;
       },
     );
 
@@ -346,7 +366,7 @@ describe("step.sandbox", () => {
       }),
     ).resolves.toMatchObject({
       type: "function-resolved",
-      data: processRef,
+      data: processId,
     });
   });
 
@@ -365,7 +385,7 @@ describe("step.sandbox", () => {
     const fn = client.createFunction(
       { id: "sandbox-create", triggers: [{ event: "sandbox/create" }] },
       async ({ step }) =>
-        (await step.sandbox.create("create", createOptions)).toJSON(),
+        (await step.sandbox.create("create", createOptions)).id,
     );
     const run = createFnRunner(fn);
 
@@ -385,7 +405,7 @@ describe("step.sandbox", () => {
     const replay = await run();
     expect(replay.result).toMatchObject({
       type: "function-resolved",
-      data: sandboxRef,
+      data: sandboxId,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -393,16 +413,24 @@ describe("step.sandbox", () => {
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
     const threeMiBBase64 = `AQID${"AAAA".repeat((1 << 20) - 1)}`;
     const oneMiBBase64 = `${"AAAA".repeat(349_525)}AA==`;
-    const fetchMock: typeof fetch = vi.fn(async () =>
-      Response.json({
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      if (
+        url.pathname === `/v2/sandboxes/${sandboxId}` &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        return Response.json({ data: sandboxResource });
+      }
+      return Response.json({
         data: {
           stdout: threeMiBBase64,
           stderr: oneMiBBase64,
           encoding: "base64",
           exitCode: 0,
         },
-      }),
-    );
+      });
+    });
     const client = new Inngest({
       id: testClientId,
       signingKey: "signkey-test",
@@ -411,9 +439,13 @@ describe("step.sandbox", () => {
       middleware: [sandboxMiddleware()],
     });
 
-    const direct = await client.sandboxes
-      .attach(sandboxRef)
-      .commands.run({ command: ["/bin/true"] });
+    const directSandbox = await client.sandboxes.get(sandboxId);
+    if (!directSandbox) {
+      throw new Error("Expected sandbox");
+    }
+    const direct = await directSandbox.commands.run({
+      command: ["/bin/true"],
+    });
     expect(direct.stdout).toHaveLength(3 << 20);
     expect(direct.stderr).toHaveLength(1 << 20);
     expect(direct.stdout.slice(0, 3)).toEqual(new Uint8Array([1, 2, 3]));
@@ -422,9 +454,13 @@ describe("step.sandbox", () => {
     const fn = client.createFunction(
       { id: "sandbox-exec-limit", triggers: [{ event: "sandbox/exec-limit" }] },
       async ({ step }) => {
-        const result = await step.sandbox
-          .attach(sandboxRef)
-          .commands.run("exec", { command: ["/bin/true"] });
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        const result = await sandbox.commands.run("exec", {
+          command: ["/bin/true"],
+        });
         return {
           stdoutBytes: result.stdout.byteLength,
           stderrBytes: result.stderr.byteLength,
@@ -434,8 +470,31 @@ describe("step.sandbox", () => {
       },
     );
 
-    const first = await runFnWithStack(fn, {});
-    expect(first).toMatchObject({
+    const getStep = await runFnWithStack(fn, {});
+    expect(getStep).toMatchObject({
+      type: "step-ran",
+      step: {
+        op: StepOpCode.StepRun,
+        data: {
+          protocolVersion: 1,
+          action: "get",
+          sandbox: sandboxRef,
+        },
+      },
+    });
+    if (getStep.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${getStep.type}`);
+    }
+    const getState = {
+      [getStep.step.id]: {
+        id: getStep.step.id,
+        data: getStep.step.data,
+      },
+    };
+    const execStep = await runFnWithStack(fn, getState, {
+      stackOrder: [getStep.step.id],
+    });
+    expect(execStep).toMatchObject({
       type: "step-ran",
       step: {
         op: StepOpCode.StepRun,
@@ -459,20 +518,21 @@ describe("step.sandbox", () => {
         },
       },
     });
-    if (first.type !== "step-ran") {
-      throw new Error(`Expected step-ran, got ${first.type}`);
+    if (execStep.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${execStep.type}`);
     }
 
     await expect(
       runFnWithStack(
         fn,
         {
-          [first.step.id]: {
-            id: first.step.id,
-            data: first.step.data,
+          ...getState,
+          [execStep.step.id]: {
+            id: execStep.step.id,
+            data: execStep.step.data,
           },
         },
-        { stackOrder: [first.step.id] },
+        { stackOrder: [getStep.step.id, execStep.step.id] },
       ),
     ).resolves.toMatchObject({
       type: "function-resolved",
@@ -494,7 +554,7 @@ describe("step.sandbox", () => {
         },
       },
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   test("reconstructs a non-retriable SandboxError from a failed run step", async () => {
@@ -650,7 +710,10 @@ describe("step.sandbox", () => {
   });
 
   test("maps a structured executor failure without making all errors non-retriable", async () => {
-    const rawTool: SandboxRawTool = async () => {
+    const rawTool: SandboxRawTool = async (_id, operation) => {
+      if (operation.action === "get") {
+        return resultForOperation(operation);
+      }
       throw {
         cause: {
           protocolVersion: 1,
@@ -664,9 +727,15 @@ describe("step.sandbox", () => {
         },
       };
     };
-    const error = await createSandboxTools(() => rawTool)
-      .attach(sandboxRef)
-      .processes.start("start", { command: ["/bin/true"] })
+    const sandbox = await createSandboxTools(() => rawTool).get(
+      "get-sandbox",
+      sandboxId,
+    );
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    const error = await sandbox.processes
+      .start("start", { command: ["/bin/true"] })
       .catch((value: unknown) => value);
 
     expect(error).toBeInstanceOf(SandboxError);
@@ -774,6 +843,12 @@ describe("inngest.sandboxes", () => {
         return Response.json({
           data: [{ ...processData, futureProcessField: true }],
           metadata: { fetchedAt: now, futureMetadataField: true },
+          page: {
+            cursor: "next-process-page",
+            hasMore: true,
+            limit: 25,
+            futurePageField: true,
+          },
         });
       }
       if (url.pathname === processPath && method === "GET") {
@@ -850,15 +925,21 @@ describe("inngest.sandboxes", () => {
     const started = await sandbox.processes.start({
       command: processRef.command,
     });
-    const processes = await sandbox.processes.list();
+    const processes = await sandbox.processes.list({
+      cursor: "process-cursor",
+      limit: 25,
+    });
     const fetchedProcess = await sandbox.processes.get(processId);
     await started.signal({ signal: 15, includeChildren: true });
     const waited = await started.wait({ timeout: "2s" });
     const output = await started.getOutput({ tailBytes: 64 });
     const destroyed = await sandbox.destroy();
 
-    expect(listed.items[0]?.toJSON()).toEqual(sandboxRef);
-    expect(sandbox.toJSON()).toEqual(sandboxRef);
+    expect(listed.items[0]).toMatchObject(sandboxRef);
+    expect(sandbox).toMatchObject(sandboxRef);
+    expect("attach" in inngest.sandboxes).toBe(false);
+    expect("toJSON" in sandbox).toBe(false);
+    expect("toJSON" in started).toBe(false);
     expect("refresh" in sandbox).toBe(false);
     expect(command).toEqual({
       stdout: new Uint8Array([0, 255]),
@@ -878,12 +959,17 @@ describe("inngest.sandboxes", () => {
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(
       new Uint8Array([0, 255]),
     );
-    expect(started.toJSON()).toEqual(processRef);
+    expect(started).toMatchObject(processRef);
     expect("refresh" in started).toBe(false);
-    expect(processes.items[0]?.toJSON()).toEqual(processRef);
+    expect(processes.items[0]).toMatchObject(processRef);
+    expect(processes.page).toEqual({
+      cursor: "next-process-page",
+      hasMore: true,
+      limit: 25,
+    });
     expect(processes.fetchedAt).toBe(now);
-    expect(fetchedProcess?.toJSON()).toEqual(processRef);
-    expect(waited.toJSON()).toMatchObject({
+    expect(fetchedProcess).toMatchObject(processRef);
+    expect(waited).toMatchObject({
       id: processId,
       state: "EXITED",
       exitCode: 0,
@@ -906,7 +992,7 @@ describe("inngest.sandboxes", () => {
         ({ url, init }) =>
           url.pathname.endsWith("/processes") && init?.method === "GET",
       )?.url.search,
-    ).toBe("");
+    ).toBe("?limit=25&cursor=process-cursor");
     expect(calls[0]?.init?.headers).toMatchObject({
       Authorization: `Bearer ${hashSigningKey("signkey-test")}`,
       "x-inngest-env": "branch",
@@ -973,8 +1059,8 @@ describe("inngest.sandboxes", () => {
       chunks.push(next.value.data);
     }
 
-    expect(sandbox.toJSON()).toEqual(sandboxRef);
-    expect(process.toJSON()).toEqual(processRef);
+    expect(sandbox).toMatchObject(sandboxRef);
+    expect(process).toMatchObject(processRef);
     expect(chunks).toEqual([new Uint8Array([0, 255])]);
     expect(calls.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
       "/v2/sandboxes",
@@ -993,12 +1079,18 @@ describe("inngest.sandboxes", () => {
   ])(
     "marks an incomplete captured Exec result as ambiguous (%s)",
     async (status, code) => {
+      let requestCount = 0;
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
       const client = createSandboxClient({
         baseUrl: () => "https://api.example.test",
         apiKey: () => "key",
         headers: () => ({}),
-        fetch: () => async () =>
-          Response.json(
+        fetch: () => async () => {
+          requestCount++;
+          if (requestCount === 1) {
+            return Response.json({ data: sandboxResource });
+          }
+          return Response.json(
             {
               errors: [
                 {
@@ -1008,11 +1100,16 @@ describe("inngest.sandboxes", () => {
               ],
             },
             { status },
-          ),
+          );
+        },
       });
 
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
       await expect(
-        client.attach(sandboxRef).commands.run({
+        sandbox.commands.run({
           command: ["/bin/true"],
         }),
       ).rejects.toMatchObject({
@@ -1030,6 +1127,10 @@ describe("inngest.sandboxes", () => {
     const fetchMock: typeof fetch = vi.fn(async () => {
       requestCount++;
       if (requestCount === 1) {
+        const { kind: _kind, version: _version, ...data } = sandboxRef;
+        return Response.json({ data });
+      }
+      if (requestCount === 2) {
         const {
           kind: _kind,
           version: _version,
@@ -1055,10 +1156,9 @@ describe("inngest.sandboxes", () => {
       headers: () => ({}),
       fetch: () => fetchMock,
     });
-    const stream = await client
-      .attach(sandboxRef)
-      .processes.get(processId)
-      .then((process) => process?.streamOutput());
+    const sandbox = await client.get(sandboxId);
+    const process = await sandbox?.processes.get(processId);
+    const stream = await process?.streamOutput();
 
     await expect(stream?.getReader().read()).rejects.toMatchObject({
       name: "SandboxError",
@@ -1075,6 +1175,10 @@ describe("inngest.sandboxes", () => {
     const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
       requestCount++;
       if (requestCount === 1) {
+        const { kind: _kind, version: _version, ...data } = sandboxRef;
+        return Response.json({ data });
+      }
+      if (requestCount === 2) {
         const {
           kind: _kind,
           version: _version,
@@ -1098,7 +1202,8 @@ describe("inngest.sandboxes", () => {
       headers: () => ({}),
       fetch: () => fetchMock,
     });
-    const process = await client.attach(sandboxRef).processes.get(processId);
+    const sandbox = await client.get(sandboxId);
+    const process = await sandbox?.processes.get(processId);
     const stream = await process?.streamOutput();
 
     await stream?.cancel();

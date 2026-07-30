@@ -37,6 +37,7 @@ export type {
   SandboxOutputChunk,
   SandboxPageInfo,
   SandboxProcess,
+  SandboxProcessListOptions,
   SandboxProcessListResult,
   SandboxProcessOutput,
   SandboxProcessOutputOptions,

@@ -1,5 +1,5 @@
 import type { StepOptionsOrId } from "../../types.ts";
-import { attachSandboxProcess } from "./client.ts";
+import { sandboxForOperation, sandboxProcessForOperation } from "./client.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -17,12 +17,14 @@ import {
   type DurableSandbox,
   type DurableSandboxProcess,
   type DurableSandboxTools,
+  type Sandbox,
   type SandboxAction,
   type SandboxClient,
   type SandboxCommandResult,
   type SandboxDestroyResult,
   SandboxError,
   type SandboxOutputChunk,
+  type SandboxProcess,
   type SandboxProcessRef,
   type SandboxRef,
   SandboxValidationError,
@@ -36,6 +38,7 @@ import {
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
+  normalizeSandboxProcessListOptions,
   normalizeSandboxProcessOutputOptions,
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
@@ -114,9 +117,35 @@ const encodeOutputChunk = (
   ...(chunk.at !== undefined && { at: chunk.at }),
 });
 
-const processRefForWire = (ref: SandboxProcessRef) => ({
-  ...ref,
-  command: [...ref.command],
+const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
+  kind: sandbox.kind,
+  version: sandbox.version,
+  id: sandbox.id,
+  name: sandbox.name,
+  status: sandbox.status,
+  vpcId: sandbox.vpcId,
+  imageRef: sandbox.imageRef,
+  resources: { ...sandbox.resources },
+  createdAt: sandbox.createdAt,
+  ...(sandbox.startedAt !== undefined && { startedAt: sandbox.startedAt }),
+  ...(sandbox.endedAt !== undefined && { endedAt: sandbox.endedAt }),
+  ...(sandbox.error !== undefined && { error: sandbox.error }),
+});
+
+const processRefForWire = (process: SandboxProcess) => ({
+  kind: process.kind,
+  version: process.version,
+  sandboxId: process.sandboxId,
+  id: process.id,
+  command: [...process.command],
+  ...(process.pid !== undefined && { pid: process.pid }),
+  state: process.state,
+  ...(process.exitCode !== undefined && { exitCode: process.exitCode }),
+  ...(process.terminationSignal !== undefined && {
+    terminationSignal: process.terminationSignal,
+  }),
+  ...(process.startedAt !== undefined && { startedAt: process.startedAt }),
+  ...(process.endedAt !== undefined && { endedAt: process.endedAt }),
 });
 
 /**
@@ -135,7 +164,7 @@ export const executeSandboxOperation = async (
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        sandbox: sandbox.toJSON(),
+        sandbox: sandboxRefForWire(sandbox),
       };
     }
     case "list": {
@@ -143,7 +172,7 @@ export const executeSandboxOperation = async (
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        sandboxes: result.items.map((sandbox) => sandbox.toJSON()),
+        sandboxes: result.items.map(sandboxRefForWire),
         page: result.page,
         fetchedAt: result.fetchedAt,
       };
@@ -153,14 +182,16 @@ export const executeSandboxOperation = async (
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        sandbox: sandbox?.toJSON() ?? null,
+        sandbox: sandbox ? sandboxRefForWire(sandbox) : null,
       };
     }
     case "exec": {
       const { timeoutMs, ...options } = operation.input[0];
-      const result = await client
-        .attach(operation.target.sandbox)
-        .commands.run({ ...options, timeout: timeoutMs });
+      const sandbox = sandboxForOperation(client, operation.target.sandbox);
+      const result = await sandbox.commands.run({
+        ...options,
+        timeout: timeoutMs,
+      });
       const output = fitDurableSandboxExecOutput(result.stdout, result.stderr);
       return {
         protocolVersion: sandboxProtocolVersion,
@@ -175,7 +206,10 @@ export const executeSandboxOperation = async (
       };
     }
     case "destroy": {
-      const result = await client.attach(operation.target.sandbox).destroy();
+      const result = await sandboxForOperation(
+        client,
+        operation.target.sandbox,
+      ).destroy();
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
@@ -183,40 +217,38 @@ export const executeSandboxOperation = async (
       };
     }
     case "process.start": {
-      const process = await client
-        .attach(operation.target.sandbox)
-        .processes.start(operation.input[0]);
+      const sandbox = sandboxForOperation(client, operation.target.sandbox);
+      const process = await sandbox.processes.start(operation.input[0]);
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        process: processRefForWire(process.toJSON()),
+        process: processRefForWire(process),
       };
     }
     case "process.list": {
-      const result = await client
-        .attach(operation.target.sandbox)
-        .processes.list();
+      const result = await sandboxForOperation(
+        client,
+        operation.target.sandbox,
+      ).processes.list(operation.input[0]);
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        processes: result.items.map((process) =>
-          processRefForWire(process.toJSON()),
-        ),
+        processes: result.items.map(processRefForWire),
+        page: { ...result.page },
         fetchedAt: result.fetchedAt,
       };
     }
     case "process.get": {
-      const process = await client
-        .attach(operation.target.sandbox)
-        .processes.get(operation.target.processId);
+      const sandbox = sandboxForOperation(client, operation.target.sandbox);
+      const process = await sandbox.processes.get(operation.target.processId);
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        process: process ? processRefForWire(process.toJSON()) : null,
+        process: process ? processRefForWire(process) : null,
       };
     }
     case "process.signal": {
-      await attachSandboxProcess(client, operation.target.process).signal(
+      await sandboxProcessForOperation(client, operation.target.process).signal(
         operation.input[0],
       );
       return {
@@ -226,29 +258,30 @@ export const executeSandboxOperation = async (
       };
     }
     case "process.wait": {
-      const process = await attachSandboxProcess(
+      const process = await sandboxProcessForOperation(
         client,
         operation.target.process,
       ).wait({ timeout: operation.input[0].timeoutMs });
-      const ref = process.toJSON();
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
         process: {
-          kind: ref.kind,
-          version: ref.version,
-          sandboxId: ref.sandboxId,
-          id: ref.id,
-          state: ref.state as "EXITED" | "KILLED" | "FAILED" | "LOST",
-          ...(ref.exitCode !== undefined && { exitCode: ref.exitCode }),
-          ...(ref.terminationSignal !== undefined && {
-            terminationSignal: ref.terminationSignal,
+          kind: process.kind,
+          version: process.version,
+          sandboxId: process.sandboxId,
+          id: process.id,
+          state: process.state as "EXITED" | "KILLED" | "FAILED" | "LOST",
+          ...(process.exitCode !== undefined && {
+            exitCode: process.exitCode,
+          }),
+          ...(process.terminationSignal !== undefined && {
+            terminationSignal: process.terminationSignal,
           }),
         },
       };
     }
     case "process.output": {
-      const result = await attachSandboxProcess(
+      const result = await sandboxProcessForOperation(
         client,
         operation.target.process,
       ).getOutput(operation.input[0]);
@@ -372,10 +405,6 @@ export const createDurableSandboxProcessFacade = (
         chunks: result.result.chunks.map(decodeOutputChunk),
       };
     },
-    toJSON: () => ({
-      ...ref,
-      command: [...ref.command],
-    }),
   };
   return Object.freeze(facade);
 };
@@ -430,12 +459,12 @@ export const createDurableSandboxFacade = (
           rawToolResolver,
         );
       },
-      list: async (idOrOptions) => {
+      list: async (idOrOptions, options) => {
         const operation = parseSandboxOperationForAction("process.list", {
           protocolVersion: sandboxProtocolVersion,
           action: "process.list",
           target: sandboxTarget(ref),
-          input: [],
+          input: [normalizeSandboxProcessListOptions(options)],
         });
         const result = await callRawTool(
           rawToolResolver,
@@ -446,6 +475,7 @@ export const createDurableSandboxFacade = (
           items: result.processes.map((process) =>
             createDurableSandboxProcessFacade(process, ref, rawToolResolver),
           ),
+          page: { ...result.page },
           fetchedAt: result.fetchedAt,
         };
       },
@@ -485,10 +515,6 @@ export const createDurableSandboxFacade = (
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
       return result.result;
     },
-    toJSON: () => ({
-      ...ref,
-      resources: { ...ref.resources },
-    }),
   };
   return Object.freeze(facade);
 };
@@ -536,5 +562,4 @@ export const createSandboxTools = (
       ? createDurableSandboxFacade(result.sandbox, rawToolResolver)
       : null;
   },
-  attach: (ref) => createDurableSandboxFacade(ref, rawToolResolver),
 });

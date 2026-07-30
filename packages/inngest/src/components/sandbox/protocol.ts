@@ -161,7 +161,7 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("process.list"),
       target: sandboxTargetSchema,
-      input: z.tuple([]),
+      input: z.tuple([listInputSchema]),
     })
     .strict(),
   z
@@ -364,6 +364,7 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("process.list"),
       processes: z.array(sandboxProcessRefSchema),
+      page: pageSchema,
       fetchedAt: z.string().min(1),
     })
     .strict(),

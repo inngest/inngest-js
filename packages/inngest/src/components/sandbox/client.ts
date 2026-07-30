@@ -11,8 +11,6 @@ import {
   type SandboxFileUploadResult,
   type SandboxOutputChunk,
   type SandboxProcess,
-  type SandboxProcessRef,
-  type SandboxRef,
   SandboxValidationError,
 } from "./types.ts";
 import {
@@ -24,6 +22,7 @@ import {
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
   normalizeSandboxListOptions,
+  normalizeSandboxProcessListOptions,
   normalizeSandboxProcessOutputOptions,
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
@@ -521,7 +520,6 @@ const createDirectProcessFacade = (
         ref.id,
       );
     },
-    toJSON: () => ({ ...ref, command: [...ref.command] }),
   };
   return Object.freeze(facade);
 };
@@ -644,11 +642,16 @@ const createDirectSandboxFacade = (
         }
         return createDirectProcessFacade(process, transport);
       },
-      list: async () => {
+      list: async (options) => {
+        const normalized = normalizeSandboxProcessListOptions(options);
+        const query = new URLSearchParams({ limit: `${normalized.limit}` });
+        if (normalized.cursor !== undefined) {
+          query.set("cursor", normalized.cursor);
+        }
         const { envelope } = await transport.json(
           "process.list",
           "GET",
-          `${basePath}/processes`,
+          `${basePath}/processes?${query}`,
           { statuses: [200], sandboxId: ref.id },
         );
         const processes = parseWithSchema(
@@ -661,6 +664,11 @@ const createDirectSandboxFacade = (
           envelope?.metadata,
           "sandbox process list metadata",
         );
+        const page = parseWithSchema(
+          sandboxPageSchema,
+          envelope?.page,
+          "sandbox process list page",
+        );
         const items = processes
           .map((process) =>
             createDirectProcessFacade(
@@ -671,6 +679,11 @@ const createDirectSandboxFacade = (
           .sort((left, right) => left.id.localeCompare(right.id));
         return {
           items,
+          page: {
+            hasMore: page.hasMore,
+            limit: page.limit,
+            ...(page.cursor != null && { cursor: page.cursor }),
+          },
           fetchedAt: metadata.fetchedAt,
         };
       },
@@ -727,7 +740,6 @@ const createDirectSandboxFacade = (
         sandbox,
       };
     },
-    toJSON: () => ({ ...ref, resources: { ...ref.resources } }),
   };
   return Object.freeze(facade);
 };
@@ -737,24 +749,29 @@ const sandboxClientTransports = new WeakMap<
   SandboxRestTransport
 >();
 
-/**
- * Rehydrate a direct process facade without performing a preflight request.
- *
- * This is intentionally internal to the SDK's durable sandbox adapter. Public
- * callers attach to the parent sandbox and use `sandbox.processes.get()`.
- */
-export const attachSandboxProcess = (
-  client: SandboxClient,
-  ref: SandboxProcessRef,
-): SandboxProcess => {
+const transportForClient = (client: SandboxClient): SandboxRestTransport => {
   const transport = sandboxClientTransports.get(client);
   if (!transport) {
     throw new SandboxValidationError(
-      "Sandbox process references can only be attached to an SDK sandbox client",
+      "Sandbox resources can only be reconstructed for an SDK sandbox client",
     );
   }
-  return createDirectProcessFacade(ref, transport);
+  return transport;
 };
+
+/**
+ * Internal reconstruction used by the durable adapter. Public callers reload
+ * resources with Get so they receive current state.
+ */
+export const sandboxForOperation = (
+  client: SandboxClient,
+  ref: unknown,
+): Sandbox => createDirectSandboxFacade(ref, transportForClient(client));
+
+export const sandboxProcessForOperation = (
+  client: SandboxClient,
+  ref: unknown,
+): SandboxProcess => createDirectProcessFacade(ref, transportForClient(client));
 
 export const createSandboxClient = (
   config: SandboxClientConfig,
@@ -849,7 +866,6 @@ export const createSandboxClient = (
         throw error;
       }
     },
-    attach: (ref: SandboxRef) => createDirectSandboxFacade(ref, transport),
   };
   sandboxClientTransports.set(client, transport);
   return client;

@@ -303,6 +303,8 @@ export const normalizeSandboxListOptions = (
   return { ...parsed, limit: parsed.limit ?? 50 };
 };
 
+export const normalizeSandboxProcessListOptions = normalizeSandboxListOptions;
+
 const assertNoNul = (value: string, context: string): void => {
   if (value.includes("\0")) {
     throw new SandboxValidationError(`${context} must not contain NUL`);

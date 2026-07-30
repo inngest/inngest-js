@@ -155,10 +155,9 @@ export interface SandboxProcessOutputOptions {
   tailBytes?: number;
 }
 
-export interface SandboxProcessListResult<TProcess = SandboxProcessRef> {
-  items: TProcess[];
-  fetchedAt: string;
-}
+export type SandboxProcessListOptions = SandboxListOptions;
+export type SandboxProcessListResult<TProcess = SandboxProcessRef> =
+  SandboxListResult<TProcess>;
 
 export interface SandboxOutputChunk {
   stream: "STDOUT" | "STDERR";
@@ -307,11 +306,12 @@ export interface Sandbox {
   };
   readonly processes: {
     start(options: SandboxProcessStartOptions): Promise<SandboxProcess>;
-    list(): Promise<SandboxProcessListResult<SandboxProcess>>;
+    list(
+      options?: SandboxProcessListOptions,
+    ): Promise<SandboxProcessListResult<SandboxProcess>>;
     get(processId: string): Promise<SandboxProcess | null>;
   };
   destroy(): Promise<SandboxDestroyResult>;
-  toJSON(): SandboxRef;
 }
 
 export interface SandboxProcess {
@@ -334,14 +334,12 @@ export interface SandboxProcess {
   streamOutput(
     options?: SandboxProcessOutputOptions,
   ): Promise<ReadableStream<SandboxOutputChunk>>;
-  toJSON(): SandboxProcessRef;
 }
 
 export interface SandboxClient {
   create(options: SandboxCreateOptions): Promise<Sandbox>;
   list(options?: SandboxListOptions): Promise<SandboxListResult<Sandbox>>;
   get(sandboxId: string): Promise<Sandbox | null>;
-  attach(ref: SandboxRef): Sandbox;
 }
 
 export interface DurableSandbox {
@@ -370,6 +368,7 @@ export interface DurableSandbox {
     ): Promise<DurableSandboxProcess>;
     list(
       idOrOptions: StepOptionsOrId,
+      options?: SandboxProcessListOptions,
     ): Promise<SandboxProcessListResult<DurableSandboxProcess>>;
     get(
       idOrOptions: StepOptionsOrId,
@@ -377,7 +376,6 @@ export interface DurableSandbox {
     ): Promise<DurableSandboxProcess | null>;
   };
   destroy(idOrOptions: StepOptionsOrId): Promise<SandboxDestroyResult>;
-  toJSON(): SandboxRef;
 }
 
 export interface DurableSandboxProcess {
@@ -404,7 +402,6 @@ export interface DurableSandboxProcess {
     idOrOptions: StepOptionsOrId,
     options?: SandboxProcessOutputOptions,
   ): Promise<SandboxProcessOutput>;
-  toJSON(): SandboxProcessRef;
 }
 
 export interface DurableSandboxTools {
@@ -420,5 +417,4 @@ export interface DurableSandboxTools {
     idOrOptions: StepOptionsOrId,
     sandboxId: string,
   ): Promise<DurableSandbox | null>;
-  attach(ref: SandboxRef): DurableSandbox;
 }
