@@ -208,7 +208,7 @@ export class InngestFunction<
         };
 
         if (timeout) {
-          ret.timeout = timeStr(timeout);
+          ret.timeout = timeStr(timeout, this.client[internalLoggerSymbol]);
         }
 
         if (match) {

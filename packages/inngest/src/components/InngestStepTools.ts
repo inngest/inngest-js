@@ -532,7 +532,7 @@ export const createStepTools = <
         displayName: name ?? id,
         opts: {
           signal: opts.signal,
-          timeout: timeStr(opts.timeout),
+          timeout: timeStr(opts.timeout, client[internalLoggerSymbol]),
           conflict: opts.onConflict,
         },
         userland: { id },
@@ -671,6 +671,9 @@ export const createStepTools = <
            * `"2.5d"`, a `Date`, a `Temporal.Duration` (relative wait), or a
            * `Temporal.Instant` / `Temporal.ZonedDateTime` (absolute deadline).
            *
+           * Durations of less than 1 second round up to `1s`, the minimum
+           * resolution of a durable wait.
+           *
            * {@link https://npm.im/ms}
            */
           timeout:
@@ -695,7 +698,10 @@ export const createStepTools = <
         opts,
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
-          timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
+          timeout: timeStr(
+            typeof opts === "string" ? opts : opts.timeout,
+            client[internalLoggerSymbol],
+          ),
         };
 
         if (typeof opts !== "string") {
@@ -804,6 +810,9 @@ export const createStepTools = <
      * The time to wait can be specified using a `number` of milliseconds or an
      * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`.
      *
+     * Durations of less than 1 second round up to `1s`, the minimum
+     * resolution of a durable wait.
+     *
      * {@link https://npm.im/ms}
      *
      * To wait until a particular date, use `sleepUntil` instead.
@@ -822,7 +831,7 @@ export const createStepTools = <
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
-      const msTimeStr: string = timeStr(time);
+      const msTimeStr: string = timeStr(time, client[internalLoggerSymbol]);
 
       return {
         id,
@@ -956,7 +965,10 @@ export const createStepTools = <
       } = {
         payload,
         function_id: "",
-        timeout: typeof timeout === "undefined" ? undefined : timeStr(timeout),
+        timeout:
+          typeof timeout === "undefined"
+            ? undefined
+            : timeStr(timeout, client[internalLoggerSymbol]),
       };
 
       switch (_type) {
@@ -1222,6 +1234,9 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
        * a `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant`
        * / `Temporal.ZonedDateTime` (absolute deadline).
        *
+       * Durations of less than 1 second round up to `1s`, the minimum
+       * resolution of a durable wait.
+       *
        * {@link https://npm.im/ms}
        */
       timeout?:
@@ -1266,6 +1281,9 @@ type WaitForSignalOpts = {
    * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, a
    * `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant` /
    * `Temporal.ZonedDateTime` (absolute deadline).
+   *
+   * Durations of less than 1 second round up to `1s`, the minimum
+   * resolution of a durable wait.
    *
    * {@link https://npm.im/ms}
    */
