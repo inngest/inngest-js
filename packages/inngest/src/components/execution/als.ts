@@ -169,6 +169,19 @@ export const getAsyncCtxSync = (): AsyncContext | undefined => {
 };
 
 /**
+ * Run a function within a specific async context if AsyncLocalStorage has
+ * already been initialized.
+ */
+export const runWithAsyncCtx = <R>(store: AsyncContext, fn: () => R): R => {
+  const als = getCache().resolved;
+  if (!als) {
+    return fn();
+  }
+
+  return als.run(store, fn);
+};
+
+/**
  * Get a singleton instance of `AsyncLocalStorage` used to store and retrieve
  * async context for the current execution.
  */

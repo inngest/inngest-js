@@ -147,3 +147,52 @@ test("info hooks for parallel steps", async () => {
     "onRunComplete",
   ]);
 });
+
+test("wrapStep runs for every memoized sibling parallel step", async () => {
+  // Regression test for a bug, where wrapStep wasn't respecting parallel steps.
+
+  const state = createState({
+    output: null as unknown,
+  });
+
+  class TagMiddleware extends Middleware.BaseMiddleware {
+    readonly id = "tag";
+
+    override async wrapStep({ next }: Middleware.WrapStepArgs) {
+      await sleep(10);
+      const value = await next();
+      return { tagged: true, value };
+    }
+  }
+
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [TagMiddleware],
+  });
+  const eventName = randomSuffix("evt");
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      const [a, b] = await Promise.all([
+        step.run("step-a", () => ({ from: "a" })),
+        step.run("step-b", () => ({ from: "b" })),
+      ]);
+
+      state.output = { a, b };
+      state.runId = runId;
+      return state.output;
+    },
+  );
+  await createTestApp({ client, functions: [fn], serve: createServer });
+
+  await client.send({ name: eventName });
+  const result = await state.waitForRunComplete();
+
+  const expected = {
+    a: { tagged: true, value: { from: "a" } },
+    b: { tagged: true, value: { from: "b" } },
+  };
+  expect(state.output).toEqual(expected);
+  expect(result).toEqual(expected);
+});
