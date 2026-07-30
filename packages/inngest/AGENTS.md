@@ -54,6 +54,9 @@ pnpm -C packages/inngest run test:integration src/test/integration/defer/misc.te
 pnpm -C packages/inngest run test:integration src/test/integration/defer/misc.test.ts -t 'defer in step'
 ```
 
+Prefer these package scripts (the `-C` option) for targeted test runs. Do not invoke Vitest directly with `pnpm exec vitest ...` when an equivalent `pnpm run test:*` script exists; the scripts encode the package's intended config and make
+command usage consistent across agents and humans.
+
 **Integration Testing:**
 ```bash
 pnpm itest <example>    # Run integration tests against live examples
