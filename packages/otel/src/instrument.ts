@@ -12,6 +12,8 @@ import { type MaybeError, toError } from "./types.ts";
 
 const debug = Debug("inngest:otel:instrumentTracing");
 
+export const providerMarker = Symbol.for("inngest.otel.provider");
+
 let isTraceInstrumentationHookRegistered = false;
 let isTraceInstrumentationStarted = false;
 
@@ -100,6 +102,11 @@ function ensureTraceProvider(): MaybeError<void> {
       // Reachable when a provider already exists
       return;
     }
+
+    Object.defineProperty(provider, providerMarker, {
+      value: true,
+      enumerable: false,
+    });
 
     context.setGlobalContextManager(
       new AsyncLocalStorageContextManager().enable(),
