@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 
+import { hashSigningKey } from "../helpers/strings.ts";
 import {
   createClient,
   createFnRunner,
@@ -907,7 +908,7 @@ describe("inngest.sandboxes", () => {
       )?.url.search,
     ).toBe("");
     expect(calls[0]?.init?.headers).toMatchObject({
-      Authorization: "Bearer signkey-test",
+      Authorization: `Bearer ${hashSigningKey("signkey-test")}`,
       "x-inngest-env": "branch",
     });
   });

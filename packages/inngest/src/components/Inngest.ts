@@ -27,7 +27,7 @@ import {
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { normalizeEventMeta } from "../helpers/sessions.ts";
-import { stringify } from "../helpers/strings.ts";
+import { hashSigningKey, stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
   IsNever,
@@ -398,7 +398,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
     this.sandboxes = createSandboxClient({
       baseUrl: () => this.apiBaseUrl,
-      apiKey: () => this.signingKey,
+      apiKey: () => hashSigningKey(this.signingKey),
       headers: () => this.headers,
       fetch: () => this.fetch,
     });
