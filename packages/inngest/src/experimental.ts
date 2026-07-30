@@ -13,7 +13,49 @@ export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components
 // Step Metadata
 export { metadataMiddleware } from "./components/InngestMetadata.ts";
 // Sandboxes
-export { sandboxMiddleware } from "./components/InngestSandbox.ts";
+export type {
+  DurableSandbox,
+  DurableSandboxProcess,
+  DurableSandboxTools,
+  Sandbox,
+  SandboxAction,
+  SandboxClient,
+  SandboxCommandOptions,
+  SandboxCommandOutputMetadata,
+  SandboxCommandResult,
+  SandboxCreateOptions,
+  SandboxDestroyResult,
+  SandboxDuration,
+  SandboxErrorCode,
+  SandboxErrorDetail,
+  SandboxFileDownloadOptions,
+  SandboxFileUploadOptions,
+  SandboxFileUploadResult,
+  SandboxListOptions,
+  SandboxListResult,
+  SandboxLogStreamOptions,
+  SandboxOutputChunk,
+  SandboxPageInfo,
+  SandboxProcess,
+  SandboxProcessListResult,
+  SandboxProcessOutput,
+  SandboxProcessOutputOptions,
+  SandboxProcessRef,
+  SandboxProcessResource,
+  SandboxProcessSignalOptions,
+  SandboxProcessStartOptions,
+  SandboxProcessState,
+  SandboxProcessWaitOptions,
+  SandboxRef,
+  SandboxResource,
+  SandboxResources,
+  SandboxStatus,
+} from "./components/InngestSandbox.ts";
+export {
+  SandboxError,
+  SandboxValidationError,
+  sandboxMiddleware,
+} from "./components/InngestSandbox.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";
 export { createScorer } from "./components/ScoreFunction.ts";
