@@ -147,6 +147,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   public readonly id: string;
 
   /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
    * Direct, non-durable access to sandbox REST APIs.
    *
    * Use `step.sandbox` inside an Inngest function to run the operation as a

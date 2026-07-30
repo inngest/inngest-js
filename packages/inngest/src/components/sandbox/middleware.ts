@@ -100,6 +100,9 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
 }
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * Middleware that enables the experimental durable `step.sandbox` API.
  *
  * The direct `inngest.sandboxes` client does not require this middleware.
