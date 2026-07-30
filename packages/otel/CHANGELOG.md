@@ -1,5 +1,11 @@
 # @inngest/otel
 
+## 0.2.2
+
+### Patch Changes
+
+- [#1660](https://github.com/inngest/inngest-js/pull/1660) [`61dca106`](https://github.com/inngest/inngest-js/commit/61dca106c1ec31d5abb8f2ce8bc6057bff08bd38) Thanks [@amh4r](https://github.com/amh4r)! - feat: add marker to identify the OTel provider
+
 ## 0.2.1
 
 ### Patch Changes
