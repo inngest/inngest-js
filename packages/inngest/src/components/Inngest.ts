@@ -149,8 +149,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   /**
    * Direct, non-durable access to sandbox REST APIs.
    *
-   * Use `step.sandbox` inside an Inngest function when the operation should be
-   * durably memoized by the executor.
+   * Use `step.sandbox` inside an Inngest function to run the operation as a
+   * durable step.
    */
   public readonly sandboxes: SandboxClient;
 
