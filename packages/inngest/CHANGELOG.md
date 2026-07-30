@@ -1,5 +1,17 @@
 # inngest
 
+## 4.14.0
+
+### Minor Changes
+
+- [#1647](https://github.com/inngest/inngest-js/pull/1647) [`3cc9a110`](https://github.com/inngest/inngest-js/commit/3cc9a110ad0c686c006cb5baae6e6b2567d93e86) Thanks [@rhino1998](https://github.com/rhino1998)! - feat(metadata): Extract AI call latency
+
+### Patch Changes
+
+- [#1648](https://github.com/inngest/inngest-js/pull/1648) [`106aaaf9`](https://github.com/inngest/inngest-js/commit/106aaaf945c138acdd0f631b33cf83978c104388) Thanks [@Linell](https://github.com/Linell)! - Fix errant `step.ai.wrap` warning
+
+- [#1649](https://github.com/inngest/inngest-js/pull/1649) [`690c0544`](https://github.com/inngest/inngest-js/commit/690c0544ac5742ae7eabe7ba2145f57286cb89cf) Thanks [@Linell](https://github.com/Linell)! - More informative errors for invalid functions
+
 ## 4.13.0
 
 ### Minor Changes
