@@ -38,6 +38,10 @@ export interface SandboxRef extends SandboxResource {
 }
 
 export interface SandboxCreateOptions {
+  /**
+   * Stable identity for an active sandbox. Creating the same name again with
+   * the same resources returns the existing sandbox.
+   */
   name: string;
   vcpu: number;
   memoryMb: number;
