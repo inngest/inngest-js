@@ -955,11 +955,20 @@ describe("step.invoke session propagation", () => {
       },
     );
 
-    // Two triggering events carrying sessions — exercises the run-level
-    // aggregation that produces `ctx.sessions`.
+    // Two triggering events whose sessions only partly overlap — exercises the
+    // run-level aggregation that produces `ctx.sessions`, and pins that only
+    // the shared pairs survive it.
     const events = [
-      { name: "test/event", data: {}, meta: { sessions: { conv_id: "p1" } } },
-      { name: "test/event", data: {}, meta: { sessions: { org_id: "42" } } },
+      {
+        name: "test/event",
+        data: {},
+        meta: { sessions: { conv_id: "p1", org_id: "42", only_a: "1" } },
+      },
+      {
+        name: "test/event",
+        data: {},
+        meta: { sessions: { conv_id: "p1", org_id: "42", only_b: "2" } },
+      },
     ];
 
     const execution = fn["createExecution"]({

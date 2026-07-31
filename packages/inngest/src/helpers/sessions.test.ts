@@ -24,51 +24,44 @@ describe("reduceEventsToPropagatedSessions", () => {
     expect(reduceEventsToPropagatedSessions([{ meta: null }])).toEqual({});
   });
 
-  test("batch unions sessions across all triggering events", () => {
-    expect(
-      reduceEventsToPropagatedSessions([evt({ a: "1" }), evt({ b: "2" })]),
-    ).toEqual({
-      a: "1",
-      b: "2",
-    });
-  });
-
-  test("exact (key,id) duplicate across the batch dedupes", () => {
-    expect(
-      reduceEventsToPropagatedSessions([evt({ a: "1" }), evt({ a: "1" })]),
-    ).toEqual({
-      a: "1",
-    });
-  });
-
   test("a key with conflicting ids across the batch is dropped entirely", () => {
     expect(
       reduceEventsToPropagatedSessions([evt({ a: "1" }), evt({ a: "2" })]),
     ).toEqual({});
   });
 
-  test("only the conflicting key is dropped; the rest survive", () => {
+  test("batch keeps only the (key,id) pairs every event shares", () => {
     expect(
       reduceEventsToPropagatedSessions([
         evt({ a: "1", b: "9" }),
-        evt({ a: "2" }),
+        evt({ a: "1", c: "9" }),
       ]),
-    ).toEqual({ b: "9" });
+    ).toEqual({ a: "1" });
   });
 
-  test("a duplicate id does not mask a genuine conflict", () => {
-    // ids seen for `a` are {1, 2} even though (a,1) appears twice.
+  test("a key held by most of the batch still needs every event", () => {
     expect(
       reduceEventsToPropagatedSessions([
         evt({ a: "1" }),
         evt({ a: "1" }),
-        evt({ a: "2" }),
+        evt({ b: "2" }),
       ]),
     ).toEqual({});
   });
 
+  test("an event with no sessions empties the intersection, either side", () => {
+    // Leading empty seeds an empty intersection; trailing empty narrows a
+    // non-empty one to nothing. Both paths must agree.
+    expect(
+      reduceEventsToPropagatedSessions([evt({ a: "1" }), evt(undefined)]),
+    ).toEqual({});
+    expect(
+      reduceEventsToPropagatedSessions([evt(undefined), evt({ a: "1" })]),
+    ).toEqual({});
+  });
+
   test("numeric and string ids for a key canonicalize equal (no false conflict)", () => {
-    // Guards the String() coercion: {a:1} and {a:"1"} dedupe, not conflict.
+    // Guards the String() coercion: {a:1} and {a:"1"} match, not conflict.
     // The numeric id is a deliberate type violation, hence the cast.
     const numericEvt = {
       meta: { sessions: { a: 1 } },
@@ -91,13 +84,13 @@ describe("reduceEventsToPropagatedSessions", () => {
     });
   });
 
-  test("conflict drop happens BEFORE truncation", () => {
-    // Six keys a..f; `a` conflicts and is dropped, leaving exactly b..f (5).
-    // If truncation ran first we would keep a..e, then drop conflicting a,
-    // yielding only b..e (4) — this pins the ordering.
+  test("intersection happens BEFORE truncation", () => {
+    // Six keys a..f on both events; `a` conflicts and is dropped, leaving
+    // exactly b..f (5). If truncation ran first we would keep a..e, then drop
+    // conflicting a, yielding only b..e (4) — this pins the ordering.
     const events = [
       evt({ a: "1", b: "1", c: "1", d: "1", e: "1", f: "1" }),
-      evt({ a: "2" }),
+      evt({ a: "2", b: "1", c: "1", d: "1", e: "1", f: "1" }),
     ];
     expect(reduceEventsToPropagatedSessions(events)).toEqual({
       b: "1",

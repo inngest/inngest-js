@@ -580,7 +580,8 @@ export type BaseContext<TClient extends Inngest.Any> = {
   events: AsTuple<Simplify<EventPayload>>;
 
   /**
-   * The run's effective sessions, aggregated from its triggering event(s).
+   * The run's effective sessions: those shared by all of its triggering
+   * events.
    *
    * When session propagation is active, these are propagated onto events
    * emitted during the run via `step.sendEvent`, so child runs stay grouped
