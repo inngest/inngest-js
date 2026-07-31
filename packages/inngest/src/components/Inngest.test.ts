@@ -1544,8 +1544,7 @@ describe("session propagation (bare inngest.send)", () => {
     createClient({
       id: "test",
       eventKey: testEventKey,
-      // Internal, undocumented option kept off the public `ClientOptions` type.
-      ...({ sessionPropagation } as { sessionPropagation: boolean }),
+      sessionPropagation,
     });
 
   /**
