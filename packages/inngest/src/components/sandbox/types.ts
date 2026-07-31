@@ -45,6 +45,18 @@ export interface SandboxCreateOptions {
   name: string;
   vcpu: number;
   memoryMb: number;
+
+  /**
+   * Wait up to this duration for the sandbox to reach RUNNING.
+   *
+   * Omit this to return as soon as Create is accepted, with either STARTING or
+   * RUNNING status.
+   */
+  runningTimeout?: SandboxDuration;
+}
+
+export interface SandboxWaitUntilRunningOptions {
+  timeout: SandboxDuration;
 }
 
 export interface SandboxListOptions {
@@ -196,6 +208,7 @@ export type SandboxAction =
   | "create"
   | "list"
   | "get"
+  | "waitUntilRunning"
   | "exec"
   | "destroy"
   | "process.start"
@@ -222,6 +235,8 @@ export type SandboxErrorCode =
   | "sandbox_exec_timed_out"
   | "sandbox_name_taken"
   | "sandbox_not_found"
+  | "sandbox_start_failed"
+  | "sandbox_start_timed_out"
   | "sandbox_process_not_found"
   | "sandbox_process_output_not_retained"
   | "sandbox_process_wait_timed_out"
@@ -315,6 +330,7 @@ export interface Sandbox {
     ): Promise<SandboxProcessListResult<SandboxProcess>>;
     get(processId: string): Promise<SandboxProcess | null>;
   };
+  waitUntilRunning(options: SandboxWaitUntilRunningOptions): Promise<Sandbox>;
   destroy(): Promise<SandboxDestroyResult>;
 }
 
@@ -379,6 +395,10 @@ export interface DurableSandbox {
       processId: string,
     ): Promise<DurableSandboxProcess | null>;
   };
+  waitUntilRunning(
+    idOrOptions: StepOptionsOrId,
+    options: SandboxWaitUntilRunningOptions,
+  ): Promise<DurableSandbox>;
   destroy(idOrOptions: StepOptionsOrId): Promise<SandboxDestroyResult>;
 }
 

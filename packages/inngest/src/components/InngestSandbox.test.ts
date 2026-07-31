@@ -73,6 +73,12 @@ const resultForOperation = (
       };
     case "get":
       return { protocolVersion: 1, action: "get", sandbox: sandboxRef };
+    case "waitUntilRunning":
+      return {
+        protocolVersion: 1,
+        action: "waitUntilRunning",
+        sandbox: sandboxRef,
+      };
     case "exec":
       return {
         protocolVersion: 1,
@@ -160,7 +166,10 @@ describe("step.sandbox", () => {
     });
     const tools = createSandboxTools(() => rawTool);
 
-    const created = await tools.create("create", createOptions);
+    const created = await tools.create("create", {
+      ...createOptions,
+      runningTimeout: "5s",
+    });
     const listed = await tools.list("list", { limit: 10 });
     const fetched = await tools.get("get", sandboxId);
     const command = await created.commands.run("exec", {
@@ -181,6 +190,9 @@ describe("step.sandbox", () => {
     await process.signal("signal", { signal: 15, includeChildren: true });
     const waited = await process.wait("wait", { timeout: "5s" });
     const output = await process.getOutput("output", { tailBytes: 123 });
+    const running = await created.waitUntilRunning("wait-running", {
+      timeout: "5s",
+    });
     const destroyed = await created.destroy("destroy");
 
     expect(created).toMatchObject(sandboxRef);
@@ -215,6 +227,7 @@ describe("step.sandbox", () => {
     expect(Object.isFrozen(waited)).toBe(true);
     expect(Object.isFrozen(waited.command)).toBe(true);
     expect(output.chunks[0]?.data).toEqual(new Uint8Array([0, 255]));
+    expect(running).toMatchObject({ id: sandboxId, status: "RUNNING" });
     expect(destroyed).toMatchObject({ status: "TERMINATING" });
 
     expect(operations.map(({ action }) => action)).toEqual([
@@ -228,6 +241,7 @@ describe("step.sandbox", () => {
       "process.signal",
       "process.wait",
       "process.output",
+      "waitUntilRunning",
       "destroy",
     ]);
     expect(operations[3]).toMatchObject({
@@ -240,6 +254,10 @@ describe("step.sandbox", () => {
           timeoutMs: 1000,
         },
       ],
+    });
+    expect(operations[0]).toMatchObject({
+      action: "create",
+      input: [{ ...createOptions, runningTimeoutMs: 5000 }],
     });
     expect(operations[4]).toMatchObject({
       action: "process.start",
@@ -256,6 +274,11 @@ describe("step.sandbox", () => {
         process: { sandboxId, id: processId },
       },
       input: [{ signal: 15, includeChildren: true }],
+    });
+    expect(operations[10]).toMatchObject({
+      action: "waitUntilRunning",
+      target: { sandbox: { id: sandboxId } },
+      input: [{ timeoutMs: 5000 }],
     });
   });
 
@@ -367,6 +390,123 @@ describe("step.sandbox", () => {
     ).resolves.toMatchObject({
       type: "function-resolved",
       data: processId,
+    });
+  });
+
+  test("suspends waitUntilRunning and rehydrates its RUNNING result on replay", async () => {
+    const startingSandboxRef = {
+      ...sandboxRef,
+      status: "STARTING",
+      startedAt: undefined,
+    } satisfies SandboxRef;
+    const client = new Inngest({
+      id: testClientId,
+      isDev: true,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      {
+        id: "sandbox-wait-until-running",
+        triggers: [{ event: "sandbox/wait-until-running" }],
+      },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        return (
+          await sandbox.waitUntilRunning("wait-running", { timeout: "5s" })
+        ).status;
+      },
+    );
+
+    const getInvocation = await runFnWithStack(
+      fn,
+      {},
+      {
+        disableImmediateExecution: true,
+      },
+    );
+    expect(getInvocation).toMatchObject({
+      type: "steps-found",
+      steps: [
+        {
+          opts: {
+            input: [{ protocolVersion: 1, action: "get" }],
+          },
+        },
+      ],
+    });
+    if (getInvocation.type !== "steps-found" || !getInvocation.steps[0]) {
+      throw new Error("Expected Get step");
+    }
+
+    const getStep = getInvocation.steps[0];
+    const waitInvocation = await runFnWithStack(
+      fn,
+      {
+        [getStep.id]: {
+          id: getStep.id,
+          data: {
+            protocolVersion: 1,
+            action: "get",
+            sandbox: startingSandboxRef,
+          },
+        },
+      },
+      {
+        stackOrder: [getStep.id],
+        disableImmediateExecution: true,
+      },
+    );
+    expect(waitInvocation).toMatchObject({
+      type: "steps-found",
+      steps: [
+        {
+          opts: {
+            input: [
+              {
+                protocolVersion: 1,
+                action: "waitUntilRunning",
+                target: { sandbox: { id: sandboxId, status: "STARTING" } },
+                input: [{ timeoutMs: 5000 }],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    if (waitInvocation.type !== "steps-found" || !waitInvocation.steps[0]) {
+      throw new Error("Expected waitUntilRunning step");
+    }
+
+    const waitStep = waitInvocation.steps[0];
+    await expect(
+      runFnWithStack(
+        fn,
+        {
+          [getStep.id]: {
+            id: getStep.id,
+            data: {
+              protocolVersion: 1,
+              action: "get",
+              sandbox: startingSandboxRef,
+            },
+          },
+          [waitStep.id]: {
+            id: waitStep.id,
+            data: {
+              protocolVersion: 1,
+              action: "waitUntilRunning",
+              sandbox: sandboxRef,
+            },
+          },
+        },
+        { stackOrder: [getStep.id, waitStep.id] },
+      ),
+    ).resolves.toMatchObject({
+      type: "function-resolved",
+      data: "RUNNING",
     });
   });
 
@@ -810,6 +950,209 @@ describe("inngest.sandboxes", () => {
     expect(sandbox.id).toBe(sandboxId);
     expect(sandbox.status).toBe(status);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("makes readiness waiting opt-in on Create", async () => {
+    const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+    const startingResource = {
+      ...runningResource,
+      status: "STARTING",
+      startedAt: undefined,
+    };
+    const calls: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      calls.push({ url, init });
+      if (init?.method === "POST") {
+        return Response.json({ data: startingResource }, { status: 202 });
+      }
+      return Response.json({ data: runningResource });
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const immediate = await client.create(createOptions);
+    expect(immediate.status).toBe("STARTING");
+    expect(calls).toHaveLength(1);
+
+    const running = await client.create({
+      ...createOptions,
+      runningTimeout: "5s",
+    });
+    expect(running.status).toBe("RUNNING");
+    expect(calls).toHaveLength(3);
+    expect(calls.map(({ init }) => init?.method)).toEqual([
+      "POST",
+      "POST",
+      "GET",
+    ]);
+    for (const call of calls.filter(({ init }) => init?.method === "POST")) {
+      expect(JSON.parse(String(call.init?.body))).toEqual(createOptions);
+    }
+  });
+
+  test("waitUntilRunning reloads a STARTING sandbox", async () => {
+    const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+    const startingResource = {
+      ...runningResource,
+      status: "STARTING",
+      startedAt: undefined,
+    };
+    let requestCount = 0;
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => async () => {
+        requestCount++;
+        return requestCount === 1
+          ? Response.json({ data: startingResource }, { status: 202 })
+          : Response.json({ data: runningResource });
+      },
+    });
+
+    const starting = await client.create(createOptions);
+    const running = await starting.waitUntilRunning({ timeout: "5s" });
+
+    expect(starting.status).toBe("STARTING");
+    expect(running.status).toBe("RUNNING");
+    expect(requestCount).toBe(2);
+  });
+
+  test("reports terminal startup failure without retrying", async () => {
+    const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+    const startingResource = {
+      ...runningResource,
+      status: "STARTING",
+      startedAt: undefined,
+    };
+    let requestCount = 0;
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => async () => {
+        requestCount++;
+        return requestCount === 1
+          ? Response.json({ data: startingResource }, { status: 202 })
+          : Response.json({
+              data: {
+                ...startingResource,
+                status: "FAILED",
+                endedAt: now,
+                error: "guest failed to start",
+              },
+            });
+      },
+    });
+
+    await expect(
+      client.create({ ...createOptions, runningTimeout: "5s" }),
+    ).rejects.toMatchObject({
+      name: "SandboxError",
+      action: "create",
+      code: "sandbox_start_failed",
+      sandboxId,
+      retryable: false,
+      details: [
+        {
+          status: "FAILED",
+          error: "guest failed to start",
+        },
+      ],
+    });
+    expect(requestCount).toBe(2);
+  });
+
+  test("reports readiness timeout without retrying Create", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+      const startingResource = {
+        ...runningResource,
+        status: "STARTING",
+        startedAt: undefined,
+      };
+      const fetchMock: typeof fetch = vi.fn(async (_input, init) =>
+        Response.json(
+          { data: startingResource },
+          { status: init?.method === "POST" ? 202 : 200 },
+        ),
+      );
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+
+      const result = client.create({
+        ...createOptions,
+        runningTimeout: "1s",
+      });
+      const assertion = expect(result).rejects.toMatchObject({
+        name: "SandboxError",
+        action: "create",
+        code: "sandbox_start_timed_out",
+        sandboxId,
+        retryable: false,
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await assertion;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("retries transient readiness reads without redispatching Create", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+      const startingResource = {
+        ...runningResource,
+        status: "STARTING",
+        startedAt: undefined,
+      };
+      const methods: string[] = [];
+      let requestCount = 0;
+      const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+        requestCount++;
+        methods.push(init?.method ?? "GET");
+        if (requestCount === 1) {
+          return Response.json({ data: startingResource }, { status: 202 });
+        }
+        if (requestCount === 2) {
+          throw new TypeError("connection reset");
+        }
+        return Response.json({ data: runningResource });
+      });
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+
+      const result = client.create({
+        ...createOptions,
+        runningTimeout: "5s",
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(result).resolves.toMatchObject({
+        id: sandboxId,
+        status: "RUNNING",
+      });
+      expect(methods).toEqual(["POST", "GET", "GET"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("forwards the complete direct REST lifecycle", async () => {

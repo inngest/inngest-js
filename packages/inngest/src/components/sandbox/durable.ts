@@ -43,6 +43,7 @@ import {
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
   normalizeSandboxProcessWaitOptions,
+  normalizeSandboxWaitUntilRunningOptions,
   parseWithSchema,
   sandboxProcessRefSchema,
   sandboxRefSchema,
@@ -160,7 +161,13 @@ export const executeSandboxOperation = async (
 
   switch (operation.action) {
     case "create": {
-      const sandbox = await client.create(operation.input[0]);
+      const { runningTimeoutMs, ...options } = operation.input[0];
+      const sandbox = await client.create({
+        ...options,
+        ...(runningTimeoutMs !== undefined && {
+          runningTimeout: runningTimeoutMs,
+        }),
+      });
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
@@ -183,6 +190,19 @@ export const executeSandboxOperation = async (
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
         sandbox: sandbox ? sandboxRefForWire(sandbox) : null,
+      };
+    }
+    case "waitUntilRunning": {
+      const sandbox = await sandboxForOperation(
+        client,
+        operation.target.sandbox,
+      ).waitUntilRunning({
+        timeout: operation.input[0].timeoutMs,
+      });
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        sandbox: sandboxRefForWire(sandbox),
       };
     }
     case "exec": {
@@ -505,6 +525,16 @@ export const createDurableSandboxFacade = (
           : null;
       },
     }),
+    waitUntilRunning: async (idOrOptions, options) => {
+      const operation = parseSandboxOperationForAction("waitUntilRunning", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "waitUntilRunning",
+        target: sandboxTarget(ref),
+        input: [normalizeSandboxWaitUntilRunningOptions(options)],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    },
     destroy: async (idOrOptions): Promise<SandboxDestroyResult> => {
       const operation = parseSandboxOperationForAction("destroy", {
         protocolVersion: sandboxProtocolVersion,

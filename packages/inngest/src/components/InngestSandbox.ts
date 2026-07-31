@@ -62,6 +62,7 @@ export type {
   SandboxResource,
   SandboxResources,
   SandboxStatus,
+  SandboxWaitUntilRunningOptions,
 } from "./sandbox/types.ts";
 export {
   SandboxError,
