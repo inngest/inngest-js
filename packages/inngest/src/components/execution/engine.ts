@@ -2407,7 +2407,7 @@ class InngestExecutionEngine
         opId.opts?.payload
       ) {
         opId.opts.payload = stampPropagatedSessionsOnInvoke(
-          opId.opts.payload as MinimalEventPayload,
+          opId.opts.payload,
           this.fnArg.sessions,
         );
       }
