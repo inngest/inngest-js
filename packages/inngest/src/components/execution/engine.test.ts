@@ -1028,7 +1028,7 @@ describe("defer session propagation", () => {
   // defer's session layers: the manual `meta.sessions` layer is normalized, and
   // the run's `ctx.sessions` (aggregated from triggering events) is stamped as
   // the separate `meta.propagated_sessions` layer, gated by the client toggle.
-  const runDefer = async (
+  const startDefer = async (
     enabled: boolean,
     manualMeta?: Record<string, unknown>,
   ) => {
@@ -1060,10 +1060,12 @@ describe("defer session propagation", () => {
     );
 
     // Two triggering events carrying sessions — exercises the run-level
-    // aggregation that produces `ctx.sessions`.
+    // intersection that produces `ctx.sessions`, so both must agree on every
+    // key for it to survive.
+    const sessions = { conv_id: "p1", org_id: "42" };
     const events = [
-      { name: "test/event", data: {}, meta: { sessions: { conv_id: "p1" } } },
-      { name: "test/event", data: {}, meta: { sessions: { org_id: "42" } } },
+      { name: "test/event", data: {}, meta: { sessions } },
+      { name: "test/event", data: {}, meta: { sessions } },
     ];
 
     const execution = fn["createExecution"]({
@@ -1086,6 +1088,16 @@ describe("defer session propagation", () => {
     const steps =
       (result as { steps?: { op?: string; opts?: unknown }[] }).steps ?? [];
     const deferOp = steps.find((s) => s.op === StepOpCode.DeferAdd);
+    return { result, deferOp };
+  };
+
+  // Most cases expect the defer to be buffered; assert that once here and hand
+  // back just the `meta` blob under test.
+  const runDefer = async (
+    enabled: boolean,
+    manualMeta?: Record<string, unknown>,
+  ) => {
+    const { deferOp } = await startDefer(enabled, manualMeta);
     expect(deferOp).toBeDefined();
     return (deferOp?.opts as { meta?: Record<string, unknown> })?.meta;
   };
@@ -1132,5 +1144,18 @@ describe("defer session propagation", () => {
     expect(meta).toBeDefined();
     expect(meta?.sessions).toBeNull();
     expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("skips the defer on invalid meta without derailing the run", async () => {
+    // `defer()` is fire-and-forget: normalization failures are logged and the
+    // call silently skipped, so no `DeferAdd` is buffered but the parent
+    // handler still runs to completion.
+    const { result, deferOp } = await startDefer(true, {
+      sessions: { conv_id: {} },
+    });
+    expect(deferOp).toBeUndefined();
+    expect(result).toMatchObject({
+      steps: [expect.objectContaining({ op: "RunComplete", data: "done" })],
+    });
   });
 });
