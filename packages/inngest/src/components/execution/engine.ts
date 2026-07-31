@@ -2774,7 +2774,7 @@ class InngestExecutionEngine
         try {
           deferMeta = normalizeEventMeta(meta);
         } catch (err) {
-          log.error({ runId, err }, "defer skipped: invalid meta.sessions");
+          log.error({ runId, err }, "defer skipped: invalid meta");
           return noopHandle;
         }
         if (this.options.client[sessionPropagationSymbol]) {
