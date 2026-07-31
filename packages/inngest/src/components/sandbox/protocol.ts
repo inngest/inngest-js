@@ -10,6 +10,7 @@ import {
 } from "./types.ts";
 import {
   canonicalUuidSchema,
+  normalizeSandboxCreateOptions,
   normalizeSandboxProcessStartOptions,
   parseWithSchema,
   sandboxProcessRefSchema,
@@ -38,9 +39,27 @@ const createInputSchema = z
     name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
     vcpu: z.number().int().positive().max(0xffffffff),
     memoryMb: z.number().int().positive().max(0xffffffff),
+    environment: z.record(z.string()).optional(),
     runningTimeoutMs: z.number().int().positive().max(300_000).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    try {
+      const { runningTimeoutMs, ...options } = value;
+      normalizeSandboxCreateOptions({
+        ...options,
+        ...(runningTimeoutMs !== undefined && {
+          runningTimeout: runningTimeoutMs,
+        }),
+      });
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          error instanceof Error ? error.message : "invalid create options",
+      });
+    }
+  });
 const listInputSchema = z
   .object({
     cursor: z.string().min(1).optional(),

@@ -12,6 +12,7 @@ import { Inngest } from "./Inngest.ts";
 import {
   createSandboxClient,
   createSandboxTools,
+  parseSandboxOperation,
   SandboxError,
   type SandboxOperationResultV1,
   type SandboxOperationV1,
@@ -55,6 +56,10 @@ const createOptions = {
   name: sandboxRef.name,
   vcpu: 2,
   memoryMb: 2048,
+  environment: {
+    "1.WITH-DOT": "allowed",
+    SHARED: "sandbox",
+  },
 };
 
 const resultForOperation = (
@@ -294,6 +299,20 @@ describe("step.sandbox", () => {
       throw new Error("Expected sandbox");
     }
     rawTool.mockClear();
+
+    await expect(
+      createSandboxTools(() => rawTool).create("create", {
+        ...createOptions,
+        environment: { "": "invalid" },
+      }),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
+    expect(() =>
+      parseSandboxOperation({
+        protocolVersion: 1,
+        action: "create",
+        input: [{ ...createOptions, environment: { "": "invalid" } }],
+      }),
+    ).toThrow(SandboxValidationError);
 
     await expect(
       sandbox.commands.run("exec", {
@@ -897,6 +916,31 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  test("validates Create environment before transport", async () => {
+    const fetchMock: typeof fetch = vi.fn();
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+    const tooMany = Object.fromEntries(
+      Array.from({ length: 257 }, (_, index) => [`KEY_${index}`, "value"]),
+    );
+
+    for (const environment of [
+      { "": "invalid" },
+      { KEY: "value\0" },
+      tooMany,
+      { KEY: "x".repeat(64 * 1_024) },
+    ]) {
+      await expect(
+        client.create({ ...createOptions, environment }),
+      ).rejects.toBeInstanceOf(SandboxValidationError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("marks Create transport failures as retryable", async () => {
     const client = createSandboxClient({
       baseUrl: () => "https://api.example.test",
