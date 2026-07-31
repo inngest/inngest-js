@@ -403,6 +403,20 @@ describe("ConnectionCore request processing", () => {
       ws1.sendGatewayClosing();
       await flushMicrotasks();
 
+      const ws1ExtensionsBefore = ws1.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+
+      // A lease tick while the replacement is handshaking must not use the
+      // draining connection. Its ACK could be lost when that socket closes.
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const ws1ExtensionsAfter = ws1.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+      expect(ws1ExtensionsAfter).toBe(ws1ExtensionsBefore);
+
       // Drive the new connection handshake
       const ws2 = MockWebSocket.instances[1]!;
       expect(ws2).toBeDefined();
@@ -418,6 +432,9 @@ describe("ConnectionCore request processing", () => {
         GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
       );
       expect(ws2Extensions.length).toBeGreaterThanOrEqual(1);
+      expect(
+        WorkerRequestExtendLeaseData.decode(ws2Extensions[0]!.payload).leaseId,
+      ).toBe("lease-1");
 
       // Clean up
       resolveExecution!(new Uint8Array(0));
@@ -478,6 +495,97 @@ describe("ConnectionCore request processing", () => {
       expect(extensionsAfter).toBeGreaterThan(extensionsBefore);
 
       // Clean up
+      resolveExecution!(new Uint8Array(0));
+      await flushMicrotasks();
+    });
+
+    test("does not fall back to an older connection when its replacement drains", async () => {
+      let resolveExecution: ((value: Uint8Array) => void) | undefined;
+      const executionPromise = new Promise<Uint8Array>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      const fetchMock = vi.fn();
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-1" }),
+      );
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-2" }),
+      );
+      fetchMock.mockResolvedValueOnce(
+        createMockStartResponse({ connectionId: "conn-3" }),
+      );
+      global.fetch = fetchMock;
+
+      const helpers = createTestCore({
+        callbacks: {
+          handleExecutionRequest: vi.fn(() => executionPromise),
+        },
+      });
+
+      const startPromise = helpers.core.start();
+      await flushMicrotasks();
+      const ws1 = MockWebSocket.instances[0]!;
+      await driveHandshake(ws1);
+      await startPromise;
+
+      ws1.sendExecutorRequest({
+        requestId: "req-1",
+        appName: "test-app",
+      });
+      await flushMicrotasks();
+
+      // Reconnect once without a gateway drain. The request's lease timer
+      // still retains ws1 as its ordinary reconnect fallback.
+      ws1.simulateError();
+      await flushMicrotasks();
+      const ws2 = MockWebSocket.instances[1]!;
+      expect(ws2).toBeDefined();
+      await driveHandshake(ws2);
+      await flushMicrotasks();
+
+      // When the replacement later drains, no older connection is safe to
+      // use while the next replacement is handshaking.
+      ws2.sendGatewayClosing();
+      await flushMicrotasks();
+
+      const ws1ExtensionsBefore = ws1.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+      const ws2ExtensionsBefore = ws2.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      ).length;
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      expect(
+        ws1.getSentMessagesOfType(
+          GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+        ).length,
+      ).toBe(ws1ExtensionsBefore);
+      expect(
+        ws2.getSentMessagesOfType(
+          GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+        ).length,
+      ).toBe(ws2ExtensionsBefore);
+
+      const ws3 = MockWebSocket.instances[2]!;
+      expect(ws3).toBeDefined();
+      await driveHandshake(ws3);
+      await flushMicrotasks();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+
+      const ws3Extensions = ws3.getSentMessagesOfType(
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+      );
+      expect(ws3Extensions.length).toBeGreaterThanOrEqual(1);
+      expect(
+        WorkerRequestExtendLeaseData.decode(ws3Extensions[0]!.payload).leaseId,
+      ).toBe("lease-1");
+
       resolveExecution!(new Uint8Array(0));
       await flushMicrotasks();
     });
