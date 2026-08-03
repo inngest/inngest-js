@@ -348,17 +348,17 @@ class SandboxRestTransport {
         requestInit,
       );
     } catch (error) {
-      const mutation = !safeReadActions.has(action);
+      const safeToRepeat = action === "create" || safeReadActions.has(action);
       throw new SandboxError({
         action,
-        code: mutation ? "operation_ambiguous" : "compute_unavailable",
-        message: mutation
-          ? "Sandbox operation result is ambiguous"
-          : "Compute is temporarily unavailable",
+        code: safeToRepeat ? "compute_unavailable" : "operation_ambiguous",
+        message: safeToRepeat
+          ? "Compute is temporarily unavailable"
+          : "Sandbox operation result is ambiguous",
         sandboxId: options.sandboxId,
         processId: options.processId,
-        ambiguous: mutation,
-        retryable: !mutation,
+        ambiguous: !safeToRepeat,
+        retryable: safeToRepeat,
         details: [],
         cause: error,
       });
@@ -784,7 +784,7 @@ export const createSandboxClient = (
         "create",
         "POST",
         "/v2/sandboxes",
-        { body, statuses: [201, 202] },
+        { body, statuses: [200, 201, 202] },
       );
       const sandbox = sandboxRefFromResource(envelope?.data);
       if (

@@ -557,18 +557,18 @@ describe("step.sandbox", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  test("reconstructs a non-retriable SandboxError from a failed run step", async () => {
+  test("retries a structured Create availability failure", async () => {
     const fetchMock: typeof fetch = vi.fn(async () =>
       Response.json(
         {
           errors: [
             {
-              code: "operation_ambiguous",
-              message: "The sandbox may have been created",
+              code: "compute_unavailable",
+              message: "Compute is temporarily unavailable",
             },
           ],
         },
-        { status: 409 },
+        { status: 503 },
       ),
     );
     const client = new Inngest({
@@ -604,78 +604,6 @@ describe("step.sandbox", () => {
     const first = await runFnWithStack(fn, {});
     expect(first).toMatchObject({
       type: "step-ran",
-      retriable: false,
-      step: {
-        op: StepOpCode.StepFailed,
-      },
-    });
-    if (first.type !== "step-ran") {
-      throw new Error(`Expected step-ran, got ${first.type}`);
-    }
-
-    const replay = await runFnWithStack(
-      fn,
-      {
-        [first.step.id]: {
-          id: first.step.id,
-          data: undefined,
-          error: first.step.error,
-        },
-      },
-      { stackOrder: [first.step.id] },
-    );
-    expect(replay).toMatchObject({
-      type: "function-resolved",
-      data: {
-        name: "SandboxError",
-        action: "create",
-        code: "operation_ambiguous",
-        ambiguous: true,
-        retryable: false,
-      },
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  test("keeps availability failures retryable and reconstructs them after exhaustion", async () => {
-    const fetchMock: typeof fetch = vi.fn(async () => {
-      throw new TypeError("connection refused");
-    });
-    const client = new Inngest({
-      id: testClientId,
-      signingKey: "signkey-test",
-      baseUrl: "https://api.example.test",
-      fetch: fetchMock,
-      middleware: [sandboxMiddleware()],
-    });
-    const fn = client.createFunction(
-      {
-        id: "sandbox-retryable-error",
-        triggers: [{ event: "sandbox/retryable-error" }],
-      },
-      async ({ step }) => {
-        try {
-          await step.sandbox.list("list");
-          return null;
-        } catch (error) {
-          return error instanceof SandboxError
-            ? {
-                name: error.name,
-                action: error.action,
-                code: error.code,
-                ambiguous: error.ambiguous,
-                retryable: error.retryable,
-              }
-            : {
-                name: error instanceof Error ? error.name : typeof error,
-              };
-        }
-      },
-    );
-
-    const first = await runFnWithStack(fn, {});
-    expect(first).toMatchObject({
-      type: "step-ran",
       retriable: true,
       step: {
         op: StepOpCode.StepError,
@@ -700,7 +628,7 @@ describe("step.sandbox", () => {
       type: "function-resolved",
       data: {
         name: "SandboxError",
-        action: "list",
+        action: "create",
         code: "compute_unavailable",
         ambiguous: false,
         retryable: true,
@@ -708,6 +636,85 @@ describe("step.sandbox", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  test.each(["list", "create"] as const)(
+    "keeps %s transport failures retryable and reconstructs them after exhaustion",
+    async (action) => {
+      const fetchMock: typeof fetch = vi.fn(async () => {
+        throw new TypeError("connection refused");
+      });
+      const client = new Inngest({
+        id: testClientId,
+        signingKey: "signkey-test",
+        baseUrl: "https://api.example.test",
+        fetch: fetchMock,
+        middleware: [sandboxMiddleware()],
+      });
+      const fn = client.createFunction(
+        {
+          id: `sandbox-retryable-${action}-error`,
+          triggers: [{ event: `sandbox/retryable-${action}-error` }],
+        },
+        async ({ step }) => {
+          try {
+            if (action === "create") {
+              await step.sandbox.create("create", createOptions);
+            } else {
+              await step.sandbox.list("list");
+            }
+            return null;
+          } catch (error) {
+            return error instanceof SandboxError
+              ? {
+                  name: error.name,
+                  action: error.action,
+                  code: error.code,
+                  ambiguous: error.ambiguous,
+                  retryable: error.retryable,
+                }
+              : {
+                  name: error instanceof Error ? error.name : typeof error,
+                };
+          }
+        },
+      );
+
+      const first = await runFnWithStack(fn, {});
+      expect(first).toMatchObject({
+        type: "step-ran",
+        retriable: true,
+        step: {
+          op: StepOpCode.StepError,
+        },
+      });
+      if (first.type !== "step-ran") {
+        throw new Error(`Expected step-ran, got ${first.type}`);
+      }
+
+      const replay = await runFnWithStack(
+        fn,
+        {
+          [first.step.id]: {
+            id: first.step.id,
+            data: undefined,
+            error: first.step.error,
+          },
+        },
+        { stackOrder: [first.step.id] },
+      );
+      expect(replay).toMatchObject({
+        type: "function-resolved",
+        data: {
+          name: "SandboxError",
+          action,
+          code: "compute_unavailable",
+          ambiguous: false,
+          retryable: true,
+        },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   test("maps a structured executor failure without making all errors non-retriable", async () => {
     const rawTool: SandboxRawTool = async (_id, operation) => {
@@ -750,6 +757,61 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  test("marks Create transport failures as retryable", async () => {
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => async () => {
+        throw new TypeError("connection refused");
+      },
+    });
+
+    await expect(client.create(createOptions)).rejects.toMatchObject({
+      name: "SandboxError",
+      action: "create",
+      code: "compute_unavailable",
+      ambiguous: false,
+      retryable: true,
+    });
+  });
+
+  test.each([
+    "PENDING",
+    "STARTING",
+    "RUNNING",
+    "PAUSED",
+    "TERMINATING",
+    "TERMINATED",
+    "FAILED",
+  ] as const)("accepts an existing %s sandbox from Create", async (status) => {
+    const { kind: _kind, version: _version, ...resource } = sandboxRef;
+    const fetchMock: typeof fetch = vi.fn(async () =>
+      Response.json(
+        {
+          data: {
+            ...resource,
+            status,
+            ...(status !== "RUNNING" && { startedAt: undefined }),
+          },
+        },
+        { status: 200 },
+      ),
+    );
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({ "X-Inngest-Env": "branch" }),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.create(createOptions);
+
+    expect(sandbox.id).toBe(sandboxId);
+    expect(sandbox.status).toBe(status);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("forwards the complete direct REST lifecycle", async () => {
     const {
       kind: _sandboxKind,
