@@ -51,6 +51,7 @@ export type {
   SandboxResource,
   SandboxResources,
   SandboxStatus,
+  SandboxWaitUntilRunningOptions,
 } from "./components/InngestSandbox.ts";
 export {
   SandboxError,

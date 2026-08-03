@@ -11,6 +11,8 @@ import {
   type SandboxFileUploadResult,
   type SandboxOutputChunk,
   type SandboxProcess,
+  type SandboxRef,
+  type SandboxStatus,
   SandboxValidationError,
 } from "./types.ts";
 import {
@@ -27,6 +29,7 @@ import {
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
   normalizeSandboxProcessWaitOptions,
+  normalizeSandboxWaitUntilRunningOptions,
   parseWithSchema,
   restOutputChunkSchema,
   sandboxProcessRefFromResource,
@@ -125,6 +128,7 @@ const waitProcessSchema = z
 const safeReadActions = new Set<SandboxAction>([
   "list",
   "get",
+  "waitUntilRunning",
   "process.list",
   "process.get",
   "process.wait",
@@ -426,6 +430,44 @@ class SandboxRestTransport {
 const processPath = (sandboxId: string, processId: string): string =>
   `/v2/sandboxes/${encodeURIComponent(sandboxId)}/processes/${encodeURIComponent(processId)}`;
 
+const sandboxStartingStatuses = new Set<SandboxStatus>(["PENDING", "STARTING"]);
+const sandboxRunningPollIntervalMs = 1_000;
+
+const delay = async (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const sandboxStartFailedError = (
+  action: "create" | "waitUntilRunning",
+  sandbox: SandboxRef,
+): SandboxError =>
+  new SandboxError({
+    action,
+    code: "sandbox_start_failed",
+    message: `Sandbox entered ${sandbox.status} before reaching RUNNING`,
+    sandboxId: sandbox.id,
+    retryable: false,
+    details: [
+      {
+        status: sandbox.status,
+        ...(sandbox.error !== undefined && { error: sandbox.error }),
+      },
+    ],
+  });
+
+const sandboxStartTimedOutError = (
+  action: "create" | "waitUntilRunning",
+  sandbox: SandboxRef,
+  timeoutMs: number,
+): SandboxError =>
+  new SandboxError({
+    action,
+    code: "sandbox_start_timed_out",
+    message: `Sandbox did not reach RUNNING within ${timeoutMs} milliseconds`,
+    sandboxId: sandbox.id,
+    retryable: false,
+    details: [{ status: sandbox.status, timeoutMs }],
+  });
+
 const createDirectProcessFacade = (
   rawRef: unknown,
   transport: SandboxRestTransport,
@@ -719,6 +761,13 @@ const createDirectSandboxFacade = (
         }
       },
     }),
+    waitUntilRunning: async (options) =>
+      waitUntilSandboxRunning(
+        ref,
+        normalizeSandboxWaitUntilRunningOptions(options).timeoutMs,
+        transport,
+        "waitUntilRunning",
+      ),
     destroy: async (): Promise<SandboxDestroyResult> => {
       const { status, envelope } = await transport.json(
         "destroy",
@@ -742,6 +791,54 @@ const createDirectSandboxFacade = (
     },
   };
   return Object.freeze(facade);
+};
+
+const waitUntilSandboxRunning = async (
+  initialSandbox: SandboxRef,
+  timeoutMs: number,
+  transport: SandboxRestTransport,
+  action: "create" | "waitUntilRunning",
+): Promise<Sandbox> => {
+  let sandbox = initialSandbox;
+  if (sandbox.status === "RUNNING") {
+    return createDirectSandboxFacade(sandbox, transport);
+  }
+  if (!sandboxStartingStatuses.has(sandbox.status)) {
+    throw sandboxStartFailedError(action, sandbox);
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  const path = `/v2/sandboxes/${encodeURIComponent(sandbox.id)}`;
+  for (;;) {
+    if (deadline - Date.now() <= 0) {
+      throw sandboxStartTimedOutError(action, sandbox, timeoutMs);
+    }
+
+    try {
+      const { envelope } = await transport.json(action, "GET", path, {
+        statuses: [200],
+        sandboxId: sandbox.id,
+      });
+      sandbox = sandboxRefFromResource(envelope?.data);
+    } catch (error) {
+      if (!(error instanceof SandboxError && error.retryable)) {
+        throw error;
+      }
+    }
+
+    if (sandbox.status === "RUNNING") {
+      return createDirectSandboxFacade(sandbox, transport);
+    }
+    if (!sandboxStartingStatuses.has(sandbox.status)) {
+      throw sandboxStartFailedError(action, sandbox);
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw sandboxStartTimedOutError(action, sandbox, timeoutMs);
+    }
+    await delay(Math.min(sandboxRunningPollIntervalMs, remainingMs));
+  }
 };
 
 const sandboxClientTransports = new WeakMap<
@@ -779,7 +876,8 @@ export const createSandboxClient = (
   const transport = new SandboxRestTransport(config);
   const client: SandboxClient = {
     create: async (options) => {
-      const body = normalizeSandboxCreateOptions(options);
+      const { runningTimeoutMs, ...body } =
+        normalizeSandboxCreateOptions(options);
       const { status, envelope } = await transport.json(
         "create",
         "POST",
@@ -795,7 +893,14 @@ export const createSandboxClient = (
           `Sandbox Create returned HTTP ${status} with status ${sandbox.status}`,
         );
       }
-      return createDirectSandboxFacade(sandbox, transport);
+      return runningTimeoutMs === undefined
+        ? createDirectSandboxFacade(sandbox, transport)
+        : waitUntilSandboxRunning(
+            sandbox,
+            runningTimeoutMs,
+            transport,
+            "create",
+          );
     },
     list: async (options) => {
       const normalized = normalizeSandboxListOptions(options);

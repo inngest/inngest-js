@@ -38,6 +38,7 @@ const createInputSchema = z
     name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
     vcpu: z.number().int().positive().max(0xffffffff),
     memoryMb: z.number().int().positive().max(0xffffffff),
+    runningTimeoutMs: z.number().int().positive().max(300_000).optional(),
   })
   .strict();
 const listInputSchema = z
@@ -130,6 +131,14 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("get"),
       input: z.tuple([getInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("waitUntilRunning"),
+      target: sandboxTargetSchema,
+      input: z.tuple([waitInputSchema]),
     })
     .strict(),
   z
@@ -341,6 +350,16 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("waitUntilRunning"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "RUNNING",
+        "waitUntilRunning sandbox must be RUNNING",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("exec"),
       result: wireCommandResultSchema,
     })
@@ -405,6 +424,7 @@ const sandboxErrorPayloadSchema = z
       "create",
       "list",
       "get",
+      "waitUntilRunning",
       "exec",
       "destroy",
       "process.start",

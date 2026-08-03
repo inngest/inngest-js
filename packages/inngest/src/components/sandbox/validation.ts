@@ -17,10 +17,12 @@ import {
   type SandboxProcessWaitOptions,
   type SandboxRef,
   SandboxValidationError,
+  type SandboxWaitUntilRunningOptions,
 } from "./types.ts";
 
 export const maxSandboxProcessTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxProcessTimeoutMs = 30 * 1_000;
+export const maxSandboxRunningTimeoutMs = 5 * 60 * 1_000;
 export const maxSandboxProcessTailBytes = 512 * 1_024;
 
 const maxProcessArgvCount = 128;
@@ -273,18 +275,50 @@ export const sandboxProcessRefFromResource = (
 
 export const normalizeSandboxCreateOptions = (
   options: SandboxCreateOptions,
-): SandboxCreateOptions =>
-  parseWithSchema(
+): Omit<SandboxCreateOptions, "runningTimeout"> & {
+  runningTimeoutMs?: number;
+} => {
+  const parsed = parseWithSchema(
     z
       .object({
         name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
         vcpu: z.number().int().positive().max(0xffffffff),
         memoryMb: z.number().int().positive().max(0xffffffff),
+        runningTimeout: z.unknown().optional(),
       })
       .strict(),
     options,
     "sandbox create options",
   );
+  const { runningTimeout, ...create } = parsed;
+  return {
+    ...create,
+    ...(runningTimeout !== undefined && {
+      runningTimeoutMs: normalizeDurationMs(
+        runningTimeout as SandboxDuration,
+        maxSandboxRunningTimeoutMs,
+        "runningTimeout",
+      ),
+    }),
+  };
+};
+
+export const normalizeSandboxWaitUntilRunningOptions = (
+  options: SandboxWaitUntilRunningOptions,
+): { timeoutMs: number } => {
+  const parsed = parseWithSchema(
+    z.object({ timeout: z.unknown() }).strict(),
+    options,
+    "sandbox waitUntilRunning options",
+  );
+  return {
+    timeoutMs: normalizeDurationMs(
+      parsed.timeout as SandboxDuration,
+      maxSandboxRunningTimeoutMs,
+      "timeout",
+    ),
+  };
+};
 
 export const normalizeSandboxListOptions = (
   options: SandboxListOptions = {},
