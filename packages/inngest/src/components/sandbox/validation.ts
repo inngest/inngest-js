@@ -44,6 +44,64 @@ const goJSONBytes = (value: unknown): number => {
   return textEncoder.encode(encoded).byteLength;
 };
 
+const assertNoNul = (value: string, context: string): void => {
+  if (value.includes("\0")) {
+    throw new SandboxValidationError(`${context} must not contain NUL`);
+  }
+};
+
+const assertValidUnicode = (value: string, context: string): void => {
+  for (let index = 0; index < value.length; index++) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) {
+        throw new SandboxValidationError(
+          `${context} must not contain an unpaired surrogate`,
+        );
+      }
+      index++;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      throw new SandboxValidationError(
+        `${context} must not contain an unpaired surrogate`,
+      );
+    }
+  }
+};
+
+const validateSandboxEnvironment = (
+  environment: Record<string, string> | undefined,
+): Array<[string, string]> => {
+  const entries = Object.entries(environment ?? {});
+  if (entries.length > maxProcessEnvCount) {
+    throw new SandboxValidationError(
+      `environment must not contain more than ${maxProcessEnvCount} entries`,
+    );
+  }
+  let environmentBytes = 0;
+  for (const [key, value] of entries) {
+    if (!key || key.includes("=")) {
+      throw new SandboxValidationError(
+        "environment keys must be nonempty and must not contain '='",
+      );
+    }
+    assertNoNul(key, `environment key ${key}`);
+    assertNoNul(value, `environment.${key}`);
+    assertValidUnicode(key, `environment key ${key}`);
+    assertValidUnicode(value, `environment.${key}`);
+    environmentBytes +=
+      textEncoder.encode(key).byteLength +
+      1 +
+      textEncoder.encode(value).byteLength;
+  }
+  if (environmentBytes > maxProcessEnvBytes) {
+    throw new SandboxValidationError(
+      `environment must not exceed ${maxProcessEnvBytes} bytes`,
+    );
+  }
+  return entries;
+};
+
 export const canonicalUuidSchema = z
   .string()
   .regex(
@@ -284,12 +342,14 @@ export const normalizeSandboxCreateOptions = (
         name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
         vcpu: z.number().int().positive().max(0xffffffff),
         memoryMb: z.number().int().positive().max(0xffffffff),
+        environment: z.record(z.string()).optional(),
         runningTimeout: z.unknown().optional(),
       })
       .strict(),
     options,
     "sandbox create options",
   );
+  validateSandboxEnvironment(parsed.environment);
   const { runningTimeout, ...create } = parsed;
   return {
     ...create,
@@ -339,31 +399,6 @@ export const normalizeSandboxListOptions = (
 
 export const normalizeSandboxProcessListOptions = normalizeSandboxListOptions;
 
-const assertNoNul = (value: string, context: string): void => {
-  if (value.includes("\0")) {
-    throw new SandboxValidationError(`${context} must not contain NUL`);
-  }
-};
-
-const assertValidUnicode = (value: string, context: string): void => {
-  for (let index = 0; index < value.length; index++) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) {
-        throw new SandboxValidationError(
-          `${context} must not contain an unpaired surrogate`,
-        );
-      }
-      index++;
-    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      throw new SandboxValidationError(
-        `${context} must not contain an unpaired surrogate`,
-      );
-    }
-  }
-};
-
 const normalizeProcessSpec = <
   T extends SandboxCommandOptions | SandboxProcessStartOptions,
 >(
@@ -400,34 +435,7 @@ const normalizeProcessSpec = <
     );
   }
 
-  const environment = parsed.environment ?? {};
-  const entries = Object.entries(environment);
-  if (entries.length > maxProcessEnvCount) {
-    throw new SandboxValidationError(
-      `environment must not contain more than ${maxProcessEnvCount} entries`,
-    );
-  }
-  let environmentBytes = 0;
-  for (const [key, value] of entries) {
-    if (!key || key.includes("=")) {
-      throw new SandboxValidationError(
-        "environment keys must be nonempty and must not contain '='",
-      );
-    }
-    assertNoNul(key, `environment key ${key}`);
-    assertNoNul(value, `environment.${key}`);
-    assertValidUnicode(key, `environment key ${key}`);
-    assertValidUnicode(value, `environment.${key}`);
-    environmentBytes +=
-      textEncoder.encode(key).byteLength +
-      1 +
-      textEncoder.encode(value).byteLength;
-  }
-  if (environmentBytes > maxProcessEnvBytes) {
-    throw new SandboxValidationError(
-      `environment must not exceed ${maxProcessEnvBytes} bytes`,
-    );
-  }
+  const entries = validateSandboxEnvironment(parsed.environment);
 
   if (parsed.cwd !== undefined) {
     assertNoNul(parsed.cwd, "cwd");

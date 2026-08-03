@@ -40,11 +40,19 @@ export interface SandboxRef extends SandboxResource {
 export interface SandboxCreateOptions {
   /**
    * Stable identity for an active sandbox. Creating the same name again with
-   * the same resources returns the existing sandbox.
+   * the same configuration returns the existing sandbox.
    */
   name: string;
   vcpu: number;
   memoryMb: number;
+
+  /**
+   * Environment inherited by commands and managed processes. Values are
+   * persisted as literal sandbox configuration; this is not a secrets
+   * mechanism, so do not use this field for secrets. Guest defaults are
+   * retained, and operation-specific values override matching keys.
+   */
+  environment?: Record<string, string>;
 
   /**
    * Wait up to this duration for the sandbox to reach RUNNING.
@@ -80,8 +88,8 @@ export interface SandboxCommandOptions {
   command: readonly string[];
 
   /**
-   * Replaces the sandbox environment for this command. It is not merged.
-   * Omitted or empty uses the guest's default environment.
+   * Overrides matching sandbox environment values for this command.
+   * Omitted or empty inherits the sandbox environment unchanged.
    */
   environment?: Record<string, string>;
   cwd?: string;
@@ -151,8 +159,8 @@ export interface SandboxProcessStartOptions {
   command: readonly string[];
 
   /**
-   * Replaces the sandbox environment for this process. It is not merged.
-   * Omitted or empty uses the guest's default environment.
+   * Overrides matching sandbox environment values for this process.
+   * Omitted or empty inherits the sandbox environment unchanged.
    */
   environment?: Record<string, string>;
   cwd?: string;
