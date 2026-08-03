@@ -16,6 +16,9 @@ import {
   type SandboxProcessStartOptions,
   type SandboxProcessWaitOptions,
   type SandboxRef,
+  type SandboxSnapshotListOptions,
+  type SandboxSnapshotRef,
+  type SandboxSnapshotWaitOptions,
   SandboxValidationError,
   type SandboxWaitUntilRunningOptions,
 } from "./types.ts";
@@ -23,6 +26,7 @@ import {
 export const maxSandboxProcessTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxProcessTimeoutMs = 30 * 1_000;
 export const maxSandboxRunningTimeoutMs = 5 * 60 * 1_000;
+export const maxSandboxSnapshotWaitTimeoutMs = 5 * 60 * 1_000;
 export const maxSandboxProcessTailBytes = 512 * 1_024;
 
 const maxProcessArgvCount = 128;
@@ -200,6 +204,73 @@ export const sandboxRefSchema = sandboxResourceSchema
   })
   .strict();
 
+export const sandboxSnapshotStatusSchema = z.enum([
+  "CREATING",
+  "READY",
+  "DELETING",
+  "DELETED",
+  "FAILED",
+  "LOST",
+]);
+
+const sandboxSnapshotResourceBaseSchema = z
+  .object({
+    id: canonicalUuidSchema,
+    sourceSandboxId: canonicalUuidSchema,
+    sourceImageRef: z.string().min(1),
+    status: sandboxSnapshotStatusSchema,
+    compatibilityId: z.string().min(1).optional(),
+    consistency: z.literal("CRASH_CONSISTENT"),
+    resources: sandboxResourcesSchema,
+    memoryPackCount: z.number().int().nonnegative().max(0xffffffff),
+    diskPackCount: z.number().int().nonnegative().max(0xffffffff),
+    logicalBytes: z.number().int().nonnegative().safe(),
+    storedBytes: z.number().int().nonnegative().safe(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+    expiresAt: timestampSchema,
+    error: z.string().min(1).optional(),
+  })
+  .strict();
+
+const validateSandboxSnapshotResource = (
+  snapshot: {
+    status: z.infer<typeof sandboxSnapshotStatusSchema>;
+    compatibilityId?: string;
+  },
+  ctx: z.RefinementCtx,
+): void => {
+  if (snapshot.status === "READY" && snapshot.compatibilityId === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "compatibilityId is required for READY snapshots",
+      path: ["compatibilityId"],
+    });
+  }
+};
+
+export const sandboxSnapshotResourceSchema =
+  sandboxSnapshotResourceBaseSchema.superRefine(
+    validateSandboxSnapshotResource,
+  );
+
+const wireSandboxSnapshotResourceSchema = sandboxSnapshotResourceBaseSchema
+  .omit({ resources: true, error: true })
+  .extend({
+    resources: sandboxResourcesSchema.strip(),
+    error: z.string().min(1).nullish(),
+  })
+  .strip()
+  .superRefine(validateSandboxSnapshotResource);
+
+export const sandboxSnapshotRefSchema = sandboxSnapshotResourceBaseSchema
+  .extend({
+    kind: z.literal("inngest/sandbox.snapshot"),
+    version: z.literal(1),
+  })
+  .strict()
+  .superRefine(validateSandboxSnapshotResource);
+
 export const sandboxProcessStateSchema = z.enum([
   "STARTING",
   "RUNNING",
@@ -360,25 +431,53 @@ export const sandboxProcessRefFromResource = (
     "sandbox process reference",
   );
 
+export const sandboxSnapshotRefFromResource = (
+  value: unknown,
+): SandboxSnapshotRef => {
+  const resource = parseWithSchema(
+    wireSandboxSnapshotResourceSchema,
+    value,
+    "sandbox snapshot resource",
+  );
+  const { error, ...base } = resource;
+  return {
+    kind: "inngest/sandbox.snapshot",
+    version: 1,
+    ...base,
+    ...(error != null && { error }),
+  };
+};
+
 export const normalizeSandboxCreateOptions = (
   options: SandboxCreateOptions,
 ): Omit<SandboxCreateOptions, "runningTimeout"> & {
   runningTimeoutMs?: number;
 } => {
   const parsed = parseWithSchema(
-    z
-      .object({
-        name: sandboxNameSchema,
-        vcpu: z.number().int().positive().max(0xffffffff),
-        memoryMb: z.number().int().positive().max(0xffffffff),
-        environment: z.record(z.string()).optional(),
-        runningTimeout: z.unknown().optional(),
-      })
-      .strict(),
+    z.union([
+      z
+        .object({
+          name: sandboxNameSchema,
+          vcpu: z.number().int().positive().max(0xffffffff),
+          memoryMb: z.number().int().positive().max(0xffffffff),
+          environment: z.record(z.string()).optional(),
+          runningTimeout: z.unknown().optional(),
+        })
+        .strict(),
+      z
+        .object({
+          name: sandboxNameSchema,
+          snapshotId: canonicalUuidSchema,
+          runningTimeout: z.unknown().optional(),
+        })
+        .strict(),
+    ]),
     options,
     "sandbox create options",
   );
-  validateSandboxEnvironment(parsed.environment);
+  if ("environment" in parsed) {
+    validateSandboxEnvironment(parsed.environment);
+  }
   const { runningTimeout, ...create } = parsed;
   return {
     ...create,
@@ -427,6 +526,27 @@ export const normalizeSandboxListOptions = (
 };
 
 export const normalizeSandboxProcessListOptions = normalizeSandboxListOptions;
+
+export const normalizeSandboxSnapshotListOptions = (
+  options: SandboxSnapshotListOptions = {},
+) => normalizeSandboxListOptions(options);
+
+export const normalizeSandboxSnapshotWaitOptions = (
+  options: SandboxSnapshotWaitOptions,
+): { timeoutMs: number } => {
+  const parsed = parseWithSchema(
+    z.object({ timeout: z.unknown() }).strict(),
+    options,
+    "sandbox snapshot waitUntilReady options",
+  );
+  return {
+    timeoutMs: normalizeDurationMs(
+      parsed.timeout as SandboxDuration,
+      maxSandboxSnapshotWaitTimeoutMs,
+      "timeout",
+    ),
+  };
+};
 
 const normalizeProcessSpec = <
   T extends SandboxCommandOptions | SandboxProcessStartOptions,
