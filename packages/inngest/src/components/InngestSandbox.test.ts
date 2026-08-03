@@ -917,6 +917,249 @@ describe("inngest.sandboxes", () => {
   });
 
   test.each([
+    ["destroy", "repeating Destroy is safe"],
+    ["file.upload", "Repeating the same upload is safe"],
+  ] as const)(
+    "marks %s transport failures as retryable with recovery guidance",
+    async (action, message) => {
+      let requestCount = 0;
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "key",
+        headers: () => ({}),
+        fetch: () => async () => {
+          requestCount++;
+          if (requestCount === 1) {
+            return Response.json({ data: sandboxResource });
+          }
+          throw new TypeError("connection refused");
+        },
+      });
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
+
+      const operation =
+        action === "destroy"
+          ? sandbox.destroy()
+          : sandbox.files.upload({
+              path: "/tmp/input.bin",
+              data: new Uint8Array([1]),
+            });
+
+      await expect(operation).rejects.toMatchObject({
+        name: "SandboxError",
+        action,
+        code: "compute_unavailable",
+        message: expect.stringContaining(message),
+        ambiguous: false,
+        retryable: true,
+      });
+    },
+  );
+
+  test.each([
+    ["exec", "Inspect its external effects"],
+    ["process.start", "List processes and reconcile"],
+    ["process.signal", "Get or wait for the process"],
+  ] as const)(
+    "marks %s transport failures as ambiguous with recovery guidance",
+    async (action, message) => {
+      let requestCount = 0;
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      const {
+        kind: _processKind,
+        version: _processVersion,
+        sandboxId: _processSandboxId,
+        ...processResource
+      } = processRef;
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "key",
+        headers: () => ({}),
+        fetch: () => async () => {
+          requestCount++;
+          if (requestCount === 1) {
+            return Response.json({ data: sandboxResource });
+          }
+          if (action === "process.signal" && requestCount === 2) {
+            return Response.json({ data: processResource });
+          }
+          throw new TypeError("connection refused");
+        },
+      });
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
+
+      let operation: Promise<unknown>;
+      switch (action) {
+        case "exec":
+          operation = sandbox.commands.run({ command: ["/bin/true"] });
+          break;
+        case "process.start":
+          operation = sandbox.processes.start({ command: ["/bin/true"] });
+          break;
+        case "process.signal": {
+          const process = await sandbox.processes.get(processId);
+          if (!process) {
+            throw new Error("Expected process");
+          }
+          operation = process.signal({ signal: 15 });
+          break;
+        }
+      }
+
+      await expect(operation).rejects.toMatchObject({
+        name: "SandboxError",
+        action,
+        code: "operation_ambiguous",
+        message: expect.stringContaining(message),
+        ambiguous: true,
+        retryable: false,
+      });
+    },
+  );
+
+  test.each([
+    ["create", 201, "compute_unavailable", false, true],
+    ["destroy", 202, "compute_unavailable", false, true],
+    ["exec", 200, "operation_ambiguous", true, false],
+    ["process.start", 201, "operation_ambiguous", true, false],
+    ["file.upload", 200, "compute_unavailable", false, true],
+  ] as const)(
+    "classifies a lost successful %s response body",
+    async (action, status, code, ambiguous, retryable) => {
+      let requestCount = 0;
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "key",
+        headers: () => ({}),
+        fetch: () => async () => {
+          requestCount++;
+          if (action !== "create" && requestCount === 1) {
+            return Response.json({ data: sandboxResource });
+          }
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("response body lost"));
+              },
+            }),
+            { status, headers: { "Content-Type": "application/json" } },
+          );
+        },
+      });
+
+      let operation: Promise<unknown>;
+      if (action === "create") {
+        operation = client.create(createOptions);
+      } else {
+        const sandbox = await client.get(sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        switch (action) {
+          case "destroy":
+            operation = sandbox.destroy();
+            break;
+          case "exec":
+            operation = sandbox.commands.run({ command: ["/bin/true"] });
+            break;
+          case "process.start":
+            operation = sandbox.processes.start({ command: ["/bin/true"] });
+            break;
+          case "file.upload":
+            operation = sandbox.files.upload({
+              path: "/tmp/input.bin",
+              data: new Uint8Array([1]),
+            });
+            break;
+        }
+      }
+
+      await expect(operation).rejects.toMatchObject({
+        name: "SandboxError",
+        action,
+        code,
+        ambiguous,
+        retryable,
+      });
+    },
+  );
+
+  test("replaces a generic ambiguous API message with action-specific guidance", async () => {
+    let requestCount = 0;
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "key",
+      headers: () => ({}),
+      fetch: () => async () => {
+        requestCount++;
+        if (requestCount === 1) {
+          return Response.json({ data: sandboxResource });
+        }
+        return Response.json(
+          {
+            errors: [
+              {
+                code: "operation_ambiguous",
+                message: "Operation result is ambiguous",
+              },
+            ],
+          },
+          { status: 409 },
+        );
+      },
+    });
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+
+    await expect(
+      sandbox.processes.start({ command: ["/bin/true"] }),
+    ).rejects.toMatchObject({
+      action: "process.start",
+      code: "operation_ambiguous",
+      message: expect.stringContaining("List processes and reconcile"),
+    });
+  });
+
+  test("guides an ambiguous Create response toward reconciliation", async () => {
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "key",
+      headers: () => ({}),
+      fetch: () => async () =>
+        Response.json(
+          {
+            errors: [
+              {
+                code: "operation_ambiguous",
+                message: "Operation result is ambiguous",
+              },
+            ],
+          },
+          { status: 409 },
+        ),
+    });
+
+    await expect(client.create(createOptions)).rejects.toMatchObject({
+      action: "create",
+      code: "operation_ambiguous",
+      message: expect.stringContaining("List sandboxes and reconcile by name"),
+      ambiguous: true,
+      retryable: false,
+    });
+  });
+
+  test.each([
     "PENDING",
     "STARTING",
     "RUNNING",

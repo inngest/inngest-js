@@ -125,7 +125,10 @@ const waitProcessSchema = z
     }
   });
 
-const safeReadActions = new Set<SandboxAction>([
+const safeRepeatActions = new Set<SandboxAction>([
+  "create",
+  "destroy",
+  "file.upload",
   "list",
   "get",
   "waitUntilRunning",
@@ -137,6 +140,32 @@ const safeReadActions = new Set<SandboxAction>([
   "logs.stream",
   "file.download",
 ]);
+
+const sandboxTransportFailureMessage = (action: SandboxAction): string => {
+  switch (action) {
+    case "create":
+      return "The Sandbox Create response was not confirmed. Repeating the same Create request is safe";
+    case "destroy":
+      return "Sandbox teardown may have been accepted. Get the sandbox; repeating Destroy is safe";
+    case "file.upload":
+      return "The sandbox file may have been replaced. Repeating the same upload is safe";
+    case "exec":
+      return "The sandbox command may have run. Inspect its external effects before running it again";
+    case "process.start":
+      return "A sandbox process may be running. List processes and reconcile before starting another";
+    case "process.signal":
+      return "The sandbox process signal may have been delivered. Get or wait for the process before sending another";
+    default:
+      return "Compute is temporarily unavailable. Retry this operation";
+  }
+};
+
+const sandboxAmbiguousResponseMessage = (action: SandboxAction): string => {
+  if (action === "create") {
+    return "A sandbox was created, but its current resource could not be loaded. List sandboxes and reconcile by name before creating another";
+  }
+  return sandboxTransportFailureMessage(action);
+};
 
 class SandboxRestTransport {
   constructor(private readonly config: SandboxClientConfig) {}
@@ -176,11 +205,12 @@ class SandboxRestTransport {
     if (response.status === 204) {
       return { status: response.status };
     }
-    const raw = await response.json().catch((error: unknown) => {
-      throw new SandboxValidationError("Sandbox API returned invalid JSON", {
-        cause: error,
-      });
-    });
+    const raw = await this.readResponseJSON(
+      action,
+      response,
+      options.sandboxId,
+      options.processId,
+    );
     return {
       status: response.status,
       envelope: parseWithSchema(
@@ -212,6 +242,19 @@ class SandboxRestTransport {
       );
     }
     return response;
+  }
+
+  async readResponseEnvelope(
+    action: SandboxAction,
+    response: Response,
+    sandboxId?: string,
+    processId?: string,
+  ): Promise<z.infer<typeof responseEnvelopeSchema>> {
+    return parseWithSchema(
+      responseEnvelopeSchema,
+      await this.readResponseJSON(action, response, sandboxId, processId),
+      "sandbox API response",
+    );
   }
 
   async stream(
@@ -352,21 +395,46 @@ class SandboxRestTransport {
         requestInit,
       );
     } catch (error) {
-      const safeToRepeat = action === "create" || safeReadActions.has(action);
-      throw new SandboxError({
+      throw this.transportFailure(
         action,
-        code: safeToRepeat ? "compute_unavailable" : "operation_ambiguous",
-        message: safeToRepeat
-          ? "Compute is temporarily unavailable"
-          : "Sandbox operation result is ambiguous",
-        sandboxId: options.sandboxId,
-        processId: options.processId,
-        ambiguous: !safeToRepeat,
-        retryable: safeToRepeat,
-        details: [],
-        cause: error,
-      });
+        error,
+        options.sandboxId,
+        options.processId,
+      );
     }
+  }
+
+  private async readResponseJSON(
+    action: SandboxAction,
+    response: Response,
+    sandboxId?: string,
+    processId?: string,
+  ): Promise<unknown> {
+    try {
+      return await response.json();
+    } catch (error) {
+      throw this.transportFailure(action, error, sandboxId, processId);
+    }
+  }
+
+  private transportFailure(
+    action: SandboxAction,
+    cause: unknown,
+    sandboxId?: string,
+    processId?: string,
+  ): SandboxError {
+    const safeToRepeat = safeRepeatActions.has(action);
+    return new SandboxError({
+      action,
+      code: safeToRepeat ? "compute_unavailable" : "operation_ambiguous",
+      message: sandboxTransportFailureMessage(action),
+      sandboxId,
+      processId,
+      ambiguous: !safeToRepeat,
+      retryable: safeToRepeat,
+      details: [],
+      cause,
+    });
   }
 
   private async throwResponseError(
@@ -415,7 +483,10 @@ class SandboxRestTransport {
     return new SandboxError({
       action,
       code: item.code as SandboxErrorCode,
-      message: item.message,
+      message:
+        item.code === "operation_ambiguous"
+          ? sandboxAmbiguousResponseMessage(action)
+          : item.message,
       status,
       sandboxId,
       processId,
@@ -641,10 +712,10 @@ const createDirectSandboxFacade = (
             sandboxId: ref.id,
           },
         );
-        const envelope = parseWithSchema(
-          responseEnvelopeSchema,
-          await response.json(),
-          "sandbox file upload response",
+        const envelope = await transport.readResponseEnvelope(
+          "file.upload",
+          response,
+          ref.id,
         );
         return parseWithSchema(
           fileUploadResultSchema,
