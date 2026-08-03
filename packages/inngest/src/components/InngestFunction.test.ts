@@ -598,6 +598,42 @@ describe("runFn", () => {
             },
             expectedStepsRun: ["A"],
           },
+          // InngestTestEngine stores mocked step results as Promises. Validation
+          // must await them or event.name is undefined (#1652).
+          "request with Promise-shaped waitForEvent data runs A step": {
+            stack: {
+              [foo]: {
+                id: foo,
+                data: Promise.resolve({
+                  name: "foo",
+                  data: { foo: "foo" },
+                }),
+              },
+            },
+            expectedReturn: {
+              type: "step-ran",
+              step: expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepRun,
+                data: "A",
+                displayName: "A",
+              }),
+            },
+            expectedStepsRun: ["A"],
+          },
+          "request with Promise-shaped waitForEvent timeout (null) resolves": {
+            stack: {
+              [foo]: {
+                id: foo,
+                data: Promise.resolve(null),
+              },
+            },
+            expectedReturn: {
+              type: "function-resolved",
+              data: null,
+            },
+          },
           "request with event foo.data.foo:bar runs B step": {
             stack: {
               [foo]: { id: foo, data: { name: "foo", data: { foo: "bar" } } },
