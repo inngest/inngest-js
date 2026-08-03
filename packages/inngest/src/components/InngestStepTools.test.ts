@@ -83,6 +83,16 @@ describe("waitForEvent", () => {
     });
   });
 
+  test("round sub-second number `timeout` up to 1s", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: 500 }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: "1s",
+      },
+    });
+  });
+
   test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
@@ -720,6 +730,12 @@ describe("sleep", () => {
   test("parses number of milliseconds", async () => {
     await expect(step.sleep("id", 60000)).resolves.toMatchObject({
       name: "1m",
+    });
+  });
+
+  test("rounds sub-second number of milliseconds up to 1s", async () => {
+    await expect(step.sleep("id", 500)).resolves.toMatchObject({
+      name: "1s",
     });
   });
 
