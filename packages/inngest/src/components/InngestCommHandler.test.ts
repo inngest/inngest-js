@@ -1,11 +1,22 @@
 import httpMocks from "node-mocks-http";
-import { ExecutionVersion, envKeys, headerKeys } from "../helpers/consts.ts";
+import {
+  ExecutionVersion,
+  envKeys,
+  headerKeys,
+  syncKind,
+} from "../helpers/consts.ts";
 import { signDataWithKey } from "../helpers/net.ts";
 import { ConsoleLogger, type Logger } from "../middleware/logger.ts";
 import { serve } from "../next.ts";
+import {
+  OTelProviderSource,
+  OTelSetupFailure,
+  OTelSetupPath,
+} from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { createClient } from "../test/helpers.ts";
 import { internalLoggerSymbol } from "./Inngest.ts";
 import { InngestCommHandler, RequestSignature } from "./InngestCommHandler.ts";
+import { sdkFeatureObservations } from "./sdkFeatureObservations.ts";
 
 /**
  * Helper to run a POST request through a Next.js serve handler and capture
@@ -730,6 +741,88 @@ describe("introspection", () => {
   });
 
   const logger = new ConsoleLogger({ level: "silent" });
+
+  test("in-band registration waits for pending feature observations", async () => {
+    const client = createClient({ id: "test", isDev: true });
+    let resolvePending: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolvePending = resolve;
+    });
+    sdkFeatureObservations.addPending(client, pending);
+
+    const commHandler = new InngestCommHandler({
+      client,
+      frameworkName: "test",
+      functions: [],
+      handler: (req: Request) => {
+        return {
+          body: () => req.text(),
+          headers: (key: string) => req.headers.get(key),
+          method: () => req.method,
+          url: () => new URL(req.url),
+          transformResponse: ({
+            body,
+            headers,
+            status,
+          }: {
+            body: string;
+            headers: Record<string, string>;
+            status: number;
+          }) => {
+            return new Response(body, { status, headers });
+          },
+        };
+      },
+    });
+
+    const handler = commHandler["createHandler"]();
+    const bodyPromise = handler(
+      new Request("http://localhost:3000/api/inngest", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          [headerKeys.InngestSyncKind]: syncKind.InBand,
+        },
+        body: JSON.stringify({
+          url: "http://localhost:3000/api/inngest",
+        }),
+      }),
+    ).then(async (res) => {
+      return res.json() as Promise<{ feature_observations?: unknown[] }>;
+    });
+
+    let settled = false;
+    void bodyPromise.then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    sdkFeatureObservations.aiMetadata.replaceSetup(client, {
+      path: OTelSetupPath.OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER,
+      providerFound: true,
+      providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_USER_PROVIDED,
+      addSpanProcessorAttempted: true,
+      spanProcessorAdded: true,
+      failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
+    });
+    resolvePending!();
+
+    const body = await bodyPromise;
+    expect(body.feature_observations).toContainEqual({
+      aiMetadataExtraction: {
+        readinessReason: "AI_METADATA_EXTRACTION_READINESS_REASON_READY",
+        otelSetup: {
+          path: "OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER",
+          providerFound: true,
+          providerSource: "OTEL_PROVIDER_SOURCE_USER_PROVIDED",
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: true,
+        },
+      },
+    });
+  });
 
   test("authenticated", async () => {
     const fakeEnv = "v10";

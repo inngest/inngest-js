@@ -1570,6 +1570,13 @@ export interface RegisterRequest {
    * Capabilities of the SDK.
    */
   capabilities: Capabilities;
+
+  /**
+   * Feature readiness and configuration facts observed by the SDK.
+   *
+   * Encoded with protobuf JSON mapping.
+   */
+  feature_observations?: unknown[];
 }
 
 export interface Capabilities {
@@ -1580,7 +1587,13 @@ export interface Capabilities {
 export interface InBandRegisterRequest
   extends Pick<
       RegisterRequest,
-      "capabilities" | "framework" | "functions" | "sdk" | "url" | "appVersion"
+      | "capabilities"
+      | "framework"
+      | "functions"
+      | "sdk"
+      | "url"
+      | "appVersion"
+      | "feature_observations"
     >,
     Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
   /**

@@ -40,6 +40,7 @@ import {
   type Logger,
   ProxyLogger,
 } from "../middleware/logger.ts";
+import type { FeatureObservation } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import {
   type ApplyAllMiddlewareCtxExtensions,
   type ApplyAllMiddlewareStepExtensions,
@@ -79,6 +80,13 @@ import {
   subscribe as realtimeSubscribe,
 } from "./realtime/subscribe/index.ts";
 import type { Realtime } from "./realtime/types";
+import {
+  collectFeatureObservations,
+  type FeatureObservationState,
+  featureObservationStateSymbol,
+  featureObservationsSymbol,
+  sdkFeatureObservations,
+} from "./sdkFeatureObservations.ts";
 import {
   type HandlerWithTriggers,
   isValidatable,
@@ -185,6 +193,13 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    */
   readonly [internalLoggerSymbol]: Logger;
 
+  /**
+   * Latest feature observations collected by SDK setup paths.
+   *
+   * @internal
+   */
+  readonly [featureObservationStateSymbol]: FeatureObservationState;
+
   private localFns: InngestFunction.Any[] = [];
 
   /**
@@ -289,6 +304,23 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
+  private hasEventApiOriginOverride(): boolean {
+    return Boolean(
+      this.options.baseUrl ||
+        this._env[envKeys.InngestEventApiBaseUrl] ||
+        this._env[envKeys.InngestBaseUrl],
+    );
+  }
+
+  [featureObservationsSymbol](): FeatureObservation[] {
+    return collectFeatureObservations({
+      state: this[featureObservationStateSymbol],
+      mode: this.mode,
+      hasEventKey: this.eventKeySet(),
+      hasEventApiOriginOverride: this.hasEventApiOriginOverride(),
+    });
+  }
+
   // defer fetch resolution until first use, but cache for reference stability
   get fetch(): FetchT {
     if (!this._cachedFetch) {
@@ -387,6 +419,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
     this.id = id;
     this.aiMetadataEnabled = this.options.aiMetadata !== false;
+    this[featureObservationStateSymbol] = sdkFeatureObservations.createState({
+      aiMetadataEnabled: this.aiMetadataEnabled,
+    });
     this._env = protectEnv({ ...getProcessEnv() });
     this._userProvidedFetch = options.fetch;
 
@@ -428,7 +463,10 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     // Attach the read-only AI metadata span processor to whatever global OTel
     // provider already exists. Idempotent across clients; only attaches once.
     if (this.aiMetadataEnabled) {
-      metadataSpanProcessor.attach();
+      sdkFeatureObservations.aiMetadata.replaceSetup(
+        this,
+        metadataSpanProcessor.attach(),
+      );
     }
 
     this._appVersion = appVersion;
