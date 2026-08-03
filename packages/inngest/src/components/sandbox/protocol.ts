@@ -15,6 +15,7 @@ import {
   parseWithSchema,
   sandboxProcessRefSchema,
   sandboxRefSchema,
+  sandboxSnapshotRefSchema,
   wireOutputChunkSchema,
 } from "./validation.ts";
 
@@ -33,16 +34,32 @@ const processTargetSchema = sandboxTargetSchema
       });
     }
   });
+const snapshotIdTargetSchema = z
+  .object({ snapshotId: canonicalUuidSchema })
+  .strict();
+const snapshotTargetSchema = z
+  .object({ snapshot: sandboxSnapshotRefSchema })
+  .strict();
 
 const createInputSchema = z
-  .object({
-    name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
-    vcpu: z.number().int().positive().max(0xffffffff),
-    memoryMb: z.number().int().positive().max(0xffffffff),
-    environment: z.record(z.string()).optional(),
-    runningTimeoutMs: z.number().int().positive().max(300_000).optional(),
-  })
-  .strict()
+  .union([
+    z
+      .object({
+        name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
+        vcpu: z.number().int().positive().max(0xffffffff),
+        memoryMb: z.number().int().positive().max(0xffffffff),
+        environment: z.record(z.string()).optional(),
+        runningTimeoutMs: z.number().int().positive().max(300_000).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
+        snapshotId: canonicalUuidSchema,
+        runningTimeoutMs: z.number().int().positive().max(300_000).optional(),
+      })
+      .strict(),
+  ])
   .superRefine((value, ctx) => {
     try {
       const { runningTimeoutMs, ...options } = value;
@@ -222,6 +239,47 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       action: z.literal("process.output"),
       target: processTargetSchema,
       input: z.tuple([outputInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.create"),
+      target: sandboxTargetSchema,
+      input: z.tuple([
+        z.object({ intentKey: z.string().min(1).max(512).optional() }).strict(),
+      ]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.list"),
+      input: z.tuple([listInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.get"),
+      target: snapshotIdTargetSchema,
+      input: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.waitUntilReady"),
+      target: snapshotTargetSchema,
+      input: z.tuple([waitInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.delete"),
+      target: snapshotTargetSchema,
+      input: z.tuple([]),
     })
     .strict(),
 ]);
@@ -434,6 +492,46 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
       result: z.object({ chunks: z.array(wireOutputChunkSchema) }).strict(),
     })
     .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.create"),
+      snapshot: sandboxSnapshotRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.list"),
+      snapshots: z.array(sandboxSnapshotRefSchema),
+      page: pageSchema,
+      fetchedAt: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.get"),
+      snapshot: sandboxSnapshotRefSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.waitUntilReady"),
+      snapshot: sandboxSnapshotRefSchema.refine(
+        (snapshot) => snapshot.status === "READY",
+        "waitUntilReady snapshot must be READY",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("snapshot.delete"),
+      result: z.null(),
+    })
+    .strict(),
 ]);
 
 const sandboxErrorPayloadSchema = z
@@ -452,12 +550,18 @@ const sandboxErrorPayloadSchema = z
       "process.signal",
       "process.wait",
       "process.output",
+      "snapshot.create",
+      "snapshot.list",
+      "snapshot.get",
+      "snapshot.waitUntilReady",
+      "snapshot.delete",
     ]),
     code: z.string().min(1),
     message: z.string().min(1),
     status: z.number().int().min(100).max(599).optional(),
     sandboxId: canonicalUuidSchema.optional(),
     processId: canonicalUuidSchema.optional(),
+    snapshotId: canonicalUuidSchema.optional(),
     ambiguous: z.boolean(),
     retryable: z.boolean(),
     requestId: z.string().min(1).optional(),
@@ -558,7 +662,7 @@ const operationSandboxId = (
   if (operation.action === "get") {
     return operation.input[0].sandboxId;
   }
-  if ("target" in operation) {
+  if ("target" in operation && "sandbox" in operation.target) {
     return operation.target.sandbox.id;
   }
   return;
@@ -572,6 +676,17 @@ const operationProcessId = (
       ? operation.target.processId
       : "process" in operation.target
         ? operation.target.process.id
+        : undefined
+    : undefined;
+
+const operationSnapshotId = (
+  operation: SandboxOperationV1,
+): string | undefined =>
+  "target" in operation
+    ? "snapshotId" in operation.target
+      ? operation.target.snapshotId
+      : "snapshot" in operation.target
+        ? operation.target.snapshot.id
         : undefined
     : undefined;
 
@@ -591,6 +706,7 @@ export const validateSandboxResult = <A extends SandboxAction>(
   }
   const sandboxId = operationSandboxId(operation);
   const processId = operationProcessId(operation);
+  const snapshotId = operationSnapshotId(operation);
   if (
     sandboxId &&
     "sandbox" in result &&
@@ -599,6 +715,26 @@ export const validateSandboxResult = <A extends SandboxAction>(
   ) {
     throw new SandboxValidationError(
       "Sandbox operation returned an unrelated sandbox",
+    );
+  }
+  if (
+    snapshotId &&
+    "snapshot" in result &&
+    result.snapshot &&
+    result.snapshot.id !== snapshotId
+  ) {
+    throw new SandboxValidationError(
+      "Sandbox operation returned an unrelated snapshot",
+    );
+  }
+  if (
+    sandboxId &&
+    operation.action === "snapshot.create" &&
+    result.action === "snapshot.create" &&
+    result.snapshot.sourceSandboxId !== sandboxId
+  ) {
+    throw new SandboxValidationError(
+      "Sandbox operation returned a snapshot from an unrelated sandbox",
     );
   }
   if (

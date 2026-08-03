@@ -1,8 +1,9 @@
+import { hashEventKey } from "../../helpers/strings.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
-import type { SandboxRawTool } from "./protocol.ts";
+import { parseSandboxOperation, type SandboxRawTool } from "./protocol.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -33,6 +34,9 @@ const executeAsStep = async (
         }),
         ...(error.processId !== undefined && {
           processId: error.processId,
+        }),
+        ...(error.snapshotId !== undefined && {
+          snapshotId: error.snapshotId,
         }),
         ambiguous: error.ambiguous,
         retryable: error.retryable,
@@ -79,12 +83,30 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxStepExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation) =>
-      arg.ctx.step.run(
+    const rawTool: SandboxRawTool = (idOrOptions, operation) => {
+      const operationWithIntent =
+        operation.action === "snapshot.create"
+          ? parseSandboxOperation({
+              ...operation,
+              input: [
+                {
+                  intentKey: `inngest:${hashEventKey(
+                    `${arg.ctx.runId}\0${
+                      typeof idOrOptions === "string"
+                        ? idOrOptions
+                        : idOrOptions.id
+                    }\0${operation.action}`,
+                  )}`,
+                },
+              ],
+            })
+          : operation;
+      return arg.ctx.step.run(
         idOrOptions,
         (input) => executeAsStep(this.client, input),
-        operation,
+        operationWithIntent,
       );
+    };
 
     return {
       ...arg,
