@@ -21,6 +21,7 @@ import {
   type SandboxProcessRef,
   type SandboxRawTool,
   type SandboxRef,
+  type SandboxSnapshotRef,
   SandboxValidationError,
   sandboxMiddleware,
 } from "./InngestSandbox.ts";
@@ -28,6 +29,7 @@ import {
 const vpcId = "11111111-1111-4111-8111-111111111111";
 const sandboxId = "22222222-2222-4222-8222-222222222222";
 const processId = "33333333-3333-4333-8333-333333333333";
+const snapshotId = "44444444-4444-4444-8444-444444444444";
 const now = "2026-07-28T00:00:00Z";
 
 const sandboxRef = {
@@ -53,6 +55,25 @@ const processRef = {
   state: "RUNNING",
   startedAt: now,
 } satisfies SandboxProcessRef;
+
+const snapshotRef = {
+  kind: "inngest/sandbox.snapshot",
+  version: 1,
+  id: snapshotId,
+  sourceSandboxId: sandboxId,
+  sourceImageRef: "default",
+  status: "READY",
+  compatibilityId: "simcity-linux-amd64-v1",
+  consistency: "CRASH_CONSISTENT",
+  resources: { vcpu: 2, memoryMb: 2048 },
+  memoryPackCount: 8,
+  diskPackCount: 2,
+  logicalBytes: 1024,
+  storedBytes: 512,
+  createdAt: now,
+  updatedAt: now,
+  expiresAt: "2026-08-04T00:00:00Z",
+} satisfies SandboxSnapshotRef;
 
 const createOptions = {
   name: sandboxRef.name,
@@ -161,6 +182,38 @@ const resultForOperation = (
           ],
         },
       };
+    case "snapshot.create":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.create",
+        snapshot: snapshotRef,
+      };
+    case "snapshot.list":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.list",
+        snapshots: [snapshotRef],
+        page: { hasMore: false, limit: operation.input[0].limit },
+        fetchedAt: now,
+      };
+    case "snapshot.get":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.get",
+        snapshot: snapshotRef,
+      };
+    case "snapshot.waitUntilReady":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.waitUntilReady",
+        snapshot: snapshotRef,
+      };
+    case "snapshot.delete":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.delete",
+        result: null,
+      };
   }
 };
 
@@ -197,6 +250,17 @@ describe("step.sandbox", () => {
     await process.signal("signal", { signal: 15, includeChildren: true });
     const waited = await process.wait("wait", { timeout: "5s" });
     const output = await process.getOutput("output", { tailBytes: 123 });
+    const snapshot = await created.snapshots.create("snapshot-create");
+    const snapshots = await tools.snapshots.list("snapshot-list", { limit: 5 });
+    await tools.snapshots.get("snapshot-get", snapshotId);
+    const readySnapshot = await snapshot.waitUntilReady("snapshot-ready", {
+      timeout: "5s",
+    });
+    await snapshot.delete("snapshot-delete");
+    const clone = await tools.create("clone", {
+      name: "snapshot-clone",
+      snapshotId,
+    });
     const running = await created.waitUntilRunning("wait-running", {
       timeout: "5s",
     });
@@ -234,6 +298,13 @@ describe("step.sandbox", () => {
     expect(Object.isFrozen(waited)).toBe(true);
     expect(Object.isFrozen(waited.command)).toBe(true);
     expect(output.chunks[0]?.data).toEqual(new Uint8Array([0, 255]));
+    expect(snapshot).toMatchObject(snapshotRef);
+    expect(snapshots.items[0]).toMatchObject(snapshotRef);
+    expect(readySnapshot).toMatchObject(snapshotRef);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.resources)).toBe(true);
+    expect("refresh" in snapshot).toBe(false);
+    expect(clone.id).toBe(sandboxId);
     expect(running).toMatchObject({ id: sandboxId, status: "RUNNING" });
     expect(destroyed).toMatchObject({ status: "TERMINATING" });
 
@@ -248,6 +319,12 @@ describe("step.sandbox", () => {
       "process.signal",
       "process.wait",
       "process.output",
+      "snapshot.create",
+      "snapshot.list",
+      "snapshot.get",
+      "snapshot.waitUntilReady",
+      "snapshot.delete",
+      "create",
       "waitUntilRunning",
       "destroy",
     ]);
@@ -284,6 +361,15 @@ describe("step.sandbox", () => {
       input: [{ signal: 15, includeChildren: true }],
     });
     expect(operations[10]).toMatchObject({
+      action: "snapshot.create",
+      target: { sandbox: { id: sandboxId } },
+      input: [{}],
+    });
+    expect(operations[15]).toMatchObject({
+      action: "create",
+      input: [{ name: "snapshot-clone", snapshotId }],
+    });
+    expect(operations[16]).toMatchObject({
       action: "waitUntilRunning",
       target: { sandbox: { id: sandboxId } },
       input: [{ timeoutMs: 5000 }],
@@ -465,6 +551,10 @@ describe("step.sandbox", () => {
 
   test("requires explicit middleware opt-in in function input types", () => {
     const client = createClient({ id: testClientId, isDev: true });
+    type DirectCreateOptions = Parameters<typeof client.sandboxes.create>[0];
+    // @ts-expect-error snapshot cloning is exposed only by step.sandbox
+    const directClone: DirectCreateOptions = { name: "clone", snapshotId };
+    expect(directClone).toBeDefined();
     const fn = client.createFunction(
       { id: "sandbox-without-middleware" },
       // @ts-expect-error step.sandbox is added by sandboxMiddleware
@@ -558,6 +648,104 @@ describe("step.sandbox", () => {
     ).resolves.toMatchObject({
       type: "function-resolved",
       data: processId,
+    });
+  });
+
+  test("uses a replay-stable intent for durable snapshot creation", async () => {
+    const client = new Inngest({
+      id: testClientId,
+      isDev: true,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-snapshot", triggers: [{ event: "sandbox/snapshot" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        return (await sandbox.snapshots.create("create-snapshot")).id;
+      },
+    );
+
+    const getInvocation = await runFnWithStack(
+      fn,
+      {},
+      {
+        disableImmediateExecution: true,
+      },
+    );
+    if (getInvocation.type !== "steps-found" || !getInvocation.steps[0]) {
+      throw new Error("Expected Get step");
+    }
+    const getStep = getInvocation.steps[0];
+    const state = {
+      [getStep.id]: {
+        id: getStep.id,
+        data: { protocolVersion: 1, action: "get", sandbox: sandboxRef },
+      },
+    };
+    const stackOrder = [getStep.id];
+
+    const first = await runFnWithStack(fn, state, {
+      stackOrder,
+      disableImmediateExecution: true,
+    });
+    const replay = await runFnWithStack(fn, state, {
+      stackOrder,
+      disableImmediateExecution: true,
+    });
+    if (
+      first.type !== "steps-found" ||
+      replay.type !== "steps-found" ||
+      !first.steps[0] ||
+      !replay.steps[0]
+    ) {
+      throw new Error("Expected snapshot Create step");
+    }
+    const firstStep = first.steps[0];
+    const replayStep = replay.steps[0];
+    if (!firstStep.opts || !replayStep.opts) {
+      throw new Error("Expected snapshot Create step options");
+    }
+    expect(firstStep.opts.input).toEqual(replayStep.opts.input);
+    expect(firstStep).toMatchObject({
+      opts: {
+        input: [
+          {
+            protocolVersion: 1,
+            action: "snapshot.create",
+            target: { sandbox: { id: sandboxId } },
+            input: [
+              { intentKey: expect.stringMatching(/^inngest:[0-9a-f]{64}$/) },
+            ],
+          },
+        ],
+      },
+    });
+
+    await expect(
+      runFnWithStack(
+        fn,
+        {
+          ...state,
+          [firstStep.id]: {
+            id: firstStep.id,
+            data: {
+              protocolVersion: 1,
+              action: "snapshot.create",
+              snapshot: snapshotRef,
+            },
+          },
+        },
+        {
+          stackOrder: [...stackOrder, firstStep.id],
+          disableImmediateExecution: true,
+        },
+      ),
+    ).resolves.toMatchObject({
+      type: "function-resolved",
+      data: snapshotId,
     });
   });
 
@@ -727,6 +915,66 @@ describe("step.sandbox", () => {
       data: sandboxId,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("executes snapshot creation through internal REST with its durable intent", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const {
+      kind: _snapshotKind,
+      version: _snapshotVersion,
+      ...snapshotResource
+    } = snapshotRef;
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      requests.push({ url, init });
+      if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/snapshots`) {
+        return Response.json({ data: snapshotResource }, { status: 201 });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      {
+        id: "sandbox-snapshot-rest",
+        triggers: [{ event: "sandbox/snapshot-rest" }],
+      },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        return (await sandbox.snapshots.create("create-snapshot")).id;
+      },
+    );
+    const run = createFnRunner(fn);
+
+    await run();
+    await run();
+    const replay = await run();
+
+    expect(replay.result).toMatchObject({
+      type: "function-resolved",
+      data: snapshotId,
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.init).toMatchObject({ method: "POST", body: "{}" });
+    expect(
+      new Headers(requests[1]?.init?.headers).get("Idempotency-Key"),
+    ).toMatch(/^inngest:[0-9a-f]{64}$/);
+    expect("snapshots" in client.sandboxes).toBe(false);
   });
 
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
