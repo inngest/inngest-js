@@ -276,15 +276,12 @@ export type SandboxSnapshotStatus =
 
 export interface SandboxSnapshotResource {
   id: string;
-  sourceSandboxId: string;
-  sourceImageRef: string;
+  sourceImageId: string;
   status: SandboxSnapshotStatus;
   compatibilityId?: string;
-  consistency: "CRASH_CONSISTENT";
   resources: SandboxResources;
   memoryPackCount: number;
   diskPackCount: number;
-  logicalBytes: number;
   storedBytes: number;
   createdAt: string;
   updatedAt: string;
@@ -526,15 +523,12 @@ export interface DurableSandboxSnapshot {
   readonly kind: "inngest/sandbox.snapshot";
   readonly version: 1;
   readonly id: string;
-  readonly sourceSandboxId: string;
-  readonly sourceImageRef: string;
+  readonly sourceImageId: string;
   readonly status: SandboxSnapshotStatus;
   readonly compatibilityId?: string;
-  readonly consistency: "CRASH_CONSISTENT";
   readonly resources: SandboxResources;
   readonly memoryPackCount: number;
   readonly diskPackCount: number;
-  readonly logicalBytes: number;
   readonly storedBytes: number;
   readonly createdAt: string;
   readonly updatedAt: string;

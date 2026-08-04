@@ -734,16 +734,6 @@ export const validateSandboxResult = <A extends SandboxAction>(
   }
   if (
     sandboxId &&
-    operation.action === "snapshot.create" &&
-    result.action === "snapshot.create" &&
-    result.snapshot.sourceSandboxId !== sandboxId
-  ) {
-    throw new SandboxValidationError(
-      "Sandbox operation returned a snapshot from an unrelated sandbox",
-    );
-  }
-  if (
-    sandboxId &&
     "process" in result &&
     result.process &&
     "sandboxId" in result.process &&

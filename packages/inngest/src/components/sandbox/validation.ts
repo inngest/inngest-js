@@ -6,6 +6,7 @@ import {
   type SandboxCommand,
   type SandboxCommandOptions,
   type SandboxCreateOptions,
+  type SandboxDuration,
   type SandboxFileDownloadOptions,
   type SandboxFileUploadOptions,
   type SandboxListOptions,
@@ -217,15 +218,12 @@ export const sandboxSnapshotStatusSchema = z.enum([
 const sandboxSnapshotResourceBaseSchema = z
   .object({
     id: canonicalUuidSchema,
-    sourceSandboxId: canonicalUuidSchema,
-    sourceImageRef: z.string().min(1),
+    sourceImageId: z.string().min(1),
     status: sandboxSnapshotStatusSchema,
     compatibilityId: z.string().min(1).optional(),
-    consistency: z.literal("CRASH_CONSISTENT"),
     resources: sandboxResourcesSchema,
     memoryPackCount: z.number().int().nonnegative().max(0xffffffff),
     diskPackCount: z.number().int().nonnegative().max(0xffffffff),
-    logicalBytes: z.number().int().nonnegative().safe(),
     storedBytes: z.number().int().nonnegative().safe(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -238,6 +236,7 @@ const validateSandboxSnapshotResource = (
   snapshot: {
     status: z.infer<typeof sandboxSnapshotStatusSchema>;
     compatibilityId?: string;
+    sourceImageId: string;
   },
   ctx: z.RefinementCtx,
 ): void => {
@@ -246,6 +245,16 @@ const validateSandboxSnapshotResource = (
       code: z.ZodIssueCode.custom,
       message: "compatibilityId is required for READY snapshots",
       path: ["compatibilityId"],
+    });
+  }
+  if (
+    snapshot.status === "READY" &&
+    !/^[a-f0-9]{64}$/.test(snapshot.sourceImageId)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Source image ID must be a lowercase SHA-256 for READY snapshots",
+      path: ["sourceImageId"],
     });
   }
 };

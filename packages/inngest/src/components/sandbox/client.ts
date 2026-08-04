@@ -1087,11 +1087,6 @@ export const createSandboxSnapshotForOperation = async (
       `Sandbox snapshot Create returned HTTP ${status} with status ${snapshot.status}`,
     );
   }
-  if (snapshot.sourceSandboxId !== sandboxId) {
-    throw new SandboxValidationError(
-      "Sandbox snapshot Create returned a snapshot for another sandbox",
-    );
-  }
   return snapshot;
 };
 

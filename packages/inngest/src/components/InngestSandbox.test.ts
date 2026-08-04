@@ -60,15 +60,13 @@ const snapshotRef = {
   kind: "inngest/sandbox.snapshot",
   version: 1,
   id: snapshotId,
-  sourceSandboxId: sandboxId,
-  sourceImageRef: "default",
+  sourceImageId:
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   status: "READY",
   compatibilityId: "simcity-linux-amd64-v1",
-  consistency: "CRASH_CONSISTENT",
   resources: { vcpu: 2, memoryMb: 2048 },
   memoryPackCount: 8,
   diskPackCount: 2,
-  logicalBytes: 1024,
   storedBytes: 512,
   createdAt: now,
   updatedAt: now,
@@ -543,7 +541,7 @@ describe("step.sandbox", () => {
       direct.create({
         ...createOptions,
         runningTimeout: true,
-      } as unknown as SandboxCreateOptions),
+      } as unknown as Parameters<typeof direct.create>[0]),
     ).rejects.toBeInstanceOf(SandboxValidationError);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(rawTool).not.toHaveBeenCalled();
@@ -932,7 +930,17 @@ describe("step.sandbox", () => {
         return Response.json({ data: sandboxResource });
       }
       if (url.pathname === `/v2/sandboxes/${sandboxId}/snapshots`) {
-        return Response.json({ data: snapshotResource }, { status: 201 });
+        return Response.json(
+          {
+            data: {
+              ...snapshotResource,
+              sourceImageId: "default",
+              status: "CREATING",
+              compatibilityId: undefined,
+            },
+          },
+          { status: 202 },
+        );
       }
       return Response.json(
         { errors: [{ code: "missing", message: "missing" }] },
