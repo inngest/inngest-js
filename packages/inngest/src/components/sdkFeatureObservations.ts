@@ -30,13 +30,6 @@ export interface FeatureObservationState {
     behavior: ExtendedTracesBehavior;
     setup?: OTelSetup;
   };
-
-  /**
-   * Things to wait for before reporting feature observations. This is useful
-   * for things that setup lazily, like the legacy Extended Traces OTel provider
-   * setup.
-   */
-  pending: Set<Promise<unknown>>;
 }
 
 export type FeatureObservationJson = Record<string, unknown>;
@@ -95,68 +88,15 @@ class SdkFeatureObservations {
       aiMetadata: {
         enabled: aiMetadataEnabled,
       },
-      pending: new Set(),
     };
   }
 
-  async get(client: Inngest.Any): Promise<FeatureObservationMessage[]> {
-    await this.waitForReady(client);
-    return this.snapshot(client);
-  }
-
-  async getJson(client: Inngest.Any): Promise<FeatureObservationJson[]> {
-    return featureObservationsToJson(await this.get(client));
-  }
-
-  /**
-   * Register async setup that may change the client's feature observations.
-   * The setup path itself should update observation state and handle/log
-   * errors; this only gives one-shot transports a promise they can await before
-   * reading.
-   */
-  addPending(client: Inngest.Any, pending: Promise<unknown>): void {
-    const state = client[featureObservationStateSymbol];
-    state.pending.add(pending);
-    pending
-      .finally(() => state.pending.delete(pending))
-      .catch(() => {
-        // The original pending setup path owns any error reporting. This helper
-        // only tracks observation readiness and should never reject on its own.
-      });
-  }
-
-  /**
-   * Register async setup that should update this client's observations before
-   * one-shot transports, such as registration, read them.
-   */
-  addPendingUpdate(
-    client: Inngest.Any,
-    pending: Promise<unknown>,
-    update: (client: Inngest.Any) => void,
-  ): void {
-    const pendingUpdate = pending.finally(() => {
-      update(client);
-    });
-    this.addPending(client, pendingUpdate);
-  }
-
-  private snapshot(client: Inngest.Any): FeatureObservationMessage[] {
+  get(client: Inngest.Any): FeatureObservationMessage[] {
     return client[featureObservationsSymbol]();
   }
 
-  /**
-   * Wait for async feature setup that started during client construction before
-   * taking a one-shot observation snapshot. This is used by get()/getJson()
-   * because registration snapshots are not refreshed when async setup, such as
-   * legacy Extended Traces provider creation, finishes later.
-   */
-  private async waitForReady(client: Inngest.Any): Promise<void> {
-    const pending = [...client[featureObservationStateSymbol].pending];
-    if (pending.length === 0) {
-      return;
-    }
-
-    await Promise.allSettled(pending);
+  getJson(client: Inngest.Any): FeatureObservationJson[] {
+    return featureObservationsToJson(this.get(client));
   }
 }
 

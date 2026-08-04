@@ -5,9 +5,6 @@ import {
   AIMetadataExtractionReadinessReason,
   ExtendedTracesBehavior,
   ExtendedTracesReadinessReason,
-  OTelProviderSource,
-  OTelSetupFailure,
-  OTelSetupPath,
   SendEventsReadinessReason,
 } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { createClient } from "../test/helpers.ts";
@@ -17,10 +14,10 @@ import {
   sdkFeatureObservations,
 } from "./sdkFeatureObservations.ts";
 
-async function sendEventsObservation(client: ReturnType<typeof createClient>) {
-  const observation = (await sdkFeatureObservations.get(client)).find(
-    (obs) => obs.sendEvents,
-  );
+function sendEventsObservation(client: ReturnType<typeof createClient>) {
+  const observation = sdkFeatureObservations
+    .get(client)
+    .find((obs) => obs.sendEvents);
 
   if (!observation?.sendEvents) {
     throw new Error("send events observation missing");
@@ -29,12 +26,12 @@ async function sendEventsObservation(client: ReturnType<typeof createClient>) {
   return observation.sendEvents;
 }
 
-async function aiMetadataExtractionObservation(
+function aiMetadataExtractionObservation(
   client: ReturnType<typeof createClient>,
 ) {
-  const observation = (await sdkFeatureObservations.get(client)).find(
-    (obs) => obs.aiMetadataExtraction,
-  );
+  const observation = sdkFeatureObservations
+    .get(client)
+    .find((obs) => obs.aiMetadataExtraction);
 
   if (!observation?.aiMetadataExtraction) {
     throw new Error("AI metadata extraction observation missing");
@@ -43,12 +40,10 @@ async function aiMetadataExtractionObservation(
   return observation.aiMetadataExtraction;
 }
 
-async function extendedTracesObservation(
-  client: ReturnType<typeof createClient>,
-) {
-  const observation = (await sdkFeatureObservations.get(client)).find(
-    (obs) => obs.extendedTraces,
-  );
+function extendedTracesObservation(client: ReturnType<typeof createClient>) {
+  const observation = sdkFeatureObservations
+    .get(client)
+    .find((obs) => obs.extendedTraces);
 
   if (!observation?.extendedTraces) {
     throw new Error("extended traces observation missing");
@@ -63,10 +58,10 @@ describe("feature observations", () => {
     context.disable();
   });
 
-  test("reports missing event keys as ready in Dev mode", async () => {
+  test("reports missing event keys as ready in Dev mode", () => {
     const client = createClient({ id: "test", isDev: true });
 
-    await expect(sendEventsObservation(client)).resolves.toEqual({
+    expect(sendEventsObservation(client)).toEqual({
       readinessReason:
         SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY,
       config: {
@@ -76,10 +71,10 @@ describe("feature observations", () => {
     });
   });
 
-  test("reports missing event keys as not ready in Cloud mode", async () => {
+  test("reports missing event keys as not ready in Cloud mode", () => {
     const client = createClient({ id: "test", isDev: false });
 
-    await expect(sendEventsObservation(client)).resolves.toEqual({
+    expect(sendEventsObservation(client)).toEqual({
       readinessReason:
         SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_EVENT_KEY_MISSING,
       config: {
@@ -89,25 +84,25 @@ describe("feature observations", () => {
     });
   });
 
-  test("reports Event API origin override without parsing the URL", async () => {
+  test("reports Event API origin override without parsing the URL", () => {
     const client = createClient({
       id: "test",
       isDev: true,
       baseUrl: "whatever",
     });
 
-    await expect(sendEventsObservation(client)).resolves.toMatchObject({
+    expect(sendEventsObservation(client)).toMatchObject({
       config: {
         hasEventApiOriginOverride: true,
       },
     });
   });
 
-  test("encodes observations with generated protobuf JSON", async () => {
+  test("encodes observations with generated protobuf JSON", () => {
     const client = createClient({ id: "test", isDev: true });
-    const observation = (await sdkFeatureObservations.get(client)).find(
-      (obs) => obs.sendEvents,
-    );
+    const observation = sdkFeatureObservations
+      .get(client)
+      .find((obs) => obs.sendEvents);
     if (!observation) {
       throw new Error("send events observation missing");
     }
@@ -120,16 +115,16 @@ describe("feature observations", () => {
     });
   });
 
-  test("encodes Extended Traces config as config", async () => {
+  test("encodes Extended Traces config as config", () => {
     trace.setGlobalTracerProvider(new BasicTracerProvider());
     const client = createClient({
       id: "test",
       isDev: true,
       middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
     });
-    const observation = (await sdkFeatureObservations.get(client)).find(
-      (obs) => obs.extendedTraces,
-    );
+    const observation = sdkFeatureObservations
+      .get(client)
+      .find((obs) => obs.extendedTraces);
     if (!observation) {
       throw new Error("extended traces observation missing");
     }
@@ -151,24 +146,22 @@ describe("feature observations", () => {
     });
   });
 
-  test("reports explicitly disabled AI metadata extraction", async () => {
+  test("reports explicitly disabled AI metadata extraction", () => {
     const client = createClient({
       id: "test",
       isDev: true,
       aiMetadata: false,
     });
 
-    expect(
-      (await aiMetadataExtractionObservation(client)).readinessReason,
-    ).toBe(
+    expect(aiMetadataExtractionObservation(client).readinessReason).toBe(
       AIMetadataExtractionReadinessReason.AI_METADATA_EXTRACTION_READINESS_REASON_DISABLED_BY_USER,
     );
   });
 
-  test("reports Extended Traces as not enabled when middleware is absent", async () => {
+  test("reports Extended Traces as not enabled when middleware is absent", () => {
     const client = createClient({ id: "test", isDev: true });
 
-    await expect(extendedTracesObservation(client)).resolves.toEqual({
+    expect(extendedTracesObservation(client)).toEqual({
       readinessReason:
         ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_NOT_ENABLED_BY_USER,
       config: {
@@ -178,65 +171,14 @@ describe("feature observations", () => {
     });
   });
 
-  test("runs pending observation updates before snapshots", async () => {
-    const client = createClient({ id: "test", isDev: true });
-    let resolvePending: () => void;
-    const pending = new Promise<void>((resolve) => {
-      resolvePending = resolve;
-    });
-
-    sdkFeatureObservations.addPendingUpdate(client, pending, (client) => {
-      sdkFeatureObservations.extendedTraces.replace(client, {
-        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_AUTO,
-        setup: {
-          path: OTelSetupPath.OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER,
-          providerFound: true,
-          providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_USER_PROVIDED,
-          addSpanProcessorAttempted: true,
-          spanProcessorAdded: true,
-          failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
-        },
-      });
-    });
-
-    let settled = false;
-    const observations = sdkFeatureObservations.get(client).then((value) => {
-      settled = true;
-      return value;
-    });
-
-    await Promise.resolve();
-    expect(settled).toBe(false);
-
-    resolvePending!();
-
-    await expect(observations).resolves.toContainEqual({
-      extendedTraces: {
-        readinessReason:
-          ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_READY,
-        config: {
-          behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_AUTO,
-        },
-        otelSetup: {
-          path: OTelSetupPath.OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER,
-          providerFound: true,
-          providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_USER_PROVIDED,
-          addSpanProcessorAttempted: true,
-          spanProcessorAdded: true,
-          failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
-        },
-      },
-    });
-  });
-
-  test("reports explicitly disabled Extended Traces", async () => {
+  test("reports explicitly disabled Extended Traces", () => {
     const client = createClient({
       id: "test",
       isDev: true,
       middleware: [extendedTracesMiddleware({ behaviour: "off" })],
     });
 
-    await expect(extendedTracesObservation(client)).resolves.toEqual({
+    expect(extendedTracesObservation(client)).toEqual({
       readinessReason:
         ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_DISABLED_BY_USER,
       config: {
@@ -246,7 +188,7 @@ describe("feature observations", () => {
     });
   });
 
-  test("encodes first-party OTel provider source", async () => {
+  test("encodes first-party OTel provider source", () => {
     const provider = new BasicTracerProvider();
     Object.defineProperty(provider, Symbol.for("inngest.otel.provider"), {
       value: true,
@@ -258,9 +200,9 @@ describe("feature observations", () => {
       isDev: true,
       middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
     });
-    const observation = (await sdkFeatureObservations.get(client)).find(
-      (obs) => obs.extendedTraces,
-    );
+    const observation = sdkFeatureObservations
+      .get(client)
+      .find((obs) => obs.extendedTraces);
     if (!observation) {
       throw new Error("extended traces observation missing");
     }

@@ -102,11 +102,7 @@ export const extendedTracesMiddleware = ({
   }
 
   function setProcessorReady(pending: Promise<void>): void {
-    // Legacy provider creation is async. Clients that register while this is
-    // pending will wait for it before their one-shot registration snapshot.
     processorReady = pending.finally(() => {
-      // After the one-time setup finishes, new clients read `setup` directly in
-      // onRegister instead of going through the pending path.
       processorReady = undefined;
     });
   }
@@ -206,18 +202,12 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       } else if (processorReady) {
-        // The initial observation may be incomplete because provider creation
-        // is still pending. Refresh it before any one-shot registration payload
-        // is produced.
-        sdkFeatureObservations.addPendingUpdate(
-          client,
-          processorReady,
-          replaceExtendedTracesObservation,
-        );
-
-        // Provider creation is async; register the processor once it resolves.
+        // Legacy provider creation is async, so this client may report the
+        // current sync snapshot before setup completes. Keep execution wiring
+        // updated once the processor is available.
         processorReady
           .then(() => {
+            replaceExtendedTracesObservation(client);
             if (processor) {
               clientProcessorMap.set(client, processor);
             }

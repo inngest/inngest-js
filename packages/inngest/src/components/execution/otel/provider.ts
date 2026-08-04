@@ -3,8 +3,9 @@ import type { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { isRecord } from "../../../helpers/types.ts";
 import {
   OTelProviderSource,
-  type OTelSetup,
+  OTelSetup,
   OTelSetupFailure,
+  type OTelSetup as OTelSetupMessage,
   OTelSetupPath,
 } from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 
@@ -15,41 +16,9 @@ export const providerMarker = Symbol.for("inngest.otel.provider");
  * only the fields they learned during a provider setup attempt.
  */
 function setupWith(
-  setup: Readonly<Partial<OTelSetup> & Pick<OTelSetup, "path">>,
-): OTelSetup {
-  let providerFound = false;
-  if (setup.providerFound !== undefined) {
-    providerFound = setup.providerFound;
-  }
-
-  let providerSource = OTelProviderSource.OTEL_PROVIDER_SOURCE_UNSPECIFIED;
-  if (setup.providerSource !== undefined) {
-    providerSource = setup.providerSource;
-  }
-
-  let addSpanProcessorAttempted = false;
-  if (setup.addSpanProcessorAttempted !== undefined) {
-    addSpanProcessorAttempted = setup.addSpanProcessorAttempted;
-  }
-
-  let spanProcessorAdded = false;
-  if (setup.spanProcessorAdded !== undefined) {
-    spanProcessorAdded = setup.spanProcessorAdded;
-  }
-
-  let failure = OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED;
-  if (setup.failure !== undefined) {
-    failure = setup.failure;
-  }
-
-  return {
-    path: setup.path,
-    providerFound,
-    providerSource,
-    addSpanProcessorAttempted,
-    spanProcessorAdded,
-    failure,
-  };
+  setup: Readonly<Partial<OTelSetupMessage> & Pick<OTelSetupMessage, "path">>,
+): OTelSetupMessage {
+  return OTelSetup.fromPartial(setup);
 }
 
 function isNoopTracerProvider(provider: unknown): boolean {
@@ -145,7 +114,7 @@ export function attemptProviderExtension({
 }: {
   path?: OTelSetupPath;
   processor: SpanProcessor;
-}): OTelSetup {
+}): OTelSetupMessage {
   const provider = getGlobalProvider();
   if (!provider) {
     return setupWith({

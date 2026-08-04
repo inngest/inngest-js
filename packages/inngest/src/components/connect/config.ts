@@ -79,10 +79,10 @@ function collectFunctions(
  * Prepare all connection configuration: signing keys, function configs,
  * connection data, and request handlers.
  */
-export async function prepareConnectionConfig(
+export function prepareConnectionConfig(
   apps: ConnectApp[],
   inngest: Inngest.Any,
-): Promise<PreparedConnectionConfig> {
+): PreparedConnectionConfig {
   const envName = inngest.env ?? getEnvironmentName();
 
   const hashedSigningKey = inngest.signingKey
@@ -150,15 +150,13 @@ export async function prepareConnectionConfig(
   const connectionData: ConnectionEstablishData = {
     manualReadinessAck: true,
     marshaledCapabilities: JSON.stringify(capabilities),
-    apps: await Promise.all(
-      Object.entries(functionConfigs).map(
-        async ([appId, { client, functions: fns }]) => ({
-          appName: appId,
-          appVersion: client.appVersion,
-          functions: new TextEncoder().encode(JSON.stringify(fns)),
-          featureObservations: await sdkFeatureObservations.get(client),
-        }),
-      ),
+    apps: Object.entries(functionConfigs).map(
+      ([appId, { client, functions: fns }]) => ({
+        appName: appId,
+        appVersion: client.appVersion,
+        functions: new TextEncoder().encode(JSON.stringify(fns)),
+        featureObservations: sdkFeatureObservations.get(client),
+      }),
     ),
   };
 

@@ -2388,7 +2388,7 @@ export class InngestCommHandler<
     return ret;
   }
 
-  protected async registerBody({
+  protected registerBody({
     url,
     deployId,
   }: {
@@ -2399,7 +2399,7 @@ export class InngestCommHandler<
      * available to us to use.
      */
     deployId: string | undefined | null;
-  }): Promise<RegisterRequest> {
+  }): RegisterRequest {
     const body: RegisterRequest = {
       url: url.href,
       deployType: "ping",
@@ -2414,7 +2414,7 @@ export class InngestCommHandler<
         connect: "v1",
       },
       appVersion: this.client.appVersion,
-      feature_observations: await sdkFeatureObservations.getJson(this.client),
+      feature_observations: sdkFeatureObservations.getJson(this.client),
     };
 
     return body;
@@ -2440,7 +2440,7 @@ export class InngestCommHandler<
 
     url: URL;
   }): Promise<InBandRegisterRequest> {
-    const registerBody = await this.registerBody({ deployId, url });
+    const registerBody = this.registerBody({ deployId, url });
     const introspectionBody = await this.introspectionBody({
       actions,
       env,
@@ -2579,7 +2579,7 @@ export class InngestCommHandler<
     deployId: string | undefined | null,
     getHeaders: () => Promise<Record<string, string>>,
   ): Promise<{ status: number; message: string; modified: boolean }> {
-    const body = await this.registerBody({ url, deployId });
+    const body = this.registerBody({ url, deployId });
 
     let res: globalThis.Response;
 

@@ -6,6 +6,8 @@ import { GatewayExecutorRequestData } from "../../proto/src/components/connect/p
 import {
   ExtendedTracesBehavior,
   ExtendedTracesReadinessReason,
+  OTelProviderSource,
+  OTelSetupFailure,
   OTelSetupPath,
   SendEventsReadinessReason,
 } from "../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
@@ -20,20 +22,20 @@ describe("prepareConnectionConfig", () => {
     context.disable();
   });
 
-  test("includes SDK feature observations in Connect app configuration", async () => {
+  test("includes SDK feature observations in Connect app configuration", () => {
     const client = createClient({ id: "test", isDev: true });
     const fn = client.createFunction(
       { id: "test", triggers: [{ event: "demo/event.sent" }] },
       () => "ok",
     );
 
-    const { connectionData } = await prepareConnectionConfig(
+    const { connectionData } = prepareConnectionConfig(
       [{ client, functions: [fn] }],
       client,
     );
 
     expect(connectionData.apps[0]?.featureObservations).toEqual(
-      await sdkFeatureObservations.get(client),
+      sdkFeatureObservations.get(client),
     );
     expect(
       connectionData.apps[0]?.featureObservations.find((obs) => obs.sendEvents)
@@ -41,18 +43,18 @@ describe("prepareConnectionConfig", () => {
     ).toBe(SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY);
   });
 
-  test("waits for async Extended Traces setup before Connect app configuration", async () => {
+  test("uses the current Extended Traces observation in Connect app configuration", () => {
     const client = createClient({
       id: "test",
       isDev: true,
-      middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
+      middleware: [extendedTracesMiddleware({ behaviour: "extendProvider" })],
     });
     const fn = client.createFunction(
       { id: "test", triggers: [{ event: "demo/event.sent" }] },
       () => "ok",
     );
 
-    const { connectionData } = await prepareConnectionConfig(
+    const { connectionData } = prepareConnectionConfig(
       [{ client, functions: [fn] }],
       client,
     );
@@ -63,14 +65,19 @@ describe("prepareConnectionConfig", () => {
       )?.extendedTraces,
     ).toEqual({
       readinessReason:
-        ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_READY,
+        ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_OTEL_PROVIDER_MISSING,
       config: {
-        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_AUTO,
+        behavior:
+          ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_EXTEND_PROVIDER,
       },
-      otelSetup: expect.objectContaining({
-        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
-        spanProcessorAdded: true,
-      }),
+      otelSetup: {
+        path: OTelSetupPath.OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER,
+        providerFound: false,
+        providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_UNSPECIFIED,
+        addSpanProcessorAttempted: false,
+        spanProcessorAdded: false,
+        failure: OTelSetupFailure.OTEL_SETUP_FAILURE_NO_PROVIDER,
+      },
     });
   });
 
@@ -108,7 +115,7 @@ describe("prepareConnectionConfig", () => {
       },
     );
 
-    const { requestHandlers } = await prepareConnectionConfig(
+    const { requestHandlers } = prepareConnectionConfig(
       [{ client, functions: [fn] }],
       client,
     );
