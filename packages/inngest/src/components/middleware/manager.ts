@@ -3,7 +3,7 @@ import type { Logger } from "../../middleware/logger.ts";
 import type { Context, StepOpCode } from "../../types.ts";
 import {
   type AsyncContext,
-  getAsyncCtxSync,
+  mustGetAsyncContextSync,
   runWithAsyncCtx,
 } from "../execution/als.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
@@ -85,17 +85,11 @@ export class MiddlewareManager {
   private readonly internalLogger: Logger;
 
   /**
-   * Infinite recursion guard for `wrapStep`. Prevents a middleware from
-   * wrapping steps it creates inside its own `wrapStep` via `ctx.step.run`.
-   * Only used when AsyncLocalStorage isn't available. This fallback is best
-   * effort and cannot isolate concurrent async branches.
-   */
-  private readonly activeWrapStep = new Set<Middleware.BaseMiddleware>();
-
-  /**
    * Tracks recursion guard state per async execution branch. Parallel memoized
    * sibling steps get separate branches, so one step's wrapStep does not hide
-   * another step's middleware.
+   * another step's middleware. Steps created by a middleware inside its own
+   * wrapStep keep the declaring branch, so that same middleware is skipped for
+   * those nested steps instead of recursively prepending/planning forever.
    */
   private readonly activeWrapStepByExecution = new WeakMap<
     ExecutionContext,
@@ -332,22 +326,23 @@ export class MiddlewareManager {
             throw new UnreachableError("wrapStep is undefined");
           }
 
-          const asyncContext = getAsyncCtxSync();
-          const asyncExecution = asyncContext?.execution;
+          const asyncContext = mustGetAsyncContextSync();
+          const asyncExecution = asyncContext.execution;
+          if (!asyncExecution) {
+            throw new Error("Inngest execution async context is required");
+          }
+
+          // Use the current async execution branch as the guard boundary: it
+          // lets parallel sibling steps each run through this middleware, while
+          // steps created inside this middleware's own wrapStep inherit the
+          // branch and skip this middleware to avoid recursive planning.
           let activeWrapStep: Set<Middleware.BaseMiddleware>;
-          if (asyncExecution) {
-            const storedActiveWrapStep =
-              this.activeWrapStepByExecution.get(asyncExecution);
-            if (storedActiveWrapStep) {
-              activeWrapStep = storedActiveWrapStep;
-            } else {
-              activeWrapStep = new Set<Middleware.BaseMiddleware>();
-            }
+          const storedActiveWrapStep =
+            this.activeWrapStepByExecution.get(asyncExecution);
+          if (storedActiveWrapStep) {
+            activeWrapStep = storedActiveWrapStep;
           } else {
-            // No ALS means no branch-local state. Keep the legacy global guard
-            // so recursive ctx.step.run() calls still get best-effort
-            // protection.
-            activeWrapStep = this.activeWrapStep;
+            activeWrapStep = new Set<Middleware.BaseMiddleware>();
           }
 
           // Infinite recursion guard: skip if this middleware is already
@@ -359,14 +354,7 @@ export class MiddlewareManager {
           // Clone guard state for ALS-backed executions before entering this
           // middleware. That preserves recursion history for this branch
           // without sharing in-flight middleware state with sibling branches.
-          let branchActiveWrapStep: Set<Middleware.BaseMiddleware>;
-          if (asyncExecution) {
-            branchActiveWrapStep = new Set(activeWrapStep);
-          } else {
-            // Without ALS this shares state across branches, matching the
-            // previous behavior in runtimes that cannot carry async context.
-            branchActiveWrapStep = activeWrapStep;
-          }
+          const branchActiveWrapStep = new Set(activeWrapStep);
 
           const runWrapStep = () => {
             branchActiveWrapStep.add(mw);
@@ -389,12 +377,6 @@ export class MiddlewareManager {
               branchActiveWrapStep.delete(mw);
             });
           };
-
-          if (!asyncContext || !asyncExecution) {
-            // No ALS-backed execution context exists, so run with the legacy
-            // manager-scoped guard.
-            return runWrapStep();
-          }
 
           // Give this wrapStep call its own ALS execution object. Async work
           // spawned from here, including ctx.step.run() before next(), sees

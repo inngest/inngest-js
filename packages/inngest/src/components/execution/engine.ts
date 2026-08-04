@@ -80,7 +80,12 @@ import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import { Stream } from "../StreamTools.ts";
 import { validateEvents } from "../triggers/utils.js";
-import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
+import {
+  getAsyncCtx,
+  getAsyncLocalStorage,
+  mustGetAsyncContextSync,
+  runWithAsyncCtx,
+} from "./als.ts";
 import {
   type BasicFoundStep,
   type ExecutionResult,
@@ -851,12 +856,10 @@ class InngestExecutionEngine
       return transformResult;
     };
 
-    const maybeReturnNewSteps = async (): Promise<
-      ExecutionResult | undefined
-    > => {
-      const newSteps = await this.filterNewSteps(
-        Array.from(this.state.steps.values()),
-      );
+    const maybeReturnNewSteps = async (
+      foundSteps = Array.from(this.state.steps.values()),
+    ): Promise<ExecutionResult | undefined> => {
+      const newSteps = await this.filterNewSteps(foundSteps);
 
       const allSteps: OutgoingOp[] = [
         ...(newSteps ?? []),
@@ -1296,7 +1299,7 @@ class InngestExecutionEngine
       "steps-found": async ({ steps }) => {
         const stepResult = await this.tryExecuteStep(steps);
         if (!stepResult) {
-          return maybeReturnNewSteps();
+          return maybeReturnNewSteps(steps);
         }
 
         // If the step's handler buffered any lazy ops (e.g. `defer` calls),
@@ -1513,7 +1516,7 @@ class InngestExecutionEngine
               }
             }
 
-            return maybeReturnNewSteps();
+            return maybeReturnNewSteps(steps);
           }
 
           // If we have stepsToResume, resume as many as possible and resume execution
@@ -2490,6 +2493,8 @@ class InngestExecutionEngine
         fnArgs = [...args.slice(0, 2), ...stepInfo.input];
       }
 
+      const asyncContext = mustGetAsyncContextSync();
+
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
@@ -2512,112 +2517,116 @@ class InngestExecutionEngine
         },
 
         handle: () => {
-          if (step.handled) {
-            return false;
-          }
+          const runHandle = () => {
+            if (step.handled) {
+              return false;
+            }
 
-          this.devDebug(`handling step "${hashedId}"`);
+            this.devDebug(`handling step "${hashedId}"`);
 
-          step.handled = true;
+            step.handled = true;
 
-          // Refetch step state because it may have been changed since we found
-          // the step. This could be due to checkpointing, where we run this
-          // live and then return to the function.
-          const result = this.state.stepState[hashedId];
+            // Refetch step state because it may have been changed since we found
+            // the step. This could be due to checkpointing, where we run this
+            // live and then return to the function.
+            const result = this.state.stepState[hashedId];
 
-          if (step.fulfilled && result) {
-            result.fulfilled = true;
+            if (step.fulfilled && result) {
+              result.fulfilled = true;
 
-            // For some execution scenarios such as testing, `data`, `error`,
-            // and `input` may be `Promises`. This could also be the case for
-            // future middleware applications. For this reason, we'll make sure
-            // the values are fully resolved before continuing.
-            void Promise.all([result.data, result.error, result.input]).then(
-              async () => {
-                // If the wrapStep chain already ran during discovery in this
-                // same request (checkpointing), reuse its result instead of
-                // firing wrappedHandler() again. This prevents middleware from
-                // seeing a duplicate wrapStep call per step per request.
-                if (step.transformedResultPromise) {
-                  // Resolve the memoization deferred so wrapStep's next()
-                  // unblocks. The step data is now confirmed memoized.
-                  if (step.memoizationDeferred) {
-                    if (typeof result.data !== "undefined") {
-                      step.memoizationDeferred.resolve(await result.data);
-                    } else {
-                      const stepError = new StepError(opId.id, result.error);
-                      this.state.recentlyRejectedStepError = stepError;
-                      step.memoizationDeferred.reject(stepError);
+              // For some execution scenarios such as testing, `data`, `error`,
+              // and `input` may be `Promises`. This could also be the case for
+              // future middleware applications. For this reason, we'll make sure
+              // the values are fully resolved before continuing.
+              void Promise.all([result.data, result.error, result.input]).then(
+                async () => {
+                  // If the wrapStep chain already ran during discovery in this
+                  // same request (checkpointing), reuse its result instead of
+                  // firing wrappedHandler() again. This prevents middleware from
+                  // seeing a duplicate wrapStep call per step per request.
+                  if (step.transformedResultPromise) {
+                    // Resolve the memoization deferred so wrapStep's next()
+                    // unblocks. The step data is now confirmed memoized.
+                    if (step.memoizationDeferred) {
+                      if (typeof result.data !== "undefined") {
+                        step.memoizationDeferred.resolve(await result.data);
+                      } else {
+                        const stepError = new StepError(opId.id, result.error);
+                        this.state.recentlyRejectedStepError = stepError;
+                        step.memoizationDeferred.reject(stepError);
+                      }
                     }
+
+                    step.transformedResultPromise.then(resolve, reject);
+                    return;
                   }
 
-                  step.transformedResultPromise.then(resolve, reject);
-                  return;
-                }
+                  // The wrapStep chain is about to fire again to resolve the
+                  // step promise through middleware (e.g. deserialization).
+                  // Mark the step as memoized so middleware can distinguish
+                  // this from the original execution call.
+                  //
+                  // This need for this change was discovered when checkpointing +
+                  // middleware's "double `wrapStep` call" behavior had `memoized:
+                  // false` on the 2nd call
+                  step.middleware.stepInfo.memoized = true;
 
-                // The wrapStep chain is about to fire again to resolve the
-                // step promise through middleware (e.g. deserialization).
-                // Mark the step as memoized so middleware can distinguish
-                // this from the original execution call.
-                //
-                // This need for this change was discovered when checkpointing +
-                // middleware's "double `wrapStep` call" behavior had `memoized:
-                // false` on the 2nd call
-                step.middleware.stepInfo.memoized = true;
+                  if (typeof result.data !== "undefined") {
+                    // Validate waitForEvent results against the schema if present
+                    // Skip validation if result.data is null (timeout case)
+                    if (
+                      opId.op === StepOpCode.WaitForEvent &&
+                      result.data !== null
+                    ) {
+                      const { event } = (step.rawArgs?.[1] ?? {}) as {
+                        event: unknown;
+                      };
+                      if (!event) {
+                        // Unreachable
+                        throw new Error("Missing event option in waitForEvent");
+                      }
+                      try {
+                        await validateEvents(
+                          [result.data],
 
-                if (typeof result.data !== "undefined") {
-                  // Validate waitForEvent results against the schema if present
-                  // Skip validation if result.data is null (timeout case)
-                  if (
-                    opId.op === StepOpCode.WaitForEvent &&
-                    result.data !== null
-                  ) {
-                    const { event } = (step.rawArgs?.[1] ?? {}) as {
-                      event: unknown;
-                    };
-                    if (!event) {
-                      // Unreachable
-                      throw new Error("Missing event option in waitForEvent");
+                          // @ts-expect-error - This is a full event object at runtime
+                          [{ event }],
+                        );
+                      } catch (err) {
+                        this.state.recentlyRejectedStepError = new StepError(
+                          opId.id,
+                          err,
+                        );
+                        reject(this.state.recentlyRejectedStepError);
+                        return;
+                      }
                     }
-                    try {
-                      await validateEvents(
-                        [result.data],
 
-                        // @ts-expect-error - This is a full event object at runtime
-                        [{ event }],
-                      );
-                    } catch (err) {
-                      this.state.recentlyRejectedStepError = new StepError(
-                        opId.id,
-                        err,
-                      );
-                      reject(this.state.recentlyRejectedStepError);
-                      return;
-                    }
+                    // Set inner handler to return memoized data
+                    step.middleware.setActualHandler(() =>
+                      Promise.resolve(result.data),
+                    );
+
+                    step.middleware.wrappedHandler().then(resolve);
+                  } else {
+                    const stepError = new StepError(opId.id, result.error);
+                    this.state.recentlyRejectedStepError = stepError;
+
+                    // Set inner handler to reject with step error
+                    step.middleware.setActualHandler(() =>
+                      Promise.reject(stepError),
+                    );
+
+                    step.middleware.wrappedHandler().catch(reject);
                   }
+                },
+              );
+            }
 
-                  // Set inner handler to return memoized data
-                  step.middleware.setActualHandler(() =>
-                    Promise.resolve(result.data),
-                  );
+            return true;
+          };
 
-                  step.middleware.wrappedHandler().then(resolve);
-                } else {
-                  const stepError = new StepError(opId.id, result.error);
-                  this.state.recentlyRejectedStepError = stepError;
-
-                  // Set inner handler to reject with step error
-                  step.middleware.setActualHandler(() =>
-                    Promise.reject(stepError),
-                  );
-
-                  step.middleware.wrappedHandler().catch(reject);
-                }
-              },
-            );
-          }
-
-          return true;
+          return runWithAsyncCtx(asyncContext, runHandle);
         },
       };
 
