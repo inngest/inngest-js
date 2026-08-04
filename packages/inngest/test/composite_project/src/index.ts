@@ -149,6 +149,15 @@ export const fnWithStepRun = inngest.createFunction(
   },
 );
 
+// Exercise step.sendSignal to ensure SendSignalResponse is portable in
+// declaration emit.
+export const fnWithSendSignal = inngest.createFunction(
+  { id: "my-fn-send-signal", triggers: [{ event: "foo" }] },
+  async ({ step }) => {
+    return step.sendSignal("signal", { signal: "foo", data: { foo: "bar" } });
+  },
+);
+
 // Exercise eventType and typed event schemas to ensure StandardSchemaV1
 // and related trigger types are portable.
 export const myEventType = Inngest.eventType("app/user.created", {

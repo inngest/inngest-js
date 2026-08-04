@@ -119,6 +119,7 @@ export type {
   RegisterOptions,
   ScheduledTimerEventPayload,
   SendEventBaseOutput,
+  SendSignalResponse,
   StepOptions,
   StepOptionsOrId,
   TimeStr,

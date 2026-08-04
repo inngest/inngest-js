@@ -12,6 +12,7 @@ import {
   type OutgoingOp,
   ok,
   type Result,
+  type SendSignalResponse,
 } from "../types.ts";
 import {
   type BatchResponse,
@@ -78,15 +79,6 @@ export namespace InngestApi {
   export interface SendSignalOptions {
     signal: string;
     data?: unknown;
-  }
-
-  export interface SendSignalResponse {
-    /**
-     * The ID of the run that was signaled.
-     *
-     * If this is undefined, the signal could not be matched to a run.
-     */
-    runId: string | undefined;
   }
 }
 
@@ -267,7 +259,7 @@ export class InngestApi {
     options?: {
       headers?: Record<string, string>;
     },
-  ): Promise<Result<InngestApi.SendSignalResponse, ErrorResponse>> {
+  ): Promise<Result<SendSignalResponse, ErrorResponse>> {
     const url = await this.getTargetUrl("/v1/signals");
 
     const body = {
@@ -292,7 +284,7 @@ export class InngestApi {
       .then(async (res) => {
         // A 404 is valid if the signal was not found.
         if (res.status === 404) {
-          return ok<InngestApi.SendSignalResponse>({
+          return ok<SendSignalResponse>({
             runId: undefined,
           });
         }

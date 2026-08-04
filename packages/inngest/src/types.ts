@@ -818,6 +818,15 @@ export type SendEventOutput<TOpts extends ClientOptions> = Omit<
 export type SendEventOutputWithMiddleware<_TOpts extends ClientOptions> =
   SendEventBaseOutput;
 
+export interface SendSignalResponse {
+  /**
+   * The ID of the run that was signaled.
+   *
+   * If this is undefined, the signal could not be matched to a run.
+   */
+  runId: string | undefined;
+}
+
 /**
  * Discriminator for which output transform to extract from middleware.
  */

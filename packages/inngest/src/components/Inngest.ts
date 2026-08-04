@@ -53,6 +53,7 @@ import {
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
+  type SendSignalResponse,
   sendEventResponseSchema,
 } from "../types.ts";
 import { getAsyncCtx } from "./execution/als.ts";
@@ -585,7 +586,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
      * multiple systems together using branch names.
      */
     env?: string;
-  }): Promise<InngestApi.SendSignalResponse> {
+  }): Promise<SendSignalResponse> {
     const headers: Record<string, string> = {
       ...(env ? { [headerKeys.Environment]: env } : {}),
     };
@@ -601,7 +602,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     signal: string;
     data?: unknown;
     headers?: Record<string, string>;
-  }): Promise<InngestApi.SendSignalResponse> {
+  }): Promise<SendSignalResponse> {
     const res = await this.inngestApi.sendSignal(
       { signal, data },
       { ...this.headers, ...headers },
