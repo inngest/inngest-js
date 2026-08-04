@@ -59,7 +59,8 @@ const snapshotRef = {
   version: 1,
   id: snapshotId,
   sourceSandboxId: sandboxId,
-  sourceImageRef: "default",
+  sourceImageId:
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   status: "READY",
   compatibilityId: "simcity-linux-amd64-v1",
   consistency: "CRASH_CONSISTENT",

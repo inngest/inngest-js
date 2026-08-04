@@ -235,7 +235,7 @@ export type SandboxSnapshotStatus =
 export interface SandboxSnapshotResource {
   id: string;
   sourceSandboxId: string;
-  sourceImageRef: string;
+  sourceImageId: string;
   status: SandboxSnapshotStatus;
   compatibilityId?: string;
   consistency: "CRASH_CONSISTENT";
@@ -481,7 +481,7 @@ export interface DurableSandboxSnapshot {
   readonly version: 1;
   readonly id: string;
   readonly sourceSandboxId: string;
-  readonly sourceImageRef: string;
+  readonly sourceImageId: string;
   readonly status: SandboxSnapshotStatus;
   readonly compatibilityId?: string;
   readonly consistency: "CRASH_CONSISTENT";
