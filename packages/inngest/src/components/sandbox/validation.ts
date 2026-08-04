@@ -217,7 +217,9 @@ const sandboxSnapshotResourceBaseSchema = z
   .object({
     id: canonicalUuidSchema,
     sourceSandboxId: canonicalUuidSchema,
-    sourceImageRef: z.string().min(1),
+    sourceImageId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/, "Source image ID must be a lowercase SHA-256"),
     status: sandboxSnapshotStatusSchema,
     compatibilityId: z.string().min(1).optional(),
     consistency: z.literal("CRASH_CONSISTENT"),
