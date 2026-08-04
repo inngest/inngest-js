@@ -1495,6 +1495,9 @@ export type Cancellation = {
    * `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant` /
    * `Temporal.ZonedDateTime` (absolute deadline).
    *
+   * Durations of less than 1 second round up to `1s`, the minimum
+   * resolution of a durable wait.
+   *
    * {@link https://npm.im/ms}
    */
   timeout?:

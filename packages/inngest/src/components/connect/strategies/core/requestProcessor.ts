@@ -164,8 +164,6 @@ export class RequestProcessor {
     const startedAt = Date.now();
 
     // Start lease extension interval
-    const originalWs = conn.ws;
-    const originalConnectionId = conn.id;
     let extendLeaseInterval: ReturnType<typeof setInterval> | undefined;
     extendLeaseInterval = setInterval(() => {
       const currentLeaseId =
@@ -177,13 +175,26 @@ export class RequestProcessor {
         return;
       }
 
-      // Use the current live connection's WebSocket for lease extensions.
-      // During a drain, the original WebSocket may be closed by the gateway
-      // while the request is still in flight.
-      const latestConn = {
-        ws: this.accessor.activeConnection?.ws ?? originalWs,
-        id: this.accessor.activeConnection?.id ?? originalConnectionId,
-      };
+      // Prefer the active connection, but preserve the original connection as
+      // a fallback during ordinary reconnects. The exception is an explicitly
+      // draining connection: an extension sent over it may succeed server-side
+      // while its ACK is lost when the replacement closes the old socket. A
+      // retry would then use the superseded lease ID and appear to have lost
+      // the lease.
+      const latestConn =
+        this.accessor.activeConnection ??
+        (this.accessor.drainingConnection ? undefined : conn);
+
+      if (!latestConn || latestConn.ws.readyState !== WebSocket.OPEN) {
+        this.logger.warn(
+          {
+            connectionId: latestConn?.id,
+            requestId: gatewayExecutorRequest.requestId,
+          },
+          "Cannot extend lease, no open WebSocket available",
+        );
+        return;
+      }
 
       this.logger.debug(
         {
@@ -196,17 +207,6 @@ export class RequestProcessor {
         },
         "Extending lease",
       );
-
-      if (latestConn.ws.readyState !== WebSocket.OPEN) {
-        this.logger.warn(
-          {
-            connectionId: latestConn.id,
-            requestId: gatewayExecutorRequest.requestId,
-          },
-          "Cannot extend lease, no open WebSocket available",
-        );
-        return;
-      }
 
       try {
         latestConn.ws.send(

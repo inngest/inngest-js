@@ -2,7 +2,8 @@ import hashjs from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
 import { Temporal } from "temporal-polyfill";
-import type { TimeStr } from "../types.ts";
+import type { Logger } from "../middleware/logger.ts";
+import { warnOnce } from "./log.ts";
 import {
   type DurationLike,
   getISOString,
@@ -88,7 +89,7 @@ const periods = [
 
 /**
  * Convert a given `Date`, `number`, or `ms`-compatible `string` to a
- * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h3010s"`).
+ * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h30m10s"`).
  */
 export const timeStr = (
   /**
@@ -101,6 +102,12 @@ export const timeStr = (
     | DurationLike
     | InstantLike
     | ZonedDateTimeLike,
+
+  /**
+   * If given, used to warn (once per process) when a sub-second duration is
+   * rounded up to 1s.
+   */
+  logger?: Logger,
 ): string => {
   if (input instanceof Date) {
     return input.toISOString();
@@ -128,6 +135,21 @@ export const timeStr = (
     milliseconds = input as number;
   }
 
+  // Purely sub-second durations round up to 1s: the round-trip latency of a
+  // durable wait dwarfs them, and flooring would serialize to "", which the
+  // server treats as a 0-duration wait.
+  if (milliseconds > 0 && milliseconds < second) {
+    if (logger) {
+      warnOnce(
+        logger,
+        "sub-second-duration-clamp",
+        { requestedMs: milliseconds },
+        "Durable waits have a minimum resolution of 1s; durations under 1s round up to 1s",
+      );
+    }
+    milliseconds = second;
+  }
+
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
       const numPeriods = Math.floor(num / period);
@@ -141,7 +163,7 @@ export const timeStr = (
     [milliseconds, ""],
   );
 
-  return timeStr as TimeStr;
+  return timeStr;
 };
 
 /**

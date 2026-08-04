@@ -1,5 +1,19 @@
 # inngest
 
+## 4.15.0
+
+### Minor Changes
+
+- [#1667](https://github.com/inngest/inngest-js/pull/1667) [`961d2807`](https://github.com/inngest/inngest-js/commit/961d28075694c460372ba569caa738e291d1269c) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Allow sandbox Create to configure environment variables inherited by commands and managed processes.
+
+- [#1654](https://github.com/inngest/inngest-js/pull/1654) [`23ddbc2e`](https://github.com/inngest/inngest-js/commit/23ddbc2e9caaa195f5fe20d95261c7298afd1b5e) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add experimental sandbox APIs, including the direct `inngest.sandboxes` client and the opt-in durable `step.sandbox` surface enabled by `sandboxMiddleware()`.
+
+### Patch Changes
+
+- [#1663](https://github.com/inngest/inngest-js/pull/1663) [`0bec14ee`](https://github.com/inngest/inngest-js/commit/0bec14eecf31ee74974190bb5675880a96c7f501) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Prevent Connect lease renewals from using a draining or replaced connection.
+
+- [#1665](https://github.com/inngest/inngest-js/pull/1665) [`3f25b191`](https://github.com/inngest/inngest-js/commit/3f25b19199cd6336ecf5b79cdf594d884be56ee8) Thanks [@Linell](https://github.com/Linell)! - Sub-second durations no longer get dropped. `step.sleep("id", 500)` used to resolve immediately; it now rounds up and sleeps a full second, the minimum resolution of a durable wait. The same rounding applies to `waitForEvent`, `invoke`, `waitForSignal`, and `cancelOn` timeouts.
+
 ## 4.14.0
 
 ### Minor Changes
