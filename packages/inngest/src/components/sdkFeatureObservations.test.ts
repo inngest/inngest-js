@@ -5,6 +5,9 @@ import {
   AIMetadataExtractionReadinessReason,
   ExtendedTracesBehavior,
   ExtendedTracesReadinessReason,
+  OTelProviderSource,
+  OTelSetupFailure,
+  OTelSetupPath,
   SendEventsReadinessReason,
 } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { createClient } from "../test/helpers.ts";
@@ -172,6 +175,57 @@ describe("feature observations", () => {
         behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_UNSPECIFIED,
       },
       otelSetup: undefined,
+    });
+  });
+
+  test("runs pending observation updates before snapshots", async () => {
+    const client = createClient({ id: "test", isDev: true });
+    let resolvePending: () => void;
+    const pending = new Promise<void>((resolve) => {
+      resolvePending = resolve;
+    });
+
+    sdkFeatureObservations.addPendingUpdate(client, pending, (client) => {
+      sdkFeatureObservations.extendedTraces.replace(client, {
+        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_AUTO,
+        setup: {
+          path: OTelSetupPath.OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER,
+          providerFound: true,
+          providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_USER_PROVIDED,
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: true,
+          failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
+        },
+      });
+    });
+
+    let settled = false;
+    const observations = sdkFeatureObservations.get(client).then((value) => {
+      settled = true;
+      return value;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolvePending!();
+
+    await expect(observations).resolves.toContainEqual({
+      extendedTraces: {
+        readinessReason:
+          ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_READY,
+        config: {
+          behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_AUTO,
+        },
+        otelSetup: {
+          path: OTelSetupPath.OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER,
+          providerFound: true,
+          providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_USER_PROVIDED,
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: true,
+          failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
+        },
+      },
     });
   });
 

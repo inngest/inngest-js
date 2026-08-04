@@ -125,6 +125,21 @@ class SdkFeatureObservations {
       });
   }
 
+  /**
+   * Register async setup that should update this client's observations before
+   * one-shot transports, such as registration, read them.
+   */
+  addPendingUpdate(
+    client: Inngest.Any,
+    pending: Promise<unknown>,
+    update: (client: Inngest.Any) => void,
+  ): void {
+    const pendingUpdate = pending.finally(() => {
+      update(client);
+    });
+    this.addPending(client, pendingUpdate);
+  }
+
   private snapshot(client: Inngest.Any): FeatureObservationMessage[] {
     return client[featureObservationsSymbol]();
   }

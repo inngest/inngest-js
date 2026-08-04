@@ -54,7 +54,7 @@ function setupWith(
 
 function isNoopTracerProvider(provider: unknown): boolean {
   if (!isRecord(provider)) {
-    return true;
+    return false;
   }
 
   // OpenTelemetry returns a no-op provider when no real provider has been

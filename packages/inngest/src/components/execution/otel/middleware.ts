@@ -90,16 +90,25 @@ export const extendedTracesMiddleware = ({
   let processor: InngestSpanProcessor | undefined;
   let processorReady: Promise<void> | undefined;
   let setup: OTelSetup | undefined;
-  const registeredClients = new Set<Middleware.OnRegisterArgs["client"]>();
   const configuredBehavior = behaviourToExtendedTracesBehavior(behaviour);
 
-  function refreshRegisteredClientObservations(): void {
-    for (const client of registeredClients) {
-      sdkFeatureObservations.extendedTraces.replace(client, {
-        behavior: configuredBehavior,
-        setup,
-      });
-    }
+  function replaceExtendedTracesObservation(
+    client: Middleware.OnRegisterArgs["client"],
+  ): void {
+    sdkFeatureObservations.extendedTraces.replace(client, {
+      behavior: configuredBehavior,
+      setup,
+    });
+  }
+
+  function setProcessorReady(pending: Promise<void>): void {
+    // Legacy provider creation is async. Clients that register while this is
+    // pending will wait for it before their one-shot registration snapshot.
+    processorReady = pending.finally(() => {
+      // After the one-time setup finishes, new clients read `setup` directly in
+      // onRegister instead of going through the pending path.
+      processorReady = undefined;
+    });
   }
 
   switch (behaviour) {
@@ -114,8 +123,8 @@ export const extendedTracesMiddleware = ({
 
       setup = extended.setup;
       warnDeprecatedCreateProviderBehaviour(behaviour);
-      processorReady = createProvider(behaviour, instrumentations).then(
-        (created) => {
+      setProcessorReady(
+        createProvider(behaviour, instrumentations).then((created) => {
           setup = created.setup;
           if (created.success) {
             devDebug("created new provider");
@@ -126,16 +135,15 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
-          refreshRegisteredClientObservations();
-        },
+        }),
       );
 
       break;
     }
     case "createProvider": {
       warnDeprecatedCreateProviderBehaviour(behaviour);
-      processorReady = createProvider(behaviour, instrumentations).then(
-        (created) => {
+      setProcessorReady(
+        createProvider(behaviour, instrumentations).then((created) => {
           setup = created.setup;
           if (created.success) {
             devDebug("created new provider");
@@ -146,8 +154,7 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
-          refreshRegisteredClientObservations();
-        },
+        }),
       );
 
       break;
@@ -187,11 +194,7 @@ export const extendedTracesMiddleware = ({
      * client.
      */
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
-      registeredClients.add(client);
-      sdkFeatureObservations.extendedTraces.replace(client, {
-        behavior: configuredBehavior,
-        setup,
-      });
+      replaceExtendedTracesObservation(client);
 
       // Set the logger for our otel processors and exporters.
       // If this is called multiple times, only the first call is set.
@@ -203,7 +206,14 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       } else if (processorReady) {
-        sdkFeatureObservations.addPending(client, processorReady);
+        // The initial observation may be incomplete because provider creation
+        // is still pending. Refresh it before any one-shot registration payload
+        // is produced.
+        sdkFeatureObservations.addPendingUpdate(
+          client,
+          processorReady,
+          replaceExtendedTracesObservation,
+        );
 
         // Provider creation is async; register the processor once it resolves.
         processorReady
