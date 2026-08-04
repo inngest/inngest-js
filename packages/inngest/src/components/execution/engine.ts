@@ -2531,9 +2531,11 @@ class InngestExecutionEngine
             // For some execution scenarios such as testing, `data`, `error`,
             // and `input` may be `Promises`. This could also be the case for
             // future middleware applications. For this reason, we'll make sure
-            // the values are fully resolved before continuing.
+            // the values are fully resolved before continuing — and use those
+            // resolved values below (passing the Promise into validateEvents
+            // would read `.name` as undefined; see #1652).
             void Promise.all([result.data, result.error, result.input]).then(
-              async () => {
+              async ([resolvedData, resolvedError]) => {
                 // If the wrapStep chain already ran during discovery in this
                 // same request (checkpointing), reuse its result instead of
                 // firing wrappedHandler() again. This prevents middleware from
@@ -2542,10 +2544,10 @@ class InngestExecutionEngine
                   // Resolve the memoization deferred so wrapStep's next()
                   // unblocks. The step data is now confirmed memoized.
                   if (step.memoizationDeferred) {
-                    if (typeof result.data !== "undefined") {
-                      step.memoizationDeferred.resolve(await result.data);
+                    if (typeof resolvedData !== "undefined") {
+                      step.memoizationDeferred.resolve(resolvedData);
                     } else {
-                      const stepError = new StepError(opId.id, result.error);
+                      const stepError = new StepError(opId.id, resolvedError);
                       this.state.recentlyRejectedStepError = stepError;
                       step.memoizationDeferred.reject(stepError);
                     }
@@ -2565,12 +2567,12 @@ class InngestExecutionEngine
                 // false` on the 2nd call
                 step.middleware.stepInfo.memoized = true;
 
-                if (typeof result.data !== "undefined") {
+                if (typeof resolvedData !== "undefined") {
                   // Validate waitForEvent results against the schema if present
-                  // Skip validation if result.data is null (timeout case)
+                  // Skip validation if resolvedData is null (timeout case)
                   if (
                     opId.op === StepOpCode.WaitForEvent &&
-                    result.data !== null
+                    resolvedData !== null
                   ) {
                     const { event } = (step.rawArgs?.[1] ?? {}) as {
                       event: unknown;
@@ -2581,7 +2583,7 @@ class InngestExecutionEngine
                     }
                     try {
                       await validateEvents(
-                        [result.data],
+                        [resolvedData],
 
                         // @ts-expect-error - This is a full event object at runtime
                         [{ event }],
@@ -2598,12 +2600,12 @@ class InngestExecutionEngine
 
                   // Set inner handler to return memoized data
                   step.middleware.setActualHandler(() =>
-                    Promise.resolve(result.data),
+                    Promise.resolve(resolvedData),
                   );
 
                   step.middleware.wrappedHandler().then(resolve);
                 } else {
-                  const stepError = new StepError(opId.id, result.error);
+                  const stepError = new StepError(opId.id, resolvedError);
                   this.state.recentlyRejectedStepError = stepError;
 
                   // Set inner handler to reject with step error
