@@ -354,3 +354,18 @@ export const rethrowError = (prefix: string): ((err: any) => never) => {
     }
   };
 };
+
+/**
+ * An error that indicates that a code path that was thought to be unreachable
+ * has been reached.
+ *
+ * This is useful for exhaustiveness checks in places where we think we've
+ * handled all possible cases, but want to be sure that if we haven't, we get a
+ * clear error.
+ */
+export class UnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnreachableError";
+  }
+}

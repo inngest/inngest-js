@@ -44,6 +44,76 @@ describe("timeStr", () => {
     expect(timeStr("1 day")).toEqual("1d");
   });
 
+  describe("sub-second durations", () => {
+    test("rounds sub-second values up to 1s instead of dropping them", () => {
+      expect(timeStr(1)).toEqual("1s");
+      expect(timeStr(500)).toEqual("1s");
+      expect(timeStr("500ms")).toEqual("1s");
+      expect(timeStr(999)).toEqual("1s");
+    });
+
+    test("floors sub-second remainders on durations of at least 1s", () => {
+      expect(timeStr(1500)).toEqual("1s");
+      expect(timeStr(65500)).toEqual("1m5s");
+    });
+
+    test("whole-second values are unchanged", () => {
+      expect(timeStr(1000)).toEqual("1s");
+      expect(timeStr(60000)).toEqual("1m");
+    });
+
+    test("fractional sub-second durations also round up to 1s", () => {
+      expect(timeStr(999.6)).toEqual("1s");
+      expect(timeStr(0.4)).toEqual("1s");
+    });
+
+    test("Temporal.Duration sub-second components floor as on any input", () => {
+      expect(
+        timeStr(Temporal.Duration.from({ hours: 1, nanoseconds: 1 })),
+      ).toEqual("1h");
+
+      expect(
+        timeStr(
+          Temporal.Duration.from({
+            hours: 1,
+            milliseconds: 999,
+            nanoseconds: 999999,
+          }),
+        ),
+      ).toEqual("1h");
+    });
+
+    test("zero and negative durations still return an empty string", () => {
+      expect(timeStr(0)).toEqual("");
+      expect(timeStr(-500)).toEqual("");
+    });
+
+    test("never returns an empty string for durations of at least 1ms", () => {
+      for (const value of [1, 10, 100, 500, 999, 1001, 1500]) {
+        expect(timeStr(value)).not.toEqual("");
+      }
+    });
+
+    test("warns once per process when a logger is given and the clamp fires", () => {
+      const mockLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      };
+
+      expect(timeStr(500, mockLogger)).toEqual("1s");
+      expect(timeStr(700, mockLogger)).toEqual("1s");
+      expect(timeStr(1500, mockLogger)).toEqual("1s");
+
+      expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        { requestedMs: 500 },
+        expect.stringContaining("round up to 1s"),
+      );
+    });
+  });
+
   test("converts a date to an ISO string", () => {
     expect(timeStr(new Date(0))).toEqual("1970-01-01T00:00:00.000Z");
   });

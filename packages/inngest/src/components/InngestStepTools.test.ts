@@ -83,6 +83,16 @@ describe("waitForEvent", () => {
     });
   });
 
+  test("round sub-second number `timeout` up to 1s", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: 500 }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: "1s",
+      },
+    });
+  });
+
   test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
@@ -154,6 +164,24 @@ describe("waitForEvent", () => {
         if: "name",
         timeout: "2h",
       });
+    });
+  });
+
+  describe("types", () => {
+    test("types matched event meta sessions as strings", () => {
+      const _test = async () => {
+        const result = await step.waitForEvent("id", {
+          event: "event",
+          timeout: "2h",
+        });
+
+        assertType<
+          IsEqual<
+            NonNullable<typeof result>["meta"],
+            { sessions?: Record<string, string> } | undefined
+          >
+        >(true);
+      };
     });
   });
 
@@ -705,6 +733,12 @@ describe("sleep", () => {
     });
   });
 
+  test("rounds sub-second number of milliseconds up to 1s", async () => {
+    await expect(step.sleep("id", 500)).resolves.toMatchObject({
+      name: "1s",
+    });
+  });
+
   test("parses ms time string", async () => {
     await expect(step.sleep("id", "1m")).resolves.toMatchObject({
       name: "1m",
@@ -1100,6 +1134,53 @@ describe("invoke", () => {
           step.invoke("id", { function: fn, data: { foo: "foo" } }),
         ).resolves.toMatchObject({ userland: { id: "id" } });
       });
+
+      test("normalizes sessions into the payload", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: {
+              sessions: {
+                conversation_id: "conversation_1234",
+                priority: 1,
+              },
+            },
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            payload: {
+              meta: {
+                sessions: {
+                  conversation_id: "conversation_1234",
+                  priority: "1",
+                },
+              },
+            },
+          },
+        });
+      });
+
+      test("omits meta from the payload if none given", async () => {
+        const op = (await step.invoke("id", {
+          function: fn,
+          data: { foo: "foo" },
+        })) as unknown as { opts: { payload: Record<string, unknown> } };
+
+        expect(op.opts.payload.meta).toBeUndefined();
+      });
+
+      test("rejects invalid session values", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: { sessions: { conversation_id: Number.NaN } },
+          }),
+        ).rejects.toThrowError(
+          'Event session "conversation_id" must be a finite number',
+        );
+      });
     });
   });
 
@@ -1129,6 +1210,22 @@ describe("invoke", () => {
         invoke("id", {
           function: referenceFunction({ functionId: "fn" }),
           data: { foo: "" },
+        });
+    });
+
+    test("allows setting meta sessions for an invocation", () => {
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => "return",
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: fn,
+          data: { foo: "" },
+          meta: {
+            sessions: { conversation_id: "conversation_1234", priority: 1 },
+          },
         });
     });
 

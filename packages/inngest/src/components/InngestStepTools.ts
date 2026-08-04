@@ -4,6 +4,7 @@ import { z } from "zod/v3";
 
 import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
+import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -14,12 +15,14 @@ import type {
 import {
   type ApplyAllMiddlewareTransforms,
   type Context,
+  type EventMeta,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type OutgoingOp,
+  type ReceivedEventMeta,
   type SendEventOutput,
   StepMode,
   StepOpCode,
@@ -46,6 +49,12 @@ import {
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import {
+  type ScoreStepTool,
+  scoreSymbol,
+  sendStepScore,
+  validateStepScoreOptions,
+} from "./InngestScore.ts";
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
@@ -419,6 +428,24 @@ export const createStepTools = <
     };
   };
 
+  const createStepScoreWrapper: ScoreStepTool = async (
+    memoizationId,
+    options,
+  ) => {
+    if (!client["experimentalScoreEnabled"]) {
+      // This is a config error, so retrying the function cannot fix it
+      throw new NonRetriableError(
+        'step.score() is experimental. Enable it by adding scoreMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
+
+    validateStepScoreOptions(options);
+
+    await tools.run(memoizationId, async () => {
+      await sendStepScore(client, options);
+    });
+  };
+
   /**
    * Define the set of tools the user has access to for their step functions.
    *
@@ -505,7 +532,7 @@ export const createStepTools = <
         displayName: name ?? id,
         opts: {
           signal: opts.signal,
-          timeout: timeStr(opts.timeout),
+          timeout: timeStr(opts.timeout, client[internalLoggerSymbol]),
           conflict: opts.onConflict,
         },
         userland: { id },
@@ -644,6 +671,9 @@ export const createStepTools = <
            * `"2.5d"`, a `Date`, a `Temporal.Duration` (relative wait), or a
            * `Temporal.Instant` / `Temporal.ZonedDateTime` (absolute deadline).
            *
+           * Durations of less than 1 second round up to `1s`, the minimum
+           * resolution of a durable wait.
+           *
            * {@link https://npm.im/ms}
            */
           timeout:
@@ -668,7 +698,10 @@ export const createStepTools = <
         opts,
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
-          timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
+          timeout: timeStr(
+            typeof opts === "string" ? opts : opts.timeout,
+            client[internalLoggerSymbol],
+          ),
         };
 
         if (typeof opts !== "string") {
@@ -777,6 +810,9 @@ export const createStepTools = <
      * The time to wait can be specified using a `number` of milliseconds or an
      * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`.
      *
+     * Durations of less than 1 second round up to `1s`, the minimum
+     * resolution of a durable wait.
+     *
      * {@link https://npm.im/ms}
      *
      * To wait until a particular date, use `sleepUntil` instead.
@@ -795,7 +831,7 @@ export const createStepTools = <
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
-      const msTimeStr: string = timeStr(time);
+      const msTimeStr: string = timeStr(time, client[internalLoggerSymbol]);
 
       return {
         id,
@@ -916,16 +952,23 @@ export const createStepTools = <
         );
       }
 
-      const { _type, function: fn, data, v, timeout } = parsedFnOpts.data;
-      const payload = { data, v } satisfies MinimalEventPayload;
+      const { _type, function: fn, data, v, meta, timeout } = parsedFnOpts.data;
+      const payload = {
+        data,
+        v,
+        meta: normalizeEventMeta(meta),
+      } satisfies MinimalEventPayload;
       const opts: {
-        payload: MinimalEventPayload;
+        payload: typeof payload;
         function_id: string;
         timeout?: string;
       } = {
         payload,
         function_id: "",
-        timeout: typeof timeout === "undefined" ? undefined : timeStr(timeout),
+        timeout:
+          typeof timeout === "undefined"
+            ? undefined
+            : timeStr(timeout, client[internalLoggerSymbol]),
       };
 
       switch (_type) {
@@ -965,6 +1008,8 @@ export const createStepTools = <
   (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
     memoizationId: string,
   ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
+  (tools as unknown as ExperimentalStepTools)[scoreSymbol] =
+    createStepScoreWrapper;
 
   // Attach a step.run variant with opts.type = "group.experiment" for use by
   // group.experiment(). The symbol keeps it off the public `step` surface.
@@ -1028,6 +1073,7 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
 
 export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
   [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
+  [scoreSymbol]: ScoreStepTool;
 };
 
 export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
@@ -1152,6 +1198,11 @@ export const group: GroupTools = {
 export const invokePayloadSchema = z.object({
   data: z.record(z.any()).optional(),
   v: z.string().optional(),
+  meta: z
+    .object({
+      sessions: z.record(z.any()).optional(),
+    })
+    .optional(),
 });
 
 type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
@@ -1161,6 +1212,15 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
     Omit<TriggerEventFromFunction<TFunction>, "id"> & {
+      /**
+       * Event meta shared with the invoked run.
+       *
+       * Meta is not inherited from the calling run; pass `meta.sessions`
+       * explicitly to group the invoked run. Values are normalized to strings
+       * before sending, as with `inngest.send()`.
+       */
+      meta?: EventMeta;
+
       /**
        * The step function will wait for the invocation to finish for a maximum
        * of this time, at which point the retured promise will be rejected
@@ -1173,6 +1233,9 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
        * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`,
        * a `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant`
        * / `Temporal.ZonedDateTime` (absolute deadline).
+       *
+       * Durations of less than 1 second round up to `1s`, the minimum
+       * resolution of a durable wait.
        *
        * {@link https://npm.im/ms}
        */
@@ -1219,6 +1282,9 @@ type WaitForSignalOpts = {
    * `Date`, a `Temporal.Duration` (relative wait), or a `Temporal.Instant` /
    * `Temporal.ZonedDateTime` (absolute deadline).
    *
+   * Durations of less than 1 second round up to `1s`, the minimum
+   * resolution of a durable wait.
+   *
    * {@link https://npm.im/ms}
    */
   timeout:
@@ -1259,7 +1325,14 @@ type WaitForEventResult<TOpts> =
       StandardSchemaV1<infer TData extends Record<string, unknown>>
     >;
   }
-    ? { name: TName; data: TData; id: string; ts: number; v?: string } | null
+    ? {
+        name: TName;
+        data: TData;
+        id: string;
+        ts: number;
+        v?: string;
+        meta?: ReceivedEventMeta;
+      } | null
     : // Case 2: event is an EventType without a schema
       TOpts extends {
           event: EventType<infer TName extends string, undefined>;
@@ -1271,6 +1344,7 @@ type WaitForEventResult<TOpts> =
           id: string;
           ts: number;
           v?: string;
+          meta?: ReceivedEventMeta;
         } | null
       : // Case 3: event is a string with schema (spread EventType)
         TOpts extends {
@@ -1285,6 +1359,7 @@ type WaitForEventResult<TOpts> =
             id: string;
             ts: number;
             v?: string;
+            meta?: ReceivedEventMeta;
           } | null
         : // Case 4: event is just a string
           TOpts extends { event: infer TName extends string }
@@ -1295,6 +1370,7 @@ type WaitForEventResult<TOpts> =
               id: string;
               ts: number;
               v?: string;
+              meta?: ReceivedEventMeta;
             } | null
           : EventPayload | null;
 

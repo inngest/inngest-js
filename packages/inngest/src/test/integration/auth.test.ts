@@ -1,7 +1,7 @@
 import type { AddressInfo } from "node:net";
 import { randomSuffix, testNameFromFileUrl } from "@inngest/test-harness";
 import { afterEach, expect, test } from "vitest";
-import { headerKeys, syncKind } from "../../helpers/consts.ts";
+import { envKeys, headerKeys, syncKind } from "../../helpers/consts.ts";
 import { signWithHashJs } from "../../helpers/net.ts";
 import { Inngest } from "../../index.ts";
 import { createServer } from "../../node.ts";
@@ -22,7 +22,9 @@ afterEach(async () => {
  * then return the URL. This bypasses the no-signing-key 500 path so we can
  * exercise the body and signature checks.
  */
-async function startCloudServer(): Promise<string> {
+async function startCloudServer(
+  serveOpts: { enableUnauthedSync?: boolean } = {},
+): Promise<string> {
   const client = new Inngest({
     baseUrl: "http://localhost:8288",
     id: randomSuffix(testFileName),
@@ -40,6 +42,7 @@ async function startCloudServer(): Promise<string> {
     client,
     functions: [fn],
     servePath,
+    ...serveOpts,
   });
 
   const port = await new Promise<number>((resolve, reject) => {
@@ -249,5 +252,71 @@ describe("PUT", () => {
       [headerKeys.SdkHandled]: "true",
     });
     expect(res.headers.get("user-agent")).toBeNull();
+  });
+
+  describe("enableUnauthedSync opt-out", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    test("serve option false: no signature", async () => {
+      const url = await startCloudServer({ enableUnauthedSync: false });
+      const res = await fetch(url, { method: "PUT" });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ message: "Unauthorized" });
+    });
+
+    test("serve option false: invlid signature returns 401", async () => {
+      const url = await startCloudServer({ enableUnauthedSync: false });
+
+      const ts = Math.round(Date.now() / 1000);
+      const badSig = `t=${ts}&s=${"0".repeat(64)}`;
+
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { [headerKeys.Signature]: badSig },
+      });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ message: "Unauthorized" });
+    });
+
+    test("serve option false: valid signature", async () => {
+      // Successful in-band sync
+
+      const url = await startCloudServer({ enableUnauthedSync: false });
+
+      const body = JSON.stringify({
+        url: "http://localhost:1234/api/inngest",
+      });
+      const ts = Math.round(Date.now() / 1000).toString();
+      const sig = `t=${ts}&s=${signWithHashJs(body, signingKey, ts)}`;
+
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: {
+          [headerKeys.InngestSyncKind]: syncKind.InBand,
+          [headerKeys.Signature]: sig,
+        },
+        body,
+      });
+      expect(res.status).toBe(200);
+    });
+
+    test("env var opt-out: no signature", async () => {
+      vi.stubEnv(envKeys.InngestEnableUnauthedSync, "0");
+      const url = await startCloudServer();
+      const res = await fetch(url, { method: "PUT" });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ message: "Unauthorized" });
+    });
+
+    test("serve option overrides env var", async () => {
+      // Code wins over env: opt-back-in should let the unauthed PUT through.
+
+      vi.stubEnv(envKeys.InngestEnableUnauthedSync, "0");
+      const url = await startCloudServer({ enableUnauthedSync: true });
+      const res = await fetch(url, { method: "PUT" });
+      expect(res.status).toBe(200);
+    });
   });
 });

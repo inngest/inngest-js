@@ -37,6 +37,8 @@ export enum envKeys {
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
+  InngestSessionPropagation = "INNGEST_SESSION_PROPAGATION",
+  InngestEnableUnauthedSync = "INNGEST_ENABLE_UNAUTHED_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
   InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
   InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
@@ -180,6 +182,7 @@ export enum headerKeys {
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
   RequestId = "x-request-id",
+  GenerationId = "x-inngest-generation-id",
   InngestJobId = "x-inngest-job-id",
   RequestVersion = "x-inngest-req-version",
   RetryAfter = "retry-after",
@@ -228,6 +231,13 @@ export enum internalEvents {
    */
   DeferredSchedule = "inngest/deferred.schedule",
 }
+
+/**
+ * Reserved input key that carries the `defer(id, { experiment })` ref to the
+ * deferred run; the receiver strips it before the handler or schema validation
+ * see the data.
+ */
+export const deferExperimentKey = "_inngestExperiment";
 
 export const logPrefix: string = "[Inngest]";
 

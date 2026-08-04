@@ -5,6 +5,7 @@ import { z } from "zod/v3";
 
 import {
   defaultMaxRetries,
+  deferExperimentKey,
   ExecutionVersion,
   headerKeys,
   internalEvents,
@@ -16,7 +17,10 @@ import {
   serializeError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
-import { isDeferredFunction } from "../../helpers/marker.ts";
+import {
+  isDeferredFunction,
+  isStaleDispatchError,
+} from "../../helpers/marker.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -29,6 +33,7 @@ import {
   retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { stringify } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import {
   isRecord,
@@ -39,6 +44,7 @@ import {
   type APIStepPayload,
   type Context,
   type DeferFn,
+  type DeferHandle,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -86,6 +92,12 @@ import {
 } from "./InngestExecution.ts";
 import { isLazyOp, LazyOps } from "./lazyOps.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+import {
+  type AIMetadata,
+  aggregate as aggregateAIMetadata,
+  toInngestAIMetadataValues,
+} from "./otel/aiExtractor.ts";
+import { metadataSpanProcessor } from "./otel/metadataProcessor.ts";
 import {
   buildSseMetadataEvent,
   prependToStream,
@@ -305,6 +317,30 @@ class InngestExecutionEngine
                 tracestate: this.options.headers[headerKeys.TraceState],
               });
 
+              if (this.options.client.aiMetadataEnabled) {
+                // The metadata span processor is independent of the Extended
+                // Traces processor above.
+                metadataSpanProcessor.declareStartingSpan({
+                  span,
+                  traceparent: this.options.headers[headerKeys.TraceParent],
+                  onAIMetadata: (aiMetadata) => {
+                    // Only attribute AI metadata to spans ending while a
+                    // step's userland code is executing;
+                    if (!this.state.executingStep) {
+                      return;
+                    }
+
+                    this.state.executingStepAIMetadata = this.state
+                      .executingStepAIMetadata
+                      ? aggregateAIMetadata(
+                          this.state.executingStepAIMetadata,
+                          aiMetadata,
+                        )
+                      : aiMetadata;
+                  },
+                });
+              }
+
               return this._start()
                 .then((result) => {
                   this.devDebug("result:", result);
@@ -474,9 +510,15 @@ class InngestExecutionEngine
             runId: this.fnArg.runId,
             fnId: internalFnId,
             queueItemId,
+            requestId: this.options.requestId,
+            generationId: this.options.generationId,
+            requestStartedAt: this.options.requestStartedAt,
             steps,
           }),
-        CHECKPOINT_RETRY_OPTIONS,
+        {
+          ...CHECKPOINT_RETRY_OPTIONS,
+          shouldRetry: (err) => !isStaleDispatchError(err),
+        },
       );
     } else {
       throw new Error(
@@ -840,6 +882,29 @@ class InngestExecutionEngine
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
       if (stepResult) {
+        // When this request started as a retry attempt (attempt > 0), return
+        // the successful step to the executor without running any more user
+        // code in this request. In non-checkpoint mode, each step's first
+        // invocation arrives in a fresh request with attempt=0 from the
+        // executor, so subsequent steps get a full retry budget. Continuing
+        // execution here would mean any later step inherits the in-flight
+        // attempt counter, exhausting its retries.
+        const startedAsRetry = (this.options.data?.attempt ?? 0) > 0;
+        if (startedAsRetry && resume) {
+          delete this.state.executingStep;
+
+          // We need to interrupt and respond, rather than checkpointing and
+          // resuming. This is necessary because we need the attempt counter to
+          // reset. If the attempt counter doesn't reset, then we'll miss
+          // retries if the next step errors.
+          //
+          // We can't just reset the attempt counter to 0 within the SDK because
+          // the Executor's attempt counter is still >0. If the next step errors
+          // then we'll respond with the error and the Executor will incorrectly
+          // think the next step has already retried.
+          return stepRanHandler(stepResult);
+        }
+
         const stepToResume = this.resumeStepWithResult(stepResult, resume);
 
         // Clear `executingStep` immediately after resuming, before any await.
@@ -853,7 +918,7 @@ class InngestExecutionEngine
         // Buffer a copy with transformed data for checkpointing
         this.state.checkpointingStepBuffer.push({
           ...stepToResume,
-          data: stepResult.data,
+          data: stepToResume.data,
         });
       }
 
@@ -877,6 +942,21 @@ class InngestExecutionEngine
             this.state.checkpointingStepBuffer,
           ));
         } catch (err) {
+          // The Inngest Server told us that the corresponding queue item is
+          // stale, so we need to interrupt to avoid running more steps. If we
+          // don't interrupt then we risk duplicate execution, since the same
+          // steps could be executed across multiple requests
+          if (isStaleDispatchError(err)) {
+            this.devDebug("stale dispatch detected; halting execution");
+            return {
+              type: "function-rejected" as const,
+              ctx: this.fnArg,
+              ops: {},
+              error: serializeError(err),
+              retriable: false,
+            };
+          }
+
           // If checkpointing fails for any reason, fall back to returning
           // ALL buffered steps to the executor via the normal async flow.
           // The executor persists completed steps and rediscovers any
@@ -1165,7 +1245,7 @@ class InngestExecutionEngine
 
         // If stream was never activated, start the POST now so the
         // client waiting at the GET endpoint gets the result event.
-        if (!this.streamTools.activated) {
+        if (this.options.isDurableEndpoint && !this.streamTools.activated) {
           this.postCheckpointStream();
         }
 
@@ -1193,7 +1273,7 @@ class InngestExecutionEngine
           await this.streamEnd();
         }
 
-        if (!this.streamTools.activated) {
+        if (this.options.isDurableEndpoint && !this.streamTools.activated) {
           this.postCheckpointStream();
         }
 
@@ -1598,12 +1678,13 @@ class InngestExecutionEngine
         id,
         name: displayName,
         hashedId,
+        userlandId: userland.id,
       };
     }
 
     this.devDebug(`executing step "${id}"`);
 
-    if (this.rootSpanId && this.options.checkpointingConfig) {
+    if (this.rootSpanId) {
       clientProcessorMap
         .get(this.options.client)
         ?.declareStepExecution(
@@ -1614,6 +1695,12 @@ class InngestExecutionEngine
           this.options.data?.attempt ?? 0,
         );
     }
+
+    // Reset the per-step AI metadata accumulator. The metadata processor's
+    // sink (registered at run start) folds into it only while `executingStep`
+    // is set; an explicit reset here guards against residue from error paths
+    // that never reached this step's drain.
+    this.state.executingStepAIMetadata = undefined;
 
     let interval: GoInterval | undefined;
 
@@ -1646,10 +1733,19 @@ class InngestExecutionEngine
 
         this.state.executingStep = undefined;
 
-        if (this.rootSpanId && this.options.checkpointingConfig) {
+        if (this.rootSpanId) {
           clientProcessorMap
             .get(this.options.client)
             ?.clearStepExecution(this.rootSpanId);
+        }
+
+        // Drain the per-step AI metadata accumulator and attach it to the
+        // step's op.
+        const aiMetadata = this.state.executingStepAIMetadata;
+        this.state.executingStepAIMetadata = undefined;
+        const aiValues = aiMetadata && toInngestAIMetadataValues(aiMetadata);
+        if (aiValues) {
+          this.addMetadata(id, "inngest.ai", "step", "merge", aiValues);
         }
 
         if (store?.execution) {
@@ -1858,8 +1954,10 @@ class InngestExecutionEngine
   }
 
   /**
-   * Validate the deferred event's data against the defer function's own
-   * schema (set via `createDefer`'s `opts.schema`).
+   * Validate the deferred event's data against the defer function's own schema
+   * (set via `createDefer`'s `opts.schema`). Our internal metadata
+   * (`event.data._inngest`) was already stripped, so that won't affect
+   * validation.
    */
   private async validateDeferEventSchema(): Promise<void> {
     const fn = this.options.fn;
@@ -1873,7 +1971,9 @@ class InngestExecutionEngine
       // Fail without retries. The event data won't change so there's no point
       // in retrying. This matches what we do for normal triggers.
       throw new NonRetriableError(
-        `defer handler "${fn.id(this.options.client.id)}" schema validation failed: ${JSON.stringify(result.issues)}`,
+        `defer handler "${fn.id(
+          this.options.client.id,
+        )}" schema validation failed: ${JSON.stringify(result.issues)}`,
       );
     }
   }
@@ -2055,15 +2155,6 @@ class InngestExecutionEngine
       group: createGroupTools({ experimentStepRun }),
       defer,
     } as unknown as Context.Any;
-
-    if (this.options.handlerKind === "defer") {
-      // Delete our internal metadata. The user's handler shouldn't see it since
-      // it's an implementation detail
-      delete fnArg.event.data._inngest;
-      for (const event of fnArg.events) {
-        delete event.data._inngest;
-      }
-    }
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.
@@ -2332,7 +2423,9 @@ class InngestExecutionEngine
           { run_id: this.fnArg.runId },
           ErrCode.NESTING_STEPS,
           {
-            message: `Nested step tooling detected in "${opId.displayName ?? opId.id}"`,
+            message: `Nested step tooling detected in "${
+              opId.displayName ?? opId.id
+            }"`,
             explanation:
               "Nesting step.* calls is not supported. This warning may also appear if steps are separated by regular async calls, which is fine.",
             action:
@@ -2577,9 +2670,10 @@ class InngestExecutionEngine
    * schema mismatch) are logged and the call is silently skipped.
    */
   private buildDefer(stepHandler: StepHandler): DeferFn {
-    return (idOrOptions, { function: deferFn, data }) => {
+    return (idOrOptions, { function: deferFn, data, experiment }) => {
       const log = this.options.client[internalLoggerSymbol];
       const runId = this.fnArg.runId;
+      const noopHandle: DeferHandle = { abort: () => {} };
 
       try {
         if (!isDeferredFunction(deferFn)) {
@@ -2587,11 +2681,13 @@ class InngestExecutionEngine
             { runId },
             "defer skipped: function not created via createDefer",
           );
-          return;
+          return noopHandle;
         }
 
         const { schema } = deferFn;
         const deferFnSlug = deferFn.id(this.options.client.id);
+        const stepOptions = getStepOptions(idOrOptions);
+        const hashedId = _internals.hashId(stepOptions.id);
 
         let input: unknown = data;
         if (schema) {
@@ -2601,20 +2697,27 @@ class InngestExecutionEngine
               { runId },
               "defer() requires a synchronous schema validator. The defer call was skipped.",
             );
-            return;
+            return noopHandle;
           }
           if (result.issues) {
             log.error(
               { runId, issues: result.issues },
               "defer skipped: schema validation failed",
             );
-            return;
+            return noopHandle;
           }
           input = result.value ?? data;
         }
 
+        // The experiment ref rides in a reserved input key the receiver strips
+        // before the handler runs; set after schema validation so it can't trip it.
+        const finalInput =
+          experiment && isRecord(input)
+            ? { ...input, [deferExperimentKey]: experiment }
+            : input;
+
         void stepHandler({
-          args: [idOrOptions, input],
+          args: [stepOptions, finalInput],
           matchOp: (stepOptions, inputArg) => ({
             id: stepOptions.id,
             mode: StepMode.Sync,
@@ -2627,10 +2730,53 @@ class InngestExecutionEngine
         }).catch((err: unknown) => {
           log.error({ runId, err }, "defer skipped: unexpected error");
         });
+
+        return {
+          abort: () => {
+            try {
+              if (this.state.priorDefers[hashedId]?.abortable === false) {
+                return;
+              }
+
+              const abortId = `${hashedId}:abort`;
+              if (this.state.lazyOps.hasId(_internals.hashId(abortId))) {
+                return;
+              }
+
+              void stepHandler({
+                args: [{ id: abortId, name: stepOptions.name }, null],
+                matchOp: (abortStepOptions) => ({
+                  id: abortStepOptions.id,
+                  mode: StepMode.Sync,
+                  op: StepOpCode.DeferAbort,
+                  name: stepOptions.name ?? stepOptions.id,
+                  displayName: stepOptions.name ?? stepOptions.id,
+                  opts: {
+                    target_hashed_id: hashedId,
+                    fn_slug: deferFnSlug,
+                    id: stepOptions.id,
+                  },
+                  userland: { id: stepOptions.id },
+                }),
+              }).catch((err: unknown) => {
+                log.error(
+                  { runId, err },
+                  "defer abort skipped: unexpected error",
+                );
+              });
+            } catch (err) {
+              log.error(
+                { runId, err },
+                "defer abort skipped: unexpected error",
+              );
+            }
+          },
+        };
       } catch (err) {
         // Fire-and-forget: a misbehaving schema validator, malformed args, or
         // any other unexpected throw must not derail the surrounding handler.
         log.error({ runId, err }, "defer skipped: unexpected error");
+        return noopHandle;
       }
     };
   }
@@ -2750,7 +2896,14 @@ class InngestExecutionEngine
       );
     }
 
-    const data = undefinedToNull(resultOp.data);
+    // Simulate a round trip. If we don't do this, then `step.run` can return
+    // non-JSON when it checkpointed. This is problematic because reentering the
+    // function would result in a different return value (e.g. retrying after a
+    // later error).
+    //
+    // Note that serializer middleware will still run after this. So serializers
+    // like "Date object preserver" will continue to work.
+    const data = JSON.parse(stringify(undefinedToNull(resultOp.data)));
 
     userlandStep.data = data;
     userlandStep.timing = resultOp.timing;
@@ -2959,6 +3112,14 @@ export interface ExecutionState {
   executingStep?: Readonly<Omit<OutgoingOp, "id">>;
 
   /**
+   * AI metadata accumulated from userland OTel spans that ended while the
+   * current step was executing, pushed by the metadata span processor's sink
+   * and drained into the step's outgoing op in the step's teardown. Only set
+   * while `executingStep` is.
+   */
+  executingStepAIMetadata?: AIMetadata;
+
+  /**
    * A map of step IDs to their data, used to fill previously-completed steps
    * with state from the executor.
    */
@@ -2970,7 +3131,7 @@ export interface ExecutionState {
    * normal steps (they have no result), so this lives separately from
    * `stepState`.
    */
-  priorDefers: Record<string, unknown>;
+  priorDefers: Record<string, { abortable?: boolean }>;
 
   /**
    * The number of steps we expect to fulfil based on the state passed from the
@@ -3147,7 +3308,9 @@ function resolveStepIdCollision({
   }
 
   throw new UnreachableError(
-    `Could not resolve step ID collision for "${baseId}" after ${stepsMap.size + 1} attempts`,
+    `Could not resolve step ID collision for "${baseId}" after ${
+      stepsMap.size + 1
+    } attempts`,
   );
 }
 

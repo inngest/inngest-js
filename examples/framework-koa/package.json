@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "inngest": "^3.5.0",
+    "inngest": "^4.4.0",
     "koa": "^2.14.2",
     "koa-bodyparser": "^4.4.1"
   },

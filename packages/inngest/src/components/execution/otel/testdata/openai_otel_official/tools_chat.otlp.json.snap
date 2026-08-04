@@ -1,0 +1,18 @@
+[
+  {
+    "span": "chat gpt-4.1-nano",
+    "metadata": {
+      "requestModel": "gpt-4.1-nano",
+      "responseModel": "gpt-4.1-nano-2025-04-14",
+      "provider": "openai",
+      "operationName": "chat",
+      "responseId": "chatcmpl-DrBr2Rq2QohIZSHpQZggjEIGFCnek",
+      "finishReasons": [
+        "tool_calls"
+      ],
+      "inputTokens": 56,
+      "outputTokens": 30,
+      "latencyMs": 984.809814453125
+    }
+  }
+]

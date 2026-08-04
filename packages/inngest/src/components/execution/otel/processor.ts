@@ -1,4 +1,4 @@
-import type { Span } from "@opentelemetry/api";
+import { type Context, type Span, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
   detectResources,
@@ -352,6 +352,14 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#spansToExport.add(span);
     this.#traceParents.set(spanId, parentState);
 
+    const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
+    if (stepCtx) {
+      span.setAttribute(Attribute.InngestStepId, stepCtx.id);
+      span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
+      span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
+      span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
+    }
+
     // For direct children of the root span during step execution, set a
     // dedicated attribute with the deterministic step span ID. The Go executor
     // creates executor.step spans with the same deterministic ID (from the same
@@ -362,24 +370,18 @@ export class InngestSpanProcessor implements SpanProcessor {
         (span as unknown as { parentSpanId?: string }).parentSpanId;
 
       if (spanParentId === parentState.rootSpanId) {
-        const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
         if (stepCtx) {
-          const seed = stepCtx.hashedStepId + ":" + String(stepCtx.attempt);
-          const newSpanId = deterministicSpanID(seed);
+          const newSpanId = deterministicSpanID(stepCtx.hashedStepId);
           trackDebug(
             "setting inngest.step.parentSpanId=%s (seed=%s) on span %s step %s index %d attempt %d",
             newSpanId,
-            seed,
+            stepCtx.hashedStepId,
             spanId,
             stepCtx.id,
             stepCtx.index,
             stepCtx.attempt,
           );
           span.setAttribute(Attribute.InngestStepParentSpanId, newSpanId);
-          span.setAttribute(Attribute.InngestStepId, stepCtx.id);
-          span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
-          span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
-          span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
         }
       }
     }
@@ -425,14 +427,10 @@ export class InngestSpanProcessor implements SpanProcessor {
    * interface. This is called when a span is started, and is used to track
    * spans that are children of spans we care about.
    */
-  onStart(span: Span): void {
+  onStart(span: Span, parentContext: Context): void {
     const devDebug = processorDevDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
-    // Support both OTel SDK v2.x (parentSpanContext.spanId) and v1.x
-    // (parentSpanId as a plain string) since users may have either version.
-    const parentSpanId =
-      (span as unknown as ReadableSpan).parentSpanContext?.spanId ??
-      (span as unknown as { parentSpanId?: string }).parentSpanId;
+    const parentSpanId = trace.getSpanContext(parentContext)?.spanId;
 
     // The root span isn't captured here, but we can capture children of it
     // here.

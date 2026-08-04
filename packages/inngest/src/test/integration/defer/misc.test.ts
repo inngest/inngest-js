@@ -149,13 +149,14 @@ describe("defer ID collision", async () => {
   }
 });
 
-test("defer in step", async () => {
+matrixCheckpointing("defer in step", async (checkpointing) => {
   // Can call `defer` within a step
 
   const parentState = createState({});
   const deferState = createState({});
 
   const client = new Inngest({
+    checkpointing,
     id: randomSuffix(testFileName),
     isDev: true,
   });
@@ -441,4 +442,43 @@ test("can't pass a normal function", async () => {
     expect.objectContaining({ runId: parentState.runId }),
     "defer skipped: function not created via createDefer",
   );
+});
+
+test("propagates experiment ref to the deferred run", async () => {
+  const childState = createState({
+    parents: null as unknown as {
+      fnSlug: string;
+      runId: string;
+      experiment?: { experimentName: string; variant: string };
+    }[],
+  });
+  const client = new Inngest({ id: randomSuffix(testFileName), isDev: true });
+  const eventName = randomSuffix("evt");
+
+  const child = createDefer(
+    client,
+    { id: "child" },
+    async ({ parents, runId }) => {
+      childState.runId = runId;
+      childState.parents = parents;
+    },
+  );
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: { event: eventName } },
+    async ({ defer }) => {
+      defer("c", {
+        function: child,
+        data: {},
+        experiment: { experimentName: "checkout-flow", variant: "control" },
+      });
+    },
+  );
+  await createTestApp({ client, functions: [fn, child], serve: createServer });
+  await client.send({ name: eventName, data: {} });
+  await childState.waitForRunComplete();
+
+  expect(childState.parents[0]!.experiment).toEqual({
+    experimentName: "checkout-flow",
+    variant: "control",
+  });
 });

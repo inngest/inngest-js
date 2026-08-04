@@ -1,3 +1,4 @@
+import type { Logger } from "../middleware/logger.ts";
 import { stringify } from "./strings.ts";
 
 /**
@@ -21,6 +22,12 @@ export const createStream = (opts?: {
    * Defaults to `" "`.
    */
   value?: string;
+
+  /**
+   * Reports write failures not already known about via `cancel()` (not all
+   * runtimes call it reliably on disconnect).
+   */
+  logger?: Logger;
 }): Promise<{ finalize: (data: unknown) => void; stream: ReadableStream }> => {
   /**
    * We need to resolve this promise with both the stream and the `finalize`
@@ -42,27 +49,55 @@ export const createStream = (opts?: {
 
   return new Promise(async (resolve, reject) => {
     try {
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let closed = false;
+
       const stream = new ReadableStream({
         start(controller) {
           const encoder = new TextEncoder();
 
-          const heartbeat = setInterval(() => {
-            controller.enqueue(encoder.encode(value));
+          heartbeat = setInterval(() => {
+            if (closed) return;
+
+            try {
+              controller.enqueue(encoder.encode(value));
+            } catch (err) {
+              // `cancel()` normally clears this interval before we'd ever hit
+              // this catch, so reaching it means the runtime didn't call it.
+              closed = true;
+              clearInterval(heartbeat);
+              opts?.logger?.debug(
+                { err },
+                "Failed to write heartbeat to stream",
+              );
+            }
           }, interval);
 
           const finalize = (data: unknown) => {
             clearInterval(heartbeat);
 
-            // `data` may be a `Promise`. If it is, we need to wait for it to
-            // resolve before sending it. To support this elegantly we'll always
-            // assume it's a promise and handle that case.
-            void Promise.resolve(data).then((resolvedData) => {
-              controller.enqueue(encoder.encode(stringify(resolvedData)));
-              controller.close();
-            });
+            void Promise.resolve(data)
+              .then((resolvedData) => {
+                if (closed) return;
+                closed = true;
+
+                controller.enqueue(encoder.encode(stringify(resolvedData)));
+                controller.close();
+              })
+              .catch((err) => {
+                opts?.logger?.debug(
+                  { err },
+                  "Failed to write final value to stream",
+                );
+              });
           };
 
           passFinalize(finalize);
+        },
+
+        cancel() {
+          closed = true;
+          clearInterval(heartbeat);
         },
       });
 

@@ -23,8 +23,17 @@ export type UseRealtimeRunStatus =
 
 export type ClientSubscriptionToken = Realtime.Subscribe.ClientToken;
 
-type TokenFactory = () => Promise<
-  string | ClientSubscriptionToken | Realtime.Subscribe.Token
+type TokenTopics<
+  TTopics extends readonly string[] | undefined = readonly string[] | undefined,
+> = TTopics extends readonly string[] ? [...TTopics] : string[];
+
+type TokenFactory<
+  TChannel extends Realtime.ChannelInput = Realtime.ChannelInput,
+  TTopics extends readonly string[] | undefined = readonly string[] | undefined,
+> = () => Promise<
+  | string
+  | ClientSubscriptionToken
+  | Realtime.Subscribe.Token<TChannel, TokenTopics<TTopics>>
 >;
 type UseRealtimePauseReason = "hidden" | "disabled" | null;
 
@@ -112,7 +121,10 @@ export interface UseRealtimeOptions<
   // Either a pre-minted subscription token or a token factory that returns
   // a token key string, a client token from
   // `getClientSubscriptionToken()`, or a full token object.
-  token?: Realtime.Subscribe.Token | TokenFactory;
+  token?:
+    | ClientSubscriptionToken
+    | Realtime.Subscribe.Token<TChannel, TokenTopics<TTopics>>
+    | TokenFactory<TChannel, TTopics>;
 
   key?: string;
   enabled?: boolean;
@@ -285,6 +297,25 @@ export const useRealtime = <
   const channelKey =
     typeof channel === "string" ? channel : (channel?.name ?? undefined);
   const topicsKey = topics ? JSON.stringify([...topics]) : "";
+  const tokenInputKey =
+    typeof tokenInput === "function"
+      ? "factory"
+      : tokenInput
+        ? isSubscriptionToken(tokenInput)
+          ? JSON.stringify({
+              apiBaseUrl: tokenInput.apiBaseUrl,
+              channel:
+                typeof tokenInput.channel === "string"
+                  ? tokenInput.channel
+                  : tokenInput.channel.name,
+              key: tokenInput.key,
+              topics: [...tokenInput.topics],
+            })
+          : JSON.stringify({
+              apiBaseUrl: tokenInput.apiBaseUrl,
+              key: tokenInput.key,
+            })
+        : "";
   const [allMessages, setAllMessages] = useState<Realtime.Message[]>([]);
   const [messageDelta, setMessageDelta] = useState<Realtime.Message[]>([]);
   const [messagesByTopic, setMessagesByTopic] = useState<
@@ -308,10 +339,15 @@ export const useRealtime = <
   const bufferIntervalRef = useRef(bufferInterval);
   const messageLimitRef = useRef(historyLimit);
   const runStatusRef = useRef(runStatus);
+  const tokenInputRef = useRef(tokenInput);
 
   useEffect(() => {
     runStatusRef.current = runStatus;
   }, [runStatus]);
+
+  useEffect(() => {
+    tokenInputRef.current = tokenInput;
+  }, [tokenInput]);
 
   useEffect(() => {
     bufferIntervalRef.current = bufferInterval;
@@ -444,12 +480,29 @@ export const useRealtime = <
     };
 
     const resolveToken = async (): Promise<Realtime.Subscribe.Token> => {
-      if (tokenInput && typeof tokenInput !== "function") {
-        return tokenInput;
+      const currentTokenInput = tokenInputRef.current;
+
+      if (currentTokenInput && typeof currentTokenInput !== "function") {
+        if (isSubscriptionToken(currentTokenInput)) {
+          return currentTokenInput as Realtime.Subscribe.Token;
+        }
+
+        if (!channel || !topics) {
+          throw new Error(
+            "useRealtime token object did not include channel/topics and channel/topics were not provided",
+          );
+        }
+
+        return {
+          channel: channel as Realtime.ChannelInput,
+          topics: topics as string[],
+          key: currentTokenInput.key,
+          apiBaseUrl: currentTokenInput.apiBaseUrl,
+        } as Realtime.Subscribe.Token;
       }
 
-      if (typeof tokenInput === "function") {
-        const next = await tokenInput();
+      if (typeof currentTokenInput === "function") {
+        const next = await currentTokenInput();
         if (typeof next === "string") {
           if (!channel || !topics) {
             throw new Error(
@@ -658,7 +711,7 @@ export const useRealtime = <
     reconnect,
     reconnectMaxMs,
     reconnectMinMs,
-    tokenInput,
+    tokenInputKey,
     topicsKey,
     validate,
   ]);

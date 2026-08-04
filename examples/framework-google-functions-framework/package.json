@@ -12,7 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "@google-cloud/functions-framework": "^3.3.0",
-    "inngest": "^3.6.2"
+    "inngest": "^4.4.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",

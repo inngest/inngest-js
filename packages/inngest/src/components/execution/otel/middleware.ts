@@ -10,6 +10,7 @@ import {
   createProvider,
   extendProvider,
   type Instrumentations,
+  warnDeprecatedCreateProviderBehaviour,
 } from "./util.ts";
 
 const devDebug = Debug(`${debugPrefix}:middleware`);
@@ -32,11 +33,14 @@ export interface ExtendedTracesMiddlewareOptions {
    * The behaviour of the Extended Traces middleware. This controls whether the
    * middleware will create a new OpenTelemetry provider, extend an existing one, or
    * do nothing. The default is "auto", which will attempt to extend an
-   * existing provider, and if that fails, create a new one.
+   * existing provider, and if that fails, use the deprecated provider creation
+   * path.
    *
    * - `"auto"`: Attempt to extend an existing provider, and if that fails,
-   *   create a new one.
+   *   create a new one using the deprecated provider creation path.
    * - `"createProvider"`: Create a new OpenTelemetry provider.
+   *   Deprecated. Use @inngest/otel and
+   *   `"extendProvider"` instead.
    * - `"extendProvider"`: Attempt to extend an existing provider.
    * - `"off"`: Do nothing.
    */
@@ -45,9 +49,13 @@ export interface ExtendedTracesMiddlewareOptions {
   /**
    * Add additional instrumentations to the OpenTelemetry provider.
    *
-   * Note that these only apply if the provider is created by the middleware;
-   * extending an existing provider cannot add instrumentations and it instead
-   * must be done wherever the provider is created.
+   * Note that these only apply when the middleware uses the deprecated provider
+   * creation path. Extending an existing provider cannot add instrumentations;
+   * configure them wherever the provider is created instead.
+   *
+   * @deprecated Configure custom instrumentations wherever your OpenTelemetry
+   * provider is created. This option only applies to the deprecated provider
+   * creation path in `extendedTracesMiddleware`.
    */
   instrumentations?: Instrumentations;
 
@@ -86,6 +94,7 @@ export const extendedTracesMiddleware = ({
         break;
       }
 
+      warnDeprecatedCreateProviderBehaviour(behaviour);
       processorReady = createProvider(behaviour, instrumentations).then(
         (created) => {
           if (created.success) {
@@ -103,6 +112,7 @@ export const extendedTracesMiddleware = ({
       break;
     }
     case "createProvider": {
+      warnDeprecatedCreateProviderBehaviour(behaviour);
       processorReady = createProvider(behaviour, instrumentations).then(
         (created) => {
           if (created.success) {
@@ -128,7 +138,7 @@ export const extendedTracesMiddleware = ({
       }
 
       console.warn(
-        'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
+        "unable to extend provider, Extended Traces middleware will not work. Use @inngest/otel, or make sure that the provider is created and imported before the middleware is used.",
       );
 
       break;
@@ -162,7 +172,7 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       } else if (processorReady) {
-        // createProvider is async; register the processor once it resolves.
+        // Provider creation is async; register the processor once it resolves.
         processorReady
           .then(() => {
             if (processor) {

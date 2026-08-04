@@ -6,5 +6,5 @@ export default inngest.createFunction(
     return {
       message: `Hello ${event.name}!`,
     };
-  }
+  },
 );

@@ -105,6 +105,59 @@ describe("ID restrictions", () => {
   it.todo("does not allow characters outside of the character set");
 });
 
+describe("optimizeParallelism deprecation warning", () => {
+  const clientWithWarnSpy = (clientOpts?: {
+    optimizeParallelism?: boolean;
+  }) => {
+    const warn = vi.fn();
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      internalLogger: fromPartial<Logger>({ warn }),
+      ...clientOpts,
+    });
+    return { client, warn };
+  };
+
+  test("warns when a function opts out", () => {
+    const { client, warn } = clientWithWarnSpy();
+    client.createFunction(
+      {
+        id: "opt-par-warn-fn",
+        optimizeParallelism: false,
+        triggers: [{ event: "foo" }],
+      },
+      vi.fn(),
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("group.parallel"),
+    );
+  });
+
+  test("warns once when the client opts out, not per function", () => {
+    const { client, warn } = clientWithWarnSpy({ optimizeParallelism: false });
+    client.createFunction(
+      { id: "opt-par-warn-client", triggers: [{ event: "foo" }] },
+      vi.fn(),
+    );
+    client.createFunction(
+      { id: "opt-par-warn-client-2", triggers: [{ event: "foo" }] },
+      vi.fn(),
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not warn by default", () => {
+    const { client, warn } = clientWithWarnSpy();
+    client.createFunction(
+      { id: "opt-par-no-warn", triggers: [{ event: "foo" }] },
+      vi.fn(),
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
 describe("runFn", () => {
   describe("single-step function", () => {
     const stepRet = { someProperty: "step done" };
@@ -1860,6 +1913,23 @@ describe("runFn", () => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
                 assertType<Error>(error);
+              },
+            },
+            () => {
+              // no-op
+            },
+          );
+        });
+
+        test("onFailure event has received-side meta sessions", () => {
+          inngest.createFunction(
+            {
+              id: "test",
+              triggers: [{ event: "test" }],
+              onFailure: ({ event }) => {
+                expectTypeOf(event.meta).toEqualTypeOf<
+                  { sessions?: Record<string, string> } | undefined
+                >();
               },
             },
             () => {

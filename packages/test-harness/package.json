@@ -4,6 +4,9 @@
   "private": true,
   "description": "Internal integration test harness for Inngest packages",
   "main": "src/index.ts",
+  "scripts": {
+    "lint:fix": "biome check --fix"
+  },
   "devDependencies": {
     "typescript": "~5.8.2",
     "vitest": "^3.0.8",
