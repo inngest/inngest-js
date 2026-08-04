@@ -2414,7 +2414,7 @@ export class InngestCommHandler<
         connect: "v1",
       },
       appVersion: this.client.appVersion,
-      feature_observations: sdkFeatureObservations.getJson(this.client),
+      featureObservations: sdkFeatureObservations.getJson(this.client),
     };
 
     return body;
@@ -2455,7 +2455,7 @@ export class InngestCommHandler<
       env,
       framework: registerBody.framework,
       functions: registerBody.functions,
-      feature_observations: registerBody.feature_observations,
+      featureObservations: registerBody.featureObservations,
       inspection: introspectionBody,
       platform: getPlatformName({
         ...getProcessEnv(),

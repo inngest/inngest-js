@@ -1575,10 +1575,8 @@ export interface RegisterRequest {
    * Feature readiness and configuration facts observed by the SDK.
    *
    * Encoded with protobuf JSON mapping.
-   * Intentionally snake_case because this is the register request wire key.
-   * Connect uses its generated protobuf `featureObservations` field instead.
    */
-  feature_observations?: unknown[];
+  featureObservations?: unknown[];
 }
 
 export interface Capabilities {
@@ -1595,7 +1593,7 @@ export interface InBandRegisterRequest
       | "sdk"
       | "url"
       | "appVersion"
-      | "feature_observations"
+      | "featureObservations"
     >,
     Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
   /**
