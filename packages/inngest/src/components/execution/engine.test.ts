@@ -1021,3 +1021,141 @@ describe("step.invoke session propagation", () => {
     });
   });
 });
+
+describe("defer session propagation", () => {
+  // Drives a real execution whose handler calls `defer(...)`, then inspects the
+  // buffered `DeferAdd` op's `opts.meta`. Asserts the engine resolves the
+  // defer's session layers: the manual `meta.sessions` layer is normalized, and
+  // the run's `ctx.sessions` (aggregated from triggering events) is stamped as
+  // the separate `meta.propagated_sessions` layer, gated by the client toggle.
+  const startDefer = async (
+    enabled: boolean,
+    manualMeta?: Record<string, unknown>,
+  ) => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      sessionPropagation: enabled,
+    });
+
+    const target = createDefer(
+      client,
+      { id: "target-defer" },
+      () => "target-result",
+    );
+
+    const fn = new InngestFunction(
+      client,
+      { id: "caller-fn", triggers: [{ event: "test/event" }] },
+      ({
+        defer,
+      }: Context.Any & { defer: (id: string, opts: unknown) => unknown }) => {
+        defer("d", {
+          function: target,
+          data: { foo: "bar" },
+          ...(manualMeta ? { meta: manualMeta } : {}),
+        });
+        return "done";
+      },
+    );
+
+    // Two triggering events carrying sessions — exercises the run-level
+    // intersection that produces `ctx.sessions`, so both must agree on every
+    // key for it to survive.
+    const sessions = { conv_id: "p1", org_id: "42" };
+    const events = [
+      { name: "test/event", data: {}, meta: { sessions } },
+      { name: "test/event", data: {}, meta: { sessions } },
+    ];
+
+    const execution = fn["createExecution"]({
+      partialOptions: {
+        client,
+        data: fromPartial({ event: events[0], events }),
+        runId: "test-run-id",
+        stepState: {},
+        stepCompletionOrder: [],
+        reqArgs: [],
+        headers: {},
+        stepMode: StepMode.AsyncCheckpointing,
+        queueItemId: "queue-item-123",
+        internalFnId: "internal-fn-456",
+      },
+    });
+
+    const result = await execution.start();
+    // The defer op is a lazy op shipped alongside the terminal response.
+    const steps =
+      (result as { steps?: { op?: string; opts?: unknown }[] }).steps ?? [];
+    const deferOp = steps.find((s) => s.op === StepOpCode.DeferAdd);
+    return { result, deferOp };
+  };
+
+  // Most cases expect the defer to be buffered; assert that once here and hand
+  // back just the `meta` blob under test.
+  const runDefer = async (
+    enabled: boolean,
+    manualMeta?: Record<string, unknown>,
+  ) => {
+    const { deferOp } = await startDefer(enabled, manualMeta);
+    expect(deferOp).toBeDefined();
+    return (deferOp?.opts as { meta?: Record<string, unknown> })?.meta;
+  };
+
+  test("stamps propagated_sessions from ctx.sessions when the toggle is on", async () => {
+    const meta = await runDefer(true);
+    expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("does not stamp when the toggle is off", async () => {
+    const meta = await runDefer(false);
+    expect(meta).toBeUndefined();
+  });
+
+  test("stamps manual sessions even when the toggle is off", async () => {
+    const meta = await runDefer(false, { sessions: { conv_id: "manual" } });
+    // Manual sessions are explicit user intent and always travel; the toggle
+    // only gates the inherited (propagated) layer, never the manual one.
+    expect(meta?.sessions).toEqual({ conv_id: "manual" });
+    expect(meta?.propagated_sessions).toBeUndefined();
+  });
+
+  test("keeps the manual sessions layer distinct from propagated", async () => {
+    const meta = await runDefer(true, { sessions: { conv_id: "manual" } });
+    // Manual and propagated travel as separate layers; the server merges them
+    // (manual wins). The SDK must not merge them itself.
+    expect(meta?.sessions).toEqual({ conv_id: "manual" });
+    expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("preserves a null tombstone on the manual sessions layer", async () => {
+    const meta = await runDefer(true, { sessions: { conv_id: null } });
+    // The tombstone must survive to finalize so the server can cut the matching
+    // inherited (propagated) session.
+    expect(meta?.sessions).toEqual({ conv_id: null });
+    expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("preserves a whole-field null (clear all inherited sessions)", async () => {
+    const meta = await runDefer(true, { sessions: null });
+    // `sessions: null` is the RFC 7386 whole-document tombstone: clear every
+    // inherited session. It must ship verbatim alongside the still-stamped
+    // propagated layer — the server folds/clears at finalize, not the SDK.
+    expect(meta).toBeDefined();
+    expect(meta?.sessions).toBeNull();
+    expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("skips the defer on invalid meta without derailing the run", async () => {
+    // `defer()` is fire-and-forget: normalization failures are logged and the
+    // call silently skipped, so no `DeferAdd` is buffered but the parent
+    // handler still runs to completion.
+    const { result, deferOp } = await startDefer(true, {
+      sessions: { conv_id: {} },
+    });
+    expect(deferOp).toBeUndefined();
+    expect(result).toMatchObject({
+      steps: [expect.objectContaining({ op: "RunComplete", data: "done" })],
+    });
+  });
+});

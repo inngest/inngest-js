@@ -83,6 +83,30 @@ Without a schema, `data` falls back to `Record<string, any>`.
 
 Receiver-side schema failures (the deferred run reading invalid `event.data`) are not in this category: they fail the deferred run itself, with normal retry semantics.
 
+## Sessions
+
+A deferred run supports sessions, similar to `step.sendEvent` and `step.invoke`.
+
+```ts
+defer("send", {
+  function: sendEmail,
+  data: { ... },
+  meta: { sessions: { conv_id: "abc" } }, // add or override a session
+});
+```
+
+Pass `meta.sessions` to add or override sessions on the deferred run.
+
+The two layers travel separately on the `DeferAdd` op's `meta` blob (manual
+`meta.sessions` normalized with tombstones preserved; propagated stamped from
+`ctx.sessions`). The SDK does not merge them — the server folds them at finalize
+in `buildDeferEvents` before emitting `inngest/deferred.schedule`. This mirrors the
+`step.invoke` and `step.sendEvent` session paths.
+
+Session propagation is gated by the public `sessionPropagation` client option
+(off by default). While disabled, the propagated layer is not stamped; manual
+`meta.sessions` still travels.
+
 ## Sharing across parents
 
 A defer function is one Inngest function in the backend. Multiple parent functions can hold a reference to it and each call to `defer(...)` triggers an independent run.
