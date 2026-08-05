@@ -128,6 +128,21 @@ describe("reduceEventsToPropagatedSessions", () => {
     expect(Object.hasOwn(got, "__proto__")).toBe(true);
     expect(got["__proto__"]).toBe("1");
   });
+
+  // The received invariants below are the server's promise, not something the
+  // parameter type enforces — these events arrive off the executor's request
+  // body. Each case would otherwise propagate a silently wrong session id.
+  test('a null id is skipped, not stringified to "null"', () => {
+    expect(
+      reduceEventsToPropagatedSessions([evt({ a: null, b: "1" })]),
+    ).toEqual({ b: "1" });
+  });
+
+  test("an empty key is skipped", () => {
+    expect(
+      reduceEventsToPropagatedSessions([evt({ "": "1", b: "2" })]),
+    ).toEqual({ b: "2" });
+  });
 });
 
 describe("compareUtf8", () => {

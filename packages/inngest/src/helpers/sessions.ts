@@ -217,7 +217,7 @@ const ownSessions = (
     if (!key) {
       continue;
     }
-    if (id === null) {
+    if (id === null || id === undefined) {
       continue;
     }
     own.set(key, String(id));
