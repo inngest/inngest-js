@@ -10,9 +10,12 @@ import {
   type SandboxErrorCode,
   type SandboxErrorDetail,
   type SandboxFileUploadResult,
+  type SandboxLifecycleOptions,
   type SandboxOutputChunk,
   type SandboxProcess,
   type SandboxRef,
+  type SandboxSnapshot,
+  type SandboxSnapshotCloneOptions,
   type SandboxSnapshotListResult,
   type SandboxSnapshotRef,
   type SandboxStatus,
@@ -32,6 +35,7 @@ import {
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
   normalizeSandboxProcessWaitOptions,
+  normalizeSandboxSnapshotCreateOptions,
   normalizeSandboxSnapshotListOptions,
   normalizeSandboxWaitUntilRunningOptions,
   parseWithSchema,
@@ -49,6 +53,7 @@ type FetchT = typeof fetch;
 export interface SandboxClientConfig {
   baseUrl: () => string;
   apiKey: () => string | undefined;
+  apiKeyFallback?: () => string | undefined;
   headers: () => Record<string, string>;
   fetch: () => FetchT;
 }
@@ -134,6 +139,9 @@ const waitProcessSchema = z
 const safeRepeatActions = new Set<SandboxAction>([
   "create",
   "destroy",
+  "pause",
+  "resume",
+  "restore",
   "file.upload",
   "list",
   "get",
@@ -145,7 +153,6 @@ const safeRepeatActions = new Set<SandboxAction>([
   "process.stream",
   "logs.stream",
   "file.download",
-  "snapshot.create",
   "snapshot.list",
   "snapshot.get",
   "snapshot.waitUntilReady",
@@ -167,7 +174,7 @@ const sandboxTransportFailureMessage = (action: SandboxAction): string => {
     case "process.signal":
       return "The sandbox process signal may have been delivered. Get or wait for the process before sending another";
     case "snapshot.create":
-      return "Snapshot creation may have started. Repeating this durable step is safe because it uses the same intent key";
+      return "Snapshot creation may have started. List snapshots and reconcile before creating another";
     case "snapshot.delete":
       return "Snapshot deletion may have started. Repeating Delete is safe";
     default:
@@ -196,6 +203,7 @@ class SandboxRestTransport {
       sandboxId?: string;
       processId?: string;
       snapshotId?: string;
+      signal?: AbortSignal;
     },
   ): Promise<{
     status: number;
@@ -213,6 +221,7 @@ class SandboxRestTransport {
       sandboxId: options.sandboxId,
       processId: options.processId,
       snapshotId: options.snapshotId,
+      signal: options.signal,
     });
     if (!options.statuses.includes(response.status)) {
       await this.throwResponseError(
@@ -403,7 +412,9 @@ class SandboxRestTransport {
     },
   ): Promise<Response> {
     const apiKey = this.config.apiKey()?.trim();
-    if (!apiKey) {
+    const fallback = this.config.apiKeyFallback?.()?.trim();
+    const selectedKey = apiKey || fallback;
+    if (!selectedKey) {
       throw new SandboxValidationError(
         "A signing or API key is required to use inngest.sandboxes",
       );
@@ -412,7 +423,7 @@ class SandboxRestTransport {
       method,
       headers: {
         ...this.config.headers(),
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${selectedKey}`,
         ...options.headers,
       },
       body: options.body,
@@ -422,10 +433,25 @@ class SandboxRestTransport {
       requestInit.duplex = "half";
     }
     try {
-      return await this.config.fetch()(
+      const response = await this.config.fetch()(
         new URL(path, this.config.baseUrl()),
         requestInit,
       );
+      if (
+        apiKey &&
+        fallback &&
+        fallback !== apiKey &&
+        (response.status === 401 || response.status === 403)
+      ) {
+        return await this.config.fetch()(new URL(path, this.config.baseUrl()), {
+          ...requestInit,
+          headers: {
+            ...requestInit.headers,
+            Authorization: `Bearer ${fallback}`,
+          },
+        });
+      }
+      return response;
     } catch (error) {
       throw this.transportFailure(
         action,
@@ -552,6 +578,26 @@ const sandboxRunningPollIntervalMs = 1_000;
 
 const delay = async (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const lifecycleTimeout = (options?: SandboxLifecycleOptions): number =>
+  normalizeSandboxWaitUntilRunningOptions({
+    timeout: options?.timeout ?? 5 * 60_000,
+  }).timeoutMs;
+
+const abortableDelay = (milliseconds: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted)
+      return reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    const timer = setTimeout(resolve, milliseconds);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 
 const sandboxStartFailedError = (
   action: "create" | "waitUntilRunning",
@@ -681,6 +727,82 @@ const createDirectProcessFacade = (
     },
   };
   return Object.freeze(facade);
+};
+
+const pollSandboxStatus = async (
+  initial: SandboxRef,
+  target: SandboxStatus,
+  action: "pause" | "resume" | "restore",
+  transport: SandboxRestTransport,
+  options?: SandboxLifecycleOptions,
+): Promise<Sandbox> => {
+  const timeoutMs = lifecycleTimeout(options);
+  const deadline = Date.now() + timeoutMs;
+  let current = initial;
+  while (current.status !== target) {
+    if (
+      ["FAILED", "TERMINATED"].includes(current.status) &&
+      action !== "restore"
+    ) {
+      throw new SandboxError({
+        action,
+        code: "invalid_request",
+        message: `Sandbox entered ${current.status} before reaching ${target}`,
+        sandboxId: current.id,
+      });
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0)
+      throw new SandboxError({
+        action,
+        code: "sandbox_start_timed_out",
+        message: `Sandbox did not reach ${target} within ${timeoutMs} milliseconds`,
+        sandboxId: current.id,
+      });
+    await abortableDelay(Math.min(1_000, remaining), options?.signal);
+    const { envelope } = await transport.json(
+      action,
+      "GET",
+      `/v2/sandboxes/${encodeURIComponent(current.id)}`,
+      { statuses: [200], sandboxId: current.id, signal: options?.signal },
+    );
+    current = sandboxRefFromResource(envelope?.data);
+    if (current.id !== initial.id || current.name !== initial.name)
+      throw new SandboxValidationError(
+        "Sandbox lifecycle operation returned an unrelated sandbox",
+      );
+  }
+  return createDirectSandboxFacade(current, transport);
+};
+
+const createDirectSnapshotFacade = (
+  rawRef: unknown,
+  transport: SandboxRestTransport,
+): SandboxSnapshot => {
+  const ref = sandboxSnapshotRefFromResource(rawRef);
+  return Object.freeze({
+    ...ref,
+    resources: Object.freeze({ ...ref.resources }),
+    clone: async (
+      options: SandboxSnapshotCloneOptions,
+      waitOptions?: SandboxLifecycleOptions,
+    ) => {
+      const sandbox = await createSandbox(transport, {
+        name: options.name,
+        snapshotId: ref.id,
+        runningTimeout: options.runningTimeout ?? waitOptions?.timeout,
+      });
+      return sandbox;
+    },
+    delete: async () => {
+      await transport.json(
+        "snapshot.delete",
+        "DELETE",
+        `/v2/sandbox-snapshots/${encodeURIComponent(ref.id)}`,
+        { statuses: [200, 202, 204], snapshotId: ref.id },
+      );
+    },
+  });
 };
 
 const createDirectSandboxFacade = (
@@ -885,6 +1007,99 @@ const createDirectSandboxFacade = (
         transport,
         "waitUntilRunning",
       ),
+    pause: async (options) => {
+      const { envelope } = await transport.json(
+        "pause",
+        "POST",
+        `${basePath}/pause`,
+        {
+          statuses: [200, 201, 202],
+          sandboxId: ref.id,
+          signal: options?.signal,
+        },
+      );
+      const accepted =
+        envelope?.data === undefined
+          ? ref
+          : sandboxRefFromResource(envelope.data);
+      return pollSandboxStatus(accepted, "PAUSED", "pause", transport, options);
+    },
+    resume: async (options) => {
+      const { envelope } = await transport.json(
+        "resume",
+        "POST",
+        `${basePath}/resume`,
+        {
+          statuses: [200, 201, 202],
+          sandboxId: ref.id,
+          signal: options?.signal,
+        },
+      );
+      const accepted =
+        envelope?.data === undefined
+          ? ref
+          : sandboxRefFromResource(envelope.data);
+      return pollSandboxStatus(
+        accepted,
+        "RUNNING",
+        "resume",
+        transport,
+        options,
+      );
+    },
+    snapshot: async (options = {}, waitOptions) => {
+      normalizeSandboxSnapshotCreateOptions(options);
+      const { envelope } = await transport.json(
+        "snapshot.create",
+        "POST",
+        `${basePath}/snapshots`,
+        {
+          body: {},
+          statuses: [200, 201, 202],
+          sandboxId: ref.id,
+          signal: waitOptions?.signal,
+        },
+      );
+      const initial = sandboxSnapshotRefFromResource(envelope?.data);
+      const ready = await waitUntilSandboxSnapshotReady(
+        transport,
+        initial,
+        lifecycleTimeout(waitOptions),
+        waitOptions?.signal,
+      );
+      return createDirectSnapshotFacade(ready, transport);
+    },
+    restore: async (options, waitOptions) => {
+      if (!["PAUSED", "FAILED", "TERMINATED"].includes(ref.status))
+        throw new SandboxValidationError(
+          "Sandbox restore requires status PAUSED, FAILED, or TERMINATED",
+        );
+      const snapshotId = parseWithSchema(
+        canonicalUuidSchema,
+        options.snapshotId,
+        "sandbox snapshot ID",
+      );
+      const { envelope } = await transport.json(
+        "restore",
+        "POST",
+        `${basePath}/restore`,
+        {
+          body: { snapshotId },
+          statuses: [200, 201, 202],
+          sandboxId: ref.id,
+          snapshotId,
+          signal: waitOptions?.signal,
+        },
+      );
+      const accepted = sandboxRefFromResource(envelope?.data);
+      return pollSandboxStatus(
+        accepted,
+        "RUNNING",
+        "restore",
+        transport,
+        waitOptions,
+      );
+    },
     destroy: async (): Promise<SandboxDestroyResult> => {
       const { status, envelope } = await transport.json(
         "destroy",
@@ -1015,7 +1230,7 @@ const getSnapshotForOperation = async (
 export const createSandboxSnapshotForOperation = async (
   client: SandboxClient,
   sandboxId: string,
-  intentKey: string,
+  options: { timeoutMs: number },
 ): Promise<SandboxSnapshotRef> => {
   const transport = transportForClient(client);
   const { status, envelope } = await transport.json(
@@ -1024,7 +1239,6 @@ export const createSandboxSnapshotForOperation = async (
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
       body: {},
-      headers: { "Idempotency-Key": intentKey },
       statuses: [201, 202],
       sandboxId,
     },
@@ -1032,7 +1246,9 @@ export const createSandboxSnapshotForOperation = async (
   const snapshot = sandboxSnapshotRefFromResource(envelope?.data);
   if (
     (status === 201 && snapshot.status !== "READY") ||
-    (status === 202 && snapshot.status !== "CREATING")
+    (status === 202 &&
+      snapshot.status !== "CREATING" &&
+      snapshot.status !== "UPLOADING")
   ) {
     throw new SandboxValidationError(
       `Sandbox snapshot Create returned HTTP ${status} with status ${snapshot.status}`,
@@ -1043,7 +1259,11 @@ export const createSandboxSnapshotForOperation = async (
       "Sandbox snapshot Create returned a snapshot for another sandbox",
     );
   }
-  return snapshot;
+  return waitUntilSandboxSnapshotReadyForOperation(
+    client,
+    snapshot,
+    options.timeoutMs,
+  );
 };
 
 export const listSandboxSnapshotsForOperation = async (
@@ -1102,8 +1322,19 @@ export const waitUntilSandboxSnapshotReadyForOperation = async (
   client: SandboxClient,
   initialSnapshot: SandboxSnapshotRef,
   timeoutMs: number,
+): Promise<SandboxSnapshotRef> =>
+  waitUntilSandboxSnapshotReady(
+    transportForClient(client),
+    initialSnapshot,
+    timeoutMs,
+  );
+
+const waitUntilSandboxSnapshotReady = async (
+  transport: SandboxRestTransport,
+  initialSnapshot: SandboxSnapshotRef,
+  timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<SandboxSnapshotRef> => {
-  const transport = transportForClient(client);
   let snapshot = parseWithSchema(
     sandboxSnapshotRefSchema,
     initialSnapshot,
@@ -1112,7 +1343,7 @@ export const waitUntilSandboxSnapshotReadyForOperation = async (
   if (snapshot.status === "READY") {
     return snapshot;
   }
-  if (snapshot.status !== "CREATING") {
+  if (snapshot.status !== "CREATING" && snapshot.status !== "UPLOADING") {
     throw new SandboxError({
       action: "snapshot.waitUntilReady",
       code: "sandbox_snapshot_not_ready",
@@ -1135,7 +1366,10 @@ export const waitUntilSandboxSnapshotReadyForOperation = async (
         details: [{ status: snapshot.status, timeoutMs }],
       });
     }
-    await delay(Math.min(sandboxRunningPollIntervalMs, remainingMs));
+    await abortableDelay(
+      Math.min(sandboxRunningPollIntervalMs, remainingMs),
+      signal,
+    );
     const current = await getSnapshotForOperation(
       transport,
       snapshot.id,
@@ -1154,7 +1388,7 @@ export const waitUntilSandboxSnapshotReadyForOperation = async (
     if (snapshot.status === "READY") {
       return snapshot;
     }
-    if (snapshot.status !== "CREATING") {
+    if (snapshot.status !== "CREATING" && snapshot.status !== "UPLOADING") {
       throw new SandboxError({
         action: "snapshot.waitUntilReady",
         code: "sandbox_snapshot_not_ready",
@@ -1284,6 +1518,32 @@ export const createSandboxClient = (
         throw error;
       }
     },
+    snapshots: Object.freeze({
+      list: async (options) => {
+        const result = await listSandboxSnapshotsForOperation(client, options);
+        return {
+          ...result,
+          items: result.items.map((snapshot) =>
+            createDirectSnapshotFacade(snapshot, transport),
+          ),
+        };
+      },
+      get: async (snapshotId) => {
+        const parsed = parseWithSchema(
+          canonicalUuidSchema,
+          snapshotId,
+          "sandbox snapshot ID",
+        );
+        const snapshot = await getSnapshotForOperation(
+          transport,
+          parsed,
+          "snapshot.get",
+        );
+        return snapshot
+          ? createDirectSnapshotFacade(snapshot, transport)
+          : null;
+      },
+    }),
   };
   sandboxClientTransports.set(client, transport);
   return client;

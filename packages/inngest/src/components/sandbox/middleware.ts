@@ -1,4 +1,3 @@
-import { hashEventKey } from "../../helpers/strings.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
@@ -84,27 +83,10 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
     };
   } {
     const rawTool: SandboxRawTool = (idOrOptions, operation) => {
-      const operationWithIntent =
-        operation.action === "snapshot.create"
-          ? parseSandboxOperation({
-              ...operation,
-              input: [
-                {
-                  intentKey: `inngest:${hashEventKey(
-                    `${arg.ctx.runId}\0${
-                      typeof idOrOptions === "string"
-                        ? idOrOptions
-                        : idOrOptions.id
-                    }\0${operation.action}`,
-                  )}`,
-                },
-              ],
-            })
-          : operation;
       return arg.ctx.step.run(
         idOrOptions,
         (input) => executeAsStep(this.client, input),
-        operationWithIntent,
+        parseSandboxOperation(operation),
       );
     };
 

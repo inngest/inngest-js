@@ -16,6 +16,7 @@ import {
   type SandboxProcessStartOptions,
   type SandboxProcessWaitOptions,
   type SandboxRef,
+  type SandboxSnapshotCreateOptions,
   type SandboxSnapshotListOptions,
   type SandboxSnapshotRef,
   type SandboxSnapshotWaitOptions,
@@ -158,8 +159,10 @@ const timestampSchema = z
 export const sandboxStatusSchema = z.enum([
   "PENDING",
   "STARTING",
+  "PAUSING",
   "RUNNING",
   "PAUSED",
+  "RESUMING",
   "TERMINATING",
   "TERMINATED",
   "FAILED",
@@ -206,6 +209,7 @@ export const sandboxRefSchema = sandboxResourceSchema
 
 export const sandboxSnapshotStatusSchema = z.enum([
   "CREATING",
+  "UPLOADING",
   "READY",
   "DELETING",
   "DELETED",
@@ -217,9 +221,7 @@ const sandboxSnapshotResourceBaseSchema = z
   .object({
     id: canonicalUuidSchema,
     sourceSandboxId: canonicalUuidSchema,
-    sourceImageId: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/, "Source image ID must be a lowercase SHA-256"),
+    sourceImageRef: z.string().min(1),
     status: sandboxSnapshotStatusSchema,
     compatibilityId: z.string().min(1).optional(),
     consistency: z.literal("CRASH_CONSISTENT"),
@@ -532,6 +534,15 @@ export const normalizeSandboxProcessListOptions = normalizeSandboxListOptions;
 export const normalizeSandboxSnapshotListOptions = (
   options: SandboxSnapshotListOptions = {},
 ) => normalizeSandboxListOptions(options);
+
+export const normalizeSandboxSnapshotCreateOptions = (
+  options: SandboxSnapshotCreateOptions = {},
+): SandboxSnapshotCreateOptions =>
+  parseWithSchema(
+    z.object({}).strict(),
+    options,
+    "sandbox snapshot create options",
+  );
 
 export const normalizeSandboxSnapshotWaitOptions = (
   options: SandboxSnapshotWaitOptions,

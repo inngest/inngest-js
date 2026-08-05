@@ -8,8 +8,10 @@ export type SandboxDuration = number | string | DurationLike;
 export type SandboxStatus =
   | "PENDING"
   | "STARTING"
+  | "PAUSING"
   | "RUNNING"
   | "PAUSED"
+  | "RESUMING"
   | "TERMINATING"
   | "TERMINATED"
   | "FAILED";
@@ -227,6 +229,7 @@ export interface SandboxFileDownloadOptions {
 
 export type SandboxSnapshotStatus =
   | "CREATING"
+  | "UPLOADING"
   | "READY"
   | "DELETING"
   | "DELETED"
@@ -236,7 +239,7 @@ export type SandboxSnapshotStatus =
 export interface SandboxSnapshotResource {
   id: string;
   sourceSandboxId: string;
-  sourceImageId: string;
+  sourceImageRef: string;
   status: SandboxSnapshotStatus;
   compatibilityId?: string;
   consistency: "CRASH_CONSISTENT";
@@ -258,6 +261,21 @@ export interface SandboxSnapshotRef extends SandboxSnapshotResource {
 
 export interface SandboxSnapshotWaitOptions {
   timeout: SandboxDuration;
+  signal?: AbortSignal;
+}
+
+export interface SandboxLifecycleOptions {
+  timeout?: SandboxDuration;
+  signal?: AbortSignal;
+}
+
+export type SandboxSnapshotCreateOptions = Record<string, never>;
+export interface SandboxRestoreOptions {
+  snapshotId: string;
+}
+export interface SandboxSnapshotCloneOptions {
+  name: string;
+  runningTimeout?: SandboxDuration;
 }
 
 export type SandboxSnapshotListOptions = SandboxListOptions;
@@ -271,6 +289,9 @@ export type SandboxAction =
   | "waitUntilRunning"
   | "exec"
   | "destroy"
+  | "pause"
+  | "resume"
+  | "restore"
   | "process.start"
   | "process.list"
   | "process.get"
@@ -403,6 +424,16 @@ export interface Sandbox {
     get(processId: string): Promise<SandboxProcess | null>;
   };
   waitUntilRunning(options: SandboxWaitUntilRunningOptions): Promise<Sandbox>;
+  pause(options?: SandboxLifecycleOptions): Promise<Sandbox>;
+  resume(options?: SandboxLifecycleOptions): Promise<Sandbox>;
+  snapshot(
+    options?: SandboxSnapshotCreateOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<SandboxSnapshot>;
+  restore(
+    options: SandboxRestoreOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<Sandbox>;
   destroy(): Promise<SandboxDestroyResult>;
 }
 
@@ -432,6 +463,20 @@ export interface SandboxClient {
   create(options: SandboxCreateFreshOptions): Promise<Sandbox>;
   list(options?: SandboxListOptions): Promise<SandboxListResult<Sandbox>>;
   get(sandboxId: string): Promise<Sandbox | null>;
+  readonly snapshots: {
+    list(
+      options?: SandboxSnapshotListOptions,
+    ): Promise<SandboxSnapshotListResult<SandboxSnapshot>>;
+    get(snapshotId: string): Promise<SandboxSnapshot | null>;
+  };
+}
+
+export interface SandboxSnapshot extends Readonly<SandboxSnapshotRef> {
+  clone(
+    options: SandboxSnapshotCloneOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<Sandbox>;
+  delete(): Promise<void>;
 }
 
 export interface DurableSandbox {
@@ -468,8 +513,30 @@ export interface DurableSandbox {
     ): Promise<DurableSandboxProcess | null>;
   };
   readonly snapshots: {
-    create(idOrOptions: StepOptionsOrId): Promise<DurableSandboxSnapshot>;
+    create(
+      idOrOptions: StepOptionsOrId,
+      options?: SandboxSnapshotCreateOptions,
+      waitOptions?: SandboxLifecycleOptions,
+    ): Promise<DurableSandboxSnapshot>;
   };
+  snapshot(
+    idOrOptions: StepOptionsOrId,
+    options?: SandboxSnapshotCreateOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<DurableSandboxSnapshot>;
+  pause(
+    idOrOptions: StepOptionsOrId,
+    options?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
+  resume(
+    idOrOptions: StepOptionsOrId,
+    options?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
+  restore(
+    idOrOptions: StepOptionsOrId,
+    options: SandboxRestoreOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
   waitUntilRunning(
     idOrOptions: StepOptionsOrId,
     options: SandboxWaitUntilRunningOptions,
@@ -482,7 +549,7 @@ export interface DurableSandboxSnapshot {
   readonly version: 1;
   readonly id: string;
   readonly sourceSandboxId: string;
-  readonly sourceImageId: string;
+  readonly sourceImageRef: string;
   readonly status: SandboxSnapshotStatus;
   readonly compatibilityId?: string;
   readonly consistency: "CRASH_CONSISTENT";
@@ -500,6 +567,11 @@ export interface DurableSandboxSnapshot {
     options: SandboxSnapshotWaitOptions,
   ): Promise<DurableSandboxSnapshot>;
   delete(idOrOptions: StepOptionsOrId): Promise<void>;
+  clone(
+    idOrOptions: StepOptionsOrId,
+    options: SandboxSnapshotCloneOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
 }
 
 export interface DurableSandboxProcess {

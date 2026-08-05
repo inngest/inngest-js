@@ -59,8 +59,7 @@ const snapshotRef = {
   version: 1,
   id: snapshotId,
   sourceSandboxId: sandboxId,
-  sourceImageId:
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  sourceImageRef: "default",
   status: "READY",
   compatibilityId: "simcity-linux-amd64-v1",
   consistency: "CRASH_CONSISTENT",
@@ -127,6 +126,16 @@ const resultForOperation = (
           sandbox: { ...sandboxRef, status: "TERMINATING" },
         },
       };
+    case "pause":
+      return {
+        protocolVersion: 1,
+        action: "pause",
+        sandbox: { ...sandboxRef, status: "PAUSED" },
+      };
+    case "resume":
+      return { protocolVersion: 1, action: "resume", sandbox: sandboxRef };
+    case "restore":
+      return { protocolVersion: 1, action: "restore", sandbox: sandboxRef };
     case "process.start":
       return {
         protocolVersion: 1,
@@ -503,7 +512,7 @@ describe("step.sandbox", () => {
     });
   });
 
-  test("uses a replay-stable intent for durable snapshot creation", async () => {
+  test("uses replay-stable snapshot creation input", async () => {
     const client = new Inngest({
       id: testClientId,
       isDev: true,
@@ -568,9 +577,7 @@ describe("step.sandbox", () => {
             protocolVersion: 1,
             action: "snapshot.create",
             target: { sandbox: { id: sandboxId } },
-            input: [
-              { intentKey: expect.stringMatching(/^inngest:[0-9a-f]{64}$/) },
-            ],
+            input: [{ timeoutMs: 300_000 }],
           },
         ],
       },
@@ -758,7 +765,7 @@ describe("step.sandbox", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test("executes snapshot creation through internal REST with its durable intent", async () => {
+  test("executes snapshot creation through internal REST", async () => {
     const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
     const {
       kind: _snapshotKind,
@@ -814,8 +821,94 @@ describe("step.sandbox", () => {
     expect(requests[1]?.init).toMatchObject({ method: "POST", body: "{}" });
     expect(
       new Headers(requests[1]?.init?.headers).get("Idempotency-Key"),
-    ).toMatch(/^inngest:[0-9a-f]{64}$/);
-    expect("snapshots" in client.sandboxes).toBe(false);
+    ).toBeNull();
+    expect("snapshots" in client.sandboxes).toBe(true);
+  });
+
+  test("parses the Go REST snapshot contracts and polls through UPLOADING", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      const {
+        kind: _snapshotKind,
+        version: _snapshotVersion,
+        ...readySnapshotResource
+      } = snapshotRef;
+      const uploadingSnapshotResource = {
+        ...readySnapshotResource,
+        status: "UPLOADING",
+        compatibilityId: undefined,
+      };
+      const metadata = { fetchedAt: "2026-08-05T12:00:00.123456789Z" };
+      const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+          return Response.json({ data: sandboxResource });
+        }
+        if (
+          url.pathname === `/v2/sandboxes/${sandboxId}/snapshots` &&
+          init?.method === "POST"
+        ) {
+          return Response.json(
+            { data: uploadingSnapshotResource, metadata },
+            { status: 202 },
+          );
+        }
+        if (url.pathname === `/v2/sandbox-snapshots/${snapshotId}`) {
+          return Response.json({ data: readySnapshotResource, metadata });
+        }
+        if (url.pathname === "/v2/sandbox-snapshots") {
+          return Response.json({
+            data: [readySnapshotResource],
+            metadata,
+            page: { limit: 50, hasMore: false },
+          });
+        }
+        return Response.json(
+          { errors: [{ code: "missing", message: "missing" }] },
+          { status: 404 },
+        );
+      });
+      const client = new Inngest({
+        id: testClientId,
+        signingKey: "signkey-test",
+        baseUrl: "https://api.example.test",
+        fetch: fetchMock,
+      });
+      const sandbox = await client.sandboxes.get(sandboxId);
+      if (!sandbox) throw new Error("Expected sandbox");
+
+      const snapshotPromise = sandbox.snapshot();
+      await vi.advanceTimersByTimeAsync(1_000);
+      const snapshot = await snapshotPromise;
+      const fetched = await client.sandboxes.snapshots.get(snapshotId);
+      const listed = await client.sandboxes.snapshots.list();
+
+      expect(snapshot).toMatchObject({
+        id: snapshotId,
+        sourceImageRef: "default",
+        status: "READY",
+      });
+      expect(fetched).toMatchObject(snapshotRef);
+      expect(listed).toEqual({
+        items: [expect.objectContaining(snapshotRef)],
+        page: { hasMore: false, limit: 50 },
+        fetchedAt: metadata.fetchedAt,
+      });
+      const createRequest = vi
+        .mocked(fetchMock)
+        .mock.calls.find(([input]) =>
+          new URL(input instanceof Request ? input.url : input).pathname.endsWith(
+            "/snapshots",
+          ),
+        );
+      expect(createRequest?.[1]).toMatchObject({
+        method: "POST",
+        body: "{}",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
