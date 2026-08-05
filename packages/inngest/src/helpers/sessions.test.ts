@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { EventMeta } from "../types.ts";
+import type { EventMeta, EventSessions } from "../types.ts";
 import {
   compareUtf8,
   normalizeEventMeta,
@@ -11,7 +11,7 @@ import {
 } from "./sessions.ts";
 
 /** Build a triggering event carrying the given session map. */
-const evt = (sessions?: Record<string, string>) => ({ meta: { sessions } });
+const evt = (sessions?: EventSessions) => ({ meta: { sessions } });
 
 describe("reduceEventsToPropagatedSessions", () => {
   test("single event, single session passes through", () => {
@@ -65,12 +65,8 @@ describe("reduceEventsToPropagatedSessions", () => {
 
   test("numeric and string ids for a key canonicalize equal (no false conflict)", () => {
     // Guards the String() coercion: {a:1} and {a:"1"} match, not conflict.
-    // The numeric id is a deliberate type violation, hence the cast.
-    const numericEvt = {
-      meta: { sessions: { a: 1 } },
-    } as unknown as ReturnType<typeof evt>;
     expect(
-      reduceEventsToPropagatedSessions([numericEvt, evt({ a: "1" })]),
+      reduceEventsToPropagatedSessions([evt({ a: 1 }), evt({ a: "1" })]),
     ).toEqual({
       a: "1",
     });
@@ -127,10 +123,25 @@ describe("reduceEventsToPropagatedSessions", () => {
   test("__proto__ is collected as an own property, not the prototype", () => {
     // Received events are JSON-parsed, which makes __proto__ an own property
     // (unlike an object literal, which would invoke the prototype setter).
-    const sessions = JSON.parse('{"__proto__":"1"}') as Record<string, string>;
+    const sessions: Record<string, string> = JSON.parse('{"__proto__":"1"}');
     const got = reduceEventsToPropagatedSessions([{ meta: { sessions } }]);
     expect(Object.hasOwn(got, "__proto__")).toBe(true);
     expect(got["__proto__"]).toBe("1");
+  });
+
+  // The received invariants below are the server's promise, not something the
+  // parameter type enforces — these events arrive off the executor's request
+  // body. Each case would otherwise propagate a silently wrong session id.
+  test('a null id is skipped, not stringified to "null"', () => {
+    expect(
+      reduceEventsToPropagatedSessions([evt({ a: null, b: "1" })]),
+    ).toEqual({ b: "1" });
+  });
+
+  test("an empty key is skipped", () => {
+    expect(
+      reduceEventsToPropagatedSessions([evt({ "": "1", b: "2" })]),
+    ).toEqual({ b: "2" });
   });
 });
 
