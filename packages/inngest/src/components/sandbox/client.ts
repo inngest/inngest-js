@@ -142,6 +142,8 @@ const waitProcessSchema = z
 const safeRepeatActions = new Set<SandboxAction>([
   "create",
   "destroy",
+  "pause",
+  "resume",
   "file.upload",
   "list",
   "get",
@@ -580,7 +582,6 @@ const abortableDelay = (milliseconds: number, signal?: AbortSignal) =>
       { once: true },
     );
   });
-
 const sandboxStartFailedError = (
   action: "create" | "waitUntilRunning",
   sandbox: SandboxRef,
@@ -743,6 +744,51 @@ export const runSandboxCommandForOperation = (
   return run(command, options);
 };
 
+const pollSandboxStatus = async (
+  initial: SandboxRef,
+  target: SandboxStatus,
+  action: "pause" | "resume",
+  transport: SandboxRestTransport,
+  options?: SandboxLifecycleOptions,
+): Promise<Sandbox> => {
+  const timeoutMs = lifecycleTimeout(options);
+  const deadline = Date.now() + timeoutMs;
+  let current = initial;
+  while (current.status !== target) {
+    if (["FAILED", "TERMINATED"].includes(current.status)) {
+      throw new SandboxError({
+        action,
+        code: "invalid_request",
+        message: `Sandbox entered ${current.status} before reaching ${target}`,
+        sandboxId: current.id,
+      });
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new SandboxError({
+        action,
+        code: "sandbox_start_timed_out",
+        message: `Sandbox did not reach ${target} within ${timeoutMs} milliseconds`,
+        sandboxId: current.id,
+      });
+    }
+    await abortableDelay(Math.min(1_000, remaining), options?.signal);
+    const { envelope } = await transport.json(
+      action,
+      "GET",
+      `/v2/sandboxes/${encodeURIComponent(current.id)}`,
+      { statuses: [200], sandboxId: current.id, signal: options?.signal },
+    );
+    current = sandboxRefFromResource(envelope?.data);
+    if (current.id !== initial.id || current.name !== initial.name) {
+      throw new SandboxValidationError(
+        "Sandbox lifecycle operation returned an unrelated sandbox",
+      );
+    }
+  }
+  return createDirectSandboxFacade(current, transport);
+};
+
 const createDirectSnapshotFacade = (
   rawRef: unknown,
   transport: SandboxRestTransport,
@@ -763,7 +809,6 @@ const createDirectSnapshotFacade = (
     delete: async () => deleteSandboxSnapshot(transport, ref.id),
   });
 };
-
 const createDirectSandboxFacade = (
   rawRef: unknown,
   transport: SandboxRestTransport,
@@ -978,6 +1023,46 @@ const createDirectSandboxFacade = (
         transport,
         "waitUntilRunning",
       ),
+    pause: async (options) => {
+      const { envelope } = await transport.json(
+        "pause",
+        "POST",
+        `${basePath}/pause`,
+        {
+          statuses: [200, 201, 202],
+          sandboxId: ref.id,
+          signal: options?.signal,
+        },
+      );
+      const accepted =
+        envelope?.data === undefined
+          ? ref
+          : sandboxRefFromResource(envelope.data);
+      return pollSandboxStatus(accepted, "PAUSED", "pause", transport, options);
+    },
+    resume: async (options) => {
+      const { envelope } = await transport.json(
+        "resume",
+        "POST",
+        `${basePath}/resume`,
+        {
+          statuses: [200, 201, 202],
+          sandboxId: ref.id,
+          signal: options?.signal,
+        },
+      );
+      const accepted =
+        envelope?.data === undefined
+          ? ref
+          : sandboxRefFromResource(envelope.data);
+      return pollSandboxStatus(
+        accepted,
+        "RUNNING",
+        "resume",
+        transport,
+        options,
+      );
+    },
     snapshot: async (options = {}, waitOptions) => {
       normalizeSandboxSnapshotCreateOptions(options);
       const initial = await createSandboxSnapshot(
@@ -1257,7 +1342,6 @@ const waitUntilSandboxSnapshotReady = async (
     if (deadline - Date.now() <= 0) {
       throw snapshotWaitTimedOutError(snapshot, timeoutMs);
     }
-
     try {
       const current = await getSnapshotForOperation(
         transport,

@@ -136,6 +136,7 @@ const signalInputSchema = z
 const waitInputSchema = z
   .object({ timeoutMs: z.number().int().positive().max(300_000) })
   .strict();
+const lifecycleInputSchema = waitInputSchema;
 const outputInputSchema = z
   .object({
     tailBytes: z
@@ -196,6 +197,22 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       action: z.literal("destroy"),
       target: sandboxTargetSchema,
       input: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("pause"),
+      target: sandboxTargetSchema,
+      input: z.tuple([lifecycleInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("resume"),
+      target: sandboxTargetSchema,
+      input: z.tuple([lifecycleInputSchema]),
     })
     .strict(),
   z
@@ -454,6 +471,26 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("pause"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "PAUSED",
+        "paused sandbox must be PAUSED",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("resume"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "RUNNING",
+        "resumed sandbox must be RUNNING",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("process.start"),
       process: sandboxProcessRefSchema,
     })
@@ -547,6 +584,8 @@ const sandboxErrorPayloadSchema = z
       "waitUntilRunning",
       "exec",
       "destroy",
+      "pause",
+      "resume",
       "process.start",
       "process.list",
       "process.get",

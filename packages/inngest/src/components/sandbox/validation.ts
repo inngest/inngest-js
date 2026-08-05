@@ -161,8 +161,10 @@ const timestampSchema = z
 export const sandboxStatusSchema = z.enum([
   "PENDING",
   "STARTING",
+  "PAUSING",
   "RUNNING",
   "PAUSED",
+  "RESUMING",
   "TERMINATING",
   "TERMINATED",
   "FAILED",

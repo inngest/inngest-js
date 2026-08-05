@@ -262,6 +262,18 @@ export const executeSandboxOperation = async (
         result,
       };
     }
+    case "pause":
+    case "resume": {
+      const sandbox = await sandboxForOperation(
+        client,
+        operation.target.sandbox,
+      )[operation.action]({ timeout: operation.input[0].timeoutMs });
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        sandbox: sandboxRefForWire(sandbox),
+      };
+    }
     case "process.start": {
       const sandbox = sandboxForOperation(client, operation.target.sandbox);
       const process = await sandbox.processes.start(operation.input[0]);
@@ -731,6 +743,32 @@ export const createDurableSandboxFacade = (
         action: "waitUntilRunning",
         target: sandboxTarget(ref),
         input: [normalizeSandboxWaitUntilRunningOptions(options)],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    },
+    pause: async (idOrOptions, options) => {
+      const input = normalizeSandboxWaitUntilRunningOptions({
+        timeout: options?.timeout ?? 5 * 60_000,
+      });
+      const operation = parseSandboxOperationForAction("pause", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "pause",
+        target: sandboxTarget(ref),
+        input: [input],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    },
+    resume: async (idOrOptions, options) => {
+      const input = normalizeSandboxWaitUntilRunningOptions({
+        timeout: options?.timeout ?? 5 * 60_000,
+      });
+      const operation = parseSandboxOperationForAction("resume", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "resume",
+        target: sandboxTarget(ref),
+        input: [input],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
       return createDurableSandboxFacade(result.sandbox, rawToolResolver);

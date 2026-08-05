@@ -126,6 +126,14 @@ const resultForOperation = (
           sandbox: { ...sandboxRef, status: "TERMINATING" },
         },
       };
+    case "pause":
+      return {
+        protocolVersion: 1,
+        action: "pause",
+        sandbox: { ...sandboxRef, status: "PAUSED" },
+      };
+    case "resume":
+      return { protocolVersion: 1, action: "resume", sandbox: sandboxRef };
     case "process.start":
       return {
         protocolVersion: 1,
@@ -2447,6 +2455,66 @@ describe("inngest.sandboxes", () => {
         status: "RUNNING",
       });
       expect(methods).toEqual(["POST", "GET", "GET"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("polls a pausing sandbox without redispatching Pause", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+      const pausingResource = { ...runningResource, status: "PAUSING" };
+      const pausedResource = { ...runningResource, status: "PAUSED" };
+      const sandboxPath = `/v2/sandboxes/${sandboxId}`;
+      const calls: Array<{ method: string; path: string }> = [];
+      let sandboxGetCount = 0;
+      const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        const method = init?.method ?? "GET";
+        calls.push({ method, path: url.pathname });
+
+        if (url.pathname === sandboxPath && method === "GET") {
+          sandboxGetCount++;
+          return Response.json({
+            data:
+              sandboxGetCount === 1
+                ? runningResource
+                : sandboxGetCount === 2
+                  ? pausingResource
+                  : pausedResource,
+          });
+        }
+        if (url.pathname === `${sandboxPath}/pause` && method === "POST") {
+          return Response.json({ data: pausingResource });
+        }
+        throw new Error(`Unexpected request: ${method} ${url}`);
+      });
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
+
+      const result = sandbox.pause({ timeout: "5s" });
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      await expect(result).resolves.toMatchObject({
+        id: sandboxId,
+        status: "PAUSED",
+      });
+      expect(calls).toEqual([
+        { method: "GET", path: sandboxPath },
+        { method: "POST", path: `${sandboxPath}/pause` },
+        { method: "GET", path: sandboxPath },
+        { method: "GET", path: sandboxPath },
+      ]);
     } finally {
       vi.useRealTimers();
     }
