@@ -25,6 +25,7 @@ import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../execution/InngestExecution
 import { type Inngest, internalLoggerSymbol } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import { sdkFeatureObservations } from "../sdkFeatureObservations.ts";
 import type {
   ConnectionEstablishData,
   RequestHandler,
@@ -54,14 +55,14 @@ export interface PreparedConnectionConfig {
  */
 function collectFunctions(
   apps: ConnectApp[],
-): Record<string, { client: Inngest.Like; functions: InngestFunction.Any[] }> {
+): Record<string, { client: Inngest.Any; functions: InngestFunction.Any[] }> {
   const result: Record<
     string,
-    { client: Inngest.Like; functions: InngestFunction.Any[] }
+    { client: Inngest.Any; functions: InngestFunction.Any[] }
   > = {};
 
   for (const app of apps) {
-    const client = app.client as Inngest.Any;
+    const client = app.client;
     if (result[client.id]) {
       throw new Error(`Duplicate app id: ${client.id}`);
     }
@@ -113,7 +114,7 @@ export function prepareConnectionConfig(
   // Build function configs
   const functionConfigs: Record<
     string,
-    { client: Inngest.Like; functions: FunctionConfig[] }
+    { client: Inngest.Any; functions: FunctionConfig[] }
   > = {};
   for (const [appId, { client, functions: fns }] of Object.entries(functions)) {
     functionConfigs[appId] = {
@@ -121,7 +122,7 @@ export function prepareConnectionConfig(
       functions: fns.flatMap((f) =>
         f["getConfig"]({
           baseUrl: new URL("wss://connect"),
-          appPrefix: (client as Inngest.Any).id,
+          appPrefix: client.id,
           isConnect: true,
         }),
       ),
@@ -152,8 +153,9 @@ export function prepareConnectionConfig(
     apps: Object.entries(functionConfigs).map(
       ([appId, { client, functions: fns }]) => ({
         appName: appId,
-        appVersion: (client as Inngest.Any).appVersion,
+        appVersion: client.appVersion,
         functions: new TextEncoder().encode(JSON.stringify(fns)),
+        featureObservations: sdkFeatureObservations.get(client),
       }),
     ),
   };

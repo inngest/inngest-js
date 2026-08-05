@@ -2,8 +2,15 @@ import { context, trace } from "@opentelemetry/api";
 import type { Instrumentation } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
+import {
+  OTelProviderSource,
+  type OTelSetup,
+  OTelSetupFailure,
+  OTelSetupPath,
+} from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { debugPrefix } from "./consts.ts";
 import { InngestSpanProcessor } from "./processor.ts";
+import { attemptProviderExtension } from "./provider.ts";
 
 const debug = Debug(`${debugPrefix}:createProvider`);
 
@@ -14,8 +21,8 @@ export const createProvider = async (
   _behaviour: Behaviour,
   instrumentations: Instrumentations | undefined = [],
 ): Promise<
-  | { success: true; processor: InngestSpanProcessor }
-  | { success: false; error?: unknown }
+  | { success: true; processor: InngestSpanProcessor; setup: OTelSetup }
+  | { success: false; error?: unknown; setup: OTelSetup }
 > => {
   try {
     // TODO Check if there's an existing provider
@@ -53,13 +60,48 @@ export const createProvider = async (
       instrumentations: instrList,
     });
 
-    trace.setGlobalTracerProvider(p);
+    if (!trace.setGlobalTracerProvider(p)) {
+      return {
+        success: false,
+        setup: {
+          path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+          providerFound: false,
+          providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: false,
+          failure: OTelSetupFailure.OTEL_SETUP_FAILURE_PROVIDER_CREATION_FAILED,
+        },
+      };
+    }
+
     context.setGlobalContextManager(new AsyncHooksContextManager().enable());
 
-    return { success: true, processor };
+    return {
+      success: true,
+      processor,
+      setup: {
+        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+        providerFound: false,
+        providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+        addSpanProcessorAttempted: true,
+        spanProcessorAdded: true,
+        failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
+      },
+    };
   } catch (err) {
     debug("failed to create provider:", err);
-    return { success: false, error: err };
+    return {
+      success: false,
+      error: err,
+      setup: {
+        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+        providerFound: false,
+        providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+        addSpanProcessorAttempted: true,
+        spanProcessorAdded: false,
+        failure: OTelSetupFailure.OTEL_SETUP_FAILURE_PROVIDER_CREATION_FAILED,
+      },
+    };
   }
 };
 
@@ -84,59 +126,24 @@ export function warnDeprecatedCreateProviderBehaviour(
  */
 export const extendProvider = (
   behaviour: Behaviour,
-): { success: true; processor: InngestSpanProcessor } | { success: false } => {
-  // Attempt to add our processor and export to the existing provider
-  const globalProvider = trace.getTracerProvider();
-  if (!globalProvider) {
+):
+  | { success: true; processor: InngestSpanProcessor; setup: OTelSetup }
+  | { success: false; setup: OTelSetup } => {
+  const processor = new InngestSpanProcessor();
+  const setup = attemptProviderExtension({ processor });
+
+  if (!setup.providerFound) {
     if (behaviour !== "auto") {
       console.warn(
         'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Use @inngest/otel instead, or make sure that the provider is created and imported before the middleware is used.',
       );
     }
 
-    return { success: false };
+    return { success: false, setup };
   }
 
-  // trace.getTracerProvider() returns a ProxyTracerProvider wrapper
-  // Unwrap it to get the actual provider.
-  const existingProvider =
-    "getDelegate" in globalProvider &&
-    typeof globalProvider.getDelegate === "function"
-      ? globalProvider.getDelegate()
-      : globalProvider;
-
-  if (!existingProvider) {
-    if (behaviour !== "auto") {
-      console.warn(
-        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
-      );
-    }
-
-    return { success: false };
-  }
-
-  const processor = new InngestSpanProcessor();
-
-  // OTel SDK v1 exposes addSpanProcessor() on BasicTracerProvider.
-  if (
-    "addSpanProcessor" in existingProvider &&
-    typeof existingProvider.addSpanProcessor === "function"
-  ) {
-    existingProvider.addSpanProcessor(processor);
-    return { success: true, processor };
-  }
-
-  // OTel SDK v2 removed addSpanProcessor() — span processors are constructor-only.
-  // No public API exists to add processors post-construction (OTel issue #5299),
-  // so push into the internal _spanProcessors array.
-  // These fields are TypeScript `private` (not #private), so accessible at runtime.
-  // TODO: Replace this internal mutation with a SpanProcessor delegator that is
-  // installed when creating the provider and can dynamically delegate to
-  // processors added later.
-  const spanProcessors = getInternalSpanProcessors(existingProvider);
-  if (spanProcessors) {
-    spanProcessors.push(processor);
-    return { success: true, processor };
+  if (setup.spanProcessorAdded) {
+    return { success: true, processor, setup };
   }
 
   if (behaviour !== "auto") {
@@ -147,28 +154,5 @@ export const extendProvider = (
     );
   }
 
-  return { success: false };
+  return { success: false, setup };
 };
-
-/**
- * Extract the internal span processors array from a BasicTracerProvider.
- * Returns the mutable array if accessible, undefined otherwise.
- *
- * BasicTracerProvider._activeSpanProcessor is a MultiSpanProcessor,
- * which holds a _spanProcessors: SpanProcessor[] array.
- * Both are TypeScript `private` (not ES #private), so accessible at runtime.
- *
- * Wrapped in try/catch because this accesses internal OTel fields that may
- * change — must never crash the host app.
- */
-function getInternalSpanProcessors(provider: unknown): unknown[] | undefined {
-  try {
-    const active = (provider as Record<string, unknown>)?._activeSpanProcessor;
-    if (typeof active !== "object" || active === null) return undefined;
-
-    const arr = (active as Record<string, unknown>)._spanProcessors;
-    return Array.isArray(arr) ? arr : undefined;
-  } catch {
-    return undefined;
-  }
-}

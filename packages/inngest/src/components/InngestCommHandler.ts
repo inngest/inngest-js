@@ -78,6 +78,7 @@ import {
   InngestFunction,
 } from "./InngestFunction.ts";
 import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
+import { sdkFeatureObservations } from "./sdkFeatureObservations.ts";
 
 /**
  * An entry in the function registry, tracking which config ID maps to which
@@ -2413,6 +2414,7 @@ export class InngestCommHandler<
         connect: "v1",
       },
       appVersion: this.client.appVersion,
+      featureObservations: sdkFeatureObservations.getJson(this.client),
     };
 
     return body;
@@ -2453,6 +2455,7 @@ export class InngestCommHandler<
       env,
       framework: registerBody.framework,
       functions: registerBody.functions,
+      featureObservations: registerBody.featureObservations,
       inspection: introspectionBody,
       platform: getPlatformName({
         ...getProcessEnv(),
@@ -2487,10 +2490,7 @@ export class InngestCommHandler<
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
-    const registerBody = this.registerBody({
-      url: this.reqUrl(url),
-      deployId: null,
-    });
+    const functionCount = this.configs(this.reqUrl(url)).length;
 
     if (!this.client.mode) {
       throw new Error("No mode set; cannot introspect without mode");
@@ -2504,7 +2504,7 @@ export class InngestCommHandler<
       },
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.client.signingKey),
-      function_count: registerBody.functions.length,
+      function_count: functionCount,
       mode: this.client.mode,
       schema_version: "2024-05-24",
     } satisfies UnauthenticatedIntrospection;

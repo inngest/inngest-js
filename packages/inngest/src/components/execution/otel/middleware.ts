@@ -1,7 +1,12 @@
 import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
+import type { OTelSetup } from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import { version } from "../../../version.ts";
 import { Middleware } from "../../middleware/middleware.ts";
+import {
+  behaviourToExtendedTracesBehavior,
+  sdkFeatureObservations,
+} from "../../sdkFeatureObservations.ts";
 import { clientProcessorMap } from "./access.ts";
 import { debugPrefix } from "./consts.ts";
 import type { InngestSpanProcessor } from "./processor.ts";
@@ -84,6 +89,23 @@ export const extendedTracesMiddleware = ({
 
   let processor: InngestSpanProcessor | undefined;
   let processorReady: Promise<void> | undefined;
+  let setup: OTelSetup | undefined;
+  const configuredBehavior = behaviourToExtendedTracesBehavior(behaviour);
+
+  function replaceExtendedTracesObservation(
+    client: Middleware.OnRegisterArgs["client"],
+  ): void {
+    sdkFeatureObservations.extendedTraces.replace(client, {
+      behavior: configuredBehavior,
+      setup,
+    });
+  }
+
+  function setProcessorReady(pending: Promise<void>): void {
+    processorReady = pending.finally(() => {
+      processorReady = undefined;
+    });
+  }
 
   switch (behaviour) {
     case "auto": {
@@ -91,12 +113,15 @@ export const extendedTracesMiddleware = ({
       if (extended.success) {
         devDebug("extended existing provider");
         processor = extended.processor;
+        setup = extended.setup;
         break;
       }
 
+      setup = extended.setup;
       warnDeprecatedCreateProviderBehaviour(behaviour);
-      processorReady = createProvider(behaviour, instrumentations).then(
-        (created) => {
+      setProcessorReady(
+        createProvider(behaviour, instrumentations).then((created) => {
+          setup = created.setup;
           if (created.success) {
             devDebug("created new provider");
             processor = created.processor;
@@ -106,15 +131,16 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
-        },
+        }),
       );
 
       break;
     }
     case "createProvider": {
       warnDeprecatedCreateProviderBehaviour(behaviour);
-      processorReady = createProvider(behaviour, instrumentations).then(
-        (created) => {
+      setProcessorReady(
+        createProvider(behaviour, instrumentations).then((created) => {
+          setup = created.setup;
           if (created.success) {
             devDebug("created new provider");
             processor = created.processor;
@@ -124,7 +150,7 @@ export const extendedTracesMiddleware = ({
               created.error ?? "",
             );
           }
-        },
+        }),
       );
 
       break;
@@ -134,9 +160,11 @@ export const extendedTracesMiddleware = ({
       if (extended.success) {
         devDebug("extended existing provider");
         processor = extended.processor;
+        setup = extended.setup;
         break;
       }
 
+      setup = extended.setup;
       console.warn(
         "unable to extend provider, Extended Traces middleware will not work. Use @inngest/otel, or make sure that the provider is created and imported before the middleware is used.",
       );
@@ -162,6 +190,8 @@ export const extendedTracesMiddleware = ({
      * client.
      */
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
+      replaceExtendedTracesObservation(client);
+
       // Set the logger for our otel processors and exporters.
       // If this is called multiple times, only the first call is set.
       devDebug(
@@ -172,9 +202,12 @@ export const extendedTracesMiddleware = ({
       if (processor) {
         clientProcessorMap.set(client, processor);
       } else if (processorReady) {
-        // Provider creation is async; register the processor once it resolves.
+        // Legacy provider creation is async, so this client may report the
+        // current sync snapshot before setup completes. Keep execution wiring
+        // updated once the processor is available.
         processorReady
           .then(() => {
+            replaceExtendedTracesObservation(client);
             if (processor) {
               clientProcessorMap.set(client, processor);
             }
