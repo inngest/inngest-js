@@ -3,7 +3,10 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { normalizeEventMeta } from "../helpers/sessions.ts";
+import {
+  normalizeEventMeta,
+  stampPropagatedSessions,
+} from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -220,58 +223,6 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
   }
 
   return options;
-};
-
-/**
- * Stamps the run's propagated sessions onto each outgoing `step.sendEvent`
- * payload as the separate `meta.propagated_sessions` layer, so child runs stay
- * grouped in the parent's sessions. The manual `meta.sessions` layer is left
- * untouched — the server merges the two (manual wins per key).
- *
- * `sessions` is `ctx.sessions`, read at send time so a run-level override
- * (mutating `ctx.sessions` in the handler) is reflected. When there is nothing
- * to propagate the payload is returned unchanged.
- */
-export const stampPropagatedSessions = (
-  payload: SendEventPayload,
-  sessions: Record<string, string> | undefined,
-): SendEventPayload => {
-  if (!sessions || Object.keys(sessions).length === 0) {
-    return payload;
-  }
-
-  const stamp = <T extends { meta?: EventMeta }>(p: T): T => ({
-    ...p,
-    meta: {
-      ...p.meta,
-
-      // Clone so that mutating one event's sessions in middleware doesn't
-      // inadvertently mutate every other event's sessions, or `ctx.sessions`
-      // itself.
-      propagated_sessions: { ...sessions },
-    },
-  });
-
-  return Array.isArray(payload) ? payload.map(stamp) : stamp(payload);
-};
-
-/**
- * Stamps the run's propagated sessions onto a `step.invoke` payload as the
- * separate `meta.propagated_sessions` layer, mirroring
- * {@link stampPropagatedSessions} for `step.sendEvent`.
- */
-export const stampPropagatedSessionsOnInvoke = (
-  payload: MinimalEventPayload,
-  sessions: Record<string, string> | undefined,
-): MinimalEventPayload => {
-  if (!sessions || Object.keys(sessions).length === 0) {
-    return payload;
-  }
-
-  return {
-    ...payload,
-    meta: { ...payload.meta, propagated_sessions: sessions },
-  };
 };
 
 /**
@@ -555,6 +506,12 @@ export const createStepTools = <
         fn: (ctx, _idOrOptions, payload) => {
           const fn = execution["options"]["fn"];
           // Only stamp inherited sessions when the client-level toggle is on.
+          //
+          // `_send` also stamps from the ambient run context, so for a Node
+          // runtime this is redundant — but deliberately so: it stamps
+          // synchronously from the direct `ctx`, and so still works on runtimes
+          // where `_send`'s AsyncLocalStorage read comes back empty. `_send`
+          // leaves this stamp authoritative.
           const payloadToSend = client[sessionPropagationSymbol]
             ? stampPropagatedSessions(payload, ctx.sessions)
             : payload;

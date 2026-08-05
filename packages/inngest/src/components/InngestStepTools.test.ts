@@ -12,11 +12,7 @@ import {
 import { type InvocationResult, StepOpCode } from "../types.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
-import {
-  createStepTools,
-  stampPropagatedSessions,
-  stampPropagatedSessionsOnInvoke,
-} from "./InngestStepTools.ts";
+import { createStepTools } from "./InngestStepTools.ts";
 import { realtime } from "./realtime/index.ts";
 
 describe("waitForEvent", () => {
@@ -1456,96 +1452,6 @@ describe("invoke", () => {
       type Actual = GetTestReturn<typeof _test>;
       assertType<IsEqual<Actual, null>>(true);
     });
-  });
-});
-
-describe("stampPropagatedSessions", () => {
-  const sessions = { conv_id: "123", org_id: "42" };
-
-  test("returns payload unchanged when there are no sessions", () => {
-    const payload = { name: "app/event", data: {} };
-    expect(stampPropagatedSessions(payload, undefined)).toBe(payload);
-    expect(stampPropagatedSessions(payload, {})).toBe(payload);
-  });
-
-  test("stamps propagated_sessions onto a single payload", () => {
-    const payload = { name: "app/event", data: {} };
-    expect(stampPropagatedSessions(payload, sessions)).toEqual({
-      name: "app/event",
-      data: {},
-      meta: { propagated_sessions: sessions },
-    });
-  });
-
-  test("stamps each payload in an array", () => {
-    const result = stampPropagatedSessions(
-      [
-        { name: "app/a", data: {} },
-        { name: "app/b", data: {} },
-      ],
-      sessions,
-    );
-    expect(result).toEqual([
-      { name: "app/a", data: {}, meta: { propagated_sessions: sessions } },
-      { name: "app/b", data: {}, meta: { propagated_sessions: sessions } },
-    ]);
-  });
-
-  test("preserves the manual sessions layer alongside propagated", () => {
-    const payload = {
-      name: "app/event",
-      data: {},
-      meta: { sessions: { conv_id: "manual" } },
-    };
-    expect(stampPropagatedSessions(payload, sessions)).toEqual({
-      name: "app/event",
-      data: {},
-      meta: {
-        sessions: { conv_id: "manual" },
-        propagated_sessions: sessions,
-      },
-    });
-  });
-
-  test("does not mutate the input payload", () => {
-    const payload = { name: "app/event", data: {} };
-    stampPropagatedSessions(payload, sessions);
-    expect(payload).toEqual({ name: "app/event", data: {} });
-  });
-});
-
-describe("stampPropagatedSessionsOnInvoke", () => {
-  const sessions = { conv_id: "123", org_id: "42" };
-
-  test("returns payload unchanged when there are no sessions", () => {
-    const payload = { data: {} };
-    expect(stampPropagatedSessionsOnInvoke(payload, undefined)).toBe(payload);
-    expect(stampPropagatedSessionsOnInvoke(payload, {})).toBe(payload);
-  });
-
-  test("stamps propagated_sessions onto the invoke payload", () => {
-    const payload = { data: { foo: "bar" } };
-    expect(stampPropagatedSessionsOnInvoke(payload, sessions)).toEqual({
-      data: { foo: "bar" },
-      meta: { propagated_sessions: sessions },
-    });
-  });
-
-  test("preserves the manual sessions layer alongside propagated", () => {
-    const payload = { data: {}, meta: { sessions: { conv_id: "manual" } } };
-    expect(stampPropagatedSessionsOnInvoke(payload, sessions)).toEqual({
-      data: {},
-      meta: {
-        sessions: { conv_id: "manual" },
-        propagated_sessions: sessions,
-      },
-    });
-  });
-
-  test("does not mutate the input payload", () => {
-    const payload = { data: {} };
-    stampPropagatedSessionsOnInvoke(payload, sessions);
-    expect(payload).toEqual({ data: {} });
   });
 });
 

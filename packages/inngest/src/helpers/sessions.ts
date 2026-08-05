@@ -3,6 +3,7 @@ import type {
   EventSessions,
   PropagatedEventSessions,
 } from "../types.ts";
+import type { SendEventPayload } from "./types.ts";
 
 /**
  * A normalized session layer as carried on the wire. Values are session-id
@@ -262,3 +263,57 @@ export const reduceEventsToPropagatedSessions = (
   // Object.fromEntries so keys like "__proto__" land as own properties.
   return Object.fromEntries(entries);
 };
+
+/**
+ * Stamps `sessions` onto a single outgoing payload as the
+ * `meta.propagated_sessions` layer, so child runs stay grouped in the parent's
+ * sessions. The manual `meta.sessions` layer is left untouched — the server
+ * merges the two (manual wins per key).
+ *
+ * Shared by every propagation entry point (`step.sendEvent`, `step.invoke`, and
+ * a bare `inngest.send()` inside a run) so their stamping can't drift.
+ *
+ * `sessions` is read at stamp time so a run-level override (mutating
+ * `ctx.sessions` in the handler) is reflected. When there is nothing to
+ * propagate the payload is returned unchanged.
+ *
+ * Pass `onlyIfAbsent` when stamping *downstream* of another entry point, to
+ * leave the upstream stamp authoritative rather than clobbering it.
+ */
+export const stampPropagatedSessionsOnEvent = <T extends { meta?: EventMeta }>(
+  payload: T,
+  sessions: Record<string, string> | undefined,
+  { onlyIfAbsent = false }: { onlyIfAbsent?: boolean } = {},
+): T => {
+  if (!sessions || Object.keys(sessions).length === 0) {
+    return payload;
+  }
+
+  if (onlyIfAbsent && payload.meta?.propagated_sessions !== undefined) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    meta: {
+      ...payload.meta,
+
+      // Clone so that mutating one event's sessions in middleware doesn't
+      // inadvertently mutate every other event's sessions, or `ctx.sessions`
+      // itself.
+      propagated_sessions: { ...sessions },
+    },
+  };
+};
+
+/**
+ * {@link stampPropagatedSessionsOnEvent} over a `step.sendEvent` payload, which
+ * may be a single event or an array.
+ */
+export const stampPropagatedSessions = (
+  payload: SendEventPayload,
+  sessions: Record<string, string> | undefined,
+): SendEventPayload =>
+  Array.isArray(payload)
+    ? payload.map((p) => stampPropagatedSessionsOnEvent(p, sessions))
+    : stampPropagatedSessionsOnEvent(payload, sessions);

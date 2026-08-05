@@ -26,7 +26,10 @@ import {
   warnOnce,
 } from "../helpers/log.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
-import { normalizeEventMeta } from "../helpers/sessions.ts";
+import {
+  normalizeEventMeta,
+  stampPropagatedSessionsOnEvent,
+} from "../helpers/sessions.ts";
 import { hashSigningKey, stringify } from "../helpers/strings.ts";
 import type {
   AsArray,
@@ -1050,13 +1053,11 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       if (asyncCtx?.app === this) {
         const sessions = asyncCtx.execution?.ctx.sessions;
         if (sessions && Object.keys(sessions).length > 0) {
+          // `onlyIfAbsent` leaves payloads already stamped upstream by
+          // `step.sendEvent` authoritative; it stamps from its direct `ctx`
+          // before reaching `_send`.
           payloads = payloads.map((p) =>
-            // Leave payloads already stamped upstream by `step.sendEvent`
-            // authoritative; it stamps from its direct `ctx` before reaching
-            // `_send`.
-            p.meta?.propagated_sessions === undefined
-              ? { ...p, meta: { ...p.meta, propagated_sessions: sessions } }
-              : p,
+            stampPropagatedSessionsOnEvent(p, sessions, { onlyIfAbsent: true }),
           );
         }
       }
