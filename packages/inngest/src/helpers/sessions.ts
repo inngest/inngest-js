@@ -262,3 +262,55 @@ export const reduceEventsToPropagatedSessions = (
   // Object.fromEntries so keys like "__proto__" land as own properties.
   return Object.fromEntries(entries);
 };
+
+/**
+ * Stamps the run's propagated sessions onto each outgoing `step.sendEvent`
+ * payload as the separate `meta.propagated_sessions` layer, so child runs stay
+ * grouped in the parent's sessions. The manual `meta.sessions` layer is left
+ * untouched — the server merges the two (manual wins per key).
+ *
+ * `sessions` is `ctx.sessions`, read at send time so a run-level override
+ * (mutating `ctx.sessions` in the handler) is reflected. When there is nothing
+ * to propagate the payload is returned unchanged.
+ */
+export const stampPropagatedSessions = (
+  payload: SendEventPayload,
+  sessions: Record<string, string> | undefined,
+): SendEventPayload => {
+  if (!sessions || Object.keys(sessions).length === 0) {
+    return payload;
+  }
+
+  const stamp = <T extends { meta?: EventMeta }>(p: T): T => ({
+    ...p,
+    meta: {
+      ...p.meta,
+
+      // Clone so that mutating one event's sessions in middleware doesn't
+      // inadvertently mutate every other event's sessions, or `ctx.sessions`
+      // itself.
+      propagated_sessions: { ...sessions },
+    },
+  });
+
+  return Array.isArray(payload) ? payload.map(stamp) : stamp(payload);
+};
+
+/**
+ * Stamps the run's propagated sessions onto a `step.invoke` payload as the
+ * separate `meta.propagated_sessions` layer, mirroring
+ * {@link stampPropagatedSessions} for `step.sendEvent`.
+ */
+export const stampPropagatedSessionsOnInvoke = (
+  payload: MinimalEventPayload,
+  sessions: Record<string, string> | undefined,
+): MinimalEventPayload => {
+  if (!sessions || Object.keys(sessions).length === 0) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    meta: { ...payload.meta, propagated_sessions: sessions },
+  };
+};
