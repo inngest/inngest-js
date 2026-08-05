@@ -182,8 +182,46 @@ export const compareUtf8 = (a: string, b: string): number => {
 };
 
 /**
- * Reduces a run's triggering events to `≤5` deterministic sessions that
- * become the propagated sessions.
+ * Collects one event's sessions into a Map, which (unlike a plain object)
+ * sidesteps `__proto__`/prototype-key footguns.
+ */
+const ownSessions = (
+  sessions: EventMeta["sessions"] | undefined,
+): Map<string, string> => {
+  const own = new Map<string, string>();
+  if (!sessions) {
+    return own;
+  }
+
+  for (const [key, id] of Object.entries(sessions)) {
+    if (!key) {
+      continue; // defensive: the server rejects empty keys at ingest
+    }
+    if (id === null) {
+      // A run's triggering events are already-resolved (received) events, so
+      // their sessions never hold tombstones; guard defensively since the
+      // send-time EventSessionValue type now admits null.
+      continue;
+    }
+    // Canonicalize to string so a numeric id and its string form match rather
+    // than diverge (ids are already strings when received; this guards against
+    // runtime type violations).
+    own.set(key, String(id));
+  }
+
+  return own;
+};
+
+/**
+ * Reduces a run's triggering events to the deterministic set of sessions that
+ * become the propagated sessions: the intersection of every triggering event's
+ * `(key, id)` pairs.
+ *
+ * A key must be present with the same id on *all* the events to survive, so a
+ * key missing from any one event — or disagreeing on its id — is dropped. The
+ * server caps a single event at `MAX_EVENT_SESSIONS`, which bounds the
+ * intersection at that too; the truncation below is a backstop for an event
+ * that somehow arrives over the cap.
  */
 export const reduceEventsToPropagatedSessions = (
   // Accepts the send-time EventMeta shape (numeric ids permitted) since that is
@@ -191,60 +229,35 @@ export const reduceEventsToPropagatedSessions = (
   // to strings below, so received string ids pass through unchanged.
   events: ReadonlyArray<{ meta?: EventMeta | null }>,
 ): Record<string, string> => {
-  // Group the sessions by key
-
-  // A Map (not a plain object) sidesteps `__proto__`/prototype-key footguns
-  // while collecting.
-  const idsByKey = new Map<string, Set<string>>();
+  // Seed from the first event, then narrow against each of the rest.
+  let shared: Map<string, string> | undefined;
   for (const event of events) {
-    const sessions = event?.meta?.sessions;
-    if (!sessions) {
-      continue;
+    const own = ownSessions(event?.meta?.sessions);
+    if (!shared) {
+      shared = own;
+    } else {
+      // Deleting during iteration is well-defined: entries removed before they
+      // are reached are not visited.
+      for (const [key, id] of shared) {
+        if (own.get(key) !== id) {
+          shared.delete(key);
+        }
+      }
     }
-    for (const [key, id] of Object.entries(sessions)) {
-      if (!key) {
-        continue; // defensive: the server rejects empty keys at ingest
-      }
-      if (id === null) {
-        // A run's triggering events are already-resolved (received) events, so
-        // their sessions never hold tombstones; guard defensively since the
-        // send-time EventSessionValue type now admits null.
-        continue;
-      }
-      let ids = idsByKey.get(key);
-      if (!ids) {
-        ids = new Set();
-        idsByKey.set(key, ids);
-      }
-      // Canonicalize to string so a numeric id and its string form dedupe
-      // rather than register as a conflict (ids are already strings when
-      // received; this guards against runtime type violations).
-      ids.add(String(id));
+    if (shared.size === 0) {
+      break;
     }
   }
 
-  // Keep only keys with a single distinct id across the batch.
-  //
-  // A key that disagrees on its id (e.g. a batch carrying conv_id:1 and
-  // conv_id:2) is dropped entirely rather than resolved to one id, for
-  // predictability.
-  const keys: string[] = [];
-  for (const [key, ids] of idsByKey) {
-    if (ids.size === 1) {
-      keys.push(key);
-    }
+  if (!shared || shared.size === 0) {
+    return {};
   }
 
   // Deterministic `≤5`: sort by UTF-8 byte order (matching the server) and
   // take the first MAX_EVENT_SESSIONS keys.
-  keys.sort(compareUtf8);
-
-  const entries = keys
-    .slice(0, MAX_EVENT_SESSIONS)
-    .map((key): [string, string] => {
-      const [id] = idsByKey.get(key)!;
-      return [key, id as string];
-    });
+  const entries = [...shared.entries()]
+    .sort(([a], [b]) => compareUtf8(a, b))
+    .slice(0, MAX_EVENT_SESSIONS);
 
   // Object.fromEntries so keys like "__proto__" land as own properties.
   return Object.fromEntries(entries);
