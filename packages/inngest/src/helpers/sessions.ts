@@ -1,16 +1,38 @@
-import type { EventMeta, EventSessions } from "../types.ts";
+import type {
+  EventMeta,
+  EventSessions,
+  PropagatedEventSessions,
+} from "../types.ts";
 
 /**
- * Validates event sessions and normalizes their values to strings, matching
- * the shape stored by the Inngest server.
- *
- * Returns `undefined` if no sessions were given.
+ * A normalized session layer as carried on the wire. Values are session-id
+ * strings; `null` is a per-key tombstone (RFC 7386) preserved so the server can
+ * cut the matching inherited session. Only the manual layer admits tombstones.
  */
-export const normalizeEventSessions = (
+type NormalizedSessions = Record<string, string | null>;
+
+/**
+ * Validates event sessions and normalizes their values to strings, matching the
+ * shape stored by the Inngest server. Shared by the two layer-specific entry
+ * points below; `layer` selects how `null` is treated.
+ *
+ * Returns `undefined` if no sessions were given (an absent field, or an empty
+ * object — an empty RFC 7386 patch leaves the inherited layer untouched);
+ * returns `null` for a preserved "clear all" tombstone.
+ */
+const normalizeSessions = (
   sessions: EventSessions | null | undefined,
-): Record<string, string> | undefined => {
-  if (sessions === undefined || sessions === null) {
+  layer: "manual" | "propagated",
+): NormalizedSessions | null | undefined => {
+  const allowCut = layer === "manual";
+
+  if (sessions === undefined) {
     return undefined;
+  }
+  if (sessions === null) {
+    // Whole-field null: on the manual layer this is the "clear all inherited"
+    // tombstone, preserved on the wire; on the propagated layer it is a no-op.
+    return allowCut ? null : undefined;
   }
   if (typeof sessions !== "object" || Array.isArray(sessions)) {
     throw new Error("Event sessions must be an object");
@@ -24,13 +46,25 @@ export const normalizeEventSessions = (
   // Collected as entries and built with Object.fromEntries so that special
   // keys like "__proto__" become own properties instead of being silently
   // dropped by a plain object assignment.
-  const normalized: [string, string][] = [];
+  const normalized: [string, string | null][] = [];
   for (const [key, value] of entries) {
     if (!key) {
       throw new Error("Event session keys cannot be empty");
     }
+    if (value === null) {
+      if (!allowCut) {
+        throw new Error(`Event session "${key}" must be a string or number`);
+      }
+      // Per-key tombstone: preserved on the wire, consumed server-side.
+      normalized.push([key, null]);
+      continue;
+    }
     if (typeof value !== "string" && typeof value !== "number") {
-      throw new Error(`Event session "${key}" must be a string or number`);
+      throw new Error(
+        allowCut
+          ? `Event session "${key}" must be a string, number, or null`
+          : `Event session "${key}" must be a string or number`,
+      );
     }
     if (typeof value === "number" && !Number.isFinite(value)) {
       throw new Error(`Event session "${key}" must be a finite number`);
@@ -47,6 +81,35 @@ export const normalizeEventSessions = (
   return Object.fromEntries(normalized);
 };
 
+/**
+ * Normalizes the manual `meta.sessions` layer, which is user-authored and so
+ * admits RFC 7386 tombstones: a `null` value is preserved as a per-key cut of
+ * the inherited session, and a whole-field `null` is preserved (as `null`) to
+ * mean "clear all inherited sessions". Tombstones are consumed server-side and
+ * never count against the per-event session limit.
+ */
+export const normalizeManualSessions = (
+  sessions: EventSessions | null | undefined,
+): NormalizedSessions | null | undefined =>
+  normalizeSessions(sessions, "manual");
+
+/**
+ * Normalizes the `meta.propagated_sessions` layer, which is machine-stamped from
+ * `ctx.sessions` and carries no tombstones — so `null` values are rejected and a
+ * whole-field `null` is dropped. The layer is typed `@internal`, but a hand-set
+ * value can still reach here (a direct `inngest.send()` is never stamped, and
+ * `step.sendEvent` leaves the payload untouched when there is nothing to
+ * propagate), so the rejection is a real trust boundary rather than a
+ * formality.
+ */
+export const normalizePropagatedSessions = (
+  sessions: PropagatedEventSessions | null | undefined,
+): Record<string, string> | undefined =>
+  // The "propagated" layer never returns tombstones, so narrow the value type.
+  normalizeSessions(sessions, "propagated") as
+    | Record<string, string>
+    | undefined;
+
 export const normalizeEventMeta = (
   meta: EventMeta | null | undefined,
 ): NormalizedEventMeta | undefined => {
@@ -57,13 +120,17 @@ export const normalizeEventMeta = (
     throw new Error("Event meta must be an object");
   }
 
-  const sessions = normalizeEventSessions(meta.sessions);
-  const propagatedSessions = normalizeEventSessions(meta.propagated_sessions);
+  const sessions = normalizeManualSessions(meta.sessions);
+  const propagatedSessions = normalizePropagatedSessions(
+    meta.propagated_sessions,
+  );
   if (sessions === undefined && propagatedSessions === undefined) {
     return undefined;
   }
 
   const out: NormalizedEventMeta = {};
+  // `sessions` may be `null` (whole-field "clear all inherited" tombstone),
+  // which must survive on the wire — so distinguish it from `undefined`.
   if (sessions !== undefined) {
     out.sessions = sessions;
   }
@@ -75,7 +142,7 @@ export const normalizeEventMeta = (
 };
 
 type NormalizedEventMeta = {
-  sessions?: Record<string, string>;
+  sessions?: NormalizedSessions | null;
   propagated_sessions?: Record<string, string>;
 };
 
@@ -137,6 +204,12 @@ export const reduceEventsToPropagatedSessions = (
     for (const [key, id] of Object.entries(sessions)) {
       if (!key) {
         continue; // defensive: the server rejects empty keys at ingest
+      }
+      if (id === null) {
+        // A run's triggering events are already-resolved (received) events, so
+        // their sessions never hold tombstones; guard defensively since the
+        // send-time EventSessionValue type now admits null.
+        continue;
       }
       let ids = idsByKey.get(key);
       if (!ids) {

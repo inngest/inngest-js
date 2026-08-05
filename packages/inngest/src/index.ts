@@ -118,6 +118,8 @@ export type {
   JsonError,
   LogLevel,
   OutgoingOp,
+  PropagatedEventSessions,
+  PropagatedEventSessionValue,
   ReceivedEventMeta,
   RegisterOptions,
   ScheduledTimerEventPayload,

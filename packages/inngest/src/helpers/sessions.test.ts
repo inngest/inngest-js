@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { compareUtf8, reduceEventsToPropagatedSessions } from "./sessions.ts";
+import {
+  compareUtf8,
+  normalizeEventMeta,
+  normalizeManualSessions,
+  normalizePropagatedSessions,
+  reduceEventsToPropagatedSessions,
+} from "./sessions.ts";
 
 /** Build a triggering event carrying the given session map. */
 const evt = (sessions?: Record<string, string>) => ({ meta: { sessions } });
@@ -158,5 +164,85 @@ describe("compareUtf8", () => {
     expect(compareUtf8("￿", "\u{1F600}")).toBeLessThan(0);
     // Sanity: JS's native UTF-16 comparison disagrees (proves we diverge from it).
     expect("￿" < "\u{1F600}").toBe(false);
+  });
+});
+
+describe("normalizePropagatedSessions", () => {
+  test("normalizes string/number ids, absent when empty", () => {
+    expect(normalizePropagatedSessions({ a: "1", b: 2 })).toEqual({
+      a: "1",
+      b: "2",
+    });
+    expect(normalizePropagatedSessions(undefined)).toBeUndefined();
+    expect(normalizePropagatedSessions({})).toBeUndefined();
+  });
+
+  test("rejects a per-key null, since the layer carries no tombstones", () => {
+    expect(() =>
+      // @ts-expect-error the type forbids tombstones here; this guards the
+      // runtime path against JS callers and payloads rebuilt from untyped data
+      normalizePropagatedSessions({ a: null }),
+    ).toThrow(/must be a string or number/);
+  });
+
+  test("drops whole-field null rather than preserving it", () => {
+    expect(normalizePropagatedSessions(null)).toBeUndefined();
+  });
+});
+
+describe("normalizeManualSessions (tombstones)", () => {
+  test("normalizes string/number ids, absent when empty", () => {
+    expect(normalizeManualSessions({ a: "1", b: 2 })).toEqual({
+      a: "1",
+      b: "2",
+    });
+    expect(normalizeManualSessions(undefined)).toBeUndefined();
+    expect(normalizeManualSessions({})).toBeUndefined();
+  });
+
+  test("preserves a per-key null tombstone", () => {
+    expect(normalizeManualSessions({ conv_id: null, keep: "1" })).toEqual({
+      conv_id: null,
+      keep: "1",
+    });
+  });
+
+  test("preserves whole-field null (clear all)", () => {
+    expect(normalizeManualSessions(null)).toBeNull();
+  });
+
+  test("still rejects non-string/number/null values", () => {
+    expect(() =>
+      // @ts-expect-error runtime guard for a value the type forbids
+      normalizeManualSessions({ a: true }),
+    ).toThrow(/must be a string, number, or null/);
+  });
+});
+
+describe("normalizeEventMeta (tombstones)", () => {
+  test("carries a per-key tombstone on the manual layer through", () => {
+    expect(
+      normalizeEventMeta({
+        sessions: { conv_id: null },
+        propagated_sessions: { conv_id: "123", org_id: "42" },
+      }),
+    ).toEqual({
+      sessions: { conv_id: null },
+      propagated_sessions: { conv_id: "123", org_id: "42" },
+    });
+  });
+
+  test("carries whole-field null (clear all) through, keeping propagated", () => {
+    expect(
+      normalizeEventMeta({
+        sessions: null,
+        propagated_sessions: { a: "1" },
+      }),
+    ).toEqual({ sessions: null, propagated_sessions: { a: "1" } });
+  });
+
+  test("drops the meta entirely when nothing is set", () => {
+    expect(normalizeEventMeta({})).toBeUndefined();
+    expect(normalizeEventMeta(undefined)).toBeUndefined();
   });
 });
