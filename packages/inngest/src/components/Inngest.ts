@@ -40,7 +40,7 @@ import {
   type Logger,
   ProxyLogger,
 } from "../middleware/logger.ts";
-import type { FeatureObservation } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
+import type { FeatureObservations } from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
 import {
   type ApplyAllMiddlewareCtxExtensions,
   type ApplyAllMiddlewareStepExtensions,
@@ -312,12 +312,12 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  [featureObservationsSymbol](): FeatureObservation[] {
+  [featureObservationsSymbol](): FeatureObservations {
     return collectFeatureObservations({
       state: this[featureObservationStateSymbol],
       mode: this.mode,
-      hasEventKey: this.eventKeySet(),
-      hasEventApiOriginOverride: this.hasEventApiOriginOverride(),
+      eventKeyConfigured: this.eventKeySet(),
+      eventApiOriginOverrideConfigured: this.hasEventApiOriginOverride(),
     });
   }
 

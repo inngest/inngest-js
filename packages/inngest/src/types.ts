@@ -1576,7 +1576,7 @@ export interface RegisterRequest {
    *
    * Encoded with protobuf JSON mapping.
    */
-  featureObservations?: unknown[];
+  featureObservations?: Record<string, unknown>;
 }
 
 export interface Capabilities {

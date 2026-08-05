@@ -354,10 +354,10 @@ export function sendEventsReadinessReasonToJSON(object: SendEventsReadinessReaso
   }
 }
 
-export interface FeatureObservation {
-  aiMetadataExtraction?: AIMetadataExtraction | undefined;
-  extendedTraces?: ExtendedTraces | undefined;
-  sendEvents?: SendEvents | undefined;
+export interface FeatureObservations {
+  aiMetadataExtraction: AIMetadataExtraction | undefined;
+  extendedTraces: ExtendedTraces | undefined;
+  sendEvents: SendEvents | undefined;
 }
 
 export interface OTelSetup {
@@ -390,16 +390,16 @@ export interface SendEvents {
 }
 
 export interface SendEventsConfig {
-  hasEventKey: boolean;
-  hasEventApiOriginOverride: boolean;
+  eventKeyConfigured: boolean;
+  eventApiOriginOverrideConfigured: boolean;
 }
 
-function createBaseFeatureObservation(): FeatureObservation {
+function createBaseFeatureObservations(): FeatureObservations {
   return { aiMetadataExtraction: undefined, extendedTraces: undefined, sendEvents: undefined };
 }
 
-export const FeatureObservation: MessageFns<FeatureObservation> = {
-  encode(message: FeatureObservation, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const FeatureObservations: MessageFns<FeatureObservations> = {
+  encode(message: FeatureObservations, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.aiMetadataExtraction !== undefined) {
       AIMetadataExtraction.encode(message.aiMetadataExtraction, writer.uint32(10).fork()).join();
     }
@@ -412,10 +412,10 @@ export const FeatureObservation: MessageFns<FeatureObservation> = {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): FeatureObservation {
+  decode(input: BinaryReader | Uint8Array, length?: number): FeatureObservations {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseFeatureObservation();
+    const message = createBaseFeatureObservations();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -452,7 +452,7 @@ export const FeatureObservation: MessageFns<FeatureObservation> = {
     return message;
   },
 
-  fromJSON(object: any): FeatureObservation {
+  fromJSON(object: any): FeatureObservations {
     return {
       aiMetadataExtraction: isSet(object.aiMetadataExtraction)
         ? AIMetadataExtraction.fromJSON(object.aiMetadataExtraction)
@@ -462,7 +462,7 @@ export const FeatureObservation: MessageFns<FeatureObservation> = {
     };
   },
 
-  toJSON(message: FeatureObservation): unknown {
+  toJSON(message: FeatureObservations): unknown {
     const obj: any = {};
     if (message.aiMetadataExtraction !== undefined) {
       obj.aiMetadataExtraction = AIMetadataExtraction.toJSON(message.aiMetadataExtraction);
@@ -476,11 +476,11 @@ export const FeatureObservation: MessageFns<FeatureObservation> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<FeatureObservation>, I>>(base?: I): FeatureObservation {
-    return FeatureObservation.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<FeatureObservations>, I>>(base?: I): FeatureObservations {
+    return FeatureObservations.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<FeatureObservation>, I>>(object: I): FeatureObservation {
-    const message = createBaseFeatureObservation();
+  fromPartial<I extends Exact<DeepPartial<FeatureObservations>, I>>(object: I): FeatureObservations {
+    const message = createBaseFeatureObservations();
     message.aiMetadataExtraction = (object.aiMetadataExtraction !== undefined && object.aiMetadataExtraction !== null)
       ? AIMetadataExtraction.fromPartial(object.aiMetadataExtraction)
       : undefined;
@@ -958,16 +958,16 @@ export const SendEvents: MessageFns<SendEvents> = {
 };
 
 function createBaseSendEventsConfig(): SendEventsConfig {
-  return { hasEventKey: false, hasEventApiOriginOverride: false };
+  return { eventKeyConfigured: false, eventApiOriginOverrideConfigured: false };
 }
 
 export const SendEventsConfig: MessageFns<SendEventsConfig> = {
   encode(message: SendEventsConfig, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.hasEventKey !== false) {
-      writer.uint32(8).bool(message.hasEventKey);
+    if (message.eventKeyConfigured !== false) {
+      writer.uint32(8).bool(message.eventKeyConfigured);
     }
-    if (message.hasEventApiOriginOverride !== false) {
-      writer.uint32(16).bool(message.hasEventApiOriginOverride);
+    if (message.eventApiOriginOverrideConfigured !== false) {
+      writer.uint32(16).bool(message.eventApiOriginOverrideConfigured);
     }
     return writer;
   },
@@ -984,7 +984,7 @@ export const SendEventsConfig: MessageFns<SendEventsConfig> = {
             break;
           }
 
-          message.hasEventKey = reader.bool();
+          message.eventKeyConfigured = reader.bool();
           continue;
         }
         case 2: {
@@ -992,7 +992,7 @@ export const SendEventsConfig: MessageFns<SendEventsConfig> = {
             break;
           }
 
-          message.hasEventApiOriginOverride = reader.bool();
+          message.eventApiOriginOverrideConfigured = reader.bool();
           continue;
         }
       }
@@ -1006,20 +1006,20 @@ export const SendEventsConfig: MessageFns<SendEventsConfig> = {
 
   fromJSON(object: any): SendEventsConfig {
     return {
-      hasEventKey: isSet(object.hasEventKey) ? globalThis.Boolean(object.hasEventKey) : false,
-      hasEventApiOriginOverride: isSet(object.hasEventApiOriginOverride)
-        ? globalThis.Boolean(object.hasEventApiOriginOverride)
+      eventKeyConfigured: isSet(object.eventKeyConfigured) ? globalThis.Boolean(object.eventKeyConfigured) : false,
+      eventApiOriginOverrideConfigured: isSet(object.eventApiOriginOverrideConfigured)
+        ? globalThis.Boolean(object.eventApiOriginOverrideConfigured)
         : false,
     };
   },
 
   toJSON(message: SendEventsConfig): unknown {
     const obj: any = {};
-    if (message.hasEventKey !== false) {
-      obj.hasEventKey = message.hasEventKey;
+    if (message.eventKeyConfigured !== false) {
+      obj.eventKeyConfigured = message.eventKeyConfigured;
     }
-    if (message.hasEventApiOriginOverride !== false) {
-      obj.hasEventApiOriginOverride = message.hasEventApiOriginOverride;
+    if (message.eventApiOriginOverrideConfigured !== false) {
+      obj.eventApiOriginOverrideConfigured = message.eventApiOriginOverrideConfigured;
     }
     return obj;
   },
@@ -1029,8 +1029,8 @@ export const SendEventsConfig: MessageFns<SendEventsConfig> = {
   },
   fromPartial<I extends Exact<DeepPartial<SendEventsConfig>, I>>(object: I): SendEventsConfig {
     const message = createBaseSendEventsConfig();
-    message.hasEventKey = object.hasEventKey ?? false;
-    message.hasEventApiOriginOverride = object.hasEventApiOriginOverride ?? false;
+    message.eventKeyConfigured = object.eventKeyConfigured ?? false;
+    message.eventApiOriginOverrideConfigured = object.eventApiOriginOverrideConfigured ?? false;
     return message;
   },
 };

@@ -1,10 +1,10 @@
 import type { Mode } from "../helpers/env.ts";
+import { isRecord } from "../helpers/types.ts";
 import {
   AIMetadataExtractionReadinessReason,
   ExtendedTracesBehavior,
   ExtendedTracesReadinessReason,
-  FeatureObservation,
-  type FeatureObservation as FeatureObservationMessage,
+  FeatureObservations,
   type OTelSetup,
   OTelSetupFailure,
   OTelSetupPath,
@@ -32,14 +32,17 @@ export interface FeatureObservationState {
   };
 }
 
-export type FeatureObservationJson = Record<string, unknown>;
+export type FeatureObservationsJson = Record<string, unknown>;
 
 export function featureObservationsToJson(
-  observations: FeatureObservationMessage[],
-): FeatureObservationJson[] {
-  return observations.map((observation) => {
-    return FeatureObservation.toJSON(observation) as FeatureObservationJson;
-  });
+  observations: FeatureObservations,
+): FeatureObservationsJson {
+  const json = FeatureObservations.toJSON(observations);
+  if (!isRecord(json)) {
+    throw new Error("SDK feature observations must serialize to a JSON object");
+  }
+
+  return json;
 }
 
 /**
@@ -91,11 +94,11 @@ class SdkFeatureObservations {
     };
   }
 
-  get(client: Inngest.Any): FeatureObservationMessage[] {
+  get(client: Inngest.Any): FeatureObservations {
     return client[featureObservationsSymbol]();
   }
 
-  getJson(client: Inngest.Any): FeatureObservationJson[] {
+  getJson(client: Inngest.Any): FeatureObservationsJson {
     return featureObservationsToJson(this.get(client));
   }
 }
@@ -122,44 +125,40 @@ export function behaviourToExtendedTracesBehavior(
 export function collectFeatureObservations({
   state,
   mode,
-  hasEventKey,
-  hasEventApiOriginOverride,
+  eventKeyConfigured,
+  eventApiOriginOverrideConfigured,
 }: {
   state: FeatureObservationState;
   mode: Mode;
-  hasEventKey: boolean;
-  hasEventApiOriginOverride: boolean;
-}): FeatureObservationMessage[] {
-  return [
-    aiMetadataObservation(state.aiMetadata),
-    extendedTracesObservation(state.extendedTraces),
-    sendEventsObservation({
+  eventKeyConfigured: boolean;
+  eventApiOriginOverrideConfigured: boolean;
+}): FeatureObservations {
+  return {
+    aiMetadataExtraction: aiMetadataObservation(state.aiMetadata),
+    extendedTraces: extendedTracesObservation(state.extendedTraces),
+    sendEvents: sendEventsObservation({
       mode,
-      hasEventKey,
-      hasEventApiOriginOverride,
+      eventKeyConfigured,
+      eventApiOriginOverrideConfigured,
     }),
-  ];
+  };
 }
 
 function aiMetadataObservation({
   enabled,
   setup,
-}: FeatureObservationState["aiMetadata"]): FeatureObservationMessage {
+}: FeatureObservationState["aiMetadata"]): FeatureObservations["aiMetadataExtraction"] {
   if (!enabled) {
     return {
-      aiMetadataExtraction: {
-        readinessReason:
-          AIMetadataExtractionReadinessReason.AI_METADATA_EXTRACTION_READINESS_REASON_DISABLED_BY_USER,
-        otelSetup: undefined,
-      },
+      readinessReason:
+        AIMetadataExtractionReadinessReason.AI_METADATA_EXTRACTION_READINESS_REASON_DISABLED_BY_USER,
+      otelSetup: undefined,
     };
   }
 
   return {
-    aiMetadataExtraction: {
-      readinessReason: aiMetadataReadinessReason(setup),
-      otelSetup: setup,
-    },
+    readinessReason: aiMetadataReadinessReason(setup),
+    otelSetup: setup,
   };
 }
 
@@ -179,28 +178,24 @@ function aiMetadataReadinessReason(
 
 function extendedTracesObservation(
   state: FeatureObservationState["extendedTraces"],
-): FeatureObservationMessage {
+): FeatureObservations["extendedTraces"] {
   if (!state) {
     return {
-      extendedTraces: {
-        readinessReason:
-          ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_NOT_ENABLED_BY_USER,
-        config: {
-          behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_UNSPECIFIED,
-        },
-        otelSetup: undefined,
+      readinessReason:
+        ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_NOT_ENABLED_BY_USER,
+      config: {
+        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_UNSPECIFIED,
       },
+      otelSetup: undefined,
     };
   }
 
   return {
-    extendedTraces: {
-      readinessReason: extendedTracesReadinessReason(state),
-      config: {
-        behavior: state.behavior,
-      },
-      otelSetup: state.setup,
+    readinessReason: extendedTracesReadinessReason(state),
+    config: {
+      behavior: state.behavior,
     },
+    otelSetup: state.setup,
   };
 }
 
@@ -234,29 +229,27 @@ function extendedTracesReadinessReason({
 
 function sendEventsObservation({
   mode,
-  hasEventKey,
-  hasEventApiOriginOverride,
+  eventKeyConfigured,
+  eventApiOriginOverrideConfigured,
 }: {
   mode: Mode;
-  hasEventKey: boolean;
-  hasEventApiOriginOverride: boolean;
-}): FeatureObservationMessage {
+  eventKeyConfigured: boolean;
+  eventApiOriginOverrideConfigured: boolean;
+}): FeatureObservations["sendEvents"] {
   let readinessReason =
     SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_EVENT_KEY_MISSING;
 
   // Dev mode doesn't need an event key.
-  if (mode === "dev" || hasEventKey) {
+  if (mode === "dev" || eventKeyConfigured) {
     readinessReason =
       SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY;
   }
 
   return {
-    sendEvents: {
-      readinessReason,
-      config: {
-        hasEventKey,
-        hasEventApiOriginOverride,
-      },
+    readinessReason,
+    config: {
+      eventKeyConfigured,
+      eventApiOriginOverrideConfigured,
     },
   };
 }

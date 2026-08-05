@@ -791,9 +791,11 @@ describe("introspection", () => {
         }),
       }),
     ).then(async (res) => {
-      return res.json() as Promise<{ featureObservations?: unknown[] }>;
+      return res.json() as Promise<{
+        featureObservations?: Record<string, unknown>;
+      }>;
     });
-    expect(body.featureObservations).toContainEqual({
+    expect(body.featureObservations).toMatchObject({
       aiMetadataExtraction: {
         readinessReason: "AI_METADATA_EXTRACTION_READINESS_REASON_READY",
         otelSetup: {

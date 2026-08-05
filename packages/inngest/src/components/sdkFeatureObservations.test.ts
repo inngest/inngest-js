@@ -15,11 +15,9 @@ import {
 } from "./sdkFeatureObservations.ts";
 
 function sendEventsObservation(client: ReturnType<typeof createClient>) {
-  const observation = sdkFeatureObservations
-    .get(client)
-    .find((obs) => obs.sendEvents);
+  const observation = sdkFeatureObservations.get(client);
 
-  if (!observation?.sendEvents) {
+  if (!observation.sendEvents) {
     throw new Error("send events observation missing");
   }
 
@@ -29,11 +27,9 @@ function sendEventsObservation(client: ReturnType<typeof createClient>) {
 function aiMetadataExtractionObservation(
   client: ReturnType<typeof createClient>,
 ) {
-  const observation = sdkFeatureObservations
-    .get(client)
-    .find((obs) => obs.aiMetadataExtraction);
+  const observation = sdkFeatureObservations.get(client);
 
-  if (!observation?.aiMetadataExtraction) {
+  if (!observation.aiMetadataExtraction) {
     throw new Error("AI metadata extraction observation missing");
   }
 
@@ -41,11 +37,9 @@ function aiMetadataExtractionObservation(
 }
 
 function extendedTracesObservation(client: ReturnType<typeof createClient>) {
-  const observation = sdkFeatureObservations
-    .get(client)
-    .find((obs) => obs.extendedTraces);
+  const observation = sdkFeatureObservations.get(client);
 
-  if (!observation?.extendedTraces) {
+  if (!observation.extendedTraces) {
     throw new Error("extended traces observation missing");
   }
 
@@ -65,8 +59,8 @@ describe("feature observations", () => {
       readinessReason:
         SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY,
       config: {
-        hasEventKey: false,
-        hasEventApiOriginOverride: false,
+        eventKeyConfigured: false,
+        eventApiOriginOverrideConfigured: false,
       },
     });
   });
@@ -78,8 +72,8 @@ describe("feature observations", () => {
       readinessReason:
         SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_EVENT_KEY_MISSING,
       config: {
-        hasEventKey: false,
-        hasEventApiOriginOverride: false,
+        eventKeyConfigured: false,
+        eventApiOriginOverrideConfigured: false,
       },
     });
   });
@@ -93,21 +87,29 @@ describe("feature observations", () => {
 
     expect(sendEventsObservation(client)).toMatchObject({
       config: {
-        hasEventApiOriginOverride: true,
+        eventApiOriginOverrideConfigured: true,
       },
     });
   });
 
   test("encodes observations with generated protobuf JSON", () => {
     const client = createClient({ id: "test", isDev: true });
-    const observation = sdkFeatureObservations
-      .get(client)
-      .find((obs) => obs.sendEvents);
-    if (!observation) {
-      throw new Error("send events observation missing");
-    }
 
-    expect(featureObservationsToJson([observation])[0]).toEqual({
+    expect(
+      featureObservationsToJson(sdkFeatureObservations.get(client)),
+    ).toEqual({
+      aiMetadataExtraction: {
+        readinessReason:
+          "AI_METADATA_EXTRACTION_READINESS_REASON_OTEL_PROVIDER_MISSING",
+        otelSetup: {
+          path: "OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER",
+          failure: "OTEL_SETUP_FAILURE_NO_PROVIDER",
+        },
+      },
+      extendedTraces: {
+        readinessReason: "EXTENDED_TRACES_READINESS_REASON_NOT_ENABLED_BY_USER",
+        config: {},
+      },
       sendEvents: {
         readinessReason: "SEND_EVENTS_READINESS_REASON_READY",
         config: {},
@@ -122,14 +124,10 @@ describe("feature observations", () => {
       isDev: true,
       middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
     });
-    const observation = sdkFeatureObservations
-      .get(client)
-      .find((obs) => obs.extendedTraces);
-    if (!observation) {
-      throw new Error("extended traces observation missing");
-    }
 
-    expect(featureObservationsToJson([observation])[0]).toEqual({
+    expect(
+      featureObservationsToJson(sdkFeatureObservations.get(client)),
+    ).toMatchObject({
       extendedTraces: {
         readinessReason: "EXTENDED_TRACES_READINESS_REASON_READY",
         config: {
@@ -200,14 +198,10 @@ describe("feature observations", () => {
       isDev: true,
       middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
     });
-    const observation = sdkFeatureObservations
-      .get(client)
-      .find((obs) => obs.extendedTraces);
-    if (!observation) {
-      throw new Error("extended traces observation missing");
-    }
 
-    expect(featureObservationsToJson([observation])[0]).toEqual({
+    expect(
+      featureObservationsToJson(sdkFeatureObservations.get(client)),
+    ).toMatchObject({
       extendedTraces: {
         readinessReason: "EXTENDED_TRACES_READINESS_REASON_READY",
         config: {

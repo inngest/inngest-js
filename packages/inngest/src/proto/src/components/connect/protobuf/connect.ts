@@ -7,7 +7,7 @@
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 import { Timestamp } from "../../../../google/protobuf/timestamp";
-import { FeatureObservation } from "../../sdkFeatureObservations/protobuf/feature_observations";
+import { FeatureObservations } from "../../sdkFeatureObservations/protobuf/feature_observations";
 
 export const protobufPackage = "connect.v1";
 
@@ -278,7 +278,7 @@ export interface AppConfiguration {
   appName: string;
   appVersion?: string | undefined;
   functions: Uint8Array;
-  featureObservations: FeatureObservation[];
+  featureObservations: FeatureObservations | undefined;
 }
 
 export interface AuthData {
@@ -530,7 +530,7 @@ export const ConnectMessage: MessageFns<ConnectMessage> = {
 };
 
 function createBaseAppConfiguration(): AppConfiguration {
-  return { appName: "", appVersion: undefined, functions: new Uint8Array(0), featureObservations: [] };
+  return { appName: "", appVersion: undefined, functions: new Uint8Array(0), featureObservations: undefined };
 }
 
 export const AppConfiguration: MessageFns<AppConfiguration> = {
@@ -544,8 +544,8 @@ export const AppConfiguration: MessageFns<AppConfiguration> = {
     if (message.functions.length !== 0) {
       writer.uint32(34).bytes(message.functions);
     }
-    for (const v of message.featureObservations) {
-      FeatureObservation.encode(v!, writer.uint32(42).fork()).join();
+    if (message.featureObservations !== undefined) {
+      FeatureObservations.encode(message.featureObservations, writer.uint32(42).fork()).join();
     }
     return writer;
   },
@@ -586,7 +586,7 @@ export const AppConfiguration: MessageFns<AppConfiguration> = {
             break;
           }
 
-          message.featureObservations.push(FeatureObservation.decode(reader, reader.uint32()));
+          message.featureObservations = FeatureObservations.decode(reader, reader.uint32());
           continue;
         }
       }
@@ -603,9 +603,9 @@ export const AppConfiguration: MessageFns<AppConfiguration> = {
       appName: isSet(object.appName) ? globalThis.String(object.appName) : "",
       appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
       functions: isSet(object.functions) ? bytesFromBase64(object.functions) : new Uint8Array(0),
-      featureObservations: globalThis.Array.isArray(object?.featureObservations)
-        ? object.featureObservations.map((e: any) => FeatureObservation.fromJSON(e))
-        : [],
+      featureObservations: isSet(object.featureObservations)
+        ? FeatureObservations.fromJSON(object.featureObservations)
+        : undefined,
     };
   },
 
@@ -620,8 +620,8 @@ export const AppConfiguration: MessageFns<AppConfiguration> = {
     if (message.functions.length !== 0) {
       obj.functions = base64FromBytes(message.functions);
     }
-    if (message.featureObservations?.length) {
-      obj.featureObservations = message.featureObservations.map((e) => FeatureObservation.toJSON(e));
+    if (message.featureObservations !== undefined) {
+      obj.featureObservations = FeatureObservations.toJSON(message.featureObservations);
     }
     return obj;
   },
@@ -634,7 +634,9 @@ export const AppConfiguration: MessageFns<AppConfiguration> = {
     message.appName = object.appName ?? "";
     message.appVersion = object.appVersion ?? undefined;
     message.functions = object.functions ?? new Uint8Array(0);
-    message.featureObservations = object.featureObservations?.map((e) => FeatureObservation.fromPartial(e)) || [];
+    message.featureObservations = (object.featureObservations !== undefined && object.featureObservations !== null)
+      ? FeatureObservations.fromPartial(object.featureObservations)
+      : undefined;
     return message;
   },
 };

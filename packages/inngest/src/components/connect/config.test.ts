@@ -38,8 +38,7 @@ describe("prepareConnectionConfig", () => {
       sdkFeatureObservations.get(client),
     );
     expect(
-      connectionData.apps[0]?.featureObservations.find((obs) => obs.sendEvents)
-        ?.sendEvents?.readinessReason,
+      connectionData.apps[0]?.featureObservations.sendEvents?.readinessReason,
     ).toBe(SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY);
   });
 
@@ -59,11 +58,7 @@ describe("prepareConnectionConfig", () => {
       client,
     );
 
-    expect(
-      connectionData.apps[0]?.featureObservations.find(
-        (obs) => obs.extendedTraces,
-      )?.extendedTraces,
-    ).toEqual({
+    expect(connectionData.apps[0]?.featureObservations.extendedTraces).toEqual({
       readinessReason:
         ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_OTEL_PROVIDER_MISSING,
       config: {
