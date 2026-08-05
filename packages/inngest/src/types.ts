@@ -580,6 +580,15 @@ export type BaseContext<TClient extends Inngest.Any> = {
   events: AsTuple<Simplify<EventPayload>>;
 
   /**
+   * The run's effective sessions, aggregated from its triggering event(s).
+   *
+   * When session propagation is active, these are propagated onto events
+   * emitted during the run via `step.sendEvent`, so child runs stay grouped
+   * in the same sessions.
+   */
+  sessions?: Record<string, string>;
+
+  /**
    * The run ID for the current function execution
    */
   runId: string;
@@ -761,6 +770,18 @@ export type EventMeta = {
    * normalized to strings before the event is sent.
    */
   sessions?: EventSessions;
+
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * Sessions propagated from the run that emitted this event. Stamped
+   * automatically from `ctx.sessions`; carried as a separate layer from manual
+   * {@link EventMeta.sessions} and merged server-side (manual wins per key).
+   *
+   * Not intended to be set by hand.
+   */
+  propagated_sessions?: EventSessions;
 };
 
 /**
@@ -1165,6 +1186,19 @@ export interface ClientOptions {
    * @default true
    */
   aiMetadata?: boolean;
+
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * Whether events sent during a run inherit the run's session metadata, so
+   * the resulting child runs stay grouped in the same sessions as their parent.
+   *
+   * This option takes precedence over the `INNGEST_SESSION_PROPAGATION`
+   * environment variable, which in turn takes precedence over the SDK's
+   * default. When left unset, the feature is off by default.
+   */
+  sessionPropagation?: boolean;
 
   /**
    * Whether or not to use checkpointing by default for executions of functions

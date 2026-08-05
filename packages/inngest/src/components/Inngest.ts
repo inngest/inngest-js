@@ -499,8 +499,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
 
   /**
    * Whether session propagation is enabled for this client. Resolved with the
-   * precedence `INNGEST_SESSION_PROPAGATION` env var > {@link
-   * SESSION_PROPAGATION_DEFAULT_ENABLED}.
+   * precedence explicit `sessionPropagation` option > `INNGEST_SESSION_PROPAGATION`
+   * env var > {@link SESSION_PROPAGATION_DEFAULT_ENABLED}, mirroring how
+   * {@link mode} resolves the `isDev` option ahead of the env var.
    *
    * Resolved lazily on every access (mirroring {@link mode}) so that env vars
    * populated after construction via {@link setEnvVars} — as happens in
@@ -509,19 +510,20 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * @internal
    */
   get [sessionPropagationSymbol](): boolean {
-    // Session propagation is resolved with the precedence
-    // `INNGEST_SESSION_PROPAGATION` env var > default, matching the SDK's
-    // `dev`-mode resolution order.
-    let sessionPropagation = SESSION_PROPAGATION_DEFAULT_ENABLED;
+    // An explicit boolean option wins outright (like `isDev` in `mode`).
+    if (typeof this.options.sessionPropagation === "boolean") {
+      return this.options.sessionPropagation;
+    }
 
+    // Otherwise fall back to the env var, then the default.
     const sessionPropagationEnv = parseAsBoolean(
       this._env[envKeys.InngestSessionPropagation],
     );
     if (sessionPropagationEnv !== undefined) {
-      sessionPropagation = sessionPropagationEnv;
+      return sessionPropagationEnv;
     }
 
-    return sessionPropagation;
+    return SESSION_PROPAGATION_DEFAULT_ENABLED;
   }
 
   get mode(): Mode {
