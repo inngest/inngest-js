@@ -188,6 +188,22 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("pause"),
+      target: sandboxTargetSchema,
+      input: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("resume"),
+      target: sandboxTargetSchema,
+      input: z.tuple([]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("destroy"),
       target: sandboxTargetSchema,
       input: z.tuple([]),
@@ -444,6 +460,26 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("pause"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "PAUSED",
+        "paused sandbox must be PAUSED",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("resume"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "RUNNING",
+        "resumed sandbox must be RUNNING",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("destroy"),
       result: wireDestroyResultSchema,
     })
@@ -543,6 +579,8 @@ const sandboxErrorPayloadSchema = z
       "get",
       "waitUntilRunning",
       "exec",
+      "pause",
+      "resume",
       "destroy",
       "process.start",
       "process.list",

@@ -137,6 +137,8 @@ const safeRepeatActions = new Set<SandboxAction>([
   "file.upload",
   "list",
   "get",
+  "pause",
+  "resume",
   "waitUntilRunning",
   "process.list",
   "process.get",
@@ -158,6 +160,10 @@ const sandboxTransportFailureMessage = (action: SandboxAction): string => {
       return "The Sandbox Create response was not confirmed. Repeating the same Create request is safe";
     case "destroy":
       return "Sandbox teardown may have been accepted. Get the sandbox; repeating Destroy is safe";
+    case "pause":
+      return "Sandbox pause may have been accepted. Repeating Pause is safe";
+    case "resume":
+      return "Sandbox resume may have been accepted. Repeating Resume is safe";
     case "file.upload":
       return "The sandbox file may have been replaced. Repeating the same upload is safe";
     case "exec":
@@ -692,6 +698,9 @@ const createDirectSandboxFacade = (
   const facade: Sandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
+    ...(ref.pauseInfo !== undefined && {
+      pauseInfo: Object.freeze({ ...ref.pauseInfo }),
+    }),
     commands: Object.freeze({
       run: async (options) => {
         const normalized = normalizeSandboxCommandOptions(options);
@@ -986,6 +995,42 @@ export const sandboxProcessForOperation = (
   client: SandboxClient,
   ref: unknown,
 ): SandboxProcess => createDirectProcessFacade(ref, transportForClient(client));
+
+const mutateSandboxLifecycleForOperation = async (
+  client: SandboxClient,
+  sandboxId: string,
+  action: "pause" | "resume",
+): Promise<SandboxRef> => {
+  const transport = transportForClient(client);
+  const { envelope } = await transport.json(
+    action,
+    "POST",
+    `/v2/sandboxes/${encodeURIComponent(sandboxId)}/${action}`,
+    { statuses: [200], sandboxId },
+  );
+  const sandbox = sandboxRefFromResource(envelope?.data);
+  const expectedStatus = action === "pause" ? "PAUSED" : "RUNNING";
+  if (sandbox.id !== sandboxId || sandbox.status !== expectedStatus) {
+    throw new SandboxValidationError(
+      `Sandbox ${action} returned ${sandbox.status} for an unrelated lifecycle state`,
+    );
+  }
+  return sandbox;
+};
+
+/** Internal REST operation used only by the durable middleware adapter. */
+export const pauseSandboxForOperation = (
+  client: SandboxClient,
+  sandboxId: string,
+): Promise<SandboxRef> =>
+  mutateSandboxLifecycleForOperation(client, sandboxId, "pause");
+
+/** Internal REST operation used only by the durable middleware adapter. */
+export const resumeSandboxForOperation = (
+  client: SandboxClient,
+  sandboxId: string,
+): Promise<SandboxRef> =>
+  mutateSandboxLifecycleForOperation(client, sandboxId, "resume");
 
 const getSnapshotForOperation = async (
   transport: SandboxRestTransport,

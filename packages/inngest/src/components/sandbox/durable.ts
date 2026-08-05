@@ -5,6 +5,8 @@ import {
   deleteSandboxSnapshotForOperation,
   getSandboxSnapshotForOperation,
   listSandboxSnapshotsForOperation,
+  pauseSandboxForOperation,
+  resumeSandboxForOperation,
   sandboxForOperation,
   sandboxProcessForOperation,
   waitUntilSandboxSnapshotReadyForOperation,
@@ -132,7 +134,7 @@ const encodeOutputChunk = (
   ...(chunk.at !== undefined && { at: chunk.at }),
 });
 
-const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
+const sandboxRefForWire = (sandbox: Sandbox | SandboxRef): SandboxRef => ({
   kind: sandbox.kind,
   version: sandbox.version,
   id: sandbox.id,
@@ -145,6 +147,9 @@ const sandboxRefForWire = (sandbox: Sandbox): SandboxRef => ({
   ...(sandbox.startedAt !== undefined && { startedAt: sandbox.startedAt }),
   ...(sandbox.endedAt !== undefined && { endedAt: sandbox.endedAt }),
   ...(sandbox.error !== undefined && { error: sandbox.error }),
+  ...(sandbox.pauseInfo !== undefined && {
+    pauseInfo: { ...sandbox.pauseInfo },
+  }),
 });
 
 const processRefForWire = (process: SandboxProcess) => ({
@@ -242,6 +247,28 @@ export const executeSandboxOperation = async (
           exitCode: result.exitCode,
           output: output.output,
         },
+      };
+    }
+    case "pause": {
+      const sandbox = await pauseSandboxForOperation(
+        client,
+        operation.target.sandbox.id,
+      );
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        sandbox: sandboxRefForWire(sandbox),
+      };
+    }
+    case "resume": {
+      const sandbox = await resumeSandboxForOperation(
+        client,
+        operation.target.sandbox.id,
+      );
+      return {
+        protocolVersion: sandboxProtocolVersion,
+        action: operation.action,
+        sandbox: sandboxRefForWire(sandbox),
       };
     }
     case "destroy": {
@@ -563,6 +590,9 @@ export const createDurableSandboxFacade = (
   const facade: DurableSandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
+    ...(ref.pauseInfo !== undefined && {
+      pauseInfo: Object.freeze({ ...ref.pauseInfo }),
+    }),
     commands: Object.freeze({
       run: async (idOrOptions, options) => {
         const normalized = normalizeSandboxCommandOptions(options);
@@ -676,6 +706,26 @@ export const createDurableSandboxFacade = (
         action: "waitUntilRunning",
         target: sandboxTarget(ref),
         input: [normalizeSandboxWaitUntilRunningOptions(options)],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    },
+    pause: async (idOrOptions) => {
+      const operation = parseSandboxOperationForAction("pause", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "pause",
+        target: sandboxTarget(ref),
+        input: [],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      return createDurableSandboxFacade(result.sandbox, rawToolResolver);
+    },
+    resume: async (idOrOptions) => {
+      const operation = parseSandboxOperationForAction("resume", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "resume",
+        target: sandboxTarget(ref),
+        input: [],
       });
       const result = await callRawTool(rawToolResolver, idOrOptions, operation);
       return createDurableSandboxFacade(result.sandbox, rawToolResolver);

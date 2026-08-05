@@ -130,11 +130,22 @@ export const sandboxStatusSchema = z.enum([
   "PENDING",
   "STARTING",
   "RUNNING",
+  "PAUSING",
   "PAUSED",
+  "RESUMING",
   "TERMINATING",
   "TERMINATED",
   "FAILED",
+  "LOST",
 ]);
+
+const sandboxPauseSchema = z
+  .object({
+    mode: z.enum(["WARM", "COLD"]),
+    pausedAt: timestampSchema,
+    warmUntil: timestampSchema.optional(),
+  })
+  .strict();
 
 const sandboxResourcesSchema = z
   .object({
@@ -155,16 +166,24 @@ export const sandboxResourceSchema = z
     startedAt: timestampSchema.optional(),
     endedAt: timestampSchema.optional(),
     error: z.string().min(1).optional(),
+    pauseInfo: sandboxPauseSchema.optional(),
   })
   .strict();
 
 const wireSandboxResourceSchema = sandboxResourceSchema
-  .omit({ resources: true, startedAt: true, endedAt: true, error: true })
+  .omit({
+    resources: true,
+    startedAt: true,
+    endedAt: true,
+    error: true,
+    pauseInfo: true,
+  })
   .extend({
     resources: sandboxResourcesSchema.strip(),
     startedAt: timestampSchema.nullish(),
     endedAt: timestampSchema.nullish(),
     error: z.string().min(1).nullish(),
+    pause: sandboxPauseSchema.nullish(),
   })
   .strip();
 
@@ -382,6 +401,7 @@ export const sandboxRefFromResource = (value: unknown): SandboxRef => {
     ...(resource.startedAt != null && { startedAt: resource.startedAt }),
     ...(resource.endedAt != null && { endedAt: resource.endedAt }),
     ...(resource.error != null && { error: resource.error }),
+    ...(resource.pause != null && { pauseInfo: resource.pause }),
   };
 };
 
