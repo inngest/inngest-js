@@ -8,6 +8,7 @@ import {
 import { expect, test } from "vitest";
 import { Inngest, Middleware } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
+import { matrixCheckpointing } from "../utils.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
 
@@ -147,3 +148,78 @@ test("info hooks for parallel steps", async () => {
     "onRunComplete",
   ]);
 });
+
+matrixCheckpointing(
+  "wrapStep runs for every memoized sibling parallel step",
+  async (checkpointing) => {
+    // Regression test for a bug, where wrapStep wasn't respecting parallel steps.
+
+    const state = createState({
+      // Used to assert steps return the output modified by middleware.
+      parallelOutput: null as unknown,
+
+      // Used to assert we run each prepend step exactly once.
+      prependStepIds: [] as string[],
+    });
+
+    class TagMiddleware extends Middleware.BaseMiddleware {
+      readonly id = "tag";
+
+      override async wrapStep({
+        ctx,
+        next,
+        stepInfo,
+      }: Middleware.WrapStepArgs) {
+        const prependStepId = `${stepInfo.options.id}-prepend`;
+
+        // Runs before every step.
+        await ctx.step.run(prependStepId, () => {
+          state.prependStepIds.push(prependStepId);
+          return null;
+        });
+
+        // Sleep to give things time to mess up.
+        await sleep(10);
+
+        const value = await next();
+        return { tagged: true, value };
+      }
+    }
+
+    const client = new Inngest({
+      checkpointing,
+      id: randomSuffix(testFileName),
+      isDev: true,
+      middleware: [TagMiddleware],
+    });
+    const eventName = randomSuffix("evt");
+    const fn = client.createFunction(
+      { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+      async ({ step, runId }) => {
+        state.runId = runId;
+        state.parallelOutput = await Promise.all([
+          step.run("step-a", () => {
+            return { from: "a" };
+          }),
+          step.run("step-b", () => {
+            return { from: "b" };
+          }),
+        ]);
+      },
+    );
+    await createTestApp({ client, functions: [fn], serve: createServer });
+
+    await client.send({ name: eventName });
+    const result = await state.waitForRunComplete();
+
+    const expected = [
+      { tagged: true, value: { from: "a" } },
+      { tagged: true, value: { from: "b" } },
+    ];
+    expect(state.parallelOutput).toEqual(expected);
+    expect(state.prependStepIds).toEqual(
+      expect.arrayContaining(["step-a-prepend", "step-b-prepend"]),
+    );
+    expect(state.prependStepIds).toHaveLength(2);
+  },
+);
