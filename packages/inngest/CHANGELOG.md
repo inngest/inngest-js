@@ -1,5 +1,15 @@
 # inngest
 
+## 4.17.0
+
+### Minor Changes
+
+- [#1645](https://github.com/inngest/inngest-js/pull/1645) [`aeae58dd`](https://github.com/inngest/inngest-js/commit/aeae58dda29c50bbb53fcdc48245a896b10b4dc0) Thanks [@scottnuma](https://github.com/scottnuma)! - Add a toggle to clients to control sessions propagation
+
+- [#1646](https://github.com/inngest/inngest-js/pull/1646) [`39aee6f7`](https://github.com/inngest/inngest-js/commit/39aee6f78a65703894ef284d2ac9b127fd3132dd) Thanks [@scottnuma](https://github.com/scottnuma)! - Add sessions support to deferred runs
+
+- [#1678](https://github.com/inngest/inngest-js/pull/1678) [`c838b982`](https://github.com/inngest/inngest-js/commit/c838b982cbbb9caf59031cf09cdf52158c05767b) Thanks [@scottnuma](https://github.com/scottnuma)! - Sessions propagate into child runs, gated behind an opt-in client config
+
 ## 4.16.0
 
 ### Minor Changes
