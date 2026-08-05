@@ -304,6 +304,18 @@ export type BaseContextWithTriggers<
   events: AsTuple<ReceivedEventTupleToUnion<ToReceivedEvent<TTriggers>>>;
 
   /**
+   * The run's effective sessions, aggregated from its triggering event(s).
+   *
+   * When session propagation is active, these are propagated onto events
+   * emitted during the run via `step.sendEvent`, so child runs stay grouped
+   * in the same sessions. Mutating this in the handler overrides what is
+   * propagated for the remainder of the run.
+   *
+   * Kept in sync with `BaseContext.sessions`.
+   */
+  sessions?: Record<string, string>;
+
+  /**
    * The run ID for the current function execution
    */
   runId: string;
