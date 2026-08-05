@@ -86,6 +86,28 @@ describe("getAsyncCtx", () => {
     const store = await externalP;
     expect(store).toBeUndefined();
   });
+
+  test("should execute step tooling if node:async_hooks is not supported", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { Inngest } = await import("../../index.ts");
+
+    const inngest = new Inngest({ id: "test" });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "" }] },
+      async ({ step }) => {
+        return await step.run("step", () => "done");
+      },
+    );
+
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    const t = new InngestTestEngine({ function: fn as any });
+
+    const { result, error } = await t.execute();
+
+    expect(error).toBeUndefined();
+    expect(result).toBe("done");
+  });
 });
 
 describe("getAsyncCtxSync", () => {

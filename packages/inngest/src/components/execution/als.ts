@@ -168,15 +168,6 @@ export const getAsyncCtxSync = (): AsyncContext | undefined => {
   return getCache().resolved?.getStore();
 };
 
-export function mustGetAsyncContextSync(): AsyncContext {
-  const asyncContext = getAsyncCtxSync();
-  if (!asyncContext) {
-    throw new Error("Runtime does not support AsyncLocalStorage");
-  }
-
-  return asyncContext;
-}
-
 /**
  * Run a function within a specific async context if AsyncLocalStorage has
  * already been initialized.

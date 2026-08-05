@@ -82,8 +82,8 @@ import { Stream } from "../StreamTools.ts";
 import { validateEvents } from "../triggers/utils.js";
 import {
   getAsyncCtx,
+  getAsyncCtxSync,
   getAsyncLocalStorage,
-  mustGetAsyncContextSync,
   runWithAsyncCtx,
 } from "./als.ts";
 import {
@@ -2493,7 +2493,7 @@ class InngestExecutionEngine
         fnArgs = [...args.slice(0, 2), ...stepInfo.input];
       }
 
-      const asyncContext = mustGetAsyncContextSync();
+      const asyncContext = getAsyncCtxSync();
 
       const step: FoundStep = {
         ...opId,
@@ -2625,6 +2625,10 @@ class InngestExecutionEngine
 
             return true;
           };
+
+          if (!asyncContext) {
+            return runHandle();
+          }
 
           return runWithAsyncCtx(asyncContext, runHandle);
         },

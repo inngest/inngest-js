@@ -3,7 +3,7 @@ import type { Logger } from "../../middleware/logger.ts";
 import type { Context, StepOpCode } from "../../types.ts";
 import {
   type AsyncContext,
-  mustGetAsyncContextSync,
+  getAsyncCtxSync,
   runWithAsyncCtx,
 } from "../execution/als.ts";
 import type { MemoizedOp } from "../execution/InngestExecution.ts";
@@ -95,6 +95,16 @@ export class MiddlewareManager {
     ExecutionContext,
     Set<Middleware.BaseMiddleware>
   >();
+
+  /**
+   * Fallback recursion guard for runtimes without AsyncLocalStorage. This
+   * preserves the legacy best-effort behavior for edge runtimes that cannot
+   * isolate concurrent async branches.
+   *
+   * TODO: Remove this when we have a hard requirement for AsyncLocalStorage
+   * (i.e. no fallbacks).
+   */
+  private readonly activeWrapStep = new Set<Middleware.BaseMiddleware>();
 
   constructor(
     fnArg: Context.Any,
@@ -326,23 +336,24 @@ export class MiddlewareManager {
             throw new UnreachableError("wrapStep is undefined");
           }
 
-          const asyncContext = mustGetAsyncContextSync();
-          const asyncExecution = asyncContext.execution;
-          if (!asyncExecution) {
-            throw new Error("Inngest execution async context is required");
-          }
+          const asyncContext = getAsyncCtxSync();
+          const asyncExecution = asyncContext?.execution;
 
           // Use the current async execution branch as the guard boundary: it
           // lets parallel sibling steps each run through this middleware, while
           // steps created inside this middleware's own wrapStep inherit the
           // branch and skip this middleware to avoid recursive planning.
           let activeWrapStep: Set<Middleware.BaseMiddleware>;
-          const storedActiveWrapStep =
-            this.activeWrapStepByExecution.get(asyncExecution);
-          if (storedActiveWrapStep) {
-            activeWrapStep = storedActiveWrapStep;
+          if (asyncExecution) {
+            const storedActiveWrapStep =
+              this.activeWrapStepByExecution.get(asyncExecution);
+            if (storedActiveWrapStep) {
+              activeWrapStep = storedActiveWrapStep;
+            } else {
+              activeWrapStep = new Set<Middleware.BaseMiddleware>();
+            }
           } else {
-            activeWrapStep = new Set<Middleware.BaseMiddleware>();
+            activeWrapStep = this.activeWrapStep;
           }
 
           // Infinite recursion guard: skip if this middleware is already
@@ -354,7 +365,12 @@ export class MiddlewareManager {
           // Clone guard state for ALS-backed executions before entering this
           // middleware. That preserves recursion history for this branch
           // without sharing in-flight middleware state with sibling branches.
-          const branchActiveWrapStep = new Set(activeWrapStep);
+          let branchActiveWrapStep: Set<Middleware.BaseMiddleware>;
+          if (asyncExecution) {
+            branchActiveWrapStep = new Set(activeWrapStep);
+          } else {
+            branchActiveWrapStep = activeWrapStep;
+          }
 
           const runWrapStep = () => {
             branchActiveWrapStep.add(mw);
@@ -381,6 +397,10 @@ export class MiddlewareManager {
           // Give this wrapStep call its own ALS execution object. Async work
           // spawned from here, including ctx.step.run() before next(), sees
           // this branch's guard state.
+          if (!asyncContext || !asyncExecution) {
+            return runWrapStep();
+          }
+
           const branchExecution = { ...asyncExecution };
           this.activeWrapStepByExecution.set(
             branchExecution,
