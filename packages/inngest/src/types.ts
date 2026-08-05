@@ -1228,8 +1228,12 @@ export interface ClientOptions {
    * EXPERIMENTAL: This API is not yet stable and may change in the future
    * without a major version bump.
    *
-   * Whether events sent during a run inherit the run's session metadata, so
-   * the resulting child runs stay grouped in the same sessions as their parent.
+   * Whether events spawned during a run — via `step.sendEvent`, `step.invoke`,
+   * and `defer` — inherit the run's session metadata, so the resulting child
+   * runs stay grouped in the same sessions as their parent.
+   *
+   * Sessions set manually always take precedence. Setting a key to null will
+   * remove that session from propagated sessions.
    *
    * This option takes precedence over the `INNGEST_SESSION_PROPAGATION`
    * environment variable, which in turn takes precedence over the SDK's
