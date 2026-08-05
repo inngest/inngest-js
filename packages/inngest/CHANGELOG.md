@@ -1,5 +1,17 @@
 # inngest
 
+## 4.16.0
+
+### Minor Changes
+
+- [#1671](https://github.com/inngest/inngest-js/pull/1671) [`3608c52d`](https://github.com/inngest/inngest-js/commit/3608c52d532d04f05a78138b25a4a6d6b1ba3f9e) Thanks [@amh4r](https://github.com/amh4r)! - Add SDK feature observations
+
+### Patch Changes
+
+- [#1674](https://github.com/inngest/inngest-js/pull/1674) [`6b0ae370`](https://github.com/inngest/inngest-js/commit/6b0ae370268953627ea3803cc612dfa6171b01c6) Thanks [@Linell](https://github.com/Linell)! - Fix `TS2742` errors in projects that use `declaration` or `composite` `true` by exporting `SendSignalResponse` appropriately.
+
+- [#1658](https://github.com/inngest/inngest-js/pull/1658) [`edcb6536`](https://github.com/inngest/inngest-js/commit/edcb6536e916f0afdacc043b87f4ab87c8466573) Thanks [@amh4r](https://github.com/amh4r)! - Fix wrapStep middleware hook sometimes skipped for parallel steps
+
 ## 4.15.0
 
 ### Minor Changes
