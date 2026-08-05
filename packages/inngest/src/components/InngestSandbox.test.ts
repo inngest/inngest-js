@@ -43,6 +43,16 @@ const sandboxRef = {
   startedAt: now,
 } satisfies SandboxRef;
 
+const pausedSandboxRef = {
+  ...sandboxRef,
+  status: "PAUSED",
+  pauseInfo: {
+    mode: "WARM",
+    pausedAt: now,
+    warmUntil: "2026-07-28T00:02:00Z",
+  },
+} satisfies SandboxRef;
+
 const processRef = {
   kind: "inngest/sandbox.process",
   version: 1,
@@ -117,6 +127,18 @@ const resultForOperation = (
           exitCode: 0,
           output: { truncated: false },
         },
+      };
+    case "pause":
+      return {
+        protocolVersion: 1,
+        action: "pause",
+        sandbox: pausedSandboxRef,
+      };
+    case "resume":
+      return {
+        protocolVersion: 1,
+        action: "resume",
+        sandbox: sandboxRef,
       };
     case "destroy":
       return {
@@ -263,6 +285,8 @@ describe("step.sandbox", () => {
     const running = await created.waitUntilRunning("wait-running", {
       timeout: "5s",
     });
+    const paused = await created.pause("pause");
+    const resumed = await paused.resume("resume");
     const destroyed = await created.destroy("destroy");
 
     expect(created).toMatchObject(sandboxRef);
@@ -305,6 +329,9 @@ describe("step.sandbox", () => {
     expect("refresh" in snapshot).toBe(false);
     expect(clone.id).toBe(sandboxId);
     expect(running).toMatchObject({ id: sandboxId, status: "RUNNING" });
+    expect(paused).toMatchObject(pausedSandboxRef);
+    expect(Object.isFrozen(paused.pauseInfo)).toBe(true);
+    expect(resumed).toMatchObject({ id: sandboxId, status: "RUNNING" });
     expect(destroyed).toMatchObject({ status: "TERMINATING" });
 
     expect(operations.map(({ action }) => action)).toEqual([
@@ -325,6 +352,8 @@ describe("step.sandbox", () => {
       "snapshot.delete",
       "create",
       "waitUntilRunning",
+      "pause",
+      "resume",
       "destroy",
     ]);
     expect(operations[3]).toMatchObject({
@@ -816,6 +845,77 @@ describe("step.sandbox", () => {
       new Headers(requests[1]?.init?.headers).get("Idempotency-Key"),
     ).toMatch(/^inngest:[0-9a-f]{64}$/);
     expect("snapshots" in client.sandboxes).toBe(false);
+  });
+
+  test("executes pause and resume through REST and replays both resources", async () => {
+    const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+    const {
+      kind: _pausedKind,
+      version: _pausedVersion,
+      pauseInfo,
+      ...pausedBase
+    } = pausedSandboxRef;
+    const pausedResource = { ...pausedBase, pause: pauseInfo };
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      requests.push({ url, init });
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/pause`) {
+        return Response.json({ data: pausedResource });
+      }
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/resume`) {
+        return Response.json({ data: runningResource });
+      }
+      if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: runningResource });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      {
+        id: "sandbox-pause-resume-rest",
+        triggers: [{ event: "sandbox/pause-resume-rest" }],
+      },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        const paused = await sandbox.pause("pause-sandbox");
+        return (await paused.resume("resume-sandbox")).status;
+      },
+    );
+    const run = createFnRunner(fn);
+
+    await run();
+    await run();
+    await run();
+    const replay = await run();
+
+    expect(replay.result).toMatchObject({
+      type: "function-resolved",
+      data: "RUNNING",
+    });
+    expect(requests.map(({ url }) => url.pathname)).toEqual([
+      `/v2/sandboxes/${sandboxId}`,
+      `/v2/sandboxes/${sandboxId}/pause`,
+      `/v2/sandboxes/${sandboxId}/resume`,
+    ]);
+    expect(requests.map(({ init }) => init?.method)).toEqual([
+      "GET",
+      "POST",
+      "POST",
+    ]);
   });
 
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {

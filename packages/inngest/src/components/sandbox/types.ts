@@ -9,10 +9,19 @@ export type SandboxStatus =
   | "PENDING"
   | "STARTING"
   | "RUNNING"
+  | "PAUSING"
   | "PAUSED"
+  | "RESUMING"
   | "TERMINATING"
   | "TERMINATED"
-  | "FAILED";
+  | "FAILED"
+  | "LOST";
+
+export interface SandboxPause {
+  readonly mode: "WARM" | "COLD";
+  readonly pausedAt: string;
+  readonly warmUntil?: string;
+}
 
 export interface SandboxResources {
   readonly vcpu: number;
@@ -30,6 +39,7 @@ export interface SandboxResource {
   startedAt?: string;
   endedAt?: string;
   error?: string;
+  pauseInfo?: SandboxPause;
 }
 
 export interface SandboxRef extends SandboxResource {
@@ -269,6 +279,8 @@ export type SandboxAction =
   | "get"
   | "waitUntilRunning"
   | "exec"
+  | "pause"
+  | "resume"
   | "destroy"
   | "process.start"
   | "process.list"
@@ -382,6 +394,7 @@ export interface Sandbox {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly error?: string;
+  readonly pauseInfo?: SandboxPause;
   readonly commands: {
     run(options: SandboxCommandOptions): Promise<SandboxCommandResult>;
   };
@@ -446,6 +459,7 @@ export interface DurableSandbox {
   readonly startedAt?: string;
   readonly endedAt?: string;
   readonly error?: string;
+  readonly pauseInfo?: SandboxPause;
   readonly commands: {
     run(
       idOrOptions: StepOptionsOrId,
@@ -473,6 +487,8 @@ export interface DurableSandbox {
     idOrOptions: StepOptionsOrId,
     options: SandboxWaitUntilRunningOptions,
   ): Promise<DurableSandbox>;
+  pause(idOrOptions: StepOptionsOrId): Promise<DurableSandbox>;
+  resume(idOrOptions: StepOptionsOrId): Promise<DurableSandbox>;
   destroy(idOrOptions: StepOptionsOrId): Promise<SandboxDestroyResult>;
 }
 

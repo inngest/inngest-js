@@ -50,6 +50,7 @@ export type {
   SandboxLogStreamOptions,
   SandboxOutputChunk,
   SandboxPageInfo,
+  SandboxPause,
   SandboxProcess,
   SandboxProcessListOptions,
   SandboxProcessListResult,
