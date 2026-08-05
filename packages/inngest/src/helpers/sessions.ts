@@ -196,30 +196,44 @@ export const compareUtf8 = (a: string, b: string): number => {
  * sidesteps `__proto__`/prototype-key footguns.
  */
 const ownSessions = (
-  sessions: EventMeta["sessions"] | undefined,
+  sessions: EventSessions | null | undefined,
 ): Map<string, string> => {
   const own = new Map<string, string>();
   if (!sessions) {
     return own;
   }
 
+  // These events come off the executor's request body, so the received
+  // invariants (non-empty keys, string ids, tombstones already consumed) are the
+  // server's promise rather than something the type system enforces here. Each
+  // guard below prevents a *silent* wrong answer rather than a loud failure:
+  //
+  // - an empty key is rejected at ingest, so it should never appear;
+  // - a `null` id is a tombstone the server should already have consumed, and
+  //   `String(null)` would propagate the literal id `"null"`;
+  // - a numeric id would make `1` and `"1"` compare as two distinct ids, so the
+  //   key would be dropped below as a false conflict.
   for (const [key, id] of Object.entries(sessions)) {
     if (!key) {
-      continue; // defensive: the server rejects empty keys at ingest
-    }
-    if (id === null) {
-      // A run's triggering events are already-resolved (received) events, so
-      // their sessions never hold tombstones; guard defensively since the
-      // send-time EventSessionValue type now admits null.
       continue;
     }
-    // Canonicalize to string so a numeric id and its string form match rather
-    // than diverge (ids are already strings when received; this guards against
-    // runtime type violations).
+    if (id === null) {
+      continue;
+    }
     own.set(key, String(id));
   }
 
   return own;
+};
+
+/**
+ * The reducer only depends on the triggering event's effective session layer.
+ * Kept structural so both context flavors are assignable: `BaseContext.events`
+ * types these with the send-time `EventMeta` while the triggers-based context
+ * resolves to `ReceivedEventMeta`, for the same runtime value.
+ */
+export type TriggeringEventWithSessions = {
+  meta?: { sessions?: EventSessions | null } | null;
 };
 
 /**
@@ -234,10 +248,7 @@ const ownSessions = (
  * that somehow arrives over the cap.
  */
 export const reduceEventsToPropagatedSessions = (
-  // Accepts the send-time EventMeta shape (numeric ids permitted) since that is
-  // how a run's triggering events are statically typed; ids are canonicalized
-  // to strings below, so received string ids pass through unchanged.
-  events: ReadonlyArray<{ meta?: EventMeta | null }>,
+  events: ReadonlyArray<TriggeringEventWithSessions>,
 ): Record<string, string> => {
   // Seed from the first event, then narrow against each of the rest.
   let shared: Map<string, string> | undefined;
