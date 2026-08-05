@@ -3,7 +3,10 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { normalizeEventMeta } from "../helpers/sessions.ts";
+import {
+  normalizeEventMeta,
+  stampPropagatedSessions,
+} from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -503,6 +506,12 @@ export const createStepTools = <
         fn: (ctx, _idOrOptions, payload) => {
           const fn = execution["options"]["fn"];
           // Only stamp inherited sessions when the client-level toggle is on.
+          //
+          // `_send` also stamps from the ambient run context, so for a Node
+          // runtime this is redundant — but deliberately so: it stamps
+          // synchronously from the direct `ctx`, and so still works on runtimes
+          // where `_send`'s AsyncLocalStorage read comes back empty. `_send`
+          // leaves this stamp authoritative.
           const payloadToSend = client[sessionPropagationSymbol]
             ? stampPropagatedSessions(payload, ctx.sessions)
             : payload;

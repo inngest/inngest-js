@@ -12,11 +12,7 @@ import {
 import { type InvocationResult, StepOpCode } from "../types.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
-import {
-  createStepTools,
-  stampPropagatedSessions,
-  stampPropagatedSessionsOnInvoke,
-} from "./InngestStepTools.ts";
+import { createStepTools } from "./InngestStepTools.ts";
 import { realtime } from "./realtime/index.ts";
 
 describe("waitForEvent", () => {

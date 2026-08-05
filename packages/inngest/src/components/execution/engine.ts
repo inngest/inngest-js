@@ -33,7 +33,10 @@ import {
   retryWithBackoff,
   runAsPromise,
 } from "../../helpers/promises.ts";
-import { reduceEventsToPropagatedSessions } from "../../helpers/sessions.ts";
+import {
+  reduceEventsToPropagatedSessions,
+  stampPropagatedSessionsOnEvent,
+} from "../../helpers/sessions.ts";
 import { stringify } from "../../helpers/strings.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import {
@@ -51,7 +54,6 @@ import {
   type Handler,
   type HashedOp,
   jsonErrorSchema,
-  type MinimalEventPayload,
   type OutgoingOp,
   StepMode,
   StepOpCode,
@@ -73,7 +75,6 @@ import {
   getStepOptions,
   STEP_INDEXING_SUFFIX,
   type StepHandler,
-  stampPropagatedSessionsOnInvoke,
 } from "../InngestStepTools.ts";
 import { MiddlewareManager } from "../middleware/index.ts";
 import type { Middleware } from "../middleware/middleware.ts";
@@ -2409,7 +2410,7 @@ class InngestExecutionEngine
         this.options.client[sessionPropagationSymbol] &&
         opId.opts?.payload
       ) {
-        opId.opts.payload = stampPropagatedSessionsOnInvoke(
+        opId.opts.payload = stampPropagatedSessionsOnEvent(
           opId.opts.payload,
           this.fnArg.sessions,
         );
