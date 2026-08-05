@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "target": "es5",
     "forceConsistentCasingInFileNames": true,
     "composite": true,

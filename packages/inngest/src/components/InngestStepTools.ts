@@ -2,7 +2,6 @@ import { type AiAdapter, models } from "@inngest/ai";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 
-import type { InngestApi } from "../api/api.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { normalizeEventMeta } from "../helpers/sessions.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -24,6 +23,7 @@ import {
   type OutgoingOp,
   type ReceivedEventMeta,
   type SendEventOutput,
+  type SendSignalResponse,
   StepMode,
   StepOpCode,
   type StepOptions,
@@ -614,7 +614,7 @@ export const createStepTools = <
       (
         idOrOptions: StepOptionsOrId,
         opts: SendSignalOpts,
-      ) => Promise<InngestApi.SendSignalResponse>
+      ) => Promise<SendSignalResponse>
     >(
       ({ id, name }, opts) => {
         return {
