@@ -20,11 +20,23 @@ type NormalizedSessions = Record<string, string | null>;
  * Returns `undefined` if no sessions were given (an absent field, or an empty
  * object — an empty RFC 7386 patch leaves the inherited layer untouched);
  * returns `null` for a preserved "clear all" tombstone.
+ *
+ * Overloaded on `layer` so the propagated call site narrows on its own: the
+ * "propagated" branch throws on a `null` value and drops a whole-field `null`,
+ * so it provably returns neither.
  */
-const normalizeSessions = (
+function normalizeSessions(
+  sessions: EventSessions | null | undefined,
+  layer: "manual",
+): NormalizedSessions | null | undefined;
+function normalizeSessions(
+  sessions: EventSessions | null | undefined,
+  layer: "propagated",
+): Record<string, string> | undefined;
+function normalizeSessions(
   sessions: EventSessions | null | undefined,
   layer: "manual" | "propagated",
-): NormalizedSessions | null | undefined => {
+): NormalizedSessions | null | undefined {
   const allowCut = layer === "manual";
 
   if (sessions === undefined) {
@@ -80,7 +92,7 @@ const normalizeSessions = (
   }
 
   return Object.fromEntries(normalized);
-};
+}
 
 /**
  * Normalizes the manual `meta.sessions` layer, which is user-authored and so
@@ -106,10 +118,7 @@ export const normalizeManualSessions = (
 export const normalizePropagatedSessions = (
   sessions: PropagatedEventSessions | null | undefined,
 ): Record<string, string> | undefined =>
-  // The "propagated" layer never returns tombstones, so narrow the value type.
-  normalizeSessions(sessions, "propagated") as
-    | Record<string, string>
-    | undefined;
+  normalizeSessions(sessions, "propagated");
 
 export const normalizeEventMeta = (
   meta: EventMeta | null | undefined,
