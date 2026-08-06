@@ -177,13 +177,13 @@ describe("step.sandbox", () => {
     });
     const listed = await tools.list("list", { limit: 10 });
     const fetched = await tools.get("get", sandboxId);
-    const command = await created.commands.run("exec", {
-      command: ["/bin/sh", "-lc", "printf ok"],
+    const shellCommand = `cd /workspace && printf '%s\n' "$HOME" | grep workspace > output.txt`;
+    const command = await created.commands.run("exec", shellCommand, {
       environment: { "WITH.DOT": "allowed" },
       timeout: Temporal.Duration.from({ seconds: 1 }),
     });
     const process = await created.processes.start("start", {
-      command: processRef.command,
+      command: "sleep 30",
       environment: { "1_NUMERIC": "also-allowed" },
       cwd: "/workspace",
     });
@@ -254,7 +254,7 @@ describe("step.sandbox", () => {
       target: { sandbox: { id: sandboxId } },
       input: [
         {
-          command: ["/bin/sh", "-lc", "printf ok"],
+          command: ["/bin/sh", "-c", shellCommand],
           environment: { "WITH.DOT": "allowed" },
           timeoutMs: 1000,
         },
@@ -267,6 +267,7 @@ describe("step.sandbox", () => {
     expect(operations[4]).toMatchObject({
       action: "process.start",
       target: { sandbox: { id: sandboxId } },
+      input: [{ command: ["/bin/sh", "-c", "sleep 30"] }],
     });
     expect(operations[5]).toMatchObject({
       action: "process.list",
@@ -314,11 +315,42 @@ describe("step.sandbox", () => {
       }),
     ).toThrow(SandboxValidationError);
 
-    await expect(
-      sandbox.commands.run("exec", {
-        command: ["npm", "test"],
+    await expect(sandbox.commands.run("exec", ["npm", "test"])).rejects.toThrow(
+      "absolute executable path",
+    );
+    await expect(sandbox.commands.run("exec", "npm test")).resolves.toEqual({
+      stdout: new Uint8Array([111, 107, 10]),
+      stderr: new Uint8Array(),
+      exitCode: 0,
+      output: { truncated: false },
+    });
+    await sandbox.commands.run("argv", [
+      "/usr/bin/git",
+      "commit",
+      "-m",
+      "hello world",
+    ]);
+    expect(rawTool).toHaveBeenLastCalledWith(
+      "argv",
+      expect.objectContaining({
+        action: "exec",
+        input: [
+          expect.objectContaining({
+            command: ["/usr/bin/git", "commit", "-m", "hello world"],
+          }),
+        ],
       }),
-    ).rejects.toThrow("absolute executable path");
+    );
+    rawTool.mockClear();
+    await expect(sandbox.commands.run("empty", "")).rejects.toThrow(
+      "command must not be empty",
+    );
+    await expect(sandbox.commands.run("nul", "printf \0")).rejects.toThrow(
+      "must not contain NUL",
+    );
+    await expect(
+      sandbox.commands.run("too-large", "x".repeat(32_760)),
+    ).rejects.toThrow("must not exceed 32768 bytes");
     await expect(
       sandbox.processes.start("start", {
         command: ["/bin/true"],
@@ -350,7 +382,7 @@ describe("step.sandbox", () => {
       async ({ step }) => {
         const sandbox = await step.sandbox.create("create", createOptions);
         const process = await sandbox.processes.start("start", {
-          command: processRef.command,
+          command: "sleep 30",
         });
         await process.signal("signal", { signal: 15 });
         return process.id;
@@ -397,6 +429,13 @@ describe("step.sandbox", () => {
           input: [{ protocolVersion: 1, action }],
         },
       });
+      if (action === "process.start") {
+        expect(outgoing).toMatchObject({
+          opts: {
+            input: [{ input: [{ command: ["/bin/sh", "-c", "sleep 30"] }] }],
+          },
+        });
+      }
       state[outgoing.id] = { id: outgoing.id, data: results[index] };
       stackOrder.push(outgoing.id);
     }
@@ -573,6 +612,7 @@ describe("step.sandbox", () => {
     const threeMiBBase64 = `AQID${"AAAA".repeat((1 << 20) - 1)}`;
     const oneMiBBase64 = `${"AAAA".repeat(349_525)}AA==`;
     const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const execBodies: unknown[] = [];
     const fetchMock: typeof fetch = vi.fn(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input);
       if (
@@ -580,6 +620,9 @@ describe("step.sandbox", () => {
         (init?.method ?? "GET") === "GET"
       ) {
         return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname.endsWith("/exec")) {
+        execBodies.push(JSON.parse(String(init?.body)));
       }
       return Response.json({
         data: {
@@ -602,8 +645,10 @@ describe("step.sandbox", () => {
     if (!directSandbox) {
       throw new Error("Expected sandbox");
     }
-    const direct = await directSandbox.commands.run({
-      command: ["/bin/true"],
+    const direct = await directSandbox.commands.run("printf ok", {
+      cwd: "/workspace",
+      environment: { CI: "true" },
+      timeout: "5m",
     });
     expect(direct.stdout).toHaveLength(3 << 20);
     expect(direct.stderr).toHaveLength(1 << 20);
@@ -617,8 +662,10 @@ describe("step.sandbox", () => {
         if (!sandbox) {
           throw new Error("Expected sandbox");
         }
-        const result = await sandbox.commands.run("exec", {
-          command: ["/bin/true"],
+        const result = await sandbox.commands.run("exec", "printf ok", {
+          cwd: "/workspace",
+          environment: { CI: "true" },
+          timeout: "5m",
         });
         return {
           stdoutBytes: result.stdout.byteLength,
@@ -714,6 +761,20 @@ describe("step.sandbox", () => {
       },
     });
     expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(execBodies).toEqual([
+      {
+        command: ["/bin/sh", "-c", "printf ok"],
+        cwd: "/workspace",
+        environment: { CI: "true" },
+        timeout: "300000ms",
+      },
+      {
+        command: ["/bin/sh", "-c", "printf ok"],
+        cwd: "/workspace",
+        environment: { CI: "true" },
+        timeout: "300000ms",
+      },
+    ]);
   });
 
   test("retries a structured Create availability failure", async () => {
@@ -1042,7 +1103,7 @@ describe("inngest.sandboxes", () => {
       let operation: Promise<unknown>;
       switch (action) {
         case "exec":
-          operation = sandbox.commands.run({ command: ["/bin/true"] });
+          operation = sandbox.commands.run(["/bin/true"]);
           break;
         case "process.start":
           operation = sandbox.processes.start({ command: ["/bin/true"] });
@@ -1112,7 +1173,7 @@ describe("inngest.sandboxes", () => {
             operation = sandbox.destroy();
             break;
           case "exec":
-            operation = sandbox.commands.run({ command: ["/bin/true"] });
+            operation = sandbox.commands.run(["/bin/true"]);
             break;
           case "process.start":
             operation = sandbox.processes.start({ command: ["/bin/true"] });
@@ -1600,8 +1661,7 @@ describe("inngest.sandboxes", () => {
     if (!sandbox) {
       throw new Error("Expected sandbox");
     }
-    const command = await sandbox.commands.run({
-      command: ["/bin/sh", "-lc", "printf ok"],
+    const command = await sandbox.commands.run("printf ok", {
       timeout: "1s",
     });
     const logReader = (await sandbox.logs.stream({ follow: true })).getReader();
@@ -1615,7 +1675,7 @@ describe("inngest.sandboxes", () => {
       path: "/tmp/result.bin",
     });
     const started = await sandbox.processes.start({
-      command: processRef.command,
+      command: "sleep 30",
     });
     const processes = await sandbox.processes.list({
       cursor: "process-cursor",
@@ -1689,6 +1749,26 @@ describe("inngest.sandboxes", () => {
       Authorization: `Bearer ${hashSigningKey("signkey-test")}`,
       "x-inngest-env": "branch",
     });
+    expect(
+      JSON.parse(
+        String(
+          calls.find(({ url }) => url.pathname.endsWith("/exec"))?.init?.body,
+        ),
+      ),
+    ).toMatchObject({
+      command: ["/bin/sh", "-c", "printf ok"],
+      timeout: "1000ms",
+    });
+    expect(
+      JSON.parse(
+        String(
+          calls.find(
+            ({ url, init }) =>
+              url.pathname.endsWith("/processes") && init?.method === "POST",
+          )?.init?.body,
+        ),
+      ),
+    ).toEqual({ command: ["/bin/sh", "-c", "sleep 30"] });
   });
 
   test("uses the REST v2 resource shape and decodes byte-safe streams", async () => {
@@ -1800,11 +1880,7 @@ describe("inngest.sandboxes", () => {
       if (!sandbox) {
         throw new Error("Expected sandbox");
       }
-      await expect(
-        sandbox.commands.run({
-          command: ["/bin/true"],
-        }),
-      ).rejects.toMatchObject({
+      await expect(sandbox.commands.run(["/bin/true"])).rejects.toMatchObject({
         name: "SandboxError",
         action: "exec",
         code,

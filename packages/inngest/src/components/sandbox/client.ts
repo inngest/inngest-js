@@ -647,8 +647,8 @@ const createDirectSandboxFacade = (
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
-      run: async (options) => {
-        const normalized = normalizeSandboxCommandOptions(options);
+      run: async (command, options) => {
+        const normalized = normalizeSandboxCommandOptions(command, options);
         const { timeout: _timeout, timeoutMs, ...spec } = normalized;
         const { envelope } = await transport.json(
           "exec",
