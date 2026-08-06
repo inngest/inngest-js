@@ -24,7 +24,25 @@ describe("Execution engine checkpoint retry behavior", () => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
+
+  const trackTransformStreamConstruction = () => {
+    const OriginalTransformStream = globalThis.TransformStream;
+    const constructed = vi.fn();
+
+    class TrackedTransformStream extends OriginalTransformStream {
+      constructor(
+        ...args: ConstructorParameters<typeof OriginalTransformStream>
+      ) {
+        constructed();
+        super(...args);
+      }
+    }
+
+    vi.stubGlobal("TransformStream", TrackedTransformStream);
+    return constructed;
+  };
 
   /**
    * Helper to advance timers through all retry delays.
@@ -820,6 +838,31 @@ describe("Execution engine checkpoint retry behavior", () => {
   });
 
   describe("StepMode.Sync with steps", () => {
+    test("does not allocate a stream for non-streaming executions", async () => {
+      const transformStream = trackTransformStreamConstruction();
+
+      const { result } = await runExecution({
+        mockApi: {
+          checkpointNewRun: vi.fn().mockResolvedValue({
+            data: {
+              app_id: "app-123",
+              fn_id: "fn-456",
+              token: "token-789",
+            },
+          }),
+          checkpointSteps: vi.fn().mockResolvedValue(undefined),
+        },
+        handler: async ({ step }) => {
+          await step.run("step-1", () => "result-1");
+          return "done";
+        },
+        stepMode: StepMode.Sync,
+      });
+
+      expect(result.type).toBe("function-resolved");
+      expect(transformStream).not.toHaveBeenCalled();
+    });
+
     test("checkpoints steps via checkpointSteps after initial run", async () => {
       const mockCheckpointNewRun = vi.fn().mockResolvedValue({
         data: { app_id: "app-123", fn_id: "fn-456", token: "token-789" },
