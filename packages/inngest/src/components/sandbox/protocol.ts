@@ -13,6 +13,7 @@ import {
   normalizeSandboxCreateOptions,
   normalizeSandboxProcessStartOptions,
   parseWithSchema,
+  sandboxNameSchema,
   sandboxProcessRefSchema,
   sandboxRefSchema,
   wireOutputChunkSchema,
@@ -36,7 +37,7 @@ const processTargetSchema = sandboxTargetSchema
 
 const createInputSchema = z
   .object({
-    name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
+    name: sandboxNameSchema,
     vcpu: z.number().int().positive().max(0xffffffff),
     memoryMb: z.number().int().positive().max(0xffffffff),
     environment: z.record(z.string()).optional(),
