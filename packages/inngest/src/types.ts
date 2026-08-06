@@ -825,9 +825,6 @@ export type EventMeta = {
   sessions?: EventSessions | null;
 
   /**
-   * EXPERIMENTAL: This API is not yet stable and may change in the future
-   * without a major version bump.
-   *
    * Sessions propagated from the run that emitted this event. Stamped
    * automatically from `ctx.sessions`; carried as a separate layer from manual
    * {@link EventMeta.sessions} and merged server-side (manual wins per key).
@@ -1241,9 +1238,6 @@ export interface ClientOptions {
   aiMetadata?: boolean;
 
   /**
-   * EXPERIMENTAL: This API is not yet stable and may change in the future
-   * without a major version bump.
-   *
    * Whether events spawned during a run — via `step.sendEvent`, `step.invoke`,
    * and `defer` — inherit the run's session metadata, so the resulting child
    * runs stay grouped in the same sessions as their parent.
