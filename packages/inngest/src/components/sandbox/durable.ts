@@ -215,9 +215,9 @@ export const executeSandboxOperation = async (
       };
     }
     case "exec": {
-      const { timeoutMs, ...options } = operation.input[0];
+      const { command, timeoutMs, ...options } = operation.input[0];
       const sandbox = sandboxForOperation(client, operation.target.sandbox);
-      const result = await runSandboxCommandForOperation(sandbox, {
+      const result = await runSandboxCommandForOperation(sandbox, command, {
         ...options,
         timeout: timeoutMs,
       });
@@ -447,8 +447,8 @@ export const createDurableSandboxFacade = (
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
-      run: async (idOrOptions, options) => {
-        const normalized = normalizeSandboxCommandOptions(options);
+      run: async (idOrOptions, command, options) => {
+        const normalized = normalizeSandboxCommandOptions(command, options);
         const { timeout: _timeout, ...input } = normalized;
         const operation = parseSandboxOperationForAction("exec", {
           protocolVersion: sandboxProtocolVersion,

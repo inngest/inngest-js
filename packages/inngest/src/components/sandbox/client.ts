@@ -4,6 +4,7 @@ import {
   type Sandbox,
   type SandboxAction,
   type SandboxClient,
+  type SandboxCommand,
   type SandboxCommandOptions,
   type SandboxCommandOutputMetadata,
   type SandboxDestroyResult,
@@ -648,7 +649,8 @@ interface SandboxCommandByteResult {
 }
 
 type DirectSandboxCommandRunner = (
-  options: SandboxCommandOptions,
+  command: SandboxCommand,
+  options?: SandboxCommandOptions,
 ) => Promise<SandboxCommandByteResult>;
 
 const directSandboxCommandRunners = new WeakMap<
@@ -659,7 +661,8 @@ const directSandboxCommandRunners = new WeakMap<
 /** Internal byte-preserving command execution used by the durable adapter. */
 export const runSandboxCommandForOperation = (
   sandbox: Sandbox,
-  options: SandboxCommandOptions,
+  command: SandboxCommand,
+  options?: SandboxCommandOptions,
 ): Promise<SandboxCommandByteResult> => {
   const run = directSandboxCommandRunners.get(sandbox);
   if (!run) {
@@ -667,7 +670,7 @@ export const runSandboxCommandForOperation = (
       "Sandbox commands can only run on an SDK sandbox resource",
     );
   }
-  return run(options);
+  return run(command, options);
 };
 
 const createDirectSandboxFacade = (
@@ -677,9 +680,10 @@ const createDirectSandboxFacade = (
   const ref = parseWithSchema(sandboxRefSchema, rawRef, "sandbox reference");
   const basePath = `/v2/sandboxes/${encodeURIComponent(ref.id)}`;
   const runCommand = async (
-    options: SandboxCommandOptions,
+    command: SandboxCommand,
+    options: SandboxCommandOptions = {},
   ): Promise<SandboxCommandByteResult> => {
-    const normalized = normalizeSandboxCommandOptions(options);
+    const normalized = normalizeSandboxCommandOptions(command, options);
     const { timeout: _timeout, timeoutMs, ...spec } = normalized;
     const { envelope } = await transport.json(
       "exec",
@@ -710,8 +714,8 @@ const createDirectSandboxFacade = (
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
-      run: async (options) => {
-        const result = await runCommand(options);
+      run: async (command, options) => {
+        const result = await runCommand(command, options);
         return {
           stdout: decodeUtf8(result.stdout),
           stderr: decodeUtf8(result.stderr),
