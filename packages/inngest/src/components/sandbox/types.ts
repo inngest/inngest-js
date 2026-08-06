@@ -40,7 +40,8 @@ export interface SandboxRef extends SandboxResource {
 export interface SandboxCreateOptions {
   /**
    * Stable identity for an active sandbox. Creating the same name again with
-   * the same configuration returns the existing sandbox.
+   * the same configuration returns the existing sandbox. Names are
+   * case-sensitive and may contain up to 255 characters.
    */
   name: string;
   vcpu: number;

@@ -916,6 +916,95 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  test("accepts uppercase ULIDs and human-readable sandbox names", async () => {
+    const { kind: _kind, version: _version, ...resource } = sandboxRef;
+    const sentNames: string[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { name: string };
+      sentNames.push(body.name);
+      return Response.json(
+        { data: { ...resource, name: body.name } },
+        { status: 201 },
+      );
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+    const names = [
+      "01J4Z3R7M8N9P0Q1S2T3V4W5XY",
+      "Repo Build / 01J4Z3R7M8N9P0Q1S2T3V4W5XY",
+      "my.sandbox",
+      "déploiement-🚀",
+      "🚀".repeat(255),
+    ];
+
+    for (const name of names) {
+      await expect(
+        client.create({ ...createOptions, name }),
+      ).resolves.toMatchObject({ name });
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "create",
+          input: [{ ...createOptions, name }],
+        }),
+      ).not.toThrow();
+    }
+
+    expect(sentNames).toEqual(names);
+  });
+
+  test.each([
+    ["empty", "", "must not be empty"],
+    ["too long", "a".repeat(256), "must not exceed 255 characters"],
+    [
+      "too many Unicode characters",
+      "🚀".repeat(256),
+      "must not exceed 255 characters",
+    ],
+    [
+      "leading whitespace",
+      " sandbox",
+      "must not contain leading or trailing whitespace",
+    ],
+    [
+      "trailing whitespace",
+      "sandbox ",
+      "must not contain leading or trailing whitespace",
+    ],
+    [
+      "control character",
+      "sandbox\nname",
+      "must not contain control characters",
+    ],
+  ] as const)(
+    "rejects a sandbox name that is %s",
+    async (_case, name, message) => {
+      const fetchMock: typeof fetch = vi.fn();
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+
+      await expect(client.create({ ...createOptions, name })).rejects.toThrow(
+        message,
+      );
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "create",
+          input: [{ ...createOptions, name }],
+        }),
+      ).toThrow(message);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
   test("validates Create environment before transport", async () => {
     const fetchMock: typeof fetch = vi.fn();
     const client = createSandboxClient({
