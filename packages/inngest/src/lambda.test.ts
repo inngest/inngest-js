@@ -1,5 +1,7 @@
 import type { APIGatewayProxyResult } from "aws-lambda";
+import { describe, expect, test } from "vitest";
 import * as LambdaHandler from "./lambda.ts";
+import { buildLambdaUrl } from "./lambda.ts";
 import { testFramework } from "./test/helpers.ts";
 
 testFramework("AWS Lambda", LambdaHandler, {
@@ -34,4 +36,67 @@ testFramework("AWS Lambda", LambdaHandler, {
       headers: (ret.headers || {}) as Record<string, string>,
     };
   },
+});
+
+describe("buildLambdaUrl query string preservation", () => {
+  const getHeader = (key: string) =>
+    key.toLowerCase() === "host" ? "example.execute-api.us-east-1.amazonaws.com" : undefined;
+
+  test("API Gateway v2 keeps rawQueryString so fnId is on url.searchParams", () => {
+    const url = buildLambdaUrl(
+      {
+        version: "2.0",
+        rawQueryString: "fnId=my-app-my-fn&stepId=step",
+        headers: { host: "example.execute-api.us-east-1.amazonaws.com" },
+        requestContext: {
+          http: {
+            method: "POST",
+            path: "/api/inngest",
+          },
+        },
+      } as Parameters<typeof buildLambdaUrl>[0],
+      getHeader,
+    );
+
+    expect(url.pathname).toBe("/api/inngest");
+    expect(url.searchParams.get("fnId")).toBe("my-app-my-fn");
+    expect(url.searchParams.get("stepId")).toBe("step");
+  });
+
+  test("API Gateway v1 keeps queryStringParameters on url.searchParams", () => {
+    const url = buildLambdaUrl(
+      {
+        path: "/api/inngest",
+        httpMethod: "POST",
+        headers: { host: "example.execute-api.us-east-1.amazonaws.com" },
+        queryStringParameters: {
+          fnId: "my-app-my-fn",
+          stepId: "step",
+        },
+      } as Parameters<typeof buildLambdaUrl>[0],
+      getHeader,
+    );
+
+    expect(url.searchParams.get("fnId")).toBe("my-app-my-fn");
+    expect(url.searchParams.get("stepId")).toBe("step");
+  });
+
+  test("omits search when the event has no query string", () => {
+    const url = buildLambdaUrl(
+      {
+        version: "2.0",
+        rawQueryString: "",
+        headers: { host: "example.execute-api.us-east-1.amazonaws.com" },
+        requestContext: {
+          http: {
+            method: "GET",
+            path: "/api/inngest",
+          },
+        },
+      } as Parameters<typeof buildLambdaUrl>[0],
+      getHeader,
+    );
+
+    expect(url.search).toBe("");
+  });
 });
