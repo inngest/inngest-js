@@ -271,13 +271,13 @@ export type GoInterval = {
 // biome-ignore lint/suspicious/noExplicitAny: match any fn
 export const goIntervalTiming = async <T extends (...args: any[]) => any>(
   fn: T,
+  // Ideally this would use process.hrtime, but that's not available in all
+  // runtimes, so we must revert to less accurate timing and `Date`.
+  start: number = Date.now(),
 ): Promise<{
   resultPromise: Promise<Awaited<ReturnType<T>>>;
   interval: { a: number; b: number };
 }> => {
-  // Ideally this would use process.hrtime, but that's not available in all
-  // runtimes, so we must revert to less accurate timing and `Date`.
-  const start = Date.now();
   const resultPromise = runAsPromise(fn) as Promise<Awaited<ReturnType<T>>>;
 
   // Let the function run to completion.
