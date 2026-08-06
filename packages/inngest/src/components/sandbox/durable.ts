@@ -1,5 +1,9 @@
 import type { StepOptionsOrId } from "../../types.ts";
-import { sandboxForOperation, sandboxProcessForOperation } from "./client.ts";
+import {
+  runSandboxCommandForOperation,
+  sandboxForOperation,
+  sandboxProcessForOperation,
+} from "./client.ts";
 import {
   findSandboxErrorOptions,
   findSandboxValidationError,
@@ -20,7 +24,7 @@ import {
   type Sandbox,
   type SandboxAction,
   type SandboxClient,
-  type SandboxCommandResult,
+  type SandboxCommandOutputMetadata,
   type SandboxDestroyResult,
   SandboxError,
   type SandboxOutputChunk,
@@ -34,6 +38,7 @@ import {
   canonicalUuidSchema,
   decodeBase64,
   decodeOutputChunk,
+  decodeUtf8,
   encodeBase64,
   normalizeSandboxCommandOptions,
   normalizeSandboxCreateOptions,
@@ -52,7 +57,11 @@ import {
 const fitDurableSandboxExecOutput = (
   stdout: Uint8Array,
   stderr: Uint8Array,
-): Pick<SandboxCommandResult, "stdout" | "stderr" | "output"> => {
+): {
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  output: SandboxCommandOutputMetadata;
+} => {
   const originalBytes = {
     stdout: stdout.byteLength,
     stderr: stderr.byteLength,
@@ -208,7 +217,7 @@ export const executeSandboxOperation = async (
     case "exec": {
       const { timeoutMs, ...options } = operation.input[0];
       const sandbox = sandboxForOperation(client, operation.target.sandbox);
-      const result = await sandbox.commands.run({
+      const result = await runSandboxCommandForOperation(sandbox, {
         ...options,
         timeout: timeoutMs,
       });
@@ -453,8 +462,12 @@ export const createDurableSandboxFacade = (
           operation,
         );
         return {
-          stdout: decodeBase64(result.result.stdout, "sandbox exec stdout"),
-          stderr: decodeBase64(result.result.stderr, "sandbox exec stderr"),
+          stdout: decodeUtf8(
+            decodeBase64(result.result.stdout, "sandbox exec stdout"),
+          ),
+          stderr: decodeUtf8(
+            decodeBase64(result.result.stderr, "sandbox exec stderr"),
+          ),
           exitCode: result.result.exitCode,
           output: result.result.output,
         };

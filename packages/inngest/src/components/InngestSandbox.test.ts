@@ -12,6 +12,7 @@ import { Inngest } from "./Inngest.ts";
 import {
   createSandboxClient,
   createSandboxTools,
+  encodeBase64,
   parseSandboxOperation,
   SandboxError,
   type SandboxOperationResultV1,
@@ -212,8 +213,8 @@ describe("step.sandbox", () => {
     expect(listed.items[0]).toMatchObject(sandboxRef);
     expect(fetched?.id).toBe(sandboxId);
     expect(command).toEqual({
-      stdout: new Uint8Array([111, 107, 10]),
-      stderr: new Uint8Array(),
+      stdout: "ok\n",
+      stderr: "",
       exitCode: 0,
       output: { truncated: false },
     });
@@ -570,8 +571,12 @@ describe("step.sandbox", () => {
   });
 
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
-    const threeMiBBase64 = `AQID${"AAAA".repeat((1 << 20) - 1)}`;
-    const oneMiBBase64 = `${"AAAA".repeat(349_525)}AA==`;
+    const stdoutBytes = new Uint8Array(3 << 20);
+    stdoutBytes.set([1, 2, 3]);
+    stdoutBytes.set([0xe2, 0x82, 0xac], (2 << 20) - 1);
+    const stderrBytes = new Uint8Array(1 << 20);
+    const threeMiBBase64 = encodeBase64(stdoutBytes);
+    const oneMiBBase64 = encodeBase64(stderrBytes);
     const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
     const fetchMock: typeof fetch = vi.fn(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input);
@@ -605,9 +610,9 @@ describe("step.sandbox", () => {
     const direct = await directSandbox.commands.run({
       command: ["/bin/true"],
     });
-    expect(direct.stdout).toHaveLength(3 << 20);
+    expect(direct.stdout.startsWith("\u0001\u0002\u0003")).toBe(true);
+    expect(direct.stdout).toContain("€");
     expect(direct.stderr).toHaveLength(1 << 20);
-    expect(direct.stdout.slice(0, 3)).toEqual(new Uint8Array([1, 2, 3]));
     expect(direct.output).toEqual({ truncated: false });
 
     const fn = client.createFunction(
@@ -621,9 +626,8 @@ describe("step.sandbox", () => {
           command: ["/bin/true"],
         });
         return {
-          stdoutBytes: result.stdout.byteLength,
-          stderrBytes: result.stderr.byteLength,
-          firstStdoutByte: result.stdout[0],
+          stdoutStartsWithReplacement: result.stdout.startsWith("\uFFFD"),
+          stderrLength: result.stderr.length,
           output: result.output,
         };
       },
@@ -696,9 +700,8 @@ describe("step.sandbox", () => {
     ).resolves.toMatchObject({
       type: "function-resolved",
       data: {
-        stdoutBytes: 1 << 20,
-        stderrBytes: 1 << 20,
-        firstStdoutByte: 0,
+        stdoutStartsWithReplacement: true,
+        stderrLength: 1 << 20,
         output: {
           truncated: true,
           strategy: "tail",
@@ -1004,6 +1007,50 @@ describe("inngest.sandboxes", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
+
+  test("decodes captured Exec output as non-fatal UTF-8", async () => {
+    const { kind: _kind, version: _version, ...resource } = sandboxRef;
+    const stdout = new Uint8Array([
+      ...new TextEncoder().encode("hello π 🚀"),
+      0xff,
+    ]);
+    const stderr = new Uint8Array([0xe2, 0x82]);
+    let requestCount = 0;
+    const fetchMock: typeof fetch = vi.fn(async () => {
+      requestCount++;
+      if (requestCount === 1) {
+        return Response.json({ data: resource });
+      }
+      return Response.json({
+        data: {
+          stdout: encodeBase64(stdout),
+          stderr: encodeBase64(stderr),
+          encoding: "base64",
+          exitCode: 0,
+        },
+      });
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    await expect(
+      sandbox.commands.run({ command: ["/bin/true"] }),
+    ).resolves.toEqual({
+      stdout: "hello π 🚀�",
+      stderr: "�",
+      exitCode: 0,
+      output: { truncated: false },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 
   test("validates Create environment before transport", async () => {
     const fetchMock: typeof fetch = vi.fn();
@@ -1723,8 +1770,8 @@ describe("inngest.sandboxes", () => {
     expect("toJSON" in started).toBe(false);
     expect("refresh" in sandbox).toBe(false);
     expect(command).toEqual({
-      stdout: new Uint8Array([0, 255]),
-      stderr: new TextEncoder().encode("err\n"),
+      stdout: "\u0000�",
+      stderr: "err\n",
       exitCode: 7,
       output: { truncated: false },
     });
