@@ -1,4 +1,9 @@
-import { isSerializedError, serializeError } from "./errors.ts";
+import { NonRetriableError } from "../components/NonRetriableError.ts";
+import {
+  deserializeError,
+  isSerializedError,
+  serializeError,
+} from "./errors.ts";
 
 interface ErrorTests {
   name: string;
@@ -101,5 +106,70 @@ describe("serializeError", () => {
     name: "Existing serialized error",
     error: serializeError(new Error("test")),
     tests: { message: "test" },
+  });
+});
+
+class MyCustomError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "MyCustomError";
+  }
+}
+
+describe("serializeError -> deserializeError round trip", () => {
+  it("round-trips a NonRetriableError", () => {
+    const err = deserializeError(serializeError(new NonRetriableError("boom")));
+
+    expect(err.name).toBe("NonRetriableError");
+    expect(err.message).toBe("boom");
+    expect(err).toBeInstanceOf(NonRetriableError);
+  });
+
+  it("round-trips a built-in TypeError", () => {
+    const err = deserializeError(serializeError(new TypeError("bad")));
+
+    expect(err.name).toBe("TypeError");
+    expect(err).toBeInstanceOf(TypeError);
+  });
+
+  it("round-trips a plain Error", () => {
+    const err = deserializeError(serializeError(new Error("plain")));
+
+    expect(err.name).toBe("Error");
+    expect(err.message).toBe("plain");
+  });
+
+  it("preserves a cause through the round trip", () => {
+    const err = deserializeError(
+      serializeError(
+        new NonRetriableError("outer", { cause: new Error("inner") }),
+      ),
+    );
+
+    expect(err.cause).toMatchObject({ message: "inner" });
+  });
+
+  it("falls back to a plain Error for an unknown custom error name", () => {
+    const err = deserializeError(serializeError(new MyCustomError("custom")));
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe("custom");
+  });
+
+  it("recognizes a stringified serialized error instead of double-wrapping", () => {
+    const str = JSON.stringify(serializeError(new Error("stringified")));
+
+    const err = deserializeError(serializeError(str));
+
+    expect(err.name).toBe("Error");
+    expect(err.message).toBe("stringified");
+  });
+
+  it("preserves a code through the round trip", () => {
+    const original = Object.assign(new Error("with code"), { code: "E_TEST" });
+
+    const err = deserializeError(serializeError(original));
+
+    expect(err).toMatchObject({ message: "with code", code: "E_TEST" });
   });
 });

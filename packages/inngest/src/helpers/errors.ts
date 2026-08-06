@@ -1,16 +1,22 @@
 import stringify from "json-stringify-safe";
-import {
-  type SerializedError as CjsSerializedError,
-  deserializeError as cjsDeserializeError,
-  serializeError as cjsSerializeError,
-  errorConstructors,
-} from "serialize-error-cjs";
 import { z } from "zod/v3";
 import { NonRetriableError } from "../components/NonRetriableError.ts";
 import type { ClientOptions, OutgoingOp } from "../types.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
+
+/**
+ * The properties preserved when serializing and deserializing errors, with
+ * the enumerability each has on a real `Error` instance.
+ */
+const copiedErrorProperties = [
+  { key: "name", enumerable: false },
+  { key: "message", enumerable: false },
+  { key: "stack", enumerable: false },
+  { key: "code", enumerable: true },
+  { key: "cause", enumerable: false },
+] as const;
 
 /**
  * Add first-class support for certain errors that we control, in addition to
@@ -22,30 +28,76 @@ const SERIALIZED_VALUE = true;
  *
  * Note that these errors only support `message?: string | undefined` as the
  * input; more custom errors are not supported with this current strategy.
+ *
+ * New public error classes are usually fine unregistered; deserialization
+ * falls back to `Error`. Only `name`, `message`, `stack`, `code`, and
+ * `cause` survive serialization either way, so register a factory only if
+ * users need `instanceof` checks in `onFailure` handlers.
  */
-errorConstructors.set(
-  "NonRetriableError",
-  NonRetriableError as ErrorConstructor,
-);
+const errorFactories = new Map<string, () => Error>([
+  ["EvalError", () => new EvalError()],
+  ["RangeError", () => new RangeError()],
+  ["ReferenceError", () => new ReferenceError()],
+  ["SyntaxError", () => new SyntaxError()],
+  ["TypeError", () => new TypeError()],
+  ["URIError", () => new URIError()],
+  ["NonRetriableError", () => new NonRetriableError("")],
+]);
 
-export interface SerializedError extends Readonly<CjsSerializedError> {
+// `name` and other error properties usually live on the prototype, so check
+// with `in` rather than own-property lookups.
+const pickErrorProperties = (subject: object): Record<string, unknown> => {
+  const result: Record<string, unknown> = {};
+
+  for (const { key } of copiedErrorProperties) {
+    if (Reflect.has(subject, key)) {
+      result[key] = Reflect.get(subject, key);
+    }
+  }
+
+  return result;
+};
+
+const reconstructError = (subject: object): Error => {
+  const name = Reflect.get(subject, "name");
+  const factory =
+    typeof name === "string" ? errorFactories.get(name) : undefined;
+
+  const output = factory ? factory() : new Error();
+
+  for (const { key, enumerable } of copiedErrorProperties) {
+    if (Reflect.has(subject, key)) {
+      Object.defineProperty(output, key, {
+        value: Reflect.get(subject, key),
+        enumerable,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+
+  return output;
+};
+
+export interface SerializedError {
+  readonly name: string;
+  readonly message: string;
+  readonly stack: string;
   readonly [SERIALIZED_KEY]: typeof SERIALIZED_VALUE;
 }
 
 /**
- * Serialise an error to a serialized JSON string.
+ * Serialize an error to a plain, JSON-serializable object.
  *
- * Errors do not serialise nicely to JSON, so we use this function to convert
- * them to a serialized JSON string. Doing this is also non-trivial for some
- * errors, so we use the `serialize-error` package to do it for us.
+ * Errors do not serialize nicely to JSON by default, so we use this function
+ * to convert them to a plain object, copying across the properties that
+ * matter (`name`, `message`, `stack`, and, where present, `code` and
+ * `cause`).
  *
- * See {@link https://www.npmjs.com/package/serialize-error}
+ * This function also adds a marker property to the serialized error, so that
+ * we can distinguish between serialized errors and other objects.
  *
- * This function is a small wrapper around that package to also add a `type`
- * property to the serialised error, so that we can distinguish between
- * serialised errors and other objects.
- *
- * Will not reserialise existing serialised errors.
+ * Will not reserialize existing serialized errors.
  */
 export const serializeError = <
   TAllowUnknown extends boolean = false,
@@ -75,7 +127,7 @@ export const serializeError = <
 
     if (typeof subject === "object" && subject !== null) {
       // Is an object, so let's try and serialize it.
-      const serializedErr = cjsSerializeError(subject as Error);
+      const serializedErr = pickErrorProperties(subject);
 
       // Not a proper error was caught, so give us a chance to return `unknown`.
       if (!serializedErr.name && allowUnknown) {
@@ -103,20 +155,29 @@ export const serializeError = <
       // If we have a cause, make sure we recursively serialize them too. We are
       // lighter with causes though; attempt to recursively serialize them, but
       // stop if we find something that doesn't work and just return `unknown`.
-      let target: unknown = ret;
+      // Values that come back unserialized are copied before we walk into
+      // them, so we never mutate objects the caller still holds.
+      let target: object = ret;
       const maxDepth = 5;
       for (let i = 0; i < maxDepth; i++) {
-        if (
-          typeof target === "object" &&
-          target !== null &&
-          "cause" in target &&
-          target.cause
-        ) {
-          target = target.cause = serializeError(target.cause, true);
-          continue;
+        if (!("cause" in target) || !target.cause) {
+          break;
         }
 
-        break;
+        const serializedCause = serializeError(target.cause, true);
+
+        if (typeof serializedCause !== "object" || serializedCause === null) {
+          target.cause = serializedCause;
+          break;
+        }
+
+        const next =
+          serializedCause === target.cause
+            ? { ...serializedCause }
+            : serializedCause;
+
+        target.cause = next;
+        target = next;
       }
 
       return ret as TOutput;
@@ -159,6 +220,15 @@ export const serializeError = <
   }
 };
 
+const serializedErrorSchema = z
+  .object({
+    [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
+    name: z.string(),
+    message: z.string(),
+    stack: z.string(),
+  })
+  .passthrough();
+
 /**
  * Check if an object or a string is a serialised error created by
  * {@link serializeError}.
@@ -168,18 +238,7 @@ export const isSerializedError = (
 ): SerializedError | undefined => {
   try {
     if (typeof value === "string") {
-      const parsed = z
-        .object({
-          [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
-          name: z.enum([...Array.from(errorConstructors.keys())] as [
-            string,
-            ...string[],
-          ]),
-          message: z.string(),
-          stack: z.string(),
-        })
-        .passthrough()
-        .safeParse(JSON.parse(value));
+      const parsed = serializedErrorSchema.safeParse(JSON.parse(value));
 
       if (parsed.success) {
         return parsed.data as SerializedError;
@@ -231,7 +290,7 @@ export const deserializeError = <
       throw new Error();
     }
 
-    const deserializedErr = cjsDeserializeError(subject as SerializedError);
+    const deserializedErr = reconstructError(subject);
 
     if ("cause" in deserializedErr) {
       deserializedErr.cause = deserializeError(
