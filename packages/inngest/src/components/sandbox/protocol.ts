@@ -41,7 +41,9 @@ const createInputSchema = z
     vcpu: z.number().int().positive().max(0xffffffff),
     memoryMb: z.number().int().positive().max(0xffffffff),
     environment: z.record(z.string()).optional(),
-    runningTimeoutMs: z.number().int().positive().max(300_000).optional(),
+    runningTimeoutMs: z
+      .union([z.number().int().positive().max(300_000), z.literal(false)])
+      .optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
