@@ -1445,9 +1445,9 @@ describe("sessionPropagation toggle", () => {
     return new Inngest(opts);
   };
 
-  test("defaults to false (dark-launch OFF) when env is not set", () => {
+  test("defaults to true when env is not set", () => {
     const inngest = createWithSessionPropagation();
-    expect(inngest[sessionPropagationSymbol]).toBe(false);
+    expect(inngest[sessionPropagationSymbol]).toBe(true);
   });
 
   test("`INNGEST_SESSION_PROPAGATION=true` enables propagation", () => {
