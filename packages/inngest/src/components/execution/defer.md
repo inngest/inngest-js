@@ -104,7 +104,7 @@ in `buildDeferEvents` before emitting `inngest/deferred.schedule`. This mirrors 
 `step.invoke` and `step.sendEvent` session paths.
 
 Session propagation is gated by the public `sessionPropagation` client option
-(off by default). While disabled, the propagated layer is not stamped; manual
+(on by default). While disabled, the propagated layer is not stamped; manual
 `meta.sessions` still travels.
 
 ## Sharing across parents

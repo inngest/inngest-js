@@ -139,7 +139,7 @@ export const sessionPropagationSymbol = Symbol.for(
   "inngest.sessionPropagation",
 );
 
-const SESSION_PROPAGATION_DEFAULT_ENABLED = false;
+const SESSION_PROPAGATION_DEFAULT_ENABLED = true;
 
 export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like

@@ -1247,7 +1247,8 @@ export interface ClientOptions {
    *
    * This option takes precedence over the `INNGEST_SESSION_PROPAGATION`
    * environment variable, which in turn takes precedence over the SDK's
-   * default. When left unset, the feature is off by default.
+   * default. When left unset, the feature is on by default; set this to
+   * `false` to opt out.
    */
   sessionPropagation?: boolean;
 
