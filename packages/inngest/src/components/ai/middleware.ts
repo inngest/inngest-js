@@ -7,10 +7,6 @@ import { metadataMiddleware } from "../InngestMetadata.ts";
 import { scoreMiddleware } from "../InngestScore.ts";
 import { Middleware } from "../middleware/middleware.ts";
 
-/**
- * The declared return type of a middleware's `transformFunctionInput`, used to
- * compose the bundled middlewares' context extensions without restating them.
- */
 type TransformedInput<TMiddleware> = TMiddleware extends {
   transformFunctionInput(
     arg: Middleware.TransformFunctionInputArgs,
@@ -25,7 +21,7 @@ type TransformedInput<TMiddleware> = TMiddleware extends {
 export interface AiMiddlewareOptions {
   /**
    * Options passed to the bundled Extended Traces middleware, or `false` to
-   * stop Inngest exporting extended traces.
+   * disable extended traces.
    *
    * Defaults to `{ behaviour: "extendProvider" }`.
    */
@@ -37,9 +33,16 @@ export interface AiMiddlewareOptions {
  * scoring (`step.score()`), metadata (`step.metadata()`, `inngest.metadata`),
  * and extended traces (`ctx.tracer`).
  *
- * Each feature's middleware remains available à la carte; this bundle is
+ * Each feature's middleware is also available individually; this bundle is
  * equivalent to using `scoreMiddleware()`, `metadataMiddleware()`, and
  * `extendedTracesMiddleware({ behaviour: "extendProvider" })` together.
+ *
+ * Extended traces attach to your app's existing OpenTelemetry provider. If
+ * you don't already have one, install `@inngest/otel` and load it before any
+ * app code (e.g. `node --import @inngest/otel/node ./app.js`, or
+ * `NODE_OPTIONS="--import @inngest/otel/node"` when a framework CLI owns the
+ * node process), or pass `traces: false` to opt out. See
+ * https://www.inngest.com/docs/examples/open-telemetry.
  *
  * @example
  * ```ts
@@ -89,9 +92,9 @@ export const aiMiddleware = ({ traces }: AiMiddlewareOptions = {}) => {
       const withMetadata = this.#metadata.transformFunctionInput(withTraces);
       const withScore = this.#score.transformFunctionInput(withMetadata);
 
-      // `withScore` is already complete at runtime, but each inner declared
-      // return type only advertises its own extension, so pluck back the two
-      // that fell off the static type rather than casting.
+      // `withScore` is complete at runtime, but each middleware's declared
+      // return type only advertises its own extension, so re-add the two the
+      // static type dropped.
       return {
         ...withScore,
         ctx: {

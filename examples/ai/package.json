@@ -4,17 +4,20 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "INNGEST_DEV=1 vite dev",
+    "dev": "NODE_OPTIONS='--import @inngest/otel/node' INNGEST_DEV=1 vite dev --port 3000",
     "build": "vite build && tsc --noEmit",
-    "start": "node dist/server/server.js"
+    "start": "node --import @inngest/otel/node dist/server/server.js"
   },
   "dependencies": {
-    "@tanstack/react-router": "^1.170.22",
-    "@tanstack/react-start": "^1.168.39",
+    "@inngest/otel": "^0.2.2",
+    "@openai/agents": "^0.14.3",
+    "@tanstack/react-router": "1.170.18",
+    "@tanstack/react-start": "1.168.35",
+    "import-in-the-middle": "^1.15.0",
     "inngest": "file:../../packages/inngest/dist",
-    "openai": "^7.4.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

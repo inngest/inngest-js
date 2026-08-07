@@ -165,9 +165,6 @@ export const extendedTracesMiddleware = ({
       }
 
       setup = extended.setup;
-      console.warn(
-        "unable to extend provider, Extended Traces middleware will not work. Use @inngest/otel, or make sure that the provider is created and imported before the middleware is used.",
-      );
 
       break;
     }
