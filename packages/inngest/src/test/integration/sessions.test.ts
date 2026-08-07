@@ -286,6 +286,57 @@ test("a manual session overrides the propagated one for the same key", async () 
   expect(childState.sessions).toEqual({ org: "override", team: "core" });
 });
 
+test("propagation is on by default, with no client option or env var", async () => {
+  // Pins the SDK's default: every other test here sets `sessionPropagation`
+  // explicitly, so this is the only end-to-end check that an unconfigured
+  // client propagates. Guard the env var first — set to `false` it would take
+  // precedence over the default and make this test vacuous.
+  expect(process.env.INNGEST_SESSION_PROPAGATION).toBeUndefined();
+
+  const parentState = createState({});
+  const childState = createState({
+    sessions: undefined as Record<string, string> | undefined,
+  });
+
+  // Built inline rather than via `createClient`, which forces the option on.
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+  });
+  const eventName = randomSuffix("evt");
+  const childEventName = randomSuffix("child");
+
+  const parent = client.createFunction(
+    { id: "parent", retries: 0, triggers: [{ event: eventName }] },
+    async ({ runId, step }) => {
+      parentState.runId = runId;
+      await step.sendEvent("send-it", { name: childEventName, data: {} });
+    },
+  );
+  const child = client.createFunction(
+    { id: "child", retries: 0, triggers: [{ event: childEventName }] },
+    (ctx) => {
+      childState.runId = ctx.runId;
+      childState.sessions = ctx.sessions;
+    },
+  );
+  await createTestApp({
+    client,
+    functions: [parent, child],
+    serve: createServer,
+  });
+
+  await client.send({
+    data: {},
+    meta: { sessions: { org: "acme" } },
+    name: eventName,
+  });
+  await parentState.waitForRunComplete();
+  await childState.waitForRunComplete();
+
+  expect(childState.sessions).toEqual({ org: "acme" });
+});
+
 test("the client toggle stops propagation reaching the child run", async () => {
   const parentState = createState({});
   const childState = createState({
