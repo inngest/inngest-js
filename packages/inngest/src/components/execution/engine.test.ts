@@ -1089,11 +1089,15 @@ describe("defer session propagation", () => {
   const startDefer = async (
     enabled: boolean,
     manualMeta?: Record<string, unknown>,
+    middlewareSessions?: unknown,
   ) => {
     const client = createClient({
       id: "test",
       isDev: true,
       sessionPropagation: enabled,
+      ...(middlewareSessions === undefined
+        ? {}
+        : { middleware: [overwriteSessionsMiddleware(middlewareSessions)] }),
     });
 
     const target = createDefer(
@@ -1154,8 +1158,13 @@ describe("defer session propagation", () => {
   const runDefer = async (
     enabled: boolean,
     manualMeta?: Record<string, unknown>,
+    middlewareSessions?: unknown,
   ) => {
-    const { deferOp } = await startDefer(enabled, manualMeta);
+    const { deferOp } = await startDefer(
+      enabled,
+      manualMeta,
+      middlewareSessions,
+    );
     expect(deferOp).toBeDefined();
     return (deferOp?.opts as { meta?: Record<string, unknown> })?.meta;
   };
@@ -1202,6 +1211,23 @@ describe("defer session propagation", () => {
     expect(meta).toBeDefined();
     expect(meta?.sessions).toBeNull();
     expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("normalizes a sessions layer overwritten by middleware", async () => {
+    const meta = await runDefer(true, undefined, { conv_id: 123 });
+    expect(meta?.propagated_sessions).toEqual({ conv_id: "123" });
+  });
+
+  test("skips the defer on an unusable sessions layer from middleware", async () => {
+    // Same fire-and-forget contract as invalid manual meta: log and skip rather
+    // than shipping a malformed propagated layer or failing the run.
+    const { result, deferOp } = await startDefer(true, undefined, {
+      conv_id: {},
+    });
+    expect(deferOp).toBeUndefined();
+    expect(result).toMatchObject({
+      steps: [expect.objectContaining({ op: "RunComplete", data: "done" })],
+    });
   });
 
   test("skips the defer on invalid meta without derailing the run", async () => {

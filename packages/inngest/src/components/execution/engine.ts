@@ -35,6 +35,7 @@ import {
 } from "../../helpers/promises.ts";
 import {
   normalizeEventMeta,
+  normalizePropagatedSessions,
   reduceEventsToPropagatedSessions,
   stampPropagatedSessionsOnEvent,
 } from "../../helpers/sessions.ts";
@@ -2785,15 +2786,19 @@ class InngestExecutionEngine
         let deferMeta: ReturnType<typeof normalizeEventMeta>;
         try {
           deferMeta = normalizeEventMeta(meta);
+
+          if (this.options.client[sessionPropagationSymbol]) {
+            // Normalized rather than trusted: `ctx.sessions` can be replaced by
+            // middleware or the handler, and this path never reaches the
+            // `sendEvent` normalization.
+            const propagated = normalizePropagatedSessions(this.fnArg.sessions);
+            if (propagated) {
+              deferMeta = { ...deferMeta, propagated_sessions: propagated };
+            }
+          }
         } catch (err) {
           log.error({ runId, err }, "defer skipped: invalid meta");
           return noopHandle;
-        }
-        if (this.options.client[sessionPropagationSymbol]) {
-          const propagated = this.fnArg.sessions;
-          if (propagated && Object.keys(propagated).length > 0) {
-            deferMeta = { ...deferMeta, propagated_sessions: propagated };
-          }
         }
 
         void stepHandler({
