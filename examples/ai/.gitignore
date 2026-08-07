@@ -1,0 +1,16 @@
+node_modules
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+.DS_Store
+.cache
+.env
+.vercel
+.output
+.vinxi
+.nitro
+.tanstack
+
+count.txt
+dist/
