@@ -30,6 +30,7 @@ export type {
   Sandbox,
   SandboxAction,
   SandboxClient,
+  SandboxCommand,
   SandboxCommandOptions,
   SandboxCommandOutputMetadata,
   SandboxCommandResult,
