@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
 import { createDefer } from "../../experimental.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
+import { Middleware } from "../../index.ts";
 import { createClient } from "../../test/helpers.ts";
 import { type Context, StepMode, StepOpCode } from "../../types.ts";
 import { InngestFunction } from "../InngestFunction.ts";
@@ -921,19 +922,47 @@ describe("Execution engine checkpoint retry behavior", () => {
   });
 });
 
+/**
+ * Middleware that replaces `ctx.sessions` wholesale, standing in for any
+ * `transformFunctionInput` hook that writes the field. Both propagation paths
+ * read `ctx.sessions` at stamp time, so the value they ship is whatever
+ * middleware left behind — not the reduced, normalized aggregate.
+ */
+const overwriteSessionsMiddleware = (sessions: unknown) =>
+  class extends Middleware.BaseMiddleware {
+    readonly id = "overwrite-sessions";
+    override transformFunctionInput(
+      arg: Middleware.TransformFunctionInputArgs,
+    ) {
+      // Cast because the point of the test is a value `ctx.sessions` doesn't
+      // type as — middleware can still put one there at runtime.
+      return {
+        ...arg,
+        ctx: {
+          ...arg.ctx,
+          sessions,
+        } as Middleware.TransformFunctionInputArgs["ctx"],
+      };
+    }
+  };
+
 describe("step.invoke session propagation", () => {
   // Drives a real execution whose handler calls `step.invoke`, then inspects
   // the emitted InvokeFunction op to assert the engine's central stamp: the
   // run's `ctx.sessions` (aggregated from triggering events) is attached to the
   // invoke payload as `meta.propagated_sessions`, gated by the client toggle.
-  const runInvoke = async (
+  const startInvoke = async (
     enabled: boolean,
     manualMeta?: Record<string, unknown>,
+    middlewareSessions?: unknown,
   ) => {
     const client = createClient({
       id: "test",
       isDev: true,
       sessionPropagation: enabled,
+      ...(middlewareSessions === undefined
+        ? {}
+        : { middleware: [overwriteSessionsMiddleware(middlewareSessions)] }),
     });
 
     const target = new InngestFunction(
@@ -986,7 +1015,15 @@ describe("step.invoke session propagation", () => {
       },
     });
 
-    const result = await execution.start();
+    return execution.start();
+  };
+
+  // Most cases expect the invoke to be planned; assert that once here and hand
+  // back just the payload under test.
+  const runInvoke = async (
+    ...args: Parameters<typeof startInvoke>
+  ): Promise<{ meta?: Record<string, unknown> } | undefined> => {
+    const result = await startInvoke(...args);
     expect(result.type).toBe("steps-found");
     const stepsFound = result as ExecutionResults["steps-found"];
     const invokeOp = stepsFound.steps.find(
@@ -1020,6 +1057,27 @@ describe("step.invoke session propagation", () => {
       org_id: "42",
     });
   });
+
+  test("normalizes a sessions layer overwritten by middleware", async () => {
+    // Middleware writes `ctx.sessions` after the engine's reduce, so the stamp
+    // can't assume the normalized shape; invoke never passes through the
+    // `sendEvent` normalization that would otherwise catch this.
+    const payload = await runInvoke(true, undefined, { conv_id: 123 });
+    expect(payload?.meta?.propagated_sessions).toEqual({ conv_id: "123" });
+  });
+
+  test("fails the run on an unusable sessions layer from middleware", async () => {
+    // `step.invoke` is user-addressable, so a malformed layer surfaces as a run
+    // failure — the same outcome `sendEvent` gives — rather than silently
+    // shipping something ingest would reject.
+    const result = await startInvoke(true, undefined, { conv_id: {} });
+    expect(result).toMatchObject({
+      type: "function-rejected",
+      error: expect.objectContaining({
+        message: expect.stringContaining("must be a string or number"),
+      }),
+    });
+  });
 });
 
 describe("defer session propagation", () => {
@@ -1031,11 +1089,15 @@ describe("defer session propagation", () => {
   const startDefer = async (
     enabled: boolean,
     manualMeta?: Record<string, unknown>,
+    middlewareSessions?: unknown,
   ) => {
     const client = createClient({
       id: "test",
       isDev: true,
       sessionPropagation: enabled,
+      ...(middlewareSessions === undefined
+        ? {}
+        : { middleware: [overwriteSessionsMiddleware(middlewareSessions)] }),
     });
 
     const target = createDefer(
@@ -1096,8 +1158,13 @@ describe("defer session propagation", () => {
   const runDefer = async (
     enabled: boolean,
     manualMeta?: Record<string, unknown>,
+    middlewareSessions?: unknown,
   ) => {
-    const { deferOp } = await startDefer(enabled, manualMeta);
+    const { deferOp } = await startDefer(
+      enabled,
+      manualMeta,
+      middlewareSessions,
+    );
     expect(deferOp).toBeDefined();
     return (deferOp?.opts as { meta?: Record<string, unknown> })?.meta;
   };
@@ -1144,6 +1211,23 @@ describe("defer session propagation", () => {
     expect(meta).toBeDefined();
     expect(meta?.sessions).toBeNull();
     expect(meta?.propagated_sessions).toEqual({ conv_id: "p1", org_id: "42" });
+  });
+
+  test("normalizes a sessions layer overwritten by middleware", async () => {
+    const meta = await runDefer(true, undefined, { conv_id: 123 });
+    expect(meta?.propagated_sessions).toEqual({ conv_id: "123" });
+  });
+
+  test("skips the defer on an unusable sessions layer from middleware", async () => {
+    // Same fire-and-forget contract as invalid manual meta: log and skip rather
+    // than shipping a malformed propagated layer or failing the run.
+    const { result, deferOp } = await startDefer(true, undefined, {
+      conv_id: {},
+    });
+    expect(deferOp).toBeUndefined();
+    expect(result).toMatchObject({
+      steps: [expect.objectContaining({ op: "RunComplete", data: "done" })],
+    });
   });
 
   test("skips the defer on invalid meta without derailing the run", async () => {
