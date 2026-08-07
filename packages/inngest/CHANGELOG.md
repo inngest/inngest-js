@@ -1,5 +1,15 @@
 # inngest
 
+## 4.18.0
+
+### Minor Changes
+
+- [#1688](https://github.com/inngest/inngest-js/pull/1688) [`610e7395`](https://github.com/inngest/inngest-js/commit/610e739574b972e625878e07a669d4d5991215a8) Thanks [@scottnuma](https://github.com/scottnuma)! - Enable sessions propagation by default
+
+### Patch Changes
+
+- [#1666](https://github.com/inngest/inngest-js/pull/1666) [`c1014932`](https://github.com/inngest/inngest-js/commit/c10149326c2727533a7bd709a348b5b5bf5ab1d5) Thanks [@Linell](https://github.com/Linell)! - Remove the unmaintained `serialize-error-cjs` dependency
+
 ## 4.17.0
 
 ### Minor Changes
