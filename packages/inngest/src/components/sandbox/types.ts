@@ -37,12 +37,18 @@ export interface SandboxRef extends SandboxResource {
   version: 1;
 }
 
-export interface SandboxCreateOptions {
+interface SandboxCreateBaseOptions {
   /**
    * Stable identity for an active sandbox. Creating the same name again with
    * the same configuration returns the existing sandbox.
    */
   name: string;
+
+  /** Wait up to this duration for the sandbox to reach RUNNING. */
+  runningTimeout?: SandboxDuration;
+}
+
+export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   vcpu: number;
   memoryMb: number;
 
@@ -54,14 +60,20 @@ export interface SandboxCreateOptions {
    */
   environment?: Record<string, string>;
 
-  /**
-   * Wait up to this duration for the sandbox to reach RUNNING.
-   *
-   * Omit this to return as soon as Create is accepted, with either STARTING or
-   * RUNNING status.
-   */
-  runningTimeout?: SandboxDuration;
+  snapshotId?: never;
 }
+
+export interface SandboxCreateFromSnapshotOptions
+  extends SandboxCreateBaseOptions {
+  snapshotId: string;
+  vcpu?: never;
+  memoryMb?: never;
+  environment?: never;
+}
+
+export type SandboxCreateOptions =
+  | SandboxCreateFreshOptions
+  | SandboxCreateFromSnapshotOptions;
 
 export interface SandboxWaitUntilRunningOptions {
   timeout: SandboxDuration;
@@ -212,6 +224,45 @@ export interface SandboxFileDownloadOptions {
   path: string;
 }
 
+export type SandboxSnapshotStatus =
+  | "CREATING"
+  | "READY"
+  | "DELETING"
+  | "DELETED"
+  | "FAILED"
+  | "LOST";
+
+export interface SandboxSnapshotResource {
+  id: string;
+  sourceSandboxId: string;
+  sourceImageId: string;
+  status: SandboxSnapshotStatus;
+  compatibilityId?: string;
+  consistency: "CRASH_CONSISTENT";
+  resources: SandboxResources;
+  memoryPackCount: number;
+  diskPackCount: number;
+  logicalBytes: number;
+  storedBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  error?: string;
+}
+
+export interface SandboxSnapshotRef extends SandboxSnapshotResource {
+  kind: "inngest/sandbox.snapshot";
+  version: 1;
+}
+
+export interface SandboxSnapshotWaitOptions {
+  timeout: SandboxDuration;
+}
+
+export type SandboxSnapshotListOptions = SandboxListOptions;
+export type SandboxSnapshotListResult<TSnapshot = SandboxSnapshotRef> =
+  SandboxListResult<TSnapshot>;
+
 export type SandboxAction =
   | "create"
   | "list"
@@ -228,7 +279,12 @@ export type SandboxAction =
   | "process.stream"
   | "logs.stream"
   | "file.upload"
-  | "file.download";
+  | "file.download"
+  | "snapshot.create"
+  | "snapshot.list"
+  | "snapshot.get"
+  | "snapshot.waitUntilReady"
+  | "snapshot.delete";
 
 export type SandboxErrorCode =
   | "access_denied"
@@ -248,6 +304,10 @@ export type SandboxErrorCode =
   | "sandbox_process_not_found"
   | "sandbox_process_output_not_retained"
   | "sandbox_process_wait_timed_out"
+  | "sandbox_snapshot_limit_exceeded"
+  | "sandbox_snapshot_not_found"
+  | "sandbox_snapshot_not_ready"
+  | "sandbox_snapshot_wait_timed_out"
   | (string & {});
 
 export type SandboxErrorDetail = Record<string, unknown>;
@@ -259,6 +319,7 @@ export interface SandboxErrorOptions {
   status?: number;
   sandboxId?: string;
   processId?: string;
+  snapshotId?: string;
   ambiguous?: boolean;
   retryable?: boolean;
   requestId?: string;
@@ -283,6 +344,7 @@ export class SandboxError extends Error {
   public readonly status?: number;
   public readonly sandboxId?: string;
   public readonly processId?: string;
+  public readonly snapshotId?: string;
   public readonly ambiguous: boolean;
   public readonly retryable: boolean;
   public readonly requestId?: string;
@@ -297,6 +359,7 @@ export class SandboxError extends Error {
     this.status = options.status;
     this.sandboxId = options.sandboxId;
     this.processId = options.processId;
+    this.snapshotId = options.snapshotId;
     this.ambiguous =
       options.ambiguous ?? options.code === "operation_ambiguous";
     this.retryable = options.retryable ?? false;
@@ -365,7 +428,7 @@ export interface SandboxProcess {
 }
 
 export interface SandboxClient {
-  create(options: SandboxCreateOptions): Promise<Sandbox>;
+  create(options: SandboxCreateFreshOptions): Promise<Sandbox>;
   list(options?: SandboxListOptions): Promise<SandboxListResult<Sandbox>>;
   get(sandboxId: string): Promise<Sandbox | null>;
 }
@@ -403,11 +466,39 @@ export interface DurableSandbox {
       processId: string,
     ): Promise<DurableSandboxProcess | null>;
   };
+  readonly snapshots: {
+    create(idOrOptions: StepOptionsOrId): Promise<DurableSandboxSnapshot>;
+  };
   waitUntilRunning(
     idOrOptions: StepOptionsOrId,
     options: SandboxWaitUntilRunningOptions,
   ): Promise<DurableSandbox>;
   destroy(idOrOptions: StepOptionsOrId): Promise<SandboxDestroyResult>;
+}
+
+export interface DurableSandboxSnapshot {
+  readonly kind: "inngest/sandbox.snapshot";
+  readonly version: 1;
+  readonly id: string;
+  readonly sourceSandboxId: string;
+  readonly sourceImageId: string;
+  readonly status: SandboxSnapshotStatus;
+  readonly compatibilityId?: string;
+  readonly consistency: "CRASH_CONSISTENT";
+  readonly resources: SandboxResources;
+  readonly memoryPackCount: number;
+  readonly diskPackCount: number;
+  readonly logicalBytes: number;
+  readonly storedBytes: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly expiresAt: string;
+  readonly error?: string;
+  waitUntilReady(
+    idOrOptions: StepOptionsOrId,
+    options: SandboxSnapshotWaitOptions,
+  ): Promise<DurableSandboxSnapshot>;
+  delete(idOrOptions: StepOptionsOrId): Promise<void>;
 }
 
 export interface DurableSandboxProcess {
@@ -449,4 +540,14 @@ export interface DurableSandboxTools {
     idOrOptions: StepOptionsOrId,
     sandboxId: string,
   ): Promise<DurableSandbox | null>;
+  readonly snapshots: {
+    list(
+      idOrOptions: StepOptionsOrId,
+      options?: SandboxSnapshotListOptions,
+    ): Promise<SandboxSnapshotListResult<DurableSandboxSnapshot>>;
+    get(
+      idOrOptions: StepOptionsOrId,
+      snapshotId: string,
+    ): Promise<DurableSandboxSnapshot | null>;
+  };
 }
