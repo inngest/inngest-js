@@ -13,7 +13,11 @@ import { clientProcessorMap } from "../../../components/execution/otel/access.ts
 import { aiMiddleware } from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
-import { expectScoreValue, findSpanByName } from "../scoring/utils.ts";
+import {
+  expectNoSpanByName,
+  expectScoreValue,
+  findSpanByName,
+} from "../scoring/utils.ts";
 
 // The bundle's default traces behaviour is "extendProvider", which only works
 // if a global OTel provider exists before the middleware factory runs.
@@ -24,7 +28,7 @@ const testFileName = testNameFromFileUrl(import.meta.url);
 
 describe("aiMiddleware", () => {
   test("score, metadata, and tracer all work through one run", async () => {
-    const state = createState({ spanIsRecording: false });
+    const state = createState({});
 
     const client = new Inngest({
       checkpointing: true,
@@ -46,7 +50,6 @@ describe("aiMiddleware", () => {
 
         await step.run("traced-step", () => {
           tracer.startActiveSpan("bundle-span", (span) => {
-            state.spanIsRecording = span.isRecording();
             span.end();
           });
         });
@@ -61,27 +64,23 @@ describe("aiMiddleware", () => {
     await state.waitForRunComplete();
     const runTrace = await getRunTraceMetadata(await state.waitForRunId());
 
-    expect(state.spanIsRecording).toBe(true);
-
     expectScoreValue(runTrace.metadata, "bundle_score", true);
 
+    findSpanByName(runTrace, "bundle-span");
     findSpanByName(runTrace, "set-status");
-    const statusMetadata = runTrace.metadata.find(
-      (md) => md.kind === "userland.default",
-    );
-    expect(statusMetadata?.values).toEqual(
-      expect.objectContaining({ status: "done" }),
-    );
+    expect(
+      runTrace.metadata.find((md) => md.kind === "userland.default")?.values,
+    ).toEqual(expect.objectContaining({ status: "done" }));
   });
 
-  test("disabling traces skips the processor but keeps the bundle working", async () => {
+  test('traces "off" sends no spans, but metadata and score still work', async () => {
     const state = createState({});
 
     const client = new Inngest({
       checkpointing: true,
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: aiMiddleware({ traces: false }),
+      middleware: aiMiddleware({ traces: { behaviour: "off" } }),
     });
     expect(clientProcessorMap.get(client)).toBeUndefined();
 
@@ -101,6 +100,7 @@ describe("aiMiddleware", () => {
           });
         });
 
+        await step.metadata("set-status").run().update({ status: "done" });
         await step.score("run-score", { name: "bundle_score", value: false });
       },
     );
@@ -111,5 +111,9 @@ describe("aiMiddleware", () => {
     const runTrace = await getRunTraceMetadata(await state.waitForRunId());
 
     expectScoreValue(runTrace.metadata, "bundle_score", false);
+    expect(
+      runTrace.metadata.find((md) => md.kind === "userland.default")?.values,
+    ).toEqual(expect.objectContaining({ status: "done" }));
+    expectNoSpanByName(runTrace, "bundle-span");
   });
 });

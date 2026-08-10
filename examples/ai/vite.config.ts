@@ -1,7 +1,7 @@
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import viteReact from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
-import tsConfigPaths from 'vite-tsconfig-paths'
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import tsConfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   server: {
@@ -11,13 +11,13 @@ export default defineConfig({
   // Vite's SSR pipeline, which trips over its CJS/ESM interop; loading it
   // directly from node also means every local rebuild is picked up.
   ssr: {
-    external: ['inngest'],
+    external: ["inngest"],
   },
   plugins: [
     tsConfigPaths({
-      projects: ['./tsconfig.json'],
+      projects: ["./tsconfig.json"],
     }),
     tanstackStart(),
     viteReact(),
   ],
-})
+});

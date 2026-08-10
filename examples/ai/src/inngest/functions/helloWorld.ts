@@ -1,4 +1,5 @@
 import { Agent, run } from "@openai/agents";
+import { SpanStatusCode } from "@opentelemetry/api";
 import { z } from "zod";
 import { inngest } from "../client";
 
@@ -74,6 +75,10 @@ export const helloWorld = inngest.createFunction(
           span.setAttribute("agent", result.lastAgent?.name ?? "translator");
 
           return result.finalOutput;
+        } catch (err) {
+          span.recordException(err instanceof Error ? err : String(err));
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          throw err;
         } finally {
           span.end();
         }

@@ -141,7 +141,7 @@ export const extendProvider = (
           "  npm install @inngest/otel",
           "  node --import @inngest/otel/node ./app.js",
           'If a framework CLI owns the node process (Next.js, Vite, etc.), set NODE_OPTIONS="--import @inngest/otel/node" or add `import "@inngest/otel/node"` as the first import of your entrypoint.',
-          'Alternatively, register your own OpenTelemetry provider before creating the Inngest client, or silence this by disabling extended traces (behaviour "off", or `traces: false` for aiMiddleware).',
+          'Alternatively, register your own OpenTelemetry provider before creating the Inngest client, or silence this by setting the behaviour to "off".',
           "Docs: https://www.inngest.com/docs/examples/open-telemetry",
         ].join("\n"),
       );

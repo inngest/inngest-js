@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 import {
+  createRootRoute,
   HeadContent,
   Outlet,
   Scripts,
-  createRootRoute,
 } from "@tanstack/react-router";
 import * as React from "react";
 

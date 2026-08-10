@@ -10,12 +10,25 @@ import { scoreMiddleware } from "../InngestScore.ts";
  */
 export interface AiMiddlewareOptions {
   /**
-   * Options passed to the bundled Extended Traces middleware, or `false` to
-   * disable extended traces.
+   * Options passed to the bundled Extended Traces middleware.
+   *
+   * Mirrors `ExtendedTracesMiddlewareOptions` minus the deprecated
+   * provider-creation path, which this bundle never takes: `instrumentations`
+   * is only read when creating a provider, and `behaviour` drops `"auto"` and
+   * `"createProvider"`.
+   *
+   * `behaviour: "off"` stops Inngest attaching its span processor to your
+   * OpenTelemetry provider. `ctx.tracer` is there either way; with `"off"` its
+   * spans reach your own provider but not Inngest.
    *
    * Defaults to `{ behaviour: "extendProvider" }`.
    */
-  traces?: false | ExtendedTracesMiddlewareOptions;
+  traces?: Omit<
+    ExtendedTracesMiddlewareOptions,
+    "behaviour" | "instrumentations"
+  > & {
+    behaviour?: "extendProvider" | "off";
+  };
 }
 
 /**
@@ -23,16 +36,17 @@ export interface AiMiddlewareOptions {
  * scoring (`step.score()`), metadata (`step.metadata()`, `inngest.metadata`),
  * and extended traces (`ctx.tracer`).
  *
- * Returns a tuple of the individual middlewares; spread it to combine the
- * bundle with your own. Each is also available on its own; this bundle is
- * equivalent to using `extendedTracesMiddleware({ behaviour: "extendProvider" })`,
- * `metadataMiddleware()`, and `scoreMiddleware()` together.
+ * Returns a tuple of the three middlewares; spread it to combine the bundle
+ * with your own. Using the bundle is equivalent to passing
+ * `extendedTracesMiddleware({ behaviour: "extendProvider" })`,
+ * `metadataMiddleware()`, and `scoreMiddleware()` yourself.
  *
  * Extended traces attach to your app's existing OpenTelemetry provider. If
  * you don't already have one, install `@inngest/otel` and load it before any
  * app code (e.g. `node --import @inngest/otel/node ./app.js`, or
  * `NODE_OPTIONS="--import @inngest/otel/node"` when a framework CLI owns the
- * node process), or pass `traces: false` to opt out. See
+ * node process), or pass `traces: { behaviour: "off" }` to stop Inngest
+ * attaching to your provider. See
  * https://www.inngest.com/docs/examples/open-telemetry.
  *
  * @example
@@ -48,17 +62,16 @@ export interface AiMiddlewareOptions {
 export const aiMiddleware = ({
   traces,
 }: AiMiddlewareOptions = {}): [
-  // The tuple is load-bearing; the client only picks up ctx/step type
-  // extensions from a tuple, never from an array.
+  // The client only picks up ctx/step type extensions from a tuple, never from
+  // an array, so this annotation is load-bearing.
   ReturnType<typeof extendedTracesMiddleware>,
   ReturnType<typeof metadataMiddleware>,
   ReturnType<typeof scoreMiddleware>,
 ] => [
-  extendedTracesMiddleware(
-    traces === false
-      ? { behaviour: "off" }
-      : { ...traces, behaviour: traces?.behaviour ?? "extendProvider" },
-  ),
+  extendedTracesMiddleware({
+    ...traces,
+    behaviour: traces?.behaviour ?? "extendProvider",
+  }),
   metadataMiddleware(),
   scoreMiddleware(),
 ];

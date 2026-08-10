@@ -68,7 +68,8 @@ export interface ExtendedTracesMiddlewareOptions {
    * The log level for the Extended Traces middleware, specifically a diagnostic logger
    * attached to the global OpenTelemetry provider.
    *
-   * Defaults to `DiagLogLevel.ERROR`.
+   * Defaults to `DiagLogLevel.ERROR`. Ignored when Inngest has no span
+   * processor of its own, as it then registers no diagnostic logger.
    */
   logLevel?: DiagLogLevel;
 }
@@ -189,12 +190,16 @@ export const extendedTracesMiddleware = ({
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
       replaceExtendedTracesObservation(client);
 
-      // Set the logger for our otel processors and exporters.
-      // If this is called multiple times, only the first call is set.
-      devDebug(
-        "set otel diagLogger:",
-        diag.setLogger(new InngestTracesLogger(), logLevel),
-      );
+      // Set the logger for our otel processors and exporters. `diag.setLogger`
+      // overwrites any logger already registered, so skip it when we have no
+      // processor of our own to diagnose and would only be swallowing the host
+      // app's OTel diagnostics.
+      if (processor || processorReady) {
+        devDebug(
+          "set otel diagLogger:",
+          diag.setLogger(new InngestTracesLogger(), logLevel),
+        );
+      }
 
       if (processor) {
         clientProcessorMap.set(client, processor);
