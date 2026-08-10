@@ -1,9 +1,11 @@
-// AsyncLocalStorage
-
+// AI middleware bundle (scoring + metadata + extended traces)
+export type { AiMiddlewareOptions } from "./components/ai/middleware.ts";
+export { aiMiddleware } from "./components/ai/middleware.ts";
 export {
   createDefer,
   DeferredFunction,
 } from "./components/DeferredFunction.ts";
+// AsyncLocalStorage
 export type { AsyncContext } from "./components/execution/als.ts";
 export { getAsyncCtx } from "./components/execution/als.ts";
 // Extended Traces (OpenTelemetry)
