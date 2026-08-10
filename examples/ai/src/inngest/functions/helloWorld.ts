@@ -46,27 +46,46 @@ const translator = Agent.create({
 
 export const helloWorld = inngest.createFunction(
   { id: "hello-world", triggers: [{ event: "test/hello.world" }] },
-  async ({ event, step }) => {
-    const language = await step.run(
-      "select-language",
-      () =>
-        event.data?.language ??
-        DEFAULT_LANGUAGES[Math.floor(Math.random() * DEFAULT_LANGUAGES.length)],
+  async ({ event, greet, step, tracer }) => {
+    greet("world");
+
+    const language = await step.run("select-language", (): string =>
+      typeof event.data?.language === "string"
+        ? event.data.language
+        : DEFAULT_LANGUAGES[
+            Math.floor(Math.random() * DEFAULT_LANGUAGES.length)
+          ],
     );
 
-    const translation = await step.run("run-translator-agent", async () => {
-      const result = await run(
-        translator,
-        `Translate "Hello, world!" into ${language}.`,
-      );
+    const translation = await step.run("run-translator-agent", () =>
+      tracer.startActiveSpan(`translate-to-${language}`, async (span) => {
+        try {
+          const result = await run(
+            translator,
+            `Translate "Hello, world!" into ${language}.`,
+          );
 
-      if (!result.finalOutput) {
-        throw new Error(
-          `The ${result.lastAgent?.name ?? "translator"} agent finished without producing a translation`,
-        );
-      }
+          if (!result.finalOutput) {
+            throw new Error(
+              `The ${result.lastAgent?.name ?? "translator"} agent finished without producing a translation`,
+            );
+          }
 
-      return result.finalOutput;
+          span.setAttribute("agent", result.lastAgent?.name ?? "translator");
+
+          return result.finalOutput;
+        } finally {
+          span.end();
+        }
+      }),
+    );
+
+    await step.metadata("record-language").run().update({ language });
+    await step.score("answered-in-requested-language", {
+      name: "answered_in_requested_language",
+      value:
+        translation.language.toLowerCase().trim() ===
+        language.toLowerCase().trim(),
     });
 
     return translation.greeting;

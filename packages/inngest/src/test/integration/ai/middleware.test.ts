@@ -30,7 +30,7 @@ describe("aiMiddleware", () => {
       checkpointing: true,
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [aiMiddleware()],
+      middleware: aiMiddleware(),
     });
     expect(clientProcessorMap.get(client)).toBeDefined();
 
@@ -81,7 +81,7 @@ describe("aiMiddleware", () => {
       checkpointing: true,
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [aiMiddleware({ traces: false })],
+      middleware: aiMiddleware({ traces: false }),
     });
     expect(clientProcessorMap.get(client)).toBeUndefined();
 
