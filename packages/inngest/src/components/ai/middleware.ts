@@ -55,7 +55,7 @@ export interface AiMiddlewareOptions {
  *
  * const inngest = new Inngest({
  *   id: "my-app",
- *   middleware: aiMiddleware(),
+ *   middleware: [...aiMiddleware()],
  * });
  * ```
  */
