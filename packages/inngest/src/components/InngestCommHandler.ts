@@ -1311,7 +1311,10 @@ export class InngestCommHandler<
       const url = await actions.url("building requestInfo for middleware");
 
       // Append function-level middleware so it is scoped to this function only.
-      const fnId = url.searchParams.get(queryKeys.FnId);
+      const fnId = await actions.queryStringWithDefaults(
+        "building requestInfo for middleware",
+        queryKeys.FnId,
+      );
       const matchedFn = fnId ? this.fns[fnId] : undefined;
       const fnMw = matchedFn?.fn?.opts?.middleware ?? [];
       mwInstances.push(
