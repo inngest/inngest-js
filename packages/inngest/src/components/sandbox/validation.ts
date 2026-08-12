@@ -31,7 +31,36 @@ const maxProcessEnvCount = 256;
 const maxProcessEnvBytes = 64 * 1_024;
 const maxProcessCwdBytes = 4_096;
 const maxProcessWireBytes = 96 * 1_024;
+const maxSandboxNameCharacters = 255;
+const sandboxNameControlCharacterPattern = /\p{Cc}/u;
+const sandboxNameEdgeWhitespacePattern = /^\p{White_Space}|\p{White_Space}$/u;
 const textEncoder = new TextEncoder();
+
+export const sandboxNameSchema = z.string().superRefine((name, ctx) => {
+  if (name.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "must not be empty",
+    });
+  } else if ([...name].length > maxSandboxNameCharacters) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `must not exceed ${maxSandboxNameCharacters} characters`,
+    });
+  }
+  if (sandboxNameEdgeWhitespacePattern.test(name)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "must not contain leading or trailing whitespace",
+    });
+  }
+  if (sandboxNameControlCharacterPattern.test(name)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "must not contain control characters",
+    });
+  }
+});
 
 const goJSONBytes = (value: unknown): number => {
   // encoding/json escapes these runes by default. Simcity measures the
@@ -142,7 +171,7 @@ const sandboxResourcesSchema = z
 export const sandboxResourceSchema = z
   .object({
     id: canonicalUuidSchema,
-    name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
+    name: sandboxNameSchema,
     status: sandboxStatusSchema,
     vpcId: canonicalUuidSchema,
     imageRef: z.string().min(1),
@@ -339,7 +368,7 @@ export const normalizeSandboxCreateOptions = (
   const parsed = parseWithSchema(
     z
       .object({
-        name: z.string().regex(/^[a-z0-9_-]{1,63}$/),
+        name: sandboxNameSchema,
         vcpu: z.number().int().positive().max(0xffffffff),
         memoryMb: z.number().int().positive().max(0xffffffff),
         environment: z.record(z.string()).optional(),
