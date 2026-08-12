@@ -1,5 +1,10 @@
 import { type Attributes, context, trace } from "@opentelemetry/api";
-import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import {
+  AlwaysOffSampler,
+  AlwaysOnSampler,
+  BasicTracerProvider,
+  type ReadableSpan,
+} from "@opentelemetry/sdk-trace-base";
 import type { AIMetadata } from "./aiExtractor.ts";
 import { InngestMetadataSpanProcessor } from "./metadataProcessor.ts";
 
@@ -53,12 +58,14 @@ describe("InngestMetadataSpanProcessor", () => {
   ) {
     const pushed: AIMetadata[] = [];
     const root = tracer.startSpan("inngest.execution");
+    const scope = processor.startScope({ runId: "test-run", span: root });
     processor.declareStartingSpan({
+      scope,
       span: root,
       traceparent: TRACEPARENT,
       onAIMetadata: (metadata) => pushed.push(metadata),
     });
-    return { root, pushed };
+    return { scope, root, pushed };
   }
 
   test("is read-only: leaves tracked span attributes exactly as set", () => {
@@ -166,6 +173,75 @@ describe("InngestMetadataSpanProcessor", () => {
     const { root, pushed } = declaredRoot(processor, tracer);
 
     endChild(tracer, root, "plain");
+
+    expect(pushed).toEqual([]);
+  });
+
+  test("does not track spans that are not recording", () => {
+    const processor = new InngestMetadataSpanProcessor();
+    const provider = new BasicTracerProvider({
+      sampler: new AlwaysOffSampler(),
+    });
+    trace.setGlobalTracerProvider(provider);
+    processor.attach();
+
+    const root = provider.getTracer("test").startSpan("inngest.execution");
+    expect(root.isRecording()).toBe(false);
+
+    const pushed: AIMetadata[] = [];
+    const scope = processor.startScope({ runId: "test-run", span: root });
+    processor.declareStartingSpan({
+      scope,
+      span: root,
+      traceparent: TRACEPARENT,
+      onAIMetadata: (metadata) => pushed.push(metadata),
+    });
+
+    // Use a recording child to probe whether the non-recording root left a
+    // sink behind. OTel will never make this callback for the root itself.
+    const childProvider = new BasicTracerProvider({
+      sampler: new AlwaysOnSampler(),
+    });
+    const parentContext = trace.setSpan(context.active(), root);
+    const child = childProvider.getTracer("test").startSpan(
+      "llm",
+      {
+        attributes: {
+          "gen_ai.request.model": "gpt-4.1-nano",
+        },
+      },
+      parentContext,
+    );
+    processor.onStart(child, parentContext);
+    child.end();
+    processor.onEnd(child as unknown as ReadableSpan);
+
+    expect(pushed).toEqual([]);
+  });
+
+  test("cleans up endless tracked spans when the request ends", () => {
+    const { processor, tracer } = setup();
+    const { scope, root, pushed } = declaredRoot(processor, tracer);
+
+    const child = tracer.startSpan(
+      "never-ended",
+      {
+        attributes: {
+          "gen_ai.request.model": "gpt-4.1-nano",
+          "gen_ai.usage.input_tokens": 42,
+        },
+      },
+      trace.setSpan(context.active(), root),
+    );
+
+    processor.endScope(scope);
+
+    // If scope cleanup did not remove the still-open child, this grandchild
+    // would inherit the child's metadata callback and push when it ends.
+    endChild(tracer, child, "late-grandchild", {
+      "gen_ai.request.model": "gpt-4.1-mini",
+      "gen_ai.usage.input_tokens": 5,
+    });
 
     expect(pushed).toEqual([]);
   });

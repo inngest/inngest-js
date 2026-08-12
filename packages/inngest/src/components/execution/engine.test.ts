@@ -1,6 +1,7 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InngestApi } from "../../api/api.ts";
+import { stream } from "../../experimental/durable-endpoints/index.ts";
 import { createDefer } from "../../experimental.ts";
 import { ExecutionVersion } from "../../helpers/consts.ts";
 import { createClient } from "../../test/helpers.ts";
@@ -11,6 +12,7 @@ import type { GenericStepTools } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { _internals } from "./engine.ts";
 import type { ExecutionResults } from "./InngestExecution.ts";
+import { metadataSpanProcessor } from "./otel/metadataProcessor.ts";
 
 describe("Execution engine checkpoint retry behavior", () => {
   const mockEvent = { name: "test/event", data: { foo: "bar" } };
@@ -917,6 +919,41 @@ describe("Execution engine checkpoint retry behavior", () => {
         name: "NonRetriableError",
         message: "permanent",
       });
+    });
+
+    test("keeps AI metadata scope open after sync SSE early response until core loop completes", async () => {
+      const api = makeSseApi();
+      const endScopeSpy = vi.spyOn(metadataSpanProcessor, "endScope");
+      let finishStep!: () => void;
+      const stepCanFinish = new Promise<void>((resolve) => {
+        finishStep = resolve;
+      });
+
+      const setup = setupExecution({
+        mockApi: api,
+        handler: async ({ step }) => {
+          await step.run("streaming-step", async () => {
+            stream.push("partial");
+            await stepCanFinish;
+            return "step result";
+          });
+          return "done";
+        },
+        stepMode: StepMode.Sync,
+        extraPartialOptions: { acceptsSse: true },
+      });
+
+      const result = await setup.execution.start();
+
+      expect(result.type).toBe("function-resolved");
+      expect(endScopeSpy).not.toHaveBeenCalled();
+
+      finishStep();
+      await (
+        (result as ExecutionResults["function-resolved"]).data as Response
+      ).text();
+
+      expect(endScopeSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -319,6 +319,16 @@ class InngestExecutionEngine
           },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
+              let aiMetadataScope:
+                | ReturnType<typeof metadataSpanProcessor.startScope>
+                | undefined;
+              if (this.options.client.aiMetadataEnabled) {
+                aiMetadataScope = metadataSpanProcessor.startScope({
+                  runId: this.options.runId,
+                  span,
+                });
+              }
+
               this.rootSpanId = span.spanContext().spanId;
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
                 span,
@@ -327,10 +337,11 @@ class InngestExecutionEngine
                 tracestate: this.options.headers[headerKeys.TraceState],
               });
 
-              if (this.options.client.aiMetadataEnabled) {
+              if (aiMetadataScope) {
                 // The metadata span processor is independent of the Extended
                 // Traces processor above.
                 metadataSpanProcessor.declareStartingSpan({
+                  scope: aiMetadataScope,
                   span,
                   traceparent: this.options.headers[headerKeys.TraceParent],
                   onAIMetadata: (aiMetadata) => {
@@ -351,14 +362,15 @@ class InngestExecutionEngine
                 });
               }
 
-              return this._start()
-                .then((result) => {
-                  this.devDebug("result:", result);
-                  return result;
-                })
-                .finally(() => {
-                  span.end();
-                });
+              return this._start(() => {
+                span.end();
+                if (aiMetadataScope) {
+                  metadataSpanProcessor.endScope(aiMetadataScope);
+                }
+              }).then((result) => {
+                this.devDebug("result:", result);
+                return result;
+              });
             });
           },
         );
@@ -388,15 +400,21 @@ class InngestExecutionEngine
 
   /**
    * Starts execution of the user's function and the core loop.
+   *
+   * @param onCoreLoopSettled - Called after this invocation has finished
+   * running user code and processing checkpoints, even if this method returned
+   * earlier. The run may re-enter later in a new SDK request.
    */
-  private async _start(): Promise<ExecutionResult> {
+  private async _start(
+    onCoreLoopSettled?: () => void,
+  ): Promise<ExecutionResult> {
     // Set up a deferred promise that handleStreamActivated resolves to return
     // the SSE Response early while the core loop keeps running.
     if (this.options.stepMode === StepMode.Sync && this.options.acceptsSse) {
       this.earlyStreamResponse = createDeferredPromise<ExecutionResult>();
     }
 
-    const coreLoop = this.runCoreLoop();
+    const coreLoop = this.runCoreLoop().finally(onCoreLoopSettled);
 
     if (this.earlyStreamResponse) {
       // Suppress: if earlyStreamResponse wins the race and coreLoop later
