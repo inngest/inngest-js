@@ -314,11 +314,19 @@ describe("step.sandbox", () => {
       }),
     ).toThrow(SandboxValidationError);
 
+    for (const command of [["npm", "test"], ["./script"], ["bin/script"]]) {
+      await sandbox.commands.run("exec", { command });
+      expect(rawTool).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          input: [expect.objectContaining({ command })],
+        }),
+      );
+    }
+    rawTool.mockClear();
     await expect(
-      sandbox.commands.run("exec", {
-        command: ["npm", "test"],
-      }),
-    ).rejects.toThrow("absolute executable path");
+      sandbox.commands.run("exec", { command: [""] }),
+    ).rejects.toThrow("command[0] must not be empty");
     await expect(
       sandbox.processes.start("start", {
         command: ["/bin/true"],
