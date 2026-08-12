@@ -319,6 +319,13 @@ class InngestExecutionEngine
           },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
+              let aiMetadataScope:
+                | ReturnType<typeof metadataSpanProcessor.startScope>
+                | undefined;
+              if (this.options.client.aiMetadataEnabled) {
+                aiMetadataScope = metadataSpanProcessor.startScope();
+              }
+
               this.rootSpanId = span.spanContext().spanId;
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
                 span,
@@ -327,10 +334,11 @@ class InngestExecutionEngine
                 tracestate: this.options.headers[headerKeys.TraceState],
               });
 
-              if (this.options.client.aiMetadataEnabled) {
+              if (aiMetadataScope) {
                 // The metadata span processor is independent of the Extended
                 // Traces processor above.
                 metadataSpanProcessor.declareStartingSpan({
+                  scope: aiMetadataScope,
                   span,
                   traceparent: this.options.headers[headerKeys.TraceParent],
                   onAIMetadata: (aiMetadata) => {
@@ -358,6 +366,9 @@ class InngestExecutionEngine
                 })
                 .finally(() => {
                   span.end();
+                  if (aiMetadataScope) {
+                    metadataSpanProcessor.endScope(aiMetadataScope);
+                  }
                 });
             });
           },

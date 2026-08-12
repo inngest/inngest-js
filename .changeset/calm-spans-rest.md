@@ -2,4 +2,4 @@
 "inngest": patch
 ---
 
-Prevent AI metadata tracking from retaining executions when OpenTelemetry samples out their root spans.
+Prevent AI metadata tracking from retaining executions after an SDK request ends, including when OpenTelemetry samples out root spans.

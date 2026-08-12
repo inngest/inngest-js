@@ -19,7 +19,18 @@ const processorDevDebug = Debug(`${debugPrefix}:InngestMetadataSpanProcessor`);
 export type AIMetadataSink = (metadata: AIMetadata) => void;
 
 /**
- * Builds the `#spanSinks` key for a span. Span IDs are only guaranteed unique
+ * A logical tracking scope. The engine owns this lifecycle and ends it when
+ * control flow interrupts and the SDK responds.
+ */
+export type AIMetadataScope = symbol;
+
+type TrackedSpan = {
+  sink: AIMetadataSink;
+  scope: AIMetadataScope;
+};
+
+/**
+ * Builds the `#spans` key for a span. Span IDs are only guaranteed unique
  * within a single trace, so spans are keyed by trace ID + span ID to avoid
  * cross-trace collisions.
  */
@@ -38,7 +49,7 @@ const spanSinkKey = (traceId: string, spanId: string): string =>
  */
 export class InngestMetadataSpanProcessor implements SpanProcessor {
   /**
-   * A map of tracked spans to their sink.
+   * A map of tracked spans to their sink and owning scope.
    *
    * We use traceId:spanID as the key, which uniquely identifies each span. See
    * {@link spanSinkKey}
@@ -54,16 +65,26 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    * All spans with the same root span that started the step will share the
    * same sink.
    */
-  #spanSinks = new Map<string, AIMetadataSink>();
+  #spans = new Map<string, TrackedSpan>();
 
   /**
-   * A registry used to clean up items from `#spanSinks` when spans fall out of
+   * The inverse index for `#spans`, used to clear all span entries owned by a
+   * scope when it completes.
+   */
+  #scopeSpanKeys = new Map<AIMetadataScope, Set<string>>();
+
+  /**
+   * A registry used to clean up items from `#spans` when spans fall out of
    * reference without ending. Avoids leaking entries (and the engine sink
    * closures they reference) for spans that are never ended and are GC'd.
    */
   #spanCleanup = new FinalizationRegistry<string>((key) => {
     if (key) {
-      this.#spanSinks.delete(key);
+      const tracked = this.#spans.get(key);
+      this.#spans.delete(key);
+      if (tracked) {
+        this.#scopeSpanKeys.get(tracked.scope)?.delete(key);
+      }
     }
   });
 
@@ -74,6 +95,32 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    * double-count tokens).
    */
   #attachSetup: OTelSetup | undefined;
+
+  /**
+   * Start a logical scope for AI metadata tracking.
+   */
+  public startScope(): AIMetadataScope {
+    const scope = Symbol("inngest.ai-metadata-scope");
+    this.#scopeSpanKeys.set(scope, new Set());
+    return scope;
+  }
+
+  /**
+   * End a logical tracking scope and drop any span sinks still associated with
+   * it.
+   */
+  public endScope(scope: AIMetadataScope): void {
+    const keys = this.#scopeSpanKeys.get(scope);
+    if (!keys) {
+      return;
+    }
+
+    for (const key of keys) {
+      this.#spans.delete(key);
+    }
+
+    this.#scopeSpanKeys.delete(scope);
+  }
 
   /**
    * Idempotently attach this processor to the global OTel provider that already
@@ -98,10 +145,12 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    * its descendants share the same AIMetadata sink.
    */
   public declareStartingSpan({
+    scope,
     span,
     traceparent,
     onAIMetadata,
   }: {
+    scope: AIMetadataScope;
     span: Span;
     traceparent: string | undefined;
     onAIMetadata: AIMetadataSink;
@@ -122,7 +171,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
       );
     }
 
-    this.trackSpan(span, onAIMetadata);
+    this.trackSpan(scope, span, onAIMetadata);
   }
 
   /**
@@ -132,7 +181,11 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    * Read-only: unlike the Extended Traces processor, no attributes
    * are stamped on the span.
    */
-  private trackSpan(span: Span, sink: AIMetadataSink): void {
+  private trackSpan(
+    scope: AIMetadataScope,
+    span: Span,
+    sink: AIMetadataSink,
+  ): void {
     // OTel does not call span processors when a span is not recording, so an
     // entry for it would never be cleared by onEnd.
     if (!span.isRecording()) {
@@ -143,7 +196,8 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
     const key = spanSinkKey(traceId, spanId);
 
     this.#spanCleanup.register(span, key, span);
-    this.#spanSinks.set(key, sink);
+    this.#spans.set(key, { sink, scope });
+    this.#scopeSpanKeys.get(scope)?.add(key);
   }
 
   /**
@@ -151,8 +205,14 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    */
   private cleanupSpan(span: ReadableSpan): void {
     const { traceId, spanId } = span.spanContext();
+    const key = spanSinkKey(traceId, spanId);
+    const tracked = this.#spans.get(key);
+
     this.#spanCleanup.unregister(span);
-    this.#spanSinks.delete(spanSinkKey(traceId, spanId));
+    this.#spans.delete(key);
+    if (tracked) {
+      this.#scopeSpanKeys.get(tracked.scope)?.delete(key);
+    }
   }
 
   /**
@@ -168,14 +228,13 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
 
     // A child span always shares its parent's trace ID, so the parent's key
     // can be built from the child's own span context.
-    const sink = this.#spanSinks.get(
-      spanSinkKey(span.spanContext().traceId, parentSpanId),
-    );
-    if (!sink) {
+    const parentKey = spanSinkKey(span.spanContext().traceId, parentSpanId);
+    const tracked = this.#spans.get(parentKey);
+    if (!tracked) {
       return;
     }
 
-    this.trackSpan(span, sink);
+    this.trackSpan(tracked.scope, span, tracked.sink);
   }
 
   /**
@@ -186,8 +245,8 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
     const { traceId, spanId } = span.spanContext();
 
     try {
-      const sink = this.#spanSinks.get(spanSinkKey(traceId, spanId));
-      if (!sink) {
+      const tracked = this.#spans.get(spanSinkKey(traceId, spanId));
+      if (!tracked) {
         return;
       }
 
@@ -196,7 +255,7 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
         return;
       }
 
-      sink(aiMetadata);
+      tracked.sink(aiMetadata);
     } finally {
       this.cleanupSpan(span);
     }

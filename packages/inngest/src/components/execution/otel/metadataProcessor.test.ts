@@ -56,14 +56,16 @@ describe("InngestMetadataSpanProcessor", () => {
     processor: InngestMetadataSpanProcessor,
     tracer: ReturnType<BasicTracerProvider["getTracer"]>,
   ) {
+    const scope = processor.startScope();
     const pushed: AIMetadata[] = [];
     const root = tracer.startSpan("inngest.execution");
     processor.declareStartingSpan({
+      scope,
       span: root,
       traceparent: TRACEPARENT,
       onAIMetadata: (metadata) => pushed.push(metadata),
     });
-    return { root, pushed };
+    return { scope, root, pushed };
   }
 
   test("is read-only: leaves tracked span attributes exactly as set", () => {
@@ -187,7 +189,9 @@ describe("InngestMetadataSpanProcessor", () => {
     expect(root.isRecording()).toBe(false);
 
     const pushed: AIMetadata[] = [];
+    const scope = processor.startScope();
     processor.declareStartingSpan({
+      scope,
       span: root,
       traceparent: TRACEPARENT,
       onAIMetadata: (metadata) => pushed.push(metadata),
@@ -211,6 +215,33 @@ describe("InngestMetadataSpanProcessor", () => {
     processor.onStart(child, parentContext);
     child.end();
     processor.onEnd(child as unknown as ReadableSpan);
+
+    expect(pushed).toEqual([]);
+  });
+
+  test("cleans up endless tracked spans when the request ends", () => {
+    const { processor, tracer } = setup();
+    const { scope, root, pushed } = declaredRoot(processor, tracer);
+
+    const child = tracer.startSpan(
+      "never-ended",
+      {
+        attributes: {
+          "gen_ai.request.model": "gpt-4.1-nano",
+          "gen_ai.usage.input_tokens": 42,
+        },
+      },
+      trace.setSpan(context.active(), root),
+    );
+
+    processor.endScope(scope);
+
+    // If scope cleanup did not remove the still-open child, this grandchild
+    // would inherit the child's metadata callback and push when it ends.
+    endChild(tracer, child, "late-grandchild", {
+      "gen_ai.request.model": "gpt-4.1-mini",
+      "gen_ai.usage.input_tokens": 5,
+    });
 
     expect(pushed).toEqual([]);
   });
