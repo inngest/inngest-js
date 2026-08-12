@@ -133,6 +133,12 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    * are stamped on the span.
    */
   private trackSpan(span: Span, sink: AIMetadataSink): void {
+    // OTel does not call span processors when a span is not recording, so an
+    // entry for it would never be cleared by onEnd.
+    if (!span.isRecording()) {
+      return;
+    }
+
     const { traceId, spanId } = span.spanContext();
     const key = spanSinkKey(traceId, spanId);
 

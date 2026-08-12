@@ -1,5 +1,10 @@
 import { type Attributes, context, trace } from "@opentelemetry/api";
-import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import {
+  AlwaysOffSampler,
+  AlwaysOnSampler,
+  BasicTracerProvider,
+  type ReadableSpan,
+} from "@opentelemetry/sdk-trace-base";
 import type { AIMetadata } from "./aiExtractor.ts";
 import { InngestMetadataSpanProcessor } from "./metadataProcessor.ts";
 
@@ -166,6 +171,46 @@ describe("InngestMetadataSpanProcessor", () => {
     const { root, pushed } = declaredRoot(processor, tracer);
 
     endChild(tracer, root, "plain");
+
+    expect(pushed).toEqual([]);
+  });
+
+  test("does not track spans that are not recording", () => {
+    const processor = new InngestMetadataSpanProcessor();
+    const provider = new BasicTracerProvider({
+      sampler: new AlwaysOffSampler(),
+    });
+    trace.setGlobalTracerProvider(provider);
+    processor.attach();
+
+    const root = provider.getTracer("test").startSpan("inngest.execution");
+    expect(root.isRecording()).toBe(false);
+
+    const pushed: AIMetadata[] = [];
+    processor.declareStartingSpan({
+      span: root,
+      traceparent: TRACEPARENT,
+      onAIMetadata: (metadata) => pushed.push(metadata),
+    });
+
+    // Use a recording child to probe whether the non-recording root left a
+    // sink behind. OTel will never make this callback for the root itself.
+    const childProvider = new BasicTracerProvider({
+      sampler: new AlwaysOnSampler(),
+    });
+    const parentContext = trace.setSpan(context.active(), root);
+    const child = childProvider.getTracer("test").startSpan(
+      "llm",
+      {
+        attributes: {
+          "gen_ai.request.model": "gpt-4.1-nano",
+        },
+      },
+      parentContext,
+    );
+    processor.onStart(child, parentContext);
+    child.end();
+    processor.onEnd(child as unknown as ReadableSpan);
 
     expect(pushed).toEqual([]);
   });
