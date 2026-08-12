@@ -133,11 +133,37 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
    * are stamped on the span.
    */
   private trackSpan(span: Span, sink: AIMetadataSink): void {
+    // OTel only delivers `onStart`/`onEnd` to span processors for recording
+    // spans, so tracking a non-recording one can only ever leak: `onEnd` will
+    // never fire to remove the entry. The `#spanCleanup` registry cannot
+    // recover it either, because the entry keeps the sink alive, the sink keeps
+    // the engine alive, and the engine keeps the span reachable — so the span
+    // is never collected and the finalizer never runs.
+    if (!span.isRecording()) {
+      return processorDevDebug(
+        "span",
+        span.spanContext().spanId,
+        "is not recording, so skipping it",
+      );
+    }
+
     const { traceId, spanId } = span.spanContext();
     const key = spanSinkKey(traceId, spanId);
 
     this.#spanCleanup.register(span, key, span);
     this.#spanSinks.set(key, sink);
+  }
+
+  /**
+   * The number of spans currently tracked.
+   *
+   * Exposed only so tests can assert that entries do not accumulate;
+   * `#spanSinks` is a private field and cannot otherwise be observed.
+   *
+   * @internal
+   */
+  public get trackedSpanCount(): number {
+    return this.#spanSinks.size;
   }
 
   /**

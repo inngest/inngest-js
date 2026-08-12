@@ -1,5 +1,8 @@
 import { type Attributes, context, trace } from "@opentelemetry/api";
-import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import {
+  AlwaysOffSampler,
+  BasicTracerProvider,
+} from "@opentelemetry/sdk-trace-base";
 import type { AIMetadata } from "./aiExtractor.ts";
 import { InngestMetadataSpanProcessor } from "./metadataProcessor.ts";
 
@@ -256,5 +259,65 @@ describe("InngestMetadataSpanProcessor", () => {
     expect(processorsOf(provider).filter((p) => p === processor)).toHaveLength(
       1,
     );
+  });
+
+  /**
+   * Same wiring as {@link setup}, but with a sampler that records nothing —
+   * the shape of any host app tracing at less than 100%.
+   */
+  function setupUnsampled() {
+    const processor = new InngestMetadataSpanProcessor();
+    const provider = new BasicTracerProvider({
+      sampler: new AlwaysOffSampler(),
+    });
+    trace.setGlobalTracerProvider(provider);
+    processor.attach();
+    return { processor, tracer: provider.getTracer("test") };
+  }
+
+  test("tracks a declared root while it is open, and releases it on end", () => {
+    const { processor, tracer } = setup();
+    const { root } = declaredRoot(processor, tracer);
+
+    expect(processor.trackedSpanCount).toBe(1);
+
+    root.end();
+
+    expect(processor.trackedSpanCount).toBe(0);
+  });
+
+  test("does not track non-recording spans", () => {
+    const { processor, tracer } = setupUnsampled();
+
+    // Processors are never handed onStart/onEnd for non-recording spans, so a
+    // tracked entry here could never be removed: it would retain the sink, and
+    // through it the execution engine, for the lifetime of the process.
+    for (let i = 0; i < 100; i++) {
+      const root = tracer.startSpan("inngest.execution");
+      expect(root.isRecording()).toBe(false);
+      processor.declareStartingSpan({
+        span: root,
+        traceparent: TRACEPARENT,
+        onAIMetadata: () => {},
+      });
+      root.end();
+    }
+
+    expect(processor.trackedSpanCount).toBe(0);
+  });
+
+  test("does not accumulate entries across many completed runs", () => {
+    const { processor, tracer } = setup();
+
+    for (let i = 0; i < 100; i++) {
+      const { root } = declaredRoot(processor, tracer);
+      endChild(tracer, root, "llm", {
+        "gen_ai.request.model": "gpt-4.1-nano",
+        "gen_ai.usage.input_tokens": 1,
+      });
+      root.end();
+    }
+
+    expect(processor.trackedSpanCount).toBe(0);
   });
 });
