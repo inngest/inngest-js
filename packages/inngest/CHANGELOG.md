@@ -1,5 +1,15 @@
 # inngest
 
+## 4.18.1
+
+### Patch Changes
+
+- [#1686](https://github.com/inngest/inngest-js/pull/1686) [`ca7dff0e`](https://github.com/inngest/inngest-js/commit/ca7dff0eb16e2cd1b848cc6fb03013e897dc246e) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Allow sandbox names up to 255 characters, including uppercase ULIDs and human-readable names.
+
+- [#1704](https://github.com/inngest/inngest-js/pull/1704) [`e72b89c7`](https://github.com/inngest/inngest-js/commit/e72b89c78045b5c2a927d17ff18b43b78161c49f) Thanks [@jacobheric](https://github.com/jacobheric)! - Prevent AI metadata tracking from retaining executions after an SDK request ends, including when OpenTelemetry excludes the root span from sampling.
+
+- [#1698](https://github.com/inngest/inngest-js/pull/1698) [`282106a5`](https://github.com/inngest/inngest-js/commit/282106a59a232baeca9d92bcad74363c359faadc) Thanks [@Linell](https://github.com/Linell)! - Fix function-level middleware silently skipped on adapters whose `url()` drops the query string (AWS Lambda, Redwood, DigitalOcean): resolve `fnId` the same way execution does
+
 ## 4.18.0
 
 ### Minor Changes
