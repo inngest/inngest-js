@@ -323,7 +323,10 @@ class InngestExecutionEngine
                 | ReturnType<typeof metadataSpanProcessor.startScope>
                 | undefined;
               if (this.options.client.aiMetadataEnabled) {
-                aiMetadataScope = metadataSpanProcessor.startScope();
+                aiMetadataScope = metadataSpanProcessor.startScope({
+                  runId: this.options.runId,
+                  span,
+                });
               }
 
               this.rootSpanId = span.spanContext().spanId;

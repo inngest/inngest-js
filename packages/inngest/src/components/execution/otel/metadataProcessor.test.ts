@@ -56,9 +56,9 @@ describe("InngestMetadataSpanProcessor", () => {
     processor: InngestMetadataSpanProcessor,
     tracer: ReturnType<BasicTracerProvider["getTracer"]>,
   ) {
-    const scope = processor.startScope();
     const pushed: AIMetadata[] = [];
     const root = tracer.startSpan("inngest.execution");
+    const scope = processor.startScope({ runId: "test-run", span: root });
     processor.declareStartingSpan({
       scope,
       span: root,
@@ -189,7 +189,7 @@ describe("InngestMetadataSpanProcessor", () => {
     expect(root.isRecording()).toBe(false);
 
     const pushed: AIMetadata[] = [];
-    const scope = processor.startScope();
+    const scope = processor.startScope({ runId: "test-run", span: root });
     processor.declareStartingSpan({
       scope,
       span: root,

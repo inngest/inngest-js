@@ -99,8 +99,17 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
   /**
    * Start a logical scope for AI metadata tracking.
    */
-  public startScope(): AIMetadataScope {
-    const scope = Symbol("inngest.ai-metadata-scope");
+  public startScope({
+    runId,
+    span,
+  }: {
+    runId: string;
+    span: Span;
+  }): AIMetadataScope {
+    const { traceId, spanId } = span.spanContext();
+    const scope = Symbol(
+      `inngest.ai-metadata-scope:${runId}:${traceId}:${spanId}`,
+    );
     this.#scopeSpanKeys.set(scope, new Set());
     return scope;
   }
@@ -192,12 +201,17 @@ export class InngestMetadataSpanProcessor implements SpanProcessor {
       return;
     }
 
+    const keys = this.#scopeSpanKeys.get(scope);
+    if (!keys) {
+      return;
+    }
+
     const { traceId, spanId } = span.spanContext();
     const key = spanSinkKey(traceId, spanId);
 
     this.#spanCleanup.register(span, key, span);
     this.#spans.set(key, { sink, scope });
-    this.#scopeSpanKeys.get(scope)?.add(key);
+    keys.add(key);
   }
 
   /**
