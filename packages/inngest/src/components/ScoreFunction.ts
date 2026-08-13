@@ -15,9 +15,6 @@ type ScorerResult =
   | undefined;
 
 /**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
- *
  * Create a typed scorer function. Wraps `createDefer`: the handler's
  * return value is forwarded to `client.score(...)` inside a durable
  * `step.run("score", ...)`. `runId` defaults to the parent run's id (from

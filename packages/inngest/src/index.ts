@@ -39,6 +39,10 @@
 
 export * from "@inngest/ai";
 export type { StandardSchemaV1 } from "@standard-schema/spec";
+export {
+  createDefer,
+  DeferredFunction,
+} from "./components/DeferredFunction.ts";
 export { experiment } from "./components/ExperimentStrategies.ts";
 export type { StepFetch } from "./components/Fetch";
 export { fetch } from "./components/Fetch.ts";
@@ -61,12 +65,19 @@ export type {
   GroupToolsDeps,
   ParallelOptions,
 } from "./components/InngestGroupTools";
+export type { MetadataBuilder } from "./components/InngestMetadata";
+export type {
+  ScoreExperimentOptions,
+  ScoreOptions,
+  ScoreStepTool,
+} from "./components/InngestScore";
 export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { realtime } from "./components/realtime/index.ts";
 export type { Realtime } from "./components/realtime/types";
+export { createScorer } from "./components/ScoreFunction.ts";
 export { StepError } from "./components/StepError.ts";
 export {
   cron,
@@ -111,6 +122,7 @@ export type {
   EventPayload,
   EventSessions,
   EventSessionValue,
+  ExperimentRef,
   FailureEventArgs,
   FailureEventPayload,
   FinishedEventPayload,

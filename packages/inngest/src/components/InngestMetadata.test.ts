@@ -1,20 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { u } from "vitest/dist/chunks/reporters.d.BFLkQcL6.js";
-import type { unknown } from "zod";
-import * as experimental from "../experimental";
-import type { KnownKeys } from "../helpers/types.ts";
 import * as als from "./execution/als.ts";
 import { Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import {
   buildTarget,
-  type MetadataBuilder,
-  type metadataSymbol,
+  type MetadataStepTool,
+  metadataMiddleware,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
-import type {
-  ExperimentalStepTools,
-  GenericStepTools,
-} from "./InngestStepTools.ts";
 
 const mockLogger = () => ({
   info: vi.fn(),
@@ -204,7 +196,6 @@ describe('"lost on retries" warning at function-body level', () => {
     const client = new Inngest({
       id: "test",
       eventKey: "test-key-123",
-      middleware: [experimental.scoreMiddleware()],
     });
     vi.spyOn(
       client as unknown as { updateMetadata: () => Promise<void> },
@@ -234,6 +225,28 @@ describe('"lost on retries" warning at function-body level', () => {
     expect(client[internalLoggerSymbol].warn).toHaveBeenCalledWith(
       expect.stringContaining("may be lost on retries"),
     );
+  });
+});
+
+describe("metadataMiddleware", () => {
+  test("warns once per client", () => {
+    const internalLogger = mockLogger();
+    const client = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      internalLogger,
+      middleware: [metadataMiddleware()],
+    });
+
+    expect(internalLogger.warn).toHaveBeenCalledWith(
+      "metadataMiddleware() is deprecated and no longer needed — step.metadata() and inngest.metadata are enabled by default. Remove it from your middleware list.",
+    );
+
+    client.createFunction(
+      { id: "fn", triggers: [{ event: "foo" }] },
+      async () => {},
+    );
+    expect(internalLogger.warn).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -330,30 +343,17 @@ describe("MetadataBuilder.update", () => {
     });
   });
 
-  test("metadata is only present as a step tool if the middleware is used", async () => {
-    const inngestWithoutMiddleware = new Inngest({
+  test("metadata is always present as a step tool", async () => {
+    const inngest = new Inngest({
       id: "test",
       eventKey: "test-key-123",
     });
 
-    inngestWithoutMiddleware.createFunction(
-      { id: "test", triggers: [{ event: "foo" }] },
-      ({ step }) => {
-        assertType<HasProperty<typeof step, "metadata">>(false);
-      },
-    );
-
-    const inngestWithMiddleware = new Inngest({
-      id: "test",
-      eventKey: "test-key-123",
-      middleware: [experimental.metadataMiddleware()],
-    });
-
-    inngestWithMiddleware.createFunction(
+    inngest.createFunction(
       { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "metadata">>(true);
-        assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
+        assertType<(memoizationId: string) => MetadataStepTool>(step.metadata);
       },
     );
   });
@@ -362,7 +362,6 @@ describe("MetadataBuilder.update", () => {
     const inngest = new Inngest({
       id: "test",
       eventKey: "test-key-123",
-      middleware: [experimental.metadataMiddleware()],
     });
 
     assertType<
@@ -451,7 +450,7 @@ describe("MetadataBuilder.update", () => {
     inngest.createFunction(
       { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
-        assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
+        assertType<(memoizationId: string) => MetadataStepTool>(step.metadata);
 
         assertType<
           HasProperty<

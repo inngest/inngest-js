@@ -5,8 +5,7 @@ import {
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
-import { createDefer } from "../../../experimental.ts";
-import { Inngest } from "../../../index.ts";
+import { createDefer, Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);

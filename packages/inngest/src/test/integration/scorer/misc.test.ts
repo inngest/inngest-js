@@ -7,8 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { createScorer, type ExperimentRef } from "../../../experimental.ts";
-import { Inngest } from "../../../index.ts";
+import { createScorer, type ExperimentRef, Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);

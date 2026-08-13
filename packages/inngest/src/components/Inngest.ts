@@ -216,18 +216,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
   private _appVersion: string | undefined;
 
   /**
-   * @internal
-   * Flag set by metadataMiddleware to enable step.metadata()
-   */
-  protected experimentalMetadataEnabled = false;
-
-  /**
-   * @internal
-   * Flag set by scoreMiddleware to enable step.score().
-   */
-  protected experimentalScoreEnabled = false;
-
-  /**
    * A dummy Inngest function used in Durable Endpoints. This is necessary
    * because the vast majority of middleware hooks require the Inngest function.
    * But for Durable Endpoints, there is no Inngest function. So we need some
@@ -382,11 +370,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
    * ```
    */
   get metadata(): MetadataBuilder {
-    if (!this.experimentalMetadataEnabled) {
-      throw new Error(
-        'inngest.metadata is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
-      );
-    }
     return new UnscopedMetadataBuilder(this);
   }
 
@@ -714,22 +697,27 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       this[internalLoggerSymbol].warn(log.message);
     }
 
-    if (!this.experimentalMetadataEnabled) {
-      return;
-    }
-
-    await this.updateMetadata({
-      target: target,
-      metadata: [
-        {
-          kind: "inngest.warnings",
-          op: "merge",
-          values: {
-            [`sdk.${kind}`]: formatLogMessage(log),
+    // Attaching the warning to the run is best-effort; the local log above is
+    // the primary signal.
+    try {
+      await this.updateMetadata({
+        target: target,
+        metadata: [
+          {
+            kind: "inngest.warnings",
+            op: "merge",
+            values: {
+              [`sdk.${kind}`]: formatLogMessage(log),
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
+    } catch (err) {
+      this[internalLoggerSymbol].debug(
+        { err },
+        "failed to attach warning metadata to run",
+      );
+    }
   }
 
   /**

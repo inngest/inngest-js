@@ -8,8 +8,7 @@ import {
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { createDefer } from "../../../experimental.ts";
-import { Inngest } from "../../../index.ts";
+import { createDefer, Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import { spyLogger } from "../utils.ts";
 

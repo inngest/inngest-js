@@ -6,8 +6,7 @@ import {
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect } from "vitest";
-import { createDefer } from "../../../experimental.ts";
-import { Inngest } from "../../../index.ts";
+import { createDefer, Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import { matrixCheckpointing } from "../utils.ts";
 

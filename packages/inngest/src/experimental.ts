@@ -1,17 +1,19 @@
 // AsyncLocalStorage
 
-export {
-  createDefer,
-  DeferredFunction,
-} from "./components/DeferredFunction.ts";
 export type { AsyncContext } from "./components/execution/als.ts";
 export { getAsyncCtx } from "./components/execution/als.ts";
 // Extended Traces (OpenTelemetry)
 export type { ExtendedTracesMiddlewareOptions } from "./components/execution/otel/middleware.ts";
 export { extendedTracesMiddleware } from "./components/execution/otel/middleware.ts";
 export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components/execution/otel/processor.ts";
-// Step Metadata
-export { metadataMiddleware } from "./components/InngestMetadata.ts";
+// Metadata
+export {
+  /**
+   * @deprecated Import is no longer needed; `step.metadata()` and
+   * `inngest.metadata` are enabled by default.
+   */
+  metadataMiddleware,
+} from "./components/InngestMetadata.ts";
 // Sandboxes
 export type {
   DurableSandbox,
@@ -59,6 +61,22 @@ export {
   sandboxMiddleware,
 } from "./components/InngestSandbox.ts";
 // Scoring
-export { scoreMiddleware } from "./components/InngestScore.ts";
-export { createScorer } from "./components/ScoreFunction.ts";
-export type { ExperimentRef } from "./types.ts";
+export {
+  /**
+   * @deprecated Import is no longer needed; `step.score()` and
+   * `inngest.score()` are enabled by default.
+   */
+  scoreMiddleware,
+} from "./components/InngestScore.ts";
+export {
+  /**
+   * @deprecated Import from `"inngest"` instead.
+   */
+  createScorer,
+} from "./components/ScoreFunction.ts";
+export type {
+  /**
+   * @deprecated Import from `"inngest"` instead.
+   */
+  ExperimentRef,
+} from "./types.ts";

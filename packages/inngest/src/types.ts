@@ -509,9 +509,6 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
- *
  * Handle returned by `defer(...)`, scoped to that call's deferred run.
  */
 export type DeferHandle = {
@@ -523,9 +520,6 @@ export type DeferHandle = {
 };
 
 /**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
- *
  * Context extension that exposes `defer` on every handler.
  *
  * `defer(id, { function, data })` emits a `DeferAdd` opcode that triggers the
@@ -581,9 +575,6 @@ export type ExperimentRef = {
  */
 export type BaseContext<TClient extends Inngest.Any> = {
   /**
-   * EXPERIMENTAL: This API is not yet stable and may change in the future
-   * without a major version bump.
-   *
    * Fire-and-forget a typed deferred function. See {@link DeferFn}.
    */
   defer: DeferFn;

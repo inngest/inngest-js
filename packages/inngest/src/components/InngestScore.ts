@@ -1,9 +1,8 @@
 import { isFiniteNumber, isRecord } from "../helpers/types.ts";
 import type { ExperimentRef } from "../types.ts";
-import type { Inngest } from "./Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import type { ExperimentMetadataValues } from "./InngestGroupTools.ts";
 import { performOp } from "./InngestMetadata.ts";
-import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
 const scoreKind = "inngest.score" as const;
@@ -54,8 +53,6 @@ export type ScoreStepTool = (
   memoizationId: string,
   options: ScoreOptions,
 ) => Promise<void>;
-
-export const scoreSymbol = Symbol.for("inngest.step.score");
 
 function validateIdField({
   value,
@@ -223,44 +220,27 @@ export async function sendScoreExperiment(
   );
 }
 
+/**
+ * @deprecated No longer needed; `step.score()` and `inngest.score()` are
+ * enabled by default. This middleware does nothing and will be removed in a
+ * future release.
+ */
 export const scoreMiddleware = () => {
   class ScoreMiddleware extends Middleware.BaseMiddleware {
     readonly id = "inngest:score";
 
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
-      client["experimentalScoreEnabled"] = true;
-    }
-
-    override transformFunctionInput(
-      arg: Middleware.TransformFunctionInputArgs,
-    ): Middleware.TransformFunctionInputArgs & {
-      ctx: {
-        step: {
-          /**
-           * Create a durable score update wrapped in a step.
-           * Omit `stepId` to attach the score to the run.
-           * Use `inngest.score()` for live score writes inside `step.run()`.
-           *
-           * @param memoizationId - The durable step ID used to memoize this score write.
-           */
-          score: ExperimentalStepTools[typeof scoreSymbol];
-        };
-      };
-    } {
-      return {
-        ...arg,
-        ctx: {
-          ...arg.ctx,
-          step: {
-            ...arg.ctx.step,
-            score: (arg.ctx.step as unknown as ExperimentalStepTools)[
-              scoreSymbol
-            ],
-          },
-        },
-      };
+      if (warnedClients.has(client)) return;
+      warnedClients.add(client);
+      client[internalLoggerSymbol].warn(
+        "scoreMiddleware() is deprecated and no longer needed — step.score() and inngest.score() are enabled by default. Remove it from your middleware list.",
+      );
     }
   }
 
   return ScoreMiddleware;
 };
+
+// onRegister fires at client construction and again per registered function;
+// warn once per client.
+const warnedClients = new WeakSet<object>();

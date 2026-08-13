@@ -7,8 +7,7 @@ import {
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { createDefer } from "../../../experimental.ts";
-import { Inngest } from "../../../index.ts";
+import { createDefer, Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import { matrixCheckpointing, spyLogger } from "../utils.ts";
 
