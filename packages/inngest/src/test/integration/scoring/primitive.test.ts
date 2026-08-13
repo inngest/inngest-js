@@ -6,7 +6,6 @@ import {
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect, test } from "vitest";
-import { scoreMiddleware } from "../../../experimental.ts";
 import { Inngest } from "../../../index.ts";
 import { createServer } from "../../../node.ts";
 import {
@@ -169,7 +168,6 @@ describe("client.score", async () => {
       checkpointing: true,
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [scoreMiddleware()],
     });
     const eventName = randomSuffix("evt");
     const fn = client.createFunction(
@@ -210,7 +208,6 @@ describe("step.score", async () => {
       checkpointing: true,
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [scoreMiddleware()],
     });
     const eventName = randomSuffix("evt");
     const fn = client.createFunction(
@@ -265,7 +262,6 @@ describe("step.score", async () => {
       checkpointing: true,
       id: randomSuffix(testFileName),
       isDev: true,
-      middleware: [scoreMiddleware()],
     });
     const eventName = randomSuffix("evt");
     const fn = client.createFunction(

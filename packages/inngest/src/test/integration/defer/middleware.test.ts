@@ -5,8 +5,8 @@ import {
   testNameFromFileUrl,
 } from "@inngest/test-harness";
 import { expect, expectTypeOf, test } from "vitest";
-import { createDefer } from "../../../experimental.ts";
 import {
+  createDefer,
   dependencyInjectionMiddleware,
   Inngest,
   Middleware,

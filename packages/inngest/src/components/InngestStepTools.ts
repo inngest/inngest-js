@@ -50,12 +50,10 @@ import type { GroupTools } from "./InngestGroupTools.ts";
 import {
   type MetadataBuilder,
   type MetadataStepTool,
-  metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import {
   type ScoreStepTool,
-  scoreSymbol,
   sendStepScore,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
@@ -394,11 +392,6 @@ export const createStepTools = <
     memoizationId: string,
     builder?: UnscopedMetadataBuilder,
   ) => {
-    if (!client["experimentalMetadataEnabled"]) {
-      throw new Error(
-        'step.metadata() is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
-      );
-    }
     const withBuilder = (next: UnscopedMetadataBuilder) =>
       createStepMetadataWrapper(memoizationId, next);
 
@@ -436,13 +429,6 @@ export const createStepTools = <
     memoizationId,
     options,
   ) => {
-    if (!client["experimentalScoreEnabled"]) {
-      // This is a config error, so retrying the function cannot fix it
-      throw new NonRetriableError(
-        'step.score() is experimental. Enable it by adding scoreMiddleware() from "inngest/experimental" to your client middleware.',
-      );
-    }
-
     validateStepScoreOptions(options);
 
     await tools.run(memoizationId, async () => {
@@ -1015,15 +1001,36 @@ export const createStepTools = <
      * this context, and a custom fallback can be set using the `config` method.
      */
     fetch: stepFetch,
-  };
 
-  // NOTE: This should be moved into the above object definition under the key
-  // "metadata" when metadata is made non-experimental.
-  (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
-    memoizationId: string,
-  ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
-  (tools as unknown as ExperimentalStepTools)[scoreSymbol] =
-    createStepScoreWrapper;
+    /**
+     * Create a durable metadata update wrapped in a step.
+     *
+     * @param memoizationId - The step ID used for the step itself, ensuring the
+     *   metadata update is only performed once even on function retries.
+     *
+     * @example
+     * ```ts
+     * // Update metadata for the current run
+     * await step.metadata("update-status").update({ status: "processing" });
+     *
+     * // Update metadata for a different run
+     * await step.metadata("notify-parent")
+     *   .run(parentRunId)
+     *   .update({ childCompleted: true });
+     * ```
+     */
+    metadata: (memoizationId: string): MetadataStepTool =>
+      createStepMetadataWrapper(memoizationId),
+
+    /**
+     * Create a durable score update wrapped in a step.
+     * Omit `stepId` to attach the score to the run.
+     * Use `inngest.score()` for live score writes inside `step.run()`.
+     *
+     * @param memoizationId - The durable step ID used to memoize this score write.
+     */
+    score: createStepScoreWrapper,
+  };
 
   // Attach a step.run variant with opts.type = "group.experiment" for use by
   // group.experiment(). The symbol keeps it off the public `step` surface.
@@ -1085,11 +1092,6 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
   }>;
 };
 
-export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
-  [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
-  [scoreSymbol]: ScoreStepTool;
-};
-
 export const experimentStepRunSymbol = Symbol.for("inngest.group.experiment");
 
 export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
@@ -1113,6 +1115,11 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
 export const step: GenericStepTools = {
   // TODO Support `step.fetch` (this is already kinda half way deferred)
   fetch: null as unknown as GenericStepTools["fetch"],
+  // TODO Support `step.metadata`; it returns a builder synchronously, which
+  // doesn't fit the deferred-tooling pattern used here.
+  metadata: null as unknown as GenericStepTools["metadata"],
+  score: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.score(...args)),
   ai: {
     infer: (...args) =>
       getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),

@@ -2,7 +2,6 @@ import type { Simplify } from "../helpers/types.ts";
 import type { MetadataTarget } from "../types.ts";
 import { type AsyncContext, getAsyncCtx } from "./execution/als.ts";
 import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
-import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 import { Middleware } from "./middleware/middleware.ts";
 
 /**
@@ -372,70 +371,27 @@ export async function performOp(
   await sendMetadataViaAPI(client, target, kind, op, values, headers);
 }
 
-export const metadataSymbol = Symbol.for("inngest.step.metadata");
-
 /**
- * Middleware that enables the experimental step.metadata() feature.
- *
- * @example
- * ```ts
- * import { metadataMiddleware } from "inngest/experimental";
- *
- * const inngest = new Inngest({
- *   id: "my-app",
- *   middleware: [metadataMiddleware()],
- * });
- * ```
+ * @deprecated No longer needed; `step.metadata()` and `inngest.metadata` are
+ * enabled by default. This middleware does nothing and will be removed in a
+ * future release.
  */
 export const metadataMiddleware = () => {
   class MetadataMiddleware extends Middleware.BaseMiddleware {
     readonly id = "inngest:metadata";
 
     static override onRegister({ client }: Middleware.OnRegisterArgs) {
-      client["experimentalMetadataEnabled"] = true;
-    }
-
-    override transformFunctionInput(
-      arg: Middleware.TransformFunctionInputArgs,
-    ): Middleware.TransformFunctionInputArgs & {
-      ctx: {
-        step: {
-          /**
-           * Create a durable metadata update wrapped in a step
-           *
-           * @param memoizationId - The step ID used for the step itself, ensuring the
-           *   metadata update is only performed once even on function retries.
-           *
-           * @example
-           * ```ts
-           * // Update metadata for the current run
-           * await step.metadata("update-status").update({ status: "processing" });
-           *
-           * // Update metadata for a different run
-           * await step.metadata("notify-parent")
-           *   .run(parentRunId)
-           *   .update({ childCompleted: true });
-           * ```
-           */
-          metadata: ExperimentalStepTools[typeof metadataSymbol];
-        };
-      };
-    } {
-      return {
-        ...arg,
-        ctx: {
-          ...arg.ctx,
-          step: {
-            ...arg.ctx.step,
-            // Access the hidden symbol-keyed metadata tool from step tools
-            metadata: (arg.ctx.step as unknown as ExperimentalStepTools)[
-              metadataSymbol
-            ],
-          },
-        },
-      };
+      if (warnedClients.has(client)) return;
+      warnedClients.add(client);
+      client[internalLoggerSymbol].warn(
+        "metadataMiddleware() is deprecated and no longer needed — step.metadata() and inngest.metadata are enabled by default. Remove it from your middleware list.",
+      );
     }
   }
 
   return MetadataMiddleware;
 };
+
+// onRegister fires at client construction and again per registered function;
+// warn once per client.
+const warnedClients = new WeakSet<object>();

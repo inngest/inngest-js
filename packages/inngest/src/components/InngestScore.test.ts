@@ -4,11 +4,17 @@ import type { KnownKeys } from "../helpers/types.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   type ScoreOptions,
+  type ScoreStepTool,
   scoreMiddleware,
-  type scoreSymbol,
   validateStepScoreOptions,
 } from "./InngestScore.ts";
-import type { ExperimentalStepTools } from "./InngestStepTools.ts";
+
+const mockLogger = () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+});
 
 type Not<T extends boolean> = T extends true ? false : true;
 
@@ -354,30 +360,39 @@ describe("client.score.experiment", () => {
 });
 
 describe("scoreMiddleware", () => {
-  test("score is only present as a step tool if the middleware is used", () => {
-    const inngestWithoutMiddleware = new Inngest({
+  test("warns once per client", () => {
+    const internalLogger = mockLogger();
+    const client = new Inngest({
       id: "test",
       eventKey: "test-key-123",
-    });
-
-    inngestWithoutMiddleware.createFunction(
-      { id: "test", triggers: [{ event: "foo" }] },
-      ({ step }) => {
-        assertType<HasProperty<typeof step, "score">>(false);
-      },
-    );
-
-    const inngestWithMiddleware = new Inngest({
-      id: "test",
-      eventKey: "test-key-123",
+      internalLogger,
       middleware: [scoreMiddleware()],
     });
 
-    inngestWithMiddleware.createFunction(
+    expect(internalLogger.warn).toHaveBeenCalledWith(
+      "scoreMiddleware() is deprecated and no longer needed — step.score() and inngest.score() are enabled by default. Remove it from your middleware list.",
+    );
+
+    client.createFunction(
+      { id: "fn", triggers: [{ event: "foo" }] },
+      async () => {},
+    );
+    expect(internalLogger.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("step.score", () => {
+  test("score is always present as a step tool", () => {
+    const inngest = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction(
       { id: "test", triggers: [{ event: "foo" }] },
       ({ step }) => {
         assertType<HasProperty<typeof step, "score">>(true);
-        assertType<ExperimentalStepTools[typeof scoreSymbol]>(step.score);
+        assertType<ScoreStepTool>(step.score);
         assertType<KnownKeys<typeof step>>("score");
       },
     );
