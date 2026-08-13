@@ -69,6 +69,7 @@ export type { MetadataBuilder } from "./components/InngestMetadata";
 export type {
   ScoreExperimentOptions,
   ScoreOptions,
+  ScoreStepTool,
 } from "./components/InngestScore";
 export { group, step } from "./components/InngestStepTools.ts";
 export { Middleware } from "./components/middleware/index.ts";
