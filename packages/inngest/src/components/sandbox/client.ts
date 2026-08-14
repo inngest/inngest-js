@@ -84,8 +84,8 @@ const sandboxPageSchema = z
 
 const wireCommandResultSchema = z
   .object({
-    stdout: z.string(),
-    stderr: z.string(),
+    stdout: z.string().optional(),
+    stderr: z.string().optional(),
     encoding: z.literal("base64"),
     exitCode: z.number().int().min(-0x80000000).max(0x7fffffff),
   })
@@ -700,8 +700,8 @@ const createDirectSandboxFacade = (
       "sandbox exec result",
     );
     return {
-      stdout: decodeBase64(result.stdout, "sandbox exec stdout"),
-      stderr: decodeBase64(result.stderr, "sandbox exec stderr"),
+      stdout: decodeBase64(result.stdout ?? "", "sandbox exec stdout"),
+      stderr: decodeBase64(result.stderr ?? "", "sandbox exec stderr"),
       exitCode: result.exitCode,
       output: { truncated: false },
     };

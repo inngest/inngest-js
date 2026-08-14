@@ -1052,6 +1052,43 @@ describe("inngest.sandboxes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  test("normalizes omitted empty captured Exec streams", async () => {
+    const { kind: _kind, version: _version, ...resource } = sandboxRef;
+    let requestCount = 0;
+    const fetchMock: typeof fetch = vi.fn(async () => {
+      requestCount++;
+      if (requestCount === 1) {
+        return Response.json({ data: resource });
+      }
+      return Response.json({
+        data: {
+          encoding: "base64",
+          exitCode: 0,
+        },
+      });
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    await expect(
+      sandbox.commands.run({ command: ["/bin/true"] }),
+    ).resolves.toEqual({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      output: { truncated: false },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   test("validates Create environment before transport", async () => {
     const fetchMock: typeof fetch = vi.fn();
     const client = createSandboxClient({
