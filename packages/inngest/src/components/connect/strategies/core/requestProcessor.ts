@@ -62,6 +62,30 @@ export class RequestProcessor {
       connectMessage.payload,
     );
 
+    const activeConn = this.accessor.activeConnection;
+    if (
+      !activeConn ||
+      activeConn.id !== conn.id ||
+      conn.dead ||
+      conn.ws.readyState !== WebSocket.OPEN
+    ) {
+      this.logger.warn(
+        {
+          requestId: gatewayExecutorRequest.requestId,
+          connectionId: conn.id,
+          activeConnectionId: activeConn?.id,
+          readyState: conn.ws.readyState,
+          dead: conn.dead,
+        },
+        "Received request on non-active WebSocket, skipping",
+      );
+      if (activeConn?.id === conn.id) {
+        conn.dead = true;
+        this.wakeSignal.wake(WAKE_REASON.WsClose);
+      }
+      return;
+    }
+
     this.logger.debug(
       {
         requestId: gatewayExecutorRequest.requestId,
@@ -106,29 +130,42 @@ export class RequestProcessor {
       return;
     }
 
-    // Send ACK
-    conn.ws.send(
-      ensureUnsharedArrayBuffer(
-        ConnectMessage.encode(
-          ConnectMessage.create({
-            kind: GatewayMessageType.WORKER_REQUEST_ACK,
-            payload: WorkerRequestAckData.encode(
-              WorkerRequestAckData.create({
-                accountId: gatewayExecutorRequest.accountId,
-                envId: gatewayExecutorRequest.envId,
-                appId: gatewayExecutorRequest.appId,
-                functionSlug: gatewayExecutorRequest.functionSlug,
-                requestId: gatewayExecutorRequest.requestId,
-                stepId: gatewayExecutorRequest.stepId,
-                userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-                systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-                runId: gatewayExecutorRequest.runId,
-              }),
-            ).finish(),
-          }),
-        ).finish(),
-      ),
-    );
+    try {
+      conn.ws.send(
+        ensureUnsharedArrayBuffer(
+          ConnectMessage.encode(
+            ConnectMessage.create({
+              kind: GatewayMessageType.WORKER_REQUEST_ACK,
+              payload: WorkerRequestAckData.encode(
+                WorkerRequestAckData.create({
+                  accountId: gatewayExecutorRequest.accountId,
+                  envId: gatewayExecutorRequest.envId,
+                  appId: gatewayExecutorRequest.appId,
+                  functionSlug: gatewayExecutorRequest.functionSlug,
+                  requestId: gatewayExecutorRequest.requestId,
+                  stepId: gatewayExecutorRequest.stepId,
+                  userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+                  systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+                  runId: gatewayExecutorRequest.runId,
+                }),
+              ).finish(),
+            }),
+          ).finish(),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          requestId: gatewayExecutorRequest.requestId,
+          connectionId: conn.id,
+          err: toError(err),
+        },
+        "Failed to send request ACK, skipping request",
+      );
+      conn.dead = true;
+      this.wakeSignal.wake(WAKE_REASON.WsError);
+      return;
+    }
 
     this.accessor.inProgressRequests.wg.add(1);
     this.accessor.inProgressRequests.requestLeases[
@@ -264,38 +301,63 @@ export class RequestProcessor {
         "Request execution completed",
       );
 
-      if (!this.accessor.activeConnection) {
+      const replyConn = this.accessor.activeConnection;
+      if (!replyConn) {
         this.logger.warn(
           { requestId: gatewayExecutorRequest.requestId },
           "No current WebSocket, buffering response",
         );
-        if (this.callbacks.onBufferResponse) {
-          this.callbacks.onBufferResponse(
-            gatewayExecutorRequest.requestId,
-            responseBytes,
-          );
-        }
+        this.bufferResponse(gatewayExecutorRequest.requestId, responseBytes);
+        return;
+      }
+
+      if (replyConn.ws.readyState !== WebSocket.OPEN) {
+        this.logger.warn(
+          {
+            connectionId: replyConn.id,
+            requestId: gatewayExecutorRequest.requestId,
+            readyState: replyConn.ws.readyState,
+          },
+          "Cannot send worker reply, buffering response",
+        );
+        replyConn.dead = true;
+        this.wakeSignal.wake(WAKE_REASON.WsClose);
+        this.bufferResponse(gatewayExecutorRequest.requestId, responseBytes);
         return;
       }
 
       this.logger.debug(
         {
-          connectionId: this.accessor.activeConnection.id,
+          connectionId: replyConn.id,
           requestId: gatewayExecutorRequest.requestId,
         },
         "Sending worker reply",
       );
 
-      this.accessor.activeConnection.ws.send(
-        ensureUnsharedArrayBuffer(
-          ConnectMessage.encode(
-            ConnectMessage.create({
-              kind: GatewayMessageType.WORKER_REPLY,
-              payload: responseBytes,
-            }),
-          ).finish(),
-        ),
-      );
+      try {
+        replyConn.ws.send(
+          ensureUnsharedArrayBuffer(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_REPLY,
+                payload: responseBytes,
+              }),
+            ).finish(),
+          ),
+        );
+      } catch (err) {
+        this.logger.warn(
+          {
+            connectionId: replyConn.id,
+            requestId: gatewayExecutorRequest.requestId,
+            err: toError(err),
+          },
+          "Failed to send worker reply, buffering response",
+        );
+        replyConn.dead = true;
+        this.wakeSignal.wake(WAKE_REASON.WsError);
+        this.bufferResponse(gatewayExecutorRequest.requestId, responseBytes);
+      }
     } catch (err) {
       const durationMs = Date.now() - startedAt;
       this.logger.warn(
@@ -332,6 +394,10 @@ export class RequestProcessor {
         this.wakeSignal.wake(WAKE_REASON.RequestFinishedOnShutdown);
       }
     }
+  }
+
+  private bufferResponse(requestId: string, responseBytes: Uint8Array): void {
+    this.callbacks.onBufferResponse?.(requestId, responseBytes);
   }
 
   /** Handle a reply ACK from the gateway. */
