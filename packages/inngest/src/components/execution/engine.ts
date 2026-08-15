@@ -136,6 +136,48 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+function normalizeMemoizedOp<T extends MemoizedOp>(op: T): T {
+  if (typeof op.data === "object" && op.data !== null) {
+    const dataObj = op.data as Record<string, unknown>;
+    const isFinishedEvent = dataObj.name === "inngest/function.finished";
+    const eventData = isFinishedEvent
+      ? (dataObj.data as Record<string, unknown> | undefined)
+      : undefined;
+
+    const status =
+      eventData?._inngest &&
+      typeof eventData._inngest === "object" &&
+      eventData._inngest !== null
+        ? (eventData._inngest as Record<string, unknown>).status
+        : dataObj._inngest &&
+            typeof dataObj._inngest === "object" &&
+            dataObj._inngest !== null
+          ? (dataObj._inngest as Record<string, unknown>).status
+          : undefined;
+
+    if (status === "Cancelled") {
+      return {
+        ...op,
+        data: undefined,
+        error: {
+          name: "NonRetriableError",
+          message: "Invoked function was cancelled",
+        },
+      };
+    }
+
+    if (isFinishedEvent && eventData?.error) {
+      return {
+        ...op,
+        data: undefined,
+        error: eventData.error as Record<string, unknown>,
+      };
+    }
+  }
+
+  return op;
+}
+
 /**
  * Placeholder step ID used when completing a checkpointed run.
  */
@@ -2138,10 +2180,14 @@ class InngestExecutionEngine
       void checkpointResults.return();
     });
 
-    const stepsToFulfill = Object.keys(this.options.stepState).length;
+    const stepState: Record<string, MemoizedOp> = {};
+    for (const [id, op] of Object.entries(this.options.stepState)) {
+      stepState[id] = normalizeMemoizedOp(op);
+    }
+    const stepsToFulfill = Object.keys(stepState).length;
 
     const state: ExecutionState = {
-      stepState: this.options.stepState,
+      stepState,
       priorDefers: this.options.priorDefers ?? {},
       stepsToFulfill,
       steps: new Map(),
@@ -2254,7 +2300,10 @@ class InngestExecutionEngine
         stepData.type === "data" &&
         stepData.data !== existing.data
       ) {
-        this.state.stepState[hashedId] = { ...existing, data: stepData.data };
+        this.state.stepState[hashedId] = normalizeMemoizedOp({
+          ...existing,
+          data: stepData.data,
+        });
       }
     }
   }
@@ -3016,7 +3065,7 @@ class InngestExecutionEngine
     if (resume) {
       userlandStep.fulfilled = true;
       userlandStep.hasStepState = true;
-      this.state.stepState[resultOp.id] = userlandStep;
+      this.state.stepState[resultOp.id] = normalizeMemoizedOp(userlandStep);
 
       userlandStep.handle();
     }
