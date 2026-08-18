@@ -447,10 +447,8 @@ const normalizeProcessSpec = <
     "sandbox command options",
   ) as unknown as T;
 
-  if (!parsed.command[0]?.startsWith("/")) {
-    throw new SandboxValidationError(
-      "command must begin with an absolute executable path",
-    );
+  if (!parsed.command[0]) {
+    throw new SandboxValidationError("command[0] must not be empty");
   }
   let argvBytes = 0;
   parsed.command.forEach((argument, index) => {
