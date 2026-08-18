@@ -23,6 +23,7 @@ import {
 export const maxSandboxProcessTimeoutMs = 5 * 60 * 1_000;
 export const defaultSandboxProcessTimeoutMs = 30 * 1_000;
 export const maxSandboxRunningTimeoutMs = 5 * 60 * 1_000;
+export const defaultSandboxRunningTimeoutMs = 120 * 1_000;
 export const maxSandboxProcessTailBytes = 512 * 1_024;
 
 const maxProcessArgvCount = 128;
@@ -363,7 +364,7 @@ export const sandboxProcessRefFromResource = (
 export const normalizeSandboxCreateOptions = (
   options: SandboxCreateOptions,
 ): Omit<SandboxCreateOptions, "runningTimeout"> & {
-  runningTimeoutMs?: number;
+  runningTimeoutMs: number | false;
 } => {
   const parsed = parseWithSchema(
     z
@@ -382,13 +383,15 @@ export const normalizeSandboxCreateOptions = (
   const { runningTimeout, ...create } = parsed;
   return {
     ...create,
-    ...(runningTimeout !== undefined && {
-      runningTimeoutMs: normalizeDurationMs(
-        runningTimeout as SandboxDuration,
-        maxSandboxRunningTimeoutMs,
-        "runningTimeout",
-      ),
-    }),
+    runningTimeoutMs:
+      runningTimeout === false
+        ? false
+        : normalizeDurationMs(
+            (runningTimeout ??
+              defaultSandboxRunningTimeoutMs) as SandboxDuration,
+            maxSandboxRunningTimeoutMs,
+            "runningTimeout",
+          ),
   };
 };
 

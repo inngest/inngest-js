@@ -56,12 +56,28 @@ export interface SandboxCreateOptions {
   environment?: Record<string, string>;
 
   /**
-   * Wait up to this duration for the sandbox to reach RUNNING.
+   * How long to wait for the sandbox to reach RUNNING after Create succeeds.
    *
-   * Omit this to return as soon as Create is accepted, with either STARTING or
-   * RUNNING status.
+   * Defaults to 120 seconds. Set this to `false` to return as soon as Create is
+   * accepted, with either STARTING or RUNNING status.
+   *
+   * @example
+   * ```ts
+   * const sandbox = await inngest.sandboxes.create({
+   *   ...options,
+   *   runningTimeout: "30s",
+   * });
+   * ```
+   *
+   * @example Return immediately without waiting
+   * ```ts
+   * const sandbox = await inngest.sandboxes.create({
+   *   ...options,
+   *   runningTimeout: false,
+   * });
+   * ```
    */
-  runningTimeout?: SandboxDuration;
+  runningTimeout?: SandboxDuration | false;
 }
 
 export interface SandboxWaitUntilRunningOptions {

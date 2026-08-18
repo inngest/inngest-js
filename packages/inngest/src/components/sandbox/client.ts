@@ -964,7 +964,7 @@ export const createSandboxClient = (
           `Sandbox Create returned HTTP ${status} with status ${sandbox.status}`,
         );
       }
-      return runningTimeoutMs === undefined
+      return runningTimeoutMs === false
         ? createDirectSandboxFacade(sandbox, transport)
         : waitUntilSandboxRunning(
             sandbox,

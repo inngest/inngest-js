@@ -13,6 +13,7 @@ import {
   createSandboxClient,
   createSandboxTools,
   parseSandboxOperation,
+  type SandboxCreateOptions,
   SandboxError,
   type SandboxOperationResultV1,
   type SandboxOperationV1,
@@ -287,6 +288,32 @@ describe("step.sandbox", () => {
     });
   });
 
+  test("serializes default and disabled Create waiting", async () => {
+    const operations: SandboxOperationV1[] = [];
+    const rawTool: SandboxRawTool = vi.fn(async (_id, operation) => {
+      operations.push(operation);
+      return resultForOperation(operation);
+    });
+    const tools = createSandboxTools(() => rawTool);
+
+    await tools.create("create-default", createOptions);
+    await tools.create("create-immediate", {
+      ...createOptions,
+      runningTimeout: false,
+    });
+
+    expect(operations).toMatchObject([
+      {
+        action: "create",
+        input: [{ ...createOptions, runningTimeoutMs: 120_000 }],
+      },
+      {
+        action: "create",
+        input: [{ ...createOptions, runningTimeoutMs: false }],
+      },
+    ]);
+  });
+
   test("validates Simcity limits without imposing identifier-style env keys", async () => {
     const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
       resultForOperation(operation),
@@ -325,6 +352,50 @@ describe("step.sandbox", () => {
         environment: { "": "invalid" },
       }),
     ).rejects.toBeInstanceOf(SandboxValidationError);
+    expect(rawTool).not.toHaveBeenCalled();
+  });
+
+  test("accepts false for direct and durable Create and rejects invalid values", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const direct = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+    const rawTool = vi.fn<SandboxRawTool>();
+    const durable = createSandboxTools(() => rawTool);
+    const noWaitOptions: SandboxCreateOptions = {
+      ...createOptions,
+      runningTimeout: false,
+    };
+
+    const verifyCreateTypes = (): void => {
+      void direct.create(noWaitOptions);
+      void durable.create("create", noWaitOptions);
+      // @ts-expect-error runningTimeout only accepts a duration or false
+      void direct.create({ ...createOptions, runningTimeout: true });
+      void durable.create("create", {
+        ...createOptions,
+        // @ts-expect-error runningTimeout only accepts a duration or false
+        runningTimeout: true,
+      });
+    };
+    expect(verifyCreateTypes).toBeTypeOf("function");
+
+    await expect(
+      direct.create({ ...createOptions, runningTimeout: 0 }),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
+    await expect(
+      durable.create("create-zero", { ...createOptions, runningTimeout: 0 }),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
+    await expect(
+      direct.create({
+        ...createOptions,
+        runningTimeout: true,
+      } as unknown as SandboxCreateOptions),
+    ).rejects.toBeInstanceOf(SandboxValidationError);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(rawTool).not.toHaveBeenCalled();
   });
 
@@ -529,11 +600,21 @@ describe("step.sandbox", () => {
     });
   });
 
-  test("executes through REST in an ordinary run step and memoizes the result", async () => {
+  test("durable Create waits by default and replays without redispatching", async () => {
     const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
-    const fetchMock: typeof fetch = vi.fn(async () =>
-      Response.json({ data: sandboxResource }, { status: 201 }),
-    );
+    const startingResource = {
+      ...sandboxResource,
+      status: "STARTING",
+      startedAt: undefined,
+    };
+    const methods: string[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+      const method = init?.method ?? "GET";
+      methods.push(method);
+      return method === "POST"
+        ? Response.json({ data: startingResource }, { status: 202 })
+        : Response.json({ data: sandboxResource });
+    });
     const client = new Inngest({
       id: testClientId,
       signingKey: "signkey-test",
@@ -560,13 +641,14 @@ describe("step.sandbox", () => {
         },
       },
     });
+    expect(methods).toEqual(["POST", "GET"]);
 
     const replay = await run();
     expect(replay.result).toMatchObject({
       type: "function-resolved",
       data: sandboxId,
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
@@ -1300,35 +1382,44 @@ describe("inngest.sandboxes", () => {
     "TERMINATING",
     "TERMINATED",
     "FAILED",
-  ] as const)("accepts an existing %s sandbox from Create", async (status) => {
-    const { kind: _kind, version: _version, ...resource } = sandboxRef;
-    const fetchMock: typeof fetch = vi.fn(async () =>
-      Response.json(
-        {
-          data: {
-            ...resource,
-            status,
-            ...(status !== "RUNNING" && { startedAt: undefined }),
+  ] as const)(
+    "accepts an existing %s sandbox from Create when waiting is disabled",
+    async (status) => {
+      const { kind: _kind, version: _version, ...resource } = sandboxRef;
+      const requests: RequestInit[] = [];
+      const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+        requests.push(init ?? {});
+        return Response.json(
+          {
+            data: {
+              ...resource,
+              status,
+              ...(status !== "RUNNING" && { startedAt: undefined }),
+            },
           },
-        },
-        { status: 200 },
-      ),
-    );
-    const client = createSandboxClient({
-      baseUrl: () => "https://api.example.test",
-      apiKey: () => "signkey-test",
-      headers: () => ({ "X-Inngest-Env": "branch" }),
-      fetch: () => fetchMock,
-    });
+          { status: 200 },
+        );
+      });
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({ "X-Inngest-Env": "branch" }),
+        fetch: () => fetchMock,
+      });
 
-    const sandbox = await client.create(createOptions);
+      const sandbox = await client.create({
+        ...createOptions,
+        runningTimeout: false,
+      });
 
-    expect(sandbox.id).toBe(sandboxId);
-    expect(sandbox.status).toBe(status);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
+      expect(sandbox.id).toBe(sandboxId);
+      expect(sandbox.status).toBe(status);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(requests[0]?.body))).toEqual(createOptions);
+    },
+  );
 
-  test("makes readiness waiting opt-in on Create", async () => {
+  test("waits for a STARTING sandbox to reach RUNNING by default", async () => {
     const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
     const startingResource = {
       ...runningResource,
@@ -1351,24 +1442,56 @@ describe("inngest.sandboxes", () => {
       fetch: () => fetchMock,
     });
 
-    const immediate = await client.create(createOptions);
-    expect(immediate.status).toBe("STARTING");
-    expect(calls).toHaveLength(1);
-
-    const running = await client.create({
-      ...createOptions,
-      runningTimeout: "5s",
-    });
+    const running = await client.create(createOptions);
     expect(running.status).toBe("RUNNING");
-    expect(calls).toHaveLength(3);
-    expect(calls.map(({ init }) => init?.method)).toEqual([
-      "POST",
-      "POST",
-      "GET",
-    ]);
-    for (const call of calls.filter(({ init }) => init?.method === "POST")) {
-      expect(JSON.parse(String(call.init?.body))).toEqual(createOptions);
-    }
+    expect(calls).toHaveLength(2);
+    expect(calls.map(({ init }) => init?.method)).toEqual(["POST", "GET"]);
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(createOptions);
+  });
+
+  test("does not poll when Create immediately returns RUNNING", async () => {
+    const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+    const fetchMock: typeof fetch = vi.fn(async () =>
+      Response.json({ data: runningResource }, { status: 201 }),
+    );
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    await expect(client.create(createOptions)).resolves.toMatchObject({
+      id: sandboxId,
+      status: "RUNNING",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns STARTING immediately when runningTimeout is false", async () => {
+    const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+    const startingResource = {
+      ...runningResource,
+      status: "STARTING",
+      startedAt: undefined,
+    };
+    const requests: RequestInit[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+      requests.push(init ?? {});
+      return Response.json({ data: startingResource }, { status: 202 });
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    await expect(
+      client.create({ ...createOptions, runningTimeout: false }),
+    ).resolves.toMatchObject({ id: sandboxId, status: "STARTING" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(requests[0]?.body))).toEqual(createOptions);
   });
 
   test("waitUntilRunning reloads a STARTING sandbox", async () => {
@@ -1391,7 +1514,10 @@ describe("inngest.sandboxes", () => {
       },
     });
 
-    const starting = await client.create(createOptions);
+    const starting = await client.create({
+      ...createOptions,
+      runningTimeout: false,
+    });
     const running = await starting.waitUntilRunning({ timeout: "5s" });
 
     expect(starting.status).toBe("STARTING");
@@ -1426,9 +1552,7 @@ describe("inngest.sandboxes", () => {
       },
     });
 
-    await expect(
-      client.create({ ...createOptions, runningTimeout: "5s" }),
-    ).rejects.toMatchObject({
+    await expect(client.create(createOptions)).rejects.toMatchObject({
       name: "SandboxError",
       action: "create",
       code: "sandbox_start_failed",
@@ -1444,7 +1568,49 @@ describe("inngest.sandboxes", () => {
     expect(requestCount).toBe(2);
   });
 
-  test("reports readiness timeout without retrying Create", async () => {
+  test("defaults the readiness timeout to 120 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
+      const startingResource = {
+        ...runningResource,
+        status: "STARTING",
+        startedAt: undefined,
+      };
+      const methods: string[] = [];
+      const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+        methods.push(init?.method ?? "GET");
+        return Response.json(
+          { data: startingResource },
+          { status: init?.method === "POST" ? 202 : 200 },
+        );
+      });
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+
+      const result = client.create(createOptions);
+      const assertion = expect(result).rejects.toMatchObject({
+        name: "SandboxError",
+        action: "create",
+        code: "sandbox_start_timed_out",
+        sandboxId,
+        retryable: false,
+        details: [{ status: "STARTING", timeoutMs: 120_000 }],
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      await assertion;
+      expect(methods.filter((method) => method === "POST")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("honors an explicit readiness timeout without retrying Create", async () => {
     vi.useFakeTimers();
     try {
       const { kind: _kind, version: _version, ...runningResource } = sandboxRef;
@@ -1476,6 +1642,7 @@ describe("inngest.sandboxes", () => {
         code: "sandbox_start_timed_out",
         sandboxId,
         retryable: false,
+        details: [{ status: "STARTING", timeoutMs: 1_000 }],
       });
       await vi.advanceTimersByTimeAsync(1_000);
 
