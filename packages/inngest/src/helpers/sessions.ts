@@ -299,17 +299,27 @@ export const reduceEventsToPropagatedSessions = (
  *
  * Pass `onlyIfAbsent` when stamping *downstream* of another entry point, to
  * leave the upstream stamp authoritative rather than clobbering it.
+ *
+ * The value is normalized here rather than trusted: `ctx.sessions` starts out
+ * machine-generated, but middleware (`transformFunctionInput`) and the handler
+ * itself can both replace it, and only the `sendEvent` path normalizes further
+ * downstream. Normalizing at the stamp keeps every entry point — `sendEvent`,
+ * `invoke`, and a bare `send()` — on the same wire shape and rejection rules.
  */
 export const stampPropagatedSessionsOnEvent = <T extends { meta?: EventMeta }>(
   payload: T,
-  sessions: Record<string, string> | undefined,
+  sessions: PropagatedEventSessions | undefined,
   { onlyIfAbsent = false }: { onlyIfAbsent?: boolean } = {},
 ): T => {
-  if (!sessions || Object.keys(sessions).length === 0) {
+  if (onlyIfAbsent && payload.meta?.propagated_sessions !== undefined) {
     return payload;
   }
 
-  if (onlyIfAbsent && payload.meta?.propagated_sessions !== undefined) {
+  // Returns `undefined` for an absent or empty layer, leaving the payload
+  // unstamped; the normalized object is already a fresh clone, so mutating one
+  // event's sessions in middleware can't reach another event or `ctx.sessions`.
+  const normalized = normalizePropagatedSessions(sessions);
+  if (!normalized) {
     return payload;
   }
 
@@ -317,11 +327,7 @@ export const stampPropagatedSessionsOnEvent = <T extends { meta?: EventMeta }>(
     ...payload,
     meta: {
       ...payload.meta,
-
-      // Clone so that mutating one event's sessions in middleware doesn't
-      // inadvertently mutate every other event's sessions, or `ctx.sessions`
-      // itself.
-      propagated_sessions: { ...sessions },
+      propagated_sessions: normalized,
     },
   };
 };
@@ -332,7 +338,7 @@ export const stampPropagatedSessionsOnEvent = <T extends { meta?: EventMeta }>(
  */
 export const stampPropagatedSessions = (
   payload: SendEventPayload,
-  sessions: Record<string, string> | undefined,
+  sessions: PropagatedEventSessions | undefined,
 ): SendEventPayload =>
   Array.isArray(payload)
     ? payload.map((p) => stampPropagatedSessionsOnEvent(p, sessions))

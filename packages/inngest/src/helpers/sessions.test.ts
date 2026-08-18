@@ -337,6 +337,37 @@ describe("stampPropagatedSessionsOnEvent", () => {
     ).toBe(payload);
   });
 
+  // `ctx.sessions` is machine-generated, but middleware and the handler can
+  // both replace it before the stamp reads it, and only the `sendEvent` path
+  // normalizes further downstream.
+  test("normalizes the sessions it is handed", () => {
+    const payload: Payload = { data: {} };
+    expect(stampPropagatedSessionsOnEvent(payload, { conv_id: 123 })).toEqual({
+      data: {},
+      meta: { propagated_sessions: { conv_id: "123" } },
+    });
+  });
+
+  test("rejects an unusable sessions layer rather than stamping it", () => {
+    const payload: Payload = { data: {} };
+    expect(() =>
+      stampPropagatedSessionsOnEvent(payload, {
+        conv_id: null,
+      } as unknown as Record<string, string>),
+    ).toThrow(/must be a string or number/);
+    expect(() =>
+      stampPropagatedSessionsOnEvent(payload, {
+        "": "123",
+      }),
+    ).toThrow(/cannot be empty/);
+    expect(() =>
+      stampPropagatedSessionsOnEvent(
+        payload,
+        "nope" as unknown as Record<string, string>,
+      ),
+    ).toThrow(/must be an object/);
+  });
+
   test("onlyIfAbsent still stamps when there is no propagated layer", () => {
     const payload = { data: {}, meta: { sessions: { conv_id: "manual" } } };
     expect(
