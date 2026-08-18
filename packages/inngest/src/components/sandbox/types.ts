@@ -85,9 +85,17 @@ export interface SandboxListResult<TSandbox = SandboxRef> {
   fetchedAt: string;
 }
 
-export interface SandboxCommandOptions {
-  command: readonly string[];
+/**
+ * A shell command string or an argv array for direct execution.
+ *
+ * Strings run as `["/bin/sh", "-c", command]`. They are passed to the shell
+ * unchanged, so normal shell quoting, variables, pipes, redirects, and
+ * chaining apply. Arrays bypass the shell and must begin with an absolute
+ * executable path.
+ */
+export type SandboxCommand = string | readonly string[];
 
+export interface SandboxCommandOptions {
   /**
    * Overrides matching sandbox environment values for this command.
    * Omitted or empty inherits the sandbox environment unchanged.
@@ -157,7 +165,7 @@ export interface SandboxProcessRef extends SandboxProcessResource {
 }
 
 export interface SandboxProcessStartOptions {
-  command: readonly string[];
+  command: SandboxCommand;
 
   /**
    * Overrides matching sandbox environment values for this process.
@@ -321,7 +329,10 @@ export interface Sandbox {
   readonly endedAt?: string;
   readonly error?: string;
   readonly commands: {
-    run(options: SandboxCommandOptions): Promise<SandboxCommandResult>;
+    run(
+      command: SandboxCommand,
+      options?: SandboxCommandOptions,
+    ): Promise<SandboxCommandResult>;
   };
   readonly logs: {
     stream(
@@ -387,7 +398,8 @@ export interface DurableSandbox {
   readonly commands: {
     run(
       idOrOptions: StepOptionsOrId,
-      options: SandboxCommandOptions,
+      command: SandboxCommand,
+      options?: SandboxCommandOptions,
     ): Promise<SandboxCommandResult>;
   };
   readonly processes: {
