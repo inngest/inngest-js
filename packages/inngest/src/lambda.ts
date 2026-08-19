@@ -43,6 +43,46 @@ import type { SupportedFrameworkName } from "./types.ts";
 export const frameworkName: SupportedFrameworkName = "aws-lambda";
 
 /**
+ * Build the request URL for a Lambda/API Gateway event, preserving the query
+ * string so function-level middleware can resolve `fnId` from `url.searchParams`.
+ *
+ * @internal Exported for unit tests.
+ */
+export const buildLambdaUrl = (
+  event: Either<APIGatewayEvent, APIGatewayProxyEventV2>,
+  getHeader: (key: string) => string | undefined,
+): URL => {
+  const eventIsV2 = (event as APIGatewayProxyEventV2).version === "2.0";
+  const path = eventIsV2
+    ? (event as APIGatewayProxyEventV2).requestContext.http.path
+    : (event as APIGatewayEvent).path;
+  const proto = getHeader("x-forwarded-proto") || "https";
+  const url = new URL(path, `${proto}://${getHeader("host") || ""}`);
+
+  // Must preserve the query string: InngestCommHandler matches function-level
+  // middleware via `url.searchParams.get(fnId)`. Execution itself reads fnId
+  // from `queryString` / queryStringParameters, so dropping the query here
+  // silently skips function middleware only.
+  // See https://github.com/inngest/inngest-js/issues/1673
+  if (eventIsV2) {
+    const rawQueryString = (event as APIGatewayProxyEventV2).rawQueryString;
+    if (rawQueryString) {
+      url.search = rawQueryString;
+    }
+  } else if ((event as APIGatewayEvent).queryStringParameters) {
+    for (const [key, value] of Object.entries(
+      (event as APIGatewayEvent).queryStringParameters ?? {},
+    )) {
+      if (typeof value === "string") {
+        url.searchParams.set(key, value);
+      }
+    }
+  }
+
+  return url;
+};
+
+/**
  * With AWS Lambda, serve and register any declared functions with Inngest,
  * making them available to be triggered by events.
  *
@@ -120,13 +160,7 @@ export const serve = (
             ? event.requestContext.http.method
             : event.httpMethod;
         },
-        url: () => {
-          const path = eventIsV2 ? event.requestContext.http.path : event.path;
-          const proto = getHeader("x-forwarded-proto") || "https";
-          const url = new URL(path, `${proto}://${getHeader("host") || ""}`);
-
-          return url;
-        },
+        url: () => buildLambdaUrl(event, getHeader),
         queryString: (key) => {
           return event.queryStringParameters?.[key];
         },
