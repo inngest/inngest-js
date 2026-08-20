@@ -1,8 +1,7 @@
 import { inngest } from "@/inngest/client";
 
 export const generateMeal = inngest.createFunction(
-  { id: "generate-meal" },
-  { event: "meal.generate" },
+  { id: "generate-meal", triggers: [{ event: "meal.generate" }] },
   async ({ event, step }) => {
     const { participantsCount, preferences } = event.data;
 

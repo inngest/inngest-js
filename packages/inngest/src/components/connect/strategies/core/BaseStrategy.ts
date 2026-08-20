@@ -1,0 +1,117 @@
+import type { Logger } from "../../../../middleware/logger.ts";
+import { onShutdown } from "../../os.ts";
+import { type ConnectDebugState, ConnectionState } from "../../types.ts";
+import type { ConnectionStrategy } from "./types.ts";
+
+/**
+ * Base class for connection strategies providing common functionality for state
+ * management, shutdown signal handling, and close lifecycle.
+ */
+export abstract class BaseStrategy implements ConnectionStrategy {
+  protected _state: ConnectionState = ConnectionState.CONNECTING;
+  protected closingPromise: Promise<void>;
+  protected resolveClosingPromise:
+    | ((value: void | PromiseLike<void>) => void)
+    | undefined;
+  protected cleanupShutdownSignal: (() => void) | undefined;
+
+  protected readonly internalLogger: Logger;
+
+  constructor({ logger }: { logger: Logger }) {
+    this.internalLogger = logger;
+    this.closingPromise = new Promise((resolve) => {
+      this.resolveClosingPromise = resolve;
+    });
+  }
+
+  get state(): ConnectionState {
+    return this._state;
+  }
+
+  get closed(): Promise<void> {
+    return this.closingPromise;
+  }
+
+  abstract get connectionId(): string | undefined;
+  abstract connect(attempt?: number): Promise<void>;
+  abstract close(): Promise<void>;
+  abstract getDebugState(): ConnectDebugState;
+
+  /**
+   * Set up shutdown signal handlers that will trigger close() on SIGINT/SIGTERM.
+   */
+  protected setupShutdownSignal(signals: string[]): void {
+    if (this.cleanupShutdownSignal) {
+      return;
+    }
+
+    this.internalLogger.debug(
+      { signals },
+      "Setting up shutdown signal handler",
+    );
+
+    const cleanupShutdownHandlers = onShutdown(signals, () => {
+      this.internalLogger.debug(
+        { signals },
+        "Received shutdown signal, closing connection",
+      );
+      void this.close();
+    });
+
+    this.cleanupShutdownSignal = () => {
+      this.internalLogger.debug("Cleaning up shutdown signal handler");
+      cleanupShutdownHandlers();
+    };
+  }
+
+  /**
+   * Clean up shutdown signal handlers. Call at the start of close().
+   */
+  protected cleanupShutdown(): void {
+    if (this.cleanupShutdownSignal) {
+      this.cleanupShutdownSignal();
+      this.cleanupShutdownSignal = undefined;
+    }
+  }
+
+  /**
+   * Mark the connection as closing. Call after cleanupShutdown().
+   */
+  protected setClosing(): void {
+    this._state = ConnectionState.CLOSING;
+  }
+
+  /**
+   * Mark the connection as closed and resolve the closing promise.
+   * Call at the end of close().
+   */
+  protected setClosed(): void {
+    this._state = ConnectionState.CLOSED;
+    this.resolveClosingPromise?.();
+  }
+
+  /**
+   * Set up shutdown signals if configured in options.
+   * Call at the start of connect().
+   */
+  protected setupShutdownSignalIfConfigured(
+    handleShutdownSignals: string[] | undefined,
+  ): void {
+    if (handleShutdownSignals && handleShutdownSignals.length > 0) {
+      this.setupShutdownSignal(handleShutdownSignals);
+    }
+  }
+
+  /**
+   * Throw if the connection is closing or closed.
+   * Call at the start of connect().
+   */
+  protected throwIfClosingOrClosed(): void {
+    if (
+      this._state === ConnectionState.CLOSING ||
+      this._state === ConnectionState.CLOSED
+    ) {
+      throw new Error("Connection already closed");
+    }
+  }
+}

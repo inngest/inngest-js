@@ -1,41 +1,124 @@
 import { context, trace } from "@opentelemetry/api";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
-import {
-  type Instrumentation,
-  registerInstrumentations,
-} from "@opentelemetry/instrumentation";
+import type { Instrumentation } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import Debug from "debug";
+import {
+  OTelProviderSource,
+  type OTelSetup,
+  OTelSetupFailure,
+  OTelSetupPath,
+} from "../../../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
+import { debugPrefix } from "./consts.ts";
 import { InngestSpanProcessor } from "./processor.ts";
+import { attemptProviderExtension } from "./provider.ts";
+
+const debug = Debug(`${debugPrefix}:createProvider`);
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];
 
-export const createProvider = (
+export const createProvider = async (
   _behaviour: Behaviour,
   instrumentations: Instrumentations | undefined = [],
-): { success: true; processor: InngestSpanProcessor } | { success: false } => {
-  // TODO Check if there's an existing provider
-  const processor = new InngestSpanProcessor();
+): Promise<
+  | { success: true; processor: InngestSpanProcessor; setup: OTelSetup }
+  | { success: false; error?: unknown; setup: OTelSetup }
+> => {
+  try {
+    // TODO Check if there's an existing provider
+    const processor = new InngestSpanProcessor();
 
-  const p = new BasicTracerProvider({
-    spanProcessors: [processor],
-  });
+    const p = new BasicTracerProvider({
+      spanProcessors: [processor],
+    });
 
-  const instrList: Instrumentations = [
-    ...instrumentations,
-    ...getNodeAutoInstrumentations(),
-  ];
+    // Dynamic imports to avoid loading the full auto-instrumentation suite at
+    // module evaluation time. These are only needed when creating a new provider,
+    // not when extending an existing one. Static imports here caused version
+    // conflicts with host app OTel setups (e.g. Sentry) and silently broke
+    // inngest.send(). See #1324.
+    const { getNodeAutoInstrumentations } = await import(
+      "@opentelemetry/auto-instrumentations-node"
+    );
+    const { registerInstrumentations } = await import(
+      "@opentelemetry/instrumentation"
+    );
+    const { AnthropicInstrumentation } = await import(
+      "@traceloop/instrumentation-anthropic"
+    );
+    const { AsyncHooksContextManager } = await import(
+      "@opentelemetry/context-async-hooks"
+    );
 
-  registerInstrumentations({
-    instrumentations: instrList,
-  });
+    const instrList: Instrumentations = [
+      ...instrumentations,
+      ...getNodeAutoInstrumentations(),
+      new AnthropicInstrumentation(),
+    ];
 
-  trace.setGlobalTracerProvider(p);
-  context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+    registerInstrumentations({
+      instrumentations: instrList,
+    });
 
-  return { success: true, processor };
+    if (!trace.setGlobalTracerProvider(p)) {
+      return {
+        success: false,
+        setup: {
+          path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+          providerFound: false,
+          providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: false,
+          failure: OTelSetupFailure.OTEL_SETUP_FAILURE_PROVIDER_CREATION_FAILED,
+        },
+      };
+    }
+
+    context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+
+    return {
+      success: true,
+      processor,
+      setup: {
+        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+        providerFound: false,
+        providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+        addSpanProcessorAttempted: true,
+        spanProcessorAdded: true,
+        failure: OTelSetupFailure.OTEL_SETUP_FAILURE_UNSPECIFIED,
+      },
+    };
+  } catch (err) {
+    debug("failed to create provider:", err);
+    return {
+      success: false,
+      error: err,
+      setup: {
+        path: OTelSetupPath.OTEL_SETUP_PATH_LEGACY_CREATE_PROVIDER,
+        providerFound: false,
+        providerSource: OTelProviderSource.OTEL_PROVIDER_SOURCE_LEGACY_SDK,
+        addSpanProcessorAttempted: true,
+        spanProcessorAdded: false,
+        failure: OTelSetupFailure.OTEL_SETUP_FAILURE_PROVIDER_CREATION_FAILED,
+      },
+    };
+  }
 };
+
+export function warnDeprecatedCreateProviderBehaviour(
+  behaviour: Extract<Behaviour, "auto" | "createProvider">,
+): void {
+  if (behaviour === "auto") {
+    console.warn(
+      "`extendedTracesMiddleware()` falling back to creating an OpenTelemetry provider is deprecated. Use @inngest/otel instead.",
+    );
+    return;
+  }
+
+  console.warn(
+    '`extendedTracesMiddleware({ behaviour: "createProvider" })` is deprecated. Use @inngest/otel instead.',
+  );
+}
 
 /**
  * Attempts to extend the existing OTel provider with our processor. Returns true
@@ -43,37 +126,33 @@ export const createProvider = (
  */
 export const extendProvider = (
   behaviour: Behaviour,
-): { success: true; processor: InngestSpanProcessor } | { success: false } => {
-  // Attempt to add our processor and export to the existing provider
-  const existingProvider = trace.getTracerProvider();
-  if (!existingProvider) {
-    if (behaviour !== "auto") {
-      console.warn(
-        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
-      );
-    }
-
-    return { success: false };
-  }
-
-  if (
-    !("addSpanProcessor" in existingProvider) ||
-    typeof existingProvider.addSpanProcessor !== "function"
-  ) {
-    // TODO Could we also add a function the user can provide that takes the
-    // processor and adds it? That way they could support many different
-    // providers.
-    if (behaviour !== "auto") {
-      console.warn(
-        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
-      );
-    }
-
-    return { success: false };
-  }
-
+):
+  | { success: true; processor: InngestSpanProcessor; setup: OTelSetup }
+  | { success: false; setup: OTelSetup } => {
   const processor = new InngestSpanProcessor();
-  existingProvider.addSpanProcessor(processor);
+  const setup = attemptProviderExtension({ processor });
 
-  return { success: true, processor };
+  if (!setup.providerFound) {
+    if (behaviour !== "auto") {
+      console.warn(
+        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Use @inngest/otel instead, or make sure that the provider is created and imported before the middleware is used.',
+      );
+    }
+
+    return { success: false, setup };
+  }
+
+  if (setup.spanProcessorAdded) {
+    return { success: true, processor, setup };
+  }
+
+  if (behaviour !== "auto") {
+    console.warn(
+      "Unable to add InngestSpanProcessor to existing OTel provider. " +
+        "The provider does not support addSpanProcessor() (OTel SDK v1) " +
+        "or expose _activeSpanProcessor._spanProcessors (OTel SDK v2).",
+    );
+  }
+
+  return { success: false, setup };
 };

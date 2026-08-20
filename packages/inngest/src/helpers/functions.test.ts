@@ -1,6 +1,9 @@
+import { ConsoleLogger } from "../middleware/logger.ts";
 import type { EventPayload } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
 import { type FnData, parseFnData } from "./functions.ts";
+
+const testLogger = new ConsoleLogger();
 
 const randomstr = (): string => {
   return (Math.random() + 1).toString(36).substring(2);
@@ -10,7 +13,6 @@ const generateEvent = (): EventPayload => {
   return {
     name: randomstr(),
     data: { hello: "world" },
-    user: {},
     ts: 0,
   };
 };
@@ -18,16 +20,18 @@ const generateEvent = (): EventPayload => {
 describe("#parseFnData", () => {
   const specs: {
     name: string;
-    data: Extract<FnData, { version: ExecutionVersion.V1 }>;
+    data: FnData;
     isOk: boolean;
   }[] = [
     {
       name: "should parse successfully for valid data",
       data: {
         version: 1,
+        sdkDecided: true,
         event: generateEvent(),
         events: [...Array.from(Array(5).keys())].map(() => generateEvent()),
         steps: {},
+        defers: {},
         ctx: {
           run_id: randomstr(),
           attempt: 0,
@@ -69,13 +73,17 @@ describe("#parseFnData", () => {
     },
   ];
 
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   specs.forEach((test) => {
     it(test.name, () => {
       if (test.isOk) {
-        return expect(() => parseFnData(test.data)).not.toThrow();
+        return expect(() =>
+          parseFnData(test.data, undefined, testLogger),
+        ).not.toThrow();
       } else {
-        return expect(() => parseFnData(test.data)).toThrow();
+        return expect(() =>
+          parseFnData(test.data, undefined, testLogger),
+        ).toThrow();
       }
     });
   });

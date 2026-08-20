@@ -12,7 +12,7 @@
  *   client: inngest,
  *   functions: [fnA],
  *   // Your digitalocean hostname.  This is required otherwise your functions won't work.
- *   serveHost: "https://faas-sfo3-your-url.doserverless.co",
+ *   serveOrigin: "https://faas-sfo3-your-url.doserverless.co",
  *   // And your DO path, also required.
  *   servePath: "/api/v1/web/fn-your-uuid/inngest",
  * });
@@ -66,7 +66,7 @@ export const frameworkName: SupportedFrameworkName = "digitalocean";
  *   client: inngest,
  *   functions: [fnA],
  *   // Your digitalocean hostname.  This is required otherwise your functions won't work.
- *   serveHost: "https://faas-sfo3-your-url.doserverless.co",
+ *   serveOrigin: "https://faas-sfo3-your-url.doserverless.co",
  *   // And your DO path, also required.
  *   servePath: "/api/v1/web/fn-your-uuid/inngest",
  * });
@@ -81,7 +81,7 @@ export const frameworkName: SupportedFrameworkName = "digitalocean";
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
   options: ServeHandlerOptions &
-    Required<Pick<NonNullable<ServeHandlerOptions>, "serveHost">>,
+    Required<Pick<NonNullable<ServeHandlerOptions>, "serveOrigin">>,
 ): ((main?: Main) => Promise<ActionResponse<string>>) => {
   const handler = new InngestCommHandler({
     frameworkName,
@@ -93,7 +93,7 @@ export const serve = (
         body: () => data || {},
         headers: (key) => http?.headers?.[key],
         method: () => http.method,
-        url: () => new URL(`${options.serveHost}${options.servePath || "/"}`),
+        url: () => new URL(`${options.serveOrigin}${options.servePath || "/"}`),
         queryString: (key) => main[key] as string,
         transformResponse: (res) => res,
       };

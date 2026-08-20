@@ -12,10 +12,6 @@
     "nuxt": "^3.0.0"
   },
   "dependencies": {
-    "inngest": "^3.0.0"
-  },
-  "volta": {
-    "node": "18.16.1",
-    "yarn": "1.22.19"
+    "inngest": "^4.4.0"
   }
 }

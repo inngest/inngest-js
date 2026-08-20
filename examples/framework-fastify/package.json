@@ -11,8 +11,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "fastify": "^4.21.0",
-    "inngest": "^3.0.0"
+    "fastify": "^5.8.3",
+    "inngest": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.5.2",

@@ -1,0 +1,263 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "unknown_service:node"
+            }
+          },
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "nodejs"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "2.8.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "@traceloop/instrumentation-anthropic",
+            "version": "0.27.0"
+          },
+          "spans": [
+            {
+              "traceId": "9dbb3de5de081fa1d048a527525c4eb8",
+              "spanId": "fc3a60829364408a",
+              "name": "chat claude-sonnet-4-6",
+              "kind": 3,
+              "startTimeUnixNano": "1781569308712000000",
+              "endTimeUnixNano": "1781569309936887000",
+              "attributes": [
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "anthropic"
+                  }
+                },
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "claude-sonnet-4-6"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.max_tokens",
+                  "value": {
+                    "intValue": 16
+                  }
+                },
+                {
+                  "key": "gen_ai.system_instructions",
+                  "value": {
+                    "stringValue": "[{\"type\":\"text\",\"content\":\"The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. \"}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Reply with the single word OK.\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "claude-sonnet-4-6"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.total_tokens",
+                  "value": {
+                    "intValue": 17
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": 4
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": 13
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_creation.input_tokens",
+                  "value": {
+                    "intValue": 2463
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"OK\"}]}]"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            },
+            {
+              "traceId": "323cd1d1894c343ea5804e3d38b21428",
+              "spanId": "7e9dbfefa431fa03",
+              "name": "chat claude-sonnet-4-6",
+              "kind": 3,
+              "startTimeUnixNano": "1781569309937000000",
+              "endTimeUnixNano": "1781569311055367958",
+              "attributes": [
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "anthropic"
+                  }
+                },
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "claude-sonnet-4-6"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.max_tokens",
+                  "value": {
+                    "intValue": 16
+                  }
+                },
+                {
+                  "key": "gen_ai.system_instructions",
+                  "value": {
+                    "stringValue": "[{\"type\":\"text\",\"content\":\"The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. The Inngest durable execution engine memoizes each completed step so a function can recover from failures without re-running prior work; this reference paragraph exists only to exceed the prompt-cache threshold. \"}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"content\":\"Reply with the single word OK.\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "claude-sonnet-4-6"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.total_tokens",
+                  "value": {
+                    "intValue": 7
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": 4
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": 3
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_creation.input_tokens",
+                  "value": {
+                    "intValue": 10
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.cache_read.input_tokens",
+                  "value": {
+                    "intValue": 2463
+                  }
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"assistant\",\"finish_reason\":\"stop\",\"parts\":[{\"type\":\"text\",\"content\":\"OK\"}]}]"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

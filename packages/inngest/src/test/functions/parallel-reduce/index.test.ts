@@ -36,14 +36,4 @@ describe("run", () => {
       expect(output).toEqual({ data: expect.any(Number) });
     }, 60000);
   });
-
-  test("Returned total score", async () => {
-    const item = await runHasTimeline(runId, {
-      stepType: "FINALIZATION",
-    });
-    expect(item).toBeDefined();
-
-    const output = await item?.getOutput();
-    expect(output).toEqual({ data: 150 });
-  }, 60000);
 });

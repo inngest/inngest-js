@@ -1,4 +1,4 @@
-import type { Span } from "@opentelemetry/api";
+import { type Context, type Span, trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
   detectResources,
@@ -15,23 +15,19 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-} from "../../../helpers/consts.ts";
-import { devServerAvailable } from "../../../helpers/devserver.ts";
-import { devServerHost } from "../../../helpers/env.ts";
+import { deterministicSpanID } from "../../../helpers/deterministicId.ts";
+import { hashSigningKey } from "../../../helpers/strings.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
 import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
 
-const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
+const processorDevDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 
 /**
  * A set of resource attributes that are used to identify the Inngest app and
  *  the function that is being executed. This is used to store the resource
- * attributes for the spans that are exported to the Inngest endpoint, and cache
+ *  attributes for the spans that are exported to the Inngest endpoint, and cache
  *  them for later use.
  */
 let _resourceAttributes: Resource | undefined;
@@ -46,6 +42,7 @@ export type ParentState = {
   appId: string | undefined;
   functionId: string | undefined;
   traceRef: string | undefined;
+  rootSpanId: string;
 };
 
 /**
@@ -125,6 +122,23 @@ export class InngestSpanProcessor implements SpanProcessor {
   });
 
   /**
+   * Tracks the currently-executing step for each execution, keyed by root span
+   * ID. Used to compute deterministic parent span IDs for userland spans when
+   * checkpointing is enabled and multiple steps run in a single invocation.
+   */
+  #activeStepContext = new Map<
+    string,
+    { hashedStepId: string; attempt: number; id: string; index: number }
+  >();
+
+  /**
+   * Root span IDs that have had at least one step execution declared, meaning
+   * they are checkpointing runs. Used to filter out infrastructure spans
+   * (checkpoint POSTs, dev server polls) that fire between steps.
+   */
+  #checkpointingRoots = new Set<string>();
+
+  /**
    * In order to only capture a subset of spans, we need to declare the initial
    * span that we care about and then export its children.
    *
@@ -155,7 +169,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     // If we don't have a traceparent, then we can't track this span. This is
     // likely a span that we don't care about, so we can ignore it.
     if (!traceparent) {
-      return processorDebug(
+      return processorDevDebug(
         "no traceparent found for span",
         span.spanContext().spanId,
         "so skipping it",
@@ -179,7 +193,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         functionId = entries[TraceStateKey.FunctionId];
         traceRef = entries[TraceStateKey.TraceRef];
       } catch (err) {
-        processorDebug(
+        processorDevDebug(
           "failed to parse tracestate",
           tracestate,
           "so skipping it;",
@@ -190,7 +204,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
-    processorDebug.extend("declareStartingSpan")(
+    processorDevDebug.extend("declareStartingSpan")(
       "declaring:",
       span.spanContext().spanId,
       "for traceparent",
@@ -208,9 +222,47 @@ export class InngestSpanProcessor implements SpanProcessor {
         runId,
         traceparent,
         traceRef,
+        rootSpanId: span.spanContext().spanId,
       },
       span,
+      true,
     );
+  }
+
+  /**
+   * Declare that a step is currently executing. Userland spans created while
+   * a step context is active will have their `inngest.traceparent` rewritten
+   * to reference a deterministic span ID derived from the step, matching the
+   * span the Go executor will create via checkpoint.
+   */
+  public declareStepExecution(
+    rootSpanId: string,
+    id: string,
+    index: number,
+    hashedStepId: string,
+    attempt: number,
+  ): void {
+    processorDevDebug(
+      "declareStepExecution: rootSpanId=%s hashedStepId=%s attempt=%d",
+      rootSpanId,
+      hashedStepId,
+      attempt,
+    );
+    this.#checkpointingRoots.add(rootSpanId);
+    this.#activeStepContext.set(rootSpanId, {
+      hashedStepId,
+      attempt,
+      id,
+      index,
+    });
+  }
+
+  /**
+   * Clear the active step context after a step finishes executing.
+   */
+  public clearStepExecution(rootSpanId: string): void {
+    processorDevDebug("clearStepExecution: rootSpanId=%s", rootSpanId);
+    this.#activeStepContext.delete(rootSpanId);
   }
 
   /**
@@ -258,38 +310,19 @@ export class InngestSpanProcessor implements SpanProcessor {
 
           const app = store.app as Inngest.Any;
 
-          // Fetch the URL for the Inngest endpoint using the app's config.
-          let url: URL;
           const path = "/v1/traces/userland";
-          if (app.apiBaseUrl) {
-            url = new URL(path, app.apiBaseUrl);
-          } else {
-            url = new URL(path, defaultInngestApiBaseUrl);
+          const url = new URL(path, app.apiBaseUrl);
 
-            if (app["mode"] && app["mode"].isDev && app["mode"].isInferred) {
-              const devHost = devServerHost() || defaultDevServerHost;
-              const hasDevServer = await devServerAvailable(
-                devHost,
-                app["fetch"],
-              );
-              if (hasDevServer) {
-                url = new URL(path, devHost);
-              }
-            } else if (app["mode"]?.explicitDevUrl) {
-              url = new URL(path, app["mode"].explicitDevUrl.href);
-            }
-          }
-
-          processorDebug(
+          processorDevDebug(
             "batcher lazily accessed; creating new batcher with URL",
             url,
           );
 
           const exporter = new OTLPTraceExporter({
             url: url.href,
-
             headers: {
-              Authorization: `Bearer ${app["inngestApi"]["signingKey"]}`,
+              ...app.headers,
+              Authorization: `Bearer ${hashSigningKey(app.signingKey)}`,
             },
           });
 
@@ -307,12 +340,51 @@ export class InngestSpanProcessor implements SpanProcessor {
    * Mark a span as being tracked by this processor, meaning it will be exported
    * to the Inggest endpoint when it ends.
    */
-  private trackSpan(parentState: ParentState, span: Span): void {
+  private trackSpan(
+    parentState: ParentState,
+    span: Span,
+    isRoot = false,
+  ): void {
+    const trackDebug = processorDevDebug.extend("trackSpan");
     const spanId = span.spanContext().spanId;
 
     this.#spanCleanup.register(span, spanId, span);
     this.#spansToExport.add(span);
     this.#traceParents.set(spanId, parentState);
+
+    const stepCtx = this.#activeStepContext.get(parentState.rootSpanId);
+    if (stepCtx) {
+      span.setAttribute(Attribute.InngestStepId, stepCtx.id);
+      span.setAttribute(Attribute.InngestStepIndex, stepCtx.index);
+      span.setAttribute(Attribute.InngestStepHash, stepCtx.hashedStepId);
+      span.setAttribute(Attribute.InngestStepAttempt, stepCtx.attempt);
+    }
+
+    // For direct children of the root span during step execution, set a
+    // dedicated attribute with the deterministic step span ID. The Go executor
+    // creates executor.step spans with the same deterministic ID (from the same
+    // seed), so the ingestion can parent userland spans under the correct step.
+    if (!isRoot) {
+      const spanParentId =
+        (span as unknown as ReadableSpan).parentSpanContext?.spanId ??
+        (span as unknown as { parentSpanId?: string }).parentSpanId;
+
+      if (spanParentId === parentState.rootSpanId) {
+        if (stepCtx) {
+          const newSpanId = deterministicSpanID(stepCtx.hashedStepId);
+          trackDebug(
+            "setting inngest.step.parentSpanId=%s (seed=%s) on span %s step %s index %d attempt %d",
+            newSpanId,
+            stepCtx.hashedStepId,
+            spanId,
+            stepCtx.id,
+            stepCtx.index,
+            stepCtx.attempt,
+          );
+          span.setAttribute(Attribute.InngestStepParentSpanId, newSpanId);
+        }
+      }
+    }
 
     span.setAttribute(Attribute.InngestTraceparent, parentState.traceparent);
     span.setAttribute(Attribute.InngestRunId, parentState.runId);
@@ -355,28 +427,41 @@ export class InngestSpanProcessor implements SpanProcessor {
    * interface. This is called when a span is started, and is used to track
    * spans that are children of spans we care about.
    */
-  onStart(span: Span): void {
-    const debug = processorDebug.extend("onStart");
+  onStart(span: Span, parentContext: Context): void {
+    const devDebug = processorDevDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
-    // 🤫 It seems to work
-    const parentSpanId = (span as unknown as ReadableSpan).parentSpanContext
-      ?.spanId;
+    const parentSpanId = trace.getSpanContext(parentContext)?.spanId;
 
     // The root span isn't captured here, but we can capture children of it
     // here.
 
     if (!parentSpanId) {
       // All spans that Inngest cares about will have a parent, so ignore this
-      debug("no parent span ID for", spanId, "so skipping it");
+      devDebug("no parent span ID for", spanId, "so skipping it");
 
       return;
     }
 
     const parentState = this.#traceParents.get(parentSpanId);
     if (parentState) {
+      // In checkpointing mode, only track spans during active step execution.
+      // This filters out infrastructure spans (checkpoint POSTs, dev server
+      // polls) that fire between steps and would otherwise pollute the tree.
+      if (
+        this.#checkpointingRoots.has(parentState.rootSpanId) &&
+        !this.#activeStepContext.has(parentState.rootSpanId)
+      ) {
+        processorDevDebug(
+          "skipping span",
+          spanId,
+          "- checkpointing between steps",
+        );
+        return;
+      }
+
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
-      debug(
+      devDebug(
         "found traceparent",
         parentState,
         "in span ID",
@@ -395,23 +480,23 @@ export class InngestSpanProcessor implements SpanProcessor {
    * endpoint.
    */
   onEnd(span: ReadableSpan): void {
-    const debug = processorDebug.extend("onEnd");
+    const devDebug = processorDevDebug.extend("onEnd");
     const spanId = span.spanContext().spanId;
 
     try {
       if (this.#spansToExport.has(span as unknown as Span)) {
         if (!this.#batcher) {
-          return debug(
+          return devDebug(
             "batcher not initialized, so failed exporting span",
             spanId,
           );
         }
 
-        debug("exporting span", spanId);
+        devDebug("exporting span", spanId);
         return void this.#batcher.then((batcher) => batcher.onEnd(span));
       }
 
-      debug("not exporting span", spanId, "as we don't care about it");
+      devDebug("not exporting span", spanId, "as we don't care about it");
     } finally {
       this.cleanupSpan(span as unknown as Span);
     }
@@ -423,12 +508,12 @@ export class InngestSpanProcessor implements SpanProcessor {
    * are currently in the batcher. This is used to ensure that spans are
    * exported to the Inngest endpoint before the process exits.
    *
-   * Notably, we call this in the `beforeResponse` middleware hook to ensure
+   * Notably, we call this in the `wrapRequest` middleware hook to ensure
    * that spans for a run as exported as soon as possible and before the
    * serverless process is killed.
    */
   async forceFlush(): Promise<void> {
-    const flushDebug = processorDebug.extend("forceFlush");
+    const flushDebug = processorDevDebug.extend("forceFlush");
     flushDebug("force flushing batcher");
 
     return this.#batcher
@@ -439,7 +524,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   async shutdown(): Promise<void> {
-    processorDebug.extend("shutdown")("shutting down batcher");
+    processorDevDebug.extend("shutdown")("shutting down batcher");
 
     return this.#batcher?.then((batcher) => batcher.shutdown());
   }

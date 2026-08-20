@@ -1,5 +1,11 @@
 # @inngest/test
 
+## 1.0.0
+
+### Major Changes
+
+- [#1404](https://github.com/inngest/inngest-js/pull/1404) [`c78b11e0`](https://github.com/inngest/inngest-js/commit/c78b11e06b69ea3c264f22820714aaaf0320d5cd) Thanks [@amh4r](https://github.com/amh4r)! - Drop support for inngest SDK v3
+
 ## 0.1.9
 
 ### Patch Changes

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "hono": "^4.9.6",
-    "inngest": "^3.40.2"
+    "inngest": "^4.4.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.2.3",

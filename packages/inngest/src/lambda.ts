@@ -11,8 +11,7 @@
  * const inngest = new Inngest({ id: "my-lambda-app" });
  *
  * const fn = inngest.createFunction(
- *   { id: "hello-world" },
- *   { event: "test/hello.world" },
+ *   { id: "hello-world", triggers: [{ event: "test/hello.world" }] },
  *   async ({ event }) => {
  *    return "Hello World";
  *  }
@@ -56,8 +55,7 @@ export const frameworkName: SupportedFrameworkName = "aws-lambda";
  * const inngest = new Inngest({ id: "my-lambda-app" });
  *
  * const fn = inngest.createFunction(
- *   { id: "hello-world" },
- *   { event: "test/hello.world" },
+ *   { id: "hello-world", triggers: [{ event: "test/hello.world" }] },
  *   async ({ event }) => {
  *    return "Hello World";
  *  }

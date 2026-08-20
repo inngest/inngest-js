@@ -8,8 +8,7 @@ import { serve } from "inngest/express";
 const inngest = new Inngest({ id: "azure-openai" });
 
 const azureTestFunction = inngest.createFunction(
-  { id: "azure-test-function" },
-  { event: "azure-test-function/event" },
+  { id: "azure-test-function", triggers: [{ event: "azure-test-function/event" }] },
   async ({ step }: { step: GetStepTools<typeof inngest> }) => {
     // Validate required environment variables
     if (!process.env.AZURE_OPENAI_ENDPOINT) {

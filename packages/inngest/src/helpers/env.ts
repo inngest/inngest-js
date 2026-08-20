@@ -4,10 +4,10 @@
 // string in order to read variables.
 
 import type { Inngest } from "../components/Inngest.ts";
+import type { Logger } from "../middleware/logger.ts";
 import type { SupportedFrameworkName } from "../types.ts";
 import { version } from "../version.ts";
-import { defaultDevServerHost, envKeys, headerKeys } from "./consts.ts";
-import { stringifyUnknown } from "./strings.ts";
+import { envKeys, headerKeys } from "./consts.ts";
 
 /**
  * @public
@@ -27,22 +27,18 @@ export type EnvValue = string | undefined;
  *
  * @example devServerHost()
  */
-export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
-  // devServerKeys are the env keys we search for to discover the dev server
-  // URL.  This includes the standard key first, then includes prefixed keys
-  // for use within common frameworks (eg. CRA, next).
-  //
-  // We have to fully write these using process.env as they're typically
-  // processed using webpack's DefinePlugin, which is dumb and does a straight
-  // text replacement instead of actually understanding the AST, despite webpack
-  // being fully capable of understanding the AST.
-  const prefixes = ["REACT_APP_", "NEXT_PUBLIC_"];
-  const keys = [envKeys.InngestBaseUrl, envKeys.InngestDevMode];
-
-  const values = keys.flatMap((key) => {
-    return prefixes.map((prefix) => {
-      return env[prefix + key];
-    });
+export const devServerHost = (env: Env = getProcessEnv()): EnvValue => {
+  // The prefixed keys we look up for common frameworks (CRA, Next). The
+  // unprefixed `INNGEST_BASE_URL` / `INNGEST_DEV` are read directly by the
+  // Inngest client elsewhere, so we only check the prefixed variants here.
+  const keys = [
+    envKeys.ReactAppInngestBaseUrl,
+    envKeys.NextPublicInngestBaseUrl,
+    envKeys.ReactAppInngestDevMode,
+    envKeys.NextPublicInngestDevMode,
+  ];
+  const values = keys.map((key) => {
+    return env[key];
   });
 
   return values.find((v) => {
@@ -60,181 +56,40 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   });
 };
 
-const checkFns = (<
-  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>,
->(
-  checks: T,
-): T => checks)({
-  equals: (actual, expected) => actual === expected,
-  "starts with": (actual, expected) =>
-    expected ? (actual?.startsWith(expected) ?? false) : false,
-  "is truthy": (actual) => Boolean(actual),
-  "is truthy but not": (actual, expected) =>
-    Boolean(actual) && actual !== expected,
-});
+export type Mode = "cloud" | "dev";
 
-const prodChecks: [
-  key: string,
-  customCheck: keyof typeof checkFns,
-  value?: string,
-][] = [
-  ["CF_PAGES", "equals", "1"],
-  ["CONTEXT", "starts with", "prod"],
-  ["ENVIRONMENT", "starts with", "prod"],
-  ["NODE_ENV", "starts with", "prod"],
-  ["VERCEL_ENV", "starts with", "prod"],
-  ["DENO_DEPLOYMENT_ID", "is truthy"],
-  [envKeys.VercelEnvKey, "is truthy but not", "development"],
-  [envKeys.IsNetlify, "is truthy"],
-  [envKeys.IsRender, "is truthy"],
-  [envKeys.RailwayBranch, "is truthy"],
-  [envKeys.IsCloudflarePages, "is truthy"],
-];
+export function checkModeConfiguration({
+  internalLogger,
+  mode,
+  signingKey,
+}: {
+  internalLogger: Logger;
+  mode: Mode;
+  signingKey: string | undefined;
+}): boolean {
+  if (mode === "cloud" && !signingKey) {
+    internalLogger.error(
+      `In cloud mode but no signing key found. For local dev, set the INNGEST_DEV=1 env var. For production, set the ${envKeys.InngestSigningKey} env var`,
+    );
 
-interface IsProdOptions {
-  /**
-   * The optional environment variables to use instead of `process.env`.
-   */
-  env?: Record<string, EnvValue>;
+    return false;
+  }
 
-  /**
-   * The Inngest client that's being used when performing this check. This is
-   * used to check if the client has an explicit mode set, and if so, to use
-   * that mode instead of inferring it from the environment.
-   */
-  client?: Inngest.Any;
-
-  /**
-   * If specified as a `boolean`, this will be returned as the result of the
-   * function. Useful for options that may or may not be set by users.
-   */
-  explicitMode?: Mode["type"];
+  return true;
 }
 
-export interface ModeOptions {
-  type: "cloud" | "dev";
-
-  /**
-   * Whether the mode was explicitly set, or inferred from other sources.
-   */
-  isExplicit: boolean;
-
-  /**
-   * If the mode was explicitly set as a dev URL, this is the URL that was set.
-   */
-  explicitDevUrl?: URL;
-
-  /**
-   * Environment variables to use when determining the mode.
-   */
-  env?: Env;
-}
-
-export class Mode {
-  public readonly type: "cloud" | "dev";
-
-  /**
-   * Whether the mode was explicitly set, or inferred from other sources.
-   */
-  public readonly isExplicit: boolean;
-
-  public readonly explicitDevUrl?: URL;
-
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private readonly env: Env;
-
-  constructor({
-    type,
-    isExplicit,
-    explicitDevUrl,
-    env = allProcessEnv(),
-  }: ModeOptions) {
-    this.env = env;
-    this.type = type;
-    this.isExplicit = isExplicit || Boolean(explicitDevUrl);
-    this.explicitDevUrl = explicitDevUrl;
+export const normalizeUrl = (
+  urlString: string,
+  scheme: string = "http://",
+): string => {
+  if (urlString === "undefined") {
+    throw new Error("URL undefined");
+  }
+  if (urlString.includes("://")) {
+    return urlString;
   }
 
-  public get isDev(): boolean {
-    return this.type === "dev";
-  }
-
-  public get isCloud(): boolean {
-    return this.type === "cloud";
-  }
-
-  public get isInferred(): boolean {
-    return !this.isExplicit;
-  }
-
-  /**
-   * If we are explicitly in a particular mode, retrieve the URL that we are
-   * sure we should be using, not considering any environment variables or other
-   * influences.
-   */
-  public getExplicitUrl(defaultCloudUrl: string): string | undefined {
-    if (!this.isExplicit) {
-      return undefined;
-    }
-
-    if (this.explicitDevUrl) {
-      return this.explicitDevUrl.href;
-    }
-
-    if (this.isCloud) {
-      return defaultCloudUrl;
-    }
-
-    if (this.isDev) {
-      return defaultDevServerHost;
-    }
-
-    return undefined;
-  }
-}
-
-/**
- * Returns the mode of the current environment, based off of either passed
- * environment variables or `process.env`, or explicit settings.
- */
-export const getMode = ({
-  env = allProcessEnv(),
-  client,
-  explicitMode,
-}: IsProdOptions = {}): Mode => {
-  if (explicitMode) {
-    return new Mode({ type: explicitMode, isExplicit: true, env });
-  }
-
-  if (client?.["mode"].isExplicit) {
-    return client["mode"];
-  }
-
-  if (envKeys.InngestDevMode in env) {
-    if (typeof env[envKeys.InngestDevMode] === "string") {
-      try {
-        const explicitDevUrl = new URL(env[envKeys.InngestDevMode]);
-        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl, env });
-      } catch {
-        // no-op
-      }
-    }
-
-    const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
-    if (typeof envIsDev === "boolean") {
-      return new Mode({
-        type: envIsDev ? "dev" : "cloud",
-        isExplicit: true,
-        env,
-      });
-    }
-  }
-
-  const isProd = prodChecks.some(([key, checkKey, expected]) => {
-    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
-  });
-
-  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false, env });
+  return `${scheme}${urlString}`;
 };
 
 /**
@@ -244,7 +99,7 @@ export const getMode = ({
  * This could be used to determine if we're on a branch deploy or not, though it
  * should be noted that we don't know if this is the default branch or not.
  */
-export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
+export const getEnvironmentName = (env: Env = getProcessEnv()): EnvValue => {
   /**
    * Order is important; more than one of these env vars may be set, so ensure
    * that we check the most specific, most reliable env vars first.
@@ -260,8 +115,12 @@ export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
   );
 };
 
-export const processEnv = (key: string): EnvValue => {
-  return allProcessEnv()[key];
+export const processEnv = (key: envKeys): EnvValue => {
+  if (!Object.values(envKeys).includes(key)) {
+    throw new Error(`Unknown env var: ${key}`);
+  }
+
+  return getProcessEnv()[key];
 };
 
 /**
@@ -279,6 +138,45 @@ declare const Netlify: {
 };
 
 /**
+ * Get the current process env vars. Only includes env vars that we care about.
+ *
+ * Returns an empty object if they can't be read.
+ */
+export function getProcessEnv(): Env {
+  const env: Env = {};
+  const whitelist: string[] = Object.values(envKeys);
+
+  for (const [k, v] of Object.entries(allProcessEnv())) {
+    if (!whitelist.includes(k)) {
+      continue;
+    }
+    env[k] = v;
+  }
+
+  return protectEnv(env);
+}
+
+/**
+ * Install a `toJSON` that returns `{}` so env var values can't leak via
+ * `JSON.stringify`, regardless of where the object is reachable from. The
+ * property is enumerable so it survives spreads (e.g. `{...env}`) which carries
+ * the protection into the new object. But note that the enumerability also
+ * means the static type is technically incorrect.
+ *
+ * Callers still read values via normal `env[key]` access.
+ */
+export function protectEnv(env: Env): Env {
+  return {
+    ...env,
+
+    // @ts-expect-error - intentional
+    toJSON: () => {
+      return {};
+    },
+  };
+}
+
+/**
  * allProcessEnv returns the current process environment variables, or an empty
  * object if they cannot be read, making sure we support environments other than
  * Node such as Deno, too.
@@ -286,7 +184,7 @@ declare const Netlify: {
  * Using this ensures we don't dangerously access `process.env` in environments
  * where it may not be defined, such as Deno or the browser.
  */
-export const allProcessEnv = (): Env => {
+const allProcessEnv = (): Env => {
   // Node, or Node-like environments
   try {
     if (process.env) {
@@ -371,6 +269,7 @@ export const inngestHeaders = (opts?: {
     "Content-Type": "application/json",
     "User-Agent": sdkVersion,
     [headerKeys.SdkVersion]: sdkVersion,
+    [headerKeys.SdkHandled]: "true",
   };
 
   if (opts?.framework) {
@@ -382,7 +281,7 @@ export const inngestHeaders = (opts?: {
   }
 
   const env = {
-    ...allProcessEnv(),
+    ...getProcessEnv(),
     ...opts?.env,
   };
 
@@ -470,7 +369,7 @@ export const getPlatformName = (env: Env) => {
  */
 export const platformSupportsStreaming = (
   framework: SupportedFrameworkName,
-  env: Env = allProcessEnv(),
+  env: Env = getProcessEnv(),
 ): boolean => {
   return (
     streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(
@@ -490,7 +389,10 @@ const CUSTOM_FETCH_MARKER = Symbol("Custom fetch implementation");
  * Given a potential fetch function, return the fetch function to use based on
  * this and the environment.
  */
-export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
+export const getFetch = (
+  logger: Logger,
+  givenFetch?: typeof fetch,
+): typeof fetch => {
   /**
    * If we've explicitly been given a fetch function, use that.
    */
@@ -518,10 +420,10 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
           !(err instanceof Error) ||
           !err.message?.startsWith("fetch failed")
         ) {
-          console.warn(
+          logger.error(
+            { err },
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
           );
-          console.error(err);
         }
 
         throw err;
@@ -607,7 +509,9 @@ export const parseAsBoolean = (value: unknown): boolean | undefined => {
       return true;
     }
 
-    return false;
+    if (["false", "0"].includes(trimmed)) {
+      return false;
+    }
   }
 
   return undefined;

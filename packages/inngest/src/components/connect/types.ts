@@ -5,7 +5,7 @@ import type { InngestFunction } from "../InngestFunction.ts";
 export const DEFAULT_SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"];
 
 export interface ConnectApp {
-  client: Inngest.Like;
+  client: Inngest.Any;
   functions?: Array<InngestFunction.Like>;
 }
 
@@ -33,7 +33,30 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    */
   handleShutdownSignals?: string[];
 
-  rewriteGatewayEndpoint?: (endpoint: string) => string;
+  /**
+   * Override the gateway WebSocket endpoint. When set, this URL is used
+   * instead of the endpoint returned by the Inngest API.
+   *
+   * Useful when there is a proxy between the worker and the gateway
+   * that requires a different hostname (e.g. `ws://localhost:8100`).
+   *
+   * Can also be set via the `INNGEST_CONNECT_GATEWAY_URL` environment variable.
+   * This option takes precedence over the env var.
+   */
+  gatewayUrl?: string;
+
+  /**
+   * Enable running the WebSocket connection, heartbeater, and lease extender
+   * in a separate worker thread. This prevents thread-blocking user code from
+   * interfering with connection health.
+   *
+   * Only works in environments that support worker_threads.
+   *
+   * Can also be disabled via the INNGEST_CONNECT_ISOLATE_EXECUTION=false environment variable.
+   *
+   * @default true
+   */
+  isolateExecution?: boolean;
 }
 
 export interface WorkerConnection {
@@ -41,6 +64,56 @@ export interface WorkerConnection {
   closed: Promise<void>;
   close: () => Promise<void>;
   state: ConnectionState;
+  getDebugState: () => ConnectDebugState;
+}
+
+export interface InFlightRequest {
+  requestId: string;
+  runId: string;
+  stepId: string | undefined;
+  appId: string;
+  envId: string;
+  functionSlug: string;
+  accountId: string;
+  /**
+   * Timestamp (ms since epoch) when the worker acknowledged the request and
+   * took the lease. Used to compute age for shutdown diagnostics.
+   *
+   * Optional so external callers constructing an `InFlightRequest` (e.g.
+   * from {@link ConnectDebugState}) aren't forced to provide it.
+   */
+  leaseAcquiredAt?: number;
+  /**
+   * Timestamp (ms since epoch) of the most recent successful lease-extend send
+   * for this request. Starts equal to `leaseAcquiredAt` and is updated each
+   * time the worker sends a WORKER_REQUEST_EXTEND_LEASE message. Useful
+   * during shutdown diagnostics to tell whether a stuck request is still
+   * being actively leased or has gone silent.
+   *
+   * Optional for the same reason as {@link leaseAcquiredAt}.
+   */
+  leaseLastExtendedAt?: number;
+}
+
+export interface ConnectDebugState {
+  /** Current connection state */
+  state: ConnectionState;
+  /** Active connection ID, if any */
+  activeConnectionId: string | undefined;
+  /** Draining connection ID (during gateway drain), if any */
+  drainingConnectionId: string | undefined;
+  /** Timestamp of last heartbeat we sent */
+  lastHeartbeatSentAt: number | undefined;
+  /** Timestamp of last heartbeat response from gateway */
+  lastHeartbeatReceivedAt: number | undefined;
+  /** Timestamp of last WS message received (any type) */
+  lastMessageReceivedAt: number | undefined;
+  /** Whether shutdown has been requested (WORKER_PAUSE sent) */
+  shutdownRequested: boolean;
+  /** Number of in-flight requests */
+  inFlightRequestCount: number;
+  /** Detailed info about in-flight requests */
+  inFlightRequests: InFlightRequest[];
 }
 
 export enum ConnectionState {

@@ -23,9 +23,11 @@
 
 import type { RequestEvent } from "@sveltejs/kit";
 import {
+  type ActionResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
+import { envKeys } from "./helpers/consts.ts";
 import { processEnv } from "./helpers/env.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 
@@ -34,6 +36,27 @@ import type { SupportedFrameworkName } from "./types.ts";
  * dashboards and during testing.
  */
 export const frameworkName: SupportedFrameworkName = "sveltekit";
+
+const createResponse = ({
+  body,
+  headers,
+  status,
+}: ActionResponse<string | ReadableStream>): Response => {
+  /**
+   * If `Response` isn't included in this environment, it's probably a
+   * Node env that isn't already polyfilling. In this case, we can
+   * polyfill it here to be safe.
+   */
+  let Res: typeof Response;
+
+  if (typeof Response === "undefined") {
+    Res = require("cross-fetch").Response;
+  } else {
+    Res = Response;
+  }
+
+  return new Res(body, { status, headers });
+};
 
 /**
  * Using SvelteKit, serve and register any declared functions with Inngest,
@@ -74,35 +97,20 @@ export const serve = (
     ) => {
       return {
         method: () => reqMethod || event.request.method || "",
-        body: () => event.request.json(),
+        body: () => event.request.text(),
         headers: (key) => event.request.headers.get(key),
         url: () => {
           const protocol =
-            processEnv("NODE_ENV") === "development" ? "http" : "https";
-
+            processEnv(envKeys.NodeEnv) === "development" ? "http" : "https";
           return new URL(
             event.request.url,
             `${protocol}://${
-              event.request.headers.get("host") || options.serveHost || ""
+              event.request.headers.get("host") || options.serveOrigin || ""
             }`,
           );
         },
-        transformResponse: ({ body, headers, status }) => {
-          /**
-           * If `Response` isn't included in this environment, it's probably a
-           * Node env that isn't already polyfilling. In this case, we can
-           * polyfill it here to be safe.
-           */
-          let Res: typeof Response;
-
-          if (typeof Response === "undefined") {
-            Res = require("cross-fetch").Response;
-          } else {
-            Res = Response;
-          }
-
-          return new Res(body, { status, headers });
-        },
+        transformResponse: createResponse,
+        transformStreamingResponse: createResponse,
       };
     },
   });

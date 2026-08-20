@@ -1,8 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { id: "undefined-data" },
-  { event: "demo/undefined.data" },
+  { id: "undefined-data", triggers: [{ event: "demo/undefined.data" }] },
   async ({ step }) => {
     await step.run("step1res", () => "step1res");
 

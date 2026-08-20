@@ -1,0 +1,203 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "unknown_service:node"
+            }
+          },
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "nodejs"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "2.7.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "ai"
+          },
+          "spans": [
+            {
+              "traceId": "c9c937f0132d5120c547203f589a9b1d",
+              "spanId": "c1f33ab8b6980c5f",
+              "parentSpanId": "7b63a07c4abdaf2a",
+              "name": "ai.embed.doEmbed",
+              "kind": 1,
+              "startTimeUnixNano": "1781569380940000000",
+              "endTimeUnixNano": "1781569381091122292",
+              "attributes": [
+                {
+                  "key": "operation.name",
+                  "value": {
+                    "stringValue": "ai.embed.doEmbed"
+                  }
+                },
+                {
+                  "key": "ai.operationId",
+                  "value": {
+                    "stringValue": "ai.embed.doEmbed"
+                  }
+                },
+                {
+                  "key": "ai.model.provider",
+                  "value": {
+                    "stringValue": "openai.embedding"
+                  }
+                },
+                {
+                  "key": "ai.model.id",
+                  "value": {
+                    "stringValue": "text-embedding-3-small"
+                  }
+                },
+                {
+                  "key": "ai.settings.maxRetries",
+                  "value": {
+                    "intValue": 2
+                  }
+                },
+                {
+                  "key": "ai.request.headers.user-agent",
+                  "value": {
+                    "stringValue": "ai/6.0.195"
+                  }
+                },
+                {
+                  "key": "ai.values",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "\"The quick brown fox jumps over the lazy dog.\""
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "ai.embeddings",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "[-0.018402099609375,-0.007236480712890625,0.0036563873291015625,-0.054229736328125,-0.022705078125,0.0369873046875,0.0290679931640625,0.023895263671875]"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "ai.usage.tokens",
+                  "value": {
+                    "intValue": 10
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            },
+            {
+              "traceId": "c9c937f0132d5120c547203f589a9b1d",
+              "spanId": "7b63a07c4abdaf2a",
+              "name": "ai.embed",
+              "kind": 1,
+              "startTimeUnixNano": "1781569380940000000",
+              "endTimeUnixNano": "1781569381091627416",
+              "attributes": [
+                {
+                  "key": "operation.name",
+                  "value": {
+                    "stringValue": "ai.embed"
+                  }
+                },
+                {
+                  "key": "ai.operationId",
+                  "value": {
+                    "stringValue": "ai.embed"
+                  }
+                },
+                {
+                  "key": "ai.model.provider",
+                  "value": {
+                    "stringValue": "openai.embedding"
+                  }
+                },
+                {
+                  "key": "ai.model.id",
+                  "value": {
+                    "stringValue": "text-embedding-3-small"
+                  }
+                },
+                {
+                  "key": "ai.settings.maxRetries",
+                  "value": {
+                    "intValue": 2
+                  }
+                },
+                {
+                  "key": "ai.request.headers.user-agent",
+                  "value": {
+                    "stringValue": "ai/6.0.195"
+                  }
+                },
+                {
+                  "key": "ai.value",
+                  "value": {
+                    "stringValue": "\"The quick brown fox jumps over the lazy dog.\""
+                  }
+                },
+                {
+                  "key": "ai.embedding",
+                  "value": {
+                    "stringValue": "[-0.018402099609375,-0.007236480712890625,0.0036563873291015625,-0.054229736328125,-0.022705078125,0.0369873046875,0.0290679931640625,0.023895263671875]"
+                  }
+                },
+                {
+                  "key": "ai.usage.tokens",
+                  "value": {
+                    "intValue": 10
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

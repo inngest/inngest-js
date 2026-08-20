@@ -400,7 +400,7 @@ function Step2({ onNext }: { onNext: () => void }) {
               <li className="flex items-center gap-2 mt-2">
                 <BookMarked className="w-4 h-4 mr-1" />
                 <a href="https://www.inngest.com/docs/guides/multi-step-functions?ref=nextjs-starter-template">
-                  Streaming Updates with <code>@inngest/realtime</code>
+                  Streaming Updates with <code>inngest.realtime</code>
                 </a>
               </li>
             </ul>
@@ -419,8 +419,7 @@ function Step3({ onNext }: { onNext: () => void }) {
   const codeSample = `import { inngest } from "./client";
 
 export const failingFunction = inngest.createFunction(
-  { id: "demo/failing-step", retries: 1 },
-  { event: "demo/failing.step" },
+  { id: "demo/failing-step", retries: 1, triggers: [{ event: "demo/failing.step" }] },
   async ({ step }) => {
     await step.run("First step", async () => {
       // This step succeeds
@@ -557,8 +556,7 @@ function Step4({ onNext }: { onNext: () => void }) {
   const codeSample = `import { inngest } from "./client";
 
 export const throttledFunction = inngest.createFunction(
-  { id: "demo/throttled-function", throttle: { limit: 2, period: "2s" } },
-  { event: "demo/throttled.function" },
+  { id: "demo/throttled-function", throttle: { limit: 2, period: "2s" }, triggers: [{ event: "demo/throttled.function" }] },
   async ({ step }) => {
     // ...
   }

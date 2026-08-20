@@ -27,7 +27,7 @@ jobs:
       # Optional dependencies are packages like frameworks, which are actually
       # peer dependencies and are not installed in every usage, so we omit them
       # here and only check what's shipped directly by us.
-      - run: pnpm audit --audit-level=critical --prod --no-optional
+      - run: pnpm audit --audit-level=critical --prod --no-optional --ignore-registry-errors
 
   inngest_test:
     name: "inngest: Runtime tests"
@@ -47,7 +47,9 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - uses: actions/setup-node@v3
         with:
-          node-version: ${{ matrix.nodeVersion }}
+          # TODO (EXE-1981): Unpin this. We had to pin it due to networking
+          # issues in Node 24.17.0.
+          node-version: ${{ matrix.nodeVersion == 24 && '24.16.0' || matrix.nodeVersion }}
       - run: |
           node --version
           npm --version
@@ -63,7 +65,8 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-          - "latest"
+          # TODO: Bring this back when we can handle v6
+          # - "latest"
           - "~5.9.0"
           - "~5.8.0"
     steps:
@@ -92,7 +95,7 @@ jobs:
       - name: Check publishing types health
         id: typescheck
         continue-on-error: true
-        run: pnpm dlx @arethetypeswrong/cli inngest.tgz
+        run: pnpm exec attw inngest.tgz
 
       - name: Fail if any checks failed
         if: steps.publint.outcome != 'success' || steps.typescheck.outcome != 'success'
@@ -142,6 +145,17 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run test:composite
 
+  itest:
+    name: "itest"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:integration
+
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
     runs-on: ubuntu-latest
@@ -156,6 +170,17 @@ jobs:
           build: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+
+  "middleware-sentry_itest":
+    name: "middleware-sentry: Integration tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-sentry
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:integration
 
   "middleware-encryption_test":
     name: "middleware-encryption: Test"
@@ -201,6 +226,24 @@ jobs:
           build: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+
+  "otel_checks":
+    name: "otel: Checks"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/otel
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: true
+          build: false
+      - run: pnpm run type-check
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run test
+      - run: pnpm run build
 
   "test_test":
     name: "test: Test"

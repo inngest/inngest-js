@@ -1,9 +1,5 @@
-import {
-  checkIntrospection,
-  eventRunWithName,
-  runHasTimeline,
-  sendEvent,
-} from "../../helpers";
+import { createState } from "@inngest/test-harness";
+import { checkIntrospection, eventRunWithName, sendEvent } from "../../helpers";
 
 const events = ["demo/multiple-triggers.1", "demo/multiple-triggers.2"];
 
@@ -15,26 +11,20 @@ checkIntrospection({
 describe("run", () => {
   events.forEach((eventName) => {
     let eventId: string;
-    let runId: string;
+    const state = createState({});
 
     beforeAll(async () => {
       eventId = await sendEvent(eventName);
     });
 
     test(`runs in response to '${eventName}'`, async () => {
-      runId = await eventRunWithName(eventId, "multiple-triggers");
-      expect(runId).toEqual(expect.any(String));
+      state.runId = await eventRunWithName(eventId, "multiple-triggers");
+      expect(state.runId).toEqual(expect.any(String));
     }, 60000);
 
     test(`returns 'Hello, ${eventName}!'`, async () => {
-      const item = await runHasTimeline(runId, {
-        stepType: "FINALIZATION",
-      });
-
-      expect(item).toBeDefined();
-
-      const output = await item?.getOutput();
-      expect(output).toEqual({ data: `Hello, ${eventName}!` });
+      const output = await state.waitForRunComplete();
+      expect(output).toEqual(`Hello, ${eventName}!`);
     }, 60000);
   });
 });

@@ -17,7 +17,6 @@
  * available to the consumer.
  */
 
-import chalk from "chalk";
 import fs from "fs";
 import { builtinModules } from "module";
 import path from "path";
@@ -142,7 +141,7 @@ function checkDependencies(
     path.resolve(packagePath, file),
   );
 
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   fileNames.forEach((file) => {
     const content = fs.readFileSync(file, "utf8");
     const sourceFile = ts.createSourceFile(
@@ -225,10 +224,22 @@ function checkDependencies(
     });
   });
 
+  // Packages that are dynamically imported and should not be flagged as unused
+  const dynamicallyImportedPackages = [
+    "ulid",
+    "@opentelemetry/auto-instrumentations-node",
+    "@opentelemetry/context-async-hooks",
+    "@traceloop/instrumentation-anthropic",
+  ];
+
   // Check for unused packages in dependencies
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   Object.keys(dependencies).forEach((dependency) => {
-    if (!importedModules.has(dependency) && !dependency.startsWith("@types/")) {
+    if (
+      !importedModules.has(dependency) &&
+      !dependency.startsWith("@types/") &&
+      !dynamicallyImportedPackages.includes(dependency)
+    ) {
       const typesPackage = `@types/${dependency}`;
       if (!importedModules.has(typesPackage)) {
         if (!issues[dependency]) {
@@ -240,7 +251,7 @@ function checkDependencies(
   });
 
   // Check for @types packages that should be moved to dependencies
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   importedTypeModules.forEach((typeModule) => {
     if (
       importedModules.has(typeModule) &&
@@ -257,18 +268,18 @@ function checkDependencies(
 
   // Output issues found
   if (Object.keys(issues).length > 0) {
-    console.log(chalk.red("Dependency Issues Found:"));
+    console.log("Dependency Issues Found:");
     Object.entries(issues).forEach(([module, data], index, array) => {
-      console.log(chalk.blue(`${module} (${data.type}):`));
-      // biome-ignore lint/complexity/noForEach: <explanation>
-      data.files.forEach((file) => console.log(chalk.yellow(`  - ${file}`)));
+      console.log(`${module} (${data.type}):`);
+      // biome-ignore lint/complexity/noForEach: intentional
+      data.files.forEach((file) => console.log(`  - ${file}`));
       if (index < array.length - 1) {
         console.log(""); // Add a line break between modules
       }
     });
     process.exit(1);
   } else {
-    console.log(chalk.green("No dependency issues found."));
+    console.log("No dependency issues found.");
   }
 }
 
@@ -289,6 +300,9 @@ checkDependencies("tsconfig.build.json", [
   "src/remix.ts",
   "src/sveltekit.ts",
   "src/nitro.ts",
+  "src/react.ts",
+  "src/components/connect/strategies/core/mock-gateway.ts",
+  "src/components/connect/strategies/core/test-helpers.ts",
   "tsdown.config.ts",
   "vitest.config.ts",
 ]);

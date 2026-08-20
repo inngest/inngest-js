@@ -3,13 +3,10 @@
  * to represent to users how a value will be serialized and deserialized as it
  * passes to and from an Inngest Server.
  *
- * We do not use the `type-fest` package directly due to some version
- * compatibility issues:
- *
- * - `inngest` supports `typescript@>=4.7`
- * - `type-fest@4` supports `typescript@>=5.1`, so the maximum version we can
- *   use is `type-fest@3`
- * - `type-fest@3` is not compatible with `typescript@5.4`
+ * We do not use the `type-fest` package directly because this copy
+ * intentionally diverges from it: `unknown` is preserved, objects mixing
+ * index signatures with known keys are handled, and re-applying `Jsonify` to
+ * its own output is a no-op.
  */
 import type {
   IsAny,
@@ -21,7 +18,7 @@ import type {
 } from "./types.ts";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;
 
 type NeverToNull<T> = IsNever<T> extends true ? null : T;
@@ -37,14 +34,22 @@ type JsonifyList<T extends UnknownArray> = T extends readonly []
       ? []
       : Array<T[number] extends NotJsonable ? null : Jsonify<T[number]>>;
 
-type FilterJsonableKeys<T extends object> = {
-  [Key in keyof T]: T[Key] extends NotJsonable ? never : Key;
-}[keyof T];
+/**
+Diverges from `type-fest`: optional properties leak `undefined` into the key
+union, which collapses objects to `{}` when `Jsonify` is re-applied to its
+own output.
+*/
+type FilterJsonableKeys<T extends object> = Exclude<
+  {
+    [Key in keyof T]: T[Key] extends NotJsonable ? never : Key;
+  }[keyof T],
+  undefined
+>;
 
 /**
 JSON serialize objects (not including arrays) and classes.
 */
-type JsonifyObject<T extends object> = {
+export type JsonifyObject<T extends object> = {
   [Key in keyof Pick<T, FilterJsonableKeys<T>>]: Jsonify<T[Key]>;
 };
 
@@ -154,7 +159,7 @@ type BaseKeyFilter<Type, Key extends keyof Type> = Key extends symbol
   */
       { name: string } extends Type[Key]
       ? Key
-      : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      : // biome-ignore lint/suspicious/noExplicitAny: intentional
         [(...arguments_: any[]) => any] extends [Type[Key]]
         ? never
         : Key;
@@ -276,7 +281,7 @@ const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 {@link https://github.com/Microsoft/TypeScript/issues/1897#issuecomment-710744173}
 */
 export type Jsonify<T> = IsAny<T> extends true
-  ? // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  ? // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
   : IsUnknown<T> extends true
     ? unknown
@@ -296,7 +301,7 @@ export type Jsonify<T> = IsAny<T> extends true
               ? string
               : T extends boolean
                 ? boolean
-                : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                : // biome-ignore lint/suspicious/noExplicitAny: intentional
                   T extends Map<any, any> | Set<any>
                   ? EmptyObject
                   : T extends TypedArray

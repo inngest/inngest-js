@@ -61,7 +61,7 @@ export const frameworkName: SupportedFrameworkName = "express";
  * @public
  */
 // Has explicit return type to avoid JSR-defined "slow types"
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const serve = (options: ServeHandlerOptions): any => {
   const handler = new InngestCommHandler({
     frameworkName,
@@ -79,7 +79,7 @@ export const serve = (options: ServeHandlerOptions): any => {
         method: () => req.method || "GET",
         url: () => {
           // `req.hostname` can filter out port numbers; beware!
-          const hostname = req.headers["host"] || options?.serveHost;
+          const hostname = req.headers["host"] || options?.serveOrigin;
 
           const protocol = hostname?.includes("://")
             ? ""

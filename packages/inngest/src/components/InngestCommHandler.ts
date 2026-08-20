@@ -1,83 +1,102 @@
-import debug from "debug";
-import { ulid } from "ulid";
 import { z } from "zod/v3";
-import { getAsyncCtx } from "../experimental";
 import {
-  debugPrefix,
-  defaultInngestApiBaseUrl,
-  defaultInngestEventBaseUrl,
   defaultMaxRetries,
-  dummyEventKey,
   ExecutionVersion,
   envKeys,
   forwardedHeaders,
   headerKeys,
+  internalEvents,
   logPrefix,
   probe as probeEnum,
   queryKeys,
   syncKind,
 } from "../helpers/consts.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
-  allProcessEnv,
-  devServerHost,
+  checkModeConfiguration,
   type Env,
-  getFetch,
-  getMode,
   getPlatformName,
+  getProcessEnv,
   inngestHeaders,
-  Mode,
   parseAsBoolean,
-  platformSupportsStreaming,
+  protectEnv,
 } from "../helpers/env.ts";
 import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
+  createVersionSchema,
   type FnData,
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
 } from "../helpers/functions.ts";
+import { warnOnce } from "../helpers/log.ts";
+import { isDeferredFunction } from "../helpers/marker.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
-import type { MaybePromise } from "../helpers/types.ts";
+import {
+  hashEventKey,
+  hashSigningKey,
+  removeSigningKeyPrefix,
+  stringify,
+  timingSafeEqual,
+} from "../helpers/strings.ts";
+import { isRecord, type MaybePromise } from "../helpers/types.ts";
+import type { Logger } from "../middleware/logger.ts";
 import {
   type APIStepPayload,
   AsyncResponseType,
   type AsyncResponseValue,
   type AuthenticatedIntrospection,
+  DefaultMaxRuntime,
   type EventPayload,
   type FunctionConfig,
   functionConfigSchema,
   type InBandRegisterRequest,
   inBandSyncRequestBodySchema,
-  type LogLevel,
-  logLevels,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   StepMode,
   StepOpCode,
-  type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
 import { version } from "../version.ts";
+import { getAsyncCtx } from "./execution/als.ts";
+import { _internals } from "./execution/engine.ts";
 import {
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
-import { _internals } from "./execution/v1";
-import type { Inngest } from "./Inngest.ts";
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
   InngestFunction,
 } from "./InngestFunction.ts";
+import { buildWrapRequestChain, type Middleware } from "./middleware/index.ts";
+import { sdkFeatureObservations } from "./sdkFeatureObservations.ts";
+
+/**
+ * An entry in the function registry, tracking which config ID maps to which
+ * function and what kind of handler it is (main, failure, or defer).
+ */
+interface FnRegistryEntry {
+  fn: InngestFunction.Any;
+  handlerKind: "main" | "failure" | "defer";
+}
+
+// A response object for when an internal server error occurs. When that
+// happens, we don't to leak any internal details to the client.
+const internalServerErrorResponse = {
+  body: stringify({ code: "internal_server_error" }),
+  headers: { "Content-Type": "application/json" },
+  status: 500,
+  version: undefined,
+} as const;
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -97,6 +116,21 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly InngestFunction.Like[];
 }
 
+/**
+ * Parameters passed to the asyncRedirectUrl function.
+ */
+export interface AsyncRedirectUrlParams {
+  /**
+   * The unique identifier for this run.
+   */
+  runId: string;
+
+  /**
+   * The token used to authenticate the request to fetch run output.
+   */
+  token: string;
+}
+
 export interface SyncHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
@@ -110,6 +144,30 @@ export interface SyncHandlerOptions extends RegisterOptions {
    * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
    */
   asyncResponse?: AsyncResponseValue;
+
+  /**
+   * Custom URL to redirect to when switching from sync to async mode.
+   *
+   * Can be:
+   * - A string path (e.g., "/api/inngest/poll") - resolved relative to request origin
+   * - A function that receives `{ runId, token }` and returns a full URL
+   *
+   * When a string path is provided, `runId` and `token` query parameters are
+   * automatically appended.
+   *
+   * @example
+   * ```ts
+   * // String path - resolved relative to request origin
+   * asyncRedirectUrl: "/api/inngest/poll"
+   *
+   * // Function - full control over URL construction
+   * asyncRedirectUrl: ({ runId, token }) =>
+   *   `https://my-app.com/poll?run=${runId}&t=${token}`
+   * ```
+   */
+  asyncRedirectUrl?:
+    | string
+    | ((params: AsyncRedirectUrlParams) => string | Promise<string>);
 
   /**
    * If defined, this sets the function ID that represents this endpoint.
@@ -147,6 +205,8 @@ export interface SyncHandlerOptions extends RegisterOptions {
     | 20;
 }
 
+export type SyncAdapterOptions = Omit<SyncHandlerOptions, "client">;
+
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
   /**
    * Can be used to override the framework name given to a particular serve
@@ -166,11 +226,11 @@ export interface InternalServeHandlerOptions extends ServeHandlerOptions {
 }
 
 interface InngestCommHandlerOptions<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Input extends any[] = any[],
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   StreamOutput = any,
 > extends RegisterOptions {
   /**
@@ -231,15 +291,18 @@ interface InngestCommHandlerOptions<
   skipSignatureValidation?: boolean;
 
   /**
+   * The default `maxRuntime` in milliseconds to use for checkpointing when the
+   * user hasn't explicitly configured one at the function or client level.
+   *
+   * Defaults to {@link DefaultMaxRuntime.serve} (10 seconds).
+   */
+  defaultMaxRuntime?: DefaultMaxRuntime;
+
+  /**
    * Options for when this comm handler executes a synchronous (API) function.
    */
   syncOptions?: SyncHandlerOptions;
 }
-
-/**
- * Capturing the global type of fetch so that we can reliably access it below.
- */
-type FetchT = typeof fetch;
 
 /**
  * A schema for the response from Inngest when registering.
@@ -296,20 +359,13 @@ const registerResSchema = z.object({
  * @public
  */
 export class InngestCommHandler<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Input extends any[] = any[],
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   StreamOutput = any,
 > {
-  /**
-   * The ID of this serve handler, e.g. `"my-app"`. It's recommended that this
-   * value represents the overarching app/service that this set of functions is
-   * being served from.
-   */
-  public readonly id: string;
-
   /**
    * The handler specified during instantiation of the class.
    */
@@ -327,47 +383,21 @@ export class InngestCommHandler<
   protected readonly frameworkName: string;
 
   /**
-   * The signing key used to validate requests from Inngest. This is
-   * intentionally mutable so that we can pick up the signing key from the
-   * environment during execution if needed.
-   */
-  protected signingKey: string | undefined;
-
-  /**
-   * The same as signingKey, except used as a fallback when auth fails using the
-   * primary signing key.
-   */
-  protected signingKeyFallback: string | undefined;
-
-  /**
-   * A property that can be set to indicate whether we believe we are in
-   * production mode.
+   * The origin used to access the Inngest serve endpoint, e.g.:
    *
-   * Should be set every time a request is received.
-   */
-  protected _mode: Mode | undefined;
-
-  /**
-   * The localized `fetch` implementation used by this handler.
-   */
-  private readonly fetch: FetchT;
-
-  /**
-   * The host used to access the Inngest serve endpoint, e.g.:
-   *
-   *     "https://myapp.com"
+   *     "https://myapp.com" or "https://myapp.com:1234"
    *
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
    * when dealing with proxies/redirects).
    *
-   * Provide the custom hostname here to ensure that the path is reported
+   * Provide the custom origin here to ensure that the path is reported
    * correctly when registering functions with Inngest.
    *
    * To also provide a custom path, use `servePath`.
    */
-  private readonly _serveHost: string | undefined;
+  private readonly _serveOrigin: string | undefined;
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
@@ -382,16 +412,21 @@ export class InngestCommHandler<
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
    *
-   * To also provide a custom hostname, use `serveHost`.
+   * To also provide a custom hostname, use `serveOrigin`.
    */
   private readonly _servePath: string | undefined;
 
-  /**
-   * The minimum level to log from the Inngest serve handler.
-   */
-  protected readonly logLevel: LogLevel;
-
   protected readonly streaming: RegisterOptions["streaming"];
+
+  /**
+   * Whether unauthenticated `PUT` (sync) requests are accepted. Set via the
+   * `enableUnauthedSync` serve option or `INNGEST_ENABLE_UNAUTHED_SYNC` env
+   * var; serve option wins. Only applies in cloud mode.
+   *
+   * `undefined` here means "unset" — the env var is consulted at request
+   * time so it picks up dynamic values in edge environments.
+   */
+  protected readonly enableUnauthedSync: boolean | undefined;
 
   /**
    * A private collection of just Inngest functions, as they have been passed
@@ -405,12 +440,9 @@ export class InngestCommHandler<
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<
-    string,
-    { fn: InngestFunction.Any; onFailure: boolean }
-  > = {};
+  private readonly fns: Record<string, FnRegistryEntry> = {};
 
-  private env: Env = allProcessEnv();
+  private env: Env = getProcessEnv();
 
   private allowExpiredSignatures: boolean;
 
@@ -422,12 +454,15 @@ export class InngestCommHandler<
 
   private readonly skipSignatureValidation: boolean;
 
+  private readonly defaultMaxRuntime: DefaultMaxRuntime;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
     // Set input options directly so we can reference them later
     this._options = options;
 
     /**
      * v2 -> v3 migration error.
+     * TODO: do we need to handle people going from v2->v4?
      *
      * If a serve handler is passed a client as the first argument, it'll be
      * spread in to these options. We should be able to detect this by picking
@@ -441,13 +476,8 @@ export class InngestCommHandler<
 
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
-
-    if (options.id) {
-      console.warn(
-        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`,
-      );
-    }
-    this.id = options.id || this.client.id;
+    this.defaultMaxRuntime =
+      options.defaultMaxRuntime ?? DefaultMaxRuntime.serve;
 
     this.handler = options.handler as Handler;
 
@@ -456,7 +486,7 @@ export class InngestCommHandler<
      * testing.
      */
     this.allowExpiredSignatures = Boolean(
-      // biome-ignore lint/complexity/noArguments: <explanation>
+      // biome-ignore lint/complexity/noArguments: intentional
       arguments["0"]?.__testingAllowExpiredSignatures,
     );
 
@@ -465,134 +495,80 @@ export class InngestCommHandler<
       []) as InngestFunction.Any[];
 
     if (this.rawFns.length !== (options.functions ?? []).length) {
-      // TODO PrettyError
-      console.warn(
+      this.client[internalLoggerSymbol].warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );
     }
 
-    this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
-    >((acc, fn) => {
+    // Build the id -> entry registry. Each main fn contributes either a
+    // single `main` entry or, when it has `onFailure`, a `main` + `failure`
+    // pair; each `DeferredFunction` (created via `createDefer`) contributes
+    // a single `defer` entry.
+    const entries: Record<string, FnRegistryEntry> = {};
+    for (const fn of this.rawFns) {
+      const isDefer = isDeferredFunction(fn);
+      const mainId = fn.id(this.client.id);
+      const failureId = `${mainId}${InngestFunction.failureSuffix}`;
+
       const configs = fn["getConfig"]({
         baseUrl: new URL("https://example.com"),
-        appPrefix: this.id,
+        appPrefix: this.client.id,
       });
 
-      const fns = configs.reduce((acc, { id }, index) => {
-        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
-      }, {});
-
-      // biome-ignore lint/complexity/noForEach: <explanation>
-      configs.forEach(({ id }) => {
-        if (acc[id]) {
-          // TODO PrettyError
+      for (const { id } of configs) {
+        if (entries[id]) {
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
           );
         }
-      });
 
-      return {
-        ...acc,
-        ...fns,
-      };
-    }, {});
+        let handlerKind: FnRegistryEntry["handlerKind"];
+        if (isDefer) {
+          handlerKind = "defer";
+        } else if (id === failureId) {
+          handlerKind = "failure";
+        } else {
+          handlerKind = "main";
+        }
 
-    this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
+        entries[id] = { fn, handlerKind };
+      }
+    }
+    this.fns = entries;
 
-    this.signingKey = options.signingKey;
-    this.signingKeyFallback = options.signingKeyFallback;
-    this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this.inngestRegisterUrl = new URL("/fn/register", this.client.apiBaseUrl);
+
+    this._serveOrigin =
+      options.serveOrigin || this.env[envKeys.InngestServeOrigin];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
 
-    const defaultLogLevel: typeof this.logLevel = "info";
-    this.logLevel = z
-      .enum(logLevels)
-      .default(defaultLogLevel)
-      .catch((ctx) => {
-        this.log(
-          "warn",
-          `Unknown log level passed: ${String(
-            ctx.input,
-          )}; defaulting to ${defaultLogLevel}`,
-        );
-
-        return defaultLogLevel;
-      })
-      .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
-
-    if (this.logLevel === "debug") {
-      /**
-       * `debug` is an old library; sometimes its runtime detection doesn't work
-       * for newer pairings of framework/runtime.
-       *
-       * One silly symptom of this is that `Debug()` returns an anonymous
-       * function with no extra properties instead of a `Debugger` instance if
-       * the wrong code is consumed following a bad detection. This results in
-       * the following `.enable()` call failing, so we just try carefully to
-       * enable it here.
-       */
-      if (debug.enable && typeof debug.enable === "function") {
-        debug.enable(`${debugPrefix}:*`);
-      }
-    }
-
     const defaultStreamingOption: typeof this.streaming = false;
     this.streaming = z
-      .union([z.enum(["allow", "force"]), z.literal(false)])
+      .boolean()
       .default(defaultStreamingOption)
       .catch((ctx) => {
-        this.log(
-          "warn",
-          `Unknown streaming option passed: ${String(
-            ctx.input,
-          )}; defaulting to ${String(defaultStreamingOption)}`,
+        this.client[internalLoggerSymbol].warn(
+          { input: ctx.input, default: defaultStreamingOption },
+          "Unknown streaming option; using default",
         );
 
         return defaultStreamingOption;
       })
-      .parse(options.streaming || this.env[envKeys.InngestStreaming]);
+      .parse(
+        options.streaming || parseAsBoolean(this.env[envKeys.InngestStreaming]),
+      );
 
-    this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
+    this.enableUnauthedSync = options.enableUnauthedSync;
+
+    // Early validation for environments where process.env is available (Node.js).
+    // Edge environments will skip this and validate at request time instead.
+    this.client.setEnvVars(this.env);
   }
 
   /**
-   * Get the API base URL for the Inngest API.
-   *
-   * This is a getter to encourage checking the environment for the API base URL
-   * each time it's accessed, as it may change during execution.
-   */
-  protected get apiBaseUrl(): string {
-    return (
-      this._options.baseUrl ||
-      this.env[envKeys.InngestApiBaseUrl] ||
-      this.env[envKeys.InngestBaseUrl] ||
-      this.client.apiBaseUrl ||
-      defaultInngestApiBaseUrl
-    );
-  }
-
-  /**
-   * Get the event API base URL for the Inngest API.
-   *
-   * This is a getter to encourage checking the environment for the event API
-   * base URL each time it's accessed, as it may change during execution.
-   */
-  protected get eventApiBaseUrl(): string {
-    return (
-      this._options.baseUrl ||
-      this.env[envKeys.InngestEventApiBaseUrl] ||
-      this.env[envKeys.InngestBaseUrl] ||
-      this.client.eventBaseUrl ||
-      defaultInngestEventBaseUrl
-    );
-  }
-
-  /**
-   * The host used to access the Inngest serve endpoint, e.g.:
+   * The origin used to access the Inngest serve endpoint, e.g.:
    *
    *     "https://myapp.com"
    *
@@ -601,13 +577,32 @@ export class InngestCommHandler<
    * (e.g. when running in a more controlled environments such as AWS Lambda or
    * when dealing with proxies/redirects).
    *
-   * Provide the custom hostname here to ensure that the path is reported
+   * Provide the custom origin here to ensure that the path is reported
    * correctly when registering functions with Inngest.
    *
    * To also provide a custom path, use `servePath`.
    */
-  protected get serveHost(): string | undefined {
-    return this._serveHost || this.env[envKeys.InngestServeHost];
+  protected get serveOrigin(): string | undefined {
+    if (this._serveOrigin) {
+      return this._serveOrigin;
+    }
+
+    const envOrigin = this.env[envKeys.InngestServeOrigin];
+    if (envOrigin) {
+      return envOrigin;
+    }
+
+    const envHost = this.env[envKeys.InngestServeHost];
+    if (envHost) {
+      warnOnce(
+        this.client[internalLoggerSymbol],
+        "serve-host-deprecated",
+        "INNGEST_SERVE_HOST is deprecated; use INNGEST_SERVE_ORIGIN instead",
+      );
+      return envHost;
+    }
+
+    return undefined;
   }
 
   /**
@@ -623,7 +618,7 @@ export class InngestCommHandler<
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
    *
-   * To also provide a custom hostname, use `serveHost`.
+   * To also provide a custom hostname, use `serveOrigin`.
    *
    * This is a getter to encourage checking the environment for the serve path
    * each time it's accessed, as it may change during execution.
@@ -633,26 +628,26 @@ export class InngestCommHandler<
   }
 
   private get hashedEventKey(): string | undefined {
-    if (!this.client["eventKey"] || this.client["eventKey"] === dummyEventKey) {
+    if (!this.client.eventKey) {
       return undefined;
     }
-    return hashEventKey(this.client["eventKey"]);
+    return hashEventKey(this.client.eventKey);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
   private get hashedSigningKey(): string | undefined {
-    if (!this.signingKey) {
+    if (!this.client.signingKey) {
       return undefined;
     }
-    return hashSigningKey(this.signingKey);
+    return hashSigningKey(this.client.signingKey);
   }
 
   private get hashedSigningKeyFallback(): string | undefined {
-    if (!this.signingKeyFallback) {
+    if (!this.client.signingKeyFallback) {
       return undefined;
     }
-    return hashSigningKey(this.signingKeyFallback);
+    return hashSigningKey(this.client.signingKeyFallback);
   }
 
   /**
@@ -671,25 +666,33 @@ export class InngestCommHandler<
       return false;
     }
 
+    const envStreaming = this.env[envKeys.InngestStreaming];
+    if (envStreaming === "allow" || envStreaming === "force") {
+      warnOnce(
+        this.client[internalLoggerSymbol],
+        "streaming-allow-force-deprecated",
+        { value: envStreaming },
+        `INNGEST_STREAMING="${envStreaming}" is deprecated; set INNGEST_STREAMING=true instead`,
+      );
+    }
+
+    const streamingRequested =
+      this.streaming === true ||
+      parseAsBoolean(this.env[envKeys.InngestStreaming]) === true ||
+      envStreaming === "allow" ||
+      envStreaming === "force";
+
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
+      if (streamingRequested) {
+        throw new Error(
+          `${logPrefix} Streaming has been forced but the serve handler does not support streaming. Please either remove the streaming option or use a serve handler that supports streaming.`,
+        );
+      }
       return false;
     }
 
-    // If the user has forced streaming, we should always stream.
-    if (this.streaming === "force") {
-      return true;
-    }
-
-    // If the user has allowed streaming, we should stream if the platform
-    // supports it.
-    return (
-      this.streaming === "allow" &&
-      platformSupportsStreaming(
-        this.frameworkName as SupportedFrameworkName,
-        this.env,
-      )
-    );
+    return streamingRequested;
   }
 
   private async isInngestReq(
@@ -716,7 +719,7 @@ export class InngestCommHandler<
     actions: HandlerResponseWithErrors;
     getHeaders: () => Promise<Record<string, string>>;
   }> {
-    const timer = new ServerTiming();
+    const timer = new ServerTiming(this.client[internalLoggerSymbol]);
     const actions = await this.getActions(timer, ...args);
 
     const [env, expectedServerKind] = await Promise.all([
@@ -730,10 +733,9 @@ export class InngestCommHandler<
     // Always make sure to merge whatever env we've been given with
     // `process.env`; some platforms may not provide all the necessary
     // environment variables or may use two sources.
-    this.env = {
-      ...allProcessEnv(),
-      ...env,
-    };
+    // Update both handler's env and client's env to ensure consistency.
+    this.env = protectEnv({ ...getProcessEnv(), ...env });
+    this.client.setEnvVars(this.env);
 
     const headerPromises = forwardedHeaders.map(async (header) => {
       const value = await actions.headers(
@@ -771,26 +773,6 @@ export class InngestCommHandler<
       }),
       ...(await headersToForwardP),
     });
-
-    const assumedMode = getMode({ env: this.env, client: this.client });
-
-    if (assumedMode.isExplicit) {
-      this._mode = assumedMode;
-    } else {
-      const serveIsProd = await actions.isProduction?.(
-        "starting to handle request",
-      );
-      if (typeof serveIsProd === "boolean") {
-        this._mode = new Mode({
-          type: serveIsProd ? "cloud" : "dev",
-          isExplicit: false,
-        });
-      } else {
-        this._mode = assumedMode;
-      }
-    }
-
-    this.upsertKeysFromEnv();
 
     return {
       timer,
@@ -842,6 +824,7 @@ export class InngestCommHandler<
           asyncMode:
             this._options.syncOptions?.asyncResponse ??
             AsyncResponseType.Redirect,
+          asyncRedirectUrl: this._options.syncOptions?.asyncRedirectUrl,
           fn,
         });
       }) as THandler);
@@ -893,9 +876,8 @@ export class InngestCommHandler<
   }
 
   /**
-   * Given a set of actions that let us access the incoming request, create a
-   * `http/run.started` event that repesents a run starting from an HTTP
-   * request.
+   * Given a set of actions that let us access the incoming request, create an
+   * event that repesents a run starting from an HTTP request.
    */
   private async createHttpEvent(
     actions: HandlerResponseWithErrors,
@@ -929,8 +911,7 @@ export class InngestCommHandler<
       url.searchParams.toString(),
     );
 
-    // TODO For body, we can add `textBody()` to the actions
-    const bodyPromise = actions.textBody!(reason).then((body) => {
+    const bodyPromise = actions.body(reason).then((body) => {
       return typeof body === "string" ? body : stringify(body);
     });
 
@@ -946,7 +927,7 @@ export class InngestCommHandler<
       ]);
 
     return {
-      name: "http/run.started",
+      name: internalEvents.HttpRequest,
       data: {
         content_type: contentType,
         domain,
@@ -965,12 +946,14 @@ export class InngestCommHandler<
     actions,
     fn,
     asyncMode,
+    asyncRedirectUrl,
     args,
   }: {
     timer: ServerTiming;
     actions: HandlerResponseWithErrors;
     fn: InngestFunction.Any;
     asyncMode: AsyncResponseValue;
+    asyncRedirectUrl: SyncHandlerOptions["asyncRedirectUrl"];
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
@@ -989,14 +972,19 @@ export class InngestCommHandler<
     }
 
     // We create a new run ID here in the SDK.
+    const { ulid } = await import("ulid"); // lazy loading for edge envs
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
-    // TODO Nope. Should be v2, so we now have two preferred versions...
-    const exeVersion = PREFERRED_EXECUTION_VERSION;
+    const acceptHeader = await actions.headers(
+      "checking accept header",
+      "Accept",
+    );
+    const acceptsSse = acceptHeader?.includes("text/event-stream") ?? false;
+
+    const exeVersion = ExecutionVersion.V2;
 
     const exe = fn["createExecution"]({
-      version: exeVersion,
       partialOptions: {
         client: this.client,
         data: {
@@ -1006,13 +994,15 @@ export class InngestCommHandler<
           events: [event],
           maxAttempts: fn.opts.retries ?? defaultMaxRetries,
         },
+        isDurableEndpoint: true,
         runId,
         headers: {},
         reqArgs: args,
         stepCompletionOrder: [],
         stepState: {},
         disableImmediateExecution: false,
-        isFailureHandler: false,
+        handlerKind: "main",
+        acceptsSse,
         timer,
         createResponse: (data: unknown) =>
           actions.experimentalTransformSyncResponse!(
@@ -1044,29 +1034,71 @@ export class InngestCommHandler<
           "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
         );
       },
-      "function-rejected": () => {
-        throw new Error(
-          "We should not get the result 'function-rejected' when checkpointing. This is a bug in the `inngest` SDK",
-        );
+      "function-rejected": (result) => {
+        return actions.transformResponse("creating sync error response", {
+          status: result.retriable ? 500 : 400,
+          headers: {
+            "Content-Type": "application/json",
+            [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+            ...(typeof result.retriable === "string"
+              ? { [headerKeys.RetryAfter]: result.retriable }
+              : {}),
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(result.error)),
+        });
       },
       "function-resolved": ({ data }) => {
-        // We're done and we didn't call any step tools, so just return the
-        // response.
-        return data;
+        // If the execution returned a Response (SSE streaming from the
+        // engine, or a user-constructed Response in a durable endpoint),
+        // pass it through directly — the headers and body are already set.
+        if (data instanceof Response) {
+          return data;
+        }
+
+        // Non-streaming path: plain return values from the function are
+        // JSON-serialized and wrapped in a framework response.
+        return actions.transformResponse("creating sync success response", {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          version: exeVersion,
+          body: stringify(undefinedToNull(data)),
+        });
       },
       "change-mode": async ({ token }) => {
         switch (asyncMode) {
           case AsyncResponseType.Redirect: {
+            let redirectUrl: string;
+
+            if (asyncRedirectUrl) {
+              if (typeof asyncRedirectUrl === "function") {
+                // Full control: user provides complete URL
+                redirectUrl = await asyncRedirectUrl({ runId, token });
+              } else {
+                // String path: resolve relative to request origin
+                // new URL("/api/poll", "https://example.com") → "https://example.com/api/poll"
+                // new URL("https://other.com/poll", "https://example.com") → "https://other.com/poll"
+                const baseUrl = await actions.url("getting request origin");
+                const url = new URL(asyncRedirectUrl, baseUrl.origin);
+                url.searchParams.set("runId", runId);
+                url.searchParams.set("token", token);
+                redirectUrl = url.toString();
+              }
+            } else {
+              // Default: redirect to Inngest API
+              redirectUrl = await this.client["inngestApi"]
+                ["getTargetUrl"](`/v1/http/runs/${runId}/output?token=${token}`)
+                .then((url) => url.toString());
+            }
+
             return actions.transformResponse(
               "creating sync->async redirect response",
               {
                 status: 302,
                 headers: {
-                  [headerKeys.Location]: await this.client["inngestApi"]
-                    ["getTargetUrl"](
-                      `/v1/http/runs/${runId}/output?token=${token}`,
-                    )
-                    .then((url) => url.toString()),
+                  [headerKeys.Location]: redirectUrl,
                 },
                 version: exeVersion,
                 body: "",
@@ -1131,15 +1163,6 @@ export class InngestCommHandler<
 
     const methodP = actions.method("starting to handle request");
 
-    const contentLength = await actions
-      .headers("checking signature for request", headerKeys.ContentLength)
-      .then((value) => {
-        if (!value) {
-          return undefined;
-        }
-        return Number.parseInt(value, 10);
-      });
-
     const [signature, method, body] = await Promise.all([
       actions
         .headers("checking signature for request", headerKeys.Signature)
@@ -1147,16 +1170,21 @@ export class InngestCommHandler<
           return headerSignature ?? undefined;
         }),
       methodP,
-      methodP.then((method) => {
+      methodP.then(async (method) => {
         if (method === "POST" || method === "PUT") {
-          if (!contentLength) {
-            // Return empty string because req.json() will throw an error.
-            return "";
-          }
-
-          return actions.body(
+          const body = await actions.body(
             `checking body for request signing as method is ${method}`,
           );
+          if (!body) {
+            // Empty body can happen with PUT requests
+            return "";
+          }
+          // Some adapters return strings (req.text()), others return
+          // pre-parsed objects (req.body). Handle both cases.
+          if (typeof body === "string") {
+            return JSON.parse(body);
+          }
+          return body;
         }
 
         return "";
@@ -1165,18 +1193,11 @@ export class InngestCommHandler<
 
     const signatureValidation = this.validateSignature(signature, body);
 
-    const actionRes = timer.wrap("action", () =>
-      this.handleAction({
-        actions,
-        timer,
-        getHeaders,
-        reqArgs: args,
-        signatureValidation,
-        body,
-        method,
-        forceExecution: Boolean(forceExecution),
-        fns,
-      }),
+    // Create middleware instances once; shared by wrapRequest and execution hooks.
+    // Starts with client-level middleware; function-level middleware is appended
+    // for POST requests once the target function is known.
+    const mwInstances = this.client.middleware.map(
+      (Cls) => new Cls({ client: this.client }),
     );
 
     /**
@@ -1196,7 +1217,7 @@ export class InngestCommHandler<
           ? {}
           : {
               [headerKeys.RequestVersion]: (
-                res.version ?? PREFERRED_EXECUTION_VERSION
+                res.version ?? PREFERRED_ASYNC_EXECUTION_VERSION
               ).toString(),
             }),
       };
@@ -1204,12 +1225,12 @@ export class InngestCommHandler<
       let signature: string | undefined;
 
       try {
-        signature = await signatureValidation.then((result) => {
+        signature = await signatureValidation.then(async (result) => {
           if (!result.success || !result.keyUsed) {
             return undefined;
           }
 
-          return this.getResponseSignature(result.keyUsed, res.body);
+          return await this.getResponseSignature(result.keyUsed, res.body);
         });
       } catch (err) {
         // If we fail to sign, retun a 500 with the error.
@@ -1231,18 +1252,171 @@ export class InngestCommHandler<
       };
     };
 
-    if (await this.shouldStream(actions)) {
+    // Build the inner handler that wraps handleAction + prepareActionRes.
+    // We capture `version` via closure so it can be passed to transformResponse.
+    let actionResponseVersion: ExecutionVersion | null | undefined;
+
+    const handleAndPrepare = async (): Promise<ActionResponse> => {
+      const rawRes = await timer.wrap("action", () =>
+        this.handleAction({
+          actions,
+          timer,
+          getHeaders,
+          reqArgs: args,
+          signatureValidation,
+          body,
+          method,
+          forceExecution: Boolean(forceExecution),
+          fns,
+          mwInstances,
+        }),
+      );
+      actionResponseVersion = rawRes.version;
+      const prepared = await prepareActionRes(rawRes);
+
+      // Unauthenticated responses must not leak SDK identification headers,
+      // so we strip every `x-inngest-*` header except `x-inngest-sdk-handled`
+      // (which the Inngest backend uses to know that the SDK produced the
+      // response, useful for troubleshooting). `User-Agent` is also stripped
+      // since it advertises the SDK and version. In dev mode, signature
+      // validation short-circuits to success so this branch is a no-op.
+      const validation = await signatureValidation;
+      if (!validation.success) {
+        const filteredHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(prepared.headers)) {
+          const lower = k.toLowerCase();
+          if (lower === "user-agent") {
+            // User-Agent contains the SDK version
+            continue;
+          }
+          if (
+            lower.startsWith("x-inngest-") &&
+            lower !== headerKeys.SdkHandled.toLowerCase()
+          ) {
+            continue;
+          }
+          filteredHeaders[k] = v;
+        }
+
+        return { ...prepared, headers: filteredHeaders };
+      }
+
+      return prepared;
+    };
+
+    // Only wrap POST requests with the wrapRequest middleware chain.
+    // GET/PUT (introspection, registration) bypass the middleware.
+    let chainResult: Promise<Middleware.Response>;
+    if (method === "POST") {
+      const url = await actions.url("building requestInfo for middleware");
+
+      // Append function-level middleware so it is scoped to this function only.
+      const fnId = await actions.queryStringWithDefaults(
+        "building requestInfo for middleware",
+        queryKeys.FnId,
+      );
+      const matchedFn = fnId ? this.fns[fnId] : undefined;
+      const fnMw = matchedFn?.fn?.opts?.middleware ?? [];
+      mwInstances.push(
+        ...fnMw.map((Cls) => {
+          return new Cls({ client: this.client });
+        }),
+      );
+
+      const fn = matchedFn?.fn ?? null;
+
+      const requestInfo: Middleware.Request = {
+        headers: Object.freeze({ ...(await getHeaders()) }),
+        method,
+        url,
+        body: () => Promise.resolve(body),
+      };
+
+      let runId = "";
+      if (
+        isRecord(body) &&
+        isRecord(body.ctx) &&
+        body.ctx.run_id &&
+        typeof body.ctx.run_id === "string"
+      ) {
+        runId = body.ctx.run_id;
+      }
+
+      const innerHandler = async (): Promise<Middleware.Response> => {
+        const prepared = await handleAndPrepare();
+        return {
+          status: prepared.status,
+          headers: prepared.headers,
+          body: prepared.body,
+        };
+      };
+
+      const wrappedHandler = buildWrapRequestChain({
+        fn,
+        handler: innerHandler,
+        middleware: mwInstances,
+        requestArgs: args,
+        requestInfo,
+        runId,
+      });
+
+      // Start eagerly (matches prior behavior where handleAction starts before
+      // the shouldStream check).
+      chainResult = wrappedHandler();
+    } else {
+      chainResult = handleAndPrepare().then((prepared) => ({
+        status: prepared.status,
+        headers: prepared.headers,
+        body: prepared.body,
+      }));
+    }
+
+    // Attach error handling: if wrapRequest middleware throws, convert to 500.
+    const safeChainResult = chainResult.catch(
+      (err): Middleware.Response => ({
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+        body: stringify({
+          type: "internal",
+          ...serializeError(err as Error),
+        }),
+      }),
+    );
+
+    let shouldStream: boolean;
+    try {
+      shouldStream = await this.shouldStream(actions);
+    } catch (err) {
+      return actions.transformResponse("sending back response", {
+        status: 500,
+        headers: {
+          ...(await getHeaders()),
+          "Content-Type": "application/json",
+        },
+        body: stringify(serializeError(err)),
+        version: undefined,
+      });
+    }
+
+    if (shouldStream) {
       const method = await actions.method("starting streaming response");
 
       if (method === "POST") {
-        const { stream, finalize } = await createStream();
+        const { stream, finalize } = await createStream({
+          logger: this.client[internalLoggerSymbol],
+        });
 
         /**
          * Errors are handled by `handleAction` here to ensure that an
          * appropriate response is always given.
          */
-        void actionRes.then((res) => {
-          return finalize(prepareActionRes(res));
+        void safeChainResult.then((res) => {
+          return finalize(
+            Promise.resolve({
+              ...res,
+              version: actionResponseVersion,
+            }),
+          );
         });
 
         return timer.wrap("res", async () => {
@@ -1260,8 +1434,11 @@ export class InngestCommHandler<
     }
 
     return timer.wrap("res", async () => {
-      return actionRes.then(prepareActionRes).then((actionRes) => {
-        return actions.transformResponse("sending back response", actionRes);
+      return safeChainResult.then((res) => {
+        return actions.transformResponse("sending back response", {
+          ...res,
+          version: actionResponseVersion,
+        });
       });
     });
   }
@@ -1325,7 +1502,7 @@ export class InngestCommHandler<
           return runAsPromise(fn)
             .catch(rethrowError(errMessage))
             .catch((err) => {
-              this.log("error", err);
+              this.client[internalLoggerSymbol].error({ err }, errMessage);
               throw err;
             });
         },
@@ -1386,20 +1563,6 @@ export class InngestCommHandler<
     return handler;
   }
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private get mode(): Mode | undefined {
-    return this._mode;
-  }
-
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private set mode(m) {
-    this._mode = m;
-
-    if (m) {
-      this.client["mode"] = m;
-    }
-  }
-
   /**
    * Given a set of functions to check if an action is available from the
    * instance's handler, enact any action that is found.
@@ -1421,6 +1584,7 @@ export class InngestCommHandler<
     method,
     forceExecution,
     fns,
+    mwInstances,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
@@ -1431,72 +1595,118 @@ export class InngestCommHandler<
     method: string;
     forceExecution: boolean;
     fns?: InngestFunction.Any[];
+    mwInstances?: Middleware.BaseMiddleware[];
   }): Promise<ActionResponse> {
-    // This is when the request body is completely missing; it does not
-    // include an empty body. This commonly happens when the HTTP framework
-    // doesn't have body parsing middleware.
-    const isMissingBody = rawBody === undefined;
+    if (!this.checkModeConfiguration()) {
+      return internalServerErrorResponse;
+    }
+
+    // This is when the request body is completely missing. This commonly
+    // happens when the HTTP framework doesn't have body parsing middleware,
+    // or for PUT requests that don't require a body.
+    const isMissingBody = !rawBody;
     let body = rawBody;
 
     try {
       let url = await actions.url("starting to handle request");
 
+      // PUT (sync) is the only request method the SDK accepts without a valid
+      // signature. Opting out via `enableUnauthedSync: false` (or the
+      // `INNGEST_ENABLE_UNAUTHED_SYNC` env var) closes that gap by requiring a
+      // signature on every request in cloud mode. Serve option wins over env;
+      // both default to enabled.
+      //
+      // We'll eventually remove this, always authing all requests in cloud
+      // mode.
+      const enableUnauthedSync =
+        this.enableUnauthedSync ??
+        parseAsBoolean(this.env[envKeys.InngestEnableUnauthedSync]) ??
+        true;
+
+      if (this.client.mode === "cloud" && !enableUnauthedSync) {
+        const sigCheck = await signatureValidation;
+        if (!sigCheck.success) {
+          this.client[internalLoggerSymbol].error(
+            {
+              err: sigCheck.err,
+              method,
+            },
+            "Signature validation failed",
+          );
+
+          // Response shape matches existing in-band PUT signature failures
+          // so opted-out callers can't be fingerprinted.
+          return unauthorizedResponse;
+        }
+      }
+
       if (method === "POST" || forceExecution) {
         if (!forceExecution && isMissingBody) {
-          this.log(
-            "error",
+          this.client[internalLoggerSymbol].error(
             "Missing body when executing, possibly due to missing request body middleware",
           );
 
-          return {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: stringify(
-              serializeError(
-                new Error(
-                  "Missing request body when executing, possibly due to missing request body middleware",
-                ),
-              ),
-            ),
-            version: undefined,
-          };
+          return unauthorizedResponse;
         }
 
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
-          return {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json",
+          this.client[internalLoggerSymbol].error(
+            {
+              err: validationResult.err,
+              method,
             },
-            body: stringify(serializeError(validationResult.err)),
-            version: undefined,
-          };
+            "Signature validation failed",
+          );
+
+          return unauthorizedResponse;
         }
 
-        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
+        let fn: FnRegistryEntry | undefined;
         let fnId: string | undefined;
-        let stepId: string | null | undefined;
 
         if (forceExecution) {
           fn =
             fns?.length && fns[0]
-              ? { fn: fns[0], onFailure: false }
+              ? {
+                  fn: fns[0],
+                  handlerKind: "main" as const,
+                }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
-          stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
+
+          // Grab "force step plan" flag from headers
+          let die = false;
+          const dieHeader = await actions.headers(
+            "getting step plan force control for forced execution",
+            headerKeys.InngestForceStepPlan,
+          );
+          if (dieHeader) {
+            const parsed = parseAsBoolean(dieHeader);
+            if (typeof parsed === "boolean") {
+              die = parsed;
+            } else {
+              this.client[internalLoggerSymbol].warn(
+                { header: headerKeys.InngestForceStepPlan, value: dieHeader },
+                "Invalid boolean header value; defaulting to false",
+              );
+            }
+          }
+
           body = {
             event: {},
             events: [],
             steps: {},
-            version: PREFERRED_EXECUTION_VERSION,
+            version: PREFERRED_ASYNC_EXECUTION_VERSION,
+            sdkDecided: true,
             ctx: {
               attempt: 0,
-              disable_immediate_execution: false,
+              disable_immediate_execution: die,
               use_api: true,
-              max_attempts: 3,
+              // This execution path doesn't control max attempts; it's already
+              // been reported and Inngest is now in control of when to stop, so
+              // we remove this restriction.
+              max_attempts: Infinity,
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
@@ -1504,7 +1714,10 @@ export class InngestCommHandler<
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
-          } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
+          } as Extract<
+            FnData,
+            { version: typeof PREFERRED_ASYNC_EXECUTION_VERSION }
+          >;
         } else {
           const rawProbe = await actions.queryStringWithDefaults(
             "testing for probe",
@@ -1550,33 +1763,80 @@ export class InngestCommHandler<
             queryKeys.FnId,
           );
           if (!fnId) {
-            // TODO PrettyError
             throw new Error("No function ID found in async request");
           }
 
           fn = this.fns[fnId];
-
-          stepId =
-            (await actions.queryStringWithDefaults(
-              "processing run request",
-              queryKeys.StepId,
-            )) || null;
         }
 
-        if (typeof fnId === "undefined" || !fn) {
+        if (typeof fnId === "undefined") {
           throw new Error("No function ID found in request");
+        } else if (!fn) {
+          throw new Error(
+            `Function "${fnId}" was not found in this app; is the app synced correctly?`,
+          );
         }
 
+        // Always try and grab the step ID; in regular async flows this will be
+        // in the querystring, and in sync modes it'll be in the headers.
+        const stepId =
+          (await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.StepId,
+          )) ||
+          (await actions.headers(
+            "processing run request",
+            headerKeys.InngestStepId,
+          )) ||
+          null;
+
+        // Try get the request version from headers for sync executions.
+        let headerReqVersion: ExecutionVersion | undefined;
+
+        try {
+          const rawVersionHeader = await actions.headers(
+            "processing run request",
+            headerKeys.RequestVersion,
+          );
+
+          // We only obey the request version header if it's actually a number,
+          // even though the underlying schema allows more values; that schema
+          // is intended to _always_ find a valid version and made for request
+          // bodies.
+          //
+          // Note that the header will be a `string` at this point.
+          if (rawVersionHeader && Number.isFinite(Number(rawVersionHeader))) {
+            const res = createVersionSchema(
+              this.client[internalLoggerSymbol],
+            ).parse(Number(rawVersionHeader));
+
+            if (!res.sdkDecided) {
+              headerReqVersion = res.version;
+            }
+          }
+        } catch {
+          // no-op
+        }
+
+        const resolvedHeaders = await getHeaders();
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
           stepId,
           timer,
           reqArgs,
-          headers: await getHeaders(),
+          headers: resolvedHeaders,
           fn,
           forceExecution,
           actions,
+          headerReqVersion,
+          requestInfo: {
+            headers: Object.freeze({ ...resolvedHeaders }),
+            method,
+            url,
+            body: () => Promise.resolve(body),
+          },
+          mwInstances,
         });
         const stepOutput = await result;
 
@@ -1632,6 +1892,26 @@ export class InngestCommHandler<
             };
           },
           "step-not-found": (result) => {
+            // we want to show the names and IDs of any steps that were found during the
+            // run process
+            const missingStepId = result.step.displayName || result.step.id;
+
+            let error = `Could not find step "${missingStepId}" to run; timed out.`;
+
+            if (result.foundSteps.length > 0) {
+              const foundStepsSummary = result.foundSteps
+                .map((step) => {
+                  const name = step.displayName || step.id;
+                  return `${name} (${step.id})`;
+                })
+                .join("\n");
+              error = `${error} Found new steps: \n${foundStepsSummary}.`;
+            }
+
+            if (result.totalFoundSteps > result.foundSteps.length) {
+              error = `${error} (showing ${result.foundSteps.length} of ${result.totalFoundSteps})`;
+            }
+
             return {
               status: 500,
               headers: {
@@ -1639,9 +1919,10 @@ export class InngestCommHandler<
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
-                error: `Could not find step "${
-                  result.step.displayName || result.step.id
-                }" to run; timed out`,
+                error,
+                requestedStep: result.step.id,
+                foundSteps: result.foundSteps,
+                totalFoundSteps: result.totalFoundSteps,
               }),
               version,
             };
@@ -1700,7 +1981,10 @@ export class InngestCommHandler<
         try {
           return await handler(stepOutput);
         } catch (err) {
-          this.log("error", "Error handling execution result", err);
+          this.client[internalLoggerSymbol].error(
+            { err },
+            "Error handling execution result",
+          );
           throw err;
         }
       }
@@ -1709,6 +1993,25 @@ export class InngestCommHandler<
       const env = (await getHeaders())[headerKeys.Environment] ?? null;
 
       if (method === "GET") {
+        // In cloud mode, introspection requires a valid signature. We don't
+        // serve an unauthenticated introspection body to anonymous callers
+        // because it leaks deployment fingerprint (mode, function count,
+        // event/signing key presence).
+        if (this.client.mode === "cloud") {
+          const validationResult = await signatureValidation;
+          if (!validationResult.success) {
+            this.client[internalLoggerSymbol].error(
+              {
+                err: validationResult.err,
+                method,
+              },
+              "Signature validation failed",
+            );
+
+            return unauthorizedResponse;
+          }
+        }
+
         return {
           status: 200,
           body: stringify(
@@ -1757,8 +2060,7 @@ export class InngestCommHandler<
 
         if (inBandSyncRequested) {
           if (isMissingBody) {
-            this.log(
-              "error",
+            this.client[internalLoggerSymbol].error(
               "Missing body when syncing, possibly due to missing request body middleware",
             );
 
@@ -1784,16 +2086,15 @@ export class InngestCommHandler<
           const sigCheck = await signatureValidation;
 
           if (!sigCheck.success) {
-            return {
-              status: 401,
-              body: stringify({
-                code: "sig_verification_failed",
-              }),
-              headers: {
-                "Content-Type": "application/json",
+            this.client[internalLoggerSymbol].error(
+              {
+                err: sigCheck.err,
+                method,
               },
-              version: undefined,
-            };
+              "Signature validation failed",
+            );
+
+            return unauthorizedResponse;
           }
 
           const res = inBandSyncRequestBodySchema.safeParse(body);
@@ -1866,13 +2167,17 @@ export class InngestCommHandler<
       };
     }
 
+    this.client[internalLoggerSymbol].error(
+      { method },
+      "Received unhandled HTTP method; expected POST, PUT, or GET",
+    );
+
     return {
       status: 405,
-      body: JSON.stringify({
-        message: "No action found; request was likely not POST, PUT, or GET",
-        mode: this._mode,
-      }),
-      headers: {},
+      body: JSON.stringify({ message: "Method not allowed" }),
+      headers: {
+        "Content-Type": "application/json",
+      },
       version: undefined,
     };
   }
@@ -1887,6 +2192,9 @@ export class InngestCommHandler<
     headers,
     fn,
     forceExecution,
+    headerReqVersion,
+    requestInfo,
+    mwInstances,
   }: {
     actions: HandlerResponseWithErrors;
     functionId: string;
@@ -1895,50 +2203,42 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
-    fn: { fn: InngestFunction.Any; onFailure: boolean };
+    fn: FnRegistryEntry;
     forceExecution: boolean;
+    headerReqVersion?: ExecutionVersion;
+    requestInfo?: InngestExecutionOptions["requestInfo"];
+    mwInstances?: Middleware.BaseMiddleware[];
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+    const requestStartedAt = Date.now();
+
     if (!fn) {
-      // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(data);
-    let { version } = immediateFnData;
+    // Try to get the request version from headers before falling back to
+    // parsing it from the body.
+    const immediateFnData = parseFnData(
+      data,
+      headerReqVersion,
+      this.client[internalLoggerSymbol],
+    );
+    let version = ExecutionVersion.V2;
 
-    // Handle opting in to optimized parallelism in v3.
-    if (
-      version === ExecutionVersion.V1 &&
-      fn.fn["shouldOptimizeParallelism"]?.()
-    ) {
-      version = ExecutionVersion.V2;
+    // Handle opting out of optimized parallelism
+    if (fn.fn["shouldOptimizeParallelism"]?.() === false) {
+      version = ExecutionVersion.V1;
     }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
         data: immediateFnData,
         api: this.client["inngestApi"],
-        version,
+        logger: this.client[internalLoggerSymbol],
       });
 
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);
       }
-
-      type ExecutionStarter<V> = (
-        fnData: V extends ExecutionVersion
-          ? Extract<FnData, { version: V }>
-          : FnData,
-      ) => MaybePromise<CreateExecutionOptions>;
-
-      type GenericExecutionStarters = Record<
-        ExecutionVersion,
-        ExecutionStarter<unknown>
-      >;
-
-      type ExecutionStarters = {
-        [V in ExecutionVersion]: ExecutionStarter<V>;
-      };
 
       const createResponse =
         forceExecution && actions.experimentalTransformSyncResponse
@@ -1952,150 +2252,92 @@ export class InngestCommHandler<
               }))
           : undefined;
 
-      const executionStarters = ((s: ExecutionStarters) =>
-        s as GenericExecutionStarters)({
-        [ExecutionVersion.V0]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, data]) => {
-            return {
-              ...acc,
-
-              [id]: { id, data },
-            };
-          }, {});
-
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: StepMode.Async,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-              },
-              stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
-              timer,
-              isFailureHandler: fn.onFailure,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-            },
-          };
-        },
-        [ExecutionVersion.V1]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, result]) => {
-            return {
-              ...acc,
-              [id]:
-                result.type === "data"
-                  ? { id, data: result.data }
-                  : result.type === "input"
-                    ? { id, input: result.input }
-                    : { id, error: result.error },
-            };
-          }, {});
-
-          const requestedRunStep =
-            stepId === "step" ? undefined : stepId || undefined;
-
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: fn.fn["shouldAsyncCheckpoint"](
-                requestedRunStep,
-                ctx?.fn_id,
-                Boolean(ctx?.disable_immediate_execution),
-              )
-                ? StepMode.AsyncCheckpointing
-                : StepMode.Async,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-                maxAttempts: ctx?.max_attempts,
-              },
-              internalFnId: ctx?.fn_id,
-              queueItemId: ctx?.qi_id,
-              stepState,
-              requestedRunStep,
-              timer,
-              isFailureHandler: fn.onFailure,
-              disableImmediateExecution: ctx?.disable_immediate_execution,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-            },
-          };
-        },
-        [ExecutionVersion.V2]: ({ event, events, steps, ctx, version }) => {
-          const stepState = Object.entries(steps ?? {}).reduce<
-            InngestExecutionOptions["stepState"]
-          >((acc, [id, result]) => {
-            return {
-              ...acc,
-              [id]:
-                result.type === "data"
-                  ? { id, data: result.data }
-                  : result.type === "input"
-                    ? { id, input: result.input }
-                    : { id, error: result.error },
-            };
-          }, {});
-
-          const requestedRunStep =
-            stepId === "step" ? undefined : stepId || undefined;
-
-          return {
-            version,
-            partialOptions: {
-              client: this.client,
-              runId: ctx?.run_id || "",
-              stepMode: fn.fn["shouldAsyncCheckpoint"](
-                requestedRunStep,
-                ctx?.fn_id,
-                Boolean(ctx?.disable_immediate_execution),
-              )
-                ? StepMode.AsyncCheckpointing
-                : StepMode.Async,
-              data: {
-                event: event as EventPayload,
-                events: events as [EventPayload, ...EventPayload[]],
-                runId: ctx?.run_id || "",
-                attempt: ctx?.attempt ?? 0,
-                maxAttempts: ctx?.max_attempts,
-              },
-              internalFnId: ctx?.fn_id,
-              queueItemId: ctx?.qi_id,
-              stepState,
-              requestedRunStep,
-              timer,
-              isFailureHandler: fn.onFailure,
-              disableImmediateExecution: ctx?.disable_immediate_execution,
-              stepCompletionOrder: ctx?.stack?.stack ?? [],
-              reqArgs,
-              headers,
-              createResponse,
-            },
-          };
-        },
-      });
-
-      const executionOptions = await executionStarters[version](
-        anyFnData.value,
+      const { defers, event, events, steps, ctx } = anyFnData.value;
+      const requestId = await actions.headers(
+        "getting request ID for execution",
+        headerKeys.RequestId,
       );
+
+      const rawGenerationId = await actions.headers(
+        "getting generation ID for execution",
+        headerKeys.GenerationId,
+      );
+      const parsedGenerationId = Number(rawGenerationId);
+      const generationId =
+        rawGenerationId && Number.isInteger(parsedGenerationId)
+          ? parsedGenerationId
+          : undefined;
+
+      const jobId = await actions.headers(
+        "getting job ID for execution",
+        headerKeys.InngestJobId,
+      );
+
+      const stepState = Object.entries(steps ?? {}).reduce<
+        InngestExecutionOptions["stepState"]
+      >((acc, [id, result]) => {
+        return {
+          ...acc,
+          [id]:
+            result.type === "data"
+              ? { id, data: result.data }
+              : result.type === "input"
+                ? { id, input: result.input }
+                : { id, error: result.error },
+        };
+      }, {});
+
+      const requestedRunStep =
+        stepId === "step" ? undefined : stepId || undefined;
+
+      const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+        requestedRunStep,
+        ctx?.fn_id,
+        Boolean(ctx?.disable_immediate_execution),
+        this.defaultMaxRuntime,
+      );
+
+      const executionOptions: CreateExecutionOptions = {
+        partialOptions: {
+          client: this.client,
+          runId: ctx?.run_id || "",
+          stepMode: checkpointingConfig
+            ? StepMode.AsyncCheckpointing
+            : StepMode.Async,
+          checkpointingConfig,
+          data: {
+            event: event as EventPayload,
+            events: events as [EventPayload, ...EventPayload[]],
+            runId: ctx?.run_id || "",
+            attempt: ctx?.attempt ?? 0,
+            maxAttempts: ctx?.max_attempts,
+            requestId: requestId ?? undefined,
+            jobId: jobId ?? undefined,
+          },
+          internalFnId: ctx?.fn_id,
+
+          // Rely on `forceExecution` to know if this is a Durable Endpoint in
+          // async mode.
+          isDurableEndpoint: forceExecution,
+
+          queueItemId: ctx?.qi_id,
+          requestId: requestId ?? undefined,
+          generationId: generationId ?? undefined,
+          requestStartedAt,
+          stepState,
+          priorDefers: defers,
+          requestedRunStep,
+          timer,
+          handlerKind: fn.handlerKind,
+          disableImmediateExecution: ctx?.disable_immediate_execution,
+          stepCompletionOrder: ctx?.stack?.stack ?? [],
+          reqArgs,
+          headers,
+          createResponse,
+          requestInfo,
+          middlewareInstances: mwInstances,
+        },
+      };
 
       return fn.fn["createExecution"](executionOptions).start();
     });
@@ -2104,10 +2346,10 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = this.rawFns.reduce<FunctionConfig[]>(
       (acc, fn) => [
         ...acc,
-        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
+        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.client.id }),
       ],
       [],
     );
@@ -2117,9 +2359,9 @@ export class InngestCommHandler<
       if (!check.success) {
         const errors = check.error.errors.map((err) => err.message).join("; ");
 
-        this.log(
-          "warn",
-          `Config invalid for function "${config.id}" : ${errors}`,
+        this.client[internalLoggerSymbol].warn(
+          { functionId: config.id, errors },
+          "Invalid function config",
         );
       }
     }
@@ -2130,21 +2372,20 @@ export class InngestCommHandler<
   /**
    * Return an Inngest serve endpoint URL given a potential `path` and `host`.
    *
-   * Will automatically use the `serveHost` and `servePath` if they have been
+   * Will automatically use the `serveOrigin` and `servePath` if they have been
    * set when registering.
    */
   protected reqUrl(url: URL): URL {
     let ret = new URL(url);
 
-    const serveHost = this.serveHost || this.env[envKeys.InngestServeHost];
     const servePath = this.servePath || this.env[envKeys.InngestServePath];
 
     if (servePath) {
       ret.pathname = servePath;
     }
 
-    if (serveHost) {
-      ret = new URL(ret.pathname + ret.search, serveHost);
+    if (this.serveOrigin) {
+      ret = new URL(ret.pathname + ret.search, this.serveOrigin);
     }
 
     return ret;
@@ -2166,7 +2407,7 @@ export class InngestCommHandler<
       url: url.href,
       deployType: "ping",
       framework: this.frameworkName,
-      appName: this.id,
+      appName: this.client.id,
       functions: this.configs(url),
       sdk: `js:v${version}`,
       v: "0.1",
@@ -2176,6 +2417,7 @@ export class InngestCommHandler<
         connect: "v1",
       },
       appVersion: this.client.appVersion,
+      featureObservations: sdkFeatureObservations.getJson(this.client),
     };
 
     return body;
@@ -2210,15 +2452,16 @@ export class InngestCommHandler<
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.id,
+      app_id: this.client.id,
       appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
       env,
       framework: registerBody.framework,
       functions: registerBody.functions,
+      featureObservations: registerBody.featureObservations,
       inspection: introspectionBody,
       platform: getPlatformName({
-        ...allProcessEnv(),
+        ...getProcessEnv(),
         ...this.env,
       }),
       sdk_author: "inngest",
@@ -2228,7 +2471,10 @@ export class InngestCommHandler<
       url: registerBody.url,
     };
 
-    if (introspectionBody.authentication_succeeded) {
+    if (
+      "authentication_succeeded" in introspectionBody &&
+      introspectionBody.authentication_succeeded
+    ) {
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -2247,68 +2493,83 @@ export class InngestCommHandler<
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
-    const registerBody = this.registerBody({
-      url: this.reqUrl(url),
-      deployId: null,
-    });
+    const functionCount = this.configs(this.reqUrl(url)).length;
 
-    if (!this._mode) {
+    if (!this.client.mode) {
       throw new Error("No mode set; cannot introspect without mode");
     }
 
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      authentication_succeeded: null,
       extra: {
-        is_mode_explicit: this._mode.isExplicit,
+        native_crypto: globalThis.crypto?.subtle ? true : false,
       },
       has_event_key: this.client["eventKeySet"](),
-      has_signing_key: Boolean(this.signingKey),
-      function_count: registerBody.functions.length,
-      mode: this._mode.type,
+      has_signing_key: Boolean(this.client.signingKey),
+      function_count: functionCount,
+      mode: this.client.mode,
       schema_version: "2024-05-24",
     } satisfies UnauthenticatedIntrospection;
 
     // Only allow authenticated introspection in Cloud mode, since Dev mode skips
     // signature validation
-    if (this._mode.type === "cloud") {
+    if (this.client.mode === "cloud") {
       try {
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
           throw new Error("Signature validation failed");
         }
 
+        // For the signing keys, only send the first 12 characters of the hash.
+        // It's technically safe to send the full hash since the request was
+        // authenticated, but we'll play it safe and only send the first 12
+        // characters. 12 characters is enough to uniquely identify the key
+        // without revealing the full hash.
+        let signingKeyHash: string | null = null;
+        if (this.hashedSigningKey) {
+          signingKeyHash = removeSigningKeyPrefix(this.hashedSigningKey).slice(
+            0,
+            12,
+          );
+        }
+        let signingKeyFallbackHash: string | null = null;
+        if (this.hashedSigningKeyFallback) {
+          signingKeyFallbackHash = removeSigningKeyPrefix(
+            this.hashedSigningKeyFallback,
+          ).slice(0, 12);
+        }
+
         introspection = {
           ...introspection,
           authentication_succeeded: true,
-          api_origin: this.apiBaseUrl,
-          app_id: this.id,
+          api_origin: this.client.apiBaseUrl,
+          app_id: this.client.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
           },
           env,
-          event_api_origin: this.eventApiBaseUrl,
+          event_api_origin: this.client.eventBaseUrl,
           event_key_hash: this.hashedEventKey ?? null,
           extra: {
             ...introspection.extra,
             is_streaming: await this.shouldStream(actions),
+            native_crypto: globalThis.crypto?.subtle ? true : false,
           },
           framework: this.frameworkName,
           sdk_language: "js",
           sdk_version: version,
-          serve_origin: this.serveHost ?? null,
+          serve_origin: this.serveOrigin ?? null,
           serve_path: this.servePath ?? null,
-          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-          signing_key_hash: this.hashedSigningKey ?? null,
+          signing_key_fallback_hash: signingKeyFallbackHash,
+          signing_key_hash: signingKeyHash,
         } satisfies AuthenticatedIntrospection;
       } catch {
         // Swallow signature validation error since we'll just return the
         // unauthenticated introspection
         introspection = {
           ...introspection,
-          authentication_succeeded: false,
         } satisfies UnauthenticatedIntrospection;
       }
     }
@@ -2325,37 +2586,19 @@ export class InngestCommHandler<
 
     let res: globalThis.Response;
 
-    // Whenever we register, we check to see if the dev server is up.  This
-    // is a noop and returns false in production. Clone the URL object to avoid
-    // mutating the property between requests.
-    let registerURL = new URL(this.inngestRegisterUrl.href);
-
-    const inferredDevMode =
-      this._mode && this._mode.isInferred && this._mode.isDev;
-
-    if (inferredDevMode) {
-      const host = devServerHost(this.env);
-      const hasDevServer = await devServerAvailable(host, this.fetch);
-      if (hasDevServer) {
-        registerURL = devServerUrl(host, "/fn/register");
-      }
-    } else if (this._mode?.explicitDevUrl) {
-      registerURL = devServerUrl(
-        this._mode.explicitDevUrl.href,
-        "/fn/register",
-      );
-    }
+    // Clone the URL object to avoid mutating the property between requests.
+    const registerUrl = new URL(this.inngestRegisterUrl.href);
 
     if (deployId) {
-      registerURL.searchParams.set(queryKeys.DeployId, deployId);
+      registerUrl.searchParams.set(queryKeys.DeployId, deployId);
     }
 
     try {
       res = await fetchWithAuthFallback({
         authToken: this.hashedSigningKey,
         authTokenFallback: this.hashedSigningKeyFallback,
-        fetch: this.fetch,
-        url: registerURL.href,
+        fetch: this.client.fetch,
+        url: registerUrl.href,
         options: {
           method: "POST",
           body: stringify(body),
@@ -2367,7 +2610,7 @@ export class InngestCommHandler<
         },
       });
     } catch (err: unknown) {
-      this.log("error", err);
+      this.client[internalLoggerSymbol].error({ err }, "Failed to register");
 
       return {
         status: 500,
@@ -2385,7 +2628,10 @@ export class InngestCommHandler<
     try {
       data = JSON.parse(raw);
     } catch (err) {
-      this.log("warn", "Couldn't unpack register response:", err);
+      this.client[internalLoggerSymbol].warn(
+        { err },
+        "Couldn't unpack register response",
+      );
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2407,7 +2653,10 @@ export class InngestCommHandler<
     try {
       ({ status, error, skipped, modified } = registerResSchema.parse(data));
     } catch (err) {
-      this.log("warn", "Invalid register response schema:", err);
+      this.client[internalLoggerSymbol].warn(
+        { err },
+        "Invalid register response schema",
+      );
 
       let message = "Failed to register";
       if (err instanceof Error) {
@@ -2428,53 +2677,24 @@ export class InngestCommHandler<
     // during registration with the body of the current functions and refuse
     // to register if the functions are the same.
     if (!skipped) {
-      this.log(
-        "debug",
-        "registered inngest functions:",
-        res.status,
-        res.statusText,
-        data,
-      );
+      this.client[internalLoggerSymbol].debug("Registered inngest functions");
     }
 
     return { status, message: error, modified };
   }
 
   /**
-   * Given an environment, upsert any missing keys. This is useful in
-   * situations where environment variables are passed directly to handlers or
-   * are otherwise difficult to access during initialization.
+   * Check that the current mode has the configuration it requires.
+   * Returns `true` if valid, `false` if not.
    */
-  private upsertKeysFromEnv() {
-    if (this.env[envKeys.InngestSigningKey]) {
-      if (!this.signingKey) {
-        this.signingKey = String(this.env[envKeys.InngestSigningKey]);
-      }
+  checkModeConfiguration(): boolean {
+    this.client.setEnvVars(this.env);
 
-      this.client["inngestApi"].setSigningKey(this.signingKey);
-    }
-
-    if (this.env[envKeys.InngestSigningKeyFallback]) {
-      if (!this.signingKeyFallback) {
-        this.signingKeyFallback = String(
-          this.env[envKeys.InngestSigningKeyFallback],
-        );
-      }
-
-      this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
-    }
-
-    if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
-      this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
-    }
-
-    // v2 -> v3 migration warnings
-    if (this.env[envKeys.InngestDevServerUrl]) {
-      this.log(
-        "warn",
-        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
-    }
+    return checkModeConfiguration({
+      mode: this.client.mode,
+      signingKey: this.client.signingKey,
+      internalLogger: this.client[internalLoggerSymbol],
+    });
   }
 
   /**
@@ -2497,32 +2717,31 @@ export class InngestCommHandler<
       // Never validate signatures outside of prod. Make sure to check the mode
       // exists here instead of using nullish coalescing to confirm that the check
       // has been completed.
-      if (this._mode && !this._mode.isCloud) {
+      if (this.client.mode !== "cloud") {
         return { success: true, keyUsed: "" };
       }
 
       // If we're here, we're in production; lack of a signing key is an error.
-      if (!this.signingKey) {
-        // TODO PrettyError
+      if (!this.client.signingKey) {
         throw new Error(
-          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`,
+          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/env/production/manage/signing-key`,
         );
       }
 
       // If we're here, we're in production; lack of a req signature is an error.
       if (!sig) {
-        // TODO PrettyError
         throw new Error(`No ${headerKeys.Signature} provided`);
       }
 
       // Validate the signature
       return {
         success: true,
-        keyUsed: new RequestSignature(sig).verifySignature({
+        keyUsed: await new RequestSignature(sig).verifySignature({
           body,
           allowExpiredSignatures: this.allowExpiredSignatures,
-          signingKey: this.signingKey,
-          signingKeyFallback: this.signingKeyFallback,
+          signingKey: this.client.signingKey,
+          signingKeyFallback: this.client.signingKeyFallback,
+          logger: this.client[internalLoggerSymbol],
         }),
       };
     } catch (err) {
@@ -2530,47 +2749,26 @@ export class InngestCommHandler<
     }
   }
 
-  protected getResponseSignature(key: string, body: string): string {
-    const now = Date.now();
-    const mac = signDataWithKey(body, key, now.toString());
+  protected async getResponseSignature(
+    key: string,
+    body: string,
+  ): Promise<string> {
+    const now = Math.round(Date.now() / 1000);
+    const mac = await signDataWithKey(
+      body,
+      key,
+      now.toString(),
+      this.client[internalLoggerSymbol],
+    );
 
     return `t=${now}&s=${mac}`;
   }
-
-  /**
-   * Log to stdout/stderr if the log level is set to include the given level.
-   * The default log level is `"info"`.
-   *
-   * This is an abstraction over `console.log` and will try to use the correct
-   * method for the given log level.  For example, `log("error", "foo")` will
-   * call `console.error("foo")`.
-   */
-  protected log(level: LogLevel, ...args: unknown[]) {
-    const logLevels: LogLevel[] = [
-      "debug",
-      "info",
-      "warn",
-      "error",
-      "fatal",
-      "silent",
-    ];
-
-    const logLevelSetting = logLevels.indexOf(this.logLevel);
-    const currentLevel = logLevels.indexOf(level);
-
-    if (currentLevel >= logLevelSetting) {
-      let logger = console.log;
-
-      if (Object.hasOwn(console, level)) {
-        logger = console[level as keyof typeof console] as typeof logger;
-      }
-
-      logger(`${logPrefix} ${level as string} -`, ...args);
-    }
-  }
 }
 
-class RequestSignature {
+/**
+ * @internal Exported for testing; not part of the public API.
+ */
+export class RequestSignature {
   public timestamp: string;
   public signature: string;
 
@@ -2580,7 +2778,6 @@ class RequestSignature {
     this.signature = params.get("s") || "";
 
     if (!this.timestamp || !this.signature) {
-      // TODO PrettyError
       throw new Error(`Invalid ${headerKeys.Signature} provided`);
     }
   }
@@ -2590,45 +2787,58 @@ class RequestSignature {
       return false;
     }
 
-    const delta =
-      Date.now() - new Date(Number.parseInt(this.timestamp) * 1000).valueOf();
-    return delta > 1000 * 60 * 5;
+    const ts = Number.parseInt(this.timestamp, 10);
+    if (!Number.isFinite(ts)) {
+      return true;
+    }
+
+    const delta = Date.now() - ts * 1000;
+    // Clamp both ends: negative delta (future-skewed `t`) would otherwise give
+    // captured requests an unbounded replay
+    return Math.abs(delta) > 1000 * 60 * 5;
   }
 
-  #verifySignature({
+  async #verifySignature({
     body,
     signingKey,
     allowExpiredSignatures,
+    logger,
   }: {
     body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
-  }): void {
+    logger: Logger;
+  }): Promise<void> {
     if (this.hasExpired(allowExpiredSignatures)) {
-      // TODO PrettyError
       throw new Error("Signature has expired");
     }
 
-    const mac = signDataWithKey(body, signingKey, this.timestamp);
-    if (mac !== this.signature) {
-      // TODO PrettyError
+    const mac = await signDataWithKey(body, signingKey, this.timestamp, logger);
+    if (!timingSafeEqual(mac, this.signature)) {
       throw new Error("Invalid signature");
     }
   }
 
-  public verifySignature({
+  public async verifySignature({
     body,
     signingKey,
     signingKeyFallback,
     allowExpiredSignatures,
+    logger,
   }: {
     body: unknown;
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
-  }): string {
+    logger: Logger;
+  }): Promise<string> {
     try {
-      this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+      await this.#verifySignature({
+        body,
+        signingKey,
+        allowExpiredSignatures,
+        logger,
+      });
 
       return signingKey;
     } catch (err) {
@@ -2636,10 +2846,11 @@ class RequestSignature {
         throw err;
       }
 
-      this.#verifySignature({
+      await this.#verifySignature({
         body,
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
+        logger,
       });
 
       return signingKeyFallback;
@@ -2652,32 +2863,21 @@ class RequestSignature {
  * {@link InngestCommHandler} instance.
  */
 export type Handler<
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Input extends any[] = any[],
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   Output = any,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   StreamOutput = any,
 > = (...args: Input) => HandlerResponse<Output, StreamOutput>;
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type HandlerResponse<Output = any, StreamOutput = any> = {
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   body: () => MaybePromise<any>;
-  textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
-  /**
-   * Whether the current environment is production. This is used to determine
-   * some functionality like whether to connect to the dev server or whether to
-   * show debug logging.
-   *
-   * If this is not provided--or is provided and returns `undefined`--we'll try
-   * to automatically detect whether we're in production by checking various
-   * environment variables.
-   */
-  isProduction?: () => MaybePromise<boolean | undefined>;
   method: () => MaybePromise<string>;
   queryString?: (
     key: string,
@@ -2818,3 +3018,12 @@ export interface HandlerResponseWithErrors
     key: string,
   ) => Promise<string | undefined>;
 }
+
+const unauthorizedResponse = {
+  status: 401,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: stringify({ message: "Unauthorized" }),
+  version: undefined,
+} as const satisfies ActionResponse;

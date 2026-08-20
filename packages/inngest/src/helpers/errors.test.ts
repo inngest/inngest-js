@@ -1,9 +1,7 @@
+import { NonRetriableError } from "../components/NonRetriableError.ts";
 import {
-  ErrCode,
-  fixEventKeyMissingSteps,
+  deserializeError,
   isSerializedError,
-  minifyPrettyError,
-  prettyError,
   serializeError,
 } from "./errors.ts";
 
@@ -111,57 +109,67 @@ describe("serializeError", () => {
   });
 });
 
-describe("minifyPrettyError", () => {
-  describe("should minify a pretty error", () => {
-    const originalErr = serializeError(
-      new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
-        }),
-      ),
-    );
+class MyCustomError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "MyCustomError";
+  }
+}
 
-    const err = minifyPrettyError(originalErr);
+describe("serializeError -> deserializeError round trip", () => {
+  it("round-trips a NonRetriableError", () => {
+    const err = deserializeError(serializeError(new NonRetriableError("boom")));
 
-    const expected = "Failed to send event";
-
-    test("sets message", () => {
-      expect(err.message).toBe(expected);
-    });
-
-    test("sets stack", () => {
-      expect(err.stack).toMatch(`Error: ${expected}\n`);
-      expect(err.stack).toMatch(originalErr.stack);
-    });
+    expect(err.name).toBe("NonRetriableError");
+    expect(err.message).toBe("boom");
+    expect(err).toBeInstanceOf(NonRetriableError);
   });
 
-  describe("should prepend code", () => {
-    const originalErr = serializeError(
-      new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
-          code: ErrCode.NESTING_STEPS,
-        }),
+  it("round-trips a built-in TypeError", () => {
+    const err = deserializeError(serializeError(new TypeError("bad")));
+
+    expect(err.name).toBe("TypeError");
+    expect(err).toBeInstanceOf(TypeError);
+  });
+
+  it("round-trips a plain Error", () => {
+    const err = deserializeError(serializeError(new Error("plain")));
+
+    expect(err.name).toBe("Error");
+    expect(err.message).toBe("plain");
+  });
+
+  it("preserves a cause through the round trip", () => {
+    const err = deserializeError(
+      serializeError(
+        new NonRetriableError("outer", { cause: new Error("inner") }),
       ),
     );
 
-    const err = minifyPrettyError(originalErr);
+    expect(err.cause).toMatchObject({ message: "inner" });
+  });
 
-    const expected = `${ErrCode.NESTING_STEPS} - Failed to send event`;
+  it("falls back to a plain Error for an unknown custom error name", () => {
+    const err = deserializeError(serializeError(new MyCustomError("custom")));
 
-    test("sets message", () => {
-      expect(err.message).toBe(expected);
-    });
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe("custom");
+  });
 
-    test("sets stack", () => {
-      expect(err.stack).toMatch(`Error: ${expected}\n`);
-      expect(err.stack).toMatch(originalErr.stack);
-    });
+  it("recognizes a stringified serialized error instead of double-wrapping", () => {
+    const str = JSON.stringify(serializeError(new Error("stringified")));
+
+    const err = deserializeError(serializeError(str));
+
+    expect(err.name).toBe("Error");
+    expect(err.message).toBe("stringified");
+  });
+
+  it("preserves a code through the round trip", () => {
+    const original = Object.assign(new Error("with code"), { code: "E_TEST" });
+
+    const err = deserializeError(serializeError(original));
+
+    expect(err).toMatchObject({ message: "with code", code: "E_TEST" });
   });
 });

@@ -10,6 +10,6 @@
     "nitropack": "latest"
   },
   "dependencies": {
-    "inngest": "^3.0.0"
+    "inngest": "^4.4.0"
   }
 }

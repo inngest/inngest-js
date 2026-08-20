@@ -2,10 +2,22 @@ import Debug, { type Debugger } from "debug";
 import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
-import type { Context, IncomingOp, OutgoingOp, StepMode } from "../../types.ts";
+import type {
+  Context,
+  IncomingOp,
+  InternalCheckpointingOptions,
+  OutgoingOp,
+  StepMode,
+} from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
+import type { Middleware } from "../middleware/middleware.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -20,7 +32,11 @@ export interface ExecutionResults {
   "step-ran": { step: OutgoingOp; retriable?: boolean | string };
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
-  "step-not-found": { step: OutgoingOp };
+  "step-not-found": {
+    step: OutgoingOp;
+    foundSteps: BasicFoundStep[];
+    totalFoundSteps: number;
+  };
 
   /**
    * Indicates that we need to relinquish control back to Inngest in order to
@@ -41,6 +57,11 @@ export type ExecutionResult = {
     } & ExecutionResults[K]
   >;
 }[keyof ExecutionResults];
+
+export interface BasicFoundStep {
+  id: string;
+  displayName?: string;
+}
 
 export type ExecutionResultHandler<T = ActionResponse> = (
   result: ExecutionResult,
@@ -72,8 +93,8 @@ export interface MemoizedOp extends IncomingOp {
  * Changing this should not ever be a breaking change, as this will only change
  * new runs, not existing ones.
  */
-export const PREFERRED_EXECUTION_VERSION =
-  ExecutionVersion.V1 satisfies ExecutionVersion;
+export const PREFERRED_ASYNC_EXECUTION_VERSION =
+  ExecutionVersion.V2 satisfies ExecutionVersion;
 
 /**
  * Options for creating a new {@link InngestExecution} instance.
@@ -92,10 +113,21 @@ export interface InngestExecutionOptions {
   internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
-  data: Omit<Context.Any, "step">;
+  data: Omit<Context.Any, "step" | "group" | "publish" | "defer">;
   stepState: Record<string, MemoizedOp>;
+
+  /**
+   * A map of hashed defer step IDs to their backend-side metadata
+   * (e.g. `{ abortable: true }`). Defer ops are not steps in the
+   * memoization sense — they don't produce results — but the backend
+   * tracks which ones it has already received so the SDK can avoid
+   * re-emitting them on replay.
+   */
+  priorDefers?: Record<string, { abortable?: boolean }>;
+
   stepCompletionOrder: string[];
   stepMode: StepMode;
+  checkpointingConfig?: InternalCheckpointingOptions;
 
   /**
    * If this execution is being run from a queue job, this will be an identifier
@@ -106,13 +138,66 @@ export interface InngestExecutionOptions {
   queueItemId?: string;
 
   /**
+   * Unique identifier for each execution request
+   */
+  requestId?: string;
+
+  /**
+   * Incrementing ID used to denote the generation in which this job was queued
+   */
+  generationId?: number;
+
+  /**
+   * Time the SDK starts handling an execution request. Format is unix millis.
+   */
+  requestStartedAt?: number;
+
+  /**
    * Headers to be sent with any request to Inngest during this execution.
    */
   headers: Record<string, string>;
   requestedRunStep?: string;
   timer?: ServerTiming;
-  isFailureHandler?: boolean;
+  /**
+   * Which handler variant is being executed. `"failure"` skips
+   * trigger-schema validation and resolves `onFailure` instead of the
+   * main handler. `"defer"` marks the fn as a standalone defer function
+   * (created via `createDefer`); incoming event data is validated
+   * against the defer function's schema.
+   *
+   * @default "main"
+   */
+  handlerKind?: "main" | "failure" | "defer";
+
+  /**
+   * Whether this execution is part of a Durable Endpoint flow. Could be either
+   * sync mode (request not from Inngest) or async mode (request from Inngest).
+   *
+   * @default false
+   */
+  isDurableEndpoint?: boolean;
+
   disableImmediateExecution?: boolean;
+
+  /**
+   * Information about the incoming HTTP request that triggered this execution.
+   * Used by middleware `wrapRequest` hooks.
+   */
+  requestInfo?: Middleware.Request;
+
+  /**
+   * Pre-created middleware instances to use for this execution. When provided,
+   * the execution will use these instead of instantiating new ones from the
+   * client. This ensures `wrapRequest` and other hooks share state on `this`.
+   */
+  middlewareInstances?: Middleware.BaseMiddleware[];
+
+  /**
+   * Whether the client accepts SSE (`Accept: text/event-stream`). When true,
+   * the execution engine may deliver the result as an SSE stream even if
+   * `stream.push()` was not called.
+   */
+  acceptsSse?: boolean;
 
   /**
    * Provide the ability to transform the context passed to the function before
@@ -134,14 +219,22 @@ export type InngestExecutionFactory = (
 ) => IInngestExecution;
 
 export class InngestExecution {
-  protected debug: Debugger;
+  protected devDebug: Debugger;
 
   constructor(protected options: InngestExecutionOptions) {
-    this.debug = Debug(`${debugPrefix}:${this.options.runId}`);
+    this.devDebug = Debug(`${debugPrefix}:${this.options.runId}`);
   }
 }
 
 export interface IInngestExecution {
   version: ExecutionVersion;
   start(): Promise<ExecutionResult>;
+
+  addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ): boolean;
 }

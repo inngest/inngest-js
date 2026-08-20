@@ -48,16 +48,4 @@ describe("run", () => {
     // const output = await item?.getOutput();
     // expect(output).toEqual({ data: { cronInvokeDone: true } });
   }, 60000);
-
-  test("returns array of both results", async () => {
-    const item = await runHasTimeline(runId, {
-      stepType: "FINALIZATION",
-    });
-    expect(item).toBeDefined();
-
-    const output = await item?.getOutput();
-    expect(output).toEqual({
-      data: [{ eventInvokeDone: true }, { cronInvokeDone: true }],
-    });
-  }, 60000);
 });

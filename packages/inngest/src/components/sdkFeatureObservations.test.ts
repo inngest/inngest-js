@@ -1,0 +1,220 @@
+import { context, trace } from "@opentelemetry/api";
+import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import { afterEach, describe, expect, test } from "vitest";
+import {
+  AIMetadataExtractionReadinessReason,
+  ExtendedTracesBehavior,
+  ExtendedTracesReadinessReason,
+  SendEventsReadinessReason,
+} from "../proto/src/components/sdkFeatureObservations/protobuf/feature_observations.ts";
+import { createClient } from "../test/helpers.ts";
+import { extendedTracesMiddleware } from "./execution/otel/middleware.ts";
+import {
+  featureObservationsToJson,
+  sdkFeatureObservations,
+} from "./sdkFeatureObservations.ts";
+
+function sendEventsObservation(client: ReturnType<typeof createClient>) {
+  const observation = sdkFeatureObservations.get(client);
+
+  if (!observation.sendEvents) {
+    throw new Error("send events observation missing");
+  }
+
+  return observation.sendEvents;
+}
+
+function aiMetadataExtractionObservation(
+  client: ReturnType<typeof createClient>,
+) {
+  const observation = sdkFeatureObservations.get(client);
+
+  if (!observation.aiMetadataExtraction) {
+    throw new Error("AI metadata extraction observation missing");
+  }
+
+  return observation.aiMetadataExtraction;
+}
+
+function extendedTracesObservation(client: ReturnType<typeof createClient>) {
+  const observation = sdkFeatureObservations.get(client);
+
+  if (!observation.extendedTraces) {
+    throw new Error("extended traces observation missing");
+  }
+
+  return observation.extendedTraces;
+}
+
+describe("feature observations", () => {
+  afterEach(() => {
+    trace.disable();
+    context.disable();
+  });
+
+  test("reports missing event keys as ready in Dev mode", () => {
+    const client = createClient({ id: "test", isDev: true });
+
+    expect(sendEventsObservation(client)).toEqual({
+      readinessReason:
+        SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_READY,
+      config: {
+        eventKeyConfigured: false,
+        eventApiOriginOverrideConfigured: false,
+      },
+    });
+  });
+
+  test("reports missing event keys as not ready in Cloud mode", () => {
+    const client = createClient({ id: "test", isDev: false });
+
+    expect(sendEventsObservation(client)).toEqual({
+      readinessReason:
+        SendEventsReadinessReason.SEND_EVENTS_READINESS_REASON_EVENT_KEY_MISSING,
+      config: {
+        eventKeyConfigured: false,
+        eventApiOriginOverrideConfigured: false,
+      },
+    });
+  });
+
+  test("reports Event API origin override without parsing the URL", () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      baseUrl: "whatever",
+    });
+
+    expect(sendEventsObservation(client)).toMatchObject({
+      config: {
+        eventApiOriginOverrideConfigured: true,
+      },
+    });
+  });
+
+  test("encodes observations with generated protobuf JSON", () => {
+    const client = createClient({ id: "test", isDev: true });
+
+    expect(
+      featureObservationsToJson(sdkFeatureObservations.get(client)),
+    ).toEqual({
+      aiMetadataExtraction: {
+        readinessReason:
+          "AI_METADATA_EXTRACTION_READINESS_REASON_OTEL_PROVIDER_MISSING",
+        otelSetup: {
+          path: "OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER",
+          failure: "OTEL_SETUP_FAILURE_NO_PROVIDER",
+        },
+      },
+      extendedTraces: {
+        readinessReason: "EXTENDED_TRACES_READINESS_REASON_NOT_ENABLED_BY_USER",
+        config: {},
+      },
+      sendEvents: {
+        readinessReason: "SEND_EVENTS_READINESS_REASON_READY",
+        config: {},
+      },
+    });
+  });
+
+  test("encodes Extended Traces config as config", () => {
+    trace.setGlobalTracerProvider(new BasicTracerProvider());
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
+    });
+
+    expect(
+      featureObservationsToJson(sdkFeatureObservations.get(client)),
+    ).toMatchObject({
+      extendedTraces: {
+        readinessReason: "EXTENDED_TRACES_READINESS_REASON_READY",
+        config: {
+          behavior: "EXTENDED_TRACES_BEHAVIOR_AUTO",
+        },
+        otelSetup: {
+          path: "OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER",
+          providerFound: true,
+          providerSource: "OTEL_PROVIDER_SOURCE_USER_PROVIDED",
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: true,
+        },
+      },
+    });
+  });
+
+  test("reports explicitly disabled AI metadata extraction", () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      aiMetadata: false,
+    });
+
+    expect(aiMetadataExtractionObservation(client).readinessReason).toBe(
+      AIMetadataExtractionReadinessReason.AI_METADATA_EXTRACTION_READINESS_REASON_DISABLED_BY_USER,
+    );
+  });
+
+  test("reports Extended Traces as not enabled when middleware is absent", () => {
+    const client = createClient({ id: "test", isDev: true });
+
+    expect(extendedTracesObservation(client)).toEqual({
+      readinessReason:
+        ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_NOT_ENABLED_BY_USER,
+      config: {
+        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_UNSPECIFIED,
+      },
+      otelSetup: undefined,
+    });
+  });
+
+  test("reports explicitly disabled Extended Traces", () => {
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      middleware: [extendedTracesMiddleware({ behaviour: "off" })],
+    });
+
+    expect(extendedTracesObservation(client)).toEqual({
+      readinessReason:
+        ExtendedTracesReadinessReason.EXTENDED_TRACES_READINESS_REASON_DISABLED_BY_USER,
+      config: {
+        behavior: ExtendedTracesBehavior.EXTENDED_TRACES_BEHAVIOR_OFF,
+      },
+      otelSetup: undefined,
+    });
+  });
+
+  test("encodes first-party OTel provider source", () => {
+    const provider = new BasicTracerProvider();
+    Object.defineProperty(provider, Symbol.for("inngest.otel.provider"), {
+      value: true,
+    });
+    trace.setGlobalTracerProvider(provider);
+
+    const client = createClient({
+      id: "test",
+      isDev: true,
+      middleware: [extendedTracesMiddleware({ behaviour: "auto" })],
+    });
+
+    expect(
+      featureObservationsToJson(sdkFeatureObservations.get(client)),
+    ).toMatchObject({
+      extendedTraces: {
+        readinessReason: "EXTENDED_TRACES_READINESS_REASON_READY",
+        config: {
+          behavior: "EXTENDED_TRACES_BEHAVIOR_AUTO",
+        },
+        otelSetup: {
+          path: "OTEL_SETUP_PATH_EXTEND_EXISTING_PROVIDER",
+          providerFound: true,
+          providerSource: "OTEL_PROVIDER_SOURCE_FIRST_PARTY",
+          addSpanProcessorAttempted: true,
+          spanProcessorAdded: true,
+        },
+      },
+    });
+  });
+});

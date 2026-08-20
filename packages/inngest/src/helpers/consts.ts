@@ -1,5 +1,3 @@
-import chalk from "chalk";
-
 /**
  * Keys for accessing query parameters included in requests from Inngest to run
  * functions.
@@ -33,13 +31,17 @@ export enum envKeys {
   InngestBaseUrl = "INNGEST_BASE_URL",
   InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
   InngestApiBaseUrl = "INNGEST_API_BASE_URL",
-  InngestServeHost = "INNGEST_SERVE_HOST",
+  InngestServeHost = "INNGEST_SERVE_HOST", // Deprecated, use INNGEST_SERVE_ORIGIN
   InngestServePath = "INNGEST_SERVE_PATH",
-  InngestLogLevel = "INNGEST_LOG_LEVEL",
+  InngestServeOrigin = "INNGEST_SERVE_ORIGIN",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
+  InngestSessionPropagation = "INNGEST_SESSION_PROPAGATION",
+  InngestEnableUnauthedSync = "INNGEST_ENABLE_UNAUTHED_SYNC",
   InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
+  InngestConnectIsolateExecution = "INNGEST_CONNECT_ISOLATE_EXECUTION",
+  InngestConnectGatewayUrl = "INNGEST_CONNECT_GATEWAY_URL",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
@@ -113,9 +115,48 @@ export enum envKeys {
 
   VercelEnvKey = "VERCEL_ENV",
 
+  /**
+   * Standard Node.js environment indicator (e.g. `"production"`, `"development"`,
+   * `"test"`). Read by some framework adapters to choose the request scheme,
+   * and by prod-mode inference.
+   */
+  NodeEnv = "NODE_ENV",
+
+  /**
+   * Netlify's deploy context (e.g. `"production"`, `"deploy-preview"`). Used
+   * for prod-mode inference.
+   *
+   * {@link https://docs.netlify.com/configure-builds/environment-variables/#build-metadata}
+   */
+  Context = "CONTEXT",
+
+  /**
+   * Generic environment name used by some platforms to indicate prod vs
+   * non-prod (e.g. `"production"`).
+   */
+  Environment = "ENVIRONMENT",
+
+  /**
+   * Set by Deno Deploy. Its presence indicates a Deno Deploy environment,
+   * which we treat as prod.
+   *
+   * {@link https://docs.deno.com/deploy/manual/environment-variables/}
+   */
+  DenoDeployment = "DENO_DEPLOYMENT_ID",
+
   OpenAiApiKey = "OPENAI_API_KEY",
   GeminiApiKey = "GEMINI_API_KEY",
   AnthropicApiKey = "ANTHROPIC_API_KEY",
+
+  /**
+   * Framework-prefixed variants of Inngest env vars. CRA's `REACT_APP_` and
+   * Next's `NEXT_PUBLIC_` prefixes expose env vars to bundled client code, so
+   * we accept the prefixed forms in addition to the canonical names.
+   */
+  ReactAppInngestBaseUrl = "REACT_APP_INNGEST_BASE_URL",
+  ReactAppInngestDevMode = "REACT_APP_INNGEST_DEV",
+  NextPublicInngestBaseUrl = "NEXT_PUBLIC_INNGEST_BASE_URL",
+  NextPublicInngestDevMode = "NEXT_PUBLIC_INNGEST_DEV",
 }
 
 /**
@@ -140,6 +181,9 @@ export enum headerKeys {
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
+  RequestId = "x-request-id",
+  GenerationId = "x-inngest-generation-id",
+  InngestJobId = "x-inngest-job-id",
   RequestVersion = "x-inngest-req-version",
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
@@ -149,6 +193,9 @@ export enum headerKeys {
   TraceParent = "traceparent",
   TraceState = "tracestate",
   InngestRunId = "x-run-id",
+  InngestStepId = "x-inngest-step-id",
+  InngestForceStepPlan = "x-inngest-force-step-plan",
+  SdkHandled = "x-inngest-sdk-handled",
 }
 
 /**
@@ -177,19 +224,22 @@ export enum internalEvents {
   FunctionFinished = "inngest/function.finished",
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
+  HttpRequest = "inngest/http.request",
+
+  /**
+   * Triggers a deferred function. The backend emits this.
+   */
+  DeferredSchedule = "inngest/deferred.schedule",
 }
 
 /**
- * Events that are known globally by the Inngest platform.
+ * Reserved input key that carries the `defer(id, { experiment })` ref to the
+ * deferred run; the receiver strips it before the handler or schema validation
+ * see the data.
  */
-export enum knownEvents {
-  /**
-   * An HTTP request has been received to trigger a function execution.
-   */
-  HttpRunStarted = "http/run.started",
-}
+export const deferExperimentKey = "_inngestExperiment";
 
-export const logPrefix: string = chalk.magenta.bold("[Inngest]");
+export const logPrefix: string = "[Inngest]";
 
 export const debugPrefix = "inngest";
 
@@ -212,14 +262,6 @@ export enum syncKind {
  * accounted for for a given operation.
  */
 export enum ExecutionVersion {
-  /**
-   * Very legacy, initial version of the executor. Uses hashed op objects and
-   * `pos` to determine the order of execution and which ops to run.
-   *
-   * Very stubborn about determinism.
-   */
-  V0 = 0,
-
   /**
    * Uses a more flexible approach to execution and is more lenient about
    * determinism, allowing non-step async actions and non-determinism.

@@ -1,7 +1,8 @@
 {
   "name": "@inngest/realtime",
-  "version": "0.4.5",
-  "description": "",
+  "version": "0.4.7",
+  "description": "Deprecated: Use inngest/realtime instead.",
+  "deprecated": "This package is deprecated. Realtime functionality is now built into the inngest package.",
   "main": "./index.js",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
@@ -10,8 +11,7 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "postversion": "pnpm run build",
-    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
-    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-realtime.tgz"
   },
   "exports": {

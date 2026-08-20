@@ -1,0 +1,395 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "unknown_service:node"
+            }
+          },
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "nodejs"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "2.7.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "ai"
+          },
+          "spans": [
+            {
+              "traceId": "44497cb36fb5f36de951c785f510fee7",
+              "spanId": "dc95a3817cbbc4aa",
+              "parentSpanId": "80c4fc1e9d07e751",
+              "name": "ai.generateText.doGenerate",
+              "kind": 1,
+              "startTimeUnixNano": "1781569377528000000",
+              "endTimeUnixNano": "1781569378103159084",
+              "attributes": [
+                {
+                  "key": "operation.name",
+                  "value": {
+                    "stringValue": "ai.generateText.doGenerate"
+                  }
+                },
+                {
+                  "key": "ai.operationId",
+                  "value": {
+                    "stringValue": "ai.generateText.doGenerate"
+                  }
+                },
+                {
+                  "key": "ai.model.provider",
+                  "value": {
+                    "stringValue": "openai.chat"
+                  }
+                },
+                {
+                  "key": "ai.model.id",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano"
+                  }
+                },
+                {
+                  "key": "ai.settings.maxRetries",
+                  "value": {
+                    "intValue": 2
+                  }
+                },
+                {
+                  "key": "ai.request.headers.user-agent",
+                  "value": {
+                    "stringValue": "ai/6.0.195"
+                  }
+                },
+                {
+                  "key": "ai.prompt.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"What is the weather in Paris? Use the tool.\"}]}]"
+                  }
+                },
+                {
+                  "key": "ai.prompt.tools",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "{\"type\":\"function\",\"name\":\"get_weather\",\"description\":\"Get the current weather for a city\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "ai.prompt.toolChoice",
+                  "value": {
+                    "stringValue": "{\"type\":\"auto\"}"
+                  }
+                },
+                {
+                  "key": "gen_ai.system",
+                  "value": {
+                    "stringValue": "openai.chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano"
+                  }
+                },
+                {
+                  "key": "ai.response.finishReason",
+                  "value": {
+                    "stringValue": "tool-calls"
+                  }
+                },
+                {
+                  "key": "ai.response.toolCalls",
+                  "value": {
+                    "stringValue": "[{\"toolCallId\":\"call_t623cUrhKnjGe0oSUgUSfscn\",\"toolName\":\"get_weather\",\"input\":\"{\\\"city\\\": \\\"Paris\\\"}\"}]"
+                  }
+                },
+                {
+                  "key": "ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-DrBrthIp6Qs0mY9a1VKXPa8s03XKf"
+                  }
+                },
+                {
+                  "key": "ai.response.model",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano-2025-04-14"
+                  }
+                },
+                {
+                  "key": "ai.response.timestamp",
+                  "value": {
+                    "stringValue": "2026-06-16T00:22:57.000Z"
+                  }
+                },
+                {
+                  "key": "ai.response.providerMetadata",
+                  "value": {
+                    "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokens",
+                  "value": {
+                    "intValue": 56
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                  "value": {
+                    "intValue": 56
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokens",
+                  "value": {
+                    "intValue": 30
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.textTokens",
+                  "value": {
+                    "intValue": 30
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "ai.usage.totalTokens",
+                  "value": {
+                    "intValue": 86
+                  }
+                },
+                {
+                  "key": "ai.usage.reasoningTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "ai.usage.cachedInputTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "tool-calls"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-DrBrthIp6Qs0mY9a1VKXPa8s03XKf"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano-2025-04-14"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": 56
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": 30
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            },
+            {
+              "traceId": "44497cb36fb5f36de951c785f510fee7",
+              "spanId": "80c4fc1e9d07e751",
+              "name": "ai.generateText",
+              "kind": 1,
+              "startTimeUnixNano": "1781569377527000000",
+              "endTimeUnixNano": "1781569378103776375",
+              "attributes": [
+                {
+                  "key": "operation.name",
+                  "value": {
+                    "stringValue": "ai.generateText"
+                  }
+                },
+                {
+                  "key": "ai.operationId",
+                  "value": {
+                    "stringValue": "ai.generateText"
+                  }
+                },
+                {
+                  "key": "ai.model.provider",
+                  "value": {
+                    "stringValue": "openai.chat"
+                  }
+                },
+                {
+                  "key": "ai.model.id",
+                  "value": {
+                    "stringValue": "gpt-4.1-nano"
+                  }
+                },
+                {
+                  "key": "ai.settings.maxRetries",
+                  "value": {
+                    "intValue": 2
+                  }
+                },
+                {
+                  "key": "ai.request.headers.user-agent",
+                  "value": {
+                    "stringValue": "ai/6.0.195"
+                  }
+                },
+                {
+                  "key": "ai.prompt",
+                  "value": {
+                    "stringValue": "{\"prompt\":\"What is the weather in Paris? Use the tool.\"}"
+                  }
+                },
+                {
+                  "key": "ai.response.finishReason",
+                  "value": {
+                    "stringValue": "tool-calls"
+                  }
+                },
+                {
+                  "key": "ai.response.toolCalls",
+                  "value": {
+                    "stringValue": "[{\"toolCallId\":\"call_t623cUrhKnjGe0oSUgUSfscn\",\"toolName\":\"get_weather\",\"input\":\"{\\\"city\\\": \\\"Paris\\\"}\"}]"
+                  }
+                },
+                {
+                  "key": "ai.response.providerMetadata",
+                  "value": {
+                    "stringValue": "{\"openai\":{\"acceptedPredictionTokens\":0,\"rejectedPredictionTokens\":0}}"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokens",
+                  "value": {
+                    "intValue": 56
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                  "value": {
+                    "intValue": 56
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokens",
+                  "value": {
+                    "intValue": 30
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.textTokens",
+                  "value": {
+                    "intValue": 30
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "ai.usage.totalTokens",
+                  "value": {
+                    "intValue": 86
+                  }
+                },
+                {
+                  "key": "ai.usage.reasoningTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                },
+                {
+                  "key": "ai.usage.cachedInputTokens",
+                  "value": {
+                    "intValue": 0
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "status": {
+                "code": 0
+              },
+              "links": [],
+              "droppedLinksCount": 0,
+              "flags": 257
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,15 +1,46 @@
 import hashjs from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
-import type { TimeStr } from "../types.ts";
+import { Temporal } from "temporal-polyfill";
+import type { Logger } from "../middleware/logger.ts";
+import { warnOnce } from "./log.ts";
+import {
+  type DurationLike,
+  getISOString,
+  type InstantLike,
+  isTemporalDuration,
+  isTemporalInstant,
+  isTemporalZonedDateTime,
+  type ZonedDateTimeLike,
+} from "./temporal.ts";
 
 const { sha256 } = hashjs;
+
+/**
+ * Constant-time equality check for two strings. Returns `false` immediately if
+ * lengths differ; otherwise XOR-accumulates every char code so the total time
+ * is independent of where (or whether) the strings diverge.
+ *
+ * Used for HMAC signature verification — `===`/`!==` short-circuit on the
+ * first mismatched character and leak the matching-prefix length via timing.
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
 
 /**
  * Safely `JSON.stringify()` an `input`, handling circular refernences and
  * removing `BigInt` values.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const stringify = (input: any): string => {
   return safeStringify(input, (_key, value) => {
     if (typeof value !== "bigint") {
@@ -58,23 +89,66 @@ const periods = [
 
 /**
  * Convert a given `Date`, `number`, or `ms`-compatible `string` to a
- * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h3010s"`).
- *
- * Can optionally provide a `now` date to use as the base for the calculation,
- * otherwise a new date will be created on invocation.
+ * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h30m10s"`).
  */
 export const timeStr = (
   /**
    * The future date to use to convert to a time string.
    */
-  input: string | number | Date,
+  input:
+    | string
+    | number
+    | Date
+    | DurationLike
+    | InstantLike
+    | ZonedDateTimeLike,
+
+  /**
+   * If given, used to warn (once per process) when a sub-second duration is
+   * rounded up to 1s.
+   */
+  logger?: Logger,
 ): string => {
   if (input instanceof Date) {
     return input.toISOString();
   }
 
-  const milliseconds: number =
-    typeof input === "string" ? ms(input as `${number}`) : input;
+  if (isTemporalInstant(input) || isTemporalZonedDateTime(input)) {
+    return getISOString(input);
+  }
+
+  let milliseconds: number;
+  if (isTemporalDuration(input)) {
+    // `relativeTo` is required for calendar units (months/years/weeks). We
+    // pass it as an ISO string rather than a Temporal object so this works
+    // regardless of which Temporal implementation the user's Duration came
+    // from (temporal-polyfill, @js-temporal/polyfill, native Temporal):
+    // ISO strings are spec-defined and parsed by every implementation;
+    // cross-polyfill object passing is not.
+    milliseconds = input.total({
+      unit: "milliseconds",
+      relativeTo: Temporal.Now.plainDateTimeISO("UTC").toString(),
+    });
+  } else if (typeof input === "string") {
+    milliseconds = ms(input as `${number}`);
+  } else {
+    milliseconds = input as number;
+  }
+
+  // Purely sub-second durations round up to 1s: the round-trip latency of a
+  // durable wait dwarfs them, and flooring would serialize to "", which the
+  // server treats as a 0-duration wait.
+  if (milliseconds > 0 && milliseconds < second) {
+    if (logger) {
+      warnOnce(
+        logger,
+        "sub-second-duration-clamp",
+        { requestedMs: milliseconds },
+        "Durable waits have a minimum resolution of 1s; durations under 1s round up to 1s",
+      );
+    }
+    milliseconds = second;
+  }
 
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
@@ -89,7 +163,7 @@ export const timeStr = (
     [milliseconds, ""],
   );
 
-  return timeStr as TimeStr;
+  return timeStr;
 };
 
 /**
@@ -118,8 +192,12 @@ export const hashSigningKey = (signingKey: string | undefined): string => {
   }
 
   const prefix = signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
-  const key = signingKey.replace(/^signkey-[\w]+-/, "");
+  const key = removeSigningKeyPrefix(signingKey);
 
   // Decode the key from its hex representation into a bytestream
   return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
 };
+
+export function removeSigningKeyPrefix(signingKey: string): string {
+  return signingKey.replace(/^signkey-[\w]+-/, "");
+}

@@ -7,8 +7,7 @@ const scoresDb: Record<string, number> = {
 };
 
 export default inngest.createFunction(
-  { id: "sequential-reduce" },
-  { event: "demo/sequential.reduce" },
+  { id: "sequential-reduce", triggers: [{ event: "demo/sequential.reduce" }] },
   async ({ step }) => {
     const teams = Object.keys(scoresDb);
 

@@ -8,7 +8,7 @@ export type SingleOrArray<T> = T | T[];
 /**
  * Given type `T`, return it as an array if it is not already an array.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type AsArray<T> = T extends any[] ? T : [T];
 
 /**
@@ -44,7 +44,7 @@ export type AsTuple<T> = Simplify<[T, ...T[]]>;
  * type T1 = AsDistributedTuple<"foo" | "bar">;
  * ```
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type AsDistributedTuple<T> = T extends any ? [T, ...T[]] : never;
 
 /**
@@ -63,17 +63,11 @@ export type PartialK<T, K extends PropertyKey = PropertyKey> = Partial<
   : never;
 
 /**
- * A payload that could be sent to Inngest, based on the given `Events`.
+ * A payload that could be sent to Inngest.
  */
-export type SendEventPayload<Events extends Record<string, EventPayload>> =
-  SingleOrArray<
-    {
-      [K in keyof WithoutInternal<Events>]: PartialK<
-        Omit<WithoutInternal<Events>[K], "v">,
-        "ts"
-      >;
-    }[keyof WithoutInternal<Events>]
-  >;
+export type SendEventPayload = SingleOrArray<
+  PartialK<Omit<EventPayload, "v">, "ts">
+>;
 
 /**
  * @public
@@ -114,7 +108,7 @@ export type UnionKeys<T> = T extends T ? keyof T : never;
  *
  * @public
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type StrictUnionHelper<T, TAll> = T extends any
   ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
   : never;
@@ -155,7 +149,7 @@ export type IsAny<T> = 0 extends 1 & T ? true : false;
  * Given a function T, return the awaited return type of that function,
  * ignoring the fact that T may be undefined.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export type Await<T extends ((...args: any[]) => any) | undefined> = Awaited<
   ReturnType<NonNullable<T>>
 >;
@@ -213,10 +207,10 @@ export type Either<A, B> = Partial<A> & Partial<B> & (A | B);
  * first one.
  */
 export type ParametersExceptFirst<T> = T extends (
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   arg0: any,
   ...rest: infer U
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
 ) => any
   ? U
   : never;
@@ -419,3 +413,11 @@ export type KnownKeys<T> = keyof {
  * skew extension checks.
  */
 export type Public<T> = { [K in keyof T]: T[K] };
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}

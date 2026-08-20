@@ -1,22 +1,18 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import type { ActionResponse } from "../components/InngestCommHandler.ts";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-  type ExecutionVersion,
-} from "../helpers/consts.ts";
-import { devServerAvailable } from "../helpers/devserver.ts";
-import type { Mode } from "../helpers/env.ts";
+import type { ExecutionVersion } from "../helpers/consts.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
+import { type Marker, markerKey } from "../helpers/marker.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
 import {
   type APIStepPayload,
   err,
+  type MetadataTarget,
   type OutgoingOp,
   ok,
   type Result,
+  type SendSignalResponse,
 } from "../types.ts";
 import {
   type BatchResponse,
@@ -24,10 +20,24 @@ import {
   type ErrorResponse,
   errorSchema,
   type StepsResponse,
-  stepsSchemas,
+  stepSchema,
 } from "./schema.ts";
 
 type FetchT = typeof fetch;
+
+/**
+ * Thrown when the executor has already requeued the current run. Returning
+ * buffered ops after this would let the executor memoize them as canonical and
+ * chain the next dispatch off this dead invocation, producing duplicates.
+ */
+export class StaleDispatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StaleDispatchError";
+  }
+
+  readonly [markerKey]: Marker = { kind: "StaleDispatchError" };
+}
 
 const realtimeSubscriptionTokenSchema = z.object({
   jwt: z.string(),
@@ -45,16 +55,16 @@ const checkpointNewRunResponseSchema = z.object({
     app_id: z.string().min(1),
     run_id: z.string().min(1),
     token: z.string().min(1).optional(),
+    realtime_token: z.string().min(1),
   }),
 });
 
 export namespace InngestApi {
   export interface Options {
-    baseUrl?: string;
-    signingKey: string;
-    signingKeyFallback: string | undefined;
-    fetch: FetchT;
-    mode: Mode;
+    baseUrl: () => string | undefined;
+    signingKey: () => string | undefined;
+    signingKeyFallback: () => string | undefined;
+    fetch: () => FetchT;
   }
 
   export interface Subscription {
@@ -70,36 +80,36 @@ export namespace InngestApi {
     signal: string;
     data?: unknown;
   }
-
-  export interface SendSignalResponse {
-    /**
-     * The ID of the run that was signaled.
-     *
-     * If this is undefined, the signal could not be matched to a run.
-     */
-    runId: string | undefined;
-  }
 }
 
 export class InngestApi {
-  public apiBaseUrl?: string;
-  private signingKey: string;
-  private signingKeyFallback: string | undefined;
-  private readonly fetch: FetchT;
-  private mode: Mode;
+  private readonly _signingKey: () => string | undefined;
+  private readonly _signingKeyFallback: () => string | undefined;
+  private readonly _apiBaseUrl: () => string | undefined;
+  private readonly _fetch: () => FetchT;
 
   constructor({
     baseUrl,
     signingKey,
     signingKeyFallback,
     fetch,
-    mode,
   }: InngestApi.Options) {
-    this.apiBaseUrl = baseUrl;
-    this.signingKey = signingKey;
-    this.signingKeyFallback = signingKeyFallback;
-    this.fetch = fetch;
-    this.mode = mode;
+    this._apiBaseUrl = baseUrl;
+    this._signingKey = signingKey;
+    this._signingKeyFallback = signingKeyFallback;
+    this._fetch = fetch;
+  }
+
+  private get apiBaseUrl(): string | undefined {
+    return this._apiBaseUrl();
+  }
+
+  private get signingKey(): string | undefined {
+    return this._signingKey();
+  }
+
+  private get signingKeyFallback(): string | undefined {
+    return this._signingKeyFallback();
   }
 
   private get hashedKey(): string {
@@ -114,38 +124,8 @@ export class InngestApi {
     return hashSigningKey(this.signingKeyFallback);
   }
 
-  // set the signing key in case it was not instantiated previously
-  setSigningKey(key: string | undefined) {
-    if (typeof key === "string" && this.signingKey === "") {
-      this.signingKey = key;
-    }
-  }
-
-  setSigningKeyFallback(key: string | undefined) {
-    if (typeof key === "string" && !this.signingKeyFallback) {
-      this.signingKeyFallback = key;
-    }
-  }
-
   private async getTargetUrl(path: string): Promise<URL> {
-    if (this.apiBaseUrl) {
-      return new URL(path, this.apiBaseUrl);
-    }
-
-    let url = new URL(path, defaultInngestApiBaseUrl);
-
-    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        this.fetch,
-      );
-
-      if (devAvailable) {
-        url = new URL(path, defaultDevServerHost);
-      }
-    }
-
-    return url;
+    return new URL(path, this.apiBaseUrl);
   }
 
   private async req(
@@ -159,7 +139,7 @@ export class InngestApi {
       const res = await fetchWithAuthFallback({
         authToken: this.hashedKey,
         authTokenFallback: this.hashedFallbackKey,
-        fetch: this.fetch,
+        fetch: this._fetch(),
         url: finalUrl,
         options: {
           ...options,
@@ -178,15 +158,16 @@ export class InngestApi {
 
   async getRunSteps(
     runId: string,
-    version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const result = await this.req(`/v0/runs/${runId}/actions`);
+    const result = await this.req(
+      `/v0/runs/${encodeURIComponent(runId)}/actions`,
+    );
     if (result.ok) {
       const res = result.value;
       const data: unknown = await res.json();
 
       if (res.ok) {
-        return ok(stepsSchemas[version].parse(data));
+        return ok(stepSchema.parse(data));
       }
 
       return err(errorSchema.parse(data));
@@ -204,7 +185,9 @@ export class InngestApi {
   async getRunBatch(
     runId: string,
   ): Promise<Result<BatchResponse, ErrorResponse>> {
-    const result = await this.req(`/v0/runs/${runId}/batch`);
+    const result = await this.req(
+      `/v0/runs/${encodeURIComponent(runId)}/batch`,
+    );
     if (result.ok) {
       const res = result.value;
       const data: unknown = await res.json();
@@ -276,7 +259,7 @@ export class InngestApi {
     options?: {
       headers?: Record<string, string>;
     },
-  ): Promise<Result<InngestApi.SendSignalResponse, ErrorResponse>> {
+  ): Promise<Result<SendSignalResponse, ErrorResponse>> {
     const url = await this.getTargetUrl("/v1/signals");
 
     const body = {
@@ -287,7 +270,7 @@ export class InngestApi {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
-      fetch: this.fetch,
+      fetch: this._fetch(),
       url,
       options: {
         method: "POST",
@@ -301,7 +284,7 @@ export class InngestApi {
       .then(async (res) => {
         // A 404 is valid if the signal was not found.
         if (res.status === 404) {
-          return ok<InngestApi.SendSignalResponse>({
+          return ok<SendSignalResponse>({
             runId: undefined,
           });
         }
@@ -378,7 +361,7 @@ export class InngestApi {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
-      fetch: this.fetch,
+      fetch: this._fetch(),
       url,
       options: {
         method: "POST",
@@ -408,6 +391,66 @@ export class InngestApi {
       });
   }
 
+  async updateMetadata(
+    args: {
+      target: MetadataTarget;
+      metadata: Array<{
+        kind: string;
+        op: string;
+        values: Record<string, unknown>;
+      }>;
+    },
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<void, ErrorResponse>> {
+    const payload = { target: args.target, metadata: args.metadata };
+
+    const result = await this.req(
+      `/v1/runs/${encodeURIComponent(args.target.run_id)}/metadata`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: options?.headers,
+      },
+    );
+
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error updating metadata"),
+        status: 500,
+      });
+    }
+
+    const res = result.value;
+    if (res.ok) {
+      return ok<void>(undefined);
+    }
+
+    const resClone = res.clone();
+
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${
+          res.statusText
+        } - ${await resClone.text()}`,
+        status: res.status,
+      });
+    }
+
+    try {
+      return err(errorSchema.parse(json));
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+        status: res.status,
+      });
+    }
+  }
+
   /**
    * Start a new run, optionally passing in a number of steps to initialize the
    * run with.
@@ -415,12 +458,17 @@ export class InngestApi {
   async checkpointNewRun(args: {
     runId: string;
     event: APIStepPayload;
+    executionVersion: ExecutionVersion;
+    retries: number;
     steps?: OutgoingOp[];
   }): Promise<z.output<typeof checkpointNewRunResponseSchema>> {
     const body = JSON.stringify({
       run_id: args.runId,
       event: args.event,
       steps: args.steps,
+      ts: new Date().valueOf(),
+      request_version: args.executionVersion,
+      retries: args.retries,
     });
 
     const result = await this.req("/v1/checkpoint", {
@@ -443,7 +491,9 @@ export class InngestApi {
     }
 
     throw new Error(
-      `Failed to checkpoint new run: ${res.status} ${res.statusText} - ${await res.text()}`,
+      `Failed to checkpoint new run: ${res.status} ${
+        res.statusText
+      } - ${await res.text()}`,
     );
   }
 
@@ -461,12 +511,16 @@ export class InngestApi {
       app_id: args.appId,
       run_id: args.runId,
       steps: args.steps,
+      ts: new Date().valueOf(),
     });
 
-    const result = await this.req(`/v1/checkpoint/${args.runId}/steps`, {
-      method: "POST",
-      body,
-    });
+    const result = await this.req(
+      `/v1/checkpoint/${encodeURIComponent(args.runId)}/steps`,
+      {
+        method: "POST",
+        body,
+      },
+    );
 
     if (!result.ok) {
       throw new Error(
@@ -477,7 +531,9 @@ export class InngestApi {
     const res = result.value;
     if (!res.ok) {
       throw new Error(
-        `Failed to checkpoint steps: ${res.status} ${res.statusText} - ${await res.text()}`,
+        `Failed to checkpoint steps: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
       );
     }
   }
@@ -489,19 +545,29 @@ export class InngestApi {
     runId: string;
     fnId: string;
     queueItemId: string;
+    generationId: number | undefined;
+    requestId: string | undefined;
+    requestStartedAt: number | undefined;
     steps: OutgoingOp[];
   }): Promise<void> {
     const body = JSON.stringify({
       run_id: args.runId,
       fn_id: args.fnId,
       qi_id: args.queueItemId,
+      request_id: args.requestId,
+      generation_id: args.generationId,
+      request_started_at: args.requestStartedAt,
       steps: args.steps,
+      ts: new Date().valueOf(),
     });
 
-    const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
-      method: "POST",
-      body,
-    });
+    const result = await this.req(
+      `/v1/checkpoint/${encodeURIComponent(args.runId)}/async`,
+      {
+        method: "POST",
+        body,
+      },
+    );
 
     if (!result.ok) {
       throw new Error(
@@ -510,10 +576,90 @@ export class InngestApi {
     }
 
     const res = result.value;
-    if (!res.ok) {
-      throw new Error(
-        `Failed to checkpoint async: ${res.status} ${res.statusText} - ${await res.text()}`,
+    // 409 means the executor has already requeued. Halt rather than returning
+    // buffered ops, which would let the executor memoize them as canonical and
+    // chain the next dispatch off this dead invocation. See EXE-1552.
+    if (res.status === 409) {
+      throw new StaleDispatchError(
+        `Stale dispatch: checkpoint returned 409 (run ${args.runId})`,
       );
     }
+    if (!res.ok) {
+      throw new Error(
+        `Failed to checkpoint async: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
+      );
+    }
+  }
+
+  /**
+   * POST stream data to the realtime publish/tee endpoint, forwarding raw
+   * bytes to all subscribers via the broadcaster.
+   */
+  async checkpointStream(args: {
+    runId: string;
+    body: ReadableStream;
+  }): Promise<void> {
+    const url = await this.getTargetUrl(
+      `/v1/realtime/publish/tee?channel=${encodeURIComponent(args.runId)}`,
+    );
+
+    const res = await fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this._fetch(),
+      url,
+      options: {
+        method: "POST",
+        body: args.body,
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        // Required for streaming request bodies
+        // @ts-expect-error duplex not in RequestInit types yet
+        duplex: "half",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(
+        `Failed to stream checkpoint: ${res.status} ${
+          res.statusText
+        } - ${await res.text()}`,
+      );
+    }
+  }
+
+  /**
+   * Build the full SSE URL for a run's stream channel using the given token.
+   */
+  async getRealtimeStreamRedirect(token: string): Promise<{ url: string }> {
+    const sseUrl = await this.getTargetUrl("/v1/realtime/sse");
+    sseUrl.searchParams.set("token", token);
+
+    return { url: sseUrl.toString() };
+  }
+
+  /**
+   * Fetch the output of a completed run using a token.
+   *
+   * This uses token-based auth (not signing key) and is intended for use by
+   * proxy endpoints that fetch results on behalf of users.
+   *
+   * @param runId - The ID of the run to fetch output for
+   * @param token - The token used to authenticate the request
+   * @returns The raw Response from the API
+   */
+  async getRunOutput(runId: string, token: string): Promise<Response> {
+    const url = await this.getTargetUrl(
+      `/v1/http/runs/${encodeURIComponent(runId)}/output`,
+    );
+    url.searchParams.set("token", token);
+
+    return this._fetch()(url.toString(), {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

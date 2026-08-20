@@ -1,8 +1,17 @@
-# CampaignCraft - How to add background jobs with real-time updates to an Next.js application
+# CampaignCraft (Realtime V2)
+
+This is the v2 version of the Next.js background-jobs demo, updated to use first-class realtime in the core `inngest` SDK.
+
+It uses:
+
+- `realtime.channel(...)` for typed channel/topic definitions
+- `inngest.realtime.publish(topicRef, data)` in Inngest functions
+- `getSubscriptionToken` from `inngest/react` in a server action
+- `useRealtime` from `inngest/react` on the campaign page
 
 ## Prerequisites
 
-- Node.js (18+ recommended)
+- Node.js (20+ recommended)
 - A Neon Postgres instance (https://neon.tech/)
 - An OpenAI API key (for AI features)
 
@@ -48,19 +57,20 @@ For deployment only:
 6. **Start the Inngest dev server (in a separate terminal):**
 
    ```bash
-   npx inngest-cli@latest dev
+   npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
    ```
 
    Open the Inngest DevServer at [http://127.0.0.1:8288/runs](http://127.0.0.1:8288/runs)
 
 7. Try it out!
 
-Open CampaignCraft at [http://localhost:3000](http://localhost:3000) and click on "Import contacts".
-From the import page, select the [examples/realtime/nextjs-bg-jobs-realtime/fake_contacts.csv](examples/realtime/nextjs-bg-jobs-realtime/fake_contacts.csv) file and import it.
+Open CampaignCraft at [http://localhost:3000](http://localhost:3000) and click `Import contacts`.
+From the import page, select [fake_contacts.csv](./fake_contacts.csv) and import it.
 
 You should see the import process run in the Inngest DevServer.
 
-Now navigate to the home page, and click on the "Create Campaign" button. Create a campaign by selecting a segment, generate some AI content and send it. You will see the campaign being sent with realtime updates.
+Navigate to the home page and click `Create Campaign`. Create a campaign by selecting a segment, generate content, and send it.
+You will see realtime progress updates on the campaign page while the send job runs.
 
 ## Notes
 

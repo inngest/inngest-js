@@ -9,16 +9,11 @@ import {
   type StepTools,
   testClientId,
 } from "../test/helpers.ts";
-import {
-  type ClientOptions,
-  type InvocationResult,
-  StepOpCode,
-} from "../types.ts";
-import { EventSchemas } from "./EventSchemas.ts";
-import type { Inngest } from "./Inngest.ts";
+import { type InvocationResult, StepOpCode } from "../types.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
-import type { createStepTools } from "./InngestStepTools.ts";
+import { createStepTools } from "./InngestStepTools.ts";
+import { realtime } from "./realtime/index.ts";
 
 describe("waitForEvent", () => {
   let step: StepTools;
@@ -88,6 +83,16 @@ describe("waitForEvent", () => {
     });
   });
 
+  test("round sub-second number `timeout` up to 1s", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: 500 }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: "1s",
+      },
+    });
+  });
+
   test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
@@ -98,6 +103,30 @@ describe("waitForEvent", () => {
     ).resolves.toMatchObject({
       opts: {
         timeout: expect.stringMatching(upcoming.toISOString()),
+      },
+    });
+  });
+
+  test("return TTL if `Temporal.Duration` `timeout` given", async () => {
+    const duration = Temporal.Duration.from({ hours: 2 });
+
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: duration }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: "2h",
+      },
+    });
+  });
+
+  test("return TTL if `Temporal.Instant` `timeout` given", async () => {
+    const instant = Temporal.Now.instant().add({ hours: 1 });
+
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: instant }),
+    ).resolves.toMatchObject({
+      opts: {
+        timeout: instant.toString(),
       },
     });
   });
@@ -138,11 +167,122 @@ describe("waitForEvent", () => {
     });
   });
 
+  describe("types", () => {
+    test("types matched event meta sessions as strings", () => {
+      const _test = async () => {
+        const result = await step.waitForEvent("id", {
+          event: "event",
+          timeout: "2h",
+        });
+
+        assertType<
+          IsEqual<
+            NonNullable<typeof result>["meta"],
+            { sessions?: Record<string, string> } | undefined
+          >
+        >(true);
+      };
+    });
+  });
+
   test("returns userland", async () => {
     await expect(
       step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       userland: { id: "id" },
+    });
+  });
+});
+
+describe("realtime step tools", () => {
+  describe("step.realtime.publish", () => {
+    const createExecutableStepTools = () => {
+      const client = createClient({ id: testClientId, isDev: true });
+
+      const step = createStepTools(
+        client,
+        {} as never,
+        async ({ args, opts }) => {
+          if (!opts?.fn) {
+            throw new Error("Expected tool fn");
+          }
+
+          return opts.fn({ runId: "run_123" } as never, ...(args as unknown[]));
+        },
+      );
+
+      return { client, step };
+    };
+
+    test("returns the published data on success", async () => {
+      const { client, step } = createExecutableStepTools();
+      const publishSpy = vi
+        .spyOn(client["inngestApi"], "publish")
+        .mockResolvedValue({ ok: true, value: undefined });
+
+      const ch = realtime.channel({
+        name: "test",
+        topics: {
+          status: { schema: z.object({ message: z.string() }) },
+        },
+      });
+
+      const payload = { message: "hello" };
+      const result = await step.realtime.publish(
+        "publish-status",
+        ch.status,
+        payload,
+      );
+
+      expect(result).toEqual(payload);
+      expect(publishSpy).toHaveBeenCalledWith(
+        {
+          topics: ["status"],
+          channel: "test",
+          runId: "run_123",
+        },
+        payload,
+      );
+    });
+
+    test("throws if schema validation fails", async () => {
+      const { client, step } = createExecutableStepTools();
+      const publishSpy = vi.spyOn(client["inngestApi"], "publish");
+
+      const ch = realtime.channel({
+        name: "test",
+        topics: {
+          status: { schema: z.object({ message: z.string() }) },
+        },
+      });
+
+      await expect(
+        // @ts-expect-error intentional invalid payload for runtime validation
+        step.realtime.publish("publish-status", ch.status, { message: 123 }),
+      ).rejects.toThrow("Schema validation failed");
+
+      expect(publishSpy).not.toHaveBeenCalled();
+    });
+
+    test("throws if the publish API returns an error result", async () => {
+      const { client, step } = createExecutableStepTools();
+      vi.spyOn(client["inngestApi"], "publish").mockResolvedValue({
+        ok: false,
+        error: { error: "Nope", status: 500 },
+      });
+
+      const ch = realtime.channel({
+        name: "test",
+        topics: {
+          status: { schema: z.object({ message: z.string() }) },
+        },
+      });
+
+      await expect(
+        step.realtime.publish("publish-status", ch.status, {
+          message: "hello",
+        }),
+      ).rejects.toThrow("Failed to publish to realtime: Nope");
     });
   });
 });
@@ -593,6 +733,12 @@ describe("sleep", () => {
     });
   });
 
+  test("rounds sub-second number of milliseconds up to 1s", async () => {
+    await expect(step.sleep("id", 500)).resolves.toMatchObject({
+      name: "1s",
+    });
+  });
+
   test("parses ms time string", async () => {
     await expect(step.sleep("id", "1m")).resolves.toMatchObject({
       name: "1m",
@@ -605,6 +751,23 @@ describe("sleep", () => {
     await expect(step.sleep("id", duration)).resolves.toMatchObject({
       name: "1m",
     });
+  });
+
+  test("parses month-long Temporal.Duration", async () => {
+    // Calendar-unit Durations resolve relative to "now". Freeze time so the
+    // 1-month conversion is deterministic: 2026-04-28 → 2026-05-28 = 30 days.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T12:00:00Z"));
+
+    try {
+      const duration = Temporal.Duration.from({ months: 1 });
+
+      await expect(step.sleep("id", duration)).resolves.toMatchObject({
+        name: "4w2d",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("returns userland", async () => {
@@ -784,7 +947,7 @@ describe("sendEvent", () => {
   describe("types", () => {
     describe("no custom types", () => {
       const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
@@ -799,92 +962,6 @@ describe("sendEvent", () => {
         void sendEvent("id", [
           { name: "anything", data: "foo" },
           { name: "anything", data: "foo" },
-        ]);
-      });
-    });
-
-    describe("multiple custom types", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        foo: {
-          name: "foo";
-          data: { foo: string };
-        };
-        bar: {
-          data: { bar: string };
-        };
-        baz: {};
-      }>();
-
-      const opts = (<T extends ClientOptions>(x: T): T => x)({
-        id: "",
-        schemas,
-      });
-
-      type Client = Inngest<typeof opts>;
-
-      const sendEvent: ReturnType<
-        typeof createStepTools<Client>
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      >["sendEvent"] = (() => undefined) as any;
-
-      test("disallows sending a single unknown event with a string", () => {
-        // @ts-expect-error Unknown event
-        void sendEvent("id", { name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending a single unknown event with an object", () => {
-        // @ts-expect-error Unknown event
-        void sendEvent("id", { name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending multiple unknown events", () => {
-        void sendEvent("id", [
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown2", data: { foo: "" } },
-        ]);
-      });
-
-      test("disallows sending one unknown event with multiple known events", () => {
-        void sendEvent("id", [
-          { name: "foo", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-        ]);
-      });
-
-      test("disallows sending a single known event with a string and invalid data", () => {
-        // @ts-expect-error Invalid data
-        void sendEvent("id", { name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending a single known event with an object and invalid data", () => {
-        // @ts-expect-error Invalid data
-        void sendEvent("id", { name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending multiple known events with invalid data", () => {
-        void sendEvent("id", [
-          // @ts-expect-error Invalid data
-          { name: "foo", data: { bar: "" } },
-          // @ts-expect-error Invalid data
-          { name: "bar", data: { foo: "" } },
-        ]);
-      });
-
-      test("allows sending a single known event with a string", () => {
-        void sendEvent("id", { name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending a single known event with an object", () => {
-        void sendEvent("id", { name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending multiple known events", () => {
-        void sendEvent("id", [
-          { name: "foo", data: { foo: "" } },
-          { name: "bar", data: { bar: "" } },
         ]);
       });
     });
@@ -942,19 +1019,6 @@ describe("invoke", () => {
         ).resolves.toMatchObject({
           opts: {
             function_id: fn.id(testClientId),
-          },
-        });
-      });
-
-      test("with `function` string", async () => {
-        await expect(
-          step.invoke("id", {
-            function: "some-client-some-fn",
-            data: { foo: "foo" },
-          }),
-        ).resolves.toMatchObject({
-          opts: {
-            function_id: "some-client-some-fn",
           },
         });
       });
@@ -1035,58 +1099,140 @@ describe("invoke", () => {
         });
       });
 
+      test("return correct timeout if `Temporal.Duration` `timeout` given", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: Temporal.Duration.from({ minutes: 1 }),
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: "1m",
+          },
+        });
+      });
+
+      test("return correct timeout if `Temporal.Instant` `timeout` given", async () => {
+        const instant = Temporal.Now.instant().add({ hours: 1 });
+
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: instant,
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: instant.toString(),
+          },
+        });
+      });
+
       test("return userland", async () => {
         await expect(
           step.invoke("id", { function: fn, data: { foo: "foo" } }),
         ).resolves.toMatchObject({ userland: { id: "id" } });
       });
+
+      test("normalizes sessions into the payload", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: {
+              sessions: {
+                conversation_id: "conversation_1234",
+                priority: 1,
+              },
+            },
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            payload: {
+              meta: {
+                sessions: {
+                  conversation_id: "conversation_1234",
+                  priority: "1",
+                },
+              },
+            },
+          },
+        });
+      });
+
+      test("preserves a whole-field null sessions tombstone in the payload", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: { sessions: null },
+          }),
+        ).resolves.toMatchObject({
+          opts: {
+            payload: {
+              meta: { sessions: null },
+            },
+          },
+        });
+      });
+
+      test("rejects non-string propagated session values", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: {
+              propagated_sessions: {
+                conversation_id: true,
+              } as unknown as Record<string, string>,
+            },
+          }),
+        ).rejects.toThrowError("Invalid invocation options");
+      });
+
+      test("omits meta from the payload if none given", async () => {
+        const op = (await step.invoke("id", {
+          function: fn,
+          data: { foo: "foo" },
+        })) as unknown as { opts: { payload: Record<string, unknown> } };
+
+        expect(op.opts.payload.meta).toBeUndefined();
+      });
+
+      test("rejects invalid session values", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            meta: { sessions: { conversation_id: Number.NaN } },
+          }),
+        ).rejects.toThrowError(
+          'Event session "conversation_id" must be a finite number',
+        );
+      });
     });
   });
 
   describe("types", () => {
-    const schemas = new EventSchemas().fromRecord<{
-      foo: {
-        name: "foo";
-        data: { foo: string };
-      };
-      bar: {
-        data: { bar: string };
-      };
-      baz: {};
-    }>();
-
-    const opts = (<T extends ClientOptions>(x: T): T => x)({
-      id: "test-client",
-      schemas,
-    });
-
-    const client = createClient(opts);
+    const client = createClient({ id: "test-client" });
 
     const invoke = null as unknown as ReturnType<
       typeof createStepTools<typeof client>
     >["invoke"];
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
       ReturnType<T>
     >;
 
-    test("allows specifying function as a string", () => {
-      const _test = () => invoke("id", { function: "test-fn", data: "foo" });
-    });
-
     test("allows specifying function as an instance", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-    });
-
-    test("allows specifying function as a string", () => {
-      const _test = () => invoke("id", { function: "fn", data: { foo: "" } });
     });
 
     test("allows specifying function as a reference function", () => {
@@ -1097,61 +1243,35 @@ describe("invoke", () => {
         });
     });
 
-    test("requires no payload if a cron", () => {
+    test("allows setting meta sessions for an invocation", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { cron: "* * * * *" },
-        () => "return",
-      );
-
-      // Allowed
-      const _test = () => invoke("id", { function: fn });
-
-      // Disallowed
-      // @ts-expect-error No payload should be provided for a cron
-      const _test2 = () => invoke("id", { function: fn, data: { foo: "" } });
-    });
-
-    test("disallows no `function` given", () => {
-      // @ts-expect-error No function provided
-      const _test = () => invoke("id", { data: { foo: "" } });
-    });
-
-    test("disallows no payload if an event", () => {
-      const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
-        () => "return",
-      );
-
-      // @ts-expect-error No payload provided
-      const _test = () => invoke("id", { function: fn });
-    });
-
-    test("disallows incorrect payload with an event", () => {
-      const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
-        () => "return",
-      );
-
-      // @ts-expect-error Invalid payload provided
-      const _test = () => invoke("id", { function: fn, data: { bar: "" } });
-    });
-
-    test("disallows incorrect payload with a reference function", () => {
-      const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
       const _test = () =>
         invoke("id", {
-          function: referenceFunction<typeof fn>({ functionId: "fn" }),
-          // @ts-expect-error Invalid payload provided
-          data: { bar: "" },
+          function: fn,
+          data: { foo: "" },
+          meta: {
+            sessions: { conversation_id: "conversation_1234", priority: 1 },
+          },
         });
+    });
+
+    test("allows no payload if a cron", () => {
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ cron: "* * * * *" }] },
+        () => "return",
+      );
+
+      // Allowed
+      const _test = () => invoke("id", { function: fn });
+    });
+
+    test("disallows no `function` given", () => {
+      // @ts-expect-error No function provided
+      const _test = () => invoke("id", { data: { foo: "" } });
     });
 
     test("disallows missing payload with a reference function and schema", () => {
@@ -1181,18 +1301,12 @@ describe("invoke", () => {
         });
     });
 
-    /**
-     * This test is a trade-off for not yet allowing local invocation schemas
-     * but adding multiple triggers.
-     *
-     * In the future, I foresee this being disallowed and requiring that either
-     * an invocation schema exists or that the user must provide a `name` to
-     * represent the payload they are trying to send.
-     */
     test("allows any data shape when invoking a function with multiple triggers", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        {
+          id: "fn",
+          triggers: [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        },
         () => "return",
       );
 
@@ -1203,17 +1317,13 @@ describe("invoke", () => {
             foo: "",
             bar: "",
             cron: "",
-            // @ts-expect-error Make sure this still fails, so that we're
-            // definitely only picking up expected properties
-            boof: "",
           },
         });
     });
 
     test("returns correct output type for function", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -1225,8 +1335,7 @@ describe("invoke", () => {
 
     test("returns correct output type for function with reference", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return",
       );
 
@@ -1271,8 +1380,7 @@ describe("invoke", () => {
 
     test("returns correct output const type for function", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return" as const,
       );
 
@@ -1284,8 +1392,7 @@ describe("invoke", () => {
 
     test("returns correct output const type for function with reference", () => {
       const fn = client.createFunction(
-        { id: "fn" },
-        { event: "foo" },
+        { id: "fn", triggers: [{ event: "foo" }] },
         () => "return" as const,
       );
 
@@ -1300,9 +1407,12 @@ describe("invoke", () => {
     });
 
     test("returns null if function returns undefined|void", () => {
-      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-        // no-op
-      });
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
 
@@ -1311,9 +1421,12 @@ describe("invoke", () => {
     });
 
     test("returns null if function returns undefined|void with reference", () => {
-      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-        // no-op
-      });
+      const fn = client.createFunction(
+        { id: "fn", triggers: [{ event: "foo" }] },
+        () => {
+          // no-op
+        },
+      );
 
       const _test = () =>
         invoke("id", {
@@ -1339,5 +1452,63 @@ describe("invoke", () => {
       type Actual = GetTestReturn<typeof _test>;
       assertType<IsEqual<Actual, null>>(true);
     });
+  });
+});
+
+describe("step.sendEvent session propagation gating", () => {
+  // Drives the real sendEvent tool fn with a mocked client._send so we can
+  // assert what actually reaches the wire given the client-level toggle.
+  const runSendEvent = async (
+    enabled: boolean,
+    ctxSessions: Record<string, string> | undefined,
+  ) => {
+    const client = createClient({
+      id: testClientId,
+      isDev: true,
+      sessionPropagation: enabled,
+    });
+
+    const sendSpy = vi
+      .spyOn(
+        client as unknown as {
+          _send: (arg: { payload: unknown }) => Promise<unknown>;
+        },
+        "_send",
+      )
+      .mockResolvedValue({ ids: [] });
+
+    const execution = {
+      options: { fn: { opts: {} }, headers: {} },
+    } as never;
+
+    const step = createStepTools(client, execution, async ({ args, opts }) => {
+      if (!opts?.fn) {
+        throw new Error("Expected tool fn");
+      }
+      return opts.fn(
+        { sessions: ctxSessions } as never,
+        ...(args as unknown[]),
+      );
+    });
+
+    await step.sendEvent("send-child", { name: "app/child", data: {} });
+
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    return sendSpy.mock.calls[0]?.[0]?.payload;
+  };
+
+  test("stamps propagated_sessions from ctx.sessions when the toggle is on", async () => {
+    const payload = await runSendEvent(true, { conv_id: "p1" });
+    expect(payload).toEqual({
+      name: "app/child",
+      data: {},
+      meta: { propagated_sessions: { conv_id: "p1" } },
+    });
+  });
+
+  test("leaves the send untouched when the toggle is off", async () => {
+    // Even with ctx.sessions populated, an off toggle must not stamp.
+    const payload = await runSendEvent(false, { conv_id: "p1" });
+    expect(payload).toEqual({ name: "app/child", data: {} });
   });
 });

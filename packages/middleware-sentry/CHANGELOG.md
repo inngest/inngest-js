@@ -1,5 +1,11 @@
 # @inngest/middleware-sentry
 
+## 1.0.0
+
+### Major Changes
+
+- [#1381](https://github.com/inngest/inngest-js/pull/1381) [`7ee8aafb`](https://github.com/inngest/inngest-js/commit/7ee8aafb29fceaefb614657d563ec99e946b3db2) Thanks [@amh4r](https://github.com/amh4r)! - Drop support for TypeScript SDK <4
+
 ## 0.1.3
 
 ### Patch Changes

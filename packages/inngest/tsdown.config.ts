@@ -19,6 +19,8 @@ export default defineConfig({
     "src/index.ts",
     "src/internals.ts",
     "src/koa.ts",
+    "src/react.ts",
+    "src/realtime.ts",
     "src/lambda.ts",
     "src/next.ts",
     "src/nitro.ts",
@@ -26,8 +28,14 @@ export default defineConfig({
     "src/nuxt.ts",
     "src/redwood.ts",
     "src/remix.ts",
+    "src/experimental/durable-endpoints/index.ts",
+    "src/experimental/durable-endpoints/client.ts",
     "src/sveltekit.ts",
     "src/types.ts",
+
+    // Connect worker thread runner. Must be an entrypoint so that it compiles
+    "src/components/connect/strategies/workerThread/runner.ts",
+
     "!src/test/**/*",
     "!src/**/*.test.*",
   ],

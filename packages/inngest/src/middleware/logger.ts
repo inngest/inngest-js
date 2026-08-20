@@ -1,4 +1,6 @@
 import { resolveNextTick } from "../helpers/promises.ts";
+import { isRecord } from "../helpers/types.ts";
+import type { LogLevel } from "../types.ts";
 
 /**
  * All kinds of arguments can come through
@@ -26,21 +28,101 @@ export interface Logger {
   debug(...args: LogArg[]): void;
 }
 
-export class DefaultLogger implements Logger {
+/**
+ * Numeric ranking for log levels. Higher = more severe.
+ * Used to determine if a message should be logged based on configured level.
+ */
+const LOG_LEVEL_RANK = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+} as const;
+
+type CallableLogLevel = keyof typeof LOG_LEVEL_RANK;
+
+/**
+ * Console-based logger. Not for production use.
+ */
+export class ConsoleLogger implements Logger {
+  private readonly level: LogLevel;
+
+  constructor(opts: { level?: LogLevel } = {}) {
+    this.level = opts.level ?? "info";
+  }
+
   info(...args: LogArg[]) {
-    console.info(...args);
+    if (this.shouldLog("info")) {
+      this.logFormatted(console.info, args);
+    }
   }
 
   warn(...args: LogArg[]) {
-    console.warn(...args);
+    if (this.shouldLog("warn")) {
+      this.logFormatted(console.warn, args);
+    }
   }
 
   error(...args: LogArg[]) {
-    console.error(...args);
+    if (this.shouldLog("error")) {
+      this.logFormatted(console.error, args);
+    }
   }
 
   debug(...args: LogArg[]) {
-    console.debug(...args);
+    if (this.shouldLog("debug")) {
+      this.logFormatted(console.debug, args);
+    }
+  }
+
+  /**
+   * Detect Pino-style `(object, string, ...rest)` calls and reformat for
+   * console readability: message first, then structured fields.
+   */
+  private logFormatted(fn: (...args: LogArg[]) => void, args: LogArg[]) {
+    if (args.length > 1 && isRecord(args[0]) && typeof args[1] === "string") {
+      const fields = args[0];
+      const nonErrFields = Object.fromEntries(
+        Object.entries(fields).filter(([key]) => {
+          return key !== "err";
+        }),
+      );
+      const [, message, ...rest] = args;
+
+      fn(message);
+
+      if (fields.err) {
+        fn(fields.err);
+      }
+
+      if (Object.keys(nonErrFields).length > 0) {
+        fn(nonErrFields);
+      }
+
+      if (rest.length > 0) {
+        fn(...rest);
+      }
+
+      return;
+    }
+
+    fn(...args);
+  }
+
+  private shouldLog(level: CallableLogLevel): boolean {
+    if (this.level === "silent") {
+      return false;
+    }
+
+    // Map configured level to a callable level (fatal -> error)
+    let effectiveLevel: CallableLogLevel = "info";
+    if (this.level === "fatal") {
+      effectiveLevel = "error";
+    } else if (this.level in LOG_LEVEL_RANK) {
+      effectiveLevel = this.level as CallableLogLevel;
+    }
+
+    return LOG_LEVEL_RANK[level] >= LOG_LEVEL_RANK[effectiveLevel];
   }
 }
 
@@ -78,23 +160,30 @@ export class ProxyLogger implements Logger {
   }
 
   info(...args: LogArg[]) {
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      return;
+    }
     this.logger.info(...args);
   }
 
   warn(...args: LogArg[]) {
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      return;
+    }
     this.logger.warn(...args);
   }
 
   error(...args: LogArg[]) {
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      return;
+    }
     this.logger.error(...args);
   }
 
   debug(...args: LogArg[]) {
-    // there are loggers that don't implement "debug" by default
-    if (!this.enabled || !(typeof this.logger.debug === "function")) return;
+    if (!this.enabled || !(typeof this.logger.debug === "function")) {
+      return;
+    }
     this.logger.debug(...args);
   }
 
@@ -107,8 +196,8 @@ export class ProxyLogger implements Logger {
   }
 
   async flush() {
-    // If DefaultLogger, nothing to wait for
-    if (this.logger.constructor.name == DefaultLogger.name) {
+    // If ConsoleLogger, nothing to wait for
+    if (this.logger.constructor.name == ConsoleLogger.name) {
       return;
     }
 

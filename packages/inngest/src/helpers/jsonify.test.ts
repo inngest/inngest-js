@@ -4,7 +4,7 @@ import type { Jsonify } from "./jsonify.ts";
 describe("Jsonify", () => {
   describe("unnested", () => {
     test("allows `any`", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Actual = Jsonify<any>;
       assertType<IsAny<Actual>>(true);
     });
@@ -29,9 +29,9 @@ describe("Jsonify", () => {
 
   describe("nested", () => {
     test("allows `any`", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Actual = Jsonify<{ foo: any }>;
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Expected = { foo: any };
       assertType<IsEqual<Actual, Expected>>(true);
     });
@@ -74,14 +74,14 @@ describe("Jsonify", () => {
   describe("#98", () => {
     test("allows mapped types with overrides when unnested", () => {
       interface Foo {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         [x: string]: any;
         foo: boolean;
       }
 
       type Actual = Jsonify<Foo>;
       type Expected = {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         [x: string]: any;
         foo: boolean;
       };
@@ -93,18 +93,47 @@ describe("Jsonify", () => {
 
     test("allows mapped types with overrides when nested", () => {
       interface Foo {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         [x: string]: any;
         foo: boolean;
       }
 
       type Actual = Jsonify<{ foo: Foo }>;
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       type Expected = { foo: { [x: string]: any; foo: boolean } };
 
       assertType<IsEqual<Actual, Expected>>(true);
       assertType<IsEqual<Actual["foo"]["foo"], boolean>>(true);
       assertType<IsAny<Actual["foo"]["bar"]>>(true);
+    });
+  });
+
+  // The property-access assertions are the real guards here: the `IsEqual`
+  // assertions pass even on broken variants because the deferred aliases
+  // compare equal before resolution.
+  describe("#1532", () => {
+    test("re-applying Jsonify to an object with optional properties is a no-op", () => {
+      type Widget = { media: { mediaId: string; label?: string }[] };
+
+      type Once = Jsonify<Widget>;
+      type Twice = Jsonify<Once>;
+
+      assertType<IsEqual<Once, Twice>>(true);
+      assertType<IsEqual<Twice["media"][number]["mediaId"], string>>(true);
+    });
+
+    test("re-applying Jsonify to a mapped type with optional properties is a no-op", () => {
+      interface Foo {
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
+        [x: string]: any;
+        items: { id: string; label?: string }[];
+      }
+
+      type Once = Jsonify<Foo>;
+      type Twice = Jsonify<Once>;
+
+      assertType<IsEqual<Once, Twice>>(true);
+      assertType<IsEqual<Twice["items"][number]["id"], string>>(true);
     });
   });
 

@@ -1,8 +1,7 @@
 import { inngest } from "../client";
 
 const cronInvokeFn = inngest.createFunction(
-  { id: "step-invoke-cron" },
-  { cron: "59 23 31 12 *" },
+  { id: "step-invoke-cron", triggers: [{ cron: "59 23 31 12 *" }] },
   async ({ step }) => {
     await step.sleep("wait-a-moment", "1s");
 
@@ -13,8 +12,7 @@ const cronInvokeFn = inngest.createFunction(
 );
 
 const eventInvokeFn = inngest.createFunction(
-  { id: "step-invoke-event" },
-  { event: "demo/step.invoke.other" },
+  { id: "step-invoke-event", triggers: [{ event: "demo/step.invoke.other" }] },
   async ({ step }) => {
     await step.sleep("wait-a-moment", "1s");
 
@@ -25,8 +23,7 @@ const eventInvokeFn = inngest.createFunction(
 );
 
 const mainFn = inngest.createFunction(
-  { id: "step-invoke" },
-  { event: "demo/step.invoke" },
+  { id: "step-invoke", triggers: [{ event: "demo/step.invoke" }] },
   async ({ step }) => {
     return Promise.all([
       step.invoke("event-fn", { function: eventInvokeFn }),

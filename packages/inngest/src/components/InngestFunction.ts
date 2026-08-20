@@ -1,31 +1,28 @@
-import {
-  ExecutionVersion,
-  internalEvents,
-  queryKeys,
-} from "../helpers/consts.ts";
+import { internalEvents, queryKeys } from "../helpers/consts.ts";
+import { warnOnce } from "../helpers/log.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
-import type {
-  Cancellation,
-  ConcurrencyOption,
-  FunctionConfig,
-  Handler,
-  TimeStr,
-  TimeStrBatch,
-  TriggersFromClient,
+import {
+  type Cancellation,
+  type CheckpointingOptions,
+  type ConcurrencyOption,
+  type DefaultMaxRuntime,
+  defaultCheckpointingOptions,
+  type FunctionConfig,
+  type Handler,
+  type InternalCheckpointingOptions,
+  type TimeStr,
+  type TimeStrBatch,
 } from "../types.ts";
+import { createExecutionEngine } from "./execution/engine.ts";
 import type {
   IInngestExecution,
   InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
-import { createV0InngestExecution } from "./execution/v0.ts";
-import { createV1InngestExecution } from "./execution/v1.ts";
-import { createV2InngestExecution } from "./execution/v2.ts";
-import type { GetEvents, Inngest } from "./Inngest.ts";
-import type {
-  InngestMiddleware,
-  MiddlewareRegisterReturn,
-} from "./InngestMiddleware.ts";
+
+import { type Inngest, internalLoggerSymbol } from "./Inngest.ts";
+import type { Middleware } from "./middleware/middleware.ts";
+import { EventType, type EventTypeWithAnySchema } from "./triggers/triggers.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -37,19 +34,12 @@ import type {
  * @public
  */
 export class InngestFunction<
-  TFnOpts extends InngestFunction.Options<
-    TClient,
-    TMiddleware,
-    TTriggers,
-    TFailureHandler
-  >,
+  TFnOpts extends InngestFunction.Options<TTriggers, TFailureHandler>,
   THandler extends Handler.Any,
   TFailureHandler extends Handler.Any,
   TClient extends Inngest.Any = Inngest.Any,
-  TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
-  TTriggers extends InngestFunction.Trigger<
-    TriggersFromClient<TClient>
-  >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
+  TTriggers extends
+    InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
 > implements InngestFunction.Like
 {
   static stepId = "step";
@@ -64,7 +54,6 @@ export class InngestFunction<
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
   protected readonly client: TClient;
-  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -87,10 +76,13 @@ export class InngestFunction<
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
 
-    this.middleware = this.client["initializeMiddleware"](
-      this.opts.middleware,
-      { registerInput: { fn: this }, prefixStack: this.client["middleware"] },
-    );
+    if (this.opts.optimizeParallelism === false) {
+      warnOnce(
+        this.client[internalLoggerSymbol],
+        `optimize-parallelism-deprecated:${this.opts.id}`,
+        '`optimizeParallelism: false` is deprecated; use `group.parallel({ mode: "race" }, ...)` for race semantics instead',
+      );
+    }
   }
 
   /**
@@ -174,21 +166,12 @@ export class InngestFunction<
      */
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
+    const triggers = this.getConfigTriggers(fnId);
+
     const fn: FunctionConfig = {
       id: fnId,
       name: this.name,
-      triggers: (this.opts.triggers ?? []).map((trigger) => {
-        if ("event" in trigger) {
-          return {
-            event: trigger.event as string,
-            expression: trigger.if,
-          };
-        }
-
-        return {
-          cron: trigger.cron,
-        };
-      }),
+      triggers,
       steps: {
         [InngestFunction.stepId]: {
           id: InngestFunction.stepId,
@@ -213,12 +196,19 @@ export class InngestFunction<
 
     if (cancelOn) {
       fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+        let eventName: string;
+        if (typeof event === "string") {
+          eventName = event;
+        } else {
+          eventName = event.name;
+        }
+
         const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
-          event,
+          event: eventName,
         };
 
         if (timeout) {
-          ret.timeout = timeStr(timeout);
+          ret.timeout = timeStr(timeout, this.client[internalLoggerSymbol]);
         }
 
         if (match) {
@@ -266,19 +256,51 @@ export class InngestFunction<
     return config;
   }
 
+  /**
+   * Build the trigger list for this function's `getConfig` payload. Subclasses
+   * (e.g. `DeferredFunction`) override this to emit implicit triggers.
+   */
+  protected getConfigTriggers(_fnId: string): FunctionConfig["triggers"] {
+    const triggers: FunctionConfig["triggers"] = [];
+
+    for (const trigger of this.opts.triggers ?? []) {
+      if (trigger.cron) {
+        const cronTrigger = trigger as { cron: string; jitter?: string };
+        triggers.push({
+          cron: cronTrigger.cron,
+          ...(cronTrigger.jitter ? { jitter: cronTrigger.jitter } : {}),
+        });
+        continue;
+      }
+
+      if (!trigger.event) {
+        continue;
+      }
+
+      // The invoke event is in the triggers if they used the `invoke` trigger
+      // helper. But we need to remove it in the config, or else the function
+      // will be triggered by any invoke.
+      let eventName = trigger.event;
+      if (eventName instanceof EventType) {
+        eventName = eventName.name;
+      }
+      if (eventName === internalEvents.FunctionInvoked) {
+        continue;
+      }
+
+      triggers.push({ event: eventName, expression: trigger.if });
+    }
+
+    return triggers;
+  }
+
   protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
       fn: this,
       ...opts.partialOptions,
     };
 
-    const versionHandlers = {
-      [ExecutionVersion.V2]: () => createV2InngestExecution(options),
-      [ExecutionVersion.V1]: () => createV1InngestExecution(options),
-      [ExecutionVersion.V0]: () => createV0InngestExecution(options),
-    } satisfies Record<ExecutionVersion, () => IInngestExecution>;
-
-    return versionHandlers[opts.version]();
+    return createExecutionEngine(options);
   }
 
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
@@ -287,7 +309,7 @@ export class InngestFunction<
     return (
       this.opts.optimizeParallelism ??
       this.client["options"].optimizeParallelism ??
-      false
+      true
     );
   }
 
@@ -296,16 +318,39 @@ export class InngestFunction<
     requestedRunStep: string | undefined,
     internalFnId: string | undefined,
     disableImmediateExecution: boolean,
-  ): boolean {
+    defaultMaxRuntime: DefaultMaxRuntime,
+  ): InternalCheckpointingOptions | undefined {
     if (requestedRunStep || !internalFnId || disableImmediateExecution) {
-      return false;
+      return;
     }
 
-    return Boolean(
-      this.opts.experimentalCheckpointing ||
-        // TODO We should check the commhandler's client instead of this one?
-        this.client["options"].experimentalCheckpointing,
-    );
+    // TODO We should check the commhandler's client instead of this one?
+    const userCfg =
+      this.opts.checkpointing ??
+      this.client["options"].checkpointing ??
+      this.opts.experimentalCheckpointing ??
+      this.client["options"].experimentalCheckpointing ??
+      true;
+
+    if (!userCfg) {
+      // Opted out
+      return;
+    }
+
+    if (userCfg === true) {
+      return {
+        ...defaultCheckpointingOptions,
+        maxRuntime: defaultMaxRuntime,
+      };
+    }
+
+    return {
+      bufferedSteps:
+        userCfg.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
+      maxRuntime: userCfg.maxRuntime ?? defaultMaxRuntime,
+      maxInterval:
+        userCfg.maxInterval ?? defaultCheckpointingOptions.maxInterval,
+    };
   }
 }
 
@@ -326,15 +371,13 @@ export namespace InngestFunction {
    * inference.
    */
   export type Any = InngestFunction<
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    any,
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    InngestFunction.Options<any, any>,
     Handler.Any,
     Handler.Any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
   >;
 
@@ -347,9 +390,9 @@ export namespace InngestFunction {
    *
    * @public
    */
-  export type Trigger<T extends string> = StrictUnion<
+  export type Trigger<TName extends string> = StrictUnion<
     | {
-        event: T;
+        event: TName | EventTypeWithAnySchema<TName>;
         if?: string;
       }
     | {
@@ -358,8 +401,8 @@ export namespace InngestFunction {
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    T extends InngestFunction<infer O, any, any, any, any> ? O : never;
 
   /**
    * A set of options for configuring an Inngest function.
@@ -367,11 +410,8 @@ export namespace InngestFunction {
    * @public
    */
   export interface Options<
-    TClient extends Inngest.Any = Inngest.Any,
-    TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
-    TTriggers extends InngestFunction.Trigger<
-      TriggersFromClient<TClient>
-    >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
+    TTriggers extends
+      InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
     TFailureHandler extends Handler.Any = Handler.Any,
   > {
     triggers?: TTriggers;
@@ -626,7 +666,7 @@ export namespace InngestFunction {
       mode: "skip" | "cancel";
     };
 
-    cancelOn?: Cancellation<GetEvents<TClient, true>>[];
+    cancelOn?: Cancellation[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.
@@ -672,37 +712,20 @@ export namespace InngestFunction {
      * Inngest functionality.
      *
      * See {@link https://innge.st/middleware}
-     *
-     * @example
-     *
-     * ```ts
-     * export const inngest = new Inngest({
-     *   middleware: [
-     *     new InngestMiddleware({
-     *       name: "My Middleware",
-     *       init: () => {
-     *         // ...
-     *       }
-     *     })
-     *   ]
-     * });
-     * ```
      */
-    middleware?: TMiddleware;
+    middleware?: Middleware.Class[];
 
     /**
-     * If `true`, parallel steps within this function are optimized to reduce
-     * traffic during `Promise` resolution, which can hugely reduce the time
-     * taken and number of requests for each run.
+     * Optimizes parallel steps to reduce traffic during `Promise` resolution,
+     * reducing time and requests per run. `Promise.*()` waits for all promises
+     * to settle before resolving. Use `group.parallel()` for `Promise.race()`
+     * semantics.
      *
-     * Note that this will be the default behaviour in v4 and in its current
-     * form will cause `Promise.*()` to wait for all promises to settle before
-     * resolving.
+     * Overrides the client-level setting.
      *
-     * Providing this value here will overwrite the same value given on the
-     * client.
-     *
-     * @default false
+     * @deprecated Use `group.parallel({ mode: "race" })` for race semantics
+     * instead.
+     * @default true
      */
     optimizeParallelism?: boolean;
 
@@ -712,24 +735,40 @@ export namespace InngestFunction {
      * If `true`, enables checkpointing with default settings, which is a safe,
      * blocking version of checkpointing, where we check in with Inngest after
      * every step is run.
-     */
-    experimentalCheckpointing?: boolean;
-    /**
-     * If an object, you can tweak the settings to batch many steps into a
-     * single checkpoint. Note that if your server dies before the checkpoint
-     * completes, step data will be lost and steps will be rerun.
      *
-     * We recommend starting with the default `true` configuration and only
-     * tweak the parameters directly if necessary.
+     * If an object, you can tweak the settings to batch, set a maximum runtime
+     * before going async, and more. Note that if your server dies before the
+     * checkpoint completes, step data will be lost and steps will be rerun.
+     *
+     * We recommend starting with the default `true` configuration and only tweak
+     * the parameters directly if necessary.
+     *
+     * @deprecated Use `checkpointing` instead.
      */
-    // | {
-    //     maxSteps?: number;
-    //     maxInterval?: number | string | Temporal.DurationLike;
-    //   };
+    experimentalCheckpointing?: CheckpointingOptions;
+
+    /**
+     * Whether or not to use checkpointing for this function's executions.
+     *
+     * If `false`, disables checkpointing.
+     *
+     * If `true`, enables checkpointing with default settings, which is a safe,
+     * blocking version of checkpointing, where we check in with Inngest after
+     * every step is run.
+     *
+     * If an object, you can tweak the settings to batch, set a maximum runtime
+     * before going async, and more. Note that if your server dies before the
+     * checkpoint completes, step data will be lost and steps will be rerun.
+     *
+     * We recommend starting with the default `true` configuration and only tweak
+     * the parameters directly if necessary.
+     *
+     * @default true
+     */
+    checkpointing?: CheckpointingOptions;
   }
 }
 
 export type CreateExecutionOptions = {
-  version: ExecutionVersion;
   partialOptions: Omit<InngestExecutionOptions, "fn">;
 };

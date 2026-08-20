@@ -56,7 +56,7 @@ export const serve = (
     ...options,
     handler: (req: Request, env: Record<string, string>) => {
       return {
-        body: () => req.json(),
+        body: () => req.text(),
         headers: (key) => req.headers.get(key),
         method: () => req.method,
         env: () => env,

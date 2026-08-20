@@ -5,14 +5,14 @@ vi.mock("node:async_hooks", () => {
   throw new Error("import failed");
 });
 
+const alsSymbol = Symbol.for("inngest:als");
+
 describe("getAsyncLocalStorage", () => {
   afterEach(() => {
     vi.resetModules();
 
     // kill the global used for storing ALS state
-    delete (globalThis as Record<string | symbol | number, unknown>)[
-      Symbol.for("inngest:als")
-    ];
+    delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
   });
 
   test("should return `undefined` if node:async_hooks is not supported", async () => {
@@ -45,9 +45,7 @@ describe("getAsyncCtx", () => {
     vi.resetModules();
 
     // kill the global used for storing ALS state
-    delete (globalThis as Record<string | symbol | number, unknown>)[
-      Symbol.for("inngest:als")
-    ];
+    delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
   });
 
   test("should return `undefined` if node:async_hooks is not supported", async () => {
@@ -56,7 +54,7 @@ describe("getAsyncCtx", () => {
 
     const inngest = new Inngest({ id: "test" });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     let resolve: (value: any) => void | PromiseLike<void>;
     const externalP = new Promise<AsyncContext | undefined>((r) => {
       resolve = r;
@@ -65,8 +63,7 @@ describe("getAsyncCtx", () => {
     let internalRunId: string | undefined;
 
     const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
+      { id: "test", triggers: [{ event: "" }] },
       ({ runId }) => {
         internalRunId = runId;
 
@@ -78,7 +75,7 @@ describe("getAsyncCtx", () => {
       },
     );
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     const t = new InngestTestEngine({ function: fn as any });
 
     const { result } = await t.execute();
@@ -88,5 +85,53 @@ describe("getAsyncCtx", () => {
 
     const store = await externalP;
     expect(store).toBeUndefined();
+  });
+
+  test("should execute step tooling if node:async_hooks is not supported", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { Inngest } = await import("../../index.ts");
+
+    const inngest = new Inngest({ id: "test" });
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "" }] },
+      async ({ step }) => {
+        return await step.run("step", () => "done");
+      },
+    );
+
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
+    const t = new InngestTestEngine({ function: fn as any });
+
+    const { result, error } = await t.execute();
+
+    expect(error).toBeUndefined();
+    expect(result).toBe("done");
+  });
+});
+
+describe("getAsyncCtxSync", () => {
+  afterEach(() => {
+    vi.resetModules();
+
+    // kill the global used for storing ALS state
+    delete (globalThis as Record<string | symbol | number, unknown>)[alsSymbol];
+  });
+
+  test("should return `undefined` if node:async_hooks is not supported", async () => {
+    const consoleWarnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+
+    const mod = await import("./als.ts");
+
+    // Initialize the fallback
+    await mod.getAsyncLocalStorage();
+
+    // Sync access should return undefined (fallback always returns undefined)
+    const store = mod.getAsyncCtxSync();
+
+    expect(store).toBeUndefined();
+    expect(consoleWarnSpy).toHaveBeenCalled();
   });
 });
