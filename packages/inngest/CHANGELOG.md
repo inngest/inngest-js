@@ -1,5 +1,14 @@
 # inngest
 
+## 4.18.2
+
+### Patch Changes
+
+- [#1693](https://github.com/inngest/inngest-js/pull/1693) [`a2cd5b48`](https://github.com/inngest/inngest-js/commit/a2cd5b48f724ea2566047a2916a072dc5e7f3049) Thanks [@scottnuma](https://github.com/scottnuma)! - Validate propagated sessions with step.invoke and defer
+
+- Updated dependencies [[`abc4a63f`](https://github.com/inngest/inngest-js/commit/abc4a63fb8a5d8d1599ee7a3afbeb2b82d9cc875)]:
+  - @inngest/ai@0.1.8
+
 ## 4.18.1
 
 ### Patch Changes
