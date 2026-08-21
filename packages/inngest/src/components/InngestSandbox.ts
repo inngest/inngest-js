@@ -26,6 +26,7 @@ export {
 export type {
   DurableSandbox,
   DurableSandboxProcess,
+  DurableSandboxSnapshot,
   DurableSandboxTools,
   Sandbox,
   SandboxAction,
@@ -33,6 +34,8 @@ export type {
   SandboxCommandOptions,
   SandboxCommandOutputMetadata,
   SandboxCommandResult,
+  SandboxCreateFreshOptions,
+  SandboxCreateFromSnapshotOptions,
   SandboxCreateOptions,
   SandboxDestroyResult,
   SandboxDuration,
@@ -61,6 +64,12 @@ export type {
   SandboxRef,
   SandboxResource,
   SandboxResources,
+  SandboxSnapshotListOptions,
+  SandboxSnapshotListResult,
+  SandboxSnapshotRef,
+  SandboxSnapshotResource,
+  SandboxSnapshotStatus,
+  SandboxSnapshotWaitOptions,
   SandboxStatus,
   SandboxWaitUntilRunningOptions,
 } from "./sandbox/types.ts";
@@ -79,5 +88,8 @@ export {
   sandboxProcessStateSchema,
   sandboxRefSchema,
   sandboxResourceSchema,
+  sandboxSnapshotRefSchema,
+  sandboxSnapshotResourceSchema,
+  sandboxSnapshotStatusSchema,
   sandboxStatusSchema,
 } from "./sandbox/validation.ts";
