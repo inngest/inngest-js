@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.1.8
+
+### Patch Changes
+
+- [#1145](https://github.com/inngest/inngest-js/pull/1145) [`abc4a63f`](https://github.com/inngest/inngest-js/commit/abc4a63fb8a5d8d1599ee7a3afbeb2b82d9cc875) Thanks [@BastiDood](https://github.com/BastiDood)! - Move `@types/node` and `typescript` to dev dependencies
+
 ## 0.1.7
 
 ### Patch Changes
