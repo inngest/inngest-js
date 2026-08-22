@@ -115,8 +115,16 @@ export type SandboxCommandOutputMetadata =
     };
 
 export interface SandboxCommandResult {
-  stdout: Uint8Array;
-  stderr: Uint8Array;
+  /**
+   * Captured stdout decoded as UTF-8. Invalid or truncated byte sequences are
+   * represented by the Unicode replacement character.
+   */
+  stdout: string;
+  /**
+   * Captured stderr decoded as UTF-8. Invalid or truncated byte sequences are
+   * represented by the Unicode replacement character.
+   */
+  stderr: string;
   exitCode: number;
   output: SandboxCommandOutputMetadata;
 }
