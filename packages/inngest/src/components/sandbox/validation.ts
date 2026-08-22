@@ -209,7 +209,6 @@ export const sandboxRefSchema = sandboxResourceSchema
 
 export const sandboxSnapshotStatusSchema = z.enum([
   "CREATING",
-  "UPLOADING",
   "READY",
   "DELETING",
   "DELETED",
@@ -220,15 +219,12 @@ export const sandboxSnapshotStatusSchema = z.enum([
 const sandboxSnapshotResourceBaseSchema = z
   .object({
     id: canonicalUuidSchema,
-    sourceSandboxId: canonicalUuidSchema,
-    sourceImageRef: z.string().min(1),
+    sourceImageId: z.string().min(1),
     status: sandboxSnapshotStatusSchema,
     compatibilityId: z.string().min(1).optional(),
-    consistency: z.literal("CRASH_CONSISTENT"),
     resources: sandboxResourcesSchema,
     memoryPackCount: z.number().int().nonnegative().max(0xffffffff),
     diskPackCount: z.number().int().nonnegative().max(0xffffffff),
-    logicalBytes: z.number().int().nonnegative().safe(),
     storedBytes: z.number().int().nonnegative().safe(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,

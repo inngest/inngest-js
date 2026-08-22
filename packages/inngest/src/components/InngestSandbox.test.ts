@@ -58,15 +58,12 @@ const snapshotRef = {
   kind: "inngest/sandbox.snapshot",
   version: 1,
   id: snapshotId,
-  sourceSandboxId: sandboxId,
-  sourceImageRef: "default",
+  sourceImageId: "default",
   status: "READY",
   compatibilityId: "simcity-linux-amd64-v1",
-  consistency: "CRASH_CONSISTENT",
   resources: { vcpu: 2, memoryMb: 2048 },
   memoryPackCount: 8,
   diskPackCount: 2,
-  logicalBytes: 1024,
   storedBytes: 512,
   createdAt: now,
   updatedAt: now,
@@ -825,7 +822,7 @@ describe("step.sandbox", () => {
     expect("snapshots" in client.sandboxes).toBe(true);
   });
 
-  test("parses the Go REST snapshot contracts and polls through UPLOADING", async () => {
+  test("parses the Go REST snapshot contracts and polls through CREATING", async () => {
     vi.useFakeTimers();
     try {
       const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
@@ -834,9 +831,9 @@ describe("step.sandbox", () => {
         version: _snapshotVersion,
         ...readySnapshotResource
       } = snapshotRef;
-      const uploadingSnapshotResource = {
+      const creatingSnapshotResource = {
         ...readySnapshotResource,
-        status: "UPLOADING",
+        status: "CREATING",
         compatibilityId: undefined,
       };
       const metadata = { fetchedAt: "2026-08-05T12:00:00.123456789Z" };
@@ -850,7 +847,7 @@ describe("step.sandbox", () => {
           init?.method === "POST"
         ) {
           return Response.json(
-            { data: uploadingSnapshotResource, metadata },
+            { data: creatingSnapshotResource, metadata },
             { status: 202 },
           );
         }
@@ -886,7 +883,7 @@ describe("step.sandbox", () => {
 
       expect(snapshot).toMatchObject({
         id: snapshotId,
-        sourceImageRef: "default",
+        sourceImageId: "default",
         status: "READY",
       });
       expect(fetched).toMatchObject(snapshotRef);
@@ -898,9 +895,9 @@ describe("step.sandbox", () => {
       const createRequest = vi
         .mocked(fetchMock)
         .mock.calls.find(([input]) =>
-          new URL(input instanceof Request ? input.url : input).pathname.endsWith(
-            "/snapshots",
-          ),
+          new URL(
+            input instanceof Request ? input.url : input,
+          ).pathname.endsWith("/snapshots"),
         );
       expect(createRequest?.[1]).toMatchObject({
         method: "POST",
@@ -1871,6 +1868,47 @@ describe("inngest.sandboxes", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("treats omitted empty protobuf exec output as empty bytes", async () => {
+    const {
+      kind: _sandboxKind,
+      version: _sandboxVersion,
+      ...sandboxData
+    } = sandboxRef;
+    const sandboxPath = `/v2/sandboxes/${sandboxId}`;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === sandboxPath && method === "GET") {
+        return Response.json({ data: sandboxData });
+      }
+      if (url.pathname === `${sandboxPath}/exec` && method === "POST") {
+        return Response.json({
+          data: { encoding: "base64", exitCode: 0 },
+        });
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+    const inngest = createClient({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    const sandbox = await inngest.sandboxes.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    await expect(
+      sandbox.commands.run({ command: ["/bin/true"] }),
+    ).resolves.toEqual({
+      stdout: new Uint8Array(),
+      stderr: new Uint8Array(),
+      exitCode: 0,
+      output: { truncated: false },
+    });
   });
 
   test("forwards the complete direct REST lifecycle", async () => {

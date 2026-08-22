@@ -92,8 +92,8 @@ const sandboxPageSchema = z
 
 const wireCommandResultSchema = z
   .object({
-    stdout: z.string(),
-    stderr: z.string(),
+    stdout: z.string().optional(),
+    stderr: z.string().optional(),
     encoding: z.literal("base64"),
     exitCode: z.number().int().min(-0x80000000).max(0x7fffffff),
   })
@@ -837,8 +837,8 @@ const createDirectSandboxFacade = (
           "sandbox exec result",
         );
         return {
-          stdout: decodeBase64(result.stdout, "sandbox exec stdout"),
-          stderr: decodeBase64(result.stderr, "sandbox exec stderr"),
+          stdout: decodeBase64(result.stdout ?? "", "sandbox exec stdout"),
+          stderr: decodeBase64(result.stderr ?? "", "sandbox exec stderr"),
           exitCode: result.exitCode,
           output: { truncated: false },
         };
@@ -1246,17 +1246,10 @@ export const createSandboxSnapshotForOperation = async (
   const snapshot = sandboxSnapshotRefFromResource(envelope?.data);
   if (
     (status === 201 && snapshot.status !== "READY") ||
-    (status === 202 &&
-      snapshot.status !== "CREATING" &&
-      snapshot.status !== "UPLOADING")
+    (status === 202 && snapshot.status !== "CREATING")
   ) {
     throw new SandboxValidationError(
       `Sandbox snapshot Create returned HTTP ${status} with status ${snapshot.status}`,
-    );
-  }
-  if (snapshot.sourceSandboxId !== sandboxId) {
-    throw new SandboxValidationError(
-      "Sandbox snapshot Create returned a snapshot for another sandbox",
     );
   }
   return waitUntilSandboxSnapshotReadyForOperation(
@@ -1343,7 +1336,7 @@ const waitUntilSandboxSnapshotReady = async (
   if (snapshot.status === "READY") {
     return snapshot;
   }
-  if (snapshot.status !== "CREATING" && snapshot.status !== "UPLOADING") {
+  if (snapshot.status !== "CREATING") {
     throw new SandboxError({
       action: "snapshot.waitUntilReady",
       code: "sandbox_snapshot_not_ready",
@@ -1388,7 +1381,7 @@ const waitUntilSandboxSnapshotReady = async (
     if (snapshot.status === "READY") {
       return snapshot;
     }
-    if (snapshot.status !== "CREATING" && snapshot.status !== "UPLOADING") {
+    if (snapshot.status !== "CREATING") {
       throw new SandboxError({
         action: "snapshot.waitUntilReady",
         code: "sandbox_snapshot_not_ready",
