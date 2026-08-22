@@ -132,6 +132,10 @@ const signalInputSchema = z
 const waitInputSchema = z
   .object({ timeoutMs: z.number().int().positive().max(300_000) })
   .strict();
+const lifecycleInputSchema = waitInputSchema;
+const restoreInputSchema = waitInputSchema
+  .extend({ snapshotId: canonicalUuidSchema })
+  .strict();
 const outputInputSchema = z
   .object({
     tailBytes: z
@@ -197,6 +201,30 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("pause"),
+      target: sandboxTargetSchema,
+      input: z.tuple([lifecycleInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("resume"),
+      target: sandboxTargetSchema,
+      input: z.tuple([lifecycleInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("restore"),
+      target: sandboxTargetSchema,
+      input: z.tuple([restoreInputSchema]),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("process.start"),
       target: sandboxTargetSchema,
       input: z.tuple([processSpecInputSchema]),
@@ -248,7 +276,11 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       action: z.literal("snapshot.create"),
       target: sandboxTargetSchema,
       input: z.tuple([
-        z.object({ intentKey: z.string().min(1).max(512).optional() }).strict(),
+        z
+          .object({
+            timeoutMs: z.number().int().positive().max(300_000),
+          })
+          .strict(),
       ]),
     })
     .strict(),
@@ -452,6 +484,36 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...operationBase,
+      action: z.literal("pause"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "PAUSED",
+        "paused sandbox must be PAUSED",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("resume"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "RUNNING",
+        "resumed sandbox must be RUNNING",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
+      action: z.literal("restore"),
+      sandbox: sandboxRefSchema.refine(
+        (sandbox) => sandbox.status === "RUNNING",
+        "restored sandbox must be RUNNING",
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      ...operationBase,
       action: z.literal("process.start"),
       process: sandboxProcessRefSchema,
     })
@@ -545,6 +607,9 @@ const sandboxErrorPayloadSchema = z
       "waitUntilRunning",
       "exec",
       "destroy",
+      "pause",
+      "resume",
+      "restore",
       "process.start",
       "process.list",
       "process.get",
@@ -726,16 +791,6 @@ export const validateSandboxResult = <A extends SandboxAction>(
   ) {
     throw new SandboxValidationError(
       "Sandbox operation returned an unrelated snapshot",
-    );
-  }
-  if (
-    sandboxId &&
-    operation.action === "snapshot.create" &&
-    result.action === "snapshot.create" &&
-    result.snapshot.sourceSandboxId !== sandboxId
-  ) {
-    throw new SandboxValidationError(
-      "Sandbox operation returned a snapshot from an unrelated sandbox",
     );
   }
   if (
