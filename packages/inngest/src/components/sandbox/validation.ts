@@ -253,7 +253,8 @@ const validateSandboxSnapshotResource = (
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Source image ID must be a lowercase SHA-256 for READY snapshots",
+      message:
+        "Source image ID must be a lowercase SHA-256 for READY snapshots",
       path: ["sourceImageId"],
     });
   }
