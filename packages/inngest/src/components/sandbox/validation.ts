@@ -5,7 +5,6 @@ import { isTemporalDuration } from "../../helpers/temporal.ts";
 import {
   type SandboxCommandOptions,
   type SandboxCreateOptions,
-  type SandboxDuration,
   type SandboxFileDownloadOptions,
   type SandboxFileUploadOptions,
   type SandboxListOptions,
@@ -387,8 +386,7 @@ export const normalizeSandboxCreateOptions = (
       runningTimeout === false
         ? false
         : normalizeDurationMs(
-            (runningTimeout ??
-              defaultSandboxRunningTimeoutMs) as SandboxDuration,
+            runningTimeout ?? defaultSandboxRunningTimeoutMs,
             maxSandboxRunningTimeoutMs,
             "runningTimeout",
           ),
@@ -405,7 +403,7 @@ export const normalizeSandboxWaitUntilRunningOptions = (
   );
   return {
     timeoutMs: normalizeDurationMs(
-      parsed.timeout as SandboxDuration,
+      parsed.timeout,
       maxSandboxRunningTimeoutMs,
       "timeout",
     ),
@@ -545,7 +543,7 @@ export const normalizeSandboxProcessWaitOptions = (
       parsed.timeout === undefined
         ? defaultSandboxProcessTimeoutMs
         : normalizeDurationMs(
-            parsed.timeout as SandboxDuration,
+            parsed.timeout,
             maxSandboxProcessTimeoutMs,
             "timeout",
           ),
@@ -573,7 +571,7 @@ export const normalizeSandboxProcessOutputOptions = (
 };
 
 export const normalizeDurationMs = (
-  duration: SandboxDuration,
+  duration: unknown,
   maximumMs: number,
   context: string,
 ): number => {
