@@ -669,6 +669,9 @@ export const decodeBase64 = (value: string, context: string): Uint8Array => {
   }
 };
 
+export const decodeUtf8 = (value: Uint8Array): string =>
+  new TextDecoder("utf-8", { fatal: false }).decode(value);
+
 export const encodeBase64 = (value: Uint8Array): string => {
   let binary = "";
   const chunkSize = 0x8000;

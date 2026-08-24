@@ -4,6 +4,8 @@ import {
   type Sandbox,
   type SandboxAction,
   type SandboxClient,
+  type SandboxCommandOptions,
+  type SandboxCommandOutputMetadata,
   type SandboxDestroyResult,
   SandboxError,
   type SandboxErrorCode,
@@ -19,6 +21,7 @@ import {
   canonicalUuidSchema,
   decodeBase64,
   decodeOutputChunk,
+  decodeUtf8,
   normalizeFileDownloadOptions,
   normalizeFileUploadOptions,
   normalizeSandboxCommandOptions,
@@ -81,8 +84,8 @@ const sandboxPageSchema = z
 
 const wireCommandResultSchema = z
   .object({
-    stdout: z.string(),
-    stderr: z.string(),
+    stdout: z.string().optional(),
+    stderr: z.string().optional(),
     encoding: z.literal("base64"),
     exitCode: z.number().int().min(-0x80000000).max(0x7fffffff),
   })
@@ -637,42 +640,83 @@ const createDirectProcessFacade = (
   return Object.freeze(facade);
 };
 
+interface SandboxCommandByteResult {
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  exitCode: number;
+  output: SandboxCommandOutputMetadata;
+}
+
+type DirectSandboxCommandRunner = (
+  options: SandboxCommandOptions,
+) => Promise<SandboxCommandByteResult>;
+
+const directSandboxCommandRunners = new WeakMap<
+  Sandbox,
+  DirectSandboxCommandRunner
+>();
+
+/** Internal byte-preserving command execution used by the durable adapter. */
+export const runSandboxCommandForOperation = (
+  sandbox: Sandbox,
+  options: SandboxCommandOptions,
+): Promise<SandboxCommandByteResult> => {
+  const run = directSandboxCommandRunners.get(sandbox);
+  if (!run) {
+    throw new SandboxValidationError(
+      "Sandbox commands can only run on an SDK sandbox resource",
+    );
+  }
+  return run(options);
+};
+
 const createDirectSandboxFacade = (
   rawRef: unknown,
   transport: SandboxRestTransport,
 ): Sandbox => {
   const ref = parseWithSchema(sandboxRefSchema, rawRef, "sandbox reference");
   const basePath = `/v2/sandboxes/${encodeURIComponent(ref.id)}`;
+  const runCommand = async (
+    options: SandboxCommandOptions,
+  ): Promise<SandboxCommandByteResult> => {
+    const normalized = normalizeSandboxCommandOptions(options);
+    const { timeout: _timeout, timeoutMs, ...spec } = normalized;
+    const { envelope } = await transport.json(
+      "exec",
+      "POST",
+      `${basePath}/exec`,
+      {
+        body: {
+          ...spec,
+          timeout: `${timeoutMs}ms`,
+        },
+        statuses: [200],
+        sandboxId: ref.id,
+      },
+    );
+    const result = parseWithSchema(
+      wireCommandResultSchema,
+      envelope?.data,
+      "sandbox exec result",
+    );
+    return {
+      stdout: decodeBase64(result.stdout ?? "", "sandbox exec stdout"),
+      stderr: decodeBase64(result.stderr ?? "", "sandbox exec stderr"),
+      exitCode: result.exitCode,
+      output: { truncated: false },
+    };
+  };
   const facade: Sandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
     commands: Object.freeze({
       run: async (options) => {
-        const normalized = normalizeSandboxCommandOptions(options);
-        const { timeout: _timeout, timeoutMs, ...spec } = normalized;
-        const { envelope } = await transport.json(
-          "exec",
-          "POST",
-          `${basePath}/exec`,
-          {
-            body: {
-              ...spec,
-              timeout: `${timeoutMs}ms`,
-            },
-            statuses: [200],
-            sandboxId: ref.id,
-          },
-        );
-        const result = parseWithSchema(
-          wireCommandResultSchema,
-          envelope?.data,
-          "sandbox exec result",
-        );
+        const result = await runCommand(options);
         return {
-          stdout: decodeBase64(result.stdout, "sandbox exec stdout"),
-          stderr: decodeBase64(result.stderr, "sandbox exec stderr"),
+          stdout: decodeUtf8(result.stdout),
+          stderr: decodeUtf8(result.stderr),
           exitCode: result.exitCode,
-          output: { truncated: false },
+          output: result.output,
         };
       },
     }),
@@ -861,6 +905,7 @@ const createDirectSandboxFacade = (
       };
     },
   };
+  directSandboxCommandRunners.set(facade, runCommand);
   return Object.freeze(facade);
 };
 
