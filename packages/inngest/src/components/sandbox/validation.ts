@@ -510,7 +510,7 @@ export const normalizeSandboxCommandOptions = (
   command: SandboxCommand,
   options: SandboxCommandOptions = {},
 ): SandboxCommandOptions & { command: string[]; timeoutMs: number } => {
-  const parsed = normalizeProcessSpec({ command, ...options }, true);
+  const parsed = normalizeProcessSpec({ ...options, command }, true);
   return {
     ...parsed,
     timeoutMs:

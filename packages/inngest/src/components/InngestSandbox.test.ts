@@ -342,6 +342,27 @@ describe("step.sandbox", () => {
         ],
       }),
     );
+    const widerOptions = {
+      command: "printf overridden",
+      cwd: "/workspace",
+    };
+    await sandbox.commands.run(
+      "explicit-command",
+      "printf explicit",
+      widerOptions,
+    );
+    expect(rawTool).toHaveBeenLastCalledWith(
+      "explicit-command",
+      expect.objectContaining({
+        action: "exec",
+        input: [
+          expect.objectContaining({
+            command: ["/bin/sh", "-c", "printf explicit"],
+            cwd: "/workspace",
+          }),
+        ],
+      }),
+    );
     rawTool.mockClear();
     await expect(sandbox.commands.run("empty", "")).rejects.toThrow(
       "command must not be empty",
