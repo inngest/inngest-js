@@ -544,7 +544,7 @@ export const normalizeSandboxProcessSignalOptions = (
   );
   return {
     signal: parsed.signal,
-    includeChildren: parsed.includeChildren ?? false,
+    includeChildren: parsed.includeChildren ?? true,
   };
 };
 

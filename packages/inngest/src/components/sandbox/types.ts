@@ -185,6 +185,10 @@ export interface SandboxProcessStartOptions {
 
 export interface SandboxProcessSignalOptions {
   signal: number;
+  /**
+   * Also signal the process's descendants. Defaults to `true` so shell-backed
+   * commands do not leave their child processes running.
+   */
   includeChildren?: boolean;
 }
 

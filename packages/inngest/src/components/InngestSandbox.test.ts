@@ -458,6 +458,13 @@ describe("step.sandbox", () => {
           },
         });
       }
+      if (action === "process.signal") {
+        expect(outgoing).toMatchObject({
+          opts: {
+            input: [{ input: [{ signal: 15, includeChildren: true }] }],
+          },
+        });
+      }
       state[outgoing.id] = { id: outgoing.id, data: results[index] };
       stackOrder.push(outgoing.id);
     }
@@ -1872,7 +1879,8 @@ describe("inngest.sandboxes", () => {
       limit: 25,
     });
     const fetchedProcess = await sandbox.processes.get(processId);
-    await started.signal({ signal: 15, includeChildren: true });
+    await started.signal({ signal: 15 });
+    await started.signal({ signal: 9, includeChildren: false });
     const waited = await started.wait({ timeout: "2s" });
     const output = await started.getOutput({ tailBytes: 64 });
     const destroyed = await sandbox.destroy();
@@ -1959,6 +1967,14 @@ describe("inngest.sandboxes", () => {
         ),
       ),
     ).toEqual({ command: ["/bin/sh", "-c", "sleep 30"] });
+    expect(
+      calls
+        .filter(({ url }) => url.pathname.endsWith("/signals"))
+        .map(({ init }) => JSON.parse(String(init?.body))),
+    ).toEqual([
+      { signal: 15, includeChildren: true },
+      { signal: 9, includeChildren: false },
+    ]);
   });
 
   test("uses the REST v2 resource shape and decodes byte-safe streams", async () => {
