@@ -207,12 +207,6 @@ class InngestExecutionEngine
   private redirectSent = false;
 
   /**
-   * Whether the checkpoint stream POST has started. Prevents duplicate
-   * payload delivery to the tee channel.
-   */
-  private checkpointStreamPosted = false;
-
-  /**
    * Promise that resolves once the redirect event has been written (or the
    * attempt completes). Stored so that `checkpointAndSwitchToAsync` can
    * await it before closing the writer.
@@ -789,11 +783,6 @@ class InngestExecutionEngine
    * real-time, or after completion if stream.push() was never called.
    */
   private postCheckpointStream(): void {
-    // At most one POST per execution: the tee channel must not receive the
-    // payload twice, and `streamTools.readable` can only be consumed once.
-    if (this.checkpointStreamPosted) return;
-    this.checkpointStreamPosted = true;
-
     try {
       // If the stream closed before any consumer materialized its readable
       // side, the full payload is already known — POST it as static bytes
