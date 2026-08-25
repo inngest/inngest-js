@@ -177,7 +177,7 @@ export class Stream implements StreamTools {
   }
 
   private activate(): void {
-    if (!this._activated) {
+    if (!this._activated && !this._closed) {
       this._activated = true;
       this.onActivated?.();
     }

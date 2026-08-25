@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { Stream } from "./StreamTools.ts";
 
 async function drain(s: Stream): Promise<string> {
@@ -65,5 +65,18 @@ describe("Stream.commit / rollback", () => {
     expect(raw).toContain('"hashedStepId":"step-a"');
     expect(raw).toContain("event: inngest.rollback");
     expect(raw).toContain('"hashedStepId":"step-b"');
+  });
+});
+
+describe("Stream.push after close", () => {
+  test("does not activate the stream", () => {
+    const onActivated = vi.fn();
+    const s = new Stream({ onActivated });
+
+    s.end();
+    s.push("late");
+
+    expect(s.activated).toBe(false);
+    expect(onActivated).not.toHaveBeenCalled();
   });
 });

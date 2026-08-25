@@ -790,8 +790,7 @@ class InngestExecutionEngine
    */
   private postCheckpointStream(): void {
     // At most one POST per execution: the tee channel must not receive the
-    // payload twice (e.g. terminal POST followed by a late activation), and
-    // `streamTools.readable` can only be consumed once.
+    // payload twice, and `streamTools.readable` can only be consumed once.
     if (this.checkpointStreamPosted) return;
     this.checkpointStreamPosted = true;
 
