@@ -3,6 +3,7 @@ import { z } from "zod/v3";
 
 import { isTemporalDuration } from "../../helpers/temporal.ts";
 import {
+  type SandboxCommand,
   type SandboxCommandOptions,
   type SandboxCreateOptions,
   type SandboxFileDownloadOptions,
@@ -429,16 +430,23 @@ export const normalizeSandboxListOptions = (
 
 export const normalizeSandboxProcessListOptions = normalizeSandboxListOptions;
 
+type SandboxProcessSpecOptions = SandboxCommandOptions & {
+  command: SandboxCommand;
+};
+
 const normalizeProcessSpec = <
-  T extends SandboxCommandOptions | SandboxProcessStartOptions,
+  T extends SandboxProcessSpecOptions | SandboxProcessStartOptions,
 >(
   options: T,
   includeTimeout: boolean,
-): T => {
+): Omit<T, "command"> & { command: string[] } => {
   const parsed = parseWithSchema(
     z
       .object({
-        command: z.array(z.string()).min(1).max(maxProcessArgvCount),
+        command: z.union([
+          z.string().min(1, "command must not be empty"),
+          z.array(z.string()).min(1).max(maxProcessArgvCount),
+        ]),
         environment: z.record(z.string()).optional(),
         cwd: z.string().optional(),
         ...(includeTimeout && { timeout: z.unknown().optional() }),
@@ -448,15 +456,21 @@ const normalizeProcessSpec = <
     "sandbox command options",
   ) as unknown as T;
 
-  if (!parsed.command[0]?.startsWith("/")) {
+  if (Array.isArray(parsed.command) && !parsed.command[0]?.startsWith("/")) {
     throw new SandboxValidationError(
       "command must begin with an absolute executable path",
     );
   }
+  const argv =
+    typeof parsed.command === "string"
+      ? ["/bin/sh", "-c", parsed.command]
+      : parsed.command;
   let argvBytes = 0;
-  parsed.command.forEach((argument, index) => {
-    assertNoNul(argument, `command[${index}]`);
-    assertValidUnicode(argument, `command[${index}]`);
+  argv.forEach((argument, index) => {
+    const context =
+      typeof parsed.command === "string" ? "command" : `command[${index}]`;
+    assertNoNul(argument, context);
+    assertValidUnicode(argument, context);
     argvBytes += textEncoder.encode(argument).byteLength;
   });
   if (argvBytes > maxProcessArgvBytes) {
@@ -478,7 +492,7 @@ const normalizeProcessSpec = <
   }
 
   const wireBytes = goJSONBytes({
-    argv: parsed.command,
+    argv,
     ...(entries.length > 0 && { env: parsed.environment }),
     ...(parsed.cwd !== undefined && parsed.cwd !== "" && { cwd: parsed.cwd }),
   });
@@ -487,13 +501,17 @@ const normalizeProcessSpec = <
       `command, environment, and cwd must not exceed ${maxProcessWireBytes} encoded bytes`,
     );
   }
-  return parsed;
+  return {
+    ...parsed,
+    command: [...argv],
+  } as Omit<T, "command"> & { command: string[] };
 };
 
 export const normalizeSandboxCommandOptions = (
-  options: SandboxCommandOptions,
-): SandboxCommandOptions & { timeoutMs: number } => {
-  const parsed = normalizeProcessSpec(options, true);
+  command: SandboxCommand,
+  options: SandboxCommandOptions = {},
+): SandboxCommandOptions & { command: string[]; timeoutMs: number } => {
+  const parsed = normalizeProcessSpec({ ...options, command }, true);
   return {
     ...parsed,
     timeoutMs:
@@ -509,7 +527,8 @@ export const normalizeSandboxCommandOptions = (
 
 export const normalizeSandboxProcessStartOptions = (
   options: SandboxProcessStartOptions,
-): SandboxProcessStartOptions => normalizeProcessSpec(options, false);
+): Omit<SandboxProcessStartOptions, "command"> & { command: string[] } =>
+  normalizeProcessSpec(options, false);
 
 export const normalizeSandboxProcessSignalOptions = (
   options: SandboxProcessSignalOptions,
@@ -526,7 +545,7 @@ export const normalizeSandboxProcessSignalOptions = (
   );
   return {
     signal: parsed.signal,
-    includeChildren: parsed.includeChildren ?? false,
+    includeChildren: parsed.includeChildren ?? true,
   };
 };
 
