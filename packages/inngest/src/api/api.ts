@@ -14,6 +14,7 @@ import {
   type Result,
   type SendSignalResponse,
 } from "../types.ts";
+import { version } from "../version.ts";
 import {
   type BatchResponse,
   batchSchema,
@@ -116,9 +117,12 @@ export class InngestApi {
     return this._signingKeyFallback();
   }
 
-  private get environmentHeaders(): Record<string, string> {
+  private get apiHeaders(): Record<string, string> {
     const environment = this._environment();
-    return environment ? { [headerKeys.Environment]: environment } : {};
+    return {
+      [headerKeys.SdkVersion]: `inngest-js:v${version}`,
+      ...(environment ? { [headerKeys.Environment]: environment } : {}),
+    };
   }
 
   private get hashedKey(): string {
@@ -154,7 +158,7 @@ export class InngestApi {
           ...options,
           headers: {
             "Content-Type": "application/json",
-            ...this.environmentHeaders,
+            ...this.apiHeaders,
             ...options?.headers,
           },
         },
@@ -287,7 +291,7 @@ export class InngestApi {
         body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
-          ...this.environmentHeaders,
+          ...this.apiHeaders,
           ...options?.headers,
         },
       },
@@ -379,7 +383,7 @@ export class InngestApi {
         body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
-          ...this.environmentHeaders,
+          ...this.apiHeaders,
         },
       },
     })
@@ -627,7 +631,7 @@ export class InngestApi {
         body: args.body,
         headers: {
           "Content-Type": "application/octet-stream",
-          ...this.environmentHeaders,
+          ...this.apiHeaders,
         },
         // Required for streaming request bodies
         // @ts-expect-error duplex not in RequestInit types yet

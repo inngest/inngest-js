@@ -1,3 +1,4 @@
+import { version } from "../version.ts";
 import { InngestApi } from "./api.ts";
 
 describe("InngestApi environment headers", () => {
@@ -37,6 +38,9 @@ describe("InngestApi environment headers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     for (const requestHeaders of headers) {
       expect(requestHeaders.get("X-Inngest-Env")).toBe("preview");
+      expect(requestHeaders.get("X-Inngest-Sdk")).toBe(
+        `inngest-js:v${version}`,
+      );
     }
     expect(headers.map((value) => value.get("Content-Type"))).toEqual([
       "application/json",
