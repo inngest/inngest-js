@@ -433,6 +433,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
       baseUrl: () => this.apiBaseUrl,
       signingKey: () => this.signingKey,
       signingKeyFallback: () => this.signingKeyFallback,
+      environment: () => this.env,
       fetch: () => this.fetch,
     });
 

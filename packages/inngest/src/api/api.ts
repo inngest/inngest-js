@@ -1,6 +1,6 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import type { ExecutionVersion } from "../helpers/consts.ts";
+import { type ExecutionVersion, headerKeys } from "../helpers/consts.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { type Marker, markerKey } from "../helpers/marker.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
@@ -14,6 +14,7 @@ import {
   type Result,
   type SendSignalResponse,
 } from "../types.ts";
+import { version } from "../version.ts";
 import {
   type BatchResponse,
   batchSchema,
@@ -64,6 +65,7 @@ export namespace InngestApi {
     baseUrl: () => string | undefined;
     signingKey: () => string | undefined;
     signingKeyFallback: () => string | undefined;
+    environment: () => string | null;
     fetch: () => FetchT;
   }
 
@@ -86,17 +88,20 @@ export class InngestApi {
   private readonly _signingKey: () => string | undefined;
   private readonly _signingKeyFallback: () => string | undefined;
   private readonly _apiBaseUrl: () => string | undefined;
+  private readonly _environment: () => string | null;
   private readonly _fetch: () => FetchT;
 
   constructor({
     baseUrl,
     signingKey,
     signingKeyFallback,
+    environment,
     fetch,
   }: InngestApi.Options) {
     this._apiBaseUrl = baseUrl;
     this._signingKey = signingKey;
     this._signingKeyFallback = signingKeyFallback;
+    this._environment = environment;
     this._fetch = fetch;
   }
 
@@ -110,6 +115,14 @@ export class InngestApi {
 
   private get signingKeyFallback(): string | undefined {
     return this._signingKeyFallback();
+  }
+
+  private get apiHeaders(): Record<string, string> {
+    const environment = this._environment();
+    return {
+      [headerKeys.SdkVersion]: `inngest-js:v${version}`,
+      ...(environment ? { [headerKeys.Environment]: environment } : {}),
+    };
   }
 
   private get hashedKey(): string {
@@ -145,6 +158,7 @@ export class InngestApi {
           ...options,
           headers: {
             "Content-Type": "application/json",
+            ...this.apiHeaders,
             ...options?.headers,
           },
         },
@@ -277,6 +291,7 @@ export class InngestApi {
         body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
+          ...this.apiHeaders,
           ...options?.headers,
         },
       },
@@ -368,6 +383,7 @@ export class InngestApi {
         body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
+          ...this.apiHeaders,
         },
       },
     })
@@ -615,6 +631,7 @@ export class InngestApi {
         body: args.body,
         headers: {
           "Content-Type": "application/octet-stream",
+          ...this.apiHeaders,
         },
         // Required for streaming request bodies
         // @ts-expect-error duplex not in RequestInit types yet
