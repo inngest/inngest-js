@@ -15,6 +15,7 @@ import { GatewayExecutorRequestData } from "../../../../proto/src/components/con
 import { MessageBuffer } from "../../buffer.ts";
 import { ConnectionState } from "../../types.ts";
 import { ConnectionCore } from "../core/connection.ts";
+import { PendingExecutions } from "./pendingExecutions.ts";
 import type {
   MainToWorkerMessage,
   SerializableConfig,
@@ -73,21 +74,14 @@ class WorkerRunner {
   private messageBuffer: MessageBuffer | undefined;
   private debugStateInterval: ReturnType<typeof setInterval> | undefined;
   private readonly logger: Logger;
+  private readonly pendingExecutions: PendingExecutions;
 
   constructor() {
     this.logger = this.createMessageLogger();
+    this.pendingExecutions = new PendingExecutions({
+      logger: this.logger,
+    });
   }
-
-  /**
-   * Pending execution responses waiting for user code to complete.
-   */
-  private pendingExecutions: Map<
-    string,
-    {
-      resolve: (response: Uint8Array) => void;
-      reject: (error: Error) => void;
-    }
-  > = new Map();
 
   private sendMessage(msg: WorkerToMainMessage) {
     parentPort?.postMessage(msg);
@@ -148,20 +142,12 @@ class WorkerRunner {
         break;
 
       case "EXECUTION_RESPONSE": {
-        const pending = this.pendingExecutions.get(msg.requestId);
-        if (pending) {
-          pending.resolve(msg.response);
-          this.pendingExecutions.delete(msg.requestId);
-        }
+        this.pendingExecutions.resolve(msg.requestId, msg.response);
         break;
       }
 
       case "EXECUTION_ERROR": {
-        const pending = this.pendingExecutions.get(msg.requestId);
-        if (pending) {
-          pending.reject(new Error(msg.error));
-          this.pendingExecutions.delete(msg.requestId);
-        }
+        this.pendingExecutions.reject(msg.requestId, new Error(msg.error));
         break;
       }
     }
@@ -200,9 +186,7 @@ class WorkerRunner {
         getState: () => this.state,
         handleExecutionRequest: async (request) => {
           // Send execution request to main thread and wait for response
-          const requestPromise = new Promise<Uint8Array>((resolve, reject) => {
-            this.pendingExecutions.set(request.requestId, { resolve, reject });
-          });
+          const requestPromise = this.pendingExecutions.wait(request.requestId);
 
           // Send the request to main thread (as serialized bytes)
           this.sendMessage({
