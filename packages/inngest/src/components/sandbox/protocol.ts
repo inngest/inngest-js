@@ -251,9 +251,7 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("snapshot.create"),
       target: sandboxTargetSchema,
-      input: z.tuple([
-        z.object({ intentKey: z.string().min(1).max(512).optional() }).strict(),
-      ]),
+      input: z.tuple([z.object({}).strict()]),
     })
     .strict(),
   z

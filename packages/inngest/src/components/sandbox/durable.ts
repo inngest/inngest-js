@@ -56,6 +56,7 @@ import {
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
   normalizeSandboxProcessWaitOptions,
+  normalizeSandboxSnapshotCreateOptions,
   normalizeSandboxSnapshotListOptions,
   normalizeSandboxSnapshotWaitOptions,
   normalizeSandboxWaitUntilRunningOptions,
@@ -337,16 +338,9 @@ export const executeSandboxOperation = async (
       };
     }
     case "snapshot.create": {
-      const { intentKey } = operation.input[0];
-      if (!intentKey) {
-        throw new SandboxValidationError(
-          "Durable snapshot Create requires an intent key",
-        );
-      }
       const snapshot = await createSandboxSnapshotForOperation(
         client,
         operation.target.sandbox.id,
-        intentKey,
       );
       return {
         protocolVersion: sandboxProtocolVersion,
@@ -438,6 +432,21 @@ const callRawTool = async <A extends SandboxAction>(
   }
 };
 
+const snapshotWaitStepOptions = (
+  idOrOptions: StepOptionsOrId,
+): StepOptionsOrId => {
+  if (typeof idOrOptions === "string") {
+    return `${idOrOptions}:wait-until-ready`;
+  }
+  return {
+    ...idOrOptions,
+    id: `${idOrOptions.id}:wait-until-ready`,
+    ...(idOrOptions.name && {
+      name: `${idOrOptions.name} (wait until ready)`,
+    }),
+  };
+};
+
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
   sandbox,
@@ -481,6 +490,21 @@ export const createDurableSandboxSnapshotFacade = (
         input: [],
       });
       await callRawTool(rawToolResolver, idOrOptions, operation);
+    },
+    clone: async (idOrOptions, options, waitOptions) => {
+      const operation = parseSandboxOperationForAction("create", {
+        protocolVersion: sandboxProtocolVersion,
+        action: "create",
+        input: [
+          normalizeSandboxCreateOptions({
+            name: options.name,
+            snapshotId: ref.id,
+            runningTimeout: options.runningTimeout ?? waitOptions?.timeout,
+          }),
+        ],
+      });
+      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      return createDurableSandboxFacade(result.sandbox, rawToolResolver);
     },
   };
   return Object.freeze(facade);
@@ -566,6 +590,42 @@ export const createDurableSandboxFacade = (
   rawToolResolver: SandboxRawToolResolver,
 ): DurableSandbox => {
   const ref = parseWithSchema(sandboxRefSchema, rawRef, "sandbox reference");
+  const createSnapshot: DurableSandbox["snapshot"] = async (
+    idOrOptions,
+    options,
+    waitOptions,
+  ) => {
+    const createOptions = normalizeSandboxSnapshotCreateOptions(options);
+    const wait = normalizeSandboxSnapshotWaitOptions({
+      timeout: waitOptions?.timeout ?? 5 * 60_000,
+    });
+    const createOperation = parseSandboxOperationForAction("snapshot.create", {
+      protocolVersion: sandboxProtocolVersion,
+      action: "snapshot.create",
+      target: sandboxTarget(ref),
+      input: [createOptions],
+    });
+    const created = await callRawTool(
+      rawToolResolver,
+      idOrOptions,
+      createOperation,
+    );
+    const waitOperation = parseSandboxOperationForAction(
+      "snapshot.waitUntilReady",
+      {
+        protocolVersion: sandboxProtocolVersion,
+        action: "snapshot.waitUntilReady",
+        target: snapshotTarget(created.snapshot),
+        input: [wait],
+      },
+    );
+    const ready = await callRawTool(
+      rawToolResolver,
+      snapshotWaitStepOptions(idOrOptions),
+      waitOperation,
+    );
+    return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);
+  };
   const facade: DurableSandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
@@ -662,24 +722,9 @@ export const createDurableSandboxFacade = (
       },
     }),
     snapshots: Object.freeze({
-      create: async (idOrOptions) => {
-        const operation = parseSandboxOperationForAction("snapshot.create", {
-          protocolVersion: sandboxProtocolVersion,
-          action: "snapshot.create",
-          target: sandboxTarget(ref),
-          input: [{}],
-        });
-        const result = await callRawTool(
-          rawToolResolver,
-          idOrOptions,
-          operation,
-        );
-        return createDurableSandboxSnapshotFacade(
-          result.snapshot,
-          rawToolResolver,
-        );
-      },
+      create: createSnapshot,
     }),
+    snapshot: createSnapshot,
     waitUntilRunning: async (idOrOptions, options) => {
       const operation = parseSandboxOperationForAction("waitUntilRunning", {
         protocolVersion: sandboxProtocolVersion,

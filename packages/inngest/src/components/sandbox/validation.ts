@@ -17,6 +17,7 @@ import {
   type SandboxProcessStartOptions,
   type SandboxProcessWaitOptions,
   type SandboxRef,
+  type SandboxSnapshotCreateOptions,
   type SandboxSnapshotListOptions,
   type SandboxSnapshotRef,
   type SandboxSnapshotWaitOptions,
@@ -546,6 +547,15 @@ type SandboxProcessSpecOptions = SandboxCommandOptions & {
 export const normalizeSandboxSnapshotListOptions = (
   options: SandboxSnapshotListOptions = {},
 ) => normalizeSandboxListOptions(options);
+
+export const normalizeSandboxSnapshotCreateOptions = (
+  options: SandboxSnapshotCreateOptions = {},
+): SandboxSnapshotCreateOptions =>
+  parseWithSchema(
+    z.object({}).strict(),
+    options,
+    "sandbox snapshot create options",
+  );
 
 export const normalizeSandboxSnapshotWaitOptions = (
   options: SandboxSnapshotWaitOptions,

@@ -13,9 +13,12 @@ import {
   type SandboxErrorCode,
   type SandboxErrorDetail,
   type SandboxFileUploadResult,
+  type SandboxLifecycleOptions,
   type SandboxOutputChunk,
   type SandboxProcess,
   type SandboxRef,
+  type SandboxSnapshot,
+  type SandboxSnapshotCloneOptions,
   type SandboxSnapshotListResult,
   type SandboxSnapshotRef,
   type SandboxStatus,
@@ -36,6 +39,7 @@ import {
   normalizeSandboxProcessSignalOptions,
   normalizeSandboxProcessStartOptions,
   normalizeSandboxProcessWaitOptions,
+  normalizeSandboxSnapshotCreateOptions,
   normalizeSandboxSnapshotListOptions,
   normalizeSandboxWaitUntilRunningOptions,
   parseWithSchema,
@@ -149,7 +153,6 @@ const safeRepeatActions = new Set<SandboxAction>([
   "process.stream",
   "logs.stream",
   "file.download",
-  "snapshot.create",
   "snapshot.list",
   "snapshot.get",
   "snapshot.waitUntilReady",
@@ -171,7 +174,7 @@ const sandboxTransportFailureMessage = (action: SandboxAction): string => {
     case "process.signal":
       return "The sandbox process signal may have been delivered. Get or wait for the process before sending another";
     case "snapshot.create":
-      return "Snapshot creation may have started. Repeating this durable step is safe because it uses the same intent key";
+      return "Snapshot creation may have started and a retry may create a second snapshot. Check snapshots.list() before creating another";
     case "snapshot.delete":
       return "Snapshot deletion may have started. Repeating Delete is safe";
     default:
@@ -196,10 +199,10 @@ class SandboxRestTransport {
     options: {
       body?: unknown;
       statuses: readonly number[];
-      headers?: Record<string, string>;
       sandboxId?: string;
       processId?: string;
       snapshotId?: string;
+      signal?: AbortSignal;
     },
   ): Promise<{
     status: number;
@@ -208,15 +211,14 @@ class SandboxRestTransport {
     const response = await this.send(action, method, path, {
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
-      headers: {
-        ...(options.body !== undefined && {
-          "Content-Type": "application/json",
-        }),
-        ...options.headers,
-      },
+      headers:
+        options.body === undefined
+          ? undefined
+          : { "Content-Type": "application/json" },
       sandboxId: options.sandboxId,
       processId: options.processId,
       snapshotId: options.snapshotId,
+      signal: options.signal,
     });
     if (!options.statuses.includes(response.status)) {
       await this.throwResponseError(
@@ -557,6 +559,28 @@ const sandboxRunningPollIntervalMs = 1_000;
 const delay = async (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+const lifecycleTimeout = (options?: SandboxLifecycleOptions): number =>
+  normalizeSandboxWaitUntilRunningOptions({
+    timeout: options?.timeout ?? 5 * 60_000,
+  }).timeoutMs;
+
+const abortableDelay = (milliseconds: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, milliseconds);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+
 const sandboxStartFailedError = (
   action: "create" | "waitUntilRunning",
   sandbox: SandboxRef,
@@ -717,6 +741,27 @@ export const runSandboxCommandForOperation = (
     );
   }
   return run(command, options);
+};
+
+const createDirectSnapshotFacade = (
+  rawRef: unknown,
+  transport: SandboxRestTransport,
+): SandboxSnapshot => {
+  const ref = sandboxSnapshotRefFromResource(rawRef);
+  return Object.freeze({
+    ...ref,
+    resources: Object.freeze({ ...ref.resources }),
+    clone: async (
+      options: SandboxSnapshotCloneOptions,
+      waitOptions?: SandboxLifecycleOptions,
+    ) =>
+      createSandbox(transport, {
+        name: options.name,
+        snapshotId: ref.id,
+        runningTimeout: options.runningTimeout ?? waitOptions?.timeout,
+      }),
+    delete: async () => deleteSandboxSnapshot(transport, ref.id),
+  });
 };
 
 const createDirectSandboxFacade = (
@@ -933,6 +978,21 @@ const createDirectSandboxFacade = (
         transport,
         "waitUntilRunning",
       ),
+    snapshot: async (options = {}, waitOptions) => {
+      normalizeSandboxSnapshotCreateOptions(options);
+      const initial = await createSandboxSnapshot(
+        transport,
+        ref.id,
+        waitOptions?.signal,
+      );
+      const ready = await waitUntilSandboxSnapshotReady(
+        transport,
+        initial,
+        lifecycleTimeout(waitOptions),
+        waitOptions?.signal,
+      );
+      return createDirectSnapshotFacade(ready, transport);
+    },
     destroy: async (): Promise<SandboxDestroyResult> => {
       const { status, envelope } = await transport.json(
         "destroy",
@@ -1045,7 +1105,7 @@ const getSnapshotForOperation = async (
     const { envelope } = await transport.json(
       action,
       "GET",
-      `/v2/sandbox-snapshots/${encodeURIComponent(snapshotId)}`,
+      `/v2/snapshots/${encodeURIComponent(snapshotId)}`,
       { statuses: [200], snapshotId },
     );
     return sandboxSnapshotRefFromResource(envelope?.data);
@@ -1060,22 +1120,20 @@ const getSnapshotForOperation = async (
   }
 };
 
-/** Internal REST operations used only by the durable middleware adapter. */
-export const createSandboxSnapshotForOperation = async (
-  client: SandboxClient,
+const createSandboxSnapshot = async (
+  transport: SandboxRestTransport,
   sandboxId: string,
-  intentKey: string,
+  signal?: AbortSignal,
 ): Promise<SandboxSnapshotRef> => {
-  const transport = transportForClient(client);
   const { status, envelope } = await transport.json(
     "snapshot.create",
     "POST",
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
       body: {},
-      headers: { "Idempotency-Key": intentKey },
       statuses: [201, 202],
       sandboxId,
+      signal,
     },
   );
   const snapshot = sandboxSnapshotRefFromResource(envelope?.data);
@@ -1090,11 +1148,10 @@ export const createSandboxSnapshotForOperation = async (
   return snapshot;
 };
 
-export const listSandboxSnapshotsForOperation = async (
-  client: SandboxClient,
+const listSandboxSnapshots = async (
+  transport: SandboxRestTransport,
   options: Parameters<typeof normalizeSandboxSnapshotListOptions>[0],
 ): Promise<SandboxSnapshotListResult> => {
-  const transport = transportForClient(client);
   const normalized = normalizeSandboxSnapshotListOptions(options);
   const query = new URLSearchParams({ limit: `${normalized.limit}` });
   if (normalized.cursor !== undefined) {
@@ -1103,7 +1160,7 @@ export const listSandboxSnapshotsForOperation = async (
   const { envelope } = await transport.json(
     "snapshot.list",
     "GET",
-    `/v2/sandbox-snapshots?${query}`,
+    `/v2/snapshots?${query}`,
     { statuses: [200] },
   );
   const resources = parseWithSchema(
@@ -1132,6 +1189,18 @@ export const listSandboxSnapshotsForOperation = async (
   };
 };
 
+export const createSandboxSnapshotForOperation = async (
+  client: SandboxClient,
+  sandboxId: string,
+): Promise<SandboxSnapshotRef> =>
+  createSandboxSnapshot(transportForClient(client), sandboxId);
+
+export const listSandboxSnapshotsForOperation = async (
+  client: SandboxClient,
+  options: Parameters<typeof normalizeSandboxSnapshotListOptions>[0],
+): Promise<SandboxSnapshotListResult> =>
+  listSandboxSnapshots(transportForClient(client), options);
+
 export const getSandboxSnapshotForOperation = async (
   client: SandboxClient,
   snapshotId: string,
@@ -1142,12 +1211,35 @@ export const getSandboxSnapshotForOperation = async (
     "snapshot.get",
   );
 
-export const waitUntilSandboxSnapshotReadyForOperation = async (
-  client: SandboxClient,
+const snapshotNotReadyError = (snapshot: SandboxSnapshotRef): SandboxError =>
+  new SandboxError({
+    action: "snapshot.waitUntilReady",
+    code: "sandbox_snapshot_not_ready",
+    message: `Snapshot entered ${snapshot.status} before reaching READY`,
+    snapshotId: snapshot.id,
+    retryable: false,
+    details: [{ status: snapshot.status }],
+  });
+
+const snapshotWaitTimedOutError = (
+  snapshot: SandboxSnapshotRef,
+  timeoutMs: number,
+): SandboxError =>
+  new SandboxError({
+    action: "snapshot.waitUntilReady",
+    code: "sandbox_snapshot_wait_timed_out",
+    message: `Snapshot did not reach READY within ${timeoutMs} milliseconds`,
+    snapshotId: snapshot.id,
+    retryable: false,
+    details: [{ status: snapshot.status, timeoutMs }],
+  });
+
+const waitUntilSandboxSnapshotReady = async (
+  transport: SandboxRestTransport,
   initialSnapshot: SandboxSnapshotRef,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<SandboxSnapshotRef> => {
-  const transport = transportForClient(client);
   let snapshot = parseWithSchema(
     sandboxSnapshotRefSchema,
     initialSnapshot,
@@ -1157,71 +1249,85 @@ export const waitUntilSandboxSnapshotReadyForOperation = async (
     return snapshot;
   }
   if (snapshot.status !== "CREATING") {
-    throw new SandboxError({
-      action: "snapshot.waitUntilReady",
-      code: "sandbox_snapshot_not_ready",
-      message: `Snapshot entered ${snapshot.status} before reaching READY`,
-      snapshotId: snapshot.id,
-      retryable: false,
-      details: [{ status: snapshot.status }],
-    });
+    throw snapshotNotReadyError(snapshot);
   }
+
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) {
-      throw new SandboxError({
-        action: "snapshot.waitUntilReady",
-        code: "sandbox_snapshot_wait_timed_out",
-        message: `Snapshot did not reach READY within ${timeoutMs} milliseconds`,
-        snapshotId: snapshot.id,
-        retryable: false,
-        details: [{ status: snapshot.status, timeoutMs }],
-      });
+    if (deadline - Date.now() <= 0) {
+      throw snapshotWaitTimedOutError(snapshot, timeoutMs);
     }
-    await delay(Math.min(sandboxRunningPollIntervalMs, remainingMs));
-    const current = await getSnapshotForOperation(
-      transport,
-      snapshot.id,
-      "snapshot.waitUntilReady",
-    );
-    if (!current) {
-      throw new SandboxError({
-        action: "snapshot.waitUntilReady",
-        code: "sandbox_snapshot_not_found",
-        message: "Snapshot not found",
-        snapshotId: snapshot.id,
-        retryable: false,
-      });
+
+    try {
+      const current = await getSnapshotForOperation(
+        transport,
+        snapshot.id,
+        "snapshot.waitUntilReady",
+      );
+      if (!current) {
+        throw new SandboxError({
+          action: "snapshot.waitUntilReady",
+          code: "sandbox_snapshot_not_found",
+          message: "Snapshot not found",
+          snapshotId: snapshot.id,
+          retryable: false,
+        });
+      }
+      snapshot = current;
+    } catch (error) {
+      // Transient transport failures must not abort the wait; keep polling
+      // until the deadline, matching waitUntilSandboxRunning.
+      if (!(error instanceof SandboxError && error.retryable)) {
+        throw error;
+      }
     }
-    snapshot = current;
+
     if (snapshot.status === "READY") {
       return snapshot;
     }
     if (snapshot.status !== "CREATING") {
-      throw new SandboxError({
-        action: "snapshot.waitUntilReady",
-        code: "sandbox_snapshot_not_ready",
-        message: `Snapshot entered ${snapshot.status} before reaching READY`,
-        snapshotId: snapshot.id,
-        retryable: false,
-        details: [{ status: snapshot.status }],
-      });
+      throw snapshotNotReadyError(snapshot);
     }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      throw snapshotWaitTimedOutError(snapshot, timeoutMs);
+    }
+    await abortableDelay(
+      Math.min(sandboxRunningPollIntervalMs, remainingMs),
+      signal,
+    );
   }
+};
+
+export const waitUntilSandboxSnapshotReadyForOperation = async (
+  client: SandboxClient,
+  initialSnapshot: SandboxSnapshotRef,
+  timeoutMs: number,
+): Promise<SandboxSnapshotRef> =>
+  waitUntilSandboxSnapshotReady(
+    transportForClient(client),
+    initialSnapshot,
+    timeoutMs,
+  );
+
+const deleteSandboxSnapshot = async (
+  transport: SandboxRestTransport,
+  snapshotId: string,
+): Promise<void> => {
+  await transport.json(
+    "snapshot.delete",
+    "DELETE",
+    `/v2/snapshots/${encodeURIComponent(snapshotId)}`,
+    { statuses: [204], snapshotId },
+  );
 };
 
 export const deleteSandboxSnapshotForOperation = async (
   client: SandboxClient,
   snapshotId: string,
-): Promise<void> => {
-  await transportForClient(client).json(
-    "snapshot.delete",
-    "DELETE",
-    `/v2/sandbox-snapshots/${encodeURIComponent(snapshotId)}`,
-    { statuses: [204], snapshotId },
-  );
-};
+): Promise<void> =>
+  deleteSandboxSnapshot(transportForClient(client), snapshotId);
 
 const createSandbox = async (
   transport: SandboxRestTransport,
@@ -1328,6 +1434,33 @@ export const createSandboxClient = (
         throw error;
       }
     },
+    snapshots: Object.freeze({
+      list: async (options) => {
+        const result = await listSandboxSnapshots(transport, options);
+        return {
+          items: result.items.map((snapshot) =>
+            createDirectSnapshotFacade(snapshot, transport),
+          ),
+          page: { ...result.page },
+          fetchedAt: result.fetchedAt,
+        };
+      },
+      get: async (snapshotId) => {
+        const parsedSnapshotId = parseWithSchema(
+          canonicalUuidSchema,
+          snapshotId,
+          "sandbox snapshot ID",
+        );
+        const snapshot = await getSnapshotForOperation(
+          transport,
+          parsedSnapshotId,
+          "snapshot.get",
+        );
+        return snapshot
+          ? createDirectSnapshotFacade(snapshot, transport)
+          : null;
+      },
+    }),
   };
   sandboxClientTransports.set(client, transport);
   return client;

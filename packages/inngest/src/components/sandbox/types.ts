@@ -298,6 +298,18 @@ export interface SandboxSnapshotWaitOptions {
   timeout: SandboxDuration;
 }
 
+export interface SandboxLifecycleOptions {
+  timeout?: SandboxDuration;
+  signal?: AbortSignal;
+}
+
+export type SandboxSnapshotCreateOptions = Record<string, never>;
+
+export interface SandboxSnapshotCloneOptions {
+  name: string;
+  runningTimeout?: SandboxDuration;
+}
+
 export type SandboxSnapshotListOptions = SandboxListOptions;
 export type SandboxSnapshotListResult<TSnapshot = SandboxSnapshotRef> =
   SandboxListResult<TSnapshot>;
@@ -444,6 +456,10 @@ export interface Sandbox {
     get(processId: string): Promise<SandboxProcess | null>;
   };
   waitUntilRunning(options: SandboxWaitUntilRunningOptions): Promise<Sandbox>;
+  snapshot(
+    options?: SandboxSnapshotCreateOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<SandboxSnapshot>;
   destroy(): Promise<SandboxDestroyResult>;
 }
 
@@ -469,10 +485,24 @@ export interface SandboxProcess {
   ): Promise<ReadableStream<SandboxOutputChunk>>;
 }
 
+export interface SandboxSnapshot extends Readonly<SandboxSnapshotRef> {
+  clone(
+    options: SandboxSnapshotCloneOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<Sandbox>;
+  delete(): Promise<void>;
+}
+
 export interface SandboxClient {
   create(options: SandboxCreateFreshOptions): Promise<Sandbox>;
   list(options?: SandboxListOptions): Promise<SandboxListResult<Sandbox>>;
   get(sandboxId: string): Promise<Sandbox | null>;
+  readonly snapshots: {
+    list(
+      options?: SandboxSnapshotListOptions,
+    ): Promise<SandboxSnapshotListResult<SandboxSnapshot>>;
+    get(snapshotId: string): Promise<SandboxSnapshot | null>;
+  };
 }
 
 export interface DurableSandbox {
@@ -510,8 +540,17 @@ export interface DurableSandbox {
     ): Promise<DurableSandboxProcess | null>;
   };
   readonly snapshots: {
-    create(idOrOptions: StepOptionsOrId): Promise<DurableSandboxSnapshot>;
+    create(
+      idOrOptions: StepOptionsOrId,
+      options?: SandboxSnapshotCreateOptions,
+      waitOptions?: SandboxLifecycleOptions,
+    ): Promise<DurableSandboxSnapshot>;
   };
+  snapshot(
+    idOrOptions: StepOptionsOrId,
+    options?: SandboxSnapshotCreateOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<DurableSandboxSnapshot>;
   waitUntilRunning(
     idOrOptions: StepOptionsOrId,
     options: SandboxWaitUntilRunningOptions,
@@ -539,6 +578,11 @@ export interface DurableSandboxSnapshot {
     options: SandboxSnapshotWaitOptions,
   ): Promise<DurableSandboxSnapshot>;
   delete(idOrOptions: StepOptionsOrId): Promise<void>;
+  clone(
+    idOrOptions: StepOptionsOrId,
+    options: SandboxSnapshotCloneOptions,
+    waitOptions?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
 }
 
 export interface DurableSandboxProcess {
