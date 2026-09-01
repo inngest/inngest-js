@@ -59,10 +59,9 @@ export interface InitSentryCaptureOptions {
  * imports from @sentry/core. pnpm isolates them as separate module instances
  * so only @sentry/core's global state is visible to the middleware.
  */
-export function initSentryCapture(
-  options: InitSentryCaptureOptions = {},
-): Captured {
-  const { tracesSampleRate = 1.0 } = options;
+export function initSentryCapture({
+  tracesSampleRate = 1.0,
+}: InitSentryCaptureOptions = { tracesSampleRate: 1.0 }): Captured {
   const captured: Captured = { items: [] };
 
   const makeTransport = (opts: InternalBaseTransportOptions): Transport =>
