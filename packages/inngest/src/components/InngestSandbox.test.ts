@@ -343,9 +343,6 @@ describe("step.sandbox", () => {
       }),
     ).toThrow(SandboxValidationError);
 
-    await expect(sandbox.commands.run("exec", ["npm", "test"])).rejects.toThrow(
-      "absolute executable path",
-    );
     await expect(sandbox.commands.run("exec", "npm test")).resolves.toEqual({
       stdout: "ok\n",
       stderr: "",
@@ -397,9 +394,22 @@ describe("step.sandbox", () => {
     await expect(sandbox.commands.run("nul", "printf \0")).rejects.toThrow(
       "must not contain NUL",
     );
+    for (const command of [["npm", "test"], ["./script"], ["bin/script"]]) {
+      await sandbox.commands.run("exec", command);
+      expect(rawTool).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          input: [expect.objectContaining({ command })],
+        }),
+      );
+    }
+    rawTool.mockClear();
     await expect(
       sandbox.commands.run("too-large", "x".repeat(32_760)),
     ).rejects.toThrow("must not exceed 32768 bytes");
+    await expect(sandbox.commands.run("exec", [""])).rejects.toThrow(
+      "command[0] must not be empty",
+    );
     await expect(
       sandbox.processes.start("start", {
         command: ["/bin/true"],
