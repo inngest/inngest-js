@@ -1,5 +1,28 @@
 # inngest
 
+## 4.19.0
+
+### Minor Changes
+
+- [#1701](https://github.com/inngest/inngest-js/pull/1701) [`f4fa1eb8`](https://github.com/inngest/inngest-js/commit/f4fa1eb84622224eb92feaaa3b6e97f2f79205ee) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Wait for newly created sandboxes to reach RUNNING by default, with `runningTimeout: false` as an explicit opt-out.
+
+### Patch Changes
+
+- [#1713](https://github.com/inngest/inngest-js/pull/1713) [`f7c49003`](https://github.com/inngest/inngest-js/commit/f7c490030838b66a3000917f76b2ad3b03f61a26) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Route signing-key API requests to the correct branch environment and include SDK identification headers.
+
+- [#1700](https://github.com/inngest/inngest-js/pull/1700) [`8f5dceb4`](https://github.com/inngest/inngest-js/commit/8f5dceb45ffaad28e1193e3d32a5eb6a07f7e79e) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Return captured sandbox command stdout and stderr as UTF-8 strings.
+
+- [#1705](https://github.com/inngest/inngest-js/pull/1705) [`28603273`](https://github.com/inngest/inngest-js/commit/2860327336e9f8fb76651554e27f034eb1d08041) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Allow sandbox commands to use executable names and relative paths.
+
+- [#1684](https://github.com/inngest/inngest-js/pull/1684) [`dde88e4d`](https://github.com/inngest/inngest-js/commit/dde88e4d8897bcbc8e4521fccf81dd8f8f3e9468) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Support shell command strings in the experimental sandbox command and managed process APIs.
+
+- [#1693](https://github.com/inngest/inngest-js/pull/1693) [`a2cd5b48`](https://github.com/inngest/inngest-js/commit/a2cd5b48f724ea2566047a2916a072dc5e7f3049) Thanks [@scottnuma](https://github.com/scottnuma)! - Validate propagated sessions with step.invoke and defer
+
+- [#1712](https://github.com/inngest/inngest-js/pull/1712) [`a9975874`](https://github.com/inngest/inngest-js/commit/a9975874dc9e43139996e74110c5cef9b0580767) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Export `SandboxCommand` from `inngest/experimental`.
+
+- Updated dependencies [[`abc4a63f`](https://github.com/inngest/inngest-js/commit/abc4a63fb8a5d8d1599ee7a3afbeb2b82d9cc875)]:
+  - @inngest/ai@0.1.8
+
 ## 4.18.1
 
 ### Patch Changes
