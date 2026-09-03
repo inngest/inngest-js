@@ -21,6 +21,7 @@ import {
   type SandboxProcessRef,
   type SandboxRawTool,
   type SandboxRef,
+  type SandboxSnapshotRef,
   SandboxValidationError,
   sandboxMiddleware,
 } from "./InngestSandbox.ts";
@@ -28,6 +29,7 @@ import {
 const vpcId = "11111111-1111-4111-8111-111111111111";
 const sandboxId = "22222222-2222-4222-8222-222222222222";
 const processId = "33333333-3333-4333-8333-333333333333";
+const snapshotId = "44444444-4444-4444-8444-444444444444";
 const now = "2026-07-28T00:00:00Z";
 
 const sandboxRef = {
@@ -53,6 +55,23 @@ const processRef = {
   state: "RUNNING",
   startedAt: now,
 } satisfies SandboxProcessRef;
+
+const snapshotRef = {
+  kind: "inngest/sandbox.snapshot",
+  version: 1,
+  id: snapshotId,
+  sourceImageId:
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  status: "READY",
+  compatibilityId: "simcity-linux-amd64-v1",
+  resources: { vcpu: 2, memoryMb: 2048 },
+  memoryPackCount: 8,
+  diskPackCount: 2,
+  storedBytes: 512,
+  createdAt: now,
+  updatedAt: now,
+  expiresAt: "2026-08-04T00:00:00Z",
+} satisfies SandboxSnapshotRef;
 
 const createOptions = {
   name: sandboxRef.name,
@@ -161,6 +180,38 @@ const resultForOperation = (
           ],
         },
       };
+    case "snapshot.create":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.create",
+        snapshot: snapshotRef,
+      };
+    case "snapshot.list":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.list",
+        snapshots: [snapshotRef],
+        page: { hasMore: false, limit: operation.input[0].limit },
+        fetchedAt: now,
+      };
+    case "snapshot.get":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.get",
+        snapshot: snapshotRef,
+      };
+    case "snapshot.waitUntilReady":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.waitUntilReady",
+        snapshot: snapshotRef,
+      };
+    case "snapshot.delete":
+      return {
+        protocolVersion: 1,
+        action: "snapshot.delete",
+        result: null,
+      };
   }
 };
 
@@ -197,6 +248,16 @@ describe("step.sandbox", () => {
     await process.signal("signal", { signal: 15, includeChildren: true });
     const waited = await process.wait("wait", { timeout: "5s" });
     const output = await process.getOutput("output", { tailBytes: 123 });
+    const snapshot = await created.snapshots.create("snapshot-create");
+    const snapshots = await tools.snapshots.list("snapshot-list", { limit: 5 });
+    await tools.snapshots.get("snapshot-get", snapshotId);
+    const readySnapshot = await snapshot.waitUntilReady("snapshot-ready", {
+      timeout: "5s",
+    });
+    await snapshot.delete("snapshot-delete");
+    const clone = await snapshot.clone("clone", {
+      name: "snapshot-clone",
+    });
     const running = await created.waitUntilRunning("wait-running", {
       timeout: "5s",
     });
@@ -234,6 +295,13 @@ describe("step.sandbox", () => {
     expect(Object.isFrozen(waited)).toBe(true);
     expect(Object.isFrozen(waited.command)).toBe(true);
     expect(output.chunks[0]?.data).toEqual(new Uint8Array([0, 255]));
+    expect(snapshot).toMatchObject(snapshotRef);
+    expect(snapshots.items[0]).toMatchObject(snapshotRef);
+    expect(readySnapshot).toMatchObject(snapshotRef);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.resources)).toBe(true);
+    expect("refresh" in snapshot).toBe(false);
+    expect(clone.id).toBe(sandboxId);
     expect(running).toMatchObject({ id: sandboxId, status: "RUNNING" });
     expect(destroyed).toMatchObject({ status: "TERMINATING" });
 
@@ -248,6 +316,13 @@ describe("step.sandbox", () => {
       "process.signal",
       "process.wait",
       "process.output",
+      "snapshot.create",
+      "snapshot.waitUntilReady",
+      "snapshot.list",
+      "snapshot.get",
+      "snapshot.waitUntilReady",
+      "snapshot.delete",
+      "create",
       "waitUntilRunning",
       "destroy",
     ]);
@@ -284,6 +359,30 @@ describe("step.sandbox", () => {
       input: [{ signal: 15, includeChildren: true }],
     });
     expect(operations[10]).toMatchObject({
+      action: "snapshot.create",
+      target: { sandbox: { id: sandboxId } },
+      input: [{}],
+    });
+    expect(operations[11]).toMatchObject({
+      action: "snapshot.waitUntilReady",
+      target: { snapshot: { id: snapshotId } },
+      input: [{ timeoutMs: 300_000 }],
+    });
+    expect(rawTool).toHaveBeenNthCalledWith(
+      11,
+      "snapshot-create",
+      expect.objectContaining({ action: "snapshot.create" }),
+    );
+    expect(rawTool).toHaveBeenNthCalledWith(
+      12,
+      "snapshot-create:wait-until-ready",
+      expect.objectContaining({ action: "snapshot.waitUntilReady" }),
+    );
+    expect(operations[16]).toMatchObject({
+      action: "create",
+      input: [{ name: "snapshot-clone", snapshotId }],
+    });
+    expect(operations[17]).toMatchObject({
       action: "waitUntilRunning",
       target: { sandbox: { id: sandboxId } },
       input: [{ timeoutMs: 5000 }],
@@ -457,7 +556,7 @@ describe("step.sandbox", () => {
       direct.create({
         ...createOptions,
         runningTimeout: true,
-      } as unknown as SandboxCreateOptions),
+      } as unknown as Parameters<typeof direct.create>[0]),
     ).rejects.toBeInstanceOf(SandboxValidationError);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(rawTool).not.toHaveBeenCalled();
@@ -465,6 +564,10 @@ describe("step.sandbox", () => {
 
   test("requires explicit middleware opt-in in function input types", () => {
     const client = createClient({ id: testClientId, isDev: true });
+    type DirectCreateOptions = Parameters<typeof client.sandboxes.create>[0];
+    // @ts-expect-error cloning is exposed on a snapshot resource
+    const directClone: DirectCreateOptions = { name: "clone", snapshotId };
+    expect(directClone).toBeDefined();
     const fn = client.createFunction(
       { id: "sandbox-without-middleware" },
       // @ts-expect-error step.sandbox is added by sandboxMiddleware
@@ -558,6 +661,145 @@ describe("step.sandbox", () => {
     ).resolves.toMatchObject({
       type: "function-resolved",
       data: processId,
+    });
+  });
+
+  test("memoizes snapshot creation before replaying its readiness wait", async () => {
+    const client = new Inngest({
+      id: testClientId,
+      isDev: true,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-snapshot", triggers: [{ event: "sandbox/snapshot" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        return (await sandbox.snapshots.create("create-snapshot")).id;
+      },
+    );
+
+    const getInvocation = await runFnWithStack(
+      fn,
+      {},
+      {
+        disableImmediateExecution: true,
+      },
+    );
+    if (getInvocation.type !== "steps-found" || !getInvocation.steps[0]) {
+      throw new Error("Expected Get step");
+    }
+    const getStep = getInvocation.steps[0];
+    const state = {
+      [getStep.id]: {
+        id: getStep.id,
+        data: { protocolVersion: 1, action: "get", sandbox: sandboxRef },
+      },
+    };
+    const stackOrder = [getStep.id];
+
+    const first = await runFnWithStack(fn, state, {
+      stackOrder,
+      disableImmediateExecution: true,
+    });
+    const replay = await runFnWithStack(fn, state, {
+      stackOrder,
+      disableImmediateExecution: true,
+    });
+    if (
+      first.type !== "steps-found" ||
+      replay.type !== "steps-found" ||
+      !first.steps[0] ||
+      !replay.steps[0]
+    ) {
+      throw new Error("Expected snapshot Create step");
+    }
+    const firstStep = first.steps[0];
+    const replayStep = replay.steps[0];
+    if (!firstStep.opts || !replayStep.opts) {
+      throw new Error("Expected snapshot Create step options");
+    }
+    expect(firstStep.opts.input).toEqual(replayStep.opts.input);
+    expect(firstStep).toMatchObject({
+      opts: {
+        input: [
+          {
+            protocolVersion: 1,
+            action: "snapshot.create",
+            target: { sandbox: { id: sandboxId } },
+            input: [{}],
+          },
+        ],
+      },
+    });
+
+    const createdState = {
+      ...state,
+      [firstStep.id]: {
+        id: firstStep.id,
+        data: {
+          protocolVersion: 1,
+          action: "snapshot.create" as const,
+          snapshot: snapshotRef,
+        },
+      },
+    };
+    const createdStackOrder = [...stackOrder, firstStep.id];
+    const firstWait = await runFnWithStack(fn, createdState, {
+      stackOrder: createdStackOrder,
+      disableImmediateExecution: true,
+    });
+    const replayedWait = await runFnWithStack(fn, createdState, {
+      stackOrder: createdStackOrder,
+      disableImmediateExecution: true,
+    });
+    if (
+      firstWait.type !== "steps-found" ||
+      replayedWait.type !== "steps-found" ||
+      !firstWait.steps[0] ||
+      !replayedWait.steps[0]
+    ) {
+      throw new Error("Expected snapshot readiness step");
+    }
+    const waitStep = firstWait.steps[0];
+    expect(replayedWait.steps[0].id).toBe(waitStep.id);
+    expect(waitStep).toMatchObject({
+      opts: {
+        input: [
+          {
+            protocolVersion: 1,
+            action: "snapshot.waitUntilReady",
+            target: { snapshot: { id: snapshotId } },
+            input: [{ timeoutMs: 300_000 }],
+          },
+        ],
+      },
+    });
+
+    await expect(
+      runFnWithStack(
+        fn,
+        {
+          ...createdState,
+          [waitStep.id]: {
+            id: waitStep.id,
+            data: {
+              protocolVersion: 1,
+              action: "snapshot.waitUntilReady",
+              snapshot: snapshotRef,
+            },
+          },
+        },
+        {
+          stackOrder: [...createdStackOrder, waitStep.id],
+          disableImmediateExecution: true,
+        },
+      ),
+    ).resolves.toMatchObject({
+      type: "function-resolved",
+      data: snapshotId,
     });
   });
 
@@ -727,6 +969,81 @@ describe("step.sandbox", () => {
       data: sandboxId,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("executes durable snapshot creation once before polling readiness", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const {
+      kind: _snapshotKind,
+      version: _snapshotVersion,
+      ...snapshotResource
+    } = snapshotRef;
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      requests.push({ url, init });
+      if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/snapshots`) {
+        return Response.json(
+          {
+            data: {
+              ...snapshotResource,
+              sourceImageId:
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              status: "CREATING",
+              compatibilityId: undefined,
+            },
+          },
+          { status: 202 },
+        );
+      }
+      if (url.pathname === `/v2/snapshots/${snapshotId}`) {
+        return Response.json({ data: snapshotResource });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      {
+        id: "sandbox-snapshot-rest",
+        triggers: [{ event: "sandbox/snapshot-rest" }],
+      },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        return (await sandbox.snapshots.create("create-snapshot")).id;
+      },
+    );
+    const run = createFnRunner(fn);
+
+    await run();
+    await run();
+    await run();
+    const replay = await run();
+
+    expect(replay.result).toMatchObject({
+      type: "function-resolved",
+      data: snapshotId,
+    });
+    expect(requests).toHaveLength(3);
+    expect(requests.filter(({ init }) => init?.method === "POST")).toHaveLength(
+      1,
+    );
+    expect(requests[1]?.init).toMatchObject({ method: "POST", body: "{}" });
+    expect("snapshots" in client.sandboxes).toBe(true);
   });
 
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
@@ -1188,6 +1505,264 @@ describe("inngest.sandboxes", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
+
+  test("supports the direct snapshot lifecycle and cloning", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const {
+      kind: _snapshotKind,
+      version: _snapshotVersion,
+      ...snapshotResource
+    } = snapshotRef;
+    const requests: Array<{ method: string; url: URL; init?: RequestInit }> =
+      [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      requests.push({ method, url, init });
+      if (method === "GET" && url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: sandboxResource });
+      }
+      if (
+        method === "POST" &&
+        url.pathname === `/v2/sandboxes/${sandboxId}/snapshots`
+      ) {
+        return Response.json({ data: snapshotResource }, { status: 201 });
+      }
+      if (method === "GET" && url.pathname === "/v2/snapshots") {
+        return Response.json({
+          data: [snapshotResource],
+          metadata: { fetchedAt: now },
+          page: { cursor: "next", hasMore: true, limit: 2 },
+        });
+      }
+      if (method === "GET" && url.pathname === `/v2/snapshots/${snapshotId}`) {
+        return Response.json({ data: snapshotResource });
+      }
+      if (
+        method === "DELETE" &&
+        url.pathname === `/v2/snapshots/${snapshotId}`
+      ) {
+        return new Response(null, { status: 204 });
+      }
+      if (method === "POST" && url.pathname === "/v2/sandboxes") {
+        const body = JSON.parse(String(init?.body)) as {
+          name: string;
+          snapshotId: string;
+        };
+        return Response.json(
+          { data: { ...sandboxResource, name: body.name } },
+          { status: 201 },
+        );
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    const created = await sandbox.snapshot({}, { timeout: "1s" });
+    const listed = await client.snapshots.list({ cursor: "opaque", limit: 2 });
+    const fetched = await client.snapshots.get(snapshotId);
+    await created.delete();
+    const clone = await created.clone({ name: "snapshot-clone" });
+
+    expect(created).toMatchObject(snapshotRef);
+    expect(listed).toMatchObject({
+      items: [expect.objectContaining(snapshotRef)],
+      page: { cursor: "next", hasMore: true, limit: 2 },
+      fetchedAt: now,
+    });
+    expect(fetched).toMatchObject(snapshotRef);
+    expect(clone.name).toBe("snapshot-clone");
+    expect(Object.isFrozen(client.snapshots)).toBe(true);
+    expect(Object.isFrozen(created)).toBe(true);
+    expect(Object.isFrozen(created.resources)).toBe(true);
+    expect("refresh" in created).toBe(false);
+    expect(requests[1]).toMatchObject({ method: "POST" });
+    expect(requests[1]?.init).toMatchObject({ body: "{}" });
+    expect(requests[2]?.url.searchParams.get("cursor")).toBe("opaque");
+    expect(requests[2]?.url.searchParams.get("limit")).toBe("2");
+    expect(requests[3]).toMatchObject({
+      method: "GET",
+      url: expect.objectContaining({
+        pathname: `/v2/snapshots/${snapshotId}`,
+      }),
+    });
+    expect(JSON.parse(String(requests[5]?.init?.body))).toEqual({
+      name: "snapshot-clone",
+      snapshotId,
+    });
+  });
+
+  test("polls snapshot readiness immediately and tolerates transient failures", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      const {
+        kind: _snapshotKind,
+        version: _snapshotVersion,
+        compatibilityId: _compatibilityId,
+        ...snapshotResource
+      } = snapshotRef;
+      const creatingResource = { ...snapshotResource, status: "CREATING" };
+      const readyResource = {
+        ...snapshotResource,
+        compatibilityId: snapshotRef.compatibilityId,
+      };
+      let snapshotGets = 0;
+      const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        const method = init?.method ?? "GET";
+        if (method === "GET" && url.pathname === `/v2/sandboxes/${sandboxId}`) {
+          return Response.json({ data: sandboxResource });
+        }
+        if (method === "POST") {
+          return Response.json({ data: creatingResource }, { status: 202 });
+        }
+        snapshotGets++;
+        if (snapshotGets === 1) {
+          return Response.json({ data: creatingResource });
+        }
+        if (snapshotGets === 2) {
+          throw new TypeError("connection reset");
+        }
+        return Response.json({ data: readyResource });
+      });
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
+      const result = sandbox.snapshot({}, { timeout: "10s" });
+      const assertion = expect(result).resolves.toMatchObject({
+        id: snapshotId,
+        status: "READY",
+      });
+      // The first poll happens before any delay.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(snapshotGets).toBe(1);
+      // A transient failure on the second poll keeps the loop alive.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(snapshotGets).toBe(2);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(snapshotGets).toBe(3);
+
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("fails snapshot readiness on a terminal status or timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      const {
+        kind: _snapshotKind,
+        version: _snapshotVersion,
+        compatibilityId: _compatibilityId,
+        ...snapshotResource
+      } = snapshotRef;
+      let status: "CREATING" | "FAILED" = "CREATING";
+      const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+          return Response.json({ data: sandboxResource });
+        }
+        return Response.json(
+          {
+            data: {
+              ...snapshotResource,
+              status: init?.method === "POST" ? "CREATING" : status,
+            },
+          },
+          { status: init?.method === "POST" ? 202 : 200 },
+        );
+      });
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
+      const timedOut = expect(
+        sandbox.snapshot({}, { timeout: "2s" }),
+      ).rejects.toMatchObject({
+        name: "SandboxError",
+        action: "snapshot.waitUntilReady",
+        code: "sandbox_snapshot_wait_timed_out",
+        snapshotId,
+        retryable: false,
+        details: [{ status: "CREATING", timeoutMs: 2_000 }],
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await timedOut;
+
+      status = "FAILED";
+      const failed = expect(
+        sandbox.snapshot({}, { timeout: "2s" }),
+      ).rejects.toMatchObject({
+        name: "SandboxError",
+        action: "snapshot.waitUntilReady",
+        code: "sandbox_snapshot_not_ready",
+        snapshotId,
+        retryable: false,
+        details: [{ status: "FAILED" }],
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await failed;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("reports an uncertain direct snapshot Create as ambiguous", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    let requestCount = 0;
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => async () => {
+        requestCount++;
+        if (requestCount === 1) {
+          return Response.json({ data: sandboxResource });
+        }
+        throw new TypeError("connection reset");
+      },
+    });
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+
+    await expect(sandbox.snapshot()).rejects.toMatchObject({
+      name: "SandboxError",
+      action: "snapshot.create",
+      code: "operation_ambiguous",
+      message: expect.stringContaining("Check snapshots.list()"),
+      snapshotId: undefined,
+      sandboxId,
+      ambiguous: true,
+      retryable: false,
+    });
+  });
 
   test("decodes captured Exec output as non-fatal UTF-8", async () => {
     const { kind: _kind, version: _version, ...resource } = sandboxRef;

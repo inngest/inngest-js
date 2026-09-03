@@ -34,6 +34,9 @@ const executeAsStep = async (
         ...(error.processId !== undefined && {
           processId: error.processId,
         }),
+        ...(error.snapshotId !== undefined && {
+          snapshotId: error.snapshotId,
+        }),
         ambiguous: error.ambiguous,
         retryable: error.retryable,
         ...(error.requestId !== undefined && {
