@@ -784,11 +784,22 @@ class InngestExecutionEngine
    */
   private postCheckpointStream(): void {
     try {
+      // If the stream closed before any consumer materialized its readable
+      // side, the full payload is already known — POST it as static bytes
+      // instead of allocating a stream.
+      const undeliveredPayload = this.streamTools.undeliveredPayload();
+      const body =
+        undeliveredPayload === undefined
+          ? this.buildMetadataPrefixedStream()
+          : new TextEncoder().encode(
+              buildSseMetadataEvent(this.fnArg.runId) + undeliveredPayload,
+            );
+
       // Fire and forget — completes when the stream closes.
       void this.options.client["inngestApi"]
         .checkpointStream({
           runId: this.fnArg.runId,
-          body: this.buildMetadataPrefixedStream(),
+          body,
         })
         .catch((err: unknown) => {
           this.devDebug("checkpoint stream POST error:", err);

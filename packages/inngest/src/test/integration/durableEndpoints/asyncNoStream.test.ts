@@ -8,6 +8,7 @@ import { createState, testNameFromFileUrl } from "@inngest/test-harness";
 import { expect, test } from "vitest";
 import { step } from "../../../index.ts";
 
+import { trackStreamAllocations } from "../../helpers.ts";
 import { setupEndpoint, urlWithTestName } from "./helpers.ts";
 
 const testFileName = testNameFromFileUrl(import.meta.url);
@@ -35,6 +36,35 @@ test("return Response object", async () => {
   expect(await res.json()).toBe('"hello world"');
 
   await state.waitForRunComplete();
+});
+
+test("does not allocate a stream across async-mode reentries", async () => {
+  const state = createState({});
+  const { port, waitForRunId } = await setupEndpoint(testFileName, async () => {
+    const a = await step.run("a", async () => "hello");
+    await step.sleep("go-async", "1s");
+    const b = await step.run("b", async () => "world");
+    return Response.json(`${a} ${b}`);
+  });
+
+  const getStreamAllocations = trackStreamAllocations();
+
+  let res = await fetch(urlWithTestName(`http://localhost:${port}`), {
+    redirect: "manual",
+  });
+  expect(res.status).toBe(302);
+  expect(res.headers.get("location")).toBeTruthy();
+  state.runId = await waitForRunId();
+
+  res = await fetch(res.headers.get("location")!);
+  expect(res.status).toBe(200);
+
+  // FIXME: The output is double-encoded. This is a Inngest server bug (not SDK)
+  expect(await res.json()).toBe('"hello world"');
+
+  await state.waitForRunComplete();
+
+  expect(getStreamAllocations()).toEqual([]);
 });
 
 test("return string", async () => {

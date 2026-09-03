@@ -3,6 +3,7 @@ import fetch from "cross-fetch";
 import type { Request, Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
+import { onTestFinished, vi } from "vitest";
 import { z } from "zod/v3";
 import {
   type IInngestExecution,
@@ -2286,3 +2287,44 @@ export const nodeVersion = process.version
   : undefined;
 
 export const silencedLogger = new ConsoleLogger({ level: "silent" });
+
+/**
+ * Track every `TransformStream` and `CountQueuingStrategy` construction in
+ * this process for the rest of the current test, restoring the globals on
+ * test finish. Returns a function yielding the captured construction stacks,
+ * each prefixed with the constructor name. Deliberately unfiltered: nothing
+ * else constructs these during our tests, and filtering by callsite would
+ * let a moved or renamed allocation escape detection.
+ */
+export function trackStreamAllocations(): () => string[] {
+  const OriginalTransformStream = globalThis.TransformStream;
+  const OriginalCountQueuingStrategy = globalThis.CountQueuingStrategy;
+  const stacks: string[] = [];
+
+  class TrackedTransformStream extends OriginalTransformStream {
+    constructor(
+      ...args: ConstructorParameters<typeof OriginalTransformStream>
+    ) {
+      super(...args);
+      stacks.push(`TransformStream ${new Error().stack ?? ""}`);
+    }
+  }
+
+  class TrackedCountQueuingStrategy extends OriginalCountQueuingStrategy {
+    constructor(
+      ...args: ConstructorParameters<typeof OriginalCountQueuingStrategy>
+    ) {
+      super(...args);
+      stacks.push(`CountQueuingStrategy ${new Error().stack ?? ""}`);
+    }
+  }
+
+  vi.stubGlobal("TransformStream", TrackedTransformStream);
+  vi.stubGlobal("CountQueuingStrategy", TrackedCountQueuingStrategy);
+  onTestFinished(() => {
+    globalThis.TransformStream = OriginalTransformStream;
+    globalThis.CountQueuingStrategy = OriginalCountQueuingStrategy;
+  });
+
+  return () => stacks;
+}
