@@ -1110,37 +1110,65 @@ export type ExperimentStepTools = GetStepTools<Inngest.Any> & {
  * tools within API endpoints, though they can still be used within regular
  * Inngest functions as well.
  */
+/**
+ * Calls a step tool, using the execution's own tools directly when they are
+ * already available and only deriving a promise when they are not.
+ *
+ * The difference matters beyond one microtask. `getDeferredStepTooling().then(
+ * (tools) => tools.run(...))` hands user code a *derived* promise, so a
+ * `Promise.all` over step calls registers on those wrappers rather than on the
+ * steps' own promises — and the wrappers in turn adopt the real ones in
+ * microtasks of their own, which looks like combinator activity that user code
+ * never performed. Both directions break the observation `StepLineage` makes.
+ *
+ * Inside a running function ALS is already resolved, which is exactly when
+ * lineage is wanted, so that path is now direct. The deferred path remains for
+ * the first touch, before ALS has loaded.
+ */
+const callTool = <TArgs extends unknown[]>(
+  pick: (tools: GenericStepTools) => (...args: TArgs) => Promise<unknown>,
+) => {
+  return (...args: TArgs): Promise<unknown> => {
+    const tools = getAsyncCtxSync()?.execution?.ctx.step as
+      | GenericStepTools
+      | undefined;
+
+    if (tools) {
+      return pick(tools)(...args);
+    }
+
+    return getDeferredStepTooling().then((deferredTools) =>
+      pick(deferredTools)(...args),
+    );
+  };
+};
+
 export const step: GenericStepTools = {
   // TODO Support `step.fetch` (this is already kinda half way deferred)
   fetch: null as unknown as GenericStepTools["fetch"],
   ai: {
-    infer: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),
-    wrap: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.ai.wrap(...args)),
+    infer: callTool((tools) => tools.ai.infer) as GenericStepTools["ai"]["infer"],
+    wrap: callTool((tools) => tools.ai.wrap) as GenericStepTools["ai"]["wrap"],
     models: {
       ...models,
     },
   },
-  invoke: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.invoke(...args)),
-  run: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.run(...args)),
-  sendEvent: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sendEvent(...args)),
-  sendSignal: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sendSignal(...args)),
-  sleep: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sleep(...args)),
-  sleepUntil: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.sleepUntil(...args)),
-  waitForEvent: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.waitForEvent(...args)),
-  waitForSignal: (...args) =>
-    getDeferredStepTooling().then((tools) => tools.waitForSignal(...args)),
+  invoke: callTool((tools) => tools.invoke) as GenericStepTools["invoke"],
+  run: callTool((tools) => tools.run) as GenericStepTools["run"],
+  sendEvent: callTool((tools) => tools.sendEvent) as GenericStepTools["sendEvent"],
+  sendSignal: callTool((tools) => tools.sendSignal) as GenericStepTools["sendSignal"],
+  sleep: callTool((tools) => tools.sleep) as GenericStepTools["sleep"],
+  sleepUntil: callTool((tools) => tools.sleepUntil) as GenericStepTools["sleepUntil"],
+  waitForEvent: callTool(
+    (tools) => tools.waitForEvent,
+  ) as GenericStepTools["waitForEvent"],
+  waitForSignal: callTool(
+    (tools) => tools.waitForSignal,
+  ) as GenericStepTools["waitForSignal"],
   realtime: {
-    publish: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.realtime.publish(...args)),
+    publish: callTool(
+      (tools) => tools.realtime.publish,
+    ) as GenericStepTools["realtime"]["publish"],
   },
 };
 
