@@ -8,8 +8,10 @@ export type SandboxDuration = number | string | DurationLike;
 export type SandboxStatus =
   | "PENDING"
   | "STARTING"
+  | "PAUSING"
   | "RUNNING"
   | "PAUSED"
+  | "RESUMING"
   | "TERMINATING"
   | "TERMINATED"
   | "FAILED";
@@ -304,7 +306,6 @@ export interface SandboxLifecycleOptions {
 }
 
 export type SandboxSnapshotCreateOptions = Record<string, never>;
-
 export interface SandboxSnapshotCloneOptions {
   name: string;
   runningTimeout?: SandboxDuration;
@@ -321,6 +322,8 @@ export type SandboxAction =
   | "waitUntilRunning"
   | "exec"
   | "destroy"
+  | "pause"
+  | "resume"
   | "process.start"
   | "process.list"
   | "process.get"
@@ -456,6 +459,8 @@ export interface Sandbox {
     get(processId: string): Promise<SandboxProcess | null>;
   };
   waitUntilRunning(options: SandboxWaitUntilRunningOptions): Promise<Sandbox>;
+  pause(options?: SandboxLifecycleOptions): Promise<Sandbox>;
+  resume(options?: SandboxLifecycleOptions): Promise<Sandbox>;
   snapshot(
     options?: SandboxSnapshotCreateOptions,
     waitOptions?: SandboxLifecycleOptions,
@@ -551,6 +556,14 @@ export interface DurableSandbox {
     options?: SandboxSnapshotCreateOptions,
     waitOptions?: SandboxLifecycleOptions,
   ): Promise<DurableSandboxSnapshot>;
+  pause(
+    idOrOptions: StepOptionsOrId,
+    options?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
+  resume(
+    idOrOptions: StepOptionsOrId,
+    options?: SandboxLifecycleOptions,
+  ): Promise<DurableSandbox>;
   waitUntilRunning(
     idOrOptions: StepOptionsOrId,
     options: SandboxWaitUntilRunningOptions,
