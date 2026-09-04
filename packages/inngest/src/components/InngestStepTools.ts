@@ -35,6 +35,10 @@ import {
 } from "../types.ts";
 import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
+import type {
+  StepLineage,
+  StepPromiseToken,
+} from "./execution/stepLineage.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
   type ClientOptionsFromInngest,
@@ -96,6 +100,37 @@ export interface StepMiddlewareContext {
 }
 
 export interface FoundStep extends HashedOp {
+  /**
+   * The hashed ID of the memoised step whose resumption unblocked the
+   * continuation that discovered this step, if any.
+   *
+   * We resume memoised steps one at a time, draining microtasks between each,
+   * so a step found while a resumption is in flight was reached by code that
+   * was waiting on it. That makes this a direct observation of causality,
+   * rather than something a consumer has to infer from report order or timing.
+   *
+   * `undefined` when the step was found during the initial replay of the
+   * function body, before any resumption — i.e. it waits on the trigger only.
+   *
+   * Diagnostic only: it is reported to the Executor so run visualisations can
+   * show which branch of a `Promise.all` a step belongs to. It never affects
+   * execution.
+   */
+  discoveredAfter?: string[];
+
+  /**
+   * Steps that could have unblocked this one but did not — the losing side of a
+   * `Promise.race`/`Promise.any`. Drawn as dashed edges, so a race reads as a
+   * race rather than as a join that waited for everything.
+   */
+  discoveredAfterAlternates?: string[];
+
+  /**
+   * Identity for this step's `step.*` call, used to tie combinator calls made
+   * on the returned promise back to this step once its hashed ID is known.
+   */
+  token?: StepPromiseToken;
+
   hashedId: string;
   fn?: (...args: unknown[]) => unknown;
   rawArgs: unknown[];
@@ -190,6 +225,13 @@ export type StepHandler = (info: {
   matchOp: MatchOpFn;
   opts?: StepToolOptions;
   args: [StepOptionsOrId, ...unknown[]];
+
+  /**
+   * Identity for this call, created before the step's hashed ID is known so
+   * that combinator calls on the returned promise can be attributed to it
+   * later. See `StepLineage`.
+   */
+  token?: StepPromiseToken;
 }) => Promise<unknown>;
 
 export interface StepToolOptions<
@@ -259,6 +301,13 @@ export const createStepTools = <
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler,
+
+  /**
+   * Observes combinator calls made on the promises these tools return, so a
+   * join can be drawn rather than declined. Diagnostic only; omitted, the tools
+   * behave exactly as before.
+   */
+  lineage?: StepLineage,
 ) => {
   /**
    * A local helper used to create tools that can be used to submit an op.
@@ -315,9 +364,23 @@ export const createStepTools = <
       return op;
     };
 
-    return (async (...args: Parameters<T>): Promise<unknown> => {
+    return ((...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
-      return stepHandler({ args: parsedArgs, matchOp: wrappedMatchOp, opts });
+      const token: StepPromiseToken | undefined = lineage ? {} : undefined;
+
+      // Kept as an async IIFE rather than an async arrow so we hold the promise
+      // object itself and can tag it. Semantics are identical: same number of
+      // microtask hops, and a synchronous throw in `stepHandler` still surfaces
+      // as a rejection rather than a throw.
+      const promise = (async () =>
+        stepHandler({
+          args: parsedArgs,
+          matchOp: wrappedMatchOp,
+          opts,
+          token,
+        }))();
+
+      return lineage && token ? lineage.tag(promise, token) : promise;
     }) as T;
   };
 

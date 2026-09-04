@@ -21,6 +21,7 @@ import {
   isDeferredFunction,
   isStaleDispatchError,
 } from "../../helpers/marker.ts";
+import { StepLineage } from "./stepLineage.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -2277,6 +2278,22 @@ class InngestExecutionEngine
     const unhandledFoundStepsToReport: Map<string, FoundStep> = new Map();
 
     /**
+     * The memoised step currently being resumed, if any.
+     *
+     * We resume exactly one memoised step at a time and drain microtasks before
+     * resuming the next, so any step discovered while this is set was reached
+     * by a continuation waiting on it. Recording it lets run visualisations
+     * show which branch of a `Promise.all` a step belongs to, instead of
+     * guessing from the order steps happen to be reported in.
+     *
+     * Undefined during the initial replay of the function body, where found
+     * steps wait on the trigger rather than on another step.
+     */
+    // Held on the execution rather than in this closure: a step can also be
+    // resumed from `resumeStepWithResult`, when it ran inline and the function
+    // continued in the same request, and that path has to mark it too.
+
+    /**
      * A map of the latest sequential step indexes found for each step ID. Used
      * to ensure that we don't index steps in parallel.
      *
@@ -2371,6 +2388,8 @@ class InngestExecutionEngine
             continue;
           }
 
+          this.currentlyResuming = nextStepId;
+          this.lineage.markResumed(nextStepId);
           const handled = unhandledFoundStepsToReport.get(nextStepId)?.handle();
           if (handled) {
             remainingStepCompletionOrder.splice(i, 1);
@@ -2378,6 +2397,10 @@ class InngestExecutionEngine
             return void reportNextTick();
           }
         }
+
+        // Nothing left to resume, so anything found from here on was not
+        // unblocked by a resumption and must not inherit the last one's id.
+        this.currentlyResuming = undefined;
 
         // If we've handled no steps in this "tick," roll up everything we've
         // found and report it.
@@ -2400,6 +2423,39 @@ class InngestExecutionEngine
      * A helper used to push a step to the list of steps to report.
      */
     const pushStepToReport = (step: FoundStep) => {
+      // Sticky: a step can be pushed more than once in a replay, and a later
+      // push may land after the resume loop has cleared the marker. The first
+      // sighting is the causal one, so never overwrite it with undefined.
+      if (
+        step.discoveredAfter === undefined &&
+        this.currentlyResuming !== undefined
+      ) {
+        const { parents, alternates } = this.lineage.parentsOf(
+          this.currentlyResuming,
+          (id) => this.state.steps.get(id)?.token,
+        );
+
+        step.discoveredAfter = parents;
+
+        if (alternates.length) {
+          step.discoveredAfterAlternates = alternates;
+        }
+
+        // Stamped onto the op's own opts, not merged in at each report site.
+        // A step reaches the Executor by three routes — planned in a batch,
+        // executed inline, or checkpointed after running — and the last of
+        // those serialises `opts` directly. Doing it here is what makes lineage
+        // survive all three, and a lone step discovered after a resumption
+        // always takes the third: that is exactly the step *after* a join.
+        step.opts = {
+          ...(step.opts ?? {}),
+
+          discoveredAfter: parents,
+          ...(alternates.length
+            ? { discoveredAfterAlternates: alternates }
+            : {}),
+        };
+      }
       foundStepsToReport.set(step.hashedId, step);
       unhandledFoundStepsToReport.set(step.hashedId, step);
       reportNextTick();
@@ -2409,6 +2465,7 @@ class InngestExecutionEngine
       args,
       matchOp,
       opts,
+      token,
     }): Promise<unknown> => {
       const stepOptions = getStepOptions(args[0]);
       const opId = matchOp(stepOptions, ...args.slice(1));
@@ -2561,11 +2618,19 @@ class InngestExecutionEngine
 
       const asyncContext = getAsyncCtxSync();
 
+      // The hashed ID is only known now, after middleware has awaited, but a
+      // combinator may already have registered on the promise. Stamping it here
+      // is what lets those registrations be resolved to step IDs later.
+      if (token) {
+        token.hashedId = hashedId;
+      }
+
       const step: FoundStep = {
         ...opId,
         opts: { ...opId.opts, ...extraOpts },
         rawArgs: fnArgs,
         hashedId,
+        token,
         input: stepState?.input,
 
         fn: opts?.fn ? () => opts.fn?.(this.fnArg, ...fnArgs) : undefined,
@@ -2732,7 +2797,12 @@ class InngestExecutionEngine
       return promise;
     };
 
-    const baseTools = createStepTools(this.options.client, this, stepHandler);
+    const baseTools = createStepTools(
+      this.options.client,
+      this,
+      stepHandler,
+      this.lineage,
+    );
     const defer = this.buildDefer(stepHandler);
 
     return { step: baseTools, defer };
@@ -2995,6 +3065,19 @@ class InngestExecutionEngine
     };
   }
 
+  /**
+   * Watches combinator calls made on the promises the step tools hand back, so
+   * `Promise.all([a, b])` can be reported as a join rather than as "waited on
+   * whichever finished last". See `StepLineage`.
+   */
+  private lineage = new StepLineage();
+
+  /**
+   * The step currently being resumed, if any. A step discovered while this is
+   * set was reached by a continuation waiting on it.
+   */
+  private currentlyResuming: string | undefined;
+
   private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
     const userlandStep = this.state.steps.get(resultOp.id);
     if (!userlandStep) {
@@ -3023,7 +3106,25 @@ class InngestExecutionEngine
       userlandStep.hasStepState = true;
       this.state.stepState[resultOp.id] = userlandStep;
 
+      // This is a resumption as much as the memoised-replay loop's is: the step
+      // just completed and the function continues from it in the same request.
+      // Without marking it, every step discovered by an inline continuation —
+      // which is most of them when checkpointing — would report no lineage.
+      this.currentlyResuming = resultOp.id;
+      this.lineage.markResumed(resultOp.id);
+
       userlandStep.handle();
+
+      // Held across the microtask drain rather than restored straight after
+      // `handle()`. Resolving a step's promise only schedules its continuation,
+      // so the step that continuation discovers is found later — which is
+      // exactly the discovery this marker exists to attribute. The replay loop
+      // gets this for free by awaiting between resumptions.
+      void resolveAfterPending().then(() => {
+        if (this.currentlyResuming === resultOp.id) {
+          this.currentlyResuming = undefined;
+        }
+      });
     }
 
     return userlandStep;
