@@ -227,9 +227,10 @@ export async function* iterSse(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // SSE events are delimited by a blank line (double newline) per the
-      // Server-Sent Events spec.
-      const parts = buffer.split("\n\n");
+      // SSE events are delimited by a blank line per the Server-Sent Events
+      // spec. Accept CRLF as well as LF so a server or proxy that uses `\r\n`
+      // line endings still splits into events instead of buffering forever.
+      const parts = buffer.split(/\r?\n\r?\n/);
       buffer = parts.pop() ?? "";
 
       for (const part of parts) {
@@ -238,11 +239,21 @@ export async function* iterSse(
         let event = "message";
         const dataLines: string[] = [];
 
-        for (const line of part.split("\n")) {
-          if (line.startsWith("event: ")) {
-            event = line.slice(7);
-          } else if (line.startsWith("data: ")) {
-            dataLines.push(line.slice(6));
+        for (const line of part.split(/\r?\n/)) {
+          // Each line is `field:value`. The space after the colon is optional
+          // (a single leading space is stripped), and a `:`-prefixed line is a
+          // comment. Matching a literal `"data: "` dropped a spec-valid
+          // `data:value` line and mis-read `event:value` as the default event.
+          if (line.startsWith(":")) continue;
+          const colon = line.indexOf(":");
+          const field = colon === -1 ? line : line.slice(0, colon);
+          let value = colon === -1 ? "" : line.slice(colon + 1);
+          if (value.startsWith(" ")) value = value.slice(1);
+
+          if (field === "event") {
+            event = value;
+          } else if (field === "data") {
+            dataLines.push(value);
           }
         }
 
