@@ -88,7 +88,7 @@ const responseEnvelopeSchema = z
 const sandboxPageSchema = z
   .object({
     cursor: z.string().min(1).nullish(),
-    hasMore: z.boolean(),
+    hasMore: z.boolean().optional(),
     limit: z.number().int().min(1).max(250),
   })
   .strip();
@@ -977,7 +977,7 @@ const createDirectSandboxFacade = (
         return {
           items,
           page: {
-            hasMore: page.hasMore,
+            hasMore: page.hasMore ?? false,
             limit: page.limit,
             ...(page.cursor != null && { cursor: page.cursor }),
           },
@@ -1266,7 +1266,7 @@ const listSandboxSnapshots = async (
   return {
     items: resources.map(sandboxSnapshotRefFromResource),
     page: {
-      hasMore: page.hasMore,
+      hasMore: page.hasMore ?? false,
       limit: page.limit,
       ...(page.cursor != null && { cursor: page.cursor }),
     },
@@ -1484,7 +1484,7 @@ export const createSandboxClient = (
           ),
         ),
         page: {
-          hasMore: page.hasMore,
+          hasMore: page.hasMore ?? false,
           limit: page.limit,
           ...(page.cursor != null && { cursor: page.cursor }),
         },
