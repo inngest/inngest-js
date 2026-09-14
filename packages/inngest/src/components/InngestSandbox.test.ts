@@ -73,7 +73,10 @@ const snapshotRef = {
   expiresAt: "2026-08-04T00:00:00Z",
 } satisfies SandboxSnapshotRef;
 
+const secretId = "55555555-5555-4555-8555-555555555555";
+
 const createOptions = {
+  secrets: { TOKEN: secretId },
   name: sandboxRef.name,
   vcpu: 2,
   memoryMb: 2048,
@@ -421,6 +424,32 @@ describe("step.sandbox", () => {
         input: [{ ...createOptions, runningTimeoutMs: false }],
       },
     ]);
+  });
+
+  test("rejects invalid launch secret selections before dispatch", async () => {
+    const rawTool = vi.fn<SandboxRawTool>();
+    const tools = createSandboxTools(() => rawTool);
+    for (const secrets of [
+      { TOKEN: "not-a-uuid" },
+      { SHARED: secretId },
+      { "": secretId },
+      { "BAD=KEY": secretId },
+      Object.fromEntries(
+        Array.from({ length: 257 }, (_, i) => [`TOKEN_${i}`, secretId]),
+      ),
+    ]) {
+      await expect(
+        tools.create("create", { ...createOptions, secrets }),
+      ).rejects.toBeInstanceOf(SandboxValidationError);
+    }
+    expect(() =>
+      parseSandboxOperation({
+        protocolVersion: 1,
+        action: "create",
+        input: [{ name: "clone", snapshotId, secrets: { TOKEN: secretId } }],
+      }),
+    ).toThrow(SandboxValidationError);
+    expect(rawTool).not.toHaveBeenCalled();
   });
 
   test("validates Simcity limits without imposing identifier-style env keys", async () => {

@@ -77,12 +77,20 @@ export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   memoryMb: number;
 
   /**
-   * Environment inherited by commands and managed processes. Values are
-   * persisted as literal sandbox configuration; this is not a secrets
-   * mechanism, so do not use this field for secrets. Guest defaults are
-   * retained, and operation-specific values override matching keys.
+   * Literal environment inherited by commands and managed processes. Values
+   * are persisted as sandbox configuration. Use `secrets` for workspace secret
+   * references. Guest defaults are retained, and operation-specific values
+   * override matching keys.
    */
   environment?: Record<string, string>;
+
+  /**
+   * Environment variable names mapped to workspace secret UUIDs. Selected
+   * values are fetched at launch with short-lived authorization and inherited
+   * by commands and managed processes. Delivered values remain in snapshots.
+   * Keys must not overlap with environment.
+   */
+  secrets?: Record<string, string>;
 
   snapshotId?: never;
 }
@@ -93,6 +101,7 @@ export interface SandboxCreateFromSnapshotOptions
   vcpu?: never;
   memoryMb?: never;
   environment?: never;
+  secrets?: never;
 }
 
 export type SandboxCreateOptions =
