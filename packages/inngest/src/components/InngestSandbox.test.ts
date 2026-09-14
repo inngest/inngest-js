@@ -2797,6 +2797,42 @@ describe("inngest.sandboxes", () => {
     ]);
   });
 
+  test("defaults an omitted process list hasMore value to false", async () => {
+    const { kind: _kind, version: _version, ...sandboxData } = sandboxRef;
+    const sandboxPath = `/v2/sandboxes/${sandboxId}`;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === sandboxPath && method === "GET") {
+        return Response.json({ data: sandboxData });
+      }
+      if (url.pathname === `${sandboxPath}/processes` && method === "GET") {
+        return Response.json({
+          data: [],
+          metadata: { fetchedAt: now },
+          page: { limit: 50 },
+        });
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+
+    await expect(sandbox.processes.list()).resolves.toMatchObject({
+      items: [],
+      page: { hasMore: false, limit: 50 },
+    });
+  });
+
   test("uses the REST v2 resource shape and decodes byte-safe streams", async () => {
     const calls: Array<{ url: URL; init?: RequestInit }> = [];
     const fetchMock: typeof fetch = vi.fn(async (input, init) => {
