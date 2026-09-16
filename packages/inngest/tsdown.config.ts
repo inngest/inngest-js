@@ -6,6 +6,7 @@ export default defineConfig({
   entry: [
     "src/astro.ts",
     "src/bun.ts",
+    "src/ci.ts",
     "src/cloudflare.ts",
     "src/connect.ts",
     "src/deno/fresh.ts",
