@@ -490,7 +490,7 @@ export const normalizeSandboxCreateOptions = (
           vcpu: z.number().int().positive().max(0xffffffff),
           memoryMb: z.number().int().positive().max(0xffffffff),
           environment: z.record(z.string()).optional(),
-          secrets: z.record(sandboxSecretNameSchema).optional(),
+          secrets: z.array(sandboxSecretNameSchema).optional(),
           runningTimeout: z.unknown().optional(),
         })
         .strict(),
@@ -507,12 +507,19 @@ export const normalizeSandboxCreateOptions = (
   );
   if ("vcpu" in parsed) {
     const environment = { ...parsed.environment };
-    for (const name of Object.keys(parsed.secrets ?? {})) {
-      if (Object.hasOwn(environment, name)) {
+    const selected = new Set<string>();
+    for (const name of parsed.secrets ?? []) {
+      if (Object.hasOwn(parsed.environment ?? {}, name)) {
         throw new SandboxValidationError(
           "secrets must not overlap with environment",
         );
       }
+      if (selected.has(name)) {
+        throw new SandboxValidationError(
+          "secrets must not contain duplicate names",
+        );
+      }
+      selected.add(name);
       Object.defineProperty(environment, name, { value: "", enumerable: true });
     }
     validateSandboxEnvironment(environment);
