@@ -223,7 +223,10 @@ class CommandBuilder implements Command {
     const machine = await ensureMachine(scope);
 
     const process = await machine.sandbox.processes.start(
-      { id: `${stepId}${scopeSeparator}start`, name: this.labelText() },
+      {
+        id: `${stepId}${scopeSeparator}start`,
+        name: `${stepId}${scopeSeparator}start`,
+      },
       {
         command: this.state.argv,
         environment: this.environment(scope),
@@ -254,7 +257,10 @@ class CommandBuilder implements Command {
       },
       kill: async (signal = 15) => {
         await process.signal(
-          { id: `${stepId}${scopeSeparator}kill`, name: "kill" },
+          {
+            id: `${stepId}${scopeSeparator}kill`,
+            name: `${stepId}${scopeSeparator}kill`,
+          },
           { signal },
         );
       },
@@ -262,7 +268,7 @@ class CommandBuilder implements Command {
         const result = await process.getOutput(
           {
             id: `${stepId}${scopeSeparator}output #${++waits}`,
-            name: "output",
+            name: `${stepId}${scopeSeparator}output #${waits}`,
           },
           { tailBytes: opts?.tailBytes ?? outputTailBytes },
         );
@@ -370,7 +376,7 @@ class CommandBuilder implements Command {
     // is cheaper and keeps the trace tidy.
     if (timeoutMs !== undefined && timeoutMs <= capturedExecLimitMs) {
       const result = await machine.sandbox.commands.run(
-        { id: stepId, name: this.labelText() },
+        { id: stepId, name: stepId },
         this.state.argv,
         {
           environment: this.environment(scope),
@@ -389,7 +395,10 @@ class CommandBuilder implements Command {
     }
 
     const process = await machine.sandbox.processes.start(
-      { id: `${stepId}${scopeSeparator}start`, name: this.labelText() },
+      {
+        id: `${stepId}${scopeSeparator}start`,
+        name: `${stepId}${scopeSeparator}start`,
+      },
       {
         command: this.state.argv,
         environment: this.environment(scope),
@@ -411,7 +420,10 @@ class CommandBuilder implements Command {
         }
 
         await process.signal(
-          { id: `${stepId}${scopeSeparator}timeout-kill`, name: "kill" },
+          {
+            id: `${stepId}${scopeSeparator}timeout-kill`,
+            name: `${stepId}${scopeSeparator}timeout-kill`,
+          },
           { signal: 9 },
         );
 
@@ -475,7 +487,7 @@ const pollUntilTerminal = async (opts: {
     await opts.scope.run.step.sleep(
       {
         id: `${opts.stepId}${scopeSeparator}wait #${index}`,
-        name: `wait #${index}`,
+        name: `${opts.stepId}${scopeSeparator}wait #${index}`,
       },
       interval,
     );
@@ -484,7 +496,7 @@ const pollUntilTerminal = async (opts: {
     const refreshed = await opts.machine.sandbox.processes.get(
       {
         id: `${opts.stepId}${scopeSeparator}check #${index}`,
-        name: `check #${index}`,
+        name: `${opts.stepId}${scopeSeparator}check #${index}`,
       },
       current.id,
     );
@@ -506,7 +518,10 @@ const readResult = async (opts: {
   startedAt?: number;
 }): Promise<CommandResult> => {
   const output = await opts.process.getOutput(
-    { id: `${opts.stepId}${scopeSeparator}output`, name: "output" },
+    {
+      id: `${opts.stepId}${scopeSeparator}output`,
+      name: `${opts.stepId}${scopeSeparator}output`,
+    },
     { tailBytes: outputTailBytes },
   );
 

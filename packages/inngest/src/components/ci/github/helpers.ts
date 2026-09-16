@@ -20,7 +20,7 @@ const helperStep = async <T>(
   const job = getJobScope();
   const id = `${job ? `${job.path} › ` : ""}github › ${helper}:${key}`;
 
-  return run.step.run({ id, name: `${helper}:${key}` }, fn) as Promise<T>;
+  return run.step.run({ id, name: id }, fn) as Promise<T>;
 };
 
 /**

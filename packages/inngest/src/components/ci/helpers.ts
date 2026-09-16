@@ -40,7 +40,7 @@ export const checkout = async (
     repo?.local && process.env.INNGEST_CI_GITHUB !== "live" ? repo.local : null;
 
   if (useLocal) {
-    await run.step.run({ id: stepId, name: "checkout" }, async () => {
+    await run.step.run({ id: stepId, name: stepId }, async () => {
       const { buildWorkingTreeTarball } = await import("./localCheckout.ts");
       const tarball = await buildWorkingTreeTarball(useLocal.path);
 
@@ -81,7 +81,7 @@ export const checkout = async (
     );
   }
 
-  await run.step.run({ id: stepId, name: "checkout" }, async () => {
+  await run.step.run({ id: stepId, name: stepId }, async () => {
     // The token is minted here, inside the handler, so it's never part of the
     // step's input or output. Both of those show in the trace.
     const { token } = await import("./github/helpers.ts");
@@ -170,7 +170,7 @@ export const changedFiles = async (): Promise<string[]> => {
   const scopePath = getJobScope()?.path;
   const id = nextStepId(run, scopePath, "changed");
 
-  const files = (await run.step.run({ id, name: "changed" }, () =>
+  const files = (await run.step.run({ id, name: id }, () =>
     listChangedFiles(run.repo),
   )) as string[];
 
