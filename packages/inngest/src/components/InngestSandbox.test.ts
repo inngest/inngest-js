@@ -73,10 +73,10 @@ const snapshotRef = {
   expiresAt: "2026-08-04T00:00:00Z",
 } satisfies SandboxSnapshotRef;
 
-const secretId = "55555555-5555-4555-8555-555555555555";
+const secretName = "openai-production";
 
 const createOptions = {
-  secrets: { TOKEN: secretId },
+  secrets: { TOKEN: secretName },
   name: sandboxRef.name,
   vcpu: 2,
   memoryMb: 2048,
@@ -426,27 +426,61 @@ describe("step.sandbox", () => {
     ]);
   });
 
+  test.each([
+    "openai-production",
+    "Mixed Case / token",
+    "55555555-5555-4555-8555-555555555555",
+    "é".repeat(128),
+  ])("preserves exact secret name %s and aliases", async (name) => {
+    const secrets = { TOKEN: name, TOKEN_ALIAS: name };
+    const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
+      resultForOperation(operation),
+    );
+    await createSandboxTools(() => rawTool).create("create", {
+      ...createOptions,
+      secrets,
+    });
+    const operation = rawTool.mock.calls[0]?.[1];
+    expect(operation).toMatchObject({ input: [{ secrets }] });
+    expect(parseSandboxOperation(operation)).toMatchObject({
+      input: [{ secrets }],
+    });
+  });
+
   test("rejects invalid launch secret selections before dispatch", async () => {
     const rawTool = vi.fn<SandboxRawTool>();
     const tools = createSandboxTools(() => rawTool);
     for (const secrets of [
-      { TOKEN: "not-a-uuid" },
-      { SHARED: secretId },
-      { "": secretId },
-      { "BAD=KEY": secretId },
+      { TOKEN: "" },
+      { TOKEN: " leading" },
+      { TOKEN: "trailing\u0085" },
+      { TOKEN: "line\nfeed" },
+      { TOKEN: "carriage\rreturn" },
+      { TOKEN: "null\0byte" },
+      { TOKEN: "é".repeat(129) },
+      { SHARED: secretName },
+      { "": secretName },
+      { "BAD=KEY": secretName },
       Object.fromEntries(
-        Array.from({ length: 257 }, (_, i) => [`TOKEN_${i}`, secretId]),
+        Array.from({ length: 257 }, (_, i) => [`TOKEN_${i}`, secretName]),
       ),
     ]) {
       await expect(
         tools.create("create", { ...createOptions, secrets }),
       ).rejects.toBeInstanceOf(SandboxValidationError);
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "create",
+          input: [{ ...createOptions, secrets }],
+        }),
+      ).toThrow(SandboxValidationError);
     }
     expect(() =>
       parseSandboxOperation({
         protocolVersion: 1,
         action: "create",
-        input: [{ name: "clone", snapshotId, secrets: { TOKEN: secretId } }],
+        input: [{ name: "clone", snapshotId, secrets: { TOKEN: secretName } }],
       }),
     ).toThrow(SandboxValidationError);
     expect(rawTool).not.toHaveBeenCalled();

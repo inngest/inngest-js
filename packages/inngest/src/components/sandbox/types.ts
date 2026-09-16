@@ -85,7 +85,10 @@ export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   environment?: Record<string, string>;
 
   /**
-   * Environment variable names mapped to workspace secret UUIDs. Selected
+   * Environment variable names mapped to exact workspace secret names, e.g.
+   * `{ OPENAI_API_KEY: "openai-production" }`. Names are resolved once when
+   * creating the sandbox; create retries keep the original secret identities.
+   * Archiving and recreating a name affects only new sandboxes. Selected
    * values are fetched at launch with short-lived authorization and inherited
    * by commands and managed processes. Delivered values remain in snapshots.
    * Keys must not overlap with environment.

@@ -43,6 +43,21 @@ const sandboxNameControlCharacterPattern = /\p{Cc}/u;
 const sandboxNameEdgeWhitespacePattern = /^\p{White_Space}|\p{White_Space}$/u;
 const textEncoder = new TextEncoder();
 
+export const sandboxSecretNameSchema = z.string().superRefine((name, ctx) => {
+  if (
+    name.length === 0 ||
+    textEncoder.encode(name).byteLength > 256 ||
+    sandboxNameEdgeWhitespacePattern.test(name) ||
+    /[\r\n\0]/u.test(name)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        "must be a nonempty workspace secret name of at most 256 bytes without leading/trailing whitespace, CR, LF, or NUL",
+    });
+  }
+});
+
 export const sandboxNameSchema = z.string().superRefine((name, ctx) => {
   if (name.length === 0) {
     ctx.addIssue({
@@ -475,7 +490,7 @@ export const normalizeSandboxCreateOptions = (
           vcpu: z.number().int().positive().max(0xffffffff),
           memoryMb: z.number().int().positive().max(0xffffffff),
           environment: z.record(z.string()).optional(),
-          secrets: z.record(canonicalUuidSchema).optional(),
+          secrets: z.record(sandboxSecretNameSchema).optional(),
           runningTimeout: z.unknown().optional(),
         })
         .strict(),
