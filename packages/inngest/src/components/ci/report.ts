@@ -19,7 +19,7 @@ export const report = {
 
     const id = nextStepId(run, job?.path, "report:summary");
 
-    await run.step.run({ id, name: "report:summary" }, () => ({
+    await run.step.run({ id, name: id }, () => ({
       length: markdown.length,
     }));
 
@@ -44,7 +44,7 @@ export const report = {
     );
 
     const id = nextStepId(run, job?.path, "report:annotate");
-    await run.step.run({ id, name: "report:annotate" }, () => ({
+    await run.step.run({ id, name: id }, () => ({
       count: valid.length,
     }));
 
