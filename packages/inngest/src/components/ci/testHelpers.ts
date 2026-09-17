@@ -176,7 +176,14 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const method = (init?.method ?? "GET").toUpperCase();
     requests.push(`${method} ${path}`);
 
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    // File uploads send bytes, so only JSON bodies are parsed.
+    const isJson = String(
+      (init?.headers as Record<string, string> | undefined)?.["Content-Type"] ??
+        "",
+    ).includes("application/json");
+
+    const body =
+      init?.body && isJson ? JSON.parse(String(init.body)) : undefined;
 
     // Create
     if (path === "/v2/sandboxes" && method === "POST") {
@@ -536,6 +543,8 @@ export const runFunction = async (
      * `waitForEvent` timeout looks like.
      */
     resolveWait?: (step: { id: string; displayName?: string }) => unknown;
+    /** How many times a retriable step failure is retried. Defaults to 4. */
+    stepAttempts?: number;
   } = {},
 ): Promise<RunResult> => {
   const stepState: InngestExecutionOptions["stepState"] = {};
@@ -551,6 +560,29 @@ export const runFunction = async (
     name?: string;
     data?: unknown;
     error?: unknown;
+  };
+
+  const attempts = new Map<string, number>();
+  const maxAttempts = opts.stepAttempts ?? 4;
+
+  /**
+   * The executor retries a step that failed retriably, and only writes the
+   * error into state once the attempts run out. Without this, a step that
+   * fails once — a flaky command, an SDK call with a bad first response —
+   * would look permanently broken.
+   */
+  const shouldRetry = (step: RanStep, retriable: unknown): boolean => {
+    const failed =
+      step.op === StepOpCode.StepError || step.op === StepOpCode.StepFailed;
+
+    if (!failed || retriable === false) {
+      return false;
+    }
+
+    const seen = (attempts.get(step.id) ?? 0) + 1;
+    attempts.set(step.id, seen);
+
+    return seen < maxAttempts;
   };
 
   const record = (step: RanStep) => {
@@ -594,7 +626,13 @@ export const runFunction = async (
     }
 
     if (result.type === "step-ran") {
-      record((result as { step: RanStep }).step);
+      const ranStep = (result as { step: RanStep; retriable?: unknown }).step;
+
+      if (shouldRetry(ranStep, (result as { retriable?: unknown }).retriable)) {
+        continue;
+      }
+
+      record(ranStep);
       continue;
     }
 
@@ -631,7 +669,13 @@ export const runFunction = async (
           continue;
         }
 
-        record((ran as { step: RanStep }).step);
+        const ranStep = (ran as { step: RanStep }).step;
+
+        if (shouldRetry(ranStep, (ran as { retriable?: unknown }).retriable)) {
+          continue;
+        }
+
+        record(ranStep);
       }
 
       continue;

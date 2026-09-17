@@ -393,6 +393,7 @@ const runPipeline = async ({
     cacheEntries: new Map(),
     sandboxes: new Set(),
     summaries: [],
+    openChecks: new Map(),
     // CI's own steps keep their scope inside the handler, so a call like
     // `github.rest` made from one still knows which run it's part of.
     step: withScopePreserved(ctx.step),
@@ -441,6 +442,10 @@ const runPipeline = async ({
 
       return result;
     } catch (error) {
+      // Jobs that were still running when the run ended would otherwise leave
+      // their checks spinning.
+      await closeOpenJobChecks(run, checks);
+
       await checks.pipelineComplete({
         run,
         conclusion: conclusionForError(error),
@@ -454,6 +459,37 @@ const runPipeline = async ({
       await destroyRunMachines(run);
     }
   });
+};
+
+/**
+ * Complete the job checks of anything still running when the run ended.
+ *
+ * With `Promise.all`, the first failure ends the run while its siblings are
+ * mid-flight; their checks are marked cancelled rather than left in progress.
+ */
+const closeOpenJobChecks = async (
+  run: CiRunScope,
+  checks: CheckReporter,
+): Promise<void> => {
+  const open = [...run.openChecks.entries()];
+  run.openChecks.clear();
+
+  for (const [jobPath, name] of open) {
+    run.summaries.push({
+      path: jobPath,
+      conclusion: "cancelled",
+      title: "Cancelled: the pipeline ended first",
+      durationMs: 0,
+    });
+
+    await checks.jobComplete({
+      run,
+      jobPath,
+      ...(name ? { name } : {}),
+      conclusion: "cancelled",
+      title: "Cancelled: the pipeline ended first",
+    });
+  }
 };
 
 const pipelineSummaryWithReports = (run: CiRunScope): string =>
@@ -670,6 +706,7 @@ const jobBody = async ({
       jobPath: scope.path,
       ...(jobCheckName ? { name: jobCheckName } : {}),
     });
+    run.openChecks.set(scope.path, jobCheckName);
   }
 
   try {
@@ -719,6 +756,7 @@ const jobBody = async ({
           ? { annotations: scope.annotations }
           : {}),
       });
+      run.openChecks.delete(scope.path);
     }
 
     await pauseMachine(scope);
@@ -754,6 +792,7 @@ const jobBody = async ({
           ? { annotations: scope.annotations }
           : {}),
       });
+      run.openChecks.delete(scope.path);
     }
 
     throw error;

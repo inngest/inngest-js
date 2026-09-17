@@ -145,13 +145,21 @@ export async function changed(
       : { include: args as string[] };
 
   const files = await changedFiles();
+
+  // Without a way to read the change, the safe answer is "something might
+  // have", so a pipeline runs rather than silently skipping.
+  if (files === null) {
+    return true;
+  }
+
   return filterPaths(files, opts).length > 0;
 }
 
 /**
- * The paths changed by whatever triggered this run.
+ * The paths changed by whatever triggered this run, or `null` when they can't
+ * be read — a cron with no repository, or a run with no GitHub credentials.
  */
-export const changedFiles = async (): Promise<string[]> => {
+export const changedFiles = async (): Promise<string[] | null> => {
   const { getRunScope } = await import("./scope.ts");
   const run = getRunScope();
 
@@ -170,9 +178,26 @@ export const changedFiles = async (): Promise<string[]> => {
   const scopePath = getJobScope()?.path;
   const id = nextStepId(run, scopePath, "changed");
 
-  const files = (await run.step.run({ id, name: id }, () =>
-    listChangedFiles(run.repo),
-  )) as string[];
+  const files = (await run.step.run({ id, name: id }, async () => {
+    try {
+      return await listChangedFiles(run.repo);
+    } catch (error) {
+      if (!(error instanceof CiUsageError)) {
+        throw error;
+      }
+
+      // No credentials, so the change can't be read. The caller assumes
+      // everything changed rather than skipping work it shouldn't.
+      return { unknown: true as const, reason: error.message };
+    }
+  })) as string[] | { unknown: true; reason: string };
+
+  if (!Array.isArray(files)) {
+    run.warnings.push(
+      `\`changed()\` assumed everything changed: ${files.reason}`,
+    );
+    return null;
+  }
 
   run.changedFiles = files;
   return files;
