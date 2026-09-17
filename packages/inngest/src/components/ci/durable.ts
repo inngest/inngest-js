@@ -164,7 +164,11 @@ const call = async (
     ? scopedId(overrides.id)
     : stepIdFor(label, options, execution.instance);
 
-  return execution.ctx.step.run({ id, name: overrides.name ?? label }, invoke);
+  // Inside a run, CI's own step tools are used so the scope is still there
+  // inside the handler; that's how the call knows which repository it's for.
+  const step = getRunScope()?.step ?? execution.ctx.step;
+
+  return step.run({ id, name: overrides.name ?? id }, invoke);
 };
 
 const invokeOnClient = async (

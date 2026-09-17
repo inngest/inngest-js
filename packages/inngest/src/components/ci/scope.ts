@@ -221,15 +221,20 @@ export const nextStepId = (
 };
 
 /**
- * Wrap step tools so every ID they're given is prefixed with a scope path.
+ * Wrap step tools so every ID they're given is prefixed with a scope path, and
+ * so the CI scope is still there inside the handler.
  *
  * User code inside a job writes `step.run("create-db", …)`, and the ID that
  * reaches the executor is `test › create-db`, so two jobs can use the same
  * name.
+ *
+ * The scope part matters because the execution engine calls step handlers from
+ * its own context rather than the caller's, so without this a `github.rest`
+ * call inside `step.run` couldn't tell which run it belonged to.
  */
 export const withStepIdPrefix = <T extends object>(
   tools: T,
-  prefix: string,
+  prefix?: string,
 ): T => {
   const cache = new Map<string | symbol, unknown>();
 
@@ -244,9 +249,17 @@ export const withStepIdPrefix = <T extends object>(
       if (typeof value === "function") {
         const wrapped = (...args: unknown[]) => {
           const [idOrOptions, ...rest] = args;
+          const store = getStore();
+
           return (value as (...a: unknown[]) => unknown).apply(target, [
-            prefixStepId(idOrOptions, prefix),
-            ...rest,
+            prefix === undefined
+              ? idOrOptions
+              : prefixStepId(idOrOptions, prefix),
+            ...rest.map((arg) =>
+              typeof arg === "function"
+                ? inScope(store, arg as (...args: unknown[]) => unknown)
+                : arg,
+            ),
           ]);
         };
         cache.set(prop, wrapped);
@@ -263,6 +276,25 @@ export const withStepIdPrefix = <T extends object>(
     },
   });
 };
+
+/**
+ * Re-enter a scope for a callback the engine will run later, from its own
+ * context.
+ */
+const inScope = (
+  store: CiStore | undefined,
+  // biome-ignore lint/suspicious/noExplicitAny: any step handler
+  fn: (...args: any[]) => unknown,
+  // biome-ignore lint/suspicious/noExplicitAny: any step handler
+): ((...args: any[]) => unknown) =>
+  store ? (...args) => runInScope(store, () => fn(...args)) : fn;
+
+/**
+ * Step tools that keep the CI scope alive inside their handlers, without
+ * touching IDs. CI's own steps write their IDs out in full.
+ */
+export const withScopePreserved = <T extends object>(tools: T): T =>
+  withStepIdPrefix(tools);
 
 const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
   if (typeof idOrOptions === "string") {

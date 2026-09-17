@@ -58,7 +58,13 @@ export interface ConsoleCheckRecord {
  * step input or output.
  */
 export const githubApp = (
-  opts: { appId?: string; privateKey?: string; baseUrl?: string } = {},
+  opts: {
+    appId?: string;
+    privateKey?: string;
+    baseUrl?: string;
+    /** Used for the HTTP calls, for proxies and for tests. */
+    fetch?: typeof fetch;
+  } = {},
 ): GitHubAppProvider => {
   const resolve = () => {
     const appId = opts.appId ?? process.env.GITHUB_APP_ID;
@@ -91,6 +97,7 @@ export const githubApp = (
       authStrategy: createAppAuth,
       auth: { appId, privateKey, installationId },
       ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+      ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
     });
   };
 
@@ -118,7 +125,12 @@ export const githubApp = (
  * there are no summaries or annotations.
  */
 export const githubToken = (
-  opts: { token?: string; baseUrl?: string } = {},
+  opts: {
+    token?: string;
+    baseUrl?: string;
+    /** Used for the HTTP calls, for proxies and for tests. */
+    fetch?: typeof fetch;
+  } = {},
 ): GitHubTokenProvider => {
   const resolve = () => {
     const token = opts.token ?? process.env.GITHUB_TOKEN;
@@ -137,6 +149,7 @@ export const githubToken = (
       new Octokit({
         auth: resolve(),
         ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+        ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
       }),
     token: async () => resolve(),
   };
