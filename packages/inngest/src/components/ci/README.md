@@ -38,6 +38,38 @@ but nothing outside `components/ci/` and `src/ci.ts` may import from here, and
 Octokit is only imported inside this directory. That's what makes moving CI
 into its own package later a file move rather than a refactor.
 
+## Types carry the trigger through to the handler
+
+A trigger is an ordinary function trigger plus a phantom `__ciEventData`, which
+never exists at runtime. `ci.pipeline` reads it back off `on` and types the
+handler's event:
+
+```ts
+ci.pipeline({ id: "pr", on: github.pullRequest() }, async ({ event }) => {
+  event.data.pull_request.head.sha; // string
+  event.data.action;                // "opened" | "synchronize" | "reopened"
+});
+```
+
+Three things make that work:
+
+- **`PayloadOf`** walks arrays, so `on: [github.pullRequest(), github.push()]`
+  gives a union the handler can narrow with `in`. A trigger written by hand
+  infers `unknown`; that's mapped to `never` so it can't swallow the payloads
+  beside it, and a pipeline with no typed triggers falls back to an open
+  record rather than `never`.
+- **`const` type parameters** on `pullRequest({ types })` and `ci.matrix`, so
+  `["20", "22"]` stays `"20" | "22"` without `as const`.
+- **Inference from the handler** for jobs: `ci.job("x", async (node: string) =>
+  …)` is a `Job<…, string>` with no type arguments written.
+
+`github.rest`'s mapped type is worth knowing about: Octokit's parameters carry
+a string index signature, and `Omit` over such a type collapses every specific
+key into it — `{ pull_number: "7" }` would have been accepted. `RepoDefaults`
+uses two mapped types with `as` clauses instead, which preserves them.
+
+`types.test.ts` pins all of this down, including what shouldn't compile.
+
 ## Two scopes
 
 CI keeps its own `AsyncLocalStorage`, nested inside the SDK's:

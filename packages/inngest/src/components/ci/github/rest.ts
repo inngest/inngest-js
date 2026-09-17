@@ -12,8 +12,20 @@ export type { RestEndpointMethodTypes };
 
 type RestEndpointMethods = Octokit["rest"];
 
-type RepoDefaults<P> = Omit<P, "owner" | "repo"> &
-  Partial<Pick<P, Extract<keyof P, "owner" | "repo">>>;
+/**
+ * A method's parameters with `owner` and `repo` made optional, since they
+ * default to the run's repository.
+ *
+ * This is written as two mapped types with `as` clauses rather than
+ * `Omit`/`Pick`: Octokit's parameters carry a string index signature, and
+ * `Omit` over such a type collapses every specific key into the index
+ * signature — which would quietly accept `{ pull_number: "7" }`.
+ */
+type RepoDefaults<TParams> = {
+  [K in keyof TParams as K extends "owner" | "repo" ? never : K]: TParams[K];
+} & {
+  [K in keyof TParams as K extends "owner" | "repo" ? K : never]?: TParams[K];
+};
 
 /**
  * Octokit's REST methods, with `owner` and `repo` optional and each method

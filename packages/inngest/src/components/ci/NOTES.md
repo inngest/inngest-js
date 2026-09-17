@@ -46,6 +46,19 @@ SDK.
 **The sandbox client requires a signing key**, even in dev, because it signs
 its requests.
 
+**`Omit` over Octokit's parameter types loses them.** Octokit's parameters
+include a string index signature, so `keyof` is `string | number` and
+`Omit<P, "owner" | "repo">` collapses every specific key into the index
+signature — `github.rest.pulls.get({ pull_number: "7" })` type-checked. Two
+mapped types with `as` clauses keep the keys and the index signature both.
+
+**A trigger can carry types without carrying data.** `CiTrigger<TData>` adds an
+optional phantom property that no runtime value ever has, which is what types
+`event.data` in a handler. Reading it back needs `unknown extends TData ? never
+: TData`, because a hand-written `{ cron }` matches the optional property and
+infers `unknown`, which would otherwise swallow every payload beside it in a
+union.
+
 ## Deviations from the spec
 
 **Commands poll instead of blocking on `process.wait`.** The spec's wait loop

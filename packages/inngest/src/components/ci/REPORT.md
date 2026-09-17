@@ -79,9 +79,24 @@ The full walk-through, with what to look for at each step, is in
 - The local webhook forwarder, with signature verification.
 - The example's `release` and `prerelease` pipelines and the README demo.
 
-**Tests:** 261 in `src/components/ci`, against a fake sandbox REST API and a
-fake GitHub HTTP layer at the `fetch` boundary, so the SDK's real client,
-validation, durable protocol, and execution engine run for real above them.
+**Types**
+
+- A trigger carries the event data it produces, so a handler's `event` is
+  typed by what starts the pipeline: `github.pullRequest()` gives
+  `event.data.pull_request`, `github.push()` gives `event.data.after`, and
+  `pullRequest({ types: ["closed"] })` narrows to that action's payload.
+  Several triggers give a union the handler narrows with `in`; a cron gives an
+  open record.
+- Jobs infer their input and result from the handler, matrices keep their
+  literal axis values, `from(job)` returns the parent's result type, and
+  `github.paginate` takes its item type from the method it's given.
+- `ci.manual({ schema })` types `event.data` from the schema.
+
+**Tests:** 355 in `src/components/ci`. The runtime ones use a fake sandbox
+REST API and a fake GitHub HTTP layer at the `fetch` boundary, so the SDK's
+real client, validation, durable protocol, and execution engine run for real
+above them. 94 are type tests, covering both what should infer and what
+shouldn't compile.
 
 ## What's stubbed, and why
 

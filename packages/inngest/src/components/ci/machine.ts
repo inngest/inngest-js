@@ -198,9 +198,33 @@ const errorMessage = (error: unknown): string =>
  *
  * Start this job on a copy of another job's machine.
  *
- * Runs the parent job if it hasn't run, takes a snapshot of where it finished,
- * and returns the parent's result. The copy is made when this job runs its
- * first command.
+ * The parent runs once however many jobs start from it, and each child gets
+ * its own copy, so they can't affect each other. The copy is made when this
+ * job runs its first command, so a job that starts from another and then
+ * waits doesn't pay for a machine while it waits.
+ *
+ * ```ts
+ * const setup = ci.job("setup", async () => {
+ *   await checkout();
+ *   await $`pnpm install`;
+ *   return { installedAt: Date.now() };
+ * });
+ *
+ * const test = ci.job("test", async () => {
+ *   const { installedAt } = await from(setup); // typed from `setup`
+ *   await $`pnpm test`;                        // runs on a copy of it
+ * });
+ * ```
+ *
+ * `await setup()` and `await from(setup)` differ: the first runs setup on its
+ * own machine and gives you its result, the second does that *and* starts this
+ * job from where it finished.
+ *
+ * @param job - The job to start from. Its result type comes back.
+ * @param input - The parent's input, when it takes one.
+ * @returns Whatever the parent job returned.
+ * @throws {CiUsageError} When called outside a job, after this job's first
+ * command, or a second time.
  */
 export async function from<TResult>(job: Job<TResult>): Promise<TResult>;
 export async function from<TResult, TInput>(

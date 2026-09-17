@@ -17,7 +17,22 @@ export const pr = ci.pipeline(
     on: github.pullRequest(),
     singleton: { key: "event.data.pull_request.number", mode: "cancel" },
   },
-  async () => {
+  async ({ event, logger }) => {
+    // `event` is typed by the triggers: this is a pull request event, so
+    // `pull_request` is there without a cast or a schema.
+    logger.info(
+      {
+        pr: event.data.pull_request.number,
+        sha: event.data.pull_request.head.sha,
+        draft: event.data.pull_request.draft,
+      },
+      "starting pull request pipeline",
+    );
+
+    if (event.data.pull_request.draft) {
+      return ci.skip("the pull request is a draft");
+    }
+
     if (!(await changed({ ignore: ["docs/**", "**/*.md"] }))) {
       return ci.skip("only docs changed");
     }
@@ -49,7 +64,14 @@ export const docs = ci.pipeline(
  */
 export const releasePipeline = ci.pipeline(
   { id: "release", on: github.push({ branches: ["main"] }) },
-  async () => release(),
+  async ({ event }) => {
+    // A push event, so `after` is the commit that was pushed.
+    if (event.data.deleted) {
+      return ci.skip("the branch was deleted");
+    }
+
+    return release();
+  },
 );
 
 /**
@@ -60,8 +82,12 @@ export const prerelease = ci.pipeline(
     id: "prerelease",
     on: github.comment({ command: "/prerelease", minPermission: "write" }),
   },
-  async () => {
+  async ({ event }) => {
+    // A comment event, so the command's arguments are right there.
+    const [, channel = "next"] = event.data.comment.body.trim().split(/\s+/);
+
     await test();
-    return { prereleased: true };
+
+    return { prereleased: true, channel };
   },
 );

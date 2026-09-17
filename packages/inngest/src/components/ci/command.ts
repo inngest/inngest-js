@@ -680,10 +680,42 @@ export const createCommandTag = (
  *
  * Run a command on the current job's machine.
  *
+ * Each command is a step: it never runs twice, it's retried if the machine
+ * disappears, and it shows in the trace. A non-zero exit fails the job.
+ *
  * ```ts
  * await $`pnpm test`;
+ * ```
+ *
+ * Interpolated values are passed as arguments rather than pasted into a
+ * string, so there's nothing to quote and nothing to escape:
+ *
+ * ```ts
+ * await $`pnpm --filter ${pkg} test`;     // one argument, spaces and all
+ * await $`pnpm test ${["--bail", "1"]}`;  // arrays spread
+ * await $`pnpm test ${verbose && "-v"}`;  // false and null are dropped
+ * ```
+ *
+ * The command is lazy until you await it, so the options chain:
+ *
+ * ```ts
+ * await $`pnpm test`.retries(1).timeout("10m").env({ CI: "true" });
+ * const sha = await $`git rev-parse HEAD`.text();
+ * const server = await $`pnpm start`.background();
+ * ```
+ *
+ * For pipes, redirects, or `&&`, use `$.sh`, which runs `/bin/sh -c` and
+ * escapes what you interpolate:
+ *
+ * ```ts
  * await $.sh`pnpm build && pnpm test | tee test.log`;
  * ```
+ *
+ * @throws {CiUsageError} When called outside a job, since there's no machine
+ * to run on.
+ * @throws {CommandFailedError} When the command exits non-zero, unless
+ * `.nothrow()` was used.
+ * @throws {CommandTimeoutError} When `.timeout()` passes.
  */
 export const $: CommandTag & { sh: CommandTag } = createCommandTag(() =>
   requireJobScope("$"),

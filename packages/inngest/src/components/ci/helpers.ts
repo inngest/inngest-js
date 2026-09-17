@@ -13,12 +13,32 @@ export const maxUploadBytes = 100 * 1024 * 1024;
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
- * Put the repository on the job's machine.
+ * Put the repository on the job's machine, at `/work`.
  *
- * Locally, this uploads your working tree, including uncommitted changes, so
+ * This is usually a job's first command, and it's what creates the machine.
+ *
+ * ```ts
+ * const test = ci.job("test", async () => {
+ *   await checkout();        // the machine starts here
+ *   await $`pnpm install`;
+ *   await $`pnpm test`;
+ * });
+ * ```
+ *
+ * Locally, it uploads your working tree, including uncommitted changes, so
  * there's nothing to push before running a pipeline. Against GitHub, it clones
  * the commit that triggered the run with a short-lived installation token that
- * never leaves the step handler.
+ * never leaves the step handler — so it's never in step input, step output, or
+ * the trace.
+ *
+ * @param opts.ref - The commit or ref to check out. Defaults to the run's.
+ * @param opts.submodules - Also initialise submodules, recursively.
+ * @param opts.history - `"full"` clones every blob. Defaults to `"shallow"`,
+ * which filters them until they're needed.
+ * @param opts.path - Where to put it. Defaults to `/work`, which is also the
+ * default working directory for the job's commands.
+ * @throws {CiUsageError} When called outside a job, or when the run has no
+ * repository to check out.
  */
 export const checkout = async (
   opts: {
@@ -128,7 +148,25 @@ export const checkout = async (
  * Whether any of the run's changed files match the given patterns.
  *
  * This runs in your app rather than on a machine, so a pipeline can decide
- * there's nothing to do before starting one.
+ * there's nothing to do before paying for one:
+ *
+ * ```ts
+ * if (!(await changed("src/**", "package.json"))) {
+ *   return ci.skip("nothing that affects the build changed");
+ * }
+ *
+ * if (await changed({ include: ["docs/**"], ignore: ["docs/**\/*.png"] })) {
+ *   await docsSite();
+ * }
+ * ```
+ *
+ * Patterns support `**`, `*`, `?`, and `{a,b}`. The changed files come from
+ * the pull request or the push range on GitHub, and from git locally.
+ *
+ * When the change can't be read — no credentials, say — this answers `true`
+ * and notes it on the check, so work runs rather than being skipped wrongly.
+ *
+ * @throws {CiUsageError} When called outside a pipeline run.
  */
 export function changed(...patterns: string[]): Promise<boolean>;
 export function changed(opts: {
@@ -219,7 +257,7 @@ const listChangedFiles = async (
   const { rest } = await import("./github/rest.ts");
 
   if (repo.pullRequest) {
-    const files = await paginate<{ filename: string }>(rest.pulls.listFiles, {
+    const files = await paginate(rest.pulls.listFiles, {
       pull_number: repo.pullRequest.number,
       per_page: 100,
     });
@@ -245,7 +283,18 @@ const listChangedFiles = async (
  * a major version bump.
  *
  * A cache key part built from repository files. The key changes when any
- * matched file's contents change.
+ * matched file's contents change, so a job is reused until its inputs move.
+ *
+ * ```ts
+ * cache: { key: files("pnpm-lock.yaml", ".nvmrc") }
+ * cache: { key: files("migrations/**", "seeds/**") }
+ * cache: { key: [files("go.mod", "go.sum"), "go1.25"] }
+ * ```
+ *
+ * Contents are read from the git tree for the run's commit, or from the
+ * working tree locally, so uncommitted changes change the key too.
+ *
+ * @param patterns - Glob patterns, supporting `**`, `*`, `?`, and `{a,b}`.
  */
 export const files = (...patterns: string[]): CacheKeyPart => ({
   kind: "inngest/ci.cacheKeyPart",
@@ -264,10 +313,24 @@ const waitScript = (check: string, timeoutMs: number) =>
   ].join("\n");
 
 /**
- * Wait for a URL on the machine to answer.
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Wait for a URL on the machine to answer, instead of sleeping and hoping.
  *
  * The retry loop runs on the machine rather than from your app, so it's one
- * step however long it takes.
+ * step however long it takes, and the URL is one the machine can reach —
+ * usually `127.0.0.1`.
+ *
+ * ```ts
+ * await $`pnpm start`.background();
+ * await waitForHttp("http://127.0.0.1:3000/health");
+ * ```
+ *
+ * @param url - The URL to request, from the machine's point of view.
+ * @param opts.status - The status code to wait for. Defaults to 200.
+ * @param opts.timeout - How long to keep trying. Defaults to `"2m"`.
+ * @param scope - Internal: the machine to run on. `sandbox()` passes its own.
  */
 export const waitForHttp = async (
   url: string,
@@ -291,10 +354,22 @@ export const waitForHttp = async (
 };
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * Wait for a port on the machine to accept connections.
  *
- * There are no port events yet, so this is an in-machine loop rather than a
- * durable wait.
+ * ```ts
+ * await $`pnpm start`.background();
+ * await waitForPort(3000);
+ * ```
+ *
+ * Note: there are no port events yet, so this is a loop inside the machine
+ * rather than a durable wait. It's still one step.
+ *
+ * @param port - The port to connect to on `127.0.0.1`.
+ * @param opts.timeout - How long to keep trying. Defaults to `"2m"`.
+ * @param scope - Internal: the machine to run on. `sandbox()` passes its own.
  */
 export const waitForPort = async (
   port: number,
