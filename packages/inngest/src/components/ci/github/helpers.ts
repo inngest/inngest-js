@@ -17,10 +17,23 @@ const helperStep = async <T>(
   fn: () => Promise<T>,
 ): Promise<T> => {
   const run = requireRunScope(`github.${helper}`);
+
+  // Inside a step already — a helper calling `github.paginate`, or user code
+  // grouping calls in `step.run` — this runs directly rather than nesting.
+  if (await insideStep()) {
+    return fn();
+  }
+
   const job = getJobScope();
   const id = `${job ? `${job.path} › ` : ""}github › ${helper}:${key}`;
 
   return run.step.run({ id, name: id }, fn) as Promise<T>;
+};
+
+const insideStep = async (): Promise<boolean> => {
+  const { getAsyncCtx } = await import("../../execution/als.ts");
+  const ctx = await getAsyncCtx();
+  return Boolean(ctx?.execution?.executingStep);
 };
 
 /**

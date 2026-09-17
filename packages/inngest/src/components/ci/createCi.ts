@@ -44,6 +44,7 @@ import {
   runInScope,
   runJobBody,
   scopeSeparator,
+  withScopePreserved,
 } from "./scope.ts";
 import type {
   AnyJob,
@@ -140,12 +141,14 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     (client as unknown as { mode?: { isDev?: boolean } }).mode?.isDev,
   );
 
-  const provider = resolveProvider(options.github, isDev);
+  // The provider answers `github.rest` and `github.token()` whatever mode
+  // we're in; only where checks *go* changes in dev.
+  const provider = options.github ?? consoleReporter();
   const internals: CiInternals = {
     client,
     isDev,
     github: provider,
-    checks: createCheckReporter(sinkFor(provider, client)),
+    checks: createCheckReporter(sinkFor(provider, client, isDev)),
     cacheStore: options.cacheStore ?? memoryCacheStore(),
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
@@ -277,40 +280,50 @@ const flowControl = (config: PipelineConfig) => {
   return rest;
 };
 
-const resolveProvider = (
-  provider: GitHubProvider | undefined,
+/**
+ * Where checks go.
+ *
+ * In dev they print to the terminal, whatever the provider is, unless the run
+ * is explicitly told to talk to GitHub with `INNGEST_CI_GITHUB=live`. The
+ * provider is still used for `github.rest` and `github.token()`, because those
+ * always need real credentials.
+ */
+const sinkFor = (
+  provider: GitHubProvider,
+  client: Inngest.Any,
   isDev: boolean,
-): GitHubProvider => {
-  // In dev, checks print to the terminal unless the run is explicitly told to
-  // talk to GitHub.
-  if (isDev && process.env.INNGEST_CI_GITHUB !== "live") {
-    return provider && provider.kind === "console"
-      ? provider
-      : consoleReporter();
+): CheckSink => {
+  const logger = (
+    client as unknown as {
+      logger?: { info: (...args: unknown[]) => void };
+    }
+  ).logger;
+
+  const toConsole =
+    provider.reporter === "console" ||
+    (isDev && process.env.INNGEST_CI_GITHUB !== "live");
+
+  if (toConsole) {
+    return consoleSink(
+      logger,
+      (provider as ConsoleProvider).history ?? consoleHistory,
+    );
   }
 
-  return provider ?? consoleReporter();
-};
-
-const sinkFor = (provider: GitHubProvider, client: Inngest.Any): CheckSink => {
   switch (provider.reporter) {
     case "checks":
       return checksSink(provider);
     case "statuses":
       return statusesSink(provider);
-    case "console":
-      return consoleSink(
-        (
-          client as unknown as {
-            logger?: { info: (...args: unknown[]) => void };
-          }
-        ).logger,
-        (provider as ConsoleProvider).history,
-      );
     default:
       return noopSink;
   }
 };
+
+/**
+ * Check transitions printed for a provider that doesn't keep its own history.
+ */
+const consoleHistory: Parameters<typeof consoleSink>[1] = [];
 
 const defaultRunUrl =
   (client: Inngest.Any, isDev: boolean) =>
@@ -380,7 +393,9 @@ const runPipeline = async ({
     cacheEntries: new Map(),
     sandboxes: new Set(),
     summaries: [],
-    step: ctx.step,
+    // CI's own steps keep their scope inside the handler, so a call like
+    // `github.rest` made from one still knows which run it's part of.
+    step: withScopePreserved(ctx.step),
     sandboxTools: sandboxTools as DurableSandboxTools,
     asyncCtx,
     counters: new Map(),
