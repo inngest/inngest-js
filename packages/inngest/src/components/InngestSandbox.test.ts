@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 
+import { envKeys } from "../helpers/consts.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
 import {
   createClient,
@@ -1518,6 +1519,125 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  const listResponse = () =>
+    Response.json({
+      data: [],
+      metadata: { fetchedAt: now },
+      page: { hasMore: false, limit: 50 },
+    });
+
+  test("uses the raw sandbox dev token for local sandbox and snapshot routes", async () => {
+    const calls: Array<{ url: URL; init?: RequestInit }> = [];
+    const inngest = new Inngest({
+      id: "sandbox-dev-token",
+      isDev: true,
+      signingKey: "signkey-cloud",
+      fetch: async (input, init) => {
+        calls.push({
+          url: new URL(input instanceof Request ? input.url : input),
+          init,
+        });
+        return listResponse();
+      },
+    });
+    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
+
+    await inngest.sandboxes.list();
+    await inngest.sandboxes.snapshots.list();
+
+    expect(calls.map(({ url }) => url.pathname)).toEqual([
+      "/v2/sandboxes",
+      "/v2/snapshots",
+    ]);
+    for (const call of calls) {
+      expect(call.init?.headers).toMatchObject({
+        Authorization: "Bearer local-token",
+      });
+    }
+  });
+
+  test("resolves the sandbox dev token lazily after construction", async () => {
+    const authorizations: string[] = [];
+    const urls: string[] = [];
+    const inngest = new Inngest({
+      id: "lazy-sandbox-dev-token",
+      signingKey: "signkey-cloud",
+      fetch: async (input, init) => {
+        urls.push(input instanceof Request ? input.url : String(input));
+        authorizations.push(
+          (init?.headers as Record<string, string>).Authorization ?? "",
+        );
+        return listResponse();
+      },
+    });
+
+    inngest.setEnvVars({
+      [envKeys.InngestDevMode]: "http://dev-server.test:8288",
+      [envKeys.InngestSandboxDevToken]: "late-token",
+    });
+    await inngest.sandboxes.list();
+
+    expect(authorizations).toEqual(["Bearer late-token"]);
+    expect(urls).toEqual(["http://dev-server.test:8288/v2/sandboxes?limit=50"]);
+  });
+
+  test("ignores the sandbox dev token in cloud mode", async () => {
+    let authorization: string | undefined;
+    const inngest = new Inngest({
+      id: "cloud-sandbox-auth",
+      isDev: false,
+      signingKey: "signkey-cloud",
+      fetch: async (_input, init) => {
+        authorization = (init?.headers as Record<string, string>).Authorization;
+        return listResponse();
+      },
+    });
+    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
+
+    await inngest.sandboxes.list();
+
+    expect(authorization).toBe(`Bearer ${hashSigningKey("signkey-cloud")}`);
+  });
+
+  test("rejects a sandbox dev token when the API URL is not the dev server", async () => {
+    const fetchMock: typeof fetch = vi.fn();
+    const inngest = new Inngest({
+      id: "mismatched-sandbox-dev-token",
+      isDev: true,
+      baseUrl: "https://api.inngest.com",
+      fetch: fetchMock,
+    });
+    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
+
+    await expect(inngest.sandboxes.list()).rejects.toThrow(
+      "INNGEST_SANDBOX_DEV_TOKEN can only be sent to the configured dev server",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("does not use the sandbox dev token for normal event auth", async () => {
+    const calls: Array<{ url: URL; init?: RequestInit }> = [];
+    const inngest = new Inngest({
+      id: "sandbox-token-event-auth",
+      isDev: true,
+      eventKey: "event-key",
+      fetch: async (input, init) => {
+        calls.push({
+          url: new URL(input instanceof Request ? input.url : input),
+          init,
+        });
+        return Response.json({ ids: ["event-id"], status: 200 });
+      },
+    });
+    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
+
+    await inngest.send({ name: "test/event", data: {} });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url.pathname).toBe("/e/event-key");
+    expect(JSON.stringify(calls[0]?.init)).not.toContain("local-token");
+  });
+
   test("accepts uppercase ULIDs and human-readable sandbox names", async () => {
     const { kind: _kind, version: _version, ...resource } = sandboxRef;
     const sentNames: string[] = [];
