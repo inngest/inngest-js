@@ -1,11 +1,13 @@
-import { sha256 } from "hash.js";
+// `hash.js` is CommonJS, so it's imported as a default like the rest of the
+// SDK does; a named import breaks under Node's ESM loader.
+import hashjs from "hash.js";
 
 /**
  * Hash a string to a short, stable hex digest. Used for cache keys and for
  * shortening names that would otherwise be too long.
  */
 export const hash = (input: string, length = 16): string =>
-  sha256().update(input).digest("hex").slice(0, length);
+  hashjs.sha256().update(input).digest("hex").slice(0, length);
 
 /**
  * Turn a scope path into something safe for a sandbox name.

@@ -35,7 +35,7 @@ import {
 } from "./github/events.ts";
 import { canUser } from "./github/helpers.ts";
 import { setFallbackGitHub } from "./github/rest.ts";
-import type { Permission } from "./github/triggers.ts";
+import { commentPermissionFor, type Permission } from "./github/triggers.ts";
 import { destroyRunMachines, pauseMachine, snapshotJob } from "./machine.ts";
 import type { CiInternals, CiJobScope, CiRunScope } from "./scope.ts";
 import {
@@ -160,15 +160,37 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   const generated: InngestFunction.Any[] = [];
   const pipelines: InngestFunction.Any[] = [];
 
+  /** The first `repo` a pipeline set, used by refresh runs that have none. */
+  let pipelineRepo: string | undefined;
+
   const ci: Ci = {
-    pipeline: (config, handler) => {
-      const triggers = flattenTriggers(config.on);
+    pipeline: (rawConfig, handler) => {
+      const triggers = flattenTriggers(rawConfig.on);
 
       if (triggers.length === 0) {
         throw new CiUsageError(
-          `Pipeline "${config.id}" has no triggers. Pass \`on: github.pullRequest()\`, a cron, or \`ci.manual({ schema })\`.`,
+          `Pipeline "${rawConfig.id}" has no triggers. Pass \`on: github.pullRequest()\`, a cron, or \`ci.manual({ schema })\`.`,
         );
       }
+
+      if (triggers.length > maxTriggersPerFunction) {
+        throw new CiUsageError(
+          `Pipeline "${rawConfig.id}" has ${triggers.length} triggers, and a function can have at most ${maxTriggersPerFunction}. Narrow \`types\` on the trigger, or split the pipeline in two.`,
+        );
+      }
+
+      // A comment trigger's `minPermission` can't be expressed in CEL, so it
+      // travels beside the trigger and is checked when the run starts.
+      const permission = triggers
+        .map((trigger) => commentPermissionFor(trigger))
+        .find(Boolean);
+
+      const config: PipelineConfig = {
+        ...rawConfig,
+        ...(permission ? { commentPermission: permission.minPermission } : {}),
+      };
+
+      pipelineRepo ??= config.repo;
 
       const fn = client.createFunction(
         {
@@ -183,9 +205,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       );
 
       pipelines.push(fn);
-      generated.push(
-        ...generatedFunctions({ client, internals, config, jobs }),
-      );
+      generated.push(...generatedFunctions({ client, config }));
 
       return fn;
     },
@@ -220,11 +240,26 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
     skip: (reason) => ({ kind: "inngest/ci.skip", reason }),
 
-    functions: () => [...pipelines, ...generated],
+    functions: () => [
+      ...pipelines,
+      ...generated,
+      ...cacheRefreshFunctions({
+        client,
+        internals,
+        jobs,
+        ...(pipelineRepo ? { repo: pipelineRepo } : {}),
+      }),
+    ],
   };
 
   return ci;
 };
+
+/**
+ * A function's triggers are declared with it, and the platform caps how many
+ * it will take. Ten is the documented limit at the time of writing.
+ */
+export const maxTriggersPerFunction = 10;
 
 const flattenTriggers = (on: CiTrigger | CiTrigger[]): CiTrigger[] =>
   (Array.isArray(on) ? on.flat(Infinity) : [on]) as CiTrigger[];
@@ -236,6 +271,7 @@ const flowControl = (config: PipelineConfig) => {
     check: _check,
     machine: _machine,
     repo: _repo,
+    commentPermission: _commentPermission,
     ...rest
   } = config;
   return rest;
@@ -461,8 +497,7 @@ const checkCommentPermission = async (
   run: CiRunScope,
   config: PipelineConfig,
 ): Promise<boolean> => {
-  const minPermission = (config as { commentPermission?: Permission })
-    .commentPermission;
+  const minPermission = config.commentPermission as Permission | undefined;
 
   if (!minPermission) {
     return true;
@@ -887,18 +922,14 @@ export const runPool = async <T>(
 
 /**
  * The functions a pipeline needs behind the scenes: cleanup after a permanent
- * failure or cancellation, cache refreshes, and re-runs from GitHub.
+ * failure or cancellation, and re-runs from a GitHub check.
  */
 const generatedFunctions = ({
   client,
-  internals,
   config,
-  jobs,
 }: {
   client: Inngest.Any;
-  internals: CiInternals;
   config: PipelineConfig;
-  jobs: Map<string, RegisteredJob>;
 }): InngestFunction.Any[] => {
   const functions: InngestFunction.Any[] = [];
 
@@ -976,16 +1007,42 @@ const generatedFunctions = ({
     ),
   );
 
+  return functions;
+};
+
+/**
+ * One function per cached job with `refresh` triggers, so the cache is built
+ * ahead of time rather than by whichever pull request gets there first.
+ *
+ * These are built when `ci.functions()` is called, because a job may be
+ * registered after the pipelines that use it, and because a job used by
+ * several pipelines still only needs one refresh function.
+ */
+const cacheRefreshFunctions = ({
+  client,
+  internals,
+  jobs,
+  repo,
+}: {
+  client: Inngest.Any;
+  internals: CiInternals;
+  jobs: Map<string, RegisteredJob>;
+  repo?: string;
+}): InngestFunction.Any[] => {
+  const functions: InngestFunction.Any[] = [];
+
   for (const job of jobs.values()) {
     const refresh = job.config.cache?.refresh;
     if (!refresh || refresh.length === 0) {
       continue;
     }
 
+    const id = `ci/cache-refresh/${job.id}`;
+
     functions.push(
       client.createFunction(
         {
-          id: `ci/cache-refresh/${job.id}`,
+          id,
           triggers: refresh,
           singleton: { key: `"${job.id}"`, mode: "skip" },
           middleware: [sandboxMiddleware()],
@@ -995,17 +1052,14 @@ const generatedFunctions = ({
           runPipeline({
             internals,
             config: {
-              id: `ci/cache-refresh/${job.id}`,
+              id,
               on: refresh,
               check: false,
-              ...(config.repo ? { repo: config.repo } : {}),
+              ...(repo ? { repo } : {}),
             },
             handler: async () => {
               const registered = jobs.get(job.id);
-              if (!registered) {
-                return null;
-              }
-              return jobBodyForRefresh(registered);
+              return registered ? jobBodyForRefresh(registered) : null;
             },
             ctx,
             jobs,

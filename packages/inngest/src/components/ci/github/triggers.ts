@@ -119,8 +119,32 @@ export const comment = (opts: {
     repoCondition(opts.repo),
   ]);
 
-  return [trigger("github/issue_comment.created", condition)];
+  const created = trigger("github/issue_comment.created", condition);
+
+  if (opts.minPermission) {
+    // The permission can't be part of the trigger the executor sees, so it's
+    // remembered here and read by `ci.pipeline` when it wires the trigger up.
+    commentPermissions.set(created, {
+      command: opts.command,
+      minPermission: opts.minPermission,
+    });
+  }
+
+  return [created];
 };
+
+const commentPermissions = new WeakMap<
+  object,
+  { command: string; minPermission: Permission }
+>();
+
+/**
+ * The permission a comment trigger asks for, if it asked for one.
+ */
+export const commentPermissionFor = (
+  trigger: CiTrigger,
+): { command: string; minPermission: Permission } | undefined =>
+  commentPermissions.get(trigger as object);
 
 export const mergeGroup = (opts: { repo?: string } = {}): CiTrigger[] => [
   trigger("github/merge_group.checks_requested", repoCondition(opts.repo)),
