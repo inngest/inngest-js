@@ -1,5 +1,9 @@
 # Report: the `inngest/ci` prototype
 
+What was built, what wasn't, and what's still open. See also
+[README.md](./README.md) for how to use it, [ARCHITECTURE.md](./ARCHITECTURE.md)
+for how it's put together, and [NOTES.md](./NOTES.md) for every deviation.
+
 ## Branch
 
 - **Branch:** `jack/ci`
