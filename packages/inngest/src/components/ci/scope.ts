@@ -84,6 +84,11 @@ export interface CiRunScope {
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
+  /**
+   * Job checks that have started and not finished. When a run ends while jobs
+   * are still going, these are completed rather than left spinning.
+   */
+  openChecks: Map<string, string | undefined>;
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GenericStepTools;
   sandboxTools: DurableSandboxTools;

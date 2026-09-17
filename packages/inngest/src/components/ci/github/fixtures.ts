@@ -1,9 +1,16 @@
 import { execFile } from "node:child_process";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 import type { PullRequestAction } from "./triggers.ts";
 
 const exec = promisify(execFile);
+
+/**
+ * The event travels to another process, which may have a different working
+ * directory, so `data.local.path` is always absolute.
+ */
+const repoPath = (cwd?: string): string => resolve(cwd ?? process.cwd());
 
 const git = async (args: string[], cwd: string): Promise<string> => {
   const { stdout } = await exec("git", args, { cwd });
@@ -86,7 +93,7 @@ export const fixtures = {
       number?: number;
     } = {},
   ): Promise<{ name: string; data: Record<string, unknown> }> => {
-    const cwd = opts.cwd ?? process.cwd();
+    const cwd = repoPath(opts.cwd);
     const fullName = await repoFullName(cwd, opts.repo);
     const baseRef = opts.base ?? "main";
 
@@ -130,7 +137,7 @@ export const fixtures = {
   push: async (
     opts: FixtureBase & { ref?: string } = {},
   ): Promise<{ name: string; data: Record<string, unknown> }> => {
-    const cwd = opts.cwd ?? process.cwd();
+    const cwd = repoPath(opts.cwd);
     const fullName = await repoFullName(cwd, opts.repo);
     const branch =
       (await safeGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd, "main")) ||
@@ -168,7 +175,7 @@ export const fixtures = {
       user?: string;
     },
   ): Promise<{ name: string; data: Record<string, unknown> }> => {
-    const cwd = opts.cwd ?? process.cwd();
+    const cwd = repoPath(opts.cwd);
     const fullName = await repoFullName(cwd, opts.repo);
     const repo = await repository(fullName);
     const number = opts.number ?? 1;
