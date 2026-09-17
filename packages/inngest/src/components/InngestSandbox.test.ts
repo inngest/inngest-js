@@ -73,7 +73,10 @@ const snapshotRef = {
   expiresAt: "2026-08-04T00:00:00Z",
 } satisfies SandboxSnapshotRef;
 
+const secretName = "OPENAI_API_KEY";
+
 const createOptions = {
+  secrets: [secretName],
   name: sandboxRef.name,
   vcpu: 2,
   memoryMb: 2048,
@@ -421,6 +424,96 @@ describe("step.sandbox", () => {
         input: [{ ...createOptions, runningTimeoutMs: false }],
       },
     ]);
+  });
+
+  test.each([
+    "OPENAI_API_KEY",
+    "openai-production",
+    "Mixed Case / token",
+    "__proto__",
+    "constructor",
+    "55555555-5555-4555-8555-555555555555",
+    "é".repeat(128),
+  ])("preserves exact secret name %s", async (name) => {
+    const secrets = [name];
+    const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
+      resultForOperation(operation),
+    );
+    await createSandboxTools(() => rawTool).create("create", {
+      ...createOptions,
+      secrets,
+    });
+    const operation = rawTool.mock.calls[0]?.[1];
+    expect(operation).toMatchObject({ input: [{ secrets }] });
+    expect(parseSandboxOperation(operation)).toMatchObject({
+      input: [{ secrets }],
+    });
+  });
+
+  test.each([
+    { secrets: [] },
+    { secrets: ["TOKEN_B", "TOKEN_A"] },
+    { secrets: ["token", "TOKEN"] },
+  ])(
+    "preserves a secret selection without aliases: %j",
+    async ({ secrets }) => {
+      const before = [...secrets];
+      const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
+        resultForOperation(operation),
+      );
+      await createSandboxTools(() => rawTool).create("create", {
+        ...createOptions,
+        secrets,
+      });
+      expect(secrets).toEqual(before);
+      expect(parseSandboxOperation(rawTool.mock.calls[0]?.[1])).toMatchObject({
+        input: [{ secrets }],
+      });
+    },
+  );
+
+  test("rejects invalid launch secret selections before dispatch", async () => {
+    const rawTool = vi.fn<SandboxRawTool>();
+    const tools = createSandboxTools(() => rawTool);
+    for (const secrets of [
+      [""],
+      [" leading"],
+      ["trailing\u0085"],
+      ["line\nfeed"],
+      ["carriage\rreturn"],
+      ["null\0byte"],
+      ["é".repeat(129)],
+      ["SHARED"],
+      ["BAD=KEY"],
+      [secretName, secretName],
+      Array.from({ length: 255 }, (_, i) => `TOKEN_${i}`),
+      Array.from({ length: 257 }, (_, i) => `TOKEN_${i}`),
+      { TOKEN: secretName },
+      secretName,
+      [123],
+    ]) {
+      await expect(
+        tools.create("create", {
+          ...createOptions,
+          secrets: secrets as unknown as string[],
+        }),
+      ).rejects.toBeInstanceOf(SandboxValidationError);
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "create",
+          input: [{ ...createOptions, secrets }],
+        }),
+      ).toThrow(SandboxValidationError);
+    }
+    expect(() =>
+      parseSandboxOperation({
+        protocolVersion: 1,
+        action: "create",
+        input: [{ name: "clone", snapshotId, secrets: [secretName] }],
+      }),
+    ).toThrow(SandboxValidationError);
+    expect(rawTool).not.toHaveBeenCalled();
   });
 
   test("validates Simcity limits without imposing identifier-style env keys", async () => {

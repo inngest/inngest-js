@@ -77,12 +77,25 @@ export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   memoryMb: number;
 
   /**
-   * Environment inherited by commands and managed processes. Values are
-   * persisted as literal sandbox configuration; this is not a secrets
-   * mechanism, so do not use this field for secrets. Guest defaults are
-   * retained, and operation-specific values override matching keys.
+   * Literal environment inherited by commands and managed processes. Values
+   * are persisted as sandbox configuration. Use `secrets` for workspace secret
+   * references. Guest defaults are retained, and operation-specific values
+   * override matching keys.
    */
   environment?: Record<string, string>;
+
+  /**
+   * Exact workspace secret names, each injected under that same environment
+   * variable name, e.g. `["OPENAI_API_KEY"]`. Save the secret as OPENAI_API_KEY
+   * to make it available under that name. Names are resolved once when
+   * creating the sandbox; create retries keep the original secret identities.
+   * Archiving and recreating a name affects only new sandboxes. Selected
+   * values are fetched at launch with short-lived authorization and inherited
+   * by commands and managed processes. Delivered values remain in snapshots.
+   * Names must be unique, valid environment keys, and must not overlap with
+   * environment. Selection order does not affect sandbox identity.
+   */
+  secrets?: string[];
 
   snapshotId?: never;
 }
@@ -93,6 +106,7 @@ export interface SandboxCreateFromSnapshotOptions
   vcpu?: never;
   memoryMb?: never;
   environment?: never;
+  secrets?: never;
 }
 
 export type SandboxCreateOptions =
