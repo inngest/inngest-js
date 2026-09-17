@@ -7,7 +7,9 @@ import { $, checkout } from "inngest/ci";
 export async function install() {
   await checkout();
   await $`corepack enable`.nothrow();
-  await $`pnpm install --frozen-lockfile`.cwd("/work/examples/ci-pipelines/app");
+  await $`pnpm install --frozen-lockfile`.cwd(
+    "/work/examples/ci-pipelines/app",
+  );
 }
 
 /**

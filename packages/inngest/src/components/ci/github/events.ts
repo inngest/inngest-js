@@ -3,10 +3,22 @@ import type { WebhookEvent } from "@octokit/webhooks-types";
 import type { RepoContext } from "../types.ts";
 
 /**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
  * The canonical Inngest event name for a GitHub webhook delivery.
  *
  * `github/${X-GitHub-Event}` when the payload has no action, and
- * `github/${X-GitHub-Event}.${action}` when it does.
+ * `github/${X-GitHub-Event}.${action}` when it does. The webhook transform and
+ * the local forwarder both use this, so events look the same either way.
+ *
+ * ```ts
+ * githubEventName("push", payload);        // "github/push"
+ * githubEventName("pull_request", payload) // "github/pull_request.opened"
+ * ```
+ *
+ * @param event - The `X-GitHub-Event` header.
+ * @param payload - The webhook's body, for its `action` if it has one.
  */
 export const githubEventName = (
   event: string,

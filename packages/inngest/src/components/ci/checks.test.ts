@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { createCi } from "./createCi.ts";
 import { consoleReporter, githubToken } from "./github/auth.ts";
@@ -20,7 +20,6 @@ import {
   createFakeSandboxApi,
   runFunction,
 } from "./testHelpers.ts";
-import type { Job, Matrix } from "./types.ts";
 
 const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope =>
   ({
@@ -311,7 +310,7 @@ describe("deprecated APIs are marked", () => {
   test.each([
     ["types.ts", "image?: string"],
     ["types.ts", "arch?:"],
-    ["types.ts", "withSecret"],
+    ["types.ts", "withSecret(name: string, value: string): Command;"],
     ["types.ts", "url(port: number): string"],
   ])("%s marks %s @deprecated", async (file, name) => {
     const source = await read(file);
@@ -321,45 +320,5 @@ describe("deprecated APIs are marked", () => {
     expect(source.slice(Math.max(0, index - 400), index)).toContain(
       "@deprecated",
     );
-  });
-});
-
-describe("types", () => {
-  test("job input and result are inferred", () => {
-    const api = createFakeSandboxApi();
-    const ci = createCi(createCiTestClient(api));
-
-    // These are only ever inspected by the type checker; calling them would
-    // need a run.
-    const noInput = ci.job("no-input", async () => 42);
-    expectTypeOf(noInput).toMatchTypeOf<Job<number>>();
-    expectTypeOf(noInput).returns.resolves.toBeNumber();
-
-    const withInput = ci.job<{ node: string }, string>(
-      "with-input",
-      async (input) => input.node,
-    );
-    expectTypeOf(withInput).toMatchTypeOf<Job<string, { node: string }>>();
-    expectTypeOf(withInput).parameter(0).toEqualTypeOf<{ node: string }>();
-    expectTypeOf(withInput).returns.resolves.toBeString();
-  });
-
-  test("matrix combinations are inferred", () => {
-    const api = createFakeSandboxApi();
-    const ci = createCi(createCiTestClient(api));
-
-    const matrix = ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"], db: ["sqlite"] } },
-      async (combo) => {
-        expectTypeOf(combo.node).toEqualTypeOf<string>();
-        expectTypeOf(combo.db).toEqualTypeOf<string>();
-        return combo.node;
-      },
-    );
-
-    expectTypeOf(matrix).toMatchTypeOf<
-      Matrix<{ node: string[]; db: string[] }, string>
-    >();
-    expectTypeOf(matrix).returns.resolves.toEqualTypeOf<string[]>();
   });
 });

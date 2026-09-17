@@ -1,5 +1,20 @@
-import type { CiTrigger } from "../types.ts";
+import type {
+  CheckSuiteCompletedEvent,
+  IssueCommentCreatedEvent,
+  MergeGroupChecksRequestedEvent,
+  PullRequestEvent,
+  PushEvent,
+} from "@octokit/webhooks-types";
 
+import type { CiTrigger } from "../types.ts";
+import type { GitHubEventData } from "./events.ts";
+
+/**
+ * The pull request actions a pipeline can trigger on.
+ *
+ * Whichever you pick types the handler's event: `types: ["closed"]` gives an
+ * event with `pull_request.merged`, and the default three don't.
+ */
 export type PullRequestAction =
   | "opened"
   | "synchronize"
@@ -10,6 +25,18 @@ export type PullRequestAction =
   | "unlabeled"
   | "edited";
 
+/** The pull request actions a pipeline triggers on when it doesn't say. */
+export type DefaultPullRequestActions = "opened" | "synchronize" | "reopened";
+
+/**
+ * The pull request event for a set of actions, as the handler sees it.
+ */
+export type PullRequestEventFor<TAction extends PullRequestAction> =
+  GitHubEventData<Extract<PullRequestEvent, { action: TAction }>>;
+
+/**
+ * A permission level on a repository, from least to most.
+ */
 export type Permission = "read" | "triage" | "write" | "maintain" | "admin";
 
 /**
@@ -53,20 +80,47 @@ const joinConditions = (
 const anyOf = (expressions: string[]): string | undefined =>
   expressions.length === 0 ? undefined : expressions.join(" || ");
 
-const trigger = (event: string, condition?: string): CiTrigger =>
+const trigger = <TData>(event: string, condition?: string): CiTrigger<TData> =>
   condition ? { event, if: condition } : { event };
 
 /**
- * Pull request triggers, one per action so the `if` expression stays readable.
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Run when a pull request opens, is pushed to, or reopens.
+ *
+ * One trigger per action, so the `if` expression stays readable, and the
+ * handler's `event.data` is typed for exactly the actions asked for.
+ *
+ * ```ts
+ * ci.pipeline(
+ *   { id: "pr", on: github.pullRequest({ branches: ["main"] }) },
+ *   async ({ event }) => {
+ *     event.data.pull_request.head.sha; // string
+ *   },
+ * );
+ * ```
+ *
+ * @param opts.branches - Only run for pull requests targeting these branches.
+ * @param opts.types - Which pull request actions to run for. Defaults to
+ * `opened`, `synchronize`, and `reopened`.
+ * @param opts.repo - Only run for this `owner/name`, for pipelines watching
+ * another repository.
  */
-export const pullRequest = (
-  opts: {
-    branches?: string[];
-    types?: PullRequestAction[];
-    repo?: string;
-  } = {},
-): CiTrigger[] => {
-  const types = opts.types ?? ["opened", "synchronize", "reopened"];
+export const pullRequest = <
+  const TTypes extends readonly PullRequestAction[] = readonly [
+    "opened",
+    "synchronize",
+    "reopened",
+  ],
+>(
+  opts: { branches?: string[]; types?: TTypes; repo?: string } = {},
+): CiTrigger<PullRequestEventFor<TTypes[number]>>[] => {
+  const types: readonly PullRequestAction[] = opts.types ?? [
+    "opened",
+    "synchronize",
+    "reopened",
+  ];
 
   const branchCondition = anyOf(
     (opts.branches ?? []).map(
@@ -76,16 +130,38 @@ export const pullRequest = (
 
   const condition = joinConditions([branchCondition, repoCondition(opts.repo)]);
 
-  return types.map((type) => trigger(`github/pull_request.${type}`, condition));
+  return types.map((type) =>
+    trigger<PullRequestEventFor<TTypes[number]>>(
+      `github/pull_request.${type}`,
+      condition,
+    ),
+  );
 };
 
 /**
- * Push triggers. Deleted-branch pushes are excluded, because there's nothing
- * to check out.
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Run when commits are pushed.
+ *
+ * Deleted-branch pushes are excluded, because there's nothing to check out.
+ *
+ * ```ts
+ * ci.pipeline(
+ *   { id: "release", on: github.push({ branches: ["main"], tags: ["v*"] }) },
+ *   async ({ event }) => {
+ *     event.data.after; // the commit that was pushed
+ *   },
+ * );
+ * ```
+ *
+ * @param opts.branches - Branch names to run for. Omit for every branch.
+ * @param opts.tags - Tag patterns to run for, like `v*`.
+ * @param opts.repo - Only run for this `owner/name`.
  */
 export const push = (
   opts: { branches?: string[]; tags?: string[]; repo?: string } = {},
-): CiTrigger[] => {
+): CiTrigger<GitHubEventData<PushEvent>>[] => {
   const refs = [
     ...(opts.branches ?? []).map((branch) => `refs/heads/${branch}`),
     ...(opts.tags ?? []).map((tag) => `refs/tags/${tag}`),
@@ -99,27 +175,49 @@ export const push = (
     repoCondition(opts.repo),
   ]);
 
-  return [trigger("github/push", condition)];
+  return [trigger<GitHubEventData<PushEvent>>("github/push", condition)];
 };
 
 /**
- * Slash-command triggers on issue comments.
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
  *
- * The permission check can't be expressed in CEL, so the pipeline wrapper
- * checks it at runtime and reports "Not permitted" when the author isn't
- * allowed.
+ * Run when someone comments a slash command on an issue or pull request.
+ *
+ * `minPermission` can't be expressed in CEL, so the run checks it and reports
+ * "Not permitted" on the check, with a reply to the comment, when the author
+ * isn't allowed.
+ *
+ * ```ts
+ * ci.pipeline(
+ *   {
+ *     id: "prerelease",
+ *     on: github.comment({ command: "/prerelease", minPermission: "write" }),
+ *   },
+ *   async ({ event }) => {
+ *     event.data.comment.body; // "/prerelease …"
+ *   },
+ * );
+ * ```
+ *
+ * @param opts.command - The prefix a comment must start with.
+ * @param opts.minPermission - The permission the author needs on the repo.
+ * @param opts.repo - Only run for this `owner/name`.
  */
 export const comment = (opts: {
   command: string;
   minPermission?: Permission;
   repo?: string;
-}): CiTrigger[] => {
+}): CiTrigger<GitHubEventData<IssueCommentCreatedEvent>>[] => {
   const condition = joinConditions([
     `event.data.comment.body.startsWith("${opts.command}")`,
     repoCondition(opts.repo),
   ]);
 
-  const created = trigger("github/issue_comment.created", condition);
+  const created = trigger<GitHubEventData<IssueCommentCreatedEvent>>(
+    "github/issue_comment.created",
+    condition,
+  );
 
   if (opts.minPermission) {
     // The permission can't be part of the trigger the executor sees, so it's
@@ -146,13 +244,36 @@ export const commentPermissionFor = (
 ): { command: string; minPermission: Permission } | undefined =>
   commentPermissions.get(trigger as object);
 
-export const mergeGroup = (opts: { repo?: string } = {}): CiTrigger[] => [
-  trigger("github/merge_group.checks_requested", repoCondition(opts.repo)),
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Run when GitHub's merge queue asks for checks on a group.
+ *
+ * @param opts.repo - Only run for this `owner/name`.
+ */
+export const mergeGroup = (
+  opts: { repo?: string } = {},
+): CiTrigger<GitHubEventData<MergeGroupChecksRequestedEvent>>[] => [
+  trigger<GitHubEventData<MergeGroupChecksRequestedEvent>>(
+    "github/merge_group.checks_requested",
+    repoCondition(opts.repo),
+  ),
 ];
 
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Run when a check suite finishes, which is how you react to someone else's
+ * checks — "you broke main", or "main is green again".
+ *
+ * @param opts.branch - Only run for suites on this branch.
+ * @param opts.repo - Only run for this `owner/name`.
+ */
 export const checkSuite = (
   opts: { branch?: string; repo?: string } = {},
-): CiTrigger[] => {
+): CiTrigger<GitHubEventData<CheckSuiteCompletedEvent>>[] => {
   const condition = joinConditions([
     opts.branch
       ? `event.data.check_suite.head_branch == "${opts.branch}"`
@@ -160,5 +281,10 @@ export const checkSuite = (
     repoCondition(opts.repo),
   ]);
 
-  return [trigger("github/check_suite.completed", condition)];
+  return [
+    trigger<GitHubEventData<CheckSuiteCompletedEvent>>(
+      "github/check_suite.completed",
+      condition,
+    ),
+  ];
 };

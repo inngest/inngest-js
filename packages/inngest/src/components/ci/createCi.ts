@@ -52,10 +52,12 @@ import type {
   CheckConclusion,
   CiSkip,
   CiTrigger,
+  CiTriggerInput,
   Job,
   JobConfig,
   MachineConfig,
   Matrix,
+  MatrixAxes,
   MatrixCombo,
   MatrixConfig,
   PipelineConfig,
@@ -82,37 +84,118 @@ export interface CiOptions {
 }
 
 export interface Ci {
-  pipeline(
-    config: PipelineConfig,
-    handler: (ctx: PipelineContext) => Promise<unknown>,
+  /**
+   * Define a pipeline: what starts it, and what it does.
+   *
+   * A pipeline is one Inngest function run. `event` in the handler is typed by
+   * the triggers you give it.
+   *
+   * ```ts
+   * export const pr = ci.pipeline(
+   *   { id: "pr", on: github.pullRequest() },
+   *   async ({ event }) => {
+   *     await Promise.all([lint(), test()]);
+   *     await deploy(event.data.pull_request.head.sha);
+   *   },
+   * );
+   * ```
+   */
+  pipeline<const TTriggers extends CiTriggerInput>(
+    config: PipelineConfig<TTriggers>,
+    handler: (ctx: PipelineContext<TTriggers>) => Promise<unknown>,
   ): InngestFunction.Any;
 
-  job<TResult>(
-    idOrConfig: string | JobConfig,
-    handler: () => Promise<TResult>,
-  ): Job<TResult>;
-  job<TInput, TResult>(
+  /**
+   * Define a job: a unit of work with its own machine, called like a function.
+   *
+   * Its input and result are inferred from the handler, and it runs once per
+   * pipeline run however many times it's called.
+   *
+   * ```ts
+   * const test = ci.job("test", async () => {
+   *   await checkout();
+   *   await $`pnpm test`;
+   * });
+   *
+   * const compat = ci.job("compat", async (node: string) => {
+   *   await $`fnm use ${node}`;
+   *   return node;
+   * });
+   * ```
+   */
+  job<TResult, TInput = void>(
     idOrConfig: string | JobConfig<TInput>,
     handler: (input: TInput) => Promise<TResult>,
   ): Job<TResult, TInput>;
 
-  matrix<TAxes extends Record<string, readonly unknown[]>, TResult>(
+  /**
+   * Define a matrix: one job per combination of the axes.
+   *
+   * Axis values keep their literal types, so the handler's `combo` is exact
+   * and a typo in `exclude` or in `matrix({ … })` is a type error.
+   *
+   * ```ts
+   * const compat = ci.matrix(
+   *   { id: "compat", axes: { node: ["20", "22"] } },
+   *   async ({ node }) => {
+   *     await $`pnpm test`.env({ NODE_VERSION: node });
+   *   },
+   * );
+   * ```
+   */
+  matrix<const TAxes extends MatrixAxes, TResult>(
     config: MatrixConfig<TAxes>,
     handler: (combo: MatrixCombo<TAxes>) => Promise<TResult>,
   ): Matrix<TAxes, TResult>;
 
-  /** Manual trigger with a typed payload. Sends `ci/manual.<pipelineId>`. */
+  /**
+   * A manual trigger with a typed payload, sent as `ci/manual.<pipelineId>`.
+   *
+   * ```ts
+   * ci.pipeline(
+   *   {
+   *     id: "deploy",
+   *     on: ci.manual({
+   *       pipelineId: "deploy",
+   *       schema: z.object({ environment: z.enum(["preview", "production"]) }),
+   *     }),
+   *   },
+   *   async ({ event }) => {
+   *     event.data.environment; // "preview" | "production"
+   *   },
+   * );
+   * ```
+   */
   manual<TSchema extends StandardSchemaV1>(opts: {
+    /** The payload's schema, which types `event.data` in the handler. */
     schema: TSchema;
+    /** The pipeline this trigger is for. Defaults to any pipeline. */
     pipelineId?: string;
-  }): CiTrigger;
+  }): CiTrigger<StandardSchemaV1.InferOutput<TSchema>>;
 
-  /** End a pipeline early, with a reason shown on the check. */
+  /**
+   * End a pipeline early, with a reason shown on the check.
+   *
+   * The check still completes as success, so a required check never hangs.
+   *
+   * ```ts
+   * if (!(await changed("src/**"))) {
+   *   return ci.skip("nothing under src changed");
+   * }
+   * ```
+   */
   skip(reason: string): CiSkip;
 
   /**
-   * Every function to pass to `serve()`: pipelines, cleanup, cache refreshes,
-   * and re-run handling.
+   * Every function to pass to `serve()`: your pipelines, plus the ones CI
+   * needs behind the scenes for cleanup, cache refreshes, and re-runs.
+   *
+   * ```ts
+   * export const { GET, POST, PUT } = serve({
+   *   client: inngest,
+   *   functions: ci.functions(),
+   * });
+   * ```
    */
   functions(): InngestFunction.Any[];
 }
@@ -264,7 +347,11 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
  */
 export const maxTriggersPerFunction = 10;
 
-const flattenTriggers = (on: CiTrigger | CiTrigger[]): CiTrigger[] =>
+/**
+ * `on` takes one trigger or any nesting of arrays of them, since
+ * `github.pullRequest()` is itself an array. The executor wants one flat list.
+ */
+const flattenTriggers = (on: CiTriggerInput): CiTrigger[] =>
   (Array.isArray(on) ? on.flat(Infinity) : [on]) as CiTrigger[];
 
 const flowControl = (config: PipelineConfig) => {
@@ -427,8 +514,12 @@ const runPipeline = async ({
 
       const result = await handler({
         event: ctx.event,
+        events: ctx.events ?? [ctx.event],
         runId: ctx.runId,
+        pipelineId: config.id,
         repo: run.repo,
+        attempt: ctx.attempt ?? 0,
+        logger: ctx.logger ?? console,
       });
 
       const skip = asSkip(result);

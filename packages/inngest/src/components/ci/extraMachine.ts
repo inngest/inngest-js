@@ -10,11 +10,34 @@ import type { Duration, ExtraMachine, MachineConfig } from "./types.ts";
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
- * Create another machine for this job, for work that needs several machines
- * alive at the same time.
+ * Create another machine for this job, for work that needs several alive at
+ * the same time.
  *
- * `$` on its own still means the job's own machine. Extra machines are
- * destroyed with the pipeline.
+ * ```ts
+ * const e2e = ci.job("e2e", async () => {
+ *   const api = await sandbox("api");
+ *   await api.$`pnpm start`.background();
+ *   await api.waitForPort(3000);
+ *
+ *   await checkout();
+ *   await $`pnpm exec playwright test`; // the job's own machine
+ * });
+ * ```
+ *
+ * `$` on its own still means the job's machine, and extra machines are
+ * destroyed with the pipeline. They appear under the job in the trace.
+ *
+ * | If the work… | Use |
+ * | --- | --- |
+ * | is independent, like lint and test | separate jobs |
+ * | follows on from earlier work | separate jobs, with `from()` |
+ * | needs several machines at once | one job, with `sandbox()` |
+ *
+ * Note: machines can't reach each other yet, so `ExtraMachine.url()` throws.
+ *
+ * @param name - Unique within the job. It names the machine in the trace.
+ * @param config - Machine settings, defaulting to the job's.
+ * @throws {CiUsageError} When called outside a job.
  */
 export const sandbox = async (
   name: string,

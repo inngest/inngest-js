@@ -8,10 +8,23 @@ import type { CheckAnnotation } from "./types.ts";
  *
  * Add to the current job's check. Outside a job, these target the pipeline
  * check.
+ *
+ * ```ts
+ * await report.summary(`Coverage: **${coverage}%**`);
+ * await report.annotate([
+ *   { path: "src/queue.ts", line: 42, message: "Flaky retry here" },
+ * ]);
+ * ```
  */
 export const report = {
   /**
-   * Add a section to the check's summary.
+   * Add a section to the check's summary, as markdown.
+   *
+   * Summaries are truncated at GitHub's 65,000 character limit, with a note
+   * pointing at the trace.
+   *
+   * @param markdown - What to add. Called several times, sections stack.
+   * @throws {CiUsageError} When called outside a pipeline run.
    */
   summary: async (markdown: string): Promise<void> => {
     const run = requireRunScope("report.summary");
@@ -32,8 +45,27 @@ export const report = {
   },
 
   /**
-   * Queue annotations for the check's next update. They're flushed when the
-   * job ends.
+   * Put annotations on the diff, and on the check.
+   *
+   * They're queued and flushed when the job ends, in batches of 50, which is
+   * GitHub's limit per request.
+   *
+   * ```ts
+   * await report.annotate([
+   *   { path: "src/a.ts", line: 4, message: "unused export" },
+   *   {
+   *     path: "src/b.ts",
+   *     start_line: 10,
+   *     end_line: 14,
+   *     annotation_level: "warning",
+   *     message: "slow query",
+   *   },
+   * ]);
+   * ```
+   *
+   * @param annotations - Anything without a `path` and a `message` is
+   * dropped, since GitHub would reject the whole batch.
+   * @throws {CiUsageError} When called outside a pipeline run.
    */
   annotate: async (annotations: CheckAnnotation[]): Promise<void> => {
     const run = requireRunScope("report.annotate");
