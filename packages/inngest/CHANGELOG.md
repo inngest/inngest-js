@@ -1,5 +1,15 @@
 # inngest
 
+## 4.21.0
+
+### Minor Changes
+
+- [#1725](https://github.com/inngest/inngest-js/pull/1725) [`76015387`](https://github.com/inngest/inngest-js/commit/76015387efa68d04de6f91feac19e7250cd431a7) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Add `secrets` to sandbox create options as an array of exact workspace secret names, for example `secrets: ["OPENAI_API_KEY"]`. Save each secret under the environment variable name the application expects. Duplicate names and collisions with literal environment variables are rejected. Names resolve to secret identities at creation, including across create retries. Values are fetched at launch and inherited by commands, managed processes, and snapshots.
+
+### Patch Changes
+
+- [#1722](https://github.com/inngest/inngest-js/pull/1722) [`1e539057`](https://github.com/inngest/inngest-js/commit/1e539057fb7063d755c99b4c2f65d3d8a1c41e9b) Thanks [@jakobevangelista](https://github.com/jakobevangelista)! - Handle sandbox list responses that omit a false `hasMore` value.
+
 ## 4.20.0
 
 ### Minor Changes
