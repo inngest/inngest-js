@@ -59,6 +59,7 @@ export {
   githubApp,
   githubToken,
 } from "./components/ci/github/auth.ts";
+export type { GitHubEventData } from "./components/ci/github/events.ts";
 export {
   githubEventName,
   githubWebhookTransform,

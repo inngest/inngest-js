@@ -167,6 +167,14 @@ export interface PipelineConfig<TTriggers = CiTrigger | CiTrigger[]>
    * resolve a head commit from.
    */
   repo?: string;
+  /**
+   * Set from a `github.comment({ minPermission })` trigger. CEL can't ask
+   * GitHub whether someone is allowed, so the run checks it and reports
+   * "Not permitted" instead.
+   *
+   * @internal
+   */
+  commentPermission?: "read" | "triage" | "write" | "maintain" | "admin";
 }
 
 export interface PipelineContext {

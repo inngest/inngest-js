@@ -1,0 +1,19 @@
+import { experimentScoreMiddleware, Inngest } from "./";
+
+const inngest = new Inngest({
+  id: "test",
+  middleware: [experimentScoreMiddleware()],
+});
+
+inngest.createFunction(
+  { id: "test-fn", triggers: [{ event: "test/event" }] },
+  async ({ step }) => {
+    await step.score("accuracy", 0.9);
+
+    await step.score("performance", async () => {
+      // some expensive scoring logic
+
+      return 52352;
+    });
+  },
+);

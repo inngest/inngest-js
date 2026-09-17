@@ -1,0 +1,16 @@
+{
+  "name": "ci-pipelines-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The tiny project this example's pipelines build, lint, and test",
+  "scripts": {
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "build": "tsc -p tsconfig.json --noEmit false --outDir dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.8.2"
+  }
+}

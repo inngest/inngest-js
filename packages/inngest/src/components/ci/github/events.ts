@@ -1,3 +1,5 @@
+import type { WebhookEvent } from "@octokit/webhooks-types";
+
 import type { RepoContext } from "../types.ts";
 
 /**
@@ -53,6 +55,32 @@ export const githubWebhookTransform = `function transform(evt, headers, queryPar
     }),
   };
 }`;
+
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * The data on an Inngest event built from a GitHub webhook: the webhook's own
+ * payload, typed by Octokit, plus what the transform adds.
+ *
+ * ```ts
+ * import type { GitHubEventData } from "inngest/ci";
+ * import type { PullRequestOpenedEvent } from "@octokit/webhooks-types";
+ *
+ * const handle = (data: GitHubEventData<PullRequestOpenedEvent>) =>
+ *   data.pull_request.head.sha;
+ * ```
+ */
+export type GitHubEventData<TPayload extends WebhookEvent = WebhookEvent> =
+  TPayload & {
+    _github: {
+      event: string;
+      delivery?: string;
+      installationId?: number;
+    };
+    /** Set by the local fixtures, so `checkout()` uses the working tree. */
+    local?: { path: string; baseRef: string };
+  };
 
 interface GithubEventData {
   _github?: { event?: string; delivery?: string; installationId?: number };
