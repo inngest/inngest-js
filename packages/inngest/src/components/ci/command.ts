@@ -435,13 +435,29 @@ class CommandBuilder implements Command {
       },
     });
 
-    return readResult({
+    const result = await readResult({
       process: terminal,
       stepId,
       argv: this.state.argv,
       secrets,
       startedAt: started,
     });
+
+    await publishOutput(scope, {
+      jobPath: scope.path,
+      stepId,
+      stream: "stdout",
+      text: result.stdout,
+    });
+
+    await publishOutput(scope, {
+      jobPath: scope.path,
+      stepId,
+      stream: "stderr",
+      text: result.stderr,
+    });
+
+    return result;
   }
 }
 
@@ -550,6 +566,41 @@ const processDurationMs = (
     );
   }
   return fallbackStart ? Date.now() - fallbackStart : 0;
+};
+
+/**
+ * Publish a command's output to the run's realtime channel, so a UI can follow
+ * along.
+ *
+ * This is best effort and deliberately not memoized, which matches the
+ * realtime guidance for high-frequency updates: a failure here must never fail
+ * the command it was describing.
+ */
+export const publishOutput = async (
+  scope: CiJobScope,
+  payload: {
+    jobPath: string;
+    stepId: string;
+    stream: "stdout" | "stderr";
+    text: string;
+  },
+): Promise<void> => {
+  if (!payload.text) {
+    return;
+  }
+
+  try {
+    await scope.run.ci.client?.realtime?.publish?.(
+      {
+        channel: `ci:${scope.run.runId}`,
+        topic: "output",
+        config: {},
+      },
+      payload,
+    );
+  } catch {
+    // Best effort.
+  }
 };
 
 const decoder = new TextDecoder();

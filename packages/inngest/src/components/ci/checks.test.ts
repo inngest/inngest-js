@@ -329,16 +329,19 @@ describe("types", () => {
     const api = createFakeSandboxApi();
     const ci = createCi(createCiTestClient(api));
 
+    // These are only ever inspected by the type checker; calling them would
+    // need a run.
     const noInput = ci.job("no-input", async () => 42);
     expectTypeOf(noInput).toMatchTypeOf<Job<number>>();
-    expectTypeOf(noInput()).resolves.toBeNumber();
+    expectTypeOf(noInput).returns.resolves.toBeNumber();
 
     const withInput = ci.job<{ node: string }, string>(
       "with-input",
       async (input) => input.node,
     );
     expectTypeOf(withInput).toMatchTypeOf<Job<string, { node: string }>>();
-    expectTypeOf(withInput({ node: "22" })).resolves.toBeString();
+    expectTypeOf(withInput).parameter(0).toEqualTypeOf<{ node: string }>();
+    expectTypeOf(withInput).returns.resolves.toBeString();
   });
 
   test("matrix combinations are inferred", () => {
@@ -357,6 +360,6 @@ describe("types", () => {
     expectTypeOf(matrix).toMatchTypeOf<
       Matrix<{ node: string[]; db: string[] }, string>
     >();
-    expectTypeOf(matrix()).resolves.toEqualTypeOf<string[]>();
+    expectTypeOf(matrix).returns.resolves.toEqualTypeOf<string[]>();
   });
 });
