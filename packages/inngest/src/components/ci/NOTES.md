@@ -3,6 +3,10 @@
 Findings from building the prototype. Each one says what's true today, what CI
 does about it, and what would remove the workaround.
 
+[README.md](./README.md) is the user-facing documentation, and has a shorter
+list of the same limits; [ARCHITECTURE.md](./ARCHITECTURE.md) is how the code
+is put together.
+
 ## Verified
 
 **Per-function middleware works (spec §4.1).** `InngestFunction.Options` takes

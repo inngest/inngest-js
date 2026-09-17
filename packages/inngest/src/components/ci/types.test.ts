@@ -13,6 +13,46 @@
 import type { PushEvent } from "@octokit/webhooks-types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expectTypeOf, test } from "vitest";
+import type {
+  BackgroundProcess as EntryBackgroundProcess,
+  CacheConfig as EntryCacheConfig,
+  CacheEntry as EntryCacheEntry,
+  CacheKey as EntryCacheKey,
+  CacheKeyPart as EntryCacheKeyPart,
+  CacheStore as EntryCacheStore,
+  CheckAnnotation as EntryCheckAnnotation,
+  CheckConclusion as EntryCheckConclusion,
+  Ci as EntryCi,
+  CiEvent as EntryCiEvent,
+  CiOptions as EntryCiOptions,
+  CiSkip as EntryCiSkip,
+  CiTrigger as EntryCiTrigger,
+  CiTriggerInput as EntryCiTriggerInput,
+  Command as EntryCommand,
+  CommandResult as EntryCommandResult,
+  CommandTag as EntryCommandTag,
+  CommandValue as EntryCommandValue,
+  DurableGitHubRest as EntryDurableGitHubRest,
+  Duration as EntryDuration,
+  ExtraMachine as EntryExtraMachine,
+  FlowControlOptions as EntryFlowControlOptions,
+  GitHubEventData as EntryGitHubEventData,
+  GitHubProvider as EntryGitHubProvider,
+  Job as EntryJob,
+  JobConfig as EntryJobConfig,
+  MachineConfig as EntryMachineConfig,
+  Matrix as EntryMatrix,
+  MatrixAxes as EntryMatrixAxes,
+  MatrixCombo as EntryMatrixCombo,
+  Permission as EntryPermission,
+  PipelineConfig as EntryPipelineConfig,
+  PipelineContext as EntryPipelineContext,
+  PullRequestAction as EntryPullRequestAction,
+  PullRequestEventFor as EntryPullRequestEventFor,
+  RepoContext as EntryRepoContext,
+  RunRepo as EntryRunRepo,
+  ShardOptions as EntryShardOptions,
+} from "../../ci.ts";
 
 import { fileCacheStore, memoryCacheStore } from "./cache.ts";
 import { $ } from "./command.ts";
@@ -732,7 +772,7 @@ describe("errors", () => {
 });
 
 describe("the entry point exports what the docs use", () => {
-  test("`inngest/ci` is importable as a whole", async () => {
+  test("every value README.md shows is exported", async () => {
     const entry = await import("../../ci.ts");
 
     expectTypeOf(entry.createCi).toBeFunction();
@@ -743,11 +783,94 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf(entry.changed).toBeFunction();
     expectTypeOf(entry.files).toBeFunction();
     expectTypeOf(entry.sandbox).toBeFunction();
+    expectTypeOf(entry.waitForHttp).toBeFunction();
+    expectTypeOf(entry.waitForPort).toBeFunction();
     expectTypeOf(entry.report).toBeObject();
     expectTypeOf(entry.fixtures).toBeObject();
+    expectTypeOf(entry.githubEventName).toBeFunction();
     expectTypeOf(entry.githubWebhookTransform).toBeString();
     expectTypeOf(entry.memoryCacheStore).toBeFunction();
     expectTypeOf(entry.fileCacheStore).toBeFunction();
+    expectTypeOf(entry.inngestCacheStore).toBeFunction();
+    expectTypeOf(entry.githubApp).toBeFunction();
+    expectTypeOf(entry.githubToken).toBeFunction();
     expectTypeOf(entry.consoleReporter).toBeFunction();
+    expectTypeOf(entry.shard).toBeFunction();
+    expectTypeOf(entry.shell).toBeFunction();
+    expectTypeOf(entry.oidc).toBeObject();
+    expectTypeOf(entry.vercel).toBeObject();
+
+    // The errors are classes, so it's their instances that matter.
+    expectTypeOf<InstanceType<typeof entry.CiUsageError>>().toExtend<Error>();
+    expectTypeOf<
+      InstanceType<typeof entry.CiNotSupportedError>
+    >().toExtend<Error>();
+    expectTypeOf<
+      InstanceType<typeof entry.CommandFailedError>
+    >().toExtend<Error>();
+    expectTypeOf<
+      InstanceType<typeof entry.CommandTimeoutError>
+    >().toExtend<Error>();
+  });
+
+  /**
+   * Writing a helper that takes a pipeline's event, or a custom cache store,
+   * shouldn't mean reaching into the package's internals — so every type a
+   * user might need to name is importable from `inngest/ci`.
+   *
+   * This import *is* the test: if one of them stops being exported, it fails
+   * to compile.
+   */
+  test("every type a user might name is exported", async () => {
+    type Exported = [
+      EntryBackgroundProcess,
+      EntryCacheConfig,
+      EntryCacheEntry,
+      EntryCacheKey,
+      EntryCacheKeyPart,
+      EntryCacheStore,
+      EntryCheckAnnotation,
+      EntryCheckConclusion,
+      EntryCi,
+      EntryCiEvent,
+      EntryCiOptions,
+      EntryCiSkip,
+      EntryCiTrigger,
+      EntryCiTriggerInput,
+      EntryCommand,
+      EntryCommandResult,
+      EntryCommandTag,
+      EntryCommandValue,
+      EntryDurableGitHubRest,
+      EntryDuration,
+      EntryExtraMachine,
+      EntryFlowControlOptions,
+      EntryGitHubEventData<PushEvent>,
+      EntryGitHubProvider,
+      EntryJob<number, string>,
+      EntryJobConfig,
+      EntryMachineConfig,
+      EntryMatrix<{ node: string[] }, void>,
+      EntryMatrixAxes,
+      EntryMatrixCombo<{ node: ["20"] }>,
+      EntryPermission,
+      EntryPipelineConfig,
+      EntryPipelineContext,
+      EntryPullRequestAction,
+      EntryPullRequestEventFor<"closed">,
+      EntryRepoContext,
+      EntryRunRepo,
+      EntryShardOptions,
+    ];
+
+    expectTypeOf<Exported>().toBeArray();
+
+    // A couple of the load-bearing ones, checked rather than just named.
+    expectTypeOf<EntryDuration>().toBeString();
+    expectTypeOf<EntryJob<number, string>>().toExtend<Job<number, string>>();
+    expectTypeOf<EntryCiEvent<{ a: 1 }>["data"]>().toEqualTypeOf<{ a: 1 }>();
+    expectTypeOf<
+      EntryPullRequestEventFor<"closed">["action"]
+    >().toEqualTypeOf<"closed">();
   });
 });

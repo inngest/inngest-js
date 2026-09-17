@@ -65,11 +65,19 @@ export {
   githubWebhookTransform,
 } from "./components/ci/github/events.ts";
 export { fixtures } from "./components/ci/github/fixtures.ts";
+export type {
+  DurableListMethod,
+  ItemOf,
+  ParamsOf,
+  RunRepo,
+} from "./components/ci/github/helpers.ts";
 export { github } from "./components/ci/github/index.ts";
 export type { DurableGitHubRest } from "./components/ci/github/rest.ts";
 export type {
+  DefaultPullRequestActions,
   Permission,
   PullRequestAction,
+  PullRequestEventFor,
 } from "./components/ci/github/triggers.ts";
 // Helpers
 export {
@@ -93,17 +101,23 @@ export type {
   CacheStore,
   CheckAnnotation,
   CheckConclusion,
+  CiEvent,
   CiSkip,
   CiTrigger,
+  CiTriggerInput,
   Command,
   CommandResult,
   CommandTag,
+  CommandValue,
   Duration,
+  EventDataOf,
   ExtraMachine,
+  FlowControlOptions,
   Job,
   JobConfig,
   MachineConfig,
   Matrix,
+  MatrixAxes,
   MatrixCombo,
   MatrixConfig,
   PipelineConfig,
