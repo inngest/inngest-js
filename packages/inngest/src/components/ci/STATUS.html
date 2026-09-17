@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inngest CI — API status board</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f6f8fa;
+    --bg-sunk: #eef1f4;
+    --fg: #1f2328;
+    --fg-soft: #59636e;
+    --fg-faint: #848d97;
+    --line: #d1d9e0;
+    --line-soft: #e4e8ec;
+    --accent: #0969da;
+
+    --works: #1a7f37;
+    --works-bg: #e6f4ea;
+    --caveat: #9a6700;
+    --caveat-bg: #fdf3d7;
+    --partial: #bc4c00;
+    --partial-bg: #fdeee0;
+    --dead: #cf222e;
+    --dead-bg: #fbe9ea;
+    --missing: #6639ba;
+    --missing-bg: #f0eaf9;
+
+    --platform: #0550ae;
+    --sdk: #8250df;
+    --verify: #0f766e;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --bg-soft: #161b22;
+      --bg-sunk: #1c2128;
+      --fg: #e6edf3;
+      --fg-soft: #9198a1;
+      --fg-faint: #6e7681;
+      --line: #30363d;
+      --line-soft: #21262d;
+      --accent: #4493f8;
+
+      --works: #3fb950;
+      --works-bg: #12261a;
+      --caveat: #d29922;
+      --caveat-bg: #2b2313;
+      --partial: #db6d28;
+      --partial-bg: #2c1c12;
+      --dead: #f85149;
+      --dead-bg: #2d1618;
+      --missing: #a371f7;
+      --missing-bg: #221a33;
+
+      --platform: #6cb6ff;
+      --sdk: #c297ff;
+      --verify: #2dd4bf;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.92em;
+  }
+
+  header {
+    padding: 28px 24px 18px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-soft);
+  }
+
+  h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.01em; }
+  .sub { color: var(--fg-soft); max-width: 78ch; margin: 0 0 16px; }
+  .sub code { background: var(--bg-sunk); padding: 1px 4px; border-radius: 4px; }
+
+  .tallies { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .tally {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 11px; background: var(--bg);
+    cursor: pointer; user-select: none;
+    font: inherit; font-size: 13px; color: var(--fg);
+  }
+  .tally:hover { border-color: var(--fg-faint); }
+  .tally.off { opacity: 0.4; }
+  .tally .n { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tally .glyph { width: 18px; text-align: center; font-weight: 700; }
+
+  .works   { color: var(--works); }
+  .caveat  { color: var(--caveat); }
+  .partial { color: var(--partial); }
+  .dead    { color: var(--dead); }
+  .missing { color: var(--missing); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 420px;
+    gap: 0;
+    align-items: start;
+  }
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .tasks-pane { position: static !important; border-left: none !important; border-top: 1px solid var(--line); }
+  }
+
+  .apis-pane { padding: 20px 24px 120px; min-width: 0; }
+  .tasks-pane {
+    position: sticky; top: 0; max-height: 100vh; overflow-y: auto;
+    border-left: 1px solid var(--line);
+    padding: 20px 20px 80px;
+    background: var(--bg-soft);
+  }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  input[type="search"] {
+    flex: 1 1 240px; min-width: 200px;
+    padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--fg); font-size: 14px;
+  }
+  input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .hint { color: var(--fg-faint); font-size: 12px; }
+
+  h2.group {
+    margin: 26px 0 8px; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--fg-soft); font-weight: 650;
+    border-bottom: 1px solid var(--line-soft); padding-bottom: 6px;
+  }
+  h2.group:first-of-type { margin-top: 0; }
+  h2.group .gcount { color: var(--fg-faint); font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 26px minmax(200px, 300px) minmax(0, 1fr);
+    gap: 12px;
+    padding: 9px 10px; border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background 90ms, opacity 90ms, border-color 90ms;
+  }
+  .row + .row { margin-top: 2px; }
+  .row:hover { background: var(--bg-soft); }
+
+  .row .glyph { font-weight: 700; text-align: center; line-height: 1.45; }
+  .row .name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; word-break: break-word; }
+  .row .name .sfx { color: var(--fg-faint); font-family: inherit; }
+  .row .body { min-width: 0; }
+  .row .note { color: var(--fg-soft); }
+  .row .gap {
+    margin-top: 4px; padding-left: 9px; border-left: 2px solid currentColor;
+    color: var(--fg);
+  }
+  .row .gap .lbl { font-weight: 650; }
+  .row.s-caveat  .gap { border-color: var(--caveat); }
+  .row.s-partial .gap { border-color: var(--partial); }
+  .row.s-dead    .gap { border-color: var(--dead); }
+  .row.s-missing .gap { border-color: var(--missing); }
+
+  .chips { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--fg-soft); background: var(--bg);
+    cursor: pointer; white-space: nowrap;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip.k-platform { border-color: color-mix(in srgb, var(--platform) 40%, var(--line)); }
+  .chip.k-sdk      { border-color: color-mix(in srgb, var(--sdk) 40%, var(--line)); }
+  .chip.k-verify   { border-color: color-mix(in srgb, var(--verify) 40%, var(--line)); }
+
+  /* cross-highlighting */
+  body.linking .row:not(.hit) { opacity: 0.22; }
+  body.linking .row.hit { background: var(--bg-sunk); border-color: var(--line); }
+  body.linking .task:not(.hit) { opacity: 0.3; }
+  body.linking .task.hit { border-color: var(--accent); }
+
+  .task {
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg); padding: 11px 12px; margin-bottom: 9px;
+    cursor: pointer; transition: border-color 90ms, opacity 90ms;
+  }
+  .task:hover { border-color: var(--accent); }
+  .task.pinned { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+  .task .top { display: flex; align-items: baseline; gap: 8px; }
+  .task .title { font-weight: 620; flex: 1; }
+  .task .kind {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 2px 6px; border-radius: 5px; font-weight: 650; white-space: nowrap;
+  }
+  .kind.platform { color: var(--platform); background: color-mix(in srgb, var(--platform) 12%, transparent); }
+  .kind.sdk      { color: var(--sdk);      background: color-mix(in srgb, var(--sdk) 12%, transparent); }
+  .kind.verify   { color: var(--verify);   background: color-mix(in srgb, var(--verify) 12%, transparent); }
+
+  .task .why { color: var(--fg-soft); font-size: 13px; margin-top: 4px; }
+
+  .impact { margin-top: 9px; display: flex; align-items: center; gap: 8px; }
+  .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--bg-sunk); overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .impact .count { font-size: 11.5px; color: var(--fg-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .pane-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .pane-head h2 { font-size: 15px; margin: 0; }
+  .pane-note { color: var(--fg-soft); font-size: 12.5px; margin: 0 0 14px; }
+
+  footer { padding: 20px 24px 60px; color: var(--fg-faint); font-size: 12.5px; border-top: 1px solid var(--line); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Inngest CI — API status board</h1>
+  <p class="sub">
+    Every code-level API in the user-facing docs (<code>packages/inngest/src/components/ci/README.md</code>),
+    what state it's actually in, and what it would take to finish it.
+    <strong>Hover a task</strong> on the right to light up everything it fixes; <strong>click</strong> to pin it.
+    Hover an API row to see which tasks touch it. Sources: <code>README.md</code>, <code>NOTES.md</code>, <code>REPORT.md</code>, and the code on <code>jack/ci</code>.
+  </p>
+  <div class="tallies" id="tallies"></div>
+</header>
+
+<div class="layout">
+  <main class="apis-pane">
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Filter APIs — e.g. cache, from, withSecret, matrix…" autocomplete="off" />
+      <span class="hint" id="shown"></span>
+    </div>
+    <div id="apis"></div>
+  </main>
+
+  <aside class="tasks-pane">
+    <div class="pane-head">
+      <h2>What we'd need to build</h2>
+      <span class="hint" id="taskCount"></span>
+    </div>
+    <p class="pane-note">Ordered by impact: how many APIs each one fixes, weighted by how broken they are (dead ×3, partial ×2, caveat ×1).</p>
+    <div id="tasks"></div>
+  </aside>
+</div>
+
+<footer>
+  Generated on the <code>jack/ci</code> branch. 357 tests pass in <code>src/components/ci</code> with no type errors — but every runtime
+  test runs against a <em>fake</em> sandbox REST API and a fake GitHub HTTP layer, so "works" below means "works against those",
+  not "proven against live infrastructure". That gap is itself a task (Verify against the real sandbox API).
+</footer>
+
+<script>
+const STATUS = {
+  works:   { glyph: "✓", label: "Works",              weight: 0 },
+  caveat:  { glyph: "~", label: "Works, with a catch", weight: 1 },
+  partial: { glyph: "◐", label: "Partial / degraded",  weight: 2 },
+  dead:    { glyph: "✕", label: "Dead — throws",       weight: 3 },
+  missing: { glyph: "○", label: "Not built",           weight: 2 },
+};
+
+const TASKS = [
+  { id: "sandbox-dev", kind: "platform", title: "Sandboxes against the Dev Server",
+    why: "Nothing that needs a machine can run locally, so the demo stops at the first <code>$</code> and no command path has ever executed for real." },
+  { id: "verify-real", kind: "verify", title: "Verify the whole surface against the real sandbox API",
+    why: "All 357 tests run against a fake sandbox REST layer. Commands, checkout, snapshots and extra machines are unproven against live infra." },
+  { id: "proc-exit", kind: "platform", title: "Process-exit event, or a <code>wait</code> that returns on timeout",
+    why: "Today every command is a poll loop (1s, 2s, 5s, 10s, 15s…), each interval a durable sleep + step. Removes the steps, the latency and the retry-budget hazard." },
+  { id: "rerun-step", kind: "platform", title: "Rerun-from-step in the REST API",
+    why: "“Re-run” on a job check currently re-runs the whole pipeline — the one place the checks story is a lie." },
+  { id: "run-lookup", kind: "platform", title: "Run/event lookup in the REST API",
+    why: "A re-run rebuilds a minimal synthetic event from the check's head commit, so anything else the original event carried is lost." },
+  { id: "snapshot-labels", kind: "platform", title: "Labels on snapshots",
+    why: "Cache entries and kept machines can't be found without a side table; the snapshot ID only shows up in a check summary." },
+  { id: "machine-net", kind: "platform", title: "Networking between machines",
+    why: "<code>sandbox()</code> is half a feature: you can start extra machines but nothing can address them." },
+  { id: "secret-inject", kind: "platform", title: "Secret injection into sandboxes",
+    why: "<code>withSecret()</code> is an ordinary env var on the machine — masked in output and kept out of steps, but readable by anything running there." },
+  { id: "hosted-cache", kind: "platform", title: "A hosted cache store",
+    why: "The shipped stores are in-memory (per process) and on-disk (per machine). Neither is correct for a fleet, which is the normal deployment." },
+  { id: "images", kind: "platform", title: "Custom images and architecture selection",
+    why: "<code>machine.image</code> and <code>machine.arch</code> are accepted and silently ignored with a warning — the biggest “my CI needs X” blocker." },
+  { id: "interactive-exec", kind: "platform", title: "Interactive exec on a machine",
+    why: "<code>shell()</code> throws, which makes <code>keepOnFailure</code> a snapshot you can't open." },
+  { id: "oidc", kind: "platform", title: "An OIDC issuer",
+    why: "<code>oidc.aws()</code> / <code>oidc.gcp()</code> throw, so cloud credentials mean long-lived secrets." },
+  { id: "wait-past", kind: "platform", title: "<code>waitForEvent</code> matching from a point in the past",
+    why: "Closes the race where a check completing between the initial read and the wait is missed, and that name just times out." },
+  { id: "timing-history", kind: "platform", title: "Per-test timing and result history",
+    why: "Needed for sharding by timing and for flagging flaky tests — the two things people ask for after their first week." },
+  { id: "cancellation", kind: "platform", title: "Cancel sibling jobs mid-run",
+    why: "<code>failFast</code> rejects, but the other combinations run to completion because there's nothing to cancel them with — so it saves no money." },
+  { id: "webhook-verify", kind: "platform", title: "Signature verification in webhook transforms",
+    why: "Transforms can't HMAC the raw body, so the webhook URL has to be treated as a secret." },
+  { id: "comment-perm", kind: "platform", title: "Permission checks before a run starts",
+    why: "CEL can't ask GitHub whether someone is allowed, so an unauthorised <code>/command</code> still starts a run that then reports “Not permitted”." },
+  { id: "junit", kind: "sdk", title: "A JUnit parser",
+    why: "Unlocks <code>report.junit()</code>, <code>$.junit()</code> and <code>.retryFailed()</code> — three dead APIs and the “rerun only what failed” story." },
+  { id: "stream-output", kind: "sdk", title: "Stream command output while it runs",
+    why: "Output is published to the run's realtime channel only when the command finishes; a long command looks silent." },
+  { id: "timeout-deadline", kind: "sdk", title: "A real deadline for <code>.timeout()</code>",
+    why: "Elapsed time is the sum of deterministic poll intervals rather than a raced <code>step.sleep</code>, so the deadline is approximate. Mostly falls out of the process-exit work." },
+  { id: "helpers-outside", kind: "sdk", title: "Run commands outside a pipeline run",
+    why: "Spec §8.4: <code>$</code> from a script or a test needs a throwaway-sandbox path, a second execution path in the command builder. Not built." },
+  { id: "idempotent-create", kind: "sdk", title: "Idempotency keys for create calls",
+    why: "A <code>github.rest</code> create can run twice if a worker dies right after it succeeds; only the helpers guard against it today." },
+  { id: "cache-parents", kind: "sdk", title: "Declare <code>from()</code> parents up front",
+    why: "Cache chains fold in the parents' keys from the <em>previous</em> run's entry, so a brand-new job can't know its parents at lookup time." },
+  { id: "changed-loud", kind: "sdk", title: "Make “couldn't read the diff” loud",
+    why: "<code>changed()</code> fails open and answers <code>true</code>, noting it on the check. Safe, but a silently over-running pipeline is easy to miss." },
+];
+
+const APIS = [
+  // ── Client & setup ────────────────────────────────────────────────────────
+  { g: "Client & setup", n: "createCi(inngest, options)", s: "works",
+    note: "Attaches <code>sandboxMiddleware()</code> to every function it creates, so users never add it to their client." },
+  { g: "Client & setup", n: "CiOptions.github", s: "works",
+    note: "<code>githubApp()</code>, <code>githubToken()</code>, <code>consoleReporter()</code>. Console is the default in dev, no reporting otherwise." },
+  { g: "Client & setup", n: "CiOptions.cacheStore", s: "caveat",
+    note: "Plain <code>get</code>/<code>set</code> interface — bring your own Redis in ~6 lines.",
+    gap: "Only per-process and per-disk stores ship. Nothing correct for more than one server.", t: ["hosted-cache"] },
+  { g: "Client & setup", n: "CiOptions.machine", s: "caveat",
+    note: "Client-wide default, overridden per pipeline and per job.",
+    gap: "Only <code>vcpu</code> means anything; <code>image</code> and <code>arch</code> are ignored.", t: ["images"] },
+  { g: "Client & setup", n: "CiOptions.runUrl", s: "works",
+    note: "Defaults to <code>localhost:8288/run?runID=…</code> in dev and <code>app.inngest.com/env/…/runs/…</code> in cloud." },
+  { g: "Client & setup", n: "ci.functions()", s: "works",
+    note: "Returns the pipelines plus the generated cleanup and cache-refresh functions. One call, serve it." },
+  { g: "Client & setup", n: "githubApp({ appId, privateKey })", s: "works",
+    note: "Installation tokens are minted inside step handlers, so they never land in step input, step output or the trace." },
+  { g: "Client & setup", n: "githubToken(token)", s: "works" },
+  { g: "Client & setup", n: "consoleReporter()", s: "works",
+    note: "Prints the whole check lifecycle to the terminal, which is what makes local runs legible." },
+  { g: "Client & setup", n: "githubWebhookTransform", s: "caveat",
+    note: "Paste-in transform that turns GitHub webhooks into <code>github/*</code> events.",
+    gap: "A transform can't verify <code>X-Hub-Signature-256</code> (no raw body + secret), so the webhook URL <em>is</em> the secret. Anyone who learns it can forge pipeline runs.", t: ["webhook-verify"] },
+  { g: "Client & setup", n: "githubEventName(…)", s: "works" },
+  { g: "Client & setup", n: "fixtures.*  +  pnpm ci:send", s: "works",
+    note: "Builds PR/push/comment events from your local git repo. This is how you run anything without GitHub." },
+
+  // ── Pipeline ──────────────────────────────────────────────────────────────
+  { g: "Pipeline", n: "ci.pipeline(config, handler)", s: "works",
+    note: "One Inngest function per pipeline. The wrapper always completes the check and always destroys machines, including on a crash." },
+  { g: "Pipeline", n: "config.on <span class='sfx'>(trigger | trigger[])</span>", s: "caveat",
+    note: "Arrays and nested arrays flatten.",
+    gap: "Hard limit of 10 triggers per function — <code>pullRequest({ types })</code> expands to one trigger per type, so it's easy to hit. Throws with a message." },
+  { g: "Pipeline", n: "config.check <span class='sfx'>false | { name, jobs }</span>", s: "works" },
+  { g: "Pipeline", n: "config.machine", s: "caveat", note: "Default machine for this pipeline's jobs.",
+    gap: "<code>vcpu</code> only; see <code>machine.image</code> / <code>machine.arch</code>.", t: ["images"] },
+  { g: "Pipeline", n: "config.repo", s: "works", note: "Gives a cron (or anything without a repo of its own) a head commit to resolve." },
+  { g: "Pipeline", n: "Flow control <span class='sfx'>singleton, idempotency, concurrency, throttle, debounce, rateLimit, priority, batchEvents, timeouts, cancelOn, retries</span>", s: "works",
+    note: "Not reimplemented — <code>Pick</code>ed straight off <code>InngestFunction.Options</code>, so it stays in step with the SDK for free. The merge-queue and supersede recipes are just these." },
+  { g: "Pipeline", n: "Handler ctx <span class='sfx'>event, events, runId, pipelineId, repo, attempt, logger</span>", s: "works" },
+  { g: "Pipeline", n: "Trigger-typed <code>event.data</code>", s: "works",
+    note: "A phantom <code>__ciEventData</code> property on the trigger types the handler with no schema and no cast; several triggers give a union you narrow with <code>in</code>; a cron gives an open record. 94 type tests cover what should and shouldn't compile." },
+  { g: "Pipeline", n: "Early return / skip", s: "works",
+    note: "Returning early reports the pipeline check as success with the reason, so a required check never hangs." },
+
+  // ── Triggers ──────────────────────────────────────────────────────────────
+  { g: "Triggers", n: "github.pullRequest({ branches, types, repo })", s: "caveat",
+    note: "<code>types</code> narrows the handler's event type — <code>[\"closed\"]</code> gives you <code>pull_request.merged</code>.",
+    gap: "Expands to one Inngest trigger per action, so it spends the 10-trigger budget fast." },
+  { g: "Triggers", n: "github.push({ branches, tags, repo })", s: "works", note: "Deleted-branch pushes are filtered out — there'd be nothing to check out." },
+  { g: "Triggers", n: "github.comment({ command, minPermission, repo })", s: "caveat",
+    note: "Slash commands, with the permission check built in.",
+    gap: "CEL can't call GitHub, so <code>minPermission</code> is checked <em>after</em> the run starts: an unauthorised comment still starts a run, which then reports “Not permitted”. Cheap, but it's a run anyone can start.", t: ["comment-perm"] },
+  { g: "Triggers", n: "github.mergeGroup({ repo })", s: "caveat",
+    gap: "Implemented and tested against the fake GitHub layer only; never seen a real merge queue.", t: ["verify-real"] },
+  { g: "Triggers", n: "github.checkSuite({ branch, repo })", s: "works", note: "This is the “you broke main / main is green again” trigger." },
+  { g: "Triggers", n: "{ cron: \"0 3 * * *\" }", s: "works", note: "Plain Inngest trigger. Pair with <code>config.repo</code> so <code>checkout()</code> has something to clone." },
+  { g: "Triggers", n: "ci.manual({ schema, pipelineId })", s: "works",
+    note: "Standard Schema in, typed <code>event.data</code> out. Replaces <code>workflow_dispatch</code> strings." },
+
+  // ── Job ───────────────────────────────────────────────────────────────────
+  { g: "Job", n: "ci.job(id | config, handler)", s: "works",
+    note: "Per-run dedupe (two callers join one run), job-scoped step IDs, and its own check. Input and result types are inferred from the handler." },
+  { g: "Job", n: "job.machine.vcpu <span class='sfx'>1 | 2 | 4</span>", s: "works", note: "Memory is paired: 1→1 GiB, 2→2 GiB, 4→4 GiB." },
+  { g: "Job", n: "job.machine.image", s: "dead",
+    note: "Typed and <code>@deprecated</code> so your editor tells you.",
+    gap: "Accepted and <strong>silently ignored</strong> with a warning. Any pipeline needing a toolchain that isn't in the default image can't be written.", t: ["images"] },
+  { g: "Job", n: "job.machine.arch", s: "dead", gap: "Ignored with a warning. No arm64 selection.", t: ["images"] },
+  { g: "Job", n: "job.check <span class='sfx'>false | { name }</span>", s: "works" },
+  { g: "Job", n: "job.keepOnFailure(duration)", s: "partial",
+    note: "Snapshots the failed machine and puts the snapshot ID on the check and in the run summary.",
+    gap: "Snapshots can't be labelled, so kept machines can't be listed or searched — and <code>shell()</code> can't open one, so the snapshot is mostly a receipt.", t: ["snapshot-labels", "interactive-exec", "sandbox-dev"] },
+  { g: "Job", n: "Jobs with no commands", s: "works", note: "Never create a machine at all, so an SDK-only job (deploy, notify) costs nothing." },
+  { g: "Job", n: "Wrapper-function jobs <span class='sfx'>ci.job(`compat (node:${v})`, …)()</span>", s: "works",
+    note: "IDs come from the input rather than call order, so adding or skipping a version doesn't disturb the others." },
+
+  // ── Matrix ────────────────────────────────────────────────────────────────
+  { g: "Matrix", n: "ci.matrix(config, handler)", s: "works", note: "Axis values keep their literal types, so a typo in <code>exclude</code> is a compile error." },
+  { g: "Matrix", n: "matrix.axes / exclude / include", s: "works" },
+  { g: "Matrix", n: "matrix.concurrency", s: "works", note: "A real pool, not a chunked loop." },
+  { g: "Matrix", n: "matrix.failFast", s: "partial",
+    note: "Off by default, so you see every result.",
+    gap: "<code>true</code> rejects on the first failure but the other combinations <strong>run to completion</strong> — there's no cancellation to hand them, so it buys you an early error and no saved compute.", t: ["cancellation"] },
+  { g: "Matrix", n: "matrix.machine / matrix.cache <span class='sfx'>value or (combo) => value</span>", s: "works" },
+  { g: "Matrix", n: "Partial selection <span class='sfx'>compat({ node: \"22\" })</span>", s: "works" },
+
+  // ── Commands ──────────────────────────────────────────────────────────────
+  { g: "Commands", n: "$`…`", s: "caveat",
+    note: "argv parsing, no shell, nothing to quote. Each command is a step, so it never runs twice.",
+    gap: "Runs as a <strong>poll loop</strong> (1s, 2s, 5s, 10s, 15s…), each interval a durable sleep plus a step — because the sandbox <code>wait</code> raises on timeout and a throwing step would eat the function's retry budget. Latency and step count scale with command length. And no command has ever run against a real sandbox.",
+    t: ["proc-exit", "sandbox-dev", "verify-real"] },
+  { g: "Commands", n: "$.sh`…`", s: "caveat", note: "For pipes, redirects and <code>&&</code>.", gap: "Same poll loop and same unverified path as <code>$</code>.", t: ["proc-exit", "sandbox-dev", "verify-real"] },
+  { g: "Commands", n: "Interpolation <span class='sfx'>values → one arg, arrays spread, null/undefined/false dropped</span>", s: "works",
+    note: "Deviation from the spec, deliberately: a value with no whitespace before it joins its argument, so <code>--filter=${pkg}</code> does what you meant." },
+  { g: "Commands", n: ".env(vars) / .cwd(path) / .as(name)", s: "works", note: "<code>.cwd</code> defaults to <code>/work</code>, which is where <code>checkout()</code> lands." },
+  { g: "Commands", n: ".retries(n)", s: "works", note: "Each attempt is its own step, so the check shows “Attempt 2 of 3” and why the last one failed. Retries land on the same machine." },
+  { g: "Commands", n: ".nothrow()", s: "works" },
+  { g: "Commands", n: ".timeout(duration)", s: "caveat",
+    note: "Under five minutes the command becomes a single captured step, which is cheaper and tidier in the trace.",
+    gap: "Doesn't race <code>step.sleep</code> — elapsed time is the sum of the poll intervals, so the deadline is approximate (deterministic on replay, but not the number you asked for).", t: ["timeout-deadline", "proc-exit"] },
+  { g: "Commands", n: ".onTimeout(fn)", s: "works", note: "Runs before the process gets signal 9 — the “dump state when it hangs” story." },
+  { g: "Commands", n: ".background() → BackgroundProcess", s: "caveat",
+    note: "<code>.exited()</code>, <code>.kill(sig)</code>, <code>.output({ tailBytes })</code>. Retained output is a step, so logs are in the trace with no upload step.",
+    gap: "<code>exited()</code> polls, because there's no process-exit event to wait on. Needs a machine, so it can't be run locally either.", t: ["proc-exit", "sandbox-dev"] },
+  { g: "Commands", n: ".withSecret(name, value)", s: "partial",
+    note: "Passed from inside the step handler and masked in results, so it's out of step input, step output and check output.",
+    gap: "It's an ordinary environment variable on the machine — any code running there can read it. Fine for a trusted repo, wrong for fork PRs or untrusted test code.", t: ["secret-inject"] },
+  { g: "Commands", n: ".text() / .lines() / .json&lt;T&gt;()", s: "works" },
+  { g: "Commands", n: "CommandResult <span class='sfx'>exitCode, stdout, stderr, truncated, durationMs</span>", s: "caveat",
+    note: "Secrets masked.", gap: "stdout/stderr are the last 64 KiB only; the rest stays on the machine." },
+  { g: "Commands", n: "Live output → <code>ci:${runId}</code> channel", s: "partial",
+    note: "Published best-effort and deliberately not memoized, as the realtime docs suggest for high-frequency updates.",
+    gap: "Published when the command <em>finishes</em>, not streamed while it runs. A 10-minute build prints nothing for 10 minutes.", t: ["stream-output"] },
+  { g: "Commands", n: "$ outside a pipeline run <span class='sfx'>scripts, tests</span>", s: "missing",
+    note: "Throws a <code>CiUsageError</code> naming the problem.",
+    gap: "Spec §8.4, not built: it needs a throwaway-sandbox path, which is a second execution path through the command builder.", t: ["helpers-outside"] },
+  { g: "Commands", n: ".junit(path) / .retryFailed(n)", s: "dead",
+    gap: "Throw: no JUnit parser. “Rerun only the tests that failed” doesn't exist; <code>.retries(n)</code> reruns the whole command.", t: ["junit"] },
+
+  // ── Machines ──────────────────────────────────────────────────────────────
+  { g: "Machines", n: "Lazy machine per job", s: "caveat",
+    note: "Created on the job's first command, so a job that waits for approval pays for nothing while it waits.",
+    gap: "Unproven against real sandboxes — the whole machine path has only ever run against a fake REST layer.", t: ["sandbox-dev", "verify-real"] },
+  { g: "Machines", n: "Pause while a job waits", s: "caveat", note: "The machine is paused around durable waits so it isn't billed.", t: ["verify-real"] },
+  { g: "Machines", n: "Destroy on pipeline end + cleanup function", s: "works",
+    note: "The pipeline wrapper always destroys; a generated function also listens for <code>FunctionFailed</code>/<code>FunctionCancelled</code> to catch permanent failures. This is the leak that matters and it's covered twice." },
+  { g: "Machines", n: "from(job)", s: "caveat",
+    note: "Runs the parent once per run, snapshots once, clones per child. Returns the parent's result, typed.",
+    gap: "Where snapshots aren't available it catches 404/501/“unsupported”, falls back to a <strong>fresh machine</strong> and says so on the check — correct, but silently much slower. Also: <code>from()</code> must precede the job's first command, and a job can only start from one place.",
+    t: ["sandbox-dev", "verify-real", "snapshot-labels"] },
+  { g: "Machines", n: "sandbox(name, config) → ExtraMachine", s: "partial",
+    note: "Extra machines for one job, created eagerly (you asked by name, not by running something), destroyed with the pipeline.",
+    gap: "Half a feature until machines can reach each other. The documented workaround is to not use it — run the server on the job's own machine and talk to <code>127.0.0.1</code>.", t: ["machine-net", "sandbox-dev"] },
+  { g: "Machines", n: "ExtraMachine.$ / .waitForPort / .waitForHttp", s: "caveat",
+    gap: "Needs machines, so none of it runs locally.", t: ["sandbox-dev", "verify-real"] },
+  { g: "Machines", n: "ExtraMachine.url(port)", s: "dead", gap: "Throws <code>CiNotSupportedError</code>: machines can't reach each other.", t: ["machine-net"] },
+
+  // ── Repo & files ──────────────────────────────────────────────────────────
+  { g: "Repo & files", n: "checkout({ ref, submodules, history, path })", s: "caveat",
+    note: "Two real implementations: a GitHub clone with a token minted inside the step handler, and a local working-tree upload — including uncommitted changes — via a hand-rolled ustar writer, with no new dependency.",
+    gap: "Local uploads are capped at 100 MB, and neither path has run against a real sandbox.", t: ["sandbox-dev", "verify-real"] },
+  { g: "Repo & files", n: "changed(...patterns) / changed({ include, ignore })", s: "caveat",
+    note: "Reads the PR file list or the push range on GitHub, and git locally. Runs in your app — no machine needed.",
+    gap: "Fails <em>open</em>: when the diff can't be read (no credentials, a cron), it answers <code>true</code> and notes it on the check. Safe, but a pipeline can silently do full work forever.", t: ["changed-loud"] },
+  { g: "Repo & files", n: "files(...patterns)", s: "works",
+    note: "Hashes against the git tree for the run's commit, or the working tree locally, so uncommitted edits change the key too." },
+  { g: "Repo & files", n: "waitForHttp(url, { timeout, status })", s: "caveat",
+    note: "One step however long it takes.",
+    gap: "It's a <code>sh</code> retry loop running <em>on the machine</em>, not a durable wait, so the machine is busy for the duration and the URL must be machine-local.", t: ["machine-net", "sandbox-dev"] },
+  { g: "Repo & files", n: "waitForPort(port, { timeout })", s: "caveat", gap: "Same on-machine loop; <code>nc</code>/<code>/dev/tcp</code> against <code>127.0.0.1</code> only.", t: ["machine-net", "sandbox-dev"] },
+  { g: "Repo & files", n: "shard({ total, index, files, by })", s: "partial",
+    note: "<code>by: \"count\"</code> works and removes fixed index matrices.",
+    gap: "<code>by: \"timing\"</code> falls back to <code>\"count\"</code> with a warning — no timing history exists to split on.", t: ["timing-history"] },
+
+  // ── GitHub API ────────────────────────────────────────────────────────────
+  { g: "GitHub API", n: "github.rest.*", s: "caveat",
+    note: "Every Octokit REST method, same names and types. Each call is a step; <code>owner</code>/<code>repo</code> default to the run's; returns <code>data</code>; rate limits retried on reset. Two mapped types keep Octokit's parameter keys alive through the <code>owner</code>/<code>repo</code> omission, which a naive <code>Omit</code> destroys.",
+    gap: "Results are stored as JSON, so dates come back as strings and big responses eat step-output limits. A create call can run twice if a worker dies right after it succeeds.", t: ["idempotent-create"] },
+  { g: "GitHub API", n: "github.rest.with({ id, name })", s: "works", note: "Names the step for a call." },
+  { g: "GitHub API", n: "github.paginate(method, params)", s: "works", note: "Item type inferred from the method you hand it." },
+  { g: "GitHub API", n: "github.graphql(query, variables)", s: "works" },
+  { g: "GitHub API", n: "github.repo()", s: "works", note: "owner, repo, sha, PR number, derived from the trigger." },
+  { g: "GitHub API", n: "github.token() / github.octokit()", s: "works",
+    note: "Deliberately throw unless called inside <code>step.run</code> — a token in step input or output would be in the trace." },
+  { g: "GitHub API", n: "Streaming methods <span class='sfx'>paginate.iterator, etc.</span>", s: "missing",
+    gap: "Not on <code>github.rest</code> by design (steps must serialise). Escape hatch: <code>github.octokit()</code> inside <code>step.run</code>." },
+  { g: "GitHub API", n: "github.stickyComment(key, body)", s: "works", note: "Guards against the double-create by finding its own marker first." },
+  { g: "GitHub API", n: "github.upsertPullRequest({ head, base, title, body })", s: "works" },
+  { g: "GitHub API", n: "github.forcePushRef(ref, sha)", s: "works", note: "No runner, no checkout, and the push triggers other pipelines." },
+  { g: "GitHub API", n: "github.canUser(login, permission)", s: "works" },
+  { g: "GitHub API", n: "github.waitForChecks({ names, sha, timeout })", s: "caveat",
+    note: "Reads completed checks once, then waits on <code>github/check_run.completed</code> events — no machine held.",
+    gap: "<strong>Race:</strong> a check that completes between the read and the wait is missed, and that name times out (default 1h). Needs the executor to match events from a point in the past.", t: ["wait-past"] },
+  { g: "GitHub API", n: "github.waitForWorkflow({ workflow, sha, timeout })", s: "caveat", gap: "Same race as <code>waitForChecks</code>.", t: ["wait-past"] },
+
+  // ── Checks & reporting ────────────────────────────────────────────────────
+  { g: "Checks & reporting", n: "Pipeline check", s: "works",
+    note: "Always reported, even when the pipeline decides there's nothing to do — which is what stops required checks hanging. This is the one to require in branch protection." },
+  { g: "Checks & reporting", n: "Per-job checks", s: "works",
+    note: "Running / retrying / passed / restored-from-cache / failed / cancelled / superseded, with the failing command and output tail. Checks left open when a run ends are completed explicitly." },
+  { g: "Checks & reporting", n: "Commit-status fallback", s: "works", note: "Used when the Checks API isn't available to the app." },
+  { g: "Checks & reporting", n: "Summary truncation, annotation batching, throttled titles", s: "works",
+    note: "65,000 chars with a pointer to the trace; annotations in batches of 50; check creation idempotent; titles throttled to 10s." },
+  { g: "Checks & reporting", n: "report.summary(markdown)", s: "works" },
+  { g: "Checks & reporting", n: "report.annotate(annotations)", s: "works", note: "Queued and flushed at the end of the job; anything without a path and message is dropped so GitHub doesn't reject the batch." },
+  { g: "Checks & reporting", n: "report.junit(path)", s: "dead", gap: "Throws. Read the file with a command and call <code>report.annotate()</code> instead.", t: ["junit"] },
+  { g: "Checks & reporting", n: "Re-run from a GitHub check", s: "partial",
+    note: "Wired up and working as “run the whole pipeline again”; cached jobs restore, so it often lands close to where it left off.",
+    gap: "Two lies in one: it can't start from the failed job, and it <strong>rebuilds a minimal synthetic event</strong> from the check's head commit because the SDK can't look the original up — so flow-control keys and payload fields the pipeline read are gone.",
+    t: ["rerun-step", "run-lookup"] },
+  { g: "Checks & reporting", n: "rerunFromFailedJob", s: "dead", gap: "Throws. Needs rerun-from-step in the REST API.", t: ["rerun-step"] },
+  { g: "Checks & reporting", n: "Console reporter output", s: "works", note: "The full check lifecycle in the terminal, which is the local story." },
+
+  // ── Caching ───────────────────────────────────────────────────────────────
+  { g: "Caching", n: "cache.key <span class='sfx'>files() | string | array | () => Promise&lt;string&gt;</span>", s: "works",
+    note: "Keys are code, so <code>[files(\"go.mod\"), \"go1.25\"]</code> works." },
+  { g: "Caching", n: "cache.refresh(triggers)", s: "works", note: "Generates a real function per refresh trigger, so the nightly cron rebuilds and PRs don't pay." },
+  { g: "Caching", n: "cache.scope <span class='sfx'>branch | global</span>", s: "works", note: "PRs read the base branch's entries and write their own, so one PR can't poison another." },
+  { g: "Caching", n: "Cache chains through from()", s: "caveat",
+    note: "An entry records <code>fromJobIds</code> and the parents' keys fold into the child's on the next run.",
+    gap: "<code>from()</code> is only known at runtime, so a brand-new job can't know its parents at lookup time — its first-ever run is always a miss.", t: ["cache-parents"] },
+  { g: "Caching", n: "Restoring a cached job's machine", s: "caveat",
+    note: "A hit means no machine starts, and <code>from(job)</code> starts from the saved snapshot.",
+    gap: "Without snapshots the entry keeps the result only, so there's nothing for a child to start from. Entries also can't be found by label.", t: ["snapshot-labels", "verify-real"] },
+  { g: "Caching", n: "memoryCacheStore()", s: "caveat", note: "The default.", gap: "Per process. Two servers = two caches; a restart = no cache.", t: ["hosted-cache"] },
+  { g: "Caching", n: "fileCacheStore(dir)", s: "caveat", note: "JSON on disk, survives a restart.", gap: "Per machine unless you point it at shared storage. Wrong for a fleet.", t: ["hosted-cache"] },
+  { g: "Caching", n: "inngestCacheStore()", s: "dead", gap: "Throws: there's no hosted store. This is the one users would actually want.", t: ["hosted-cache"] },
+
+  // ── Steps inside jobs ─────────────────────────────────────────────────────
+  { g: "Steps inside jobs", n: "step.run inside a job", s: "works",
+    note: "Stand-out: SDK step handlers run <em>outside</em> the caller's async context, so CI re-enters its own scope (<code>withScopePreserved</code>) around every handler. Without it, <code>github.rest</code> inside <code>step.run</code> couldn't tell which repo it belonged to. Same wrapper gives job-scoped step IDs, so two jobs can both have a <code>create-db-branch</code>." },
+  { g: "Steps inside jobs", n: "step.waitForEvent / step.sleep / step.invoke", s: "works",
+    note: "The whole step API works inside a job; the machine pauses while it waits." },
+  { g: "Steps inside jobs", n: "RetryAfterError", s: "works", note: "Core SDK. Built into <code>github.rest</code> for rate limits." },
+
+  // ── Local development ─────────────────────────────────────────────────────
+  { g: "Local development", n: "Pipelines, jobs, checks, cache, changed(), github.rest against the Dev Server", s: "works",
+    note: "Everything that doesn't need a machine runs locally today, including a job that only calls SDKs inside <code>step.run</code>." },
+  { g: "Local development", n: "Commands against the Dev Server", s: "dead",
+    gap: "No sandbox API locally, so a job stops at its first <code>$</code>. This is the single biggest blocker in the project: it's why nothing on the command path has ever been proven.", t: ["sandbox-dev"] },
+  { g: "Local development", n: "Working-tree checkout <span class='sfx'>uncommitted changes, no push</span>", s: "works" },
+  { g: "Local development", n: "INNGEST_CI_GITHUB=live", s: "works", note: "Posts real checks from local runs." },
+  { g: "Local development", n: "Local webhook forwarder <span class='sfx'>examples/ci-pipelines</span>", s: "works",
+    note: "Does verify <code>X-Hub-Signature-256</code>, using <code>@octokit/webhooks-methods</code> — the thing the hosted transform can't do." },
+
+  // ── Declared-but-dead ─────────────────────────────────────────────────────
+  { g: "Declared but dead", n: "shell(runId, { at })", s: "dead",
+    gap: "Throws: no interactive exec. Combined with <code>keepOnFailure</code>, “debug the machine that failed” doesn't exist.", t: ["interactive-exec"] },
+  { g: "Declared but dead", n: "oidc.aws({ role })", s: "dead", gap: "Throws: no OIDC issuer. Workaround is a long-lived secret through <code>withSecret()</code>.", t: ["oidc", "secret-inject"] },
+  { g: "Declared but dead", n: "oidc.gcp({ workloadIdentityProvider, serviceAccount })", s: "dead", gap: "Throws: no OIDC issuer.", t: ["oidc"] },
+  { g: "Declared but dead", n: "vercel.waitForDeployment({ sha, timeout })", s: "dead",
+    gap: "Throws — out of scope on purpose, not blocked. Use <code>github.waitForChecks({ names: [\"vercel\"] })</code>." },
+  { g: "Declared but dead", n: "Flaky-test detection", s: "missing",
+    note: "Not typed at all — the docs name it as an absence. A command's retries do show on the check (“Attempt 2 of 2”, with why the first failed).",
+    gap: "Flagging a test that fails then passes on the same commit needs per-test history.", t: ["timing-history"] },
+];
+
+// ── wiring ──────────────────────────────────────────────────────────────────
+const taskById = Object.fromEntries(TASKS.map((t) => [t.id, t]));
+APIS.forEach((a, i) => { a.id = "a" + i; a.t = a.t || []; });
+
+const fixes = {};
+TASKS.forEach((t) => { fixes[t.id] = []; });
+APIS.forEach((a) => a.t.forEach((id) => { if (fixes[id]) fixes[id].push(a); }));
+
+const impactOf = (id) => fixes[id].reduce((sum, a) => sum + STATUS[a.s].weight, 0);
+TASKS.sort((a, b) => impactOf(b.id) - impactOf(a.id) || fixes[b.id].length - fixes[a.id].length);
+const maxImpact = Math.max(...TASKS.map((t) => impactOf(t.id)), 1);
+
+const off = new Set();
+let pinned = null;
+
+const tallies = document.getElementById("tallies");
+Object.entries(STATUS).forEach(([key, meta]) => {
+  const n = APIS.filter((a) => a.s === key).length;
+  const el = document.createElement("button");
+  el.className = "tally";
+  el.dataset.status = key;
+  el.innerHTML = `<span class="glyph ${key}">${meta.glyph}</span><span class="n">${n}</span><span>${meta.label}</span>`;
+  el.addEventListener("click", () => {
+    off.has(key) ? off.delete(key) : off.add(key);
+    el.classList.toggle("off", off.has(key));
+    renderApis();
+  });
+  tallies.appendChild(el);
+});
+
+const apisEl = document.getElementById("apis");
+const shownEl = document.getElementById("shown");
+const qEl = document.getElementById("q");
+
+function renderApis() {
+  const q = qEl.value.trim().toLowerCase();
+  const strip = (s) => (s || "").replace(/<[^>]+>/g, "");
+  const visible = APIS.filter((a) => {
+    if (off.has(a.s)) return false;
+    if (!q) return true;
+    return (strip(a.n) + " " + strip(a.note) + " " + strip(a.gap) + " " + a.g + " " +
+            a.t.map((id) => taskById[id].title).join(" ")).toLowerCase().includes(q);
+  });
+
+  apisEl.innerHTML = "";
+  let group = null;
+  let groupEl = null;
+
+  visible.forEach((a) => {
+    if (a.g !== group) {
+      group = a.g;
+      const count = visible.filter((x) => x.g === group).length;
+      const h = document.createElement("h2");
+      h.className = "group";
+      h.innerHTML = `${group} <span class="gcount">${count}</span>`;
+      apisEl.appendChild(h);
+      groupEl = document.createElement("div");
+      apisEl.appendChild(groupEl);
+    }
+
+    const row = document.createElement("div");
+    row.className = `row s-${a.s}`;
+    row.dataset.id = a.id;
+
+    const chips = a.t.map((id) => {
+      const t = taskById[id];
+      return `<span class="chip k-${t.kind}" data-task="${id}">${strip(t.title)}</span>`;
+    }).join("");
+
+    row.innerHTML =
+      `<div class="glyph ${a.s}" title="${STATUS[a.s].label}">${STATUS[a.s].glyph}</div>` +
+      `<div class="name">${a.n}</div>` +
+      `<div class="body">` +
+        (a.note ? `<div class="note">${a.note}</div>` : "") +
+        (a.gap ? `<div class="gap"><span class="lbl ${a.s}">${a.s === "dead" ? "Blocked:" : a.s === "missing" ? "Missing:" : "Catch:"}</span> ${a.gap}</div>` : "") +
+        (chips ? `<div class="chips">${chips}</div>` : "") +
+      `</div>`;
+
+    row.addEventListener("mouseenter", () => { if (!pinned) link(a.t, [a.id]); });
+    row.addEventListener("mouseleave", () => { if (!pinned) unlink(); });
+    groupEl.appendChild(row);
+  });
+
+  shownEl.textContent = `${visible.length} of ${APIS.length} APIs`;
+  if (pinned) applyPin();
+}
+
+const tasksEl = document.getElementById("tasks");
+document.getElementById("taskCount").textContent = `${TASKS.length} tasks`;
+
+TASKS.forEach((t) => {
+  const el = document.createElement("div");
+  el.className = "task";
+  el.dataset.id = t.id;
+  const list = fixes[t.id];
+  const impact = impactOf(t.id);
+  const breakdown = ["dead", "partial", "missing", "caveat"]
+    .map((s) => { const n = list.filter((a) => a.s === s).length; return n ? `${n} ${STATUS[s].glyph}` : null; })
+    .filter(Boolean).join("  ");
+
+  el.innerHTML =
+    `<div class="top"><span class="title">${t.title}</span><span class="kind ${t.kind}">${t.kind}</span></div>` +
+    `<div class="why">${t.why}</div>` +
+    `<div class="impact"><span class="bar"><i style="width:${Math.round((impact / maxImpact) * 100)}%"></i></span>` +
+    `<span class="count">${list.length} API${list.length === 1 ? "" : "s"}${breakdown ? " · " + breakdown : ""}</span></div>`;
+
+  el.addEventListener("mouseenter", () => { if (!pinned) link([t.id], list.map((a) => a.id)); });
+  el.addEventListener("mouseleave", () => { if (!pinned) unlink(); });
+  el.addEventListener("click", () => {
+    pinned = pinned === t.id ? null : t.id;
+    document.querySelectorAll(".task").forEach((n) => n.classList.toggle("pinned", n.dataset.id === pinned));
+    pinned ? applyPin() : unlink();
+  });
+  tasksEl.appendChild(el);
+});
+
+function link(taskIds, apiIds) {
+  document.body.classList.add("linking");
+  document.querySelectorAll(".task").forEach((n) => n.classList.toggle("hit", taskIds.includes(n.dataset.id)));
+  document.querySelectorAll(".row").forEach((n) => n.classList.toggle("hit", apiIds.includes(n.dataset.id)));
+}
+
+function unlink() {
+  document.body.classList.remove("linking");
+  document.querySelectorAll(".hit").forEach((n) => n.classList.remove("hit"));
+}
+
+function applyPin() {
+  if (!pinned) return;
+  link([pinned], fixes[pinned].map((a) => a.id));
+}
+
+apisEl.addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  pinned = chip.dataset.task;
+  document.querySelectorAll(".task").forEach((n) => n.classList.toggle("pinned", n.dataset.id === pinned));
+  document.querySelector(`.task[data-id="${pinned}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  applyPin();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { pinned = null; document.querySelectorAll(".task").forEach((n) => n.classList.remove("pinned")); unlink(); }
+});
+
+qEl.addEventListener("input", renderApis);
+renderApis();
+</script>
+</body>
+</html>
