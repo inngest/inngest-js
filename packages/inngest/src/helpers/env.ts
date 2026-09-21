@@ -413,13 +413,24 @@ export const getFetch = (
          * Capture warnings that are not simple fetch failures and highlight
          * them for the user.
          *
+         * Aborts and timeouts (e.g. a user's own `AbortSignal.timeout()`) are
+         * expected and handled gracefully higher up the stack, so we don't
+         * treat them as misconfigurations.
+         *
          * We also use this opportunity to log the causing error, as code higher
          * up the stack will likely abstract this.
          */
-        if (
-          !(err instanceof Error) ||
-          !err.message?.startsWith("fetch failed")
-        ) {
+        const name =
+          typeof err === "object" && err !== null && "name" in err
+            ? err.name
+            : undefined;
+
+        const isExpectedFetchError =
+          name === "AbortError" ||
+          name === "TimeoutError" ||
+          (err instanceof Error && err.message?.startsWith("fetch failed"));
+
+        if (!isExpectedFetchError) {
           logger.error(
             { err },
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
