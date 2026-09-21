@@ -1627,6 +1627,16 @@ class InngestExecutionEngine
 
     const op = unfulfilledSteps[0];
 
+    // A parallel step may already be running in another request. Discovery
+    // must plan it instead of executing it inline, even if it is the only
+    // unfulfilled step and the executor allows immediate execution.
+    //
+    // Without this check, it's possible to run the same parallel step multiple
+    // times.
+    if (op?.opts?.parallelMode) {
+      return;
+    }
+
     if (
       op &&
       op.op === StepOpCode.StepPlanned

@@ -2139,7 +2139,7 @@ export const runHasTimeline = async (
       body: JSON.stringify({
         query: `query GetRunTimeline($runId: String!) {
           run(runID: $runId) {
-            trace(preview: true) {
+            trace {
               name
               stepType
               attempts
