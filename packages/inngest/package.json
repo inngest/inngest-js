@@ -90,6 +90,12 @@
       "import": "./edge.js",
       "require": "./edge.cjs"
     },
+    "./effect": {
+      "import": {
+        "types": "./effect.d.ts",
+        "default": "./effect.js"
+      }
+    },
     "./express": {
       "types": {
         "import": "./express.d.ts",
@@ -353,6 +359,7 @@
     "aws-lambda": "^1.0.7",
     "callsites": "^4.1.0",
     "concurrently": "^7.4.0",
+    "effect": "4.0.0-rc.117",
     "express": "^4.19.2",
     "fastify": "^4.21.0",
     "genversion": "^3.1.1",
@@ -385,6 +392,7 @@
     "@sveltejs/kit": ">=1.27.3",
     "@vercel/node": ">=2.15.9",
     "aws-lambda": ">=1.0.7",
+    "effect": "4.0.0-rc.117",
     "express": ">=4.19.2",
     "fastify": ">=4.21.0",
     "h3": ">=1.8.1",
@@ -403,6 +411,9 @@
       "optional": true
     },
     "aws-lambda": {
+      "optional": true
+    },
+    "effect": {
       "optional": true
     },
     "express": {

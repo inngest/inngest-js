@@ -555,6 +555,31 @@ export class MiddlewareManager {
     }
   }
 
+  async onExecutionEnd(): Promise<void> {
+    // Unwind the middleware onion so inner finalizers can still use resources
+    // owned by outer middleware.
+    for (let i = this.middleware.length - 1; i >= 0; i--) {
+      const mw = this.middleware[i];
+      if (mw?.onExecutionEnd) {
+        try {
+          await mw.onExecutionEnd({
+            ctx: this.fnArg,
+            fn: this.fn,
+          });
+        } catch (err) {
+          this.internalLogger.error(
+            {
+              err,
+              hook: "onExecutionEnd",
+              mw: mw.id,
+            },
+            "middleware error",
+          );
+        }
+      }
+    }
+  }
+
   async onRunStart(): Promise<void> {
     for (const mw of this.middleware) {
       if (mw?.onRunStart) {

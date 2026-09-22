@@ -31,11 +31,13 @@ const packageJsonRaw = fs.readFileSync(packageJsonPath, "utf8");
 const packageJson = JSON.parse(packageJsonRaw) as {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 };
 
-// Extract dependencies and devDependencies, or default to empty objects if not defined
+// Extract declared dependencies, or default to empty objects if not defined
 const dependencies = packageJson.dependencies ?? {};
 const devDependencies = packageJson.devDependencies ?? {};
+const peerDependencies = packageJson.peerDependencies ?? {};
 
 // Check if a module is a built-in Node module
 function isNodeBuiltin(moduleName: string): boolean {
@@ -188,12 +190,14 @@ function checkDependencies(
 
           if (
             !dependencies[importedModule] &&
-            !devDependencies[importedModule]
+            !devDependencies[importedModule] &&
+            !peerDependencies[importedModule]
           ) {
             if (typeOnlyImport) {
               if (
                 !dependencies[typesPackageName] &&
-                !devDependencies[typesPackageName]
+                !devDependencies[typesPackageName] &&
+                !peerDependencies[typesPackageName]
               ) {
                 issueType = "MissingTypes";
               }
@@ -202,6 +206,7 @@ function checkDependencies(
             }
           } else if (
             !dependencies[importedModule] &&
+            !peerDependencies[importedModule] &&
             devDependencies[importedModule]
           ) {
             issueType = "DevOnly";
@@ -255,7 +260,8 @@ function checkDependencies(
   importedTypeModules.forEach((typeModule) => {
     if (
       importedModules.has(typeModule) &&
-      devDependencies[`@types/${typeModule}`]
+      devDependencies[`@types/${typeModule}`] &&
+      !peerDependencies[`@types/${typeModule}`]
     ) {
       if (!issues[typeModule]) {
         issues[typeModule] = { files: [], type: "MoveToDependencies" };

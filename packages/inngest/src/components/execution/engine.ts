@@ -184,6 +184,13 @@ class InngestExecutionEngine
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
   private middlewareManager: MiddlewareManager;
+
+  /**
+   * Set before invocation cleanup, which may settle abandoned user handlers.
+   * Those settlements must not emit run hooks or enqueue more checkpoints.
+   */
+  private executionEnded = false;
+
   /**
    * Close the stream via {@link streamCloseSucceeded}, {@link streamCloseFailed},
    * or {@link streamEnd} — never call `streamTools.close*`/`end` directly, as
@@ -467,7 +474,9 @@ class InngestExecutionEngine
 
       return this.transformOutput({ error });
     } finally {
+      this.executionEnded = true;
       void this.state.loop.return();
+      await this.middlewareManager.onExecutionEnd();
     }
 
     /**
@@ -1846,10 +1855,20 @@ class InngestExecutionEngine
 
     runAsPromise(runHandler)
       .then(async (data) => {
+        if (this.executionEnded) {
+          return;
+        }
+
         await this.middlewareManager.onRunComplete(data);
-        this.state.setCheckpoint({ type: "function-resolved", data });
+        if (!this.executionEnded) {
+          this.state.setCheckpoint({ type: "function-resolved", data });
+        }
       })
       .catch(async (error) => {
+        if (this.executionEnded) {
+          return;
+        }
+
         // Preserve Error instances; stringify non-Error throws (e.g. `throw {}`)
         let err: Error;
         if (error instanceof Error) {
@@ -1861,7 +1880,9 @@ class InngestExecutionEngine
         }
 
         await this.middlewareManager.onRunError(err, !this.retriability(err));
-        this.state.setCheckpoint({ type: "function-rejected", error: err });
+        if (!this.executionEnded) {
+          this.state.setCheckpoint({ type: "function-rejected", error: err });
+        }
       });
   }
 
