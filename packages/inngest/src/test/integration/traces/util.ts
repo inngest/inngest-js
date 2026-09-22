@@ -43,9 +43,9 @@ export function simulateOpenAICall(): string {
 }
 
 const fetchTraceStepsQuery = `
-  query Query($runID: String!, $preview: Boolean) {
+  query Query($runID: String!) {
     run(runID: $runID) {
-      trace(preview: $preview) {
+      trace {
         childrenSpans {
           metadata {
             scope
@@ -88,7 +88,7 @@ async function fetchTraceSteps(runId: string): Promise<TraceStep[] | null> {
     body: JSON.stringify({
       operationName: "Query",
       query: fetchTraceStepsQuery,
-      variables: { preview: true, runID: runId },
+      variables: { runID: runId },
     }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
