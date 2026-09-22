@@ -12,6 +12,7 @@ dist
 *.tgz
 examples/**/*/.env
 examples/**/*/dist
+/packages/inngest/test/effect-platform/.wrangler/
 
 CLAUDE.local.md
 

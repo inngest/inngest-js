@@ -245,6 +245,9 @@ importers:
       concurrently:
         specifier: ^7.4.0
         version: 7.4.0
+      effect:
+        specifier: 4.0.0-rc.117
+        version: 4.0.0-rc.117
       express:
         specifier: ^4.19.2
         version: 4.19.2
@@ -4697,6 +4700,9 @@ packages:
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
+
+  effect@4.0.0-rc.117:
+    resolution: {integrity: sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w==}
 
   electron-to-chromium@1.4.616:
     resolution: {integrity: sha512-1n7zWYh8eS0L9Uy+GskE0lkBUNK83cXTVJI0pU3mGprFsbfSdAc15VTFbo+A+Bq4pwstmL30AVcEU3Fo463lNg==}
@@ -13176,6 +13182,8 @@ snapshots:
       time-span: 4.0.0
 
   ee-first@1.1.1: {}
+
+  effect@4.0.0-rc.117: {}
 
   electron-to-chromium@1.4.616: {}
 

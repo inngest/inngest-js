@@ -129,6 +129,134 @@ inngest.send("app/user.signup", {
 
 <br />
 
+## Effect v4
+
+`inngest/effect` is an opt-in, **ESM-only** integration with
+`effect@4.0.0-rc.117`. Install that exact version while Effect v4 is a release
+candidate. Effect is an optional peer: applications using only the normal SDK
+do not need to install it. Existing CommonJS entrypoints are unchanged;
+`require("inngest/effect")` is intentionally not exported.
+
+```sh
+npm install inngest effect@4.0.0-rc.117
+```
+
+Keep your existing client, function options, triggers, and serve adapter. Add
+`EffectMiddleware` at client or function level and return `effect.run(...)`:
+
+```ts
+import { Effect } from "effect";
+import { Inngest } from "inngest";
+import { EffectMiddleware } from "inngest/effect";
+
+const inngest = new Inngest({
+  id: "orders",
+  middleware: [EffectMiddleware],
+});
+
+export const calculateOrder = inngest.createFunction(
+  { id: "calculate-order", triggers: { event: "order/received" } },
+  ({ event, step, effect }) =>
+    effect.run(
+      Effect.gen(function* () {
+        const total = yield* effect.step(
+          (subtotal: number) => Effect.succeed({ total: subtotal * 1.2 }),
+          (run) => step.run("calculate-total", run, event.data.subtotal),
+        );
+
+        yield* effect.promise(() => step.sleep("settlement-delay", "1h"));
+        return total;
+      }),
+    ),
+);
+```
+
+### Effect and durable-step boundaries
+
+- **`effect.run(program, { signal? })`** is the handler boundary. Provide all
+  required services with `Effect.provide` / `Effect.provideService`, and close
+  scopes with `Effect.scoped`. Missing services are a TypeScript error.
+- **`effect.step(body, register)`** captures the current Effect services and
+  supplies a Promise callback to your native `step.run` or `step.ai.wrap`.
+  The body runs only when Inngest executes that step, not during discovery or
+  memoized replay. Keeping the native call explicit preserves edited inputs,
+  middleware output transformations, and output type inference.
+- **`effect.promise(thunk)`** lazily lifts any native Promise-returning tool,
+  including `step.sleep`, `step.waitForEvent`, `step.invoke`, `step.sendEvent`,
+  and middleware extensions. Pass a thunk, not an already-started Promise.
+  For cancellable external APIs, declare and forward its `AbortSignal`, e.g.
+  `effect.promise((signal) => fetch(url, { signal }))`.
+- Parallel durable branches work with
+  `Effect.all(branches, { concurrency: "unbounded" })`; Effect's default
+  concurrency is sequential. Use stable, distinct step IDs.
+
+Inngest persists step results, **not Effect fibers or services**. Ordinary
+Effect work outside durable steps is replayed on each invocation.
+`Effect.sleep`, `Effect.retry`, and in-process waits inside a step do not
+become durable operations. Use native `step.sleep` / `step.waitForEvent` for
+durable waiting. In-process retries multiply the attempts inside each
+Inngest retry; choose that policy explicitly.
+
+Typed errors can be recovered inside a step with normal Effect operators.
+At the durable boundary, errors have type `unknown`: a replayed `StepError`
+cannot honestly retain the original error class or Effect error type.
+Uncaught failures and defects preserve the original error at the Promise
+boundary, including `NonRetriableError` and `RetryAfterError`.
+Return JSON-compatible results; use schemas/codecs when domain values need
+reconstruction after replay.
+
+### Resource ownership and cancellation
+
+Scopes belong to **one SDK invocation**, not an entire durable run. On
+suspension, the middleware interrupts its active fibers and waits for their
+finalizers before ending the invocation. Streaming responses are special:
+cleanup runs when the execution loop ends, not when the early SSE response
+is returned. Interrupted step cleanup finishes before parent services close.
+Execution-end hooks unwind middleware in reverse registration order, keeping
+outer middleware resources alive for inner finalizers.
+Normal suspension is not reported as a function failure; cleanup defects are
+reported through the SDK's middleware error logger.
+
+Acquire resources inside a step when they are needed only for that step.
+Finalizers must terminate and must not schedule durable steps. Uninterruptible
+work can delay shutdown; JavaScript cannot preempt synchronous blocking code.
+Detached fibers (`Effect.forkDetach`), manually started runtimes, and external
+Promises that ignore cancellation remain application-owned. Aborting a local
+Effect does not cancel already-registered durable operations or cancel the
+server-side Inngest run.
+
+### Platforms and verification
+
+The integration uses Effect's platform-neutral core; it adds no Node-specific
+runtime or `AsyncLocalStorage` requirement. Continue using the appropriate
+Inngest serve adapter and platform-compatible services. Node/Bun filesystem
+Layers are not portable to Workers merely because the handler is an Effect.
+Cloudflare verification uses `nodejs_compat`, as required by the tested SDK
+configuration.
+
+Built-package protocol smoke scenarios live in `test/effect-platform/`, with
+a Node/Bun/Deno/local-workerd CI matrix in `.github/workflows/effect.yml`.
+They exercise discovery, selected-step execution, replay, serialization,
+durable sleep opcodes, retry-control responses, and asynchronous cleanup.
+The separate `src/test/integration/effect.test.ts` uses the real Inngest Dev
+Server to verify actual retries, parallel steps, elapsed durable sleep, and
+memoized side effects:
+
+```sh
+# From packages/inngest after installing workspace dependencies:
+pnpm build
+pnpm test src/effect.test.ts src/components/execution/lifecycle.test.ts
+pnpm test:integration src/test/integration/effect.test.ts
+node test/effect-platform/run.mjs
+bun test/effect-platform/run.mjs
+deno run --no-lock --node-modules-dir=manual --allow-env --allow-read --allow-sys test/effect-platform/run.mjs
+node test/effect-platform/workers.mjs
+```
+
+The Workers smoke runs locally; it does not deploy anything. These checks are
+regression evidence, not a claim of production soak testing or compatibility
+with untested future Effect release candidates.
+
 ## Features
 
 - **Fully serverless:** Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup

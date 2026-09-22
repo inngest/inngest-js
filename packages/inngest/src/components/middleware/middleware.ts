@@ -209,6 +209,14 @@ export namespace Middleware {
   }>;
 
   /**
+   * The argument passed to `onExecutionEnd`.
+   */
+  export type OnExecutionEndArgs = DeepReadonly<{
+    ctx: Context.Any;
+    fn: InngestFunction.Any;
+  }>;
+
+  /**
    * The argument passed to `onRunComplete`.
    */
   export type OnRunCompleteArgs = DeepReadonly<{
@@ -367,6 +375,20 @@ export namespace Middleware {
      * Do not mutate arguments.
      */
     onMemoizationEnd?(arg: Middleware.OnMemoizationEndArgs): MaybePromise<void>;
+
+    /**
+     * Called once when this SDK invocation's core execution settles, including
+     * step suspension and failure. This is not durable run completion: a run
+     * can resume in another invocation. With streaming, this waits for core
+     * execution to end, not the early HTTP response.
+     *
+     * Async cleanup runs in reverse middleware order and is awaited before
+     * execution settles, so inner finalizers can use outer resources. Errors
+     * are logged without replacing the result or skipping other middleware.
+     *
+     * Do not mutate arguments.
+     */
+    onExecutionEnd?(arg: Middleware.OnExecutionEndArgs): MaybePromise<void>;
 
     /**
      * Called when the run completes successfully. Does NOT call when the run

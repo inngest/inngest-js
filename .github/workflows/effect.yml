@@ -1,0 +1,81 @@
+name: Effect built-package platforms
+
+on:
+  pull_request:
+    paths:
+      - "packages/inngest/**"
+      - "packages/test/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/effect.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: effect-platforms-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platforms:
+    name: Effect / ${{ matrix.runtime }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [node20, node, bun, deno, workerd]
+    env:
+      NODE_AUTH_TOKEN: nothing
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+      - uses: actions/setup-node@v4
+        with:
+          # Same networking-safe Node release as the existing PR workflow.
+          node-version: "24.16.0"
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.runtime == 'bun'
+        with:
+          bun-version: "1.4.2"
+      - uses: denoland/setup-deno@v2
+        if: matrix.runtime == 'deno'
+        with:
+          deno-version: "2.9.6"
+      # effect is exactly 4.0.0-rc.117 in the SDK manifest and frozen lockfile.
+      # workers.mjs pins Wrangler 4.136.1 (workerd 1.20260921.1).
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @inngest/test build
+      - run: pnpm --filter inngest build
+      - name: Default CommonJS and ESM-only Effect export boundary
+        run: node test/effect-platform/cjs.cjs
+        working-directory: packages/inngest
+      - name: Node HTTP execution smoke
+        if: matrix.runtime == 'node'
+        run: node test/effect-platform/run.mjs
+        working-directory: packages/inngest
+      - name: Node 20 minimum-runtime smoke
+        if: matrix.runtime == 'node20'
+        run: |
+          npx --yes node@20.0.0 test/effect-platform/cjs.cjs
+          npx --yes node@20.0.0 test/effect-platform/run.mjs
+        working-directory: packages/inngest
+      - name: Bun HTTP execution smoke
+        if: matrix.runtime == 'bun'
+        run: bun test/effect-platform/run.mjs
+        working-directory: packages/inngest
+      - name: Deno HTTP execution smoke
+        if: matrix.runtime == 'deno'
+        run: deno run --no-lock --node-modules-dir=manual --allow-env --allow-read --allow-sys test/effect-platform/run.mjs
+        working-directory: packages/inngest
+      - name: Local Cloudflare workerd HTTP execution smoke
+        if: matrix.runtime == 'workerd'
+        run: node test/effect-platform/workers.mjs
+        working-directory: packages/inngest

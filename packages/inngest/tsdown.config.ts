@@ -1,6 +1,6 @@
-import { defineConfig } from "tsdown";
+import { defineConfig, type Options } from "tsdown";
 
-export default defineConfig({
+const config = {
   clean: true,
   dts: true,
   entry: [
@@ -39,7 +39,6 @@ export default defineConfig({
     "!src/test/**/*",
     "!src/**/*.test.*",
   ],
-  format: ["cjs", "esm"],
   outDir: "dist",
   tsconfig: "tsconfig.build.json",
   target: "node20",
@@ -51,4 +50,18 @@ export default defineConfig({
   unbundle: true, // let bundlers handle bundling
   copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
   skipNodeModulesBundle: true,
-});
+} satisfies Options;
+
+export default defineConfig([
+  {
+    ...config,
+    format: ["cjs"],
+  },
+  {
+    ...config,
+    entry: [...config.entry, "src/effect.ts"],
+    format: ["esm"],
+    clean: false,
+    copy: undefined,
+  },
+]);

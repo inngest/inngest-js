@@ -1,0 +1,10 @@
+{
+  "name": "inngest-effect-platform-smoke",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-22",
+  // Matches examples/framework-hono/wrangler.jsonc. This is the existing SDK's
+  // Workers configuration (including node:async_hooks), not an Effect runtime.
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "send_metrics": false
+}

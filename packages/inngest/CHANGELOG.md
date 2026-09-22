@@ -1,5 +1,19 @@
 # inngest
 
+## Unreleased
+
+### Minor Changes
+
+- Add the opt-in ESM-only `inngest/effect` entrypoint with `EffectMiddleware`,
+  targeting the optional `effect@4.0.0-rc.117` peer. Effect handlers can use
+  provided services inside native durable steps while retaining replay,
+  serialization, edited inputs, middleware transforms, and retry-control errors.
+- Add the invocation-scoped `onExecutionEnd` middleware hook. Effect fibers
+  are interrupted and asynchronous finalizers awaited when the execution loop
+  ends, including durable suspension and streaming completion.
+- Add Node, Bun, Deno, and local Cloudflare workerd protocol smoke coverage
+  and real Dev Server replay, retry, parallelism, and durable-wait regressions.
+
 ## 4.20.0
 
 ### Minor Changes
