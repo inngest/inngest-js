@@ -346,7 +346,9 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  private get sandboxApiKey(): string | undefined {
+  // Sandbox REST requests use a hashed signing key, or the local dev token
+  // unchanged when authenticating with the dev server.
+  private get sandboxAuthToken(): string | undefined {
     const devToken = this._env[envKeys.InngestSandboxDevToken]?.trim();
     if (this.mode !== "dev" || !devToken) {
       return hashSigningKey(this.signingKey);
@@ -460,7 +462,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
     this.sandboxes = createSandboxClient({
       baseUrl: () => this.apiBaseUrl,
-      apiKey: () => this.sandboxApiKey,
+      apiKey: () => this.sandboxAuthToken,
       headers: () => this.headers,
       fetch: () => this.fetch,
     });
