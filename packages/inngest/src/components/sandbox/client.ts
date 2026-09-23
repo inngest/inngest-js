@@ -57,6 +57,7 @@ type FetchT = typeof fetch;
 export interface SandboxClientConfig {
   baseUrl: () => string;
   apiKey: () => string | undefined;
+  isDev?: () => boolean;
   headers: () => Record<string, string>;
   fetch: () => FetchT;
 }
@@ -411,7 +412,7 @@ class SandboxRestTransport {
     },
   ): Promise<Response> {
     const apiKey = this.config.apiKey()?.trim();
-    if (!apiKey) {
+    if (!apiKey && !this.config.isDev?.()) {
       throw new SandboxValidationError(
         "A signing or API key is required to use inngest.sandboxes",
       );
@@ -420,7 +421,7 @@ class SandboxRestTransport {
       method,
       headers: {
         ...this.config.headers(),
-        Authorization: `Bearer ${apiKey}`,
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         ...options.headers,
       },
       body: options.body,
