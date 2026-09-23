@@ -10,7 +10,8 @@
     "ci:send": "tsx scripts/send.ts",
     "ci:forward": "tsx scripts/github-forwarder.ts",
     "app:test": "tsx --test app/src/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "ci:e2e": "tsx e2e/run.ts"
   },
   "dependencies": {
     "inngest": "link:../../packages/inngest/dist"
