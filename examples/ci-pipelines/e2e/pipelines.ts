@@ -304,7 +304,7 @@ const checkoutJob = ci.job("checkout", async () => {
   await checkout();
   const tracked = await $`cat src/sum.js`.text();
   const uncommitted = await $`cat uncommitted.txt`.nothrow();
-  const test = await $`node --test src/`.nothrow();
+  const test = await $`node --test src/sum.test.js`.nothrow();
   return {
     hasSum: tracked.includes("export const sum"),
     uncommitted: uncommitted.stdout.trim(),
