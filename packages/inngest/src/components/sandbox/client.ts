@@ -1217,7 +1217,7 @@ const createSandboxSnapshot = async (
     "POST",
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
-      body: {},
+      // No body, not even `{}`: Cloud's route for this binding rejects one.
       statuses: [201, 202],
       sandboxId,
       signal,
