@@ -957,3 +957,76 @@ describe("introspection", () => {
     expect(await res.json()).toEqual({ message: "Unauthorized" });
   });
 });
+
+describe("self-hosted step-execution over GET (inngest/inngest-js#1543)", () => {
+  const logger = new ConsoleLogger({ level: "silent" });
+
+  test("signed GET with a JSON body is validated and executed, not 401", async () => {
+    const signingKey = "signkey-test-deadbeefcafef00d";
+    const inngest = createClient({ id: "test", isDev: false, signingKey });
+
+    let executed = false;
+    const fn = inngest.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => {
+        executed = true;
+        return "ran";
+      },
+    );
+
+    const body = {
+      version: ExecutionVersion.V2,
+      ctx: {
+        fn_id: "test-test",
+        run_id: "run-123",
+        step_id: "step",
+        attempt: 0,
+        disable_immediate_execution: false,
+        use_api: false,
+        stack: { stack: [], current: 0 },
+      },
+      event: { name: "demo/event.sent", data: {} },
+      events: [{ name: "demo/event.sent", data: {} }],
+      steps: {},
+    };
+    const rawBody = JSON.stringify(body);
+    const commHandler = new InngestCommHandler({
+      client: inngest,
+      frameworkName: "test",
+      functions: [fn],
+      handler: (req: Request) => ({
+        body: () => rawBody,
+        headers: (key: string) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url),
+        transformResponse: ({ body: resBody, headers, status }) =>
+          new Response(resBody, { status, headers }),
+      }),
+    });
+    const handler = commHandler["createHandler"]();
+
+    const ts = Math.round(Date.now() / 1000).toString();
+    const mac = await signDataWithKey(body, signingKey, ts, logger);
+
+    const req = new Request(
+      "https://localhost:3000/api/inngest?fnId=test-test&stepId=step",
+      {
+        method: "GET",
+        headers: {
+          host: "localhost:3000",
+          [headerKeys.Signature]: `t=${ts}&s=${mac}`,
+          [headerKeys.InngestRunId]: "run-123",
+          [headerKeys.InngestStepId]: "step",
+        },
+      },
+    );
+
+    const res = await handler(req);
+
+    // Before the fix the SDK signed an empty body for GET requests, so signature
+    // validation failed and the request returned 401. Now the body is read and
+    // verified for signed GETs, so the function should be executed.
+    expect(res.status).not.toBe(401);
+    expect(executed).toBe(true);
+  });
+});
