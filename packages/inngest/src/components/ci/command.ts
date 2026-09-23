@@ -373,15 +373,41 @@ class CommandBuilder implements Command {
     // Short commands with an explicit timeout run as one captured step, which
     // is cheaper and keeps the trace tidy.
     if (timeoutMs !== undefined && timeoutMs <= capturedExecLimitMs) {
-      const result = await machine.sandbox.commands.run(
-        { id: stepId, name: stepId },
-        this.state.argv,
-        {
-          environment: this.environment(scope),
-          cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
-          timeout: timeoutMs,
-        },
-      );
+      let result: {
+        exitCode: number;
+        stdout: string;
+        stderr: string;
+        output?: { truncated?: boolean };
+      };
+
+      try {
+        result = await machine.sandbox.commands.run(
+          { id: stepId, name: stepId },
+          this.state.argv,
+          {
+            environment: this.environment(scope),
+            cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
+            timeout: timeoutMs,
+          },
+        );
+      } catch (error) {
+        // The sandbox answers an exec that outlives its timeout with an
+        // error, not a result, so it's mapped onto the same error a managed
+        // process's timeout gives.
+        if ((error as { code?: string })?.code !== "sandbox_exec_timed_out") {
+          throw error;
+        }
+
+        if (this.state.onTimeout) {
+          await this.state.onTimeout();
+        }
+
+        throw new CommandTimeoutError({
+          command: this.state.argv,
+          timeout: this.state.timeout ?? "",
+          jobPath: scope.path,
+        });
+      }
 
       return {
         exitCode: result.exitCode,

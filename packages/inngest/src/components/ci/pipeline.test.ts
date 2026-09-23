@@ -2,7 +2,11 @@ import { describe, expect, test } from "vitest";
 import { memoryCacheStore } from "./cache.ts";
 import { $ } from "./command.ts";
 import { createCi } from "./createCi.ts";
-import { CiUsageError, CommandFailedError } from "./errors.ts";
+import {
+  CiUsageError,
+  CommandFailedError,
+  CommandTimeoutError,
+} from "./errors.ts";
 import { sandbox } from "./extraMachine.ts";
 import { consoleReporter } from "./github/auth.ts";
 import { files } from "./helpers.ts";
@@ -364,6 +368,39 @@ describe("commands", () => {
       true,
     );
     expect(result.stepIds.some((id) => id.includes("wait #"))).toBe(false);
+  });
+
+  test("a captured command that times out throws CommandTimeoutError", async () => {
+    const { api, ci } = setup();
+    api.script([{ match: "hang", execTimesOut: true }]);
+
+    const job = ci.job("hang", async () => {
+      let lookedAround = false;
+      try {
+        await $`hang`.timeout("2s").onTimeout(async () => {
+          lookedAround = true;
+        });
+        return "no error";
+      } catch (error) {
+        return {
+          isTimeout: error instanceof CommandTimeoutError,
+          message: (error as Error).message,
+          lookedAround,
+        };
+      }
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () =>
+      job(),
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.data).toEqual({
+      isTimeout: true,
+      message: "`hang` timed out after 2s",
+      lookedAround: true,
+    });
   });
 
   test("secrets are masked in output and never in step input", async () => {

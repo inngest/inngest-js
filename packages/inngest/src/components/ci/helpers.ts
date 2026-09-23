@@ -302,6 +302,12 @@ export const files = (...patterns: string[]): CacheKeyPart => ({
   patterns,
 });
 
+/**
+ * How much longer the command running a wait loop is given than the loop
+ * itself, so the loop's own deadline decides and its failure is the one seen.
+ */
+const waitHeadroomMs = 15_000;
+
 const waitScript = (check: string, timeoutMs: number) =>
   [
     `deadline=$(( $(date +%s) + ${Math.ceil(timeoutMs / 1000)} ))`,
@@ -350,7 +356,7 @@ export const waitForHttp = async (
     () => target,
     ["/bin/sh", "-c", script],
     `waitForHttp ${url}`,
-  ).timeout(opts.timeout ?? "2m");
+  ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
 };
 
 /**
@@ -388,5 +394,5 @@ export const waitForPort = async (
     () => target,
     ["/bin/sh", "-c", script],
     `waitForPort ${port}`,
-  ).timeout(opts.timeout ?? "2m");
+  ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
 };

@@ -58,6 +58,8 @@ export interface CommandScript {
    * though the process started, as Cloud sometimes does. Defaults to 0.
    */
   ambiguousStarts?: number;
+  /** A captured exec of this command runs past its timeout. */
+  execTimesOut?: boolean;
 }
 
 export interface FakeSandboxApi {
@@ -249,6 +251,22 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         commands.push(argv);
 
         const script = scriptFor(argv);
+
+        // Cloud answers an exec that runs past its timeout with a 504.
+        if (script.execTimesOut) {
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: "sandbox_exec_timed_out",
+                  message: "Sandbox exec timed out",
+                },
+              ],
+            }),
+            { status: 504, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
         return json(200, {
           encoding: "base64",
           stdout: btoa(script.stdout ?? ""),
