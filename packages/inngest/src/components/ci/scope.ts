@@ -18,6 +18,9 @@ import type {
  */
 export const scopeSeparator = " › ";
 
+/** The default working directory, which is where `checkout()` puts the repo. */
+export const defaultCwd = "/work";
+
 /**
  * A machine held by a job or an extra machine scope. It's a promise so
  * concurrent first commands share one creation.

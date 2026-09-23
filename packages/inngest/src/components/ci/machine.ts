@@ -1,6 +1,11 @@
 import { CiUsageError } from "./errors.ts";
 import type { CiJobScope, CiRunScope, MachineHandle } from "./scope.ts";
-import { getJobScope, requireJobScope, scopeSeparator } from "./scope.ts";
+import {
+  defaultCwd,
+  getJobScope,
+  requireJobScope,
+  scopeSeparator,
+} from "./scope.ts";
 import type { AnyJob, Job, MachineConfig } from "./types.ts";
 import { boundedName, slug, warnOnce } from "./util.ts";
 
@@ -77,6 +82,17 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     : await tools.create(stepId, { name, ...machineConfig });
 
   run.sandboxes.add(sandbox.id);
+
+  // Commands run in `/work` by default, and a sandbox won't start a process
+  // in a directory that doesn't exist. `checkout()` creates it, but a job
+  // doesn't have to check out. Machines from a snapshot already have it.
+  if (!scope.fromSnapshotId) {
+    await sandbox.commands.run(`${stepId}${scopeSeparator}workdir`, [
+      "/bin/mkdir",
+      "-p",
+      defaultCwd,
+    ]);
+  }
   const handle: MachineHandle = { sandbox, name, id: sandbox.id };
   run.machines.set(scope.path, Promise.resolve(handle));
 

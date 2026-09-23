@@ -1,7 +1,12 @@
 import { CommandFailedError, CommandTimeoutError } from "./errors.ts";
 import { ensureMachine } from "./machine.ts";
 import type { CiJobScope, MachineHandle } from "./scope.ts";
-import { nextStepId, requireJobScope, scopeSeparator } from "./scope.ts";
+import {
+  defaultCwd,
+  nextStepId,
+  requireJobScope,
+  scopeSeparator,
+} from "./scope.ts";
 import type {
   BackgroundProcess,
   Command,
@@ -28,8 +33,7 @@ export const capturedExecLimitMs = 5 * 60 * 1000;
 /** How much of each stream is kept on a `CommandResult`. */
 export const outputTailBytes = 64 * 1024;
 
-/** The default working directory, which is where `checkout()` puts the repo. */
-export const defaultCwd = "/work";
+export { defaultCwd };
 
 const terminalStates = new Set(["EXITED", "KILLED", "FAILED", "LOST"]);
 

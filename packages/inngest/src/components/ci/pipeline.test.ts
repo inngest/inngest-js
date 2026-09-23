@@ -36,6 +36,12 @@ const prEvent = {
 
 const prTrigger = [{ event: "github/pull_request.opened" }];
 
+/** The commands a job asked for, without CI creating each machine's `/work`. */
+const userCommands = (api: ReturnType<typeof createFakeSandboxApi>) =>
+  api.commands.filter(
+    (argv) => argv.join(" ") !== ["/bin/mkdir", "-p", "/work"].join(" "),
+  );
+
 const setup = (
   opts: {
     cacheStore?: CacheStore;
@@ -73,12 +79,33 @@ describe("pipelines and jobs", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(result.data).toBe("done");
-    expect(api.commands).toEqual([
+    expect(userCommands(api)).toEqual([
       ["pnpm", "install"],
       ["pnpm", "test"],
     ]);
     expect(api.sandboxes.size).toBe(1);
     expect([...api.sandboxes.values()][0]?.name).toBe("ci-01TESTRUN-test");
+  });
+
+  test("a new machine gets its default working directory first", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job("build", async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () =>
+      job(),
+    );
+
+    await runFunction(pipeline, { event: prEvent });
+
+    // Without `checkout()`, nothing else would create `/work`, and a sandbox
+    // won't start a process in a directory that doesn't exist.
+    expect(api.commands).toEqual([
+      ["/bin/mkdir", "-p", "/work"],
+      ["pnpm", "build"],
+    ]);
   });
 
   test("a job with no commands never creates a machine", async () => {
@@ -115,7 +142,9 @@ describe("pipelines and jobs", () => {
     expect(result.data).toEqual({ a: "built", b: "built" });
     // One machine and one command, however many callers there were.
     expect(api.sandboxes.size).toBe(1);
-    expect(api.commands.filter((argv) => argv[1] === "build")).toHaveLength(1);
+    expect(
+      userCommands(api).filter((argv) => argv[1] === "build"),
+    ).toHaveLength(1);
   });
 
   test("step IDs inside a job are scoped to it", async () => {
@@ -420,7 +449,7 @@ describe("commands", () => {
 
     expect(result.data).toEqual({ first: "one", second: "two", server: "up" });
     // Each start ran once: reconciling never starts the command again.
-    expect(api.commands.map((argv) => argv.join(" "))).toEqual([
+    expect(userCommands(api).map((argv) => argv.join(" "))).toEqual([
       "first",
       "second",
       "server",
@@ -719,7 +748,7 @@ describe("cache", () => {
     expect((await runFunction(firstPipeline, { event: prEvent })).data).toBe(
       "built",
     );
-    expect(first.api.commands).toHaveLength(1);
+    expect(userCommands(first.api)).toHaveLength(1);
 
     const second = setup({ cacheStore: store, api });
     const build2 = second.ci.job(
@@ -739,7 +768,7 @@ describe("cache", () => {
 
     expect(result.data).toBe("built");
     // Nothing new ran: no extra commands, and no second machine.
-    expect(api.commands).toHaveLength(1);
+    expect(userCommands(api)).toHaveLength(1);
     expect(api.sandboxes.size).toBe(1);
   });
 
@@ -776,7 +805,7 @@ describe("cache", () => {
     );
 
     expect(result.data).toBe(2);
-    expect(api.commands).toHaveLength(2);
+    expect(userCommands(api)).toHaveLength(2);
   });
 
   test("a cached job with a machine can still be started from", async () => {
@@ -817,7 +846,7 @@ describe("cache", () => {
 
     expect(result.type).toBe("function-resolved");
     // `setup` was restored, so only the child job's command ran this time.
-    expect(api.commands).toEqual([
+    expect(userCommands(api)).toEqual([
       ["pnpm", "install"],
       ["pnpm", "test"],
     ]);
