@@ -28,6 +28,11 @@ export interface MachineHandle {
   sandbox: any;
   name: string;
   id: string;
+  /**
+   * Processes this run has already started on the machine, so reconciling an
+   * ambiguous start never adopts one of them.
+   */
+  claimedProcessIds?: Set<string>;
 }
 
 export interface JobSummary {

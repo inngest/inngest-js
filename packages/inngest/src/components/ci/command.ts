@@ -1,6 +1,6 @@
 import { CommandFailedError, CommandTimeoutError } from "./errors.ts";
 import { ensureMachine } from "./machine.ts";
-import type { CiJobScope } from "./scope.ts";
+import type { CiJobScope, MachineHandle } from "./scope.ts";
 import { nextStepId, requireJobScope, scopeSeparator } from "./scope.ts";
 import type {
   BackgroundProcess,
@@ -222,17 +222,11 @@ class CommandBuilder implements Command {
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
 
-    const process = await machine.sandbox.processes.start(
-      {
-        id: `${stepId}${scopeSeparator}start`,
-        name: `${stepId}${scopeSeparator}start`,
-      },
-      {
-        command: this.state.argv,
-        environment: this.environment(scope),
-        cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
-      },
-    );
+    const process = await startProcess(machine, stepId, {
+      command: this.state.argv,
+      environment: this.environment(scope),
+      cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
+    });
 
     const argv = this.state.argv;
     const secrets = this.secretValues(scope);
@@ -394,17 +388,11 @@ class CommandBuilder implements Command {
       };
     }
 
-    const process = await machine.sandbox.processes.start(
-      {
-        id: `${stepId}${scopeSeparator}start`,
-        name: `${stepId}${scopeSeparator}start`,
-      },
-      {
-        command: this.state.argv,
-        environment: this.environment(scope),
-        cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
-      },
-    );
+    const process = await startProcess(machine, stepId, {
+      command: this.state.argv,
+      environment: this.environment(scope),
+      cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
+    });
 
     let waits = 0;
     const terminal = await pollUntilTerminal({
@@ -460,6 +448,85 @@ class CommandBuilder implements Command {
     return result;
   }
 }
+
+interface StartedProcess {
+  id: string;
+  command: readonly string[];
+  startedAt?: string;
+}
+
+const isAmbiguousStart = (error: unknown): boolean => {
+  const { code, action } = (error ?? {}) as { code?: string; action?: string };
+  return code === "operation_ambiguous" && action === "process.start";
+};
+
+const sameArgv = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((arg, i) => arg === b[i]);
+
+/**
+ * Start a managed process, reconciling an ambiguous start.
+ *
+ * Cloud can answer a start that succeeded with `409 operation_ambiguous`, and
+ * the error says to list processes and reconcile before starting another. So
+ * this lists them, as a step, and adopts the newest process running the same
+ * command that this run hasn't already claimed. It never starts the command a
+ * second time; with nothing to adopt, the original error stands.
+ */
+const startProcess = async (
+  machine: MachineHandle,
+  stepId: string,
+  options: {
+    command: string[];
+    environment?: Record<string, string>;
+    cwd: string;
+  },
+  // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess, loose like MachineHandle
+): Promise<any> => {
+  machine.claimedProcessIds ??= new Set<string>();
+  const claimed = machine.claimedProcessIds;
+  const claim = <T extends { id: string }>(process: T): T => {
+    claimed.add(process.id);
+    return process;
+  };
+
+  try {
+    return claim(
+      await machine.sandbox.processes.start(
+        {
+          id: `${stepId}${scopeSeparator}start`,
+          name: `${stepId}${scopeSeparator}start`,
+        },
+        options,
+      ),
+    );
+  } catch (error) {
+    if (!isAmbiguousStart(error)) {
+      throw error;
+    }
+
+    const listed = (await machine.sandbox.processes.list(
+      {
+        id: `${stepId}${scopeSeparator}reconcile`,
+        name: `${stepId}${scopeSeparator}reconcile`,
+      },
+      { limit: 250 },
+    )) as { items: StartedProcess[] };
+
+    const [match] = listed.items
+      .filter(
+        (process) =>
+          !claimed.has(process.id) &&
+          sameArgv(process.command, options.command),
+      )
+      .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
+
+    if (!match) {
+      throw error;
+    }
+
+    return claim(match);
+  }
+};
 
 /**
  * Follow a managed process until it reaches a terminal state.

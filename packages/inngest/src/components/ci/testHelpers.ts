@@ -53,6 +53,11 @@ export interface CommandScript {
   stderr?: string;
   /** How many polls before a managed process exits. Defaults to 0. */
   ticks?: number;
+  /**
+   * How many starts of this command answer `409 operation_ambiguous` even
+   * though the process started, as Cloud sometimes does. Defaults to 0.
+   */
+  ambiguousStarts?: number;
 }
 
 export interface FakeSandboxApi {
@@ -310,7 +315,32 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         };
 
         processes.set(process.id, process);
+
+        // Cloud sometimes answers a start that succeeded with a 409.
+        if (script.ambiguousStarts && script.ambiguousStarts > 0) {
+          script.ambiguousStarts--;
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  code: "operation_ambiguous",
+                  message:
+                    "Sandbox process may have started; list processes and reconcile before starting another",
+                },
+              ],
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
         return json(201, processResource(process));
+      }
+
+      if (rest === "/processes" && method === "GET") {
+        const items = [...processes.values()]
+          .filter((process) => process.sandboxId === sandbox.id)
+          .map(processResource);
+        return json(200, items, { page: { limit: 50 } });
       }
 
       const processMatch = rest.match(/^\/processes\/([^/]+)(.*)$/);
@@ -358,6 +388,11 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         }
 
         if (processRest.startsWith("/output") && method === "GET") {
+          // Like Cloud, protobuf JSON omits `chunks` when there's no output.
+          if (!process.stdout && !process.stderr) {
+            return json(200, {});
+          }
+
           return json(200, {
             chunks: [
               ...(process.stdout

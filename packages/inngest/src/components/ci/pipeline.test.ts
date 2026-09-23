@@ -378,6 +378,85 @@ describe("commands", () => {
       true,
     );
   });
+
+  test("a command with no output reads as empty", async () => {
+    const { ci } = setup();
+
+    const job = ci.job("quiet", async () => {
+      const result = await $`true`;
+      return { exitCode: result.exitCode, stdout: result.stdout };
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () =>
+      job(),
+    );
+
+    expect((await runFunction(pipeline, { event: prEvent })).data).toEqual({
+      exitCode: 0,
+      stdout: "",
+    });
+  });
+
+  test("an ambiguous start adopts the process that did start", async () => {
+    const { api, ci } = setup();
+    api.script([
+      { match: "first", stdout: "one" },
+      { match: "second", stdout: "two", ambiguousStarts: 1 },
+      { match: "server", stdout: "up", ambiguousStarts: 1 },
+    ]);
+
+    const job = ci.job("reconcile", async () => {
+      const first = await $`first`.text();
+      const second = await $`second`.text();
+      const server = await $`server`.background();
+      return { first, second, server: await server.output() };
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () =>
+      job(),
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.data).toEqual({ first: "one", second: "two", server: "up" });
+    // Each start ran once: reconciling never starts the command again.
+    expect(api.commands.map((argv) => argv.join(" "))).toEqual([
+      "first",
+      "second",
+      "server",
+    ]);
+    expect(
+      result.stepIds.filter((id) => id.endsWith("reconcile")),
+    ).toHaveLength(2);
+  });
+
+  test("an ambiguous start with nothing to adopt still fails", async () => {
+    const api = createFakeSandboxApi();
+    api.script([{ match: "gone", ambiguousStarts: 1 }]);
+    // The process the 409 was about doesn't show up in the list.
+    const fetch = api.fetch;
+    api.fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      if (response.status === 409) {
+        api.processes.clear();
+      }
+      return response;
+    };
+    const { ci } = setup({ api });
+
+    const job = ci.job("lost", async () => {
+      await $`gone`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () =>
+      job(),
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(JSON.stringify(result.error)).toContain("operation_ambiguous");
+  });
 });
 
 describe("from()", () => {
