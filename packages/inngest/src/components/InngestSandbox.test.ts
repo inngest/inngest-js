@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 
+import { envKeys } from "../helpers/consts.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
 import {
   createClient,
@@ -1518,6 +1519,136 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  const listResponse = () =>
+    Response.json({
+      data: [],
+      metadata: { fetchedAt: now },
+      page: { hasMore: false, limit: 50 },
+    });
+
+  test.each([undefined, "http://localhost:9393"])(
+    "calls dev sandbox and snapshot routes without a key (%s)",
+    async (devUrl) => {
+      const calls: Array<{ url: URL; init?: RequestInit }> = [];
+      const inngest = new Inngest({
+        id: "sandbox-dev",
+        isDev: true,
+        fetch: async (input, init) => {
+          calls.push({
+            url: new URL(input instanceof Request ? input.url : input),
+            init,
+          });
+          return listResponse();
+        },
+      });
+      inngest.setEnvVars(devUrl ? { [envKeys.InngestDevMode]: devUrl } : {});
+
+      await inngest.sandboxes.list();
+      await inngest.sandboxes.snapshots.list();
+
+      expect(calls.map(({ url }) => url.pathname)).toEqual([
+        "/v2/sandboxes",
+        "/v2/snapshots",
+      ]);
+      for (const call of calls) {
+        expect(call.url.origin).toBe(devUrl ?? "http://localhost:8288");
+        expect(new Headers(call.init?.headers).has("Authorization")).toBe(
+          false,
+        );
+      }
+    },
+  );
+
+  test("resolves dev mode lazily after construction", async () => {
+    const fetchMock: typeof fetch = vi.fn(async () => listResponse());
+    const inngest = new Inngest({ id: "lazy-sandbox-dev", fetch: fetchMock });
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "0" });
+    await expect(inngest.sandboxes.list()).rejects.toThrow(
+      "A signing or API key is required",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "http://localhost:9393" });
+    await inngest.sandboxes.list();
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("http://localhost:9393/v2/sandboxes?limit=50"),
+      expect.anything(),
+    );
+
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "0" });
+    await expect(inngest.sandboxes.list()).rejects.toThrow(
+      "A signing or API key is required",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([false, true])(
+    "preserves signing key auth (isDev=%s)",
+    async (isDev) => {
+      let authorization: string | null = null;
+      const inngest = new Inngest({
+        id: "sandbox-signing-key",
+        isDev,
+        signingKey: "signkey-cloud",
+        fetch: async (_input, init) => {
+          authorization = new Headers(init?.headers).get("Authorization");
+          return listResponse();
+        },
+      });
+      inngest.setEnvVars({});
+      await inngest.sandboxes.list();
+      expect(authorization).toBe(`Bearer ${hashSigningKey("signkey-cloud")}`);
+    },
+  );
+
+  test.each(["cloud", "standalone"])(
+    "requires a key for %s clients",
+    async (target) => {
+      const fetchMock: typeof fetch = vi.fn();
+      const inngest = new Inngest({
+        id: "sandbox-cloud",
+        isDev: false,
+        fetch: fetchMock,
+      });
+      inngest.setEnvVars({});
+      const client =
+        target === "cloud"
+          ? inngest.sandboxes
+          : createSandboxClient({
+              baseUrl: () => "https://api.inngest.com",
+              apiKey: () => undefined,
+              headers: () => ({}),
+              fetch: () => fetchMock,
+            });
+      await expect(client.list()).rejects.toThrow(
+        "A signing or API key is required",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("surfaces the dev server's CLI login instruction", async () => {
+    const inngest = new Inngest({
+      id: "sandbox-login-required",
+      isDev: true,
+      fetch: async () =>
+        Response.json(
+          {
+            errors: [
+              {
+                code: "cloud_login_required",
+                message:
+                  "Run \`inngest login\` to use Cloud sandboxes from the dev server",
+              },
+            ],
+          },
+          { status: 401 },
+        ),
+    });
+    inngest.setEnvVars({});
+    await expect(inngest.sandboxes.list()).rejects.toThrow("inngest login");
+  });
+
   test("accepts uppercase ULIDs and human-readable sandbox names", async () => {
     const { kind: _kind, version: _version, ...resource } = sandboxRef;
     const sentNames: string[] = [];
