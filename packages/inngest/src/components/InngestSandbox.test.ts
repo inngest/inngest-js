@@ -2953,6 +2953,47 @@ describe("inngest.sandboxes", () => {
     });
   });
 
+  test("defaults omitted process output chunks to an empty list", async () => {
+    const { kind: _kind, version: _version, ...sandboxData } = sandboxRef;
+    const sandboxPath = `/v2/sandboxes/${sandboxId}`;
+    const processPath = `${sandboxPath}/processes/${processId}`;
+    const {
+      kind: _processKind,
+      version: _processVersion,
+      sandboxId: _processSandbox,
+      ...processData
+    } = processRef;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === sandboxPath && method === "GET") {
+        return Response.json({ data: sandboxData });
+      }
+      if (url.pathname === processPath && method === "GET") {
+        return Response.json({ data: processData });
+      }
+      // A process that printed nothing: protobuf JSON omits the empty list.
+      if (url.pathname === `${processPath}/output` && method === "GET") {
+        return Response.json({ data: {}, metadata: { fetchedAt: now } });
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.get(sandboxId);
+    const process = await sandbox?.processes.get(processId);
+    if (!process) {
+      throw new Error("Expected process");
+    }
+
+    await expect(process.getOutput()).resolves.toEqual({ chunks: [] });
+  });
+
   test("uses the REST v2 resource shape and decodes byte-safe streams", async () => {
     const calls: Array<{ url: URL; init?: RequestInit }> = [];
     const fetchMock: typeof fetch = vi.fn(async (input, init) => {

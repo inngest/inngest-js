@@ -102,8 +102,10 @@ const wireCommandResultSchema = z
   })
   .strip();
 
+// Protobuf JSON omits an empty list, so a process that printed nothing has no
+// `chunks` at all.
 const outputResponseSchema = z
-  .object({ chunks: z.array(restOutputChunkSchema) })
+  .object({ chunks: z.array(restOutputChunkSchema).optional() })
   .passthrough();
 
 const fileUploadResultSchema = z
@@ -696,7 +698,7 @@ const createDirectProcessFacade = (
         envelope?.data,
         "sandbox process output",
       );
-      return { chunks: output.chunks.map(decodeOutputChunk) };
+      return { chunks: (output.chunks ?? []).map(decodeOutputChunk) };
     },
     streamOutput: async (options) => {
       const { tailBytes } = normalizeSandboxProcessOutputOptions(options);
