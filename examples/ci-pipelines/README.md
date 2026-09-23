@@ -30,21 +30,37 @@ cd packages/inngest && pnpm build
 cd ../../examples/ci-pipelines && pnpm install --ignore-workspace
 ```
 
-Then start the Dev Server and this app:
+Then start the Dev Server with Cloud sandboxes, and this app:
 
 ```bash
-npx inngest-cli@latest dev            # in one terminal
-pnpm dev                              # in another
+inngest dev --cloud-sandboxes         # in one terminal
+pnpm dev                              # in another, with the env below
 ```
+
+Machines are real Cloud sandboxes, so the Dev Server needs a CLI build with
+`--cloud-sandboxes` (inngest/inngest#4886). Open the **Cloud sandboxes** link it
+prints, sign in, and connect a development environment with sandbox access.
+Then give this app the token it printed:
+
+```bash
+export INNGEST_DEV=http://127.0.0.1:8288
+export INNGEST_SANDBOX_DEV_TOKEN=...  # printed by `inngest dev --cloud-sandboxes`
+```
+
+On a machine with no OS keyring (WSL, a container), sign in with
+`inngest login --insecure-storage` first, which keeps the credential in a
+user-only file.
 
 The app serves its functions at `http://localhost:3939/api/inngest`.
 
-## Demo
+## End-to-end tests
 
-Each step works locally. Sandboxes don't run locally yet, so the steps that
-need a machine will fail at the first command until they do — everything up to
-that point, and everything that doesn't touch a machine, works today. See
-[Known limitations](#known-limitations).
+`pnpm ci:e2e` runs one pipeline per area of the API against real sandboxes
+and checks what each returned. `pnpm ci:e2e commands matrix` runs just those.
+It needs the Dev Server and token above, but not `pnpm dev`: it serves its own
+functions on port 3940.
+
+## Demo
 
 1. **Run the pull request pipeline.**
 
@@ -144,11 +160,13 @@ Items 1, 2, 3, 4, 5, 9, and 10 have tests in
 These are prototype limits, not design decisions. The full list, and what
 each one needs, is in `packages/inngest/src/components/ci/NOTES.md`.
 
-- **Sandboxes don't run against the local Dev Server yet.** Everything that
-  doesn't need a machine works locally today; commands need the sandbox API.
-  CI's own tests run against a fake sandbox API for this reason.
+- **Machines need `inngest dev --cloud-sandboxes`.** A plain Dev Server has no
+  sandbox API, so everything up to a job's first command works, and commands
+  fail. CI's unit tests run against a fake sandbox API; `pnpm ci:e2e` runs
+  against real ones.
 - **Snapshots**: if the environment doesn't support them, `from()` falls back
-  to a fresh machine and says so on the check.
+  to a fresh machine and says so on the check. An environment whose snapshot
+  limit is used up fails `from()` and cached machines instead.
 - **No networking between machines**, so `ExtraMachine.url()` throws. Run the
   server on the job's own machine and use `127.0.0.1`.
 - **`withSecret()` isn't isolated** from code on the machine. The value never
