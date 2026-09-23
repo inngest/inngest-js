@@ -220,9 +220,9 @@ interface RegisteredJob {
  * ```
  */
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
-  const isDev = Boolean(
-    (client as unknown as { mode?: { isDev?: boolean } }).mode?.isDev,
-  );
+  // Read on use rather than here: the client resolves its mode from env vars
+  // that some runtimes only provide per request.
+  const isDev = () => client.mode === "dev";
 
   // The provider answers `github.rest` and `github.token()` whatever mode
   // we're in; only where checks *go* changes in dev.
@@ -378,7 +378,7 @@ const flowControl = (config: PipelineConfig) => {
 const sinkFor = (
   provider: GitHubProvider,
   client: Inngest.Any,
-  isDev: boolean,
+  isDev: () => boolean,
 ): CheckSink => {
   const logger = (
     client as unknown as {
@@ -386,25 +386,34 @@ const sinkFor = (
     }
   ).logger;
 
-  const toConsole =
-    provider.reporter === "console" ||
-    (isDev && process.env.INNGEST_CI_GITHUB !== "live");
+  const toConsole = consoleSink(
+    logger,
+    (provider as ConsoleProvider).history ?? consoleHistory,
+  );
 
-  if (toConsole) {
-    return consoleSink(
-      logger,
-      (provider as ConsoleProvider).history ?? consoleHistory,
-    );
+  if (provider.reporter === "console") {
+    return toConsole;
   }
 
-  switch (provider.reporter) {
-    case "checks":
-      return checksSink(provider);
-    case "statuses":
-      return statusesSink(provider);
-    default:
-      return noopSink;
-  }
+  const toGitHub =
+    provider.reporter === "checks"
+      ? checksSink(provider)
+      : provider.reporter === "statuses"
+        ? statusesSink(provider)
+        : noopSink;
+
+  // Chosen per call, because whether we're in dev is only known once the
+  // client has its env vars.
+  const pick = () =>
+    isDev() && process.env.INNGEST_CI_GITHUB !== "live" ? toConsole : toGitHub;
+
+  return {
+    start: (args) => pick().start(args),
+    complete: (args) => pick().complete(args),
+    update: async (args) => {
+      await pick().update?.(args);
+    },
+  };
 };
 
 /**
@@ -413,9 +422,9 @@ const sinkFor = (
 const consoleHistory: Parameters<typeof consoleSink>[1] = [];
 
 const defaultRunUrl =
-  (client: Inngest.Any, isDev: boolean) =>
+  (client: Inngest.Any, isDev: () => boolean) =>
   ({ runId }: { runId: string; functionId: string }) => {
-    if (isDev) {
+    if (isDev()) {
       const base =
         process.env.INNGEST_DEV_SERVER_URL ??
         process.env.INNGEST_BASE_URL ??

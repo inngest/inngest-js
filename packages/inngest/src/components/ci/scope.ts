@@ -65,7 +65,7 @@ export interface CiInternals {
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
-  isDev: boolean;
+  isDev: () => boolean;
   // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
   logger?: { warn: (...args: any[]) => void };
 }

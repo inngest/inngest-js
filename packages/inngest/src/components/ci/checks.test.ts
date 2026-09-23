@@ -285,6 +285,47 @@ describe("a required check never hangs", () => {
   });
 });
 
+describe("dev mode", () => {
+  test("checks stay in the console even with a GitHub provider", async () => {
+    const gh = createFakeGitHub();
+    // The test client is in dev mode, as it is against the Dev Server.
+    const client = createCiTestClient(createFakeSandboxApi());
+    const ci = createCi(client, {
+      github: githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    });
+
+    const job = ci.job("build", async () => "built");
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "github/pull_request.opened" }] },
+      async () => job(),
+    );
+
+    const result = await runFunction(pipeline, {
+      event: {
+        name: "github/pull_request.opened",
+        data: {
+          action: "opened",
+          number: 7,
+          repository: { full_name: "inngest/inngest-js" },
+          pull_request: {
+            number: 7,
+            head: { sha: "abc1234", ref: "feature" },
+            base: { sha: "def5678", ref: "main" },
+          },
+        },
+      },
+    });
+
+    expect(result.type).toBe("function-resolved");
+    // Nothing reaches GitHub: no check runs, and no commit statuses either.
+    expect(gh.requests).toEqual([]);
+  });
+});
+
 describe("deprecated APIs are marked", () => {
   const read = (file: string) =>
     readFile(join(import.meta.dirname, file), "utf8");
