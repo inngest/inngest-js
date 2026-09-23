@@ -57,6 +57,19 @@ export const ensureMachine = (scope: CiJobScope): Promise<MachineHandle> => {
   return scope.machine;
 };
 
+/**
+ * Run once on every machine before its first command.
+ *
+ * - Commands run in `/work` by default, and a sandbox won't start a process in
+ *   a directory that doesn't exist. `checkout()` creates it, but a job doesn't
+ *   have to check out.
+ * - Sandboxes currently boot with the loopback interface down, so nothing can
+ *   listen on or reach `127.0.0.1`, which breaks services started with
+ *   `.background()` and `waitForHttp`/`waitForPort`. Bringing it up is a no-op
+ *   once the platform does it itself.
+ */
+export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true)`;
+
 const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   const { run } = scope;
   const tools = run.sandboxTools;
@@ -83,16 +96,11 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
   run.sandboxes.add(sandbox.id);
 
-  // Commands run in `/work` by default, and a sandbox won't start a process
-  // in a directory that doesn't exist. `checkout()` creates it, but a job
-  // doesn't have to check out. Machines from a snapshot already have it.
-  if (!scope.fromSnapshotId) {
-    await sandbox.commands.run(`${stepId}${scopeSeparator}workdir`, [
-      "/bin/mkdir",
-      "-p",
-      defaultCwd,
-    ]);
-  }
+  await sandbox.commands.run(`${stepId}${scopeSeparator}setup`, [
+    "/bin/sh",
+    "-c",
+    machineSetupScript,
+  ]);
   const handle: MachineHandle = { sandbox, name, id: sandbox.id };
   run.machines.set(scope.path, Promise.resolve(handle));
 

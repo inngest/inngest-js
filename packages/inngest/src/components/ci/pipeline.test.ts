@@ -10,7 +10,7 @@ import {
 import { sandbox } from "./extraMachine.ts";
 import { consoleReporter } from "./github/auth.ts";
 import { files } from "./helpers.ts";
-import { from } from "./machine.ts";
+import { from, machineSetupScript } from "./machine.ts";
 import { report } from "./report.ts";
 import {
   createCiTestClient,
@@ -40,11 +40,9 @@ const prEvent = {
 
 const prTrigger = [{ event: "github/pull_request.opened" }];
 
-/** The commands a job asked for, without CI creating each machine's `/work`. */
+/** The commands a job asked for, without CI's own machine setup. */
 const userCommands = (api: ReturnType<typeof createFakeSandboxApi>) =>
-  api.commands.filter(
-    (argv) => argv.join(" ") !== ["/bin/mkdir", "-p", "/work"].join(" "),
-  );
+  api.commands.filter((argv) => argv[2] !== machineSetupScript);
 
 const setup = (
   opts: {
@@ -91,7 +89,7 @@ describe("pipelines and jobs", () => {
     expect([...api.sandboxes.values()][0]?.name).toBe("ci-01TESTRUN-test");
   });
 
-  test("a new machine gets its default working directory first", async () => {
+  test("a new machine is set up before its first command", async () => {
     const { api, ci } = setup();
 
     const job = ci.job("build", async () => {
@@ -105,11 +103,14 @@ describe("pipelines and jobs", () => {
     await runFunction(pipeline, { event: prEvent });
 
     // Without `checkout()`, nothing else would create `/work`, and a sandbox
-    // won't start a process in a directory that doesn't exist.
+    // won't start a process in a directory that doesn't exist. Loopback is
+    // brought up too, since sandboxes currently boot with it down.
     expect(api.commands).toEqual([
-      ["/bin/mkdir", "-p", "/work"],
+      ["/bin/sh", "-c", machineSetupScript],
       ["pnpm", "build"],
     ]);
+    expect(machineSetupScript).toContain("mkdir -p /work");
+    expect(machineSetupScript).toContain("ip link set lo up");
   });
 
   test("a job with no commands never creates a machine", async () => {
