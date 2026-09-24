@@ -1216,7 +1216,6 @@ const createSandboxSnapshot = async (
     "POST",
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
-      body: {},
       statuses: [201, 202],
       sandboxId,
       signal,
