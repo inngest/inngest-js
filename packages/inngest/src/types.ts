@@ -45,6 +45,7 @@ const baseJsonErrorSchema = z.object({
   error: z.string().trim().optional(),
   message: z.string().trim().optional(),
   stack: z.string().trim().optional(),
+  code: z.string().trim().optional(),
 });
 
 const maybeJsonErrorSchema: z.ZodType<{
