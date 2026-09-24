@@ -104,7 +104,7 @@ const wireCommandResultSchema = z
   .strip();
 
 const outputResponseSchema = z
-  .object({ chunks: z.array(restOutputChunkSchema) })
+  .object({ chunks: z.array(restOutputChunkSchema).optional() })
   .passthrough();
 
 const fileUploadResultSchema = z
@@ -697,7 +697,7 @@ const createDirectProcessFacade = (
         envelope?.data,
         "sandbox process output",
       );
-      return { chunks: output.chunks.map(decodeOutputChunk) };
+      return { chunks: (output.chunks ?? []).map(decodeOutputChunk) };
     },
     streamOutput: async (options) => {
       const { tailBytes } = normalizeSandboxProcessOutputOptions(options);
