@@ -1,0 +1,32 @@
+{
+  "name": "ai-example",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_OPTIONS='--import @inngest/otel/node' INNGEST_DEV=1 vite dev --port 3000",
+    "build": "vite build && tsc --noEmit",
+    "start": "node --import @inngest/otel/node dist/server/server.js"
+  },
+  "dependencies": {
+    "@inngest/otel": "^0.2.2",
+    "@openai/agents": "^0.14.3",
+    "@opentelemetry/api": "^1.9.0",
+    "@tanstack/react-router": "1.170.18",
+    "@tanstack/react-start": "1.168.35",
+    "import-in-the-middle": "^1.15.0",
+    "inngest": "file:../../packages/inngest/dist",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.1",
+    "vite-tsconfig-paths": "^6.1.1"
+  }
+}

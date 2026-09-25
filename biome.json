@@ -8,6 +8,7 @@
       "!**/coverage",
       "!**/dist",
       "!**/src/proto",
+      "!**/routeTree.gen.ts",
       "!**/package.json",
       "!**/.claude"
     ]
