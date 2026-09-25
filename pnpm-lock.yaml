@@ -366,9 +366,6 @@ importers:
       '@sentry/core':
         specifier: ^8.8.0
         version: 8.14.0
-      '@sentry/types':
-        specifier: ^8.8.0
-        version: 8.14.0
       '@types/node':
         specifier: ^22.0.0
         version: 22.13.10
@@ -11589,7 +11586,7 @@ snapshots:
       svelte: 4.2.5
       svelte-hmr: 0.15.3(svelte@4.2.5)
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0)
-      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0))
+      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(yaml@2.9.0))
     transitivePeerDependencies:
       - supports-color
 
@@ -11603,7 +11600,7 @@ snapshots:
       svelte: 4.2.5
       svelte-hmr: 0.15.3(svelte@4.2.5)
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0)
-      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0))
+      vitefu: 0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(yaml@2.9.0))
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -12363,7 +12360,7 @@ snapshots:
     optionalDependencies:
       vite: 7.0.2(@types/node@22.13.10)(jiti@2.5.1)(yaml@2.9.0)
 
-  '@vitest/mocker@3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0))':
+  '@vitest/mocker@3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.4
       estree-walker: 3.0.3
@@ -17086,7 +17083,7 @@ snapshots:
       vite: 7.0.2(@types/node@22.13.10)(jiti@2.5.1)(yaml@2.9.0)
     optional: true
 
-  vitefu@0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0)):
+  vitefu@0.2.5(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(yaml@2.9.0)):
     optionalDependencies:
       vite: 7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0)
 
@@ -17177,7 +17174,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.2
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.4(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
