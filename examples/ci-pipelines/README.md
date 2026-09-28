@@ -157,8 +157,8 @@ Items 1, 2, 3, 4, 5, 9, and 10 have tests in
 
 ## Known limitations
 
-These are prototype limits, not design decisions. The full list, and what
-each one needs, is in `packages/inngest/src/components/ci/NOTES.md`.
+These are prototype limits, not design decisions. The full list is in
+`packages/inngest/src/components/ci/README.md`.
 
 - **Machines need `inngest dev --cloud-sandboxes`.** A plain Dev Server has no
   sandbox API, so everything up to a job's first command works, and commands
