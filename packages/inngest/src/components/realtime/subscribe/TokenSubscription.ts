@@ -301,13 +301,21 @@ export class TokenSubscription {
               return;
             }
 
+            // `start` runs synchronously inside the constructor, so `stream`
+            // isn't assigned yet; capture the controller and register the
+            // pair after construction.
+            let streamController!: ReadableStreamDefaultController;
             const stream = new ReadableStream({
               start: (controller) => {
-                this.#chunkStreams.set(streamId, { stream, controller });
+                streamController = controller;
               },
               cancel: () => {
                 this.#chunkStreams.delete(streamId);
               },
+            });
+            this.#chunkStreams.set(streamId, {
+              stream,
+              controller: streamController,
             });
 
             this.#debug(
