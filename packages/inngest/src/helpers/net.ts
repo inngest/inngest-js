@@ -23,22 +23,39 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
   options?: Parameters<TFetch>[1];
   url: URL | string;
 }): Promise<Response> {
-  let res = await fetch(url, {
-    ...options,
-    headers: {
-      ...options?.headers,
-      Authorization: `Bearer ${authToken}`,
-    },
-  });
+  // A stream body can only be sent once, so keep a copy for the retry.
+  let body = options?.body;
+  let retryBody: ReadableStream | undefined;
+  if (authTokenFallback && body instanceof ReadableStream) {
+    [body, retryBody] = body.tee();
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      ...(retryBody ? { body } : {}),
+      headers: {
+        ...options?.headers,
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+  } catch (err) {
+    void retryBody?.cancel().catch(() => {});
+    throw err;
+  }
 
   if ([401, 403].includes(res.status) && authTokenFallback) {
     res = await fetch(url, {
       ...options,
+      ...(retryBody ? { body: retryBody } : {}),
       headers: {
         ...options?.headers,
         Authorization: `Bearer ${authTokenFallback}`,
       },
     });
+  } else {
+    void retryBody?.cancel().catch(() => {});
   }
 
   return res;

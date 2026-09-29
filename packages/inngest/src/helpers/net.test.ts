@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createFetchMock from "vitest-fetch-mock";
 import { ConsoleLogger } from "../middleware/logger.ts";
@@ -96,6 +98,56 @@ describe("fetchWithAuthFallback", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.status).toEqual(500);
+  });
+
+  it("should resend a stream body when retrying with the fallback token", async () => {
+    const received: { auth: string | undefined; body: string }[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const auth = req.headers.authorization;
+        received.push({ auth, body });
+        res.statusCode = auth === "Bearer fallbackToken" ? 200 : 401;
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+
+    try {
+      const { port } = server.address() as AddressInfo;
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("hello "));
+          controller.enqueue(encoder.encode("world"));
+          controller.close();
+        },
+      });
+
+      const response = await fetchWithAuthFallback({
+        authToken: "testToken",
+        authTokenFallback: "fallbackToken",
+        fetch,
+        url: `http://127.0.0.1:${port}`,
+        options: {
+          method: "POST",
+          body: stream,
+          // @ts-expect-error duplex is not in RequestInit types yet
+          duplex: "half",
+        },
+      });
+
+      expect(response.status).toEqual(200);
+      expect(received).toEqual([
+        { auth: "Bearer testToken", body: "hello world" },
+        { auth: "Bearer fallbackToken", body: "hello world" },
+      ]);
+    } finally {
+      server.close();
+    }
   });
 });
 
