@@ -149,6 +149,126 @@ describe("fetchWithAuthFallback", () => {
       server.close();
     }
   });
+
+  describe("stream bodies", () => {
+    function chunkedStream(chunks: number, chunkSize: number) {
+      const state = { pulled: 0, cancelled: false };
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (state.pulled >= chunks) {
+            controller.close();
+            return;
+          }
+          state.pulled++;
+          controller.enqueue(new Uint8Array(chunkSize));
+        },
+        cancel() {
+          state.cancelled = true;
+        },
+      });
+      return { state, stream };
+    }
+
+    async function drain(body: BodyInit | null | undefined) {
+      let total = 0;
+      const reader = (body as ReadableStream<Uint8Array>).getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return total;
+        total += value.byteLength;
+      }
+    }
+
+    it("should not retry or buffer past the replay limit", async () => {
+      const { state, stream } = chunkedStream(10, 1024 * 1024);
+      const sent: number[] = [];
+      const fakeFetch = (async (_url, init) => {
+        sent.push(await drain(init?.body));
+        return new Response(null, { status: 401 });
+      }) as typeof fetch;
+
+      const response = await fetchWithAuthFallback({
+        authToken: "testToken",
+        authTokenFallback: "fallbackToken",
+        fetch: fakeFetch,
+        url: "https://example.com",
+        options: { method: "POST", body: stream },
+      });
+
+      expect(response.status).toEqual(401);
+      expect(sent).toEqual([10 * 1024 * 1024]);
+      expect(state.pulled).toBe(10);
+    });
+
+    it("should replay a partially sent stream on the fallback token", async () => {
+      const { stream } = chunkedStream(6, 1024);
+      const sent: number[] = [];
+      const fakeFetch = (async (_url, init) => {
+        const headers = init?.headers as Record<string, string>;
+        if (headers.Authorization === "Bearer testToken") {
+          // Reject after reading only the first chunk.
+          const reader = (init?.body as ReadableStream<Uint8Array>).getReader();
+          const { value } = await reader.read();
+          sent.push(value?.byteLength ?? 0);
+          reader.releaseLock();
+          return new Response(null, { status: 401 });
+        }
+        sent.push(await drain(init?.body));
+        return new Response(null, { status: 200 });
+      }) as typeof fetch;
+
+      const response = await fetchWithAuthFallback({
+        authToken: "testToken",
+        authTokenFallback: "fallbackToken",
+        fetch: fakeFetch,
+        url: "https://example.com",
+        options: { method: "POST", body: stream },
+      });
+
+      expect(response.status).toEqual(200);
+      expect(sent).toEqual([1024, 6 * 1024]);
+    });
+
+    it("should cancel the source stream when the first fetch rejects", async () => {
+      const { state, stream } = chunkedStream(3, 1024);
+      const fakeFetch = (async () => {
+        throw new Error("network down");
+      }) as typeof fetch;
+
+      await expect(
+        fetchWithAuthFallback({
+          authToken: "testToken",
+          authTokenFallback: "fallbackToken",
+          fetch: fakeFetch,
+          url: "https://example.com",
+          options: { method: "POST", body: stream },
+        }),
+      ).rejects.toThrow("network down");
+
+      await vi.waitFor(() => expect(state.cancelled).toBe(true));
+    });
+
+    it("should not read ahead of the request when the primary key succeeds", async () => {
+      const { state, stream } = chunkedStream(1000, 1024 * 1024);
+      const fakeFetch = (async (_url, init) => {
+        const reader = (init?.body as ReadableStream<Uint8Array>).getReader();
+        await reader.read();
+        reader.releaseLock();
+        return new Response(null, { status: 200 });
+      }) as typeof fetch;
+
+      await fetchWithAuthFallback({
+        authToken: "testToken",
+        authTokenFallback: "fallbackToken",
+        fetch: fakeFetch,
+        url: "https://example.com",
+        options: { method: "POST", body: stream },
+      });
+
+      expect(state.pulled).toBeLessThan(10);
+      await vi.waitFor(() => expect(state.cancelled).toBe(true));
+    });
+  });
 });
 
 describe("signing functions", () => {

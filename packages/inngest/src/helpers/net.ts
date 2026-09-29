@@ -7,6 +7,82 @@ import { removeSigningKeyPrefix } from "./strings.ts";
 const { hmac, sha256 } = hashjs;
 
 /**
+ * The most bytes of a stream body that are kept for a retry with the fallback
+ * signing key. Once a request sends more than this, the retry is skipped and
+ * the original response is returned.
+ */
+const MAX_REPLAY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Split a stream body into one stream to send now and one to send on a retry.
+ * Chunks are recorded only as the first request reads them, up to
+ * `MAX_REPLAY_BYTES`, so nothing is buffered beyond what is sent. The retry
+ * stream replays the recorded chunks, then reads the rest from the source.
+ */
+function replayableStream(source: ReadableStream) {
+  const reader = source.getReader();
+  const recorded: unknown[] = [];
+  let recordedBytes = 0;
+  let overflowed = false;
+  let inflight: Promise<unknown> = Promise.resolve();
+
+  const first = new ReadableStream({
+    pull(controller) {
+      const read = reader.read().then(({ done, value }) => {
+        if (done) {
+          controller.close();
+          return;
+        }
+        if (!overflowed) {
+          recordedBytes += (value as { byteLength?: number })?.byteLength ?? 0;
+          if (recordedBytes > MAX_REPLAY_BYTES) {
+            overflowed = true;
+            recorded.length = 0;
+          } else {
+            recorded.push(value);
+          }
+        }
+        controller.enqueue(value);
+      });
+      inflight = read.catch(() => {});
+      return read.catch((err) => controller.error(err));
+    },
+    // The retry stream still needs the source, so leave it open here.
+  });
+
+  const canReplay = () => !overflowed;
+
+  const retry = () => {
+    let index = 0;
+    return new ReadableStream({
+      async pull(controller) {
+        await inflight;
+        if (index < recorded.length) {
+          controller.enqueue(recorded[index++]);
+          return;
+        }
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    });
+  };
+
+  return {
+    first,
+    canReplay,
+    retry,
+    cancel: () => reader.cancel().catch(() => {}),
+  };
+}
+
+/**
  * Send an HTTP request with the given signing key. If the response is a 401 or
  * 403, then try again with the fallback signing key
  */
@@ -23,39 +99,47 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
   options?: Parameters<TFetch>[1];
   url: URL | string;
 }): Promise<Response> {
-  // A stream body can only be sent once, so keep a copy for the retry.
-  let body = options?.body;
-  let retryBody: ReadableStream | undefined;
-  if (authTokenFallback && body instanceof ReadableStream) {
-    [body, retryBody] = body.tee();
-  }
+  // A stream body can only be sent once, so keep the sent chunks for the retry.
+  const replay =
+    authTokenFallback && options?.body instanceof ReadableStream
+      ? replayableStream(options.body)
+      : undefined;
 
   let res: Response;
   try {
     res = await fetch(url, {
       ...options,
-      ...(retryBody ? { body } : {}),
+      ...(replay ? { body: replay.first } : {}),
       headers: {
         ...options?.headers,
         Authorization: `Bearer ${authToken}`,
       },
     });
   } catch (err) {
-    void retryBody?.cancel().catch(() => {});
+    void replay?.cancel();
     throw err;
   }
 
-  if ([401, 403].includes(res.status) && authTokenFallback) {
-    res = await fetch(url, {
-      ...options,
-      ...(retryBody ? { body: retryBody } : {}),
-      headers: {
-        ...options?.headers,
-        Authorization: `Bearer ${authTokenFallback}`,
-      },
-    });
+  if (
+    [401, 403].includes(res.status) &&
+    authTokenFallback &&
+    (!replay || replay.canReplay())
+  ) {
+    try {
+      res = await fetch(url, {
+        ...options,
+        ...(replay ? { body: replay.retry() } : {}),
+        headers: {
+          ...options?.headers,
+          Authorization: `Bearer ${authTokenFallback}`,
+        },
+      });
+    } catch (err) {
+      void replay?.cancel();
+      throw err;
+    }
   } else {
-    void retryBody?.cancel().catch(() => {});
+    void replay?.cancel();
   }
 
   return res;
