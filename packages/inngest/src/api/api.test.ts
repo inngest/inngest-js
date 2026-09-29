@@ -49,3 +49,67 @@ describe("InngestApi environment headers", () => {
     ]);
   });
 });
+
+describe("InngestApi run data errors", () => {
+  const createApi = (response: () => Response) =>
+    new InngestApi({
+      baseUrl: () => "https://api.example.test",
+      signingKey: () => "signkey-test",
+      signingKeyFallback: () => undefined,
+      environment: () => null,
+      fetch: () => vi.fn(async () => response()),
+    });
+
+  const methods = [
+    ["getRunSteps", (api: InngestApi) => api.getRunSteps("run-id")],
+    ["getRunBatch", (api: InngestApi) => api.getRunBatch("run-id")],
+  ] as const;
+
+  describe.each(methods)("%s", (_name, call) => {
+    test("returns an error result for a non-JSON error response", async () => {
+      const api = createApi(
+        () =>
+          new Response("<html>Bad Gateway</html>", {
+            status: 502,
+            statusText: "Bad Gateway",
+          }),
+      );
+
+      const result = await call(api);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error?.status).toBe(502);
+        expect(result.error?.error).toContain("502");
+        expect(result.error?.error).toContain("Bad Gateway");
+      }
+    });
+
+    test("returns an error result for a JSON error response without a status", async () => {
+      const api = createApi(() =>
+        Response.json({ error: "run not found" }, { status: 404 }),
+      );
+
+      const result = await call(api);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error?.status).toBe(404);
+        expect(result.error?.error).toContain("run not found");
+      }
+    });
+
+    test("keeps the error result for a well-formed error response", async () => {
+      const api = createApi(() =>
+        Response.json({ error: "denied", status: 403 }, { status: 403 }),
+      );
+
+      const result = await call(api);
+
+      expect(result).toEqual({
+        ok: false,
+        error: { error: "denied", status: 403 },
+      });
+    });
+  });
+});
