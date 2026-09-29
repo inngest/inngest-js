@@ -207,7 +207,8 @@ describe("fetchWithAuthFallback", () => {
         const headers = init?.headers as Record<string, string>;
         if (headers.Authorization === "Bearer testToken") {
           // Reject after reading only the first chunk.
-          const reader = (init?.body as ReadableStream<Uint8Array>).getReader();
+          const body = init?.body as ReadableStream<Uint8Array>;
+          const reader = body.getReader();
           const { value } = await reader.read();
           sent.push(value?.byteLength ?? 0);
           reader.releaseLock();
@@ -248,10 +249,56 @@ describe("fetchWithAuthFallback", () => {
       await vi.waitFor(() => expect(state.cancelled).toBe(true));
     });
 
+    it("should not let the first stream read after the retry starts", async () => {
+      let next = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (next >= 8) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(new Uint8Array(1024 * 1024).fill(next++));
+        },
+      });
+      let primaryReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      const received: number[] = [];
+      const fakeFetch = (async (_url, init) => {
+        const headers = init?.headers as Record<string, string>;
+        const body = init?.body as ReadableStream<Uint8Array>;
+        if (headers.Authorization === "Bearer testToken") {
+          // Answer 401 but keep the body reader open.
+          primaryReader = body.getReader();
+          await primaryReader.read();
+          return new Response(null, { status: 401 });
+        }
+        // The first request keeps reading before the retry body is consumed.
+        for (let i = 0; i < 6; i++) await primaryReader?.read();
+        const reader = body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received.push(value[0] ?? -1);
+        }
+        return new Response(null, { status: 200 });
+      }) as typeof fetch;
+
+      const response = await fetchWithAuthFallback({
+        authToken: "testToken",
+        authTokenFallback: "fallbackToken",
+        fetch: fakeFetch,
+        url: "https://example.com",
+        options: { method: "POST", body: stream },
+      });
+
+      expect(response.status).toEqual(200);
+      expect(received).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    });
+
     it("should not read ahead of the request when the primary key succeeds", async () => {
       const { state, stream } = chunkedStream(1000, 1024 * 1024);
       const fakeFetch = (async (_url, init) => {
-        const reader = (init?.body as ReadableStream<Uint8Array>).getReader();
+        const body = init?.body as ReadableStream<Uint8Array>;
+        const reader = body.getReader();
         await reader.read();
         reader.releaseLock();
         return new Response(null, { status: 200 });

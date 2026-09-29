@@ -25,9 +25,15 @@ function replayableStream(source: ReadableStream) {
   let recordedBytes = 0;
   let overflowed = false;
   let inflight: Promise<unknown> = Promise.resolve();
+  let retrying = false;
 
   const first = new ReadableStream({
     pull(controller) {
+      // Once the retry starts, it is the only reader of the source.
+      if (retrying) {
+        controller.close();
+        return;
+      }
       const read = reader.read().then(({ done, value }) => {
         if (done) {
           controller.close();
@@ -53,6 +59,7 @@ function replayableStream(source: ReadableStream) {
   const canReplay = () => !overflowed;
 
   const retry = () => {
+    retrying = true;
     let index = 0;
     return new ReadableStream({
       async pull(controller) {
