@@ -121,3 +121,79 @@ describe("readRequestBody", () => {
     expect(await NodeHandler.readRequestBody(req)).toBe("é");
   });
 });
+
+describe("URL headers", () => {
+  const client = new Inngest({ id: "test", isDev: true });
+  const fn = client.createFunction(
+    { id: "test", triggers: [{ event: "demo/event.sent" }] },
+    () => "ok",
+  );
+
+  const request = (
+    server: http.Server,
+    headers: Record<string, string>,
+  ): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => {
+        const { port } = server.address() as { port: number };
+        http
+          .get(
+            { host: "127.0.0.1", port, path: "/api/inngest", headers },
+            (res) => {
+              res.resume();
+              res.on("end", () => server.close(() => resolve(res.statusCode!)));
+            },
+          )
+          .on("error", (err) => server.close(() => reject(err)));
+      });
+    });
+  };
+
+  test("serve() uses the first entry of a comma-separated X-Forwarded-Proto", async () => {
+    const server = http.createServer(
+      NodeHandler.serve({ client, functions: [fn] }),
+    );
+
+    expect(await request(server, { "x-forwarded-proto": "https, http" })).toBe(
+      200,
+    );
+  });
+
+  test("createServer() uses the first entry of a comma-separated X-Forwarded-Proto", async () => {
+    const server = NodeHandler.createServer({ client, functions: [fn] });
+
+    expect(await request(server, { "x-forwarded-proto": "https, http" })).toBe(
+      200,
+    );
+  });
+
+  test("createServer() responds 400 instead of crashing on a malformed X-Forwarded-Proto", async () => {
+    const server = NodeHandler.createServer({ client, functions: [fn] });
+
+    expect(await request(server, { "x-forwarded-proto": "not a scheme" })).toBe(
+      400,
+    );
+  });
+
+  test("createServer() responds 400 instead of crashing on a malformed Host", async () => {
+    const server = NodeHandler.createServer({ client, functions: [fn] });
+
+    expect(await request(server, { host: "exa mple.com" })).toBe(400);
+  });
+
+  test("createEndpointServer() responds 400 instead of crashing on a malformed Host", async () => {
+    const server = NodeHandler.createEndpointServer(
+      async () => new Response("ok"),
+    );
+
+    expect(await request(server, { host: "exa mple.com" })).toBe(400);
+  });
+
+  test("the durable endpoint proxy responds 400 instead of crashing on a malformed Host", async () => {
+    const server = http.createServer(
+      NodeHandler.endpointAdapter.createProxyHandler({ client }),
+    );
+
+    expect(await request(server, { host: "exa mple.com" })).toBe(400);
+  });
+});
