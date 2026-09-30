@@ -346,27 +346,6 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  // Sandbox REST requests use a hashed signing key, or the local dev token
-  // unchanged when authenticating with the dev server.
-  private get sandboxAuthToken(): string | undefined {
-    const devToken = this._env[envKeys.InngestSandboxDevToken]?.trim();
-    if (this.mode !== "dev" || !devToken) {
-      return hashSigningKey(this.signingKey);
-    }
-
-    const devServerOrigin = new URL(
-      this.explicitDevUrl?.href ?? defaultDevServerHost,
-    ).origin;
-    const apiOrigin = new URL(this.apiBaseUrl).origin;
-    if (apiOrigin !== devServerOrigin) {
-      throw new Error(
-        `${envKeys.InngestSandboxDevToken} can only be sent to the configured dev server (${devServerOrigin}); the sandbox API base URL resolves to ${apiOrigin}. Set INNGEST_DEV to the dev server URL or remove the API base URL override.`,
-      );
-    }
-
-    return devToken;
-  }
-
   get headers(): Record<string, string> {
     return inngestHeaders({
       inngestEnv: this.options.env,
@@ -462,7 +441,8 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this[internalLoggerSymbol] = this.options.internalLogger ?? this._logger;
     this.sandboxes = createSandboxClient({
       baseUrl: () => this.apiBaseUrl,
-      apiKey: () => this.sandboxAuthToken,
+      apiKey: () => hashSigningKey(this.signingKey),
+      isDev: () => this.mode === "dev",
       headers: () => this.headers,
       fetch: () => this.fetch,
     });

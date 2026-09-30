@@ -74,7 +74,10 @@ const snapshotRef = {
   expiresAt: "2026-08-04T00:00:00Z",
 } satisfies SandboxSnapshotRef;
 
+const secretName = "OPENAI_API_KEY";
+
 const createOptions = {
+  secrets: [secretName],
   name: sandboxRef.name,
   vcpu: 2,
   memoryMb: 2048,
@@ -422,6 +425,96 @@ describe("step.sandbox", () => {
         input: [{ ...createOptions, runningTimeoutMs: false }],
       },
     ]);
+  });
+
+  test.each([
+    "OPENAI_API_KEY",
+    "openai-production",
+    "Mixed Case / token",
+    "__proto__",
+    "constructor",
+    "55555555-5555-4555-8555-555555555555",
+    "é".repeat(128),
+  ])("preserves exact secret name %s", async (name) => {
+    const secrets = [name];
+    const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
+      resultForOperation(operation),
+    );
+    await createSandboxTools(() => rawTool).create("create", {
+      ...createOptions,
+      secrets,
+    });
+    const operation = rawTool.mock.calls[0]?.[1];
+    expect(operation).toMatchObject({ input: [{ secrets }] });
+    expect(parseSandboxOperation(operation)).toMatchObject({
+      input: [{ secrets }],
+    });
+  });
+
+  test.each([
+    { secrets: [] },
+    { secrets: ["TOKEN_B", "TOKEN_A"] },
+    { secrets: ["token", "TOKEN"] },
+  ])(
+    "preserves a secret selection without aliases: %j",
+    async ({ secrets }) => {
+      const before = [...secrets];
+      const rawTool = vi.fn<SandboxRawTool>(async (_id, operation) =>
+        resultForOperation(operation),
+      );
+      await createSandboxTools(() => rawTool).create("create", {
+        ...createOptions,
+        secrets,
+      });
+      expect(secrets).toEqual(before);
+      expect(parseSandboxOperation(rawTool.mock.calls[0]?.[1])).toMatchObject({
+        input: [{ secrets }],
+      });
+    },
+  );
+
+  test("rejects invalid launch secret selections before dispatch", async () => {
+    const rawTool = vi.fn<SandboxRawTool>();
+    const tools = createSandboxTools(() => rawTool);
+    for (const secrets of [
+      [""],
+      [" leading"],
+      ["trailing\u0085"],
+      ["line\nfeed"],
+      ["carriage\rreturn"],
+      ["null\0byte"],
+      ["é".repeat(129)],
+      ["SHARED"],
+      ["BAD=KEY"],
+      [secretName, secretName],
+      Array.from({ length: 255 }, (_, i) => `TOKEN_${i}`),
+      Array.from({ length: 257 }, (_, i) => `TOKEN_${i}`),
+      { TOKEN: secretName },
+      secretName,
+      [123],
+    ]) {
+      await expect(
+        tools.create("create", {
+          ...createOptions,
+          secrets: secrets as unknown as string[],
+        }),
+      ).rejects.toBeInstanceOf(SandboxValidationError);
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "create",
+          input: [{ ...createOptions, secrets }],
+        }),
+      ).toThrow(SandboxValidationError);
+    }
+    expect(() =>
+      parseSandboxOperation({
+        protocolVersion: 1,
+        action: "create",
+        input: [{ name: "clone", snapshotId, secrets: [secretName] }],
+      }),
+    ).toThrow(SandboxValidationError);
+    expect(rawTool).not.toHaveBeenCalled();
   });
 
   test("validates Simcity limits without imposing identifier-style env keys", async () => {
@@ -1435,116 +1528,127 @@ describe("inngest.sandboxes", () => {
       page: { hasMore: false, limit: 50 },
     });
 
-  test("uses the raw sandbox dev token for local sandbox and snapshot routes", async () => {
-    const calls: Array<{ url: URL; init?: RequestInit }> = [];
-    const inngest = new Inngest({
-      id: "sandbox-dev-token",
-      isDev: true,
-      signingKey: "signkey-cloud",
-      fetch: async (input, init) => {
-        calls.push({
-          url: new URL(input instanceof Request ? input.url : input),
-          init,
-        });
-        return listResponse();
-      },
-    });
-    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
-
-    await inngest.sandboxes.list();
-    await inngest.sandboxes.snapshots.list();
-
-    expect(calls.map(({ url }) => url.pathname)).toEqual([
-      "/v2/sandboxes",
-      "/v2/snapshots",
-    ]);
-    for (const call of calls) {
-      expect(call.init?.headers).toMatchObject({
-        Authorization: "Bearer local-token",
+  test.each([undefined, "http://localhost:9393"])(
+    "calls dev sandbox and snapshot routes without a key (%s)",
+    async (devUrl) => {
+      const calls: Array<{ url: URL; init?: RequestInit }> = [];
+      const inngest = new Inngest({
+        id: "sandbox-dev",
+        isDev: true,
+        fetch: async (input, init) => {
+          calls.push({
+            url: new URL(input instanceof Request ? input.url : input),
+            init,
+          });
+          return listResponse();
+        },
       });
-    }
-  });
+      inngest.setEnvVars(devUrl ? { [envKeys.InngestDevMode]: devUrl } : {});
 
-  test("resolves the sandbox dev token lazily after construction", async () => {
-    const authorizations: string[] = [];
-    const urls: string[] = [];
-    const inngest = new Inngest({
-      id: "lazy-sandbox-dev-token",
-      signingKey: "signkey-cloud",
-      fetch: async (input, init) => {
-        urls.push(input instanceof Request ? input.url : String(input));
-        authorizations.push(
-          (init?.headers as Record<string, string>).Authorization ?? "",
+      await inngest.sandboxes.list();
+      await inngest.sandboxes.snapshots.list();
+
+      expect(calls.map(({ url }) => url.pathname)).toEqual([
+        "/v2/sandboxes",
+        "/v2/snapshots",
+      ]);
+      for (const call of calls) {
+        expect(call.url.origin).toBe(devUrl ?? "http://localhost:8288");
+        expect(new Headers(call.init?.headers).has("Authorization")).toBe(
+          false,
         );
-        return listResponse();
-      },
-    });
+      }
+    },
+  );
 
-    inngest.setEnvVars({
-      [envKeys.InngestDevMode]: "http://dev-server.test:8288",
-      [envKeys.InngestSandboxDevToken]: "late-token",
-    });
-    await inngest.sandboxes.list();
-
-    expect(authorizations).toEqual(["Bearer late-token"]);
-    expect(urls).toEqual(["http://dev-server.test:8288/v2/sandboxes?limit=50"]);
-  });
-
-  test("ignores the sandbox dev token in cloud mode", async () => {
-    let authorization: string | undefined;
-    const inngest = new Inngest({
-      id: "cloud-sandbox-auth",
-      isDev: false,
-      signingKey: "signkey-cloud",
-      fetch: async (_input, init) => {
-        authorization = (init?.headers as Record<string, string>).Authorization;
-        return listResponse();
-      },
-    });
-    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
-
-    await inngest.sandboxes.list();
-
-    expect(authorization).toBe(`Bearer ${hashSigningKey("signkey-cloud")}`);
-  });
-
-  test("rejects a sandbox dev token when the API URL is not the dev server", async () => {
-    const fetchMock: typeof fetch = vi.fn();
-    const inngest = new Inngest({
-      id: "mismatched-sandbox-dev-token",
-      isDev: true,
-      baseUrl: "https://api.inngest.com",
-      fetch: fetchMock,
-    });
-    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
-
+  test("resolves dev mode lazily after construction", async () => {
+    const fetchMock: typeof fetch = vi.fn(async () => listResponse());
+    const inngest = new Inngest({ id: "lazy-sandbox-dev", fetch: fetchMock });
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "0" });
     await expect(inngest.sandboxes.list()).rejects.toThrow(
-      "INNGEST_SANDBOX_DEV_TOKEN can only be sent to the configured dev server",
+      "A signing or API key is required",
     );
     expect(fetchMock).not.toHaveBeenCalled();
+
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "http://localhost:9393" });
+    await inngest.sandboxes.list();
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("http://localhost:9393/v2/sandboxes?limit=50"),
+      expect.anything(),
+    );
+
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "0" });
+    await expect(inngest.sandboxes.list()).rejects.toThrow(
+      "A signing or API key is required",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  test("does not use the sandbox dev token for normal event auth", async () => {
-    const calls: Array<{ url: URL; init?: RequestInit }> = [];
+  test.each([false, true])(
+    "preserves signing key auth (isDev=%s)",
+    async (isDev) => {
+      let authorization: string | null = null;
+      const inngest = new Inngest({
+        id: "sandbox-signing-key",
+        isDev,
+        signingKey: "signkey-cloud",
+        fetch: async (_input, init) => {
+          authorization = new Headers(init?.headers).get("Authorization");
+          return listResponse();
+        },
+      });
+      inngest.setEnvVars({});
+      await inngest.sandboxes.list();
+      expect(authorization).toBe(`Bearer ${hashSigningKey("signkey-cloud")}`);
+    },
+  );
+
+  test.each(["cloud", "standalone"])(
+    "requires a key for %s clients",
+    async (target) => {
+      const fetchMock: typeof fetch = vi.fn();
+      const inngest = new Inngest({
+        id: "sandbox-cloud",
+        isDev: false,
+        fetch: fetchMock,
+      });
+      inngest.setEnvVars({});
+      const client =
+        target === "cloud"
+          ? inngest.sandboxes
+          : createSandboxClient({
+              baseUrl: () => "https://api.inngest.com",
+              apiKey: () => undefined,
+              headers: () => ({}),
+              fetch: () => fetchMock,
+            });
+      await expect(client.list()).rejects.toThrow(
+        "A signing or API key is required",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("surfaces the dev server's CLI login instruction", async () => {
     const inngest = new Inngest({
-      id: "sandbox-token-event-auth",
+      id: "sandbox-login-required",
       isDev: true,
-      eventKey: "event-key",
-      fetch: async (input, init) => {
-        calls.push({
-          url: new URL(input instanceof Request ? input.url : input),
-          init,
-        });
-        return Response.json({ ids: ["event-id"], status: 200 });
-      },
+      fetch: async () =>
+        Response.json(
+          {
+            errors: [
+              {
+                code: "cloud_login_required",
+                message:
+                  "Run \`inngest login\` to use Cloud sandboxes from the dev server",
+              },
+            ],
+          },
+          { status: 401 },
+        ),
     });
-    inngest.setEnvVars({ [envKeys.InngestSandboxDevToken]: "local-token" });
-
-    await inngest.send({ name: "test/event", data: {} });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.url.pathname).toBe("/e/event-key");
-    expect(JSON.stringify(calls[0]?.init)).not.toContain("local-token");
+    inngest.setEnvVars({});
+    await expect(inngest.sandboxes.list()).rejects.toThrow("inngest login");
   });
 
   test("accepts uppercase ULIDs and human-readable sandbox names", async () => {

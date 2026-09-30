@@ -36,7 +36,6 @@ export enum envKeys {
   InngestServeOrigin = "INNGEST_SERVE_ORIGIN",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
-  InngestSandboxDevToken = "INNGEST_SANDBOX_DEV_TOKEN",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
   InngestSessionPropagation = "INNGEST_SESSION_PROPAGATION",
   InngestEnableUnauthedSync = "INNGEST_ENABLE_UNAUTHED_SYNC",

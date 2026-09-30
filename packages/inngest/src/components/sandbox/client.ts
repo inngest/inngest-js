@@ -57,6 +57,7 @@ type FetchT = typeof fetch;
 export interface SandboxClientConfig {
   baseUrl: () => string;
   apiKey: () => string | undefined;
+  isDev?: () => boolean;
   headers: () => Record<string, string>;
   fetch: () => FetchT;
 }
@@ -102,8 +103,6 @@ const wireCommandResultSchema = z
   })
   .strip();
 
-// Protobuf JSON omits an empty list, so a process that printed nothing has no
-// `chunks` at all.
 const outputResponseSchema = z
   .object({ chunks: z.array(restOutputChunkSchema).optional() })
   .passthrough();
@@ -413,7 +412,7 @@ class SandboxRestTransport {
     },
   ): Promise<Response> {
     const apiKey = this.config.apiKey()?.trim();
-    if (!apiKey) {
+    if (!apiKey && !this.config.isDev?.()) {
       throw new SandboxValidationError(
         "A signing or API key is required to use inngest.sandboxes",
       );
@@ -422,7 +421,7 @@ class SandboxRestTransport {
       method,
       headers: {
         ...this.config.headers(),
-        Authorization: `Bearer ${apiKey}`,
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         ...options.headers,
       },
       body: options.body,
@@ -1217,7 +1216,6 @@ const createSandboxSnapshot = async (
     "POST",
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
-      // No body, not even `{}`: Cloud's route for this binding rejects one.
       statuses: [201, 202],
       sandboxId,
       signal,
