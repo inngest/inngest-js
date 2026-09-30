@@ -24,6 +24,7 @@ import {
   type SandboxResultForAction,
   validateSandboxResult,
 } from "./protocol.ts";
+import type { SandboxStepTrace } from "./trace.ts";
 import {
   type DurableSandbox,
   type DurableSandboxProcess,
@@ -411,16 +412,45 @@ export const executeSandboxOperation = async (
   }
 };
 
+/**
+ * The facade method a user calls for each action, as a trace names it. Methods
+ * that share an action, or take more than one step, pass their own trace.
+ */
+const statementForAction: Record<SandboxOperationV1["action"], string> = {
+  create: "create",
+  list: "list",
+  get: "get",
+  waitUntilRunning: "waitUntilRunning",
+  exec: "commands.run",
+  destroy: "destroy",
+  pause: "pause",
+  resume: "resume",
+  "process.start": "processes.start",
+  "process.list": "processes.list",
+  "process.get": "processes.get",
+  "process.signal": "process.signal",
+  "process.wait": "process.wait",
+  "process.output": "process.getOutput",
+  "snapshot.create": "snapshot",
+  "snapshot.list": "snapshots.list",
+  "snapshot.get": "snapshots.get",
+  "snapshot.waitUntilReady": "snapshot.waitUntilReady",
+  "snapshot.delete": "snapshot.delete",
+};
+
 const callRawTool = async <A extends SandboxAction>(
   rawToolResolver: SandboxRawToolResolver,
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationForAction<A>,
+  trace: SandboxStepTrace = {
+    statement: statementForAction[operation.action],
+  },
 ): Promise<SandboxResultForAction<A>> => {
   try {
     const rawTool = await rawToolResolver();
     return validateSandboxResult(
       operation,
-      await rawTool(idOrOptions, operation),
+      await rawTool(idOrOptions, operation, trace),
     );
   } catch (error) {
     if (error instanceof SandboxValidationError) {
@@ -525,7 +555,12 @@ export const createDurableSandboxSnapshotFacade = (
           }),
         ],
       });
-      const result = await callRawTool(rawToolResolver, idOrOptions, operation);
+      const result = await callRawTool(
+        rawToolResolver,
+        idOrOptions,
+        operation,
+        { statement: "snapshot.clone" },
+      );
       return createDurableSandboxFacade(result.sandbox, rawToolResolver);
     },
   };
@@ -641,10 +676,17 @@ export const createDurableSandboxFacade = (
         input: [wait],
       },
     );
+    // Waiting for the snapshot is part of the user's `snapshot()` call, not a
+    // statement of its own.
     const ready = await callRawTool(
       rawToolResolver,
       snapshotWaitStepOptions(idOrOptions),
       waitOperation,
+      {
+        statement: "snapshot",
+        statementOperation: createOperation,
+        sandbox: { id: ref.id, name: ref.name },
+      },
     );
     return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);
   };
