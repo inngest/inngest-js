@@ -295,5 +295,104 @@ describe("step.sandbox trace metadata", () => {
       },
     ]);
     expect(wait?.id).not.toBe(snapshot?.id);
+
+    for (const step of ran) {
+      expect(step.id).toMatch(/^[0-9a-f]{40}$/);
+    }
+    expect(snapshot?.id).not.toBe("snap");
+  });
+
+  test("emits one full entry per step attempt", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    let execCalls = 0;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === `/v2/sandboxes/${sandboxId}` && method === "GET") {
+        return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname.endsWith("/exec")) {
+        execCalls++;
+        if (execCalls === 1) {
+          return Response.json(
+            { errors: [{ code: "sandbox_unavailable", message: "busy" }] },
+            { status: 503 },
+          );
+        }
+        return Response.json({
+          data: { stdout: "", stderr: "", encoding: "base64", exitCode: 0 },
+        });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-trace-retry", triggers: [{ event: "sandbox/trace" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-box", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        await sandbox.commands.run("test", "npm test");
+      },
+    );
+
+    const first = await runFnWithStack(fn, {});
+    if (first.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${first.type}`);
+    }
+    const state = {
+      [first.step.id]: { id: first.step.id, data: first.step.data },
+    };
+
+    const attempts = [];
+    for (let i = 0; i < 2; i++) {
+      const result = await runFnWithStack(fn, state);
+      if (result.type !== "step-ran") {
+        throw new Error(`Expected step-ran, got ${result.type}`);
+      }
+      attempts.push(result.step);
+    }
+
+    const sandboxEntries = (metadata: unknown) => {
+      return ((metadata ?? []) as Array<{ kind: string; values: object }>)
+        .filter(({ kind }) => {
+          return kind === "inngest.sandbox";
+        })
+        .map(({ values }) => {
+          return values;
+        });
+    };
+
+    const [failed, succeeded] = attempts;
+    expect(failed?.error).toBeDefined();
+    expect(sandboxEntries(failed?.metadata)).toEqual([
+      expect.objectContaining({
+        action: "exec",
+        statement_id: failed?.id,
+        error_code: "sandbox_unavailable",
+      }),
+    ]);
+
+    // Entries are folded as merge patches, so a later entry can't clear a key.
+    // Each attempt's entry must stand alone: no error_code once it succeeds.
+    expect(succeeded?.id).toBe(failed?.id);
+    const [success] = sandboxEntries(succeeded?.metadata);
+    expect(sandboxEntries(succeeded?.metadata)).toHaveLength(1);
+    expect(success).toMatchObject({
+      action: "exec",
+      statement_id: succeeded?.id,
+      exit_code: 0,
+    });
+    expect(success).not.toHaveProperty("error_code");
   });
 });
