@@ -1074,6 +1074,68 @@ describe("step.sandbox", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  test("stores environment values as [redacted] and sends them from code", async () => {
+    const secret = "DUMMY_SECRET_VALUE_123";
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const bodies: string[] = [];
+    const fetchMock: typeof fetch = vi.fn(async (_input, init) => {
+      if (init?.body) {
+        bodies.push(String(init.body));
+      }
+      return Response.json({ data: sandboxResource }, { status: 201 });
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-env", triggers: [{ event: "sandbox/env" }] },
+      async ({ step }) => {
+        const environment = { ...createOptions.environment, TOKEN: secret };
+        return (
+          await step.sandbox.create("create", { ...createOptions, environment })
+        ).id;
+      },
+    );
+
+    const first = await runFnWithStack(fn, {});
+    if (first.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${first.type}`);
+    }
+    const [stored] = first.step.opts?.input as [SandboxOperationV1];
+    expect(stored.input[0]).toMatchObject({
+      environment: {
+        "1.WITH-DOT": "[redacted]",
+        SHARED: "[redacted]",
+        TOKEN: "[redacted]",
+      },
+    });
+    expect(JSON.stringify(first.step)).not.toContain(secret);
+    expect(bodies[0]).toContain(secret);
+
+    // Rerun from the step with edited input: redacted values come from code.
+    const edited = {
+      ...stored,
+      input: [
+        {
+          ...stored.input[0],
+          name: "edited",
+          environment: { TOKEN: "[redacted]", SHARED: "edited" },
+        },
+      ],
+    };
+    await runFnWithStack(fn, {
+      [first.step.id]: { id: first.step.id, input: [edited] },
+    });
+    expect(JSON.parse(bodies.at(-1) ?? "{}")).toMatchObject({
+      name: "edited",
+      environment: { TOKEN: secret, SHARED: "edited" },
+    });
+  });
+
   test("executes durable snapshot creation once before polling readiness", async () => {
     const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
     const {

@@ -2,7 +2,7 @@ import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
-import type { SandboxRawTool } from "./protocol.ts";
+import type { SandboxOperationV1, SandboxRawTool } from "./protocol.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -12,6 +12,33 @@ import {
 
 type SandboxStepExtension = {
   sandbox: DurableSandboxTools;
+};
+
+const redacted = "[redacted]";
+
+type EnvironmentOptions = { environment?: Record<string, string> } | undefined;
+
+/**
+ * Replaces each `environment` value with "[redacted]" or, given the operation
+ * from code, replaces each "[redacted]" value with the value from code.
+ */
+const redactEnvironment = (
+  operation: SandboxOperationV1,
+  fromCode?: SandboxOperationV1,
+): SandboxOperationV1 => {
+  const [options, ...rest] = operation.input as EnvironmentOptions[];
+  if (!options?.environment) {
+    return operation;
+  }
+  const real = (fromCode?.input[0] as EnvironmentOptions)?.environment ?? {};
+  const entries = Object.entries(options.environment).map(([key, value]) => {
+    return [key, !fromCode ? redacted : value === redacted ? real[key] : value];
+  });
+  const environment = Object.fromEntries(entries);
+  return {
+    ...operation,
+    input: [{ ...options, environment }, ...rest],
+  } as SandboxOperationV1;
 };
 
 const executeAsStep = async (
@@ -82,11 +109,18 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxStepExtension;
     };
   } {
+    // Step input is stored and shown in the dashboard, so environment values
+    // are redacted there and restored from code when the step runs.
     const rawTool: SandboxRawTool = (idOrOptions, operation) =>
       arg.ctx.step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input),
-        operation,
+        (input: SandboxOperationV1) => {
+          return executeAsStep(
+            this.client,
+            redactEnvironment(input, operation),
+          );
+        },
+        redactEnvironment(operation),
       );
 
     return {
