@@ -694,16 +694,17 @@ describe("step.sandbox", () => {
           command: "sleep 30",
         });
         await process.signal("signal", { signal: 15 });
-        return process.id;
+        return { id: process.id, command: process.command };
       },
     );
 
+    const { command: _command, ...storedProcessRef } = processRef;
     const results: SandboxOperationResultV1[] = [
       { protocolVersion: 1, action: "create", sandbox: sandboxRef },
       {
         protocolVersion: 1,
         action: "process.start",
-        process: processRef,
+        process: storedProcessRef,
       },
       {
         protocolVersion: 1,
@@ -711,15 +712,11 @@ describe("step.sandbox", () => {
         result: null,
       },
     ];
-    const expectedActions = [
-      "create",
-      "process.start",
-      "process.signal",
-    ] as const;
+    const expectedStepIds = ["create", "start", "signal"] as const;
     const state: Record<string, { id: string; data: unknown }> = {};
     const stackOrder: string[] = [];
 
-    for (const [index, action] of expectedActions.entries()) {
+    for (const [index, stepId] of expectedStepIds.entries()) {
       const invocation = await runFnWithStack(fn, state, {
         stackOrder,
         disableImmediateExecution: true,
@@ -730,32 +727,19 @@ describe("step.sandbox", () => {
       }
       const outgoing = invocation.steps[0];
       if (!outgoing) {
-        throw new Error(`Missing ${action} operation`);
+        throw new Error(`Missing ${stepId} operation`);
       }
       expect(outgoing).toMatchObject({
         op: StepOpCode.StepPlanned,
-        opts: {
-          input: [{ protocolVersion: 1, action }],
-        },
+        displayName: stepId,
       });
-      if (action === "process.start") {
-        expect(outgoing).toMatchObject({
-          opts: {
-            input: [{ input: [{ command: ["/bin/sh", "-c", "sleep 30"] }] }],
-          },
-        });
-      }
-      if (action === "process.signal") {
-        expect(outgoing).toMatchObject({
-          opts: {
-            input: [{ input: [{ signal: 15, includeChildren: true }] }],
-          },
-        });
-      }
+      // The operation is not step input, so it is never persisted.
+      expect(outgoing.opts?.input).toBeUndefined();
       state[outgoing.id] = { id: outgoing.id, data: results[index] };
       stackOrder.push(outgoing.id);
     }
 
+    // `command` is not stored in the Start output; replay takes it from code.
     await expect(
       runFnWithStack(fn, state, {
         stackOrder,
@@ -763,7 +747,7 @@ describe("step.sandbox", () => {
       }),
     ).resolves.toMatchObject({
       type: "function-resolved",
-      data: processId,
+      data: { id: processId, command: ["/bin/sh", "-c", "sleep 30"] },
     });
   });
 
@@ -824,19 +808,9 @@ describe("step.sandbox", () => {
     if (!firstStep.opts || !replayStep.opts) {
       throw new Error("Expected snapshot Create step options");
     }
-    expect(firstStep.opts.input).toEqual(replayStep.opts.input);
-    expect(firstStep).toMatchObject({
-      opts: {
-        input: [
-          {
-            protocolVersion: 1,
-            action: "snapshot.create",
-            target: { sandbox: { id: sandboxId } },
-            input: [{}],
-          },
-        ],
-      },
-    });
+    expect(replayStep.id).toBe(firstStep.id);
+    expect(firstStep).toMatchObject({ displayName: "create-snapshot" });
+    expect(firstStep.opts.input).toBeUndefined();
 
     const createdState = {
       ...state,
@@ -869,17 +843,9 @@ describe("step.sandbox", () => {
     const waitStep = firstWait.steps[0];
     expect(replayedWait.steps[0].id).toBe(waitStep.id);
     expect(waitStep).toMatchObject({
-      opts: {
-        input: [
-          {
-            protocolVersion: 1,
-            action: "snapshot.waitUntilReady",
-            target: { snapshot: { id: snapshotId } },
-            input: [{ timeoutMs: 300_000 }],
-          },
-        ],
-      },
+      displayName: "create-snapshot:wait-until-ready",
     });
+    expect(waitStep.opts?.input).toBeUndefined();
 
     await expect(
       runFnWithStack(
@@ -942,17 +908,12 @@ describe("step.sandbox", () => {
     );
     expect(getInvocation).toMatchObject({
       type: "steps-found",
-      steps: [
-        {
-          opts: {
-            input: [{ protocolVersion: 1, action: "get" }],
-          },
-        },
-      ],
+      steps: [{ displayName: "get" }],
     });
     if (getInvocation.type !== "steps-found" || !getInvocation.steps[0]) {
       throw new Error("Expected Get step");
     }
+    expect(getInvocation.steps[0].opts?.input).toBeUndefined();
 
     const getStep = getInvocation.steps[0];
     const waitInvocation = await runFnWithStack(
@@ -974,24 +935,12 @@ describe("step.sandbox", () => {
     );
     expect(waitInvocation).toMatchObject({
       type: "steps-found",
-      steps: [
-        {
-          opts: {
-            input: [
-              {
-                protocolVersion: 1,
-                action: "waitUntilRunning",
-                target: { sandbox: { id: sandboxId, status: "STARTING" } },
-                input: [{ timeoutMs: 5000 }],
-              },
-            ],
-          },
-        },
-      ],
+      steps: [{ displayName: "wait-running" }],
     });
     if (waitInvocation.type !== "steps-found" || !waitInvocation.steps[0]) {
       throw new Error("Expected waitUntilRunning step");
     }
+    expect(waitInvocation.steps[0].opts?.input).toBeUndefined();
 
     const waitStep = waitInvocation.steps[0];
     await expect(

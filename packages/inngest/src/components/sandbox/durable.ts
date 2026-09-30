@@ -278,10 +278,12 @@ export const executeSandboxOperation = async (
     case "process.start": {
       const sandbox = sandboxForOperation(client, operation.target.sandbox);
       const process = await sandbox.processes.start(operation.input[0]);
+      // The caller already has argv, so don't copy it into stored output.
+      const { command: _command, ...ref } = processRefForWire(process);
       return {
         protocolVersion: sandboxProtocolVersion,
         action: operation.action,
-        process: processRefForWire(process),
+        process: ref,
       };
     }
     case "process.list": {
@@ -692,7 +694,7 @@ export const createDurableSandboxFacade = (
           operation,
         );
         return createDurableSandboxProcessFacade(
-          result.process,
+          { ...result.process, command: operation.input[0].command },
           ref,
           rawToolResolver,
         );

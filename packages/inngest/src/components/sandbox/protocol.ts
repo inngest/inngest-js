@@ -19,6 +19,7 @@ import {
   sandboxRefSchema,
   sandboxSecretNameSchema,
   sandboxSnapshotRefSchema,
+  sandboxStartedProcessRefSchema,
   wireOutputChunkSchema,
 } from "./validation.ts";
 
@@ -495,7 +496,7 @@ export const sandboxOperationResultSchema = z.discriminatedUnion("action", [
     .object({
       ...operationBase,
       action: z.literal("process.start"),
-      process: sandboxProcessRefSchema,
+      process: sandboxStartedProcessRefSchema,
     })
     .strict(),
   z

@@ -353,40 +353,67 @@ const wireSandboxProcessResourceSchema = z
   .strip()
   .superRefine(validateSandboxProcessResource);
 
+const sandboxProcessRefShape = {
+  kind: z.literal("inngest/sandbox.process"),
+  version: z.literal(1),
+  sandboxId: canonicalUuidSchema,
+  id: canonicalUuidSchema,
+  command: z.array(z.string()).min(1).max(maxProcessArgvCount),
+  pid: z.number().int().positive().max(0x7fffffff).optional(),
+  state: sandboxProcessStateSchema,
+  exitCode: z.number().int().min(-0x80000000).max(0x7fffffff).optional(),
+  terminationSignal: z.number().int().min(1).max(64).optional(),
+  startedAt: timestampSchema.optional(),
+  endedAt: timestampSchema.optional(),
+};
+
+const validateSandboxProcessRefState = (
+  process: {
+    state: z.infer<typeof sandboxProcessStateSchema>;
+    exitCode?: number;
+    terminationSignal?: number;
+  },
+  ctx: z.RefinementCtx,
+): void => {
+  if ((process.state === "EXITED") !== (process.exitCode !== undefined)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "exitCode must be present only for EXITED processes",
+      path: ["exitCode"],
+    });
+  }
+  if (
+    (process.state === "KILLED") !==
+    (process.terminationSignal !== undefined)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "terminationSignal must be present only for KILLED processes",
+      path: ["terminationSignal"],
+    });
+  }
+};
+
 export const sandboxProcessRefSchema = z
+  .object(sandboxProcessRefShape)
+  .strict()
+  .superRefine(validateSandboxProcessRefState);
+
+/**
+ * The process reference a durable `processes.start` step stores as its output.
+ *
+ * It omits `command`: argv may carry credentials, and the facade already has
+ * it from the code that started the process, so storing it would only copy it
+ * into run state. `command` is still accepted so that outputs memoized by
+ * earlier SDK versions replay, but it is ignored.
+ */
+export const sandboxStartedProcessRefSchema = z
   .object({
-    kind: z.literal("inngest/sandbox.process"),
-    version: z.literal(1),
-    sandboxId: canonicalUuidSchema,
-    id: canonicalUuidSchema,
-    command: z.array(z.string()).min(1).max(maxProcessArgvCount),
-    pid: z.number().int().positive().max(0x7fffffff).optional(),
-    state: sandboxProcessStateSchema,
-    exitCode: z.number().int().min(-0x80000000).max(0x7fffffff).optional(),
-    terminationSignal: z.number().int().min(1).max(64).optional(),
-    startedAt: timestampSchema.optional(),
-    endedAt: timestampSchema.optional(),
+    ...sandboxProcessRefShape,
+    command: sandboxProcessRefShape.command.optional(),
   })
   .strict()
-  .superRefine((process, ctx) => {
-    if ((process.state === "EXITED") !== (process.exitCode !== undefined)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "exitCode must be present only for EXITED processes",
-        path: ["exitCode"],
-      });
-    }
-    if (
-      (process.state === "KILLED") !==
-      (process.terminationSignal !== undefined)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "terminationSignal must be present only for KILLED processes",
-        path: ["terminationSignal"],
-      });
-    }
-  });
+  .superRefine(validateSandboxProcessRefState);
 
 const outputChunkShape = {
   stream: z.enum(["STDOUT", "STDERR"]),

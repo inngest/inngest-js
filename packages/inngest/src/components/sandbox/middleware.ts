@@ -82,12 +82,15 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxStepExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation) =>
-      arg.ctx.step.run(
-        idOrOptions,
-        (input) => executeAsStep(this.client, input),
-        operation,
-      );
+    // The operation is deliberately not passed as step input. Step input is
+    // persisted in run state and shown in traces, and an operation can carry
+    // literal environment values and argv. The facade rebuilds the same
+    // operation from code on every request, so the handler closes over it.
+    const rawTool: SandboxRawTool = (idOrOptions, operation) => {
+      return arg.ctx.step.run(idOrOptions, () => {
+        return executeAsStep(this.client, operation);
+      });
+    };
 
     return {
       ...arg,
