@@ -1,3 +1,4 @@
+import { getSandboxError } from "../sandbox/protocol.ts";
 import { CommandFailedError, CommandTimeoutError } from "./errors.ts";
 import { ensureMachine } from "./machine.ts";
 import type { CiJobScope, MachineHandle } from "./scope.ts";
@@ -394,7 +395,7 @@ class CommandBuilder implements Command {
         // The sandbox answers an exec that outlives its timeout with an
         // error, not a result, so it's mapped onto the same error a managed
         // process's timeout gives.
-        if ((error as { code?: string })?.code !== "sandbox_exec_timed_out") {
+        if (getSandboxError(error)?.code !== "sandbox_exec_timed_out") {
           throw error;
         }
 
@@ -486,8 +487,11 @@ interface StartedProcess {
 }
 
 const isAmbiguousStart = (error: unknown): boolean => {
-  const { code, action } = (error ?? {}) as { code?: string; action?: string };
-  return code === "operation_ambiguous" && action === "process.start";
+  const sandboxError = getSandboxError(error);
+  return (
+    sandboxError?.code === "operation_ambiguous" &&
+    sandboxError.action === "process.start"
+  );
 };
 
 const sameArgv = (a: readonly string[], b: readonly string[]): boolean =>
