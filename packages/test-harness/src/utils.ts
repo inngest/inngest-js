@@ -44,9 +44,12 @@ export async function waitFor<T>(
   // unstable dev server connection — is no longer hidden behind a bare rethrow.
   const detail =
     lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(`waitFor timed out after ${timeout}ms; last error: ${detail}`, {
-    cause: lastError,
-  });
+  throw new Error(
+    `waitFor timed out after ${timeout}ms; last error: ${detail}`,
+    {
+      cause: lastError,
+    },
+  );
 }
 
 type RunResult =
@@ -141,7 +144,7 @@ async function fetchRunTrace(runId: string): Promise<{
       query: `query ($runId: String!) {
         run(runID: $runId) {
           status
-          trace(preview: true) {
+          trace {
             status
             outputID
           }
@@ -222,7 +225,7 @@ export async function getRunTraceMetadata(
 
       query ($runId: String!) {
         run(runID: $runId) {
-          trace(preview: true) {
+          trace {
             ...TraceMetadataFields
             childrenSpans {
               ...TraceMetadataFields
