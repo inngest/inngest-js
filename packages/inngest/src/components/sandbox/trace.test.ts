@@ -103,6 +103,38 @@ describe("sandboxTraceMetadata", () => {
     expect(metadata.process_id).toBeUndefined();
   });
 
+  test("identifies the machine from the operation, even when it fails", () => {
+    // The machine may have been created outside this run, so its identity
+    // must come from the reference the operation targets, not a result.
+    const failed = sandboxTraceMetadata({
+      operation: parseSandboxOperation({
+        protocolVersion: 1,
+        action: "resume",
+        target: { sandbox: sandboxRef },
+        input: [{ timeoutMs: 1_000 }],
+      }),
+      trace: { statement: "resume" },
+      stepId: "step-resume",
+      outcome: { error: undefined },
+    });
+    expect(failed).toMatchObject({
+      sandbox_id: sandboxId,
+      sandbox_name: "ci-box",
+    });
+
+    const missing = sandboxTraceMetadata({
+      operation: parseSandboxOperation({
+        protocolVersion: 1,
+        action: "get",
+        input: [{ sandboxId }],
+      }),
+      trace: { statement: "get" },
+      stepId: "step-get",
+      outcome: { result: { protocolVersion: 1, action: "get", sandbox: null } },
+    });
+    expect(missing.sandbox_id).toBe(sandboxId);
+  });
+
   test("points an internal step at its statement and machine", () => {
     const operation = parseSandboxOperation({
       protocolVersion: 1,
