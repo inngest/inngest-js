@@ -1653,6 +1653,30 @@ describe("inngest.sandboxes", () => {
     },
   );
 
+  test("treats a list response without data as empty", async () => {
+    const inngest = new Inngest({
+      id: "sandbox-empty-list",
+      isDev: true,
+      fetch: async () => {
+        return Response.json({
+          metadata: { fetchedAt: now },
+          page: { limit: 50 },
+        });
+      },
+    });
+
+    const sandboxes = await inngest.sandboxes.list();
+    const snapshots = await inngest.sandboxes.snapshots.list();
+
+    for (const result of [sandboxes, snapshots]) {
+      expect(result).toEqual({
+        items: [],
+        page: { hasMore: false, limit: 50 },
+        fetchedAt: now,
+      });
+    }
+  });
+
   test("resolves dev mode lazily after construction", async () => {
     const fetchMock: typeof fetch = vi.fn(async () => listResponse());
     const inngest = new Inngest({ id: "lazy-sandbox-dev", fetch: fetchMock });

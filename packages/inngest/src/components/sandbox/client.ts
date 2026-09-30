@@ -86,6 +86,11 @@ const responseEnvelopeSchema = z
   })
   .passthrough();
 
+// The API omits `data` from list responses when there are no items.
+const parseListData = (data: unknown, context: string): unknown[] => {
+  return parseWithSchema(z.array(z.unknown()), data ?? [], context);
+};
+
 const sandboxPageSchema = z
   .object({
     cursor: z.string().min(1).nullish(),
@@ -952,11 +957,7 @@ const createDirectSandboxFacade = (
           `${basePath}/processes?${query}`,
           { statuses: [200], sandboxId: ref.id },
         );
-        const processes = parseWithSchema(
-          z.array(z.unknown()),
-          envelope?.data,
-          "sandbox process list",
-        );
+        const processes = parseListData(envelope?.data, "sandbox process list");
         const metadata = parseWithSchema(
           metadataSchema,
           envelope?.metadata,
@@ -1248,11 +1249,7 @@ const listSandboxSnapshots = async (
     `/v2/snapshots?${query}`,
     { statuses: [200] },
   );
-  const resources = parseWithSchema(
-    z.array(z.unknown()),
-    envelope?.data,
-    "sandbox snapshot list",
-  );
+  const resources = parseListData(envelope?.data, "sandbox snapshot list");
   const page = parseWithSchema(
     sandboxPageSchema,
     envelope?.page,
@@ -1461,11 +1458,7 @@ export const createSandboxClient = (
         `/v2/sandboxes?${query}`,
         { statuses: [200] },
       );
-      const resources = parseWithSchema(
-        z.array(z.unknown()),
-        envelope?.data,
-        "sandbox list",
-      );
+      const resources = parseListData(envelope?.data, "sandbox list");
       const page = parseWithSchema(
         sandboxPageSchema,
         envelope?.page,
