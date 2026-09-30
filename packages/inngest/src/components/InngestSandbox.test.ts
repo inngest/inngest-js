@@ -1144,7 +1144,9 @@ describe("step.sandbox", () => {
     expect(requests.filter(({ init }) => init?.method === "POST")).toHaveLength(
       1,
     );
-    expect(requests[1]?.init).toMatchObject({ method: "POST", body: "{}" });
+    expect(requests[1]?.init).toMatchObject({ method: "POST" });
+    // Cloud rejects any body on this route, even `{}`.
+    expect(requests[1]?.init?.body).toBeUndefined();
     expect("snapshots" in client.sandboxes).toBe(true);
   });
 
@@ -1818,7 +1820,7 @@ describe("inngest.sandboxes", () => {
     expect(Object.isFrozen(created.resources)).toBe(true);
     expect("refresh" in created).toBe(false);
     expect(requests[1]).toMatchObject({ method: "POST" });
-    expect(requests[1]?.init).toMatchObject({ body: "{}" });
+    expect(requests[1]?.init?.body).toBeUndefined();
     expect(requests[2]?.url.searchParams.get("cursor")).toBe("opaque");
     expect(requests[2]?.url.searchParams.get("limit")).toBe("2");
     expect(requests[3]).toMatchObject({
