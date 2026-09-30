@@ -14,6 +14,7 @@ import {
   createSandboxClient,
   createSandboxTools,
   encodeBase64,
+  getSandboxError,
   parseSandboxOperation,
   type SandboxCreateOptions,
   SandboxError,
@@ -1349,13 +1350,14 @@ describe("step.sandbox", () => {
           await step.sandbox.create("create", createOptions);
           return null;
         } catch (error) {
-          return error instanceof SandboxError
+          const sandboxError = getSandboxError(error);
+          return sandboxError
             ? {
-                name: error.name,
-                action: error.action,
-                code: error.code,
-                ambiguous: error.ambiguous,
-                retryable: error.retryable,
+                name: sandboxError.name,
+                action: sandboxError.action,
+                code: sandboxError.code,
+                ambiguous: sandboxError.ambiguous,
+                retryable: sandboxError.retryable,
               }
             : {
                 name: error instanceof Error ? error.name : typeof error,
@@ -1428,13 +1430,14 @@ describe("step.sandbox", () => {
             }
             return null;
           } catch (error) {
-            return error instanceof SandboxError
+            const sandboxError = getSandboxError(error);
+            return sandboxError
               ? {
-                  name: error.name,
-                  action: error.action,
-                  code: error.code,
-                  ambiguous: error.ambiguous,
-                  retryable: error.retryable,
+                  name: sandboxError.name,
+                  action: sandboxError.action,
+                  code: sandboxError.code,
+                  ambiguous: sandboxError.ambiguous,
+                  retryable: sandboxError.retryable,
                 }
               : {
                   name: error instanceof Error ? error.name : typeof error,
@@ -1479,6 +1482,95 @@ describe("step.sandbox", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     },
   );
+
+  describe("a failed sandbox step behaves like any other failed step", () => {
+    const createFailingFn = (
+      status: number,
+      code: string,
+      handler: (list: () => Promise<unknown>) => Promise<unknown>,
+    ) => {
+      const fetchMock: typeof fetch = vi.fn(async () =>
+        Response.json(
+          { errors: [{ code, message: "List failed" }] },
+          { status },
+        ),
+      );
+      const client = new Inngest({
+        id: testClientId,
+        signingKey: "signkey-test",
+        baseUrl: "https://api.example.test",
+        fetch: fetchMock,
+        middleware: [sandboxMiddleware()],
+      });
+      return client.createFunction(
+        { id: `sandbox-list-${status}`, triggers: [{ event: "sandbox/list" }] },
+        async ({ step }) => handler(() => step.sandbox.list("list")),
+      );
+    };
+
+    const replayFailedStep = async (fn: ReturnType<typeof createFailingFn>) => {
+      const first = await runFnWithStack(fn, {});
+      if (first.type !== "step-ran") {
+        throw new Error(`Expected step-ran, got ${first.type}`);
+      }
+      return runFnWithStack(
+        fn,
+        {
+          [first.step.id]: {
+            id: first.step.id,
+            data: undefined,
+            error: first.step.error,
+          },
+        },
+        { stackOrder: [first.step.id] },
+      );
+    };
+
+    test.each([
+      [403, "sandbox_snapshot_limit_exceeded"],
+      [503, "compute_unavailable"],
+    ] as const)(
+      "does not retry the function when a %i failure is uncaught",
+      async (status, code) => {
+        const fn = createFailingFn(status, code, (list) => list());
+
+        const replay = await replayFailedStep(fn);
+        expect(replay).toMatchObject({
+          type: "function-rejected",
+          retriable: false,
+        });
+        if (replay.type !== "function-rejected") {
+          throw new Error(`Expected function-rejected, got ${replay.type}`);
+        }
+        expect(getSandboxError(replay.error)).toMatchObject({
+          action: "list",
+          code,
+        });
+      },
+    );
+
+    test("retries the function when the failure is caught and another error is thrown", async () => {
+      const fn = createFailingFn(
+        403,
+        "sandbox_snapshot_limit_exceeded",
+        async (list) => {
+          try {
+            return await list();
+          } catch (error) {
+            throw new Error("Retrying after a sandbox failure", {
+              cause: error,
+            });
+          }
+        },
+      );
+
+      const replay = await replayFailedStep(fn);
+      expect(replay).toMatchObject({
+        type: "function-rejected",
+        retriable: true,
+      });
+    });
+  });
 
   test("maps a structured executor failure without making all errors non-retriable", async () => {
     const rawTool: SandboxRawTool = async (_id, operation) => {
