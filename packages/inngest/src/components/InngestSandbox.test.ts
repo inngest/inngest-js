@@ -1,5 +1,6 @@
 import { Temporal } from "temporal-polyfill";
 
+import { envKeys } from "../helpers/consts.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
 import {
   createClient,
@@ -13,6 +14,7 @@ import {
   createSandboxClient,
   createSandboxTools,
   encodeBase64,
+  getSandboxError,
   parseSandboxOperation,
   type SandboxCreateOptions,
   SandboxError,
@@ -1143,7 +1145,9 @@ describe("step.sandbox", () => {
     expect(requests.filter(({ init }) => init?.method === "POST")).toHaveLength(
       1,
     );
-    expect(requests[1]?.init).toMatchObject({ method: "POST", body: "{}" });
+    expect(requests[1]?.init).toMatchObject({ method: "POST" });
+    // Cloud rejects any body on this route, even `{}`.
+    expect(requests[1]?.init?.body).toBeUndefined();
     expect("snapshots" in client.sandboxes).toBe(true);
   });
 
@@ -1346,13 +1350,14 @@ describe("step.sandbox", () => {
           await step.sandbox.create("create", createOptions);
           return null;
         } catch (error) {
-          return error instanceof SandboxError
+          const sandboxError = getSandboxError(error);
+          return sandboxError
             ? {
-                name: error.name,
-                action: error.action,
-                code: error.code,
-                ambiguous: error.ambiguous,
-                retryable: error.retryable,
+                name: sandboxError.name,
+                action: sandboxError.action,
+                code: sandboxError.code,
+                ambiguous: sandboxError.ambiguous,
+                retryable: sandboxError.retryable,
               }
             : {
                 name: error instanceof Error ? error.name : typeof error,
@@ -1425,13 +1430,14 @@ describe("step.sandbox", () => {
             }
             return null;
           } catch (error) {
-            return error instanceof SandboxError
+            const sandboxError = getSandboxError(error);
+            return sandboxError
               ? {
-                  name: error.name,
-                  action: error.action,
-                  code: error.code,
-                  ambiguous: error.ambiguous,
-                  retryable: error.retryable,
+                  name: sandboxError.name,
+                  action: sandboxError.action,
+                  code: sandboxError.code,
+                  ambiguous: sandboxError.ambiguous,
+                  retryable: sandboxError.retryable,
                 }
               : {
                   name: error instanceof Error ? error.name : typeof error,
@@ -1477,6 +1483,95 @@ describe("step.sandbox", () => {
     },
   );
 
+  describe("a failed sandbox step behaves like any other failed step", () => {
+    const createFailingFn = (
+      status: number,
+      code: string,
+      handler: (list: () => Promise<unknown>) => Promise<unknown>,
+    ) => {
+      const fetchMock: typeof fetch = vi.fn(async () =>
+        Response.json(
+          { errors: [{ code, message: "List failed" }] },
+          { status },
+        ),
+      );
+      const client = new Inngest({
+        id: testClientId,
+        signingKey: "signkey-test",
+        baseUrl: "https://api.example.test",
+        fetch: fetchMock,
+        middleware: [sandboxMiddleware()],
+      });
+      return client.createFunction(
+        { id: `sandbox-list-${status}`, triggers: [{ event: "sandbox/list" }] },
+        async ({ step }) => handler(() => step.sandbox.list("list")),
+      );
+    };
+
+    const replayFailedStep = async (fn: ReturnType<typeof createFailingFn>) => {
+      const first = await runFnWithStack(fn, {});
+      if (first.type !== "step-ran") {
+        throw new Error(`Expected step-ran, got ${first.type}`);
+      }
+      return runFnWithStack(
+        fn,
+        {
+          [first.step.id]: {
+            id: first.step.id,
+            data: undefined,
+            error: first.step.error,
+          },
+        },
+        { stackOrder: [first.step.id] },
+      );
+    };
+
+    test.each([
+      [403, "sandbox_snapshot_limit_exceeded"],
+      [503, "compute_unavailable"],
+    ] as const)(
+      "does not retry the function when a %i failure is uncaught",
+      async (status, code) => {
+        const fn = createFailingFn(status, code, (list) => list());
+
+        const replay = await replayFailedStep(fn);
+        expect(replay).toMatchObject({
+          type: "function-rejected",
+          retriable: false,
+        });
+        if (replay.type !== "function-rejected") {
+          throw new Error(`Expected function-rejected, got ${replay.type}`);
+        }
+        expect(getSandboxError(replay.error)).toMatchObject({
+          action: "list",
+          code,
+        });
+      },
+    );
+
+    test("retries the function when the failure is caught and another error is thrown", async () => {
+      const fn = createFailingFn(
+        403,
+        "sandbox_snapshot_limit_exceeded",
+        async (list) => {
+          try {
+            return await list();
+          } catch (error) {
+            throw new Error("Retrying after a sandbox failure", {
+              cause: error,
+            });
+          }
+        },
+      );
+
+      const replay = await replayFailedStep(fn);
+      expect(replay).toMatchObject({
+        type: "function-rejected",
+        retriable: true,
+      });
+    });
+  });
+
   test("maps a structured executor failure without making all errors non-retriable", async () => {
     const rawTool: SandboxRawTool = async (_id, operation) => {
       if (operation.action === "get") {
@@ -1518,6 +1613,136 @@ describe("step.sandbox", () => {
 });
 
 describe("inngest.sandboxes", () => {
+  const listResponse = () =>
+    Response.json({
+      data: [],
+      metadata: { fetchedAt: now },
+      page: { hasMore: false, limit: 50 },
+    });
+
+  test.each([undefined, "http://localhost:9393"])(
+    "calls dev sandbox and snapshot routes without a key (%s)",
+    async (devUrl) => {
+      const calls: Array<{ url: URL; init?: RequestInit }> = [];
+      const inngest = new Inngest({
+        id: "sandbox-dev",
+        isDev: true,
+        fetch: async (input, init) => {
+          calls.push({
+            url: new URL(input instanceof Request ? input.url : input),
+            init,
+          });
+          return listResponse();
+        },
+      });
+      inngest.setEnvVars(devUrl ? { [envKeys.InngestDevMode]: devUrl } : {});
+
+      await inngest.sandboxes.list();
+      await inngest.sandboxes.snapshots.list();
+
+      expect(calls.map(({ url }) => url.pathname)).toEqual([
+        "/v2/sandboxes",
+        "/v2/snapshots",
+      ]);
+      for (const call of calls) {
+        expect(call.url.origin).toBe(devUrl ?? "http://localhost:8288");
+        expect(new Headers(call.init?.headers).has("Authorization")).toBe(
+          false,
+        );
+      }
+    },
+  );
+
+  test("resolves dev mode lazily after construction", async () => {
+    const fetchMock: typeof fetch = vi.fn(async () => listResponse());
+    const inngest = new Inngest({ id: "lazy-sandbox-dev", fetch: fetchMock });
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "0" });
+    await expect(inngest.sandboxes.list()).rejects.toThrow(
+      "A signing or API key is required",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "http://localhost:9393" });
+    await inngest.sandboxes.list();
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("http://localhost:9393/v2/sandboxes?limit=50"),
+      expect.anything(),
+    );
+
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "0" });
+    await expect(inngest.sandboxes.list()).rejects.toThrow(
+      "A signing or API key is required",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([false, true])(
+    "preserves signing key auth (isDev=%s)",
+    async (isDev) => {
+      let authorization: string | null = null;
+      const inngest = new Inngest({
+        id: "sandbox-signing-key",
+        isDev,
+        signingKey: "signkey-cloud",
+        fetch: async (_input, init) => {
+          authorization = new Headers(init?.headers).get("Authorization");
+          return listResponse();
+        },
+      });
+      inngest.setEnvVars({});
+      await inngest.sandboxes.list();
+      expect(authorization).toBe(`Bearer ${hashSigningKey("signkey-cloud")}`);
+    },
+  );
+
+  test.each(["cloud", "standalone"])(
+    "requires a key for %s clients",
+    async (target) => {
+      const fetchMock: typeof fetch = vi.fn();
+      const inngest = new Inngest({
+        id: "sandbox-cloud",
+        isDev: false,
+        fetch: fetchMock,
+      });
+      inngest.setEnvVars({});
+      const client =
+        target === "cloud"
+          ? inngest.sandboxes
+          : createSandboxClient({
+              baseUrl: () => "https://api.inngest.com",
+              apiKey: () => undefined,
+              headers: () => ({}),
+              fetch: () => fetchMock,
+            });
+      await expect(client.list()).rejects.toThrow(
+        "A signing or API key is required",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("surfaces the dev server's CLI login instruction", async () => {
+    const inngest = new Inngest({
+      id: "sandbox-login-required",
+      isDev: true,
+      fetch: async () =>
+        Response.json(
+          {
+            errors: [
+              {
+                code: "cloud_login_required",
+                message:
+                  "Run \`inngest login\` to use Cloud sandboxes from the dev server",
+              },
+            ],
+          },
+          { status: 401 },
+        ),
+    });
+    inngest.setEnvVars({});
+    await expect(inngest.sandboxes.list()).rejects.toThrow("inngest login");
+  });
+
   test("accepts uppercase ULIDs and human-readable sandbox names", async () => {
     const { kind: _kind, version: _version, ...resource } = sandboxRef;
     const sentNames: string[] = [];
@@ -1687,7 +1912,7 @@ describe("inngest.sandboxes", () => {
     expect(Object.isFrozen(created.resources)).toBe(true);
     expect("refresh" in created).toBe(false);
     expect(requests[1]).toMatchObject({ method: "POST" });
-    expect(requests[1]?.init).toMatchObject({ body: "{}" });
+    expect(requests[1]?.init?.body).toBeUndefined();
     expect(requests[2]?.url.searchParams.get("cursor")).toBe("opaque");
     expect(requests[2]?.url.searchParams.get("limit")).toBe("2");
     expect(requests[3]).toMatchObject({
@@ -2924,6 +3149,47 @@ describe("inngest.sandboxes", () => {
       items: [],
       page: { hasMore: false, limit: 50 },
     });
+  });
+
+  test("defaults omitted process output chunks to an empty list", async () => {
+    const { kind: _kind, version: _version, ...sandboxData } = sandboxRef;
+    const sandboxPath = `/v2/sandboxes/${sandboxId}`;
+    const processPath = `${sandboxPath}/processes/${processId}`;
+    const {
+      kind: _processKind,
+      version: _processVersion,
+      sandboxId: _processSandbox,
+      ...processData
+    } = processRef;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === sandboxPath && method === "GET") {
+        return Response.json({ data: sandboxData });
+      }
+      if (url.pathname === processPath && method === "GET") {
+        return Response.json({ data: processData });
+      }
+      // A process that printed nothing: protobuf JSON omits the empty list.
+      if (url.pathname === `${processPath}/output` && method === "GET") {
+        return Response.json({ data: {}, metadata: { fetchedAt: now } });
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+
+    const sandbox = await client.get(sandboxId);
+    const process = await sandbox?.processes.get(processId);
+    if (!process) {
+      throw new Error("Expected process");
+    }
+
+    await expect(process.getOutput()).resolves.toEqual({ chunks: [] });
   });
 
   test("uses the REST v2 resource shape and decodes byte-safe streams", async () => {

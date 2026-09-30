@@ -18,6 +18,7 @@ export type {
 export {
   findSandboxErrorOptions,
   findSandboxValidationError,
+  getSandboxError,
   parseSandboxOperation,
   sandboxOperationResultSchema,
   sandboxOperationSchema,

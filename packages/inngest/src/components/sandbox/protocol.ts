@@ -3,6 +3,7 @@ import { z } from "zod/v3";
 import type { StepOptionsOrId } from "../../types.ts";
 import {
   type SandboxAction,
+  SandboxError,
   type SandboxErrorDetail,
   type SandboxErrorOptions,
   SandboxValidationError,
@@ -681,6 +682,19 @@ export const findSandboxErrorOptions = (
     current = (current as { cause?: unknown }).cause;
   }
   return;
+};
+
+/**
+ * Returns the sandbox failure carried by `error` as a `SandboxError`, or
+ * `undefined` if it isn't one. A failed `step.sandbox` call rejects with a
+ * `StepError`, like any other step, so use this to read its sandbox fields.
+ */
+export const getSandboxError = (error: unknown): SandboxError | undefined => {
+  if (error instanceof SandboxError) {
+    return error;
+  }
+  const options = findSandboxErrorOptions(error);
+  return options ? new SandboxError(options) : undefined;
 };
 
 export const findSandboxValidationError = (

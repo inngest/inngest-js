@@ -442,6 +442,7 @@ export class Inngest<const TClientOpts extends ClientOptions = ClientOptions>
     this.sandboxes = createSandboxClient({
       baseUrl: () => this.apiBaseUrl,
       apiKey: () => hashSigningKey(this.signingKey),
+      isDev: () => this.mode === "dev",
       headers: () => this.headers,
       fetch: () => this.fetch,
     });

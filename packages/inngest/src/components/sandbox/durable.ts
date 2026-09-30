@@ -1,4 +1,5 @@
 import type { StepOptionsOrId } from "../../types.ts";
+import { StepError } from "../StepError.ts";
 import {
   createSandboxForOperation,
   createSandboxSnapshotForOperation,
@@ -432,7 +433,16 @@ const callRawTool = async <A extends SandboxAction>(
           `Sandbox operation returned a ${options.action} error for ${operation.action}`,
         );
       }
+      // A failed step rejects with the engine's own StepError. Rethrow that
+      // exact error so it behaves like any other step: left uncaught, it fails
+      // the function without retrying it.
+      if (error instanceof StepError) {
+        throw error;
+      }
       throw new SandboxError(options);
+    }
+    if (error instanceof StepError) {
+      throw error;
     }
     const validationError = findSandboxValidationError(error);
     if (validationError) {

@@ -57,6 +57,7 @@ type FetchT = typeof fetch;
 export interface SandboxClientConfig {
   baseUrl: () => string;
   apiKey: () => string | undefined;
+  isDev?: () => boolean;
   headers: () => Record<string, string>;
   fetch: () => FetchT;
 }
@@ -103,7 +104,7 @@ const wireCommandResultSchema = z
   .strip();
 
 const outputResponseSchema = z
-  .object({ chunks: z.array(restOutputChunkSchema) })
+  .object({ chunks: z.array(restOutputChunkSchema).optional() })
   .passthrough();
 
 const fileUploadResultSchema = z
@@ -411,7 +412,7 @@ class SandboxRestTransport {
     },
   ): Promise<Response> {
     const apiKey = this.config.apiKey()?.trim();
-    if (!apiKey) {
+    if (!apiKey && !this.config.isDev?.()) {
       throw new SandboxValidationError(
         "A signing or API key is required to use inngest.sandboxes",
       );
@@ -420,7 +421,7 @@ class SandboxRestTransport {
       method,
       headers: {
         ...this.config.headers(),
-        Authorization: `Bearer ${apiKey}`,
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         ...options.headers,
       },
       body: options.body,
@@ -696,7 +697,7 @@ const createDirectProcessFacade = (
         envelope?.data,
         "sandbox process output",
       );
-      return { chunks: output.chunks.map(decodeOutputChunk) };
+      return { chunks: (output.chunks ?? []).map(decodeOutputChunk) };
     },
     streamOutput: async (options) => {
       const { tailBytes } = normalizeSandboxProcessOutputOptions(options);
@@ -1215,7 +1216,6 @@ const createSandboxSnapshot = async (
     "POST",
     `/v2/sandboxes/${encodeURIComponent(sandboxId)}/snapshots`,
     {
-      body: {},
       statuses: [201, 202],
       sandboxId,
       signal,
