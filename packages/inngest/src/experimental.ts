@@ -68,6 +68,7 @@ export type {
   SandboxWaitUntilRunningOptions,
 } from "./components/InngestSandbox.ts";
 export {
+  getSandboxError,
   SandboxError,
   SandboxValidationError,
   sandboxMiddleware,
