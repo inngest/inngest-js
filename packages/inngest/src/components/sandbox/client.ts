@@ -115,7 +115,7 @@ const outputResponseSchema = z
 const fileUploadResultSchema = z
   .object({
     path: z.string(),
-    bytesWritten: z.number().int().nonnegative().safe(),
+    bytesWritten: z.number().int().nonnegative().safe().default(0),
   })
   .strip();
 

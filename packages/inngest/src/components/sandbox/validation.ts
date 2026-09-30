@@ -173,6 +173,19 @@ const timestampSchema = z
     message: "must be an RFC3339 timestamp",
   });
 
+// Sandbox REST responses may use proto3 JSON, which omits zero values and
+// encodes 64-bit integers as decimal strings.
+const wireUint32Schema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(0xffffffff)
+  .default(0);
+const wireUint64Schema = z
+  .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
+  .pipe(z.number().int().nonnegative().safe())
+  .default(0);
+
 export const sandboxStatusSchema = z.enum([
   "PENDING",
   "STARTING",
@@ -287,6 +300,9 @@ const wireSandboxSnapshotResourceSchema = sandboxSnapshotResourceBaseSchema
   .omit({ resources: true, error: true })
   .extend({
     resources: sandboxResourcesSchema.strip(),
+    memoryPackCount: wireUint32Schema,
+    diskPackCount: wireUint32Schema,
+    storedBytes: wireUint64Schema,
     error: z.string().min(1).nullish(),
   })
   .strip()
@@ -396,7 +412,9 @@ const outputChunkShape = {
 };
 
 export const wireOutputChunkSchema = z.object(outputChunkShape).strict();
-export const restOutputChunkSchema = z.object(outputChunkShape).strip();
+export const restOutputChunkSchema = z
+  .object({ ...outputChunkShape, data: z.string().default("") })
+  .strip();
 
 const formatValidationError = (context: string, error: z.ZodError): string => {
   const issue = error.issues[0];
@@ -404,8 +422,8 @@ const formatValidationError = (context: string, error: z.ZodError): string => {
   return `Invalid ${context}${path}: ${issue?.message ?? "validation failed"}`;
 };
 
-export const parseWithSchema = <T>(
-  schema: z.ZodType<T>,
+export const parseWithSchema = <T, Input = T>(
+  schema: z.ZodType<T, z.ZodTypeDef, Input>,
   value: unknown,
   context: string,
 ): T => {
