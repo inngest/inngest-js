@@ -1865,7 +1865,7 @@ class InngestExecutionEngine
         if (error instanceof Error) {
           err = error;
         } else if (typeof error === "object") {
-          err = new Error(JSON.stringify(error));
+          err = new Error(stringify(error));
         } else {
           err = new Error(String(error));
         }
