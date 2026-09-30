@@ -149,22 +149,90 @@ describe("URL headers", () => {
     });
   };
 
-  test("serve() uses the first entry of a comma-separated X-Forwarded-Proto", async () => {
-    const server = http.createServer(
-      NodeHandler.serve({ client, functions: [fn] }),
+  /**
+   * Sends a registration request to `createApp`'s server and returns the URL
+   * it advertised to a stand-in dev server.
+   */
+  const registeredUrl = async (
+    createApp: (
+      client: Parameters<typeof NodeHandler.serve>[0]["client"],
+      functions: Parameters<typeof NodeHandler.serve>[0]["functions"],
+    ) => http.Server,
+    headers: Record<string, string>,
+  ): Promise<string> => {
+    let body = "";
+    const devServer = http.createServer((req, res) => {
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end("{}");
+      });
+    });
+    await new Promise<void>((resolve) =>
+      devServer.listen(0, "127.0.0.1", resolve),
     );
 
-    expect(await request(server, { "x-forwarded-proto": "https, http" })).toBe(
-      200,
+    const devPort = (devServer.address() as { port: number }).port;
+    const devClient = new Inngest({
+      id: "test",
+      isDev: true,
+      baseUrl: `http://127.0.0.1:${devPort}`,
+    });
+    const devFn = devClient.createFunction(
+      { id: "test", triggers: [{ event: "demo/event.sent" }] },
+      () => "ok",
     );
+    const server = createApp(devClient, [devFn]);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.listen(0, "127.0.0.1", () => {
+          const { port } = server.address() as { port: number };
+          http
+            .request(
+              {
+                method: "PUT",
+                host: "127.0.0.1",
+                port,
+                path: "/api/inngest",
+                headers,
+              },
+              (res) => {
+                res.resume();
+                res.on("end", resolve);
+              },
+            )
+            .on("error", reject)
+            .end();
+        });
+      });
+    } finally {
+      server.close();
+      devServer.close();
+    }
+
+    return (JSON.parse(body) as { url: string }).url;
+  };
+
+  test("serve() uses the first entry of a comma-separated X-Forwarded-Proto", async () => {
+    const url = await registeredUrl(
+      (client, functions) =>
+        http.createServer(NodeHandler.serve({ client, functions })),
+      { "x-forwarded-proto": "https, http" },
+    );
+
+    expect(url).toMatch(/^https:\/\//);
   });
 
   test("createServer() uses the first entry of a comma-separated X-Forwarded-Proto", async () => {
-    const server = NodeHandler.createServer({ client, functions: [fn] });
-
-    expect(await request(server, { "x-forwarded-proto": "https, http" })).toBe(
-      200,
+    const url = await registeredUrl(
+      (client, functions) => NodeHandler.createServer({ client, functions }),
+      { "x-forwarded-proto": "https, http" },
     );
+
+    expect(url).toMatch(/^https:\/\//);
   });
 
   test("createServer() responds 400 instead of crashing on a malformed X-Forwarded-Proto", async () => {
