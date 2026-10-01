@@ -1,5 +1,13 @@
 # inngest
 
+## 4.21.1
+
+### Patch Changes
+
+- [#1744](https://github.com/inngest/inngest-js/pull/1744) [`28a0a39e`](https://github.com/inngest/inngest-js/commit/28a0a39e468ccdedce8dc0372c99c78ef0541613) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `sandboxes.list()`, `sandboxes.snapshots.list()` and sandbox process lists throwing `SandboxValidationError` when the API returns an empty list without a `data` field.
+
+- [#1744](https://github.com/inngest/inngest-js/pull/1744) [`28a0a39e`](https://github.com/inngest/inngest-js/commit/28a0a39e468ccdedce8dc0372c99c78ef0541613) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix sandbox snapshot, file upload and process output responses failing validation when the API omits zero values or returns `storedBytes` as a decimal string.
+
 ## 4.21.0
 
 ### Minor Changes
