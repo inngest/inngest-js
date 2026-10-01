@@ -1653,6 +1653,179 @@ describe("inngest.sandboxes", () => {
     },
   );
 
+  test("treats a list response without data as empty", async () => {
+    const inngest = new Inngest({
+      id: "sandbox-empty-list",
+      isDev: true,
+      fetch: async () => {
+        return Response.json({
+          metadata: { fetchedAt: now },
+          page: { limit: 50 },
+        });
+      },
+    });
+
+    const sandboxes = await inngest.sandboxes.list();
+    const snapshots = await inngest.sandboxes.snapshots.list();
+
+    for (const result of [sandboxes, snapshots]) {
+      expect(result).toEqual({
+        items: [],
+        page: { hasMore: false, limit: 50 },
+        fetchedAt: now,
+      });
+    }
+  });
+
+  test("parses proto3 JSON snapshot resources", async () => {
+    // Real Cloud payloads: zero counts are omitted and uint64 is a string.
+    const creating = {
+      createdAt: "2026-09-30T18:42:19.777539Z",
+      expiresAt: "2026-10-01T18:42:19.777539Z",
+      id: "a0733080-d411-494d-8ec0-c16cb7d3aee1",
+      memoryPackCount: 1,
+      resources: { memoryMb: 2048, vcpu: 2 },
+      sourceImageId: "default",
+      status: "CREATING",
+      storedBytes: "20182051",
+      updatedAt: "2026-09-30T18:42:23.826884Z",
+    };
+    const ready = {
+      compatibilityId:
+        "b81c07cfb7963033e7adc553bf8283ea52a4186292a783877c047d069fa47ebe",
+      createdAt: "2026-09-30T18:42:19.777539Z",
+      diskPackCount: 1,
+      expiresAt: "2026-10-01T18:42:19.777539Z",
+      id: "a0733080-d411-494d-8ec0-c16cb7d3aee1",
+      memoryPackCount: 1,
+      resources: { memoryMb: 2048, vcpu: 2 },
+      sourceImageId:
+        "e2c2fb128cf2ebb0a0055711ba132f78448a782cf71b05ef72ca31123d0c6972",
+      status: "READY",
+      storedBytes: "20227570",
+      updatedAt: "2026-09-30T18:42:31.651228Z",
+    };
+    const unset = {
+      ...creating,
+      memoryPackCount: undefined,
+      storedBytes: undefined,
+    };
+    const inngest = new Inngest({
+      id: "sandbox-proto3-json",
+      isDev: true,
+      fetch: async () => {
+        return Response.json({
+          data: [creating, ready, unset],
+          metadata: { fetchedAt: now },
+          page: { limit: 50 },
+        });
+      },
+    });
+
+    const { items } = await inngest.sandboxes.snapshots.list();
+
+    expect(
+      items.map(({ memoryPackCount, diskPackCount, storedBytes }) => {
+        return { memoryPackCount, diskPackCount, storedBytes };
+      }),
+    ).toEqual([
+      { memoryPackCount: 1, diskPackCount: 0, storedBytes: 20182051 },
+      { memoryPackCount: 1, diskPackCount: 1, storedBytes: 20227570 },
+      { memoryPackCount: 0, diskPackCount: 0, storedBytes: 0 },
+    ]);
+  });
+
+  test("defaults omitted zero upload bytes and empty output data", async () => {
+    const {
+      kind: _sandboxKind,
+      version: _sandboxVersion,
+      ...sandboxData
+    } = sandboxRef;
+    const {
+      kind: _processKind,
+      version: _processVersion,
+      sandboxId: _processSandboxId,
+      ...processData
+    } = processRef;
+    const sandboxPath = `/v2/sandboxes/${sandboxId}`;
+    const processPath = `${sandboxPath}/processes/${processId}`;
+    const inngest = new Inngest({
+      id: "sandbox-proto3-zero-values",
+      isDev: true,
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        const method = init?.method ?? "GET";
+        if (url.pathname === sandboxPath && method === "GET") {
+          return Response.json({ data: sandboxData });
+        }
+        if (url.pathname === `${sandboxPath}/files` && method === "PUT") {
+          return Response.json({ data: { path: "/tmp/empty" } });
+        }
+        if (url.pathname === processPath && method === "GET") {
+          return Response.json({ data: processData });
+        }
+        if (url.pathname === `${processPath}/output` && method === "GET") {
+          return Response.json({
+            data: { chunks: [{ stream: "STDOUT", encoding: "base64" }] },
+          });
+        }
+        throw new Error(`Unexpected request: ${method} ${url}`);
+      },
+    });
+
+    const sandbox = await inngest.sandboxes.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+    const upload = await sandbox.files.upload({
+      path: "/tmp/empty",
+      data: new Uint8Array(),
+    });
+    const process = await sandbox.processes.get(processId);
+    if (!process) {
+      throw new Error("Expected process");
+    }
+    const output = await process.getOutput();
+
+    expect(upload).toEqual({ path: "/tmp/empty", bytesWritten: 0 });
+    expect(output.chunks).toEqual([
+      { stream: "STDOUT", data: new Uint8Array() },
+    ]);
+  });
+
+  test.each([
+    ["an unsafe integer string", "9007199254740993"],
+    ["a non-decimal string", "0x10"],
+    ["a negative string", "-1"],
+  ])("rejects storedBytes as %s", async (_name, storedBytes) => {
+    const inngest = new Inngest({
+      id: "sandbox-stored-bytes",
+      isDev: true,
+      fetch: async () => {
+        return Response.json({
+          data: [
+            {
+              createdAt: now,
+              expiresAt: now,
+              id: "a0733080-d411-494d-8ec0-c16cb7d3aee1",
+              resources: { memoryMb: 2048, vcpu: 2 },
+              sourceImageId: "default",
+              status: "CREATING",
+              storedBytes,
+              updatedAt: now,
+            },
+          ],
+          metadata: { fetchedAt: now },
+          page: { limit: 50 },
+        });
+      },
+    });
+
+    await expect(inngest.sandboxes.snapshots.list()).rejects.toThrow(
+      "Invalid sandbox snapshot resource at storedBytes",
+    );
+  });
+
   test("resolves dev mode lazily after construction", async () => {
     const fetchMock: typeof fetch = vi.fn(async () => listResponse());
     const inngest = new Inngest({ id: "lazy-sandbox-dev", fetch: fetchMock });
