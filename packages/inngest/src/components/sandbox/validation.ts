@@ -288,6 +288,21 @@ const wireSandboxSnapshotResourceSchema = sandboxSnapshotResourceBaseSchema
   .extend({
     resources: sandboxResourcesSchema.strip(),
     error: z.string().min(1).nullish(),
+    memoryPackCount:
+      sandboxSnapshotResourceBaseSchema.shape.memoryPackCount.default(0),
+    diskPackCount:
+      sandboxSnapshotResourceBaseSchema.shape.diskPackCount.default(0),
+    // Protobuf JSON omits zero values and encodes uint64 fields as strings.
+    storedBytes: z
+      .union([
+        z.number(),
+        z
+          .string()
+          .regex(/^(0|[1-9][0-9]*)$/)
+          .transform(Number),
+      ])
+      .pipe(sandboxSnapshotResourceBaseSchema.shape.storedBytes)
+      .default(0),
   })
   .strip()
   .superRefine(validateSandboxSnapshotResource);
@@ -405,7 +420,7 @@ const formatValidationError = (context: string, error: z.ZodError): string => {
 };
 
 export const parseWithSchema = <T>(
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   value: unknown,
   context: string,
 ): T => {

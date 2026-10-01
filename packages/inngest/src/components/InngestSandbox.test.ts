@@ -1927,6 +1927,93 @@ describe("inngest.sandboxes", () => {
     });
   });
 
+  test.each([
+    { storedBytes: undefined, expected: 0 },
+    { storedBytes: "0", expected: 0 },
+    { storedBytes: "123456789", expected: 123456789 },
+    { storedBytes: 512, expected: 512 },
+  ])(
+    "decodes protobuf snapshot counters: $storedBytes",
+    async ({ storedBytes, expected }) => {
+      const fetchMock: typeof fetch = vi.fn(async () =>
+        Response.json({
+          data: {
+            ...snapshotRef,
+            memoryPackCount: undefined,
+            diskPackCount: undefined,
+            storedBytes,
+          },
+        }),
+      );
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => fetchMock,
+      });
+      await expect(client.snapshots.get(snapshotId)).resolves.toMatchObject({
+        memoryPackCount: 0,
+        diskPackCount: 0,
+        storedBytes: expected,
+      });
+    },
+  );
+
+  test.each([
+    "9007199254740992",
+    "18446744073709551615",
+    "-1",
+    "1.5",
+    "",
+    "NaN",
+    null,
+  ])(
+    "rejects invalid or unsafe snapshot storedBytes: %s",
+    async (storedBytes) => {
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () =>
+          vi.fn(async () =>
+            Response.json({ data: { ...snapshotRef, storedBytes } }),
+          ),
+      });
+      await expect(client.snapshots.get(snapshotId)).rejects.toThrow();
+    },
+  );
+
+  test.each(["sandboxes", "snapshots", "processes"] as const)(
+    "accepts omitted data in an empty %s list",
+    async (kind) => {
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () =>
+          vi.fn(async (input) => {
+            const url = new URL(input instanceof Request ? input.url : input);
+            return Response.json(
+              url.pathname === `/v2/sandboxes/${sandboxId}`
+                ? { data: sandboxRef }
+                : { metadata: { fetchedAt: now }, page: { limit: 50 } },
+            );
+          }),
+      });
+      const result =
+        kind === "sandboxes"
+          ? client.list()
+          : kind === "snapshots"
+            ? client.snapshots.list()
+            : (await client.get(sandboxId))!.processes.list();
+      await expect(result).resolves.toMatchObject({
+        items: [],
+        page: { hasMore: false, limit: 50 },
+        fetchedAt: now,
+      });
+    },
+  );
+
   test("polls snapshot readiness immediately and tolerates transient failures", async () => {
     vi.useFakeTimers();
     try {

@@ -953,7 +953,7 @@ const createDirectSandboxFacade = (
           { statuses: [200], sandboxId: ref.id },
         );
         const processes = parseWithSchema(
-          z.array(z.unknown()),
+          z.array(z.unknown()).default([]),
           envelope?.data,
           "sandbox process list",
         );
@@ -1249,7 +1249,7 @@ const listSandboxSnapshots = async (
     { statuses: [200] },
   );
   const resources = parseWithSchema(
-    z.array(z.unknown()),
+    z.array(z.unknown()).default([]),
     envelope?.data,
     "sandbox snapshot list",
   );
@@ -1462,7 +1462,7 @@ export const createSandboxClient = (
         { statuses: [200] },
       );
       const resources = parseWithSchema(
-        z.array(z.unknown()),
+        z.array(z.unknown()).default([]),
         envelope?.data,
         "sandbox list",
       );
