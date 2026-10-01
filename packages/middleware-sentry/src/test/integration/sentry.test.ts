@@ -444,3 +444,39 @@ test("request span uses function name", async () => {
     expect(hasMatchingTransaction).toBe(true);
   });
 });
+
+test("tracesSampleRate: 0 exports no transactions but still captures errors", async () => {
+  const captured = initSentryCapture({ tracesSampleRate: 0 });
+
+  const state = createState({});
+
+  const eventName = randomSuffix("evt");
+  const client = new Inngest({
+    id: randomSuffix(testFileName),
+    isDev: true,
+    middleware: [SentryMiddleware],
+  });
+
+  const fn = client.createFunction(
+    { id: "fn", retries: 0, triggers: [{ event: eventName }] },
+    async ({ step, runId }) => {
+      state.runId = runId;
+      await step.run("step-a", () => 1);
+      throw new Error("boom");
+    },
+  );
+
+  await createTestApp({ client, functions: [fn], serve: createServer });
+  await client.send({ name: eventName });
+  await state.waitForRunFailed();
+
+  // Wait for a positive signal (the error envelope) before asserting the
+  // absence of transactions, so the flush has demonstrably happened.
+  await waitFor(() => {
+    const errors = capturedErrors(captured);
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    expect(errors.some((e) => errorHasException(e, "boom"))).toBe(true);
+  });
+
+  expect(capturedTransactions(captured)).toHaveLength(0);
+});
