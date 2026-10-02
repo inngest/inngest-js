@@ -239,6 +239,69 @@ describe("TokenSubscription", () => {
     });
   });
 
+  test("delivers datastream start, chunk and end messages", async () => {
+    const sub = new TokenSubscription({
+      token: {
+        channel: "test",
+        topics: ["status"],
+        key: "token",
+      } as never,
+    });
+
+    const reader = sub.getJsonStream().getReader();
+    await sub.connect();
+
+    const ws = MockWebSocket.instances[0];
+    if (!ws) {
+      throw new Error("Expected websocket instance");
+    }
+
+    ws.emitJson({
+      kind: "datastream-start",
+      channel: "test",
+      topic: "status",
+      data: "stream_1",
+      run_id: "run_1",
+    });
+    ws.emitJson({
+      kind: "chunk",
+      channel: "test",
+      topic: "status",
+      stream_id: "stream_1",
+      data: "hello",
+      run_id: "run_1",
+    });
+    ws.emitJson({
+      kind: "datastream-end",
+      channel: "test",
+      topic: "status",
+      data: "stream_1",
+      run_id: "run_1",
+    });
+
+    const start = await reader.read();
+    expect(start.value?.kind).toBe("datastream-start");
+    expect(start.value).toMatchObject({ streamId: "stream_1" });
+
+    const chunk = await reader.read();
+    expect(chunk.value?.kind).toBe("chunk");
+    expect(chunk.value?.data).toBe("hello");
+
+    const end = await reader.read();
+    expect(end.value?.kind).toBe("datastream-end");
+
+    const chunks: unknown[] = [];
+    const chunkReader = (
+      start.value as { stream: ReadableStream }
+    ).stream.getReader();
+    for (;;) {
+      const { done, value } = await chunkReader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    expect(chunks).toEqual(["hello"]);
+  });
+
   test("close closes the websocket and fanout streams", async () => {
     const sub = new TokenSubscription({
       token: {
