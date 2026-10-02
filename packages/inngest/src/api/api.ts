@@ -170,6 +170,39 @@ export class InngestApi {
     }
   }
 
+  /**
+   * Convert a non-2xx response into an `ErrorResponse`, falling back to the
+   * HTTP status and body text when the body isn't the expected JSON shape (for
+   * example, an HTML error page from a gateway).
+   */
+  private async parseErrorResponse(
+    res: Response,
+    action: string,
+  ): Promise<ErrorResponse> {
+    const text = await res.text().catch(() => "");
+
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // Not JSON; use the text below.
+    }
+
+    const parsed = errorSchema.safeParse(json);
+    if (parsed.success) {
+      return parsed.data;
+    }
+
+    const message = z.object({ error: z.string() }).safeParse(json);
+
+    return {
+      error: message.success
+        ? message.data.error
+        : `Failed to retrieve ${action}: ${res.status} ${res.statusText} - ${text}`,
+      status: res.status,
+    };
+  }
+
   async getRunSteps(
     runId: string,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
@@ -178,13 +211,14 @@ export class InngestApi {
     );
     if (result.ok) {
       const res = result.value;
-      const data: unknown = await res.json();
 
       if (res.ok) {
+        const data: unknown = await res.json();
+
         return ok(stepSchema.parse(data));
       }
 
-      return err(errorSchema.parse(data));
+      return err(await this.parseErrorResponse(res, "run steps"));
     }
 
     return err({
@@ -204,13 +238,14 @@ export class InngestApi {
     );
     if (result.ok) {
       const res = result.value;
-      const data: unknown = await res.json();
 
       if (res.ok) {
+        const data: unknown = await res.json();
+
         return ok(batchSchema.parse(data));
       }
 
-      return err(errorSchema.parse(data));
+      return err(await this.parseErrorResponse(res, "run batch"));
     }
 
     return err({
