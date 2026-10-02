@@ -1,5 +1,6 @@
 import type { DurationLike } from "../../helpers/temporal.ts";
 import type { StepOptionsOrId } from "../../types.ts";
+import type { ImageClient } from "./images.ts";
 
 export const sandboxProtocolVersion = 1 as const;
 
@@ -27,6 +28,9 @@ export interface SandboxResource {
   status: SandboxStatus;
   vpcId: string;
   imageRef: string;
+  imageDigest?: string;
+  imageStartupMode?: "idle" | "image";
+  resolvedImageRef?: string;
   resources: SandboxResources;
   createdAt: string;
   startedAt?: string;
@@ -75,6 +79,9 @@ interface SandboxCreateBaseOptions {
 export interface SandboxCreateFreshOptions extends SandboxCreateBaseOptions {
   vcpu: number;
   memoryMb: number;
+  /** Workspace or official image name with a tag or immutable manifest digest. */
+  image?: string;
+  imageOptions?: SandboxImageOptions;
 
   /**
    * Literal environment inherited by commands and managed processes. Values
@@ -107,6 +114,18 @@ export interface SandboxCreateFromSnapshotOptions
   memoryMb?: never;
   environment?: never;
   secrets?: never;
+  image?: never;
+  imageOptions?: never;
+}
+
+export interface SandboxImageOptions {
+  /** Default: idle, ready for SDK commands. image runs ENTRYPOINT + CMD. */
+  startupMode?: "idle" | "image";
+  user?: string;
+  workingDir?: string;
+  /** Omitted inherits the image; an empty array explicitly clears it. */
+  entrypoint?: string[];
+  cmd?: string[];
 }
 
 export type SandboxCreateOptions =
@@ -445,6 +464,9 @@ export interface Sandbox {
   readonly status: SandboxStatus;
   readonly vpcId: string;
   readonly imageRef: string;
+  readonly imageDigest?: string;
+  readonly imageStartupMode?: "idle" | "image";
+  readonly resolvedImageRef?: string;
   readonly resources: SandboxResources;
   readonly createdAt: string;
   readonly startedAt?: string;
@@ -513,6 +535,7 @@ export interface SandboxSnapshot extends Readonly<SandboxSnapshotRef> {
 }
 
 export interface SandboxClient {
+  readonly images: ImageClient;
   create(options: SandboxCreateFreshOptions): Promise<Sandbox>;
   list(options?: SandboxListOptions): Promise<SandboxListResult<Sandbox>>;
   get(sandboxId: string): Promise<Sandbox | null>;
@@ -532,6 +555,9 @@ export interface DurableSandbox {
   readonly status: SandboxStatus;
   readonly vpcId: string;
   readonly imageRef: string;
+  readonly imageDigest?: string;
+  readonly imageStartupMode?: "idle" | "image";
+  readonly resolvedImageRef?: string;
   readonly resources: SandboxResources;
   readonly createdAt: string;
   readonly startedAt?: string;
