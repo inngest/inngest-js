@@ -143,6 +143,22 @@ describe("ServeHandler", () => {
       expect(result.status).toBe(500);
       expect(result.body).toMatch(/streaming/i);
     });
+
+    test("does not stream when streaming is false, even if INNGEST_STREAMING=true", async () => {
+      const handler = serve({
+        client: inngest,
+        functions: [fn],
+        streaming: false,
+      });
+
+      const result = await runHandler(handler, {
+        env: { [envKeys.InngestStreaming]: "true" },
+        actionOverrides: { transformStreamingResponse: undefined },
+      });
+
+      expect(result.status).not.toBe(500);
+      expect(result.body).not.toMatch(/streaming/i);
+    });
   });
 
   describe("streaming: deprecation warnings", () => {
