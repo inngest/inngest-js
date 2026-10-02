@@ -1703,6 +1703,40 @@ describe("runFn", () => {
       },
     );
 
+    test("throws a retriable error when a circular object is thrown inside the main function body", async () => {
+      const fn = inngest.createFunction(
+        { id: "Foo", triggers: [{ event: "foo" }] },
+        async () => {
+          const obj: Record<string, unknown> = { foo: "bar" };
+          obj.self = obj;
+          throw obj;
+        },
+      );
+
+      const execution = fn["createExecution"]({
+        partialOptions: {
+          client: fn["client"],
+          data: fromPartial({
+            event: { name: "foo", data: { foo: "foo" } },
+          }),
+          runId: "run",
+          stepState: {},
+          stepCompletionOrder: [],
+          reqArgs: [],
+          headers: {},
+          stepMode: StepMode.Async,
+        },
+      });
+
+      const ret = await execution.start();
+
+      expect(ret).toMatchObject({
+        type: "function-rejected",
+        retriable: true,
+        error: matchError({ foo: "bar", self: "[Circular ~]" }),
+      });
+    });
+
     testFn(
       "handle onFailure calls",
       () => {
