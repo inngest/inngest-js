@@ -212,6 +212,12 @@ export const sandboxResourceSchema = z
     status: sandboxStatusSchema,
     vpcId: canonicalUuidSchema,
     imageRef: z.string().min(1),
+    imageDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    imageStartupMode: z.enum(["idle", "image"]).optional(),
+    resolvedImageRef: z.string().min(1).optional(),
     resources: sandboxResourcesSchema,
     createdAt: timestampSchema,
     startedAt: timestampSchema.optional(),
@@ -451,6 +457,13 @@ export const sandboxRefFromResource = (value: unknown): SandboxRef => {
     status: resource.status,
     vpcId: resource.vpcId,
     imageRef: resource.imageRef,
+    ...(resource.imageDigest && { imageDigest: resource.imageDigest }),
+    ...(resource.imageStartupMode && {
+      imageStartupMode: resource.imageStartupMode,
+    }),
+    ...(resource.resolvedImageRef && {
+      resolvedImageRef: resource.resolvedImageRef,
+    }),
     resources: resource.resources,
     createdAt: resource.createdAt,
     ...(resource.startedAt != null && { startedAt: resource.startedAt }),
@@ -495,6 +508,47 @@ export const sandboxSnapshotRefFromResource = (
   };
 };
 
+export const sandboxImageReferenceSchema = z
+  .string()
+  .max(320)
+  .regex(
+    /^(?:inngest\/)?[a-z0-9][a-z0-9._-]{0,62}(?::[a-z0-9][a-z0-9._-]{0,127}|@sha256:[a-f0-9]{64})?$/,
+  );
+
+export const sandboxImageOptionsSchema = z
+  .object({
+    startupMode: z.enum(["idle", "image"]).optional(),
+    user: z
+      .string()
+      .max(256)
+      .refine((value) => !value.includes("\0") && !/[\r\n]/.test(value))
+      .optional(),
+    workingDir: z
+      .string()
+      .max(4096)
+      .refine((value) => value.startsWith("/") && !value.includes("\0"))
+      .optional(),
+    entrypoint: z
+      .array(
+        z
+          .string()
+          .max(32768)
+          .refine((value) => !value.includes("\0")),
+      )
+      .max(256)
+      .optional(),
+    cmd: z
+      .array(
+        z
+          .string()
+          .max(32768)
+          .refine((value) => !value.includes("\0")),
+      )
+      .max(256)
+      .optional(),
+  })
+  .strict();
+
 export const normalizeSandboxCreateOptions = (
   options: SandboxCreateOptions,
 ): Omit<SandboxCreateOptions, "runningTimeout"> & {
@@ -507,6 +561,8 @@ export const normalizeSandboxCreateOptions = (
           name: sandboxNameSchema,
           vcpu: z.number().int().positive().max(0xffffffff),
           memoryMb: z.number().int().positive().max(0xffffffff),
+          image: sandboxImageReferenceSchema.optional(),
+          imageOptions: sandboxImageOptionsSchema.optional(),
           environment: z.record(z.string()).optional(),
           secrets: z.array(sandboxSecretNameSchema).optional(),
           runningTimeout: z.unknown().optional(),
@@ -524,6 +580,11 @@ export const normalizeSandboxCreateOptions = (
     "sandbox create options",
   );
   if ("vcpu" in parsed) {
+    if (parsed.imageOptions && !parsed.image) {
+      throw new SandboxValidationError(
+        "imageOptions requires an image reference",
+      );
+    }
     const environment = { ...parsed.environment };
     const selected = new Set<string>();
     for (const name of parsed.secrets ?? []) {
