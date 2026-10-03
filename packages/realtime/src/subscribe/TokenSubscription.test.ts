@@ -1,21 +1,36 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-/**
- * The WS URL fallback reads environment variables captured at module load,
- * so each case re-imports the module with a fresh environment.
- */
+const PREFIXES = [
+  "",
+  "NEXT_PUBLIC_",
+  "REACT_APP_",
+  "NUXT_PUBLIC_",
+  "VUE_APP_",
+  "VITE_",
+];
+const KEYS = [
+  "NODE_ENV",
+  "INNGEST_DEV",
+  "INNGEST_BASE_URL",
+  "INNGEST_API_BASE_URL",
+];
+
+// env is read at module load, so re-import with a clean environment each time.
 async function getWsUrl(
   env: Record<string, string | undefined>,
 ): Promise<string> {
   vi.resetModules();
   vi.unstubAllEnvs();
-  for (const key of ["NODE_ENV", "INNGEST_DEV"]) {
-    const value = env[key];
-    if (value === undefined) {
-      vi.stubEnv(key, undefined as unknown as string);
-      delete process.env[key];
-    } else {
-      vi.stubEnv(key, value);
+  for (const name of [
+    "VITE_MODE",
+    ...KEYS.flatMap((key) => PREFIXES.map((prefix) => prefix + key)),
+  ]) {
+    vi.stubEnv(name, undefined as unknown as string);
+    delete process.env[name];
+  }
+  for (const key of KEYS) {
+    if (env[key] !== undefined) {
+      vi.stubEnv(key, env[key] as string);
     }
   }
 
