@@ -72,16 +72,17 @@ export const twoMachines = ci.job("two-machines", async () => {
 });
 
 export const release = ci.job("release", async () => {
+  const { sha, number } = github.repo();
+
   const approval = await step.waitForEvent("approval", {
     event: "release/approved",
+    if: `async.data.sha == "${sha}"`,
     timeout: "24h",
   });
 
   if (!approval) {
     return { released: false, reason: "not approved in 24h" };
   }
-
-  const { sha } = github.repo();
 
   const created = await github.rest.repos.createRelease({
     tag_name: `v0.0.0-ci-${sha.slice(0, 7)}`,
@@ -90,7 +91,9 @@ export const release = ci.job("release", async () => {
 
   await github.forcePushRef("heads/ci-example-next", sha);
 
-  await github.stickyComment("release", `Released ${created.html_url}`);
+  if (number) {
+    await github.stickyComment("release", `Released ${created.html_url}`);
+  }
 
   return { released: true, url: created.html_url };
 });

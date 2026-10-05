@@ -252,7 +252,9 @@ jobs:
       run:
         working-directory: packages/ci
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-and-build
         with:
           install-dependencies: true

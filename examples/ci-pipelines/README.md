@@ -74,7 +74,7 @@ Open `http://localhost:8288` to see the trace. Checks print in the terminal runn
 3. Send `pr` twice in a row. `singleton` cancels the first run.
 4. Make a test flaky. Add `.env({ FLAKY: "1" })` to the `pnpm test` command in `ci/jobs.ts`, then send `pr`. `app/src/sum.test.ts` fails about half the time, and `.retries(1)` runs the command again. The check shows the attempt count and the failure.
 5. Send `pnpm ci:send docs` on a change with no documentation. The pipeline returns `ci.skip()` and its check still completes.
-6. Send `pnpm ci:send release --event push`, then send a `release/approved` event from the Dev Server UI. `release` waits for it with `step.waitForEvent`.
+6. Send `pnpm ci:send release --event push`, then send a `release/approved` event from the Dev Server UI with `data.sha` set to the commit being released. `release` waits for a matching event with `step.waitForEvent`.
 7. Send `pnpm ci:send prerelease --event comment --body "/prerelease beta"`.
 
 ## What each file shows
@@ -117,7 +117,7 @@ To receive real webhooks locally, forward them to the Dev Server:
 
 ```bash
 INNGEST_DEV=1 pnpm ci:forward
-gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3940
+gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3950
 ```
 
-Set `GITHUB_WEBHOOK_SECRET` to verify `X-Hub-Signature-256`.
+Set `GITHUB_WEBHOOK_SECRET` to the secret GitHub signs with. The forwarder verifies `X-Hub-Signature-256`, refuses to start without it, and listens on `127.0.0.1:3950` (override the port with `FORWARDER_PORT`).

@@ -38,8 +38,9 @@ if (!pipeline) {
   process.exit(1);
 }
 
-// The repository root, so `checkout()` uploads the whole working tree.
-const cwd = resolve(values.cwd ?? process.cwd(), "../..");
+const cwd = values.cwd
+  ? resolve(values.cwd)
+  : resolve(import.meta.dirname, "../../..");
 
 const build = async () => {
   const kind = values.event ?? "pull_request.opened";

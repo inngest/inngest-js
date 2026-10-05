@@ -3,12 +3,13 @@
  *
  * ```bash
  * pnpm ci:forward
- * gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3940
+ * gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3950
  * ```
  *
  * It applies the same transform as `githubWebhookTransform`, so events look
- * exactly like they do in production, and verifies `X-Hub-Signature-256` when
- * `GITHUB_WEBHOOK_SECRET` is set.
+ * exactly like they do in production, and verifies `X-Hub-Signature-256`. It
+ * refuses to start without `GITHUB_WEBHOOK_SECRET`, listens on 127.0.0.1 only,
+ * and defaults to port 3950 so it doesn't clash with the e2e runner on 3940.
  */
 
 import { createServer } from "node:http";
@@ -18,8 +19,13 @@ import { githubEventName } from "@inngest/ci";
 
 import { inngest } from "../ci/client.ts";
 
-const port = Number(process.env.FORWARDER_PORT ?? 3940);
+const port = Number(process.env.FORWARDER_PORT ?? 3950);
 const secret = process.env.GITHUB_WEBHOOK_SECRET;
+
+if (!secret) {
+  console.error("Set GITHUB_WEBHOOK_SECRET to the secret GitHub signs with.");
+  process.exit(1);
+}
 
 const readBody = (req: import("node:http").IncomingMessage): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -39,47 +45,58 @@ createServer(async (req, res) => {
   const body = await readBody(req);
   const signature = req.headers["x-hub-signature-256"];
 
-  if (secret) {
-    const ok =
-      typeof signature === "string" && (await verify(secret, body, signature));
+  const ok =
+    typeof signature === "string" && (await verify(secret, body, signature));
 
-    if (!ok) {
-      console.warn({ signature }, "Rejected a webhook with a bad signature");
+  if (!ok) {
+    console.warn({ signature }, "Rejected a webhook with a bad signature");
 
-      res.writeHead(401).end();
+    res.writeHead(401).end();
 
-      return;
-    }
+    return;
   }
 
   const event = String(req.headers["x-github-event"] ?? "unknown");
   const delivery = req.headers["x-github-delivery"];
 
-  const payload = JSON.parse(body) as {
-    action?: string;
-    installation?: { id?: number };
-  };
+  let payload: { action?: string; installation?: { id?: number } };
+
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    res.writeHead(400).end();
+
+    return;
+  }
 
   const name = githubEventName(event, payload);
 
-  await inngest.send({
-    name,
-    data: {
-      ...payload,
-      _github: {
-        event,
-        delivery: typeof delivery === "string" ? delivery : undefined,
-        installationId: payload.installation?.id,
+  try {
+    await inngest.send({
+      name,
+      data: {
+        ...payload,
+        _github: {
+          event,
+          delivery: typeof delivery === "string" ? delivery : undefined,
+          installationId: payload.installation?.id,
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.error({ err, name, delivery }, "Failed to forward a webhook");
+
+    res.writeHead(500).end();
+
+    return;
+  }
 
   console.log({ name, delivery }, "Forwarded a GitHub webhook");
 
   res.writeHead(202).end();
-}).listen(port, () => {
+}).listen(port, "127.0.0.1", () => {
   console.log(
-    { port, verifying: Boolean(secret) },
-    `Forwarding GitHub webhooks to the Dev Server from http://localhost:${port}`,
+    { port },
+    `Forwarding GitHub webhooks to the Dev Server from http://127.0.0.1:${port}`,
   );
 });
