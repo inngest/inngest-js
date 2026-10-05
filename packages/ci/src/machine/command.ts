@@ -7,7 +7,11 @@
  */
 
 import { getSandboxError } from "inngest/experimental";
-import { CommandFailedError, CommandTimeoutError } from "../errors.ts";
+import {
+  CiUsageError,
+  CommandFailedError,
+  CommandTimeoutError,
+} from "../errors.ts";
 import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   defaultCwd,
@@ -29,7 +33,6 @@ import {
   shellEscape,
   tail,
   truncateLabel,
-  warnOnce,
 } from "../util.ts";
 import { ensureMachine } from "./machine.ts";
 
@@ -64,7 +67,6 @@ interface CommandState {
   nothrow: boolean;
   timeout?: Duration;
   onTimeout?: () => Promise<unknown>;
-  secrets: Array<{ name: string; value: string }>;
 }
 
 const isPresent = (value: CommandValue): boolean => {
@@ -222,16 +224,10 @@ class CommandBuilder implements Command {
     return this;
   }
 
-  withSecret(name: string, value: string): Command {
-    warnOnce(
-      this.getScope().run.ci.logger,
-      "ci:withSecret",
-      "`withSecret()` passes the value as an environment variable from inside the step handler. It never appears in step input or output, but it isn't isolated from code running on the machine.",
+  withSecret(_name: string, _value: string): Command {
+    throw new CiUsageError(
+      "`withSecret()` isn't supported yet. The Sandbox API has no per-command secrets, and a value passed as command environment is persisted in step data. Don't pass the secret to the command.",
     );
-
-    this.state.secrets.push({ name, value });
-
-    return this;
   }
 
   async text(): Promise<string> {
@@ -322,21 +318,11 @@ class CommandBuilder implements Command {
     return {
       ...scope.env,
       ...this.state.env,
-      ...Object.fromEntries(
-        this.state.secrets.map((secret) => {
-          return [secret.name, secret.value];
-        }),
-      ),
     };
   }
 
   private secretValues(scope: CiJobScope): string[] {
-    return [
-      ...scope.secrets,
-      ...this.state.secrets.map((secret) => {
-        return secret.value;
-      }),
-    ];
+    return [...scope.secrets];
   }
 
   private spawnOptions(scope: CiJobScope) {
@@ -765,7 +751,6 @@ export const createRawCommand = (
     env: {},
     retries: 0,
     nothrow: false,
-    secrets: [],
   });
 };
 

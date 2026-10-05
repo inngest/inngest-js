@@ -14,6 +14,7 @@ import {
   scopeSeparator,
 } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
+import { shellEscape } from "../util.ts";
 import { buildWorkingTreeTarball } from "./tarball.ts";
 
 /** Uploads are limited to 100 MiB, so a local checkout has an upper bound. */
@@ -134,6 +135,38 @@ const uploadWorkingTree = async (
   return { path: target, source: "local" as const };
 };
 
+/**
+ * The shell script that clones the repository and checks out `sha`.
+ *
+ * The URL comes from `$CI_REPO_URL` so the token stays out of the script, and
+ * the path and ref are quoted so they're only ever data.
+ */
+export const cloneScript = (args: {
+  repo: RepoContext;
+  opts: CheckoutOptions;
+  target: string;
+  sha: string;
+}): string => {
+  const { repo, opts, sha } = args;
+  const target = shellEscape(args.target);
+  const filter = opts.history === "full" ? "" : "--filter=blob:none";
+
+  return [
+    `git clone ${filter} --no-checkout -- "$CI_REPO_URL" ${target}`,
+    // A fork's commits aren't in the target repository's branches, but
+    // GitHub keeps every pull request's head under a ref there.
+    ...(repo.pullRequest?.fork
+      ? [
+          `git -C ${target} fetch origin ${shellEscape(`refs/pull/${repo.pullRequest.number}/head`)}`,
+        ]
+      : []),
+    `git -C ${target} checkout ${shellEscape(sha)}`,
+    ...(opts.submodules
+      ? [`git -C ${target} submodule update --init --recursive`]
+      : []),
+  ].join(" && ");
+};
+
 const cloneFromGithub = async (
   run: CiRunScope,
   machine: MachineHandle,
@@ -150,15 +183,7 @@ const cloneFromGithub = async (
 
   const sha = opts.ref ?? repo.sha;
   const url = `https://x-access-token:${accessToken}@github.com/${repo.fullName}.git`;
-  const filter = opts.history === "full" ? "" : "--filter=blob:none";
-
-  const script = [
-    `git clone ${filter} --no-checkout "$CI_REPO_URL" ${target}`,
-    `git -C ${target} checkout ${sha}`,
-    ...(opts.submodules
-      ? [`git -C ${target} submodule update --init --recursive`]
-      : []),
-  ].join(" && ");
+  const script = cloneScript({ repo, opts, target, sha });
 
   const result = await sandbox.commands.run(["/bin/sh", "-c", script], {
     environment: { CI_REPO_URL: url },

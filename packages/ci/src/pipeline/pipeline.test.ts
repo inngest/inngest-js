@@ -492,15 +492,19 @@ describe("commands", () => {
     });
   });
 
-  test("secrets are masked in output and never in step input", async () => {
+  test("withSecret throws instead of persisting the value", async () => {
     const { api, ci } = setup();
 
-    api.script([{ match: "publish", stdout: "used npm_s3cret to publish" }]);
+    api.script([{ match: "publish", stdout: "published" }]);
 
     const job = ci.job("release", async () => {
-      const result = await $`publish`.withSecret("NPM_TOKEN", "npm_s3cret");
+      try {
+        await $`publish`.withSecret("NPM_TOKEN", "npm_s3cret");
+      } catch (error) {
+        return `${(error as Error).name}: ${(error as Error).message}`;
+      }
 
-      return result.stdout;
+      return "no error";
     });
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
@@ -509,8 +513,10 @@ describe("commands", () => {
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(result.data).toBe("used *** to publish");
-    expect(JSON.stringify(result.steps)).not.toContain("npm_s3cret");
+    expect(result.data).toContain(
+      "CiUsageError: `withSecret()` isn't supported",
+    );
+    expect(JSON.stringify(result)).not.toContain("npm_s3cret");
   });
 
   test("a background process can be waited on and killed", async () => {

@@ -379,9 +379,9 @@ export interface CiSkip {
 export interface CommandResult {
   /** Zero unless something went wrong. A non-zero code throws unless `.nothrow()`. */
   exitCode: number;
-  /** The last 64 KiB of stdout, with any `withSecret` values masked. */
+  /** The last 64 KiB of stdout. */
   stdout: string;
-  /** The last 64 KiB of stderr, with any `withSecret` values masked. */
+  /** The last 64 KiB of stderr. */
   stderr: string;
   /** Whether output was cut to fit. The whole of it is on the machine. */
   truncated: boolean;
@@ -491,10 +491,12 @@ export interface Command extends PromiseLike<CommandResult> {
    */
   background(): Promise<BackgroundProcess>;
   /**
-   * Pass a secret to this command as an environment variable, masked in
-   * output. There's no secret injection on the platform yet, so the value is
-   * set from inside the step handler and isn't isolated from code running on
-   * the machine.
+   * Not supported yet: running a command with a secret. The Sandbox API has
+   * no per-command secrets, and values passed as command environment are
+   * persisted in step data. Calling this throws `CiUsageError` and never sends
+   * the value anywhere.
+   *
+   * @deprecated Don't use this until secrets are supported.
    */
   withSecret(name: string, value: string): Command;
   /** Run it and return stdout, trimmed. */

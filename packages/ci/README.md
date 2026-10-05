@@ -417,7 +417,6 @@ await $`pnpm test`.env({ CI: "true" });
 await $`pnpm test`.cwd("/work/app");
 await $`pnpm test`.timeout("10m");
 await $`pnpm exec playwright test`.as("e2e");
-await $`pnpm publish`.withSecret("NPM_TOKEN", token);
 
 const sha = await $`git rev-parse HEAD`.text();
 const tracked = await $`git ls-files`.lines();
@@ -436,7 +435,6 @@ await $.sh`pnpm build && pnpm test | tee test.log`;
 | `.onTimeout(fn)` | Runs `fn` when the timeout hits, then throws. |
 | `.background()` | Starts the command and returns a process with `id`, `exited()`, `kill(signal?)`, and `output({ tailBytes? })`. |
 | `.as(name)` | Names the step in the trace. |
-| `.withSecret(name, value)` | Passes an environment variable and masks it in output. |
 | `.text()`, `.lines()`, `.json()` | Returns stdout as a trimmed string, an array of lines, or parsed JSON. |
 
 - `$` runs without a shell. `$.sh` runs `/bin/sh -c` and escapes interpolated values.
@@ -445,8 +443,8 @@ await $.sh`pnpm build && pnpm test | tee test.log`;
 - `.background()` returns once the process starts. `kill()` sends `SIGTERM` unless you pass a signal number, `output()` reads the last 64 KiB by default, and `exited()` polls for exit. It ignores `.retries()`, `.timeout()`, and `.nothrow()`.
 - Output arrives when the command ends. A `.timeout()` of 5 minutes or less is exact. A longer one is approximate because Inngest polls for exit.
 
-> [!WARNING]
-> `.withSecret()` hides the value from the trace and from check output. Code running on the machine can still read it.
+> [!NOTE]
+> Running a command with a secret isn't supported yet. `.withSecret()` is deprecated and throws `CiUsageError`, because the Sandbox API has no per-command secrets and command environment is persisted in step data.
 
 Any function can run commands. It uses the calling job's machine:
 

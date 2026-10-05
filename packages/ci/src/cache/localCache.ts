@@ -5,11 +5,13 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { parsePorcelainPaths } from "../checkout/porcelain.ts";
 import { filterPaths, hash } from "../util.ts";
 
 const exec = promisify(execFile);
@@ -25,14 +27,14 @@ export const hashLocalFiles = async (
   cwd: string,
   patterns: string[],
 ): Promise<string> => {
-  const { stdout: staged } = await exec("git", ["ls-files", "-s"], {
+  const { stdout: staged } = await exec("git", ["ls-files", "-s", "-z"], {
     cwd,
     maxBuffer: 64 * 1024 * 1024,
   });
 
   const tracked = new Map<string, string>();
 
-  for (const line of staged.split("\n").filter(Boolean)) {
+  for (const line of staged.split("\0").filter(Boolean)) {
     // "<mode> <sha> <stage>\t<path>"
     const [meta, path] = line.split("\t");
     const sha = meta?.split(" ")[1];
@@ -42,21 +44,13 @@ export const hashLocalFiles = async (
     }
   }
 
-  const { stdout: dirty } = await exec("git", ["status", "--porcelain"], {
-    cwd,
-  });
-
-  const changed = new Set(
-    dirty
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        return line.slice(3).trim();
-      })
-      .map((path) => {
-        return path.split(" -> ").pop() as string;
-      }),
+  const { stdout: dirty } = await exec(
+    "git",
+    ["status", "--porcelain", "-z", "--untracked-files=all"],
+    { cwd, maxBuffer: 64 * 1024 * 1024 },
   );
+
+  const changed = new Set(parsePorcelainPaths(dirty));
 
   const candidates = [...new Set([...tracked.keys(), ...changed])];
   const matched = filterPaths(candidates, { include: patterns }).sort();
@@ -68,7 +62,9 @@ export const hashLocalFiles = async (
       try {
         const contents = await readFile(join(cwd, path));
 
-        parts.push(`${path}:${hash(contents.toString("utf8"))}`);
+        parts.push(
+          `${path}:${createHash("sha256").update(contents).digest("hex")}`,
+        );
       } catch {
         parts.push(`${path}:deleted`);
       }
