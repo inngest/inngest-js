@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "ci:send": "tsx scripts/send.ts",
+    "ci": "inngest-ci",
     "ci:forward": "tsx scripts/github-forwarder.ts",
     "app:test": "tsx --test app/src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -21,6 +21,7 @@
     "@octokit/webhooks-methods": "^6.0.0",
     "@types/node": "^20.14.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "zod": "^3.25.0"
   }
 }

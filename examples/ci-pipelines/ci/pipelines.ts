@@ -1,7 +1,8 @@
 import { changed, github } from "@inngest/ci";
+import { z } from "zod";
 
 import { ci } from "./client.ts";
-import { base, compat, e2e, lint, release, test } from "./jobs.ts";
+import { base, build, compat, e2e, lint, release, test } from "./jobs.ts";
 
 export const pr = ci.pipeline(
   {
@@ -57,7 +58,24 @@ export const releasePipeline = ci.pipeline(
       return ci.skip("the branch was deleted");
     }
 
+    if (ci.local) {
+      return ci.skip("not releasing from a local run");
+    }
+
     return release();
+  },
+);
+
+export const deploy = ci.pipeline(
+  {
+    id: "deploy",
+    on: ci.manual({
+      pipelineId: "deploy",
+      schema: z.object({ target: z.enum(["web", "api"]) }),
+    }),
+  },
+  async ({ event }) => {
+    await build({ target: event.data.target });
   },
 );
 
