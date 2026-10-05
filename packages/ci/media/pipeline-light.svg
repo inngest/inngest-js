@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 440" width="940" height="440" role="img" aria-labelledby="t d">
+<title id="t">A pipeline run as one trace</title>
+<desc id="d">A pull request event starts the pipeline. The base job runs checkout and install on machine A, then a snapshot is taken. Lint and test start in parallel on copies of that snapshot. Test fails and runs again on its own machine, and neither base nor lint run again. Each job reports a GitHub check.</desc>
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8c959f"/></marker>
+<marker id="ao" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c2410c"/></marker>
+</defs>
+<rect width="940" height="440" rx="12" fill="#ffffff"/>
+<rect x="24" y="168" width="132" height="74" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
+<text x="90" y="196" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a" text-anchor="middle">Trigger</text>
+<text x="90" y="218" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="600" fill="#1f2328" text-anchor="middle">pull_request</text>
+<path d="M156 205 H212" fill="none" stroke="#8c959f" stroke-width="1.75" marker-end="url(#a)"/>
+<rect x="196" y="44" width="500" height="352" rx="12" fill="#ffffff" stroke="#8c959f" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="214" y="72" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#1f2328" text-anchor="start">Pipeline pr</text>
+<text x="214" y="92" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a" text-anchor="start">one Inngest run, one trace</text>
+<rect x="216" y="150" width="150" height="116" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
+<text x="291" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#1f2328" text-anchor="middle">base</text>
+<text x="291" y="197" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a" text-anchor="middle">Machine A</text>
+<text x="291" y="223" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="middle">checkout</text>
+<text x="291" y="245" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="middle">pnpm install</text>
+<path d="M366 208 H400" fill="none" stroke="#8c959f" stroke-width="1.75" marker-end="url(#a)"/>
+<circle cx="418" cy="208" r="15" fill="#fff1e8" stroke="#c2410c" stroke-width="1.75"/>
+<circle cx="418" cy="208" r="5" fill="#c2410c"/>
+<text x="418" y="242" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#c2410c" text-anchor="middle">snapshot</text>
+<rect x="500" y="104" width="170" height="84" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
+<text x="585" y="130" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#1f2328" text-anchor="middle">lint</text>
+<text x="585" y="151" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a" text-anchor="middle">copy of A</text>
+<text x="585" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="middle">pnpm lint</text>
+<rect x="500" y="232" width="170" height="84" rx="8" fill="#fff1e8" stroke="#c2410c" stroke-width="1.5"/>
+<text x="585" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="700" fill="#1f2328" text-anchor="middle">test</text>
+<text x="585" y="279" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a" text-anchor="middle">copy of A</text>
+<text x="585" y="302" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="middle">pnpm test</text>
+<path d="M433 200 C462 200 462 146 496 146" fill="none" stroke="#8c959f" stroke-width="1.75" marker-end="url(#a)"/>
+<path d="M433 216 C462 216 462 274 496 274" fill="none" stroke="#8c959f" stroke-width="1.75" marker-end="url(#a)"/>
+<path d="M640 316 C640 346 530 346 530 320" fill="none" stroke="#c2410c" stroke-width="1.75" marker-end="url(#ao)"/>
+<text x="585" y="366" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#c2410c" text-anchor="middle">attempt 2: same machine</text>
+<text x="585" y="384" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#57606a" text-anchor="middle">base and lint do not rerun</text>
+<path d="M670 146 H726" fill="none" stroke="#8c959f" stroke-width="1.75" marker-end="url(#a)"/>
+<path d="M670 274 H726" fill="none" stroke="#c2410c" stroke-width="1.75" marker-end="url(#ao)"/>
+<rect x="730" y="104" width="186" height="212" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.5"/>
+<text x="823" y="132" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="middle">GitHub checks</text>
+<text x="748" y="166" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#c2410c" text-anchor="start">✕</text>
+<text x="770" y="166" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">pr</text>
+<text x="748" y="200" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#57606a" text-anchor="start">✓</text>
+<text x="770" y="200" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">pr / base</text>
+<text x="748" y="234" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#57606a" text-anchor="start">✓</text>
+<text x="770" y="234" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">pr / lint</text>
+<text x="748" y="268" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#c2410c" text-anchor="start">✕</text>
+<text x="770" y="268" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">pr / test</text>
+</svg>
