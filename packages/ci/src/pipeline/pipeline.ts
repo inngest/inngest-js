@@ -219,6 +219,11 @@ export const runPipeline = async ({
 
     await checks.pipelineStart({ run });
 
+    // A run that is about to be retried keeps its machines: the retry replays
+    // the memoized machine IDs and needs them alive. The generated cleanup
+    // function covers the case where the retries run out.
+    let retrying = false;
+
     try {
       const permitted = await checkCommentPermission(run, config);
 
@@ -277,9 +282,13 @@ export const runPipeline = async ({
         throw new NonRetriableError(error.message, { cause: error });
       }
 
+      retrying = willRetry(error, config, ctx);
+
       throw error;
     } finally {
-      await destroyRunMachines(run, ctx.attempt ?? 0);
+      if (!retrying) {
+        await destroyRunMachines(run, ctx.attempt ?? 0);
+      }
     }
   });
 };
@@ -336,6 +345,33 @@ const resolveConfiguredRepo = (
     },
   ) as Promise<RepoContext>;
 };
+
+/**
+ * Whether Inngest will run the function again after this error: it isn't
+ * non-retriable and attempts remain.
+ */
+const willRetry = (
+  error: unknown,
+  config: PipelineConfig,
+  // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
+  ctx: any,
+): boolean => {
+  if (
+    error instanceof NonRetriableError ||
+    error instanceof CommandFailedError ||
+    error instanceof CommandTimeoutError
+  ) {
+    return false;
+  }
+
+  const retries = (config as { retries?: number }).retries ?? defaultRetries;
+  const maxAttempts: number = ctx.maxAttempts ?? retries + 1;
+
+  return (ctx.attempt ?? 0) < maxAttempts - 1;
+};
+
+/** How many times Inngest retries a function that sets no `retries`. */
+const defaultRetries = 4;
 
 /**
  * Complete the job checks of anything still running when the run ended.

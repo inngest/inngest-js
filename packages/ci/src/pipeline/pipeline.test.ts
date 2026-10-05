@@ -1601,28 +1601,71 @@ describe("cleanup", () => {
     ).rejects.toThrow("503");
   });
 
-  test("a retried run cleans up again instead of replaying the first cleanup", async () => {
+  test("a run that will be retried keeps its machines for the retry", async () => {
     const { api, ci } = setup();
 
     const job = ci.job("test", async () => {
       await $`pnpm test`;
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await job();
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async ({ attempt }) => {
+        await job();
 
-      throw new Error("flaky infrastructure");
-    });
+        if (attempt === 0) {
+          // Nothing may have been destroyed before the retry replays.
+          expect(
+            [...api.sandboxes.values()].some((sandbox) => {
+              return sandbox.status === "TERMINATED";
+            }),
+          ).toBe(false);
+
+          throw new Error("flaky infrastructure");
+        }
+
+        return "ok";
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
 
-    expect(result.type).toBe("function-rejected");
+    expect(result.type).toBe("function-resolved");
+    expect(result.data).toBe("ok");
+    expect(api.sandboxes.size).toBe(1);
 
     expect(
       result.stepIds.filter((id) => {
         return id === "cleanup";
       }),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+
+    expect(
+      [...api.sandboxes.values()].every((sandbox) => {
+        return sandbox.status === "TERMINATED";
+      }),
+    ).toBe(true);
+  });
+
+  test("the last attempt cleans up when it fails", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async () => {
+        await job();
+
+        throw new Error("flaky infrastructure");
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-rejected");
 
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
