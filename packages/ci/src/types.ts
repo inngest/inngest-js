@@ -5,8 +5,6 @@
  * @module
  */
 
-import type { StandardSchemaV1 } from "@standard-schema/spec";
-
 import type { InngestFunction } from "inngest";
 
 /**
@@ -113,18 +111,6 @@ export interface MachineConfig {
    * gets 1 GiB, 2 gets 2 GiB, and 4 gets 4 GiB. Defaults to 2.
    */
   vcpu?: 1 | 2 | 4;
-
-  /**
-   * @deprecated Not yet supported by Inngest Sandboxes: custom images aren't
-   * exposed. This is ignored with a warning.
-   */
-  image?: string;
-
-  /**
-   * @deprecated Not yet supported by Inngest Sandboxes: architecture selection
-   * isn't exposed. This is ignored with a warning.
-   */
-  arch?: "amd64" | "arm64";
 }
 
 /**
@@ -467,10 +453,10 @@ export interface Command extends PromiseLike<CommandResult> {
    */
   background(): Promise<BackgroundProcess>;
   /**
-   * @deprecated Not yet supported by Inngest Sandboxes: there's no secret
-   * injection, so the value is passed as an environment variable from inside
-   * the step handler and masked in output. It isn't isolated from code running
-   * on the machine.
+   * Pass a secret to this command as an environment variable, masked in
+   * output. There's no secret injection on the platform yet, so the value is
+   * set from inside the step handler and isn't isolated from code running on
+   * the machine.
    */
   withSecret(name: string, value: string): Command;
   /** Run it and return stdout, trimmed. */
@@ -497,11 +483,6 @@ export interface ExtraMachine {
     url: string,
     opts?: { timeout?: Duration; status?: number },
   ): Promise<void>;
-  /**
-   * @deprecated Not yet supported by Inngest Sandboxes: machines can't reach
-   * each other. Throws `CiNotSupportedError`.
-   */
-  url(port: number): string;
 }
 
 /**
@@ -598,8 +579,4 @@ export interface CheckAnnotation {
   message: string;
   title?: string;
   raw_details?: string;
-}
-
-export interface ManualTriggerOptions<TSchema extends StandardSchemaV1> {
-  schema: TSchema;
 }

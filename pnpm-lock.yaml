@@ -84,9 +84,6 @@ importers:
       '@standard-schema/spec':
         specifier: ^1.0.0
         version: 1.0.0
-      hash.js:
-        specifier: ^1.1.7
-        version: 1.1.7
     devDependencies:
       '@types/node':
         specifier: ~24.3.0

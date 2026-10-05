@@ -66,8 +66,7 @@
     "@octokit/auth-app": "^8.3.1",
     "@octokit/rest": "^22.0.1",
     "@octokit/webhooks-types": "^7.6.1",
-    "@standard-schema/spec": "^1.0.0",
-    "hash.js": "^1.1.7"
+    "@standard-schema/spec": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "~24.3.0",

@@ -5,14 +5,14 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { CiNotSupportedError, CiUsageError } from "../errors.ts";
+import { shard } from "../checkout/shard.ts";
+import { CiUsageError } from "../errors.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { durable, resetDurableWarnings } from "../pipeline/durable.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import { oidc, shard, shell, vercel } from "../unsupported.ts";
 import { consoleReporter, githubToken } from "./auth.ts";
 import { github } from "./index.ts";
 
@@ -588,40 +588,31 @@ describe("durable()", () => {
   });
 });
 
-describe("platform gaps", () => {
-  test("each unsupported API throws with a reason", () => {
-    expect(() => shell("run-id")).toThrow(CiNotSupportedError);
-    expect(() => oidc.aws({ role: "deployer" })).toThrow(CiNotSupportedError);
-    expect(() => oidc.gcp({ workloadIdentityProvider: "x" })).toThrow(
-      CiNotSupportedError,
-    );
-    expect(() => vercel.waitForDeployment({})).toThrow(CiNotSupportedError);
-  });
-
-  test("shard by timing falls back to count with a warning", async () => {
-    const warn = vi.fn();
+describe("shard", () => {
+  test("splits files evenly by count", async () => {
     const api = createFakeSandboxApi();
     const client = createCiTestClient(api);
 
     const ci = createCi(client, { github: consoleReporter() });
-    // biome-ignore lint/suspicious/noExplicitAny: reaching in to watch the warning
-    ci as any;
 
-    const job = ci.job("shard", async () =>
-      shard(
-        { total: 2, index: 0, by: "timing", files: ["a", "b", "c", "d"] },
-        async (files) => files,
-      ),
-    );
+    const job = ci.job("shard", async () => {
+      return shard(
+        { total: 2, index: 0, files: ["a", "b", "c", "d"] },
+        async (files) => {
+          return files;
+        },
+      );
+    });
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toEqual(["a", "c"]);
-    void warn;
   });
 });

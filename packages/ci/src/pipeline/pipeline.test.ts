@@ -765,25 +765,6 @@ describe("machines", () => {
       result.stepIds.some((id) => id.startsWith("e2e › api › pnpm start")),
     ).toBe(true);
   });
-
-  test("an extra machine's url() explains it isn't supported", async () => {
-    const { ci } = setup();
-
-    const job = ci.job("e2e", async () => {
-      const extra = await sandbox("api");
-      return extra.url(3000);
-    });
-
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () =>
-      job(),
-    );
-
-    const result = await runFunction(pipeline, { event: prEvent });
-
-    expect(String((result.error as { message?: string })?.message)).toContain(
-      "Machines can't reach each other yet",
-    );
-  });
 });
 
 describe("matrix", () => {

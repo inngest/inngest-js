@@ -1,20 +1,18 @@
 /**
  * Small shared helpers: hashing, durations, glob matching, formatting and
- warn-once.
+ * warn-once.
  *
  * @module
  */
 
-// `hash.js` is CommonJS, so it's imported as a default like the rest of the
-// SDK does; a named import breaks under Node's ESM loader.
-import hashjs from "hash.js";
+import { createHash } from "node:crypto";
 
 /**
  * Hash a string to a short, stable hex digest. Used for cache keys and for
  * shortening names that would otherwise be too long.
  */
 export const hash = (input: string, length = 16): string =>
-  hashjs.sha256().update(input).digest("hex").slice(0, length);
+  createHash("sha256").update(input).digest("hex").slice(0, length);
 
 /**
  * Turn a scope path into something safe for a sandbox name.
@@ -249,11 +247,4 @@ export const warnOnce = (
   }
   warned.add(key);
   (logger ?? console).warn({ feature: key }, message);
-};
-
-/**
- * Only for tests: forget which warnings have already been emitted.
- */
-export const resetWarnings = (): void => {
-  warned.clear();
 };

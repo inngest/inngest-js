@@ -20,7 +20,6 @@ import { changed } from "./checkout/changed.ts";
 import { checkout } from "./checkout/checkout.ts";
 import { waitForHttp, waitForPort } from "./checkout/wait.ts";
 import type {
-  CiNotSupportedError,
   CiUsageError,
   CommandFailedError,
   CommandTimeoutError,
@@ -760,7 +759,6 @@ describe("providers and stores", () => {
 describe("errors", () => {
   test("each carries what you need to report it", () => {
     expectTypeOf<CiUsageError>().toExtend<Error>();
-    expectTypeOf<CiNotSupportedError["feature"]>().toBeString();
     expectTypeOf<CommandFailedError["command"]>().toEqualTypeOf<string[]>();
     expectTypeOf<CommandFailedError["exitCode"]>().toBeNumber();
     expectTypeOf<CommandFailedError["stderrTail"]>().toBeString();
@@ -789,20 +787,13 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf(entry.githubWebhookTransform).toBeString();
     expectTypeOf(entry.memoryCacheStore).toBeFunction();
     expectTypeOf(entry.fileCacheStore).toBeFunction();
-    expectTypeOf(entry.inngestCacheStore).toBeFunction();
     expectTypeOf(entry.githubApp).toBeFunction();
     expectTypeOf(entry.githubToken).toBeFunction();
     expectTypeOf(entry.consoleReporter).toBeFunction();
     expectTypeOf(entry.shard).toBeFunction();
-    expectTypeOf(entry.shell).toBeFunction();
-    expectTypeOf(entry.oidc).toBeObject();
-    expectTypeOf(entry.vercel).toBeObject();
 
     // The errors are classes, so it's their instances that matter.
     expectTypeOf<InstanceType<typeof entry.CiUsageError>>().toExtend<Error>();
-    expectTypeOf<
-      InstanceType<typeof entry.CiNotSupportedError>
-    >().toExtend<Error>();
     expectTypeOf<
       InstanceType<typeof entry.CommandFailedError>
     >().toExtend<Error>();

@@ -5,7 +5,6 @@
  */
 
 import { waitForHttp, waitForPort } from "../checkout/wait.ts";
-import { CiNotSupportedError } from "../errors.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
 import { requireJobScope, scopeSeparator } from "../pipeline/scope.ts";
 import type { Duration, ExtraMachine, MachineConfig } from "../types.ts";
@@ -38,8 +37,6 @@ import { ensureMachine } from "./machine.ts";
  * | is independent, like lint and test | separate jobs |
  * | follows on from earlier work | separate jobs, with `from()` |
  * | needs several machines at once | one job, with `sandbox()` |
- *
- * Note: machines can't reach each other yet, so `ExtraMachine.url()` throws.
  *
  * @param name - Unique within the job. It names the machine in the trace.
  * @param config - Machine settings, defaulting to the job's.
@@ -85,11 +82,5 @@ export const sandbox = async (
       url: string,
       opts?: { timeout?: Duration; status?: number },
     ) => waitForHttp(url, opts ?? {}, scope),
-    url: (_port: number): string => {
-      throw new CiNotSupportedError(
-        "ExtraMachine.url",
-        "Machines can't reach each other yet, so there's no URL to give you. Run the server on the job's own machine and use `127.0.0.1` for now.",
-      );
-    },
   };
 };

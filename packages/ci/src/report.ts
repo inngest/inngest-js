@@ -4,7 +4,6 @@
  * @module
  */
 
-import { CiNotSupportedError } from "./errors.ts";
 import { getJobScope, nextStepId, requireRunScope } from "./pipeline/scope.ts";
 import type { CheckAnnotation } from "./types.ts";
 
@@ -92,16 +91,5 @@ export const report = {
     }
 
     run.pipelineAnnotations.push(...valid);
-  },
-
-  /**
-   * @deprecated Not yet supported by Inngest Sandboxes: the JUnit parser isn't
-   * built. Throws `CiNotSupportedError`.
-   */
-  junit: async (_path: string): Promise<void> => {
-    throw new CiNotSupportedError(
-      "report.junit",
-      "`report.junit()` isn't implemented in this prototype. Parse the report yourself and call `report.annotate()`.",
-    );
   },
 };

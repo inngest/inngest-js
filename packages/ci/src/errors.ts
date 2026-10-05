@@ -25,23 +25,6 @@ export class CiUsageError extends Error {
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
- * Thrown when a typed API exists but the platform doesn't support it yet. See
- * `unsupported.ts` for the full list.
- */
-export class CiNotSupportedError extends Error {
-  public readonly feature: string;
-
-  constructor(feature: string, message: string) {
-    super(message);
-    this.name = "CiNotSupportedError";
-    this.feature = feature;
-  }
-}
-
-/**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
- *
  * Thrown when a command exits with a non-zero code.
  */
 export class CommandFailedError extends Error {

@@ -6,7 +6,7 @@
  * your jobs; each job gets its own machine when it runs its first command.
  *
  * ```ts
- * import { createCi, github, checkout, $ } from "@inngest/ci";
+ * import { createCi, github, checkout } from "@inngest/ci";
  *
  * export const ci = createCi(inngest);
  *
@@ -27,20 +27,20 @@
  * @module
  */
 
-// Cache
-// Helpers
+// Cache and checkout helpers
 export {
   fileCacheStore,
   files,
-  inngestCacheStore,
   memoryCacheStore,
 } from "./cache/cache.ts";
 export { changed } from "./checkout/changed.ts";
 export { checkout } from "./checkout/checkout.ts";
+// Sharding
+export type { ShardOptions } from "./checkout/shard.ts";
+export { shard } from "./checkout/shard.ts";
 export { waitForHttp, waitForPort } from "./checkout/wait.ts";
 // Errors
 export {
-  CiNotSupportedError,
   CiUsageError,
   CommandFailedError,
   CommandTimeoutError,
@@ -121,6 +121,3 @@ export type {
   PipelineContext,
   RepoContext,
 } from "./types.ts";
-// Platform gaps: typed, deprecated, and explicit about why
-export type { ShardOptions } from "./unsupported.ts";
-export { oidc, shard, shell, vercel } from "./unsupported.ts";

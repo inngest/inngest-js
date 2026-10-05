@@ -5,9 +5,6 @@
  * @module
  */
 
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { describe, expect, test } from "vitest";
 
 import { createCi } from "../pipeline/createCi.ts";
@@ -328,43 +325,5 @@ describe("dev mode", () => {
     expect(result.type).toBe("function-resolved");
     // Nothing reaches GitHub: no check runs, and no commit statuses either.
     expect(gh.requests).toEqual([]);
-  });
-});
-
-describe("deprecated APIs are marked", () => {
-  const read = (file: string) =>
-    readFile(join(import.meta.dirname, "..", file), "utf8");
-
-  test.each([
-    ["unsupported.ts", "shell"],
-    ["unsupported.ts", "oidc"],
-    ["unsupported.ts", "vercel"],
-    ["unsupported.ts", "rerunFromFailedJob"],
-    ["cache/cache.ts", "inngestCacheStore"],
-    ["report.ts", "junit"],
-  ])("%s marks %s @deprecated", async (file, name) => {
-    const source = await read(file);
-    const index = source.indexOf(`${name}`);
-
-    expect(index).toBeGreaterThan(-1);
-    // The JSDoc block immediately above the declaration carries the tag.
-    expect(source.slice(Math.max(0, index - 600), index)).toContain(
-      "@deprecated",
-    );
-  });
-
-  test.each([
-    ["types.ts", "image?: string"],
-    ["types.ts", "arch?:"],
-    ["types.ts", "withSecret(name: string, value: string): Command;"],
-    ["types.ts", "url(port: number): string"],
-  ])("%s marks %s @deprecated", async (file, name) => {
-    const source = await read(file);
-    const index = source.indexOf(name);
-
-    expect(index).toBeGreaterThan(-1);
-    expect(source.slice(Math.max(0, index - 400), index)).toContain(
-      "@deprecated",
-    );
   });
 });

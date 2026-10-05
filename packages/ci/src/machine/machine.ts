@@ -13,7 +13,7 @@ import type {
 } from "../pipeline/scope.ts";
 import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
-import { boundedName, slug, warnOnce } from "../util.ts";
+import { boundedName, slug } from "../util.ts";
 
 /**
  * Memory is paired with vCPU count, so a job only picks one number.
@@ -22,25 +22,7 @@ const memoryForVcpu = { 1: 1024, 2: 2048, 4: 4096 } as const;
 
 export const resolveMachineConfig = (
   config: MachineConfig | undefined,
-  // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
-  logger?: { warn: (...args: any[]) => void },
 ): { vcpu: 1 | 2 | 4; memoryMb: number } => {
-  if (config?.image) {
-    warnOnce(
-      logger,
-      "ci:machine.image",
-      "`machine.image` is ignored: custom images aren't supported by Inngest Sandboxes yet.",
-    );
-  }
-
-  if (config?.arch) {
-    warnOnce(
-      logger,
-      "ci:machine.arch",
-      "`machine.arch` is ignored: architecture selection isn't supported by Inngest Sandboxes yet.",
-    );
-  }
-
   const vcpu = config?.vcpu ?? 2;
   return { vcpu, memoryMb: memoryForVcpu[vcpu] };
 };
@@ -90,7 +72,6 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   const stepId = `${scope.path}${scopeSeparator}machine`;
   const machineConfig = resolveMachineConfig(
     scope.config.machine ?? run.ci.defaultMachine,
-    run.ci.logger,
   );
 
   const sandbox = scope.fromSnapshotId
