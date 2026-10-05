@@ -22,7 +22,7 @@ export interface CiConfig {
   path: string;
   /** Absolute directory for logs and the Dev Server's database. */
   dir: string;
-  /** A Dev Server binary to use instead of the `inngest-cli` package. */
+  /** A Dev Server binary to use instead of the `inngest-cli` package or a global install. */
   devServerBin?: string;
 }
 

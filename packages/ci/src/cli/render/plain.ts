@@ -120,7 +120,8 @@ export const plainLines = (
   paint: Paint,
 ): string[] => {
   switch (event.kind) {
-    case "manifest": {
+    case "manifest":
+    case "project": {
       return [];
     }
 

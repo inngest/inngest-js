@@ -337,6 +337,9 @@ const execute = async (
 
   const root = await findProjectRoot(opts.cwd);
   const config = await loadConfig(root);
+
+  emit({ kind: "project", root, at: Date.now() });
+
   const bin = resolveDevServerBin(config);
 
   mkdirSync(config.dir, { recursive: true });

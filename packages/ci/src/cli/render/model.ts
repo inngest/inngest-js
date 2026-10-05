@@ -60,6 +60,8 @@ export interface Model {
   stages: StageView[];
   /** In order of first appearance. */
   runs: RunView[];
+  /** The project's root directory, once found. */
+  projectRoot?: string;
   setupError?: Extract<SessionEvent, { kind: "setup-error" }>;
   conclusion?: SessionConclusion;
   runUrl?: string;
@@ -197,6 +199,10 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
           },
         ),
       };
+    }
+
+    case "project": {
+      return { ...next, projectRoot: event.root };
     }
 
     case "setup-error": {

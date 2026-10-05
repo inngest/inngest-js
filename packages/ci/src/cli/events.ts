@@ -28,6 +28,12 @@ export type SessionEvent =
       at: number;
     }
   | {
+      kind: "project";
+      /** The absolute directory of the project's `inngest.json`. */
+      root: string;
+      at: number;
+    }
+  | {
       kind: "setup-error";
       /** What went wrong, in one sentence. */
       message: string;

@@ -1,10 +1,13 @@
 /**
  * The `inngest-ci` bin: parses the command line, picks a renderer, runs one
- * session and exits with its code. tsdown adds the shebang when it bundles
+ * session, publishes its state file and exits with its code. tsdown adds the shebang when it bundles
  * this file.
  *
  * @module
  */
+
+import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 
 import { type CliArgs, parseCliArgs, usage } from "./args.ts";
 import type { Renderer } from "./events.ts";
@@ -12,7 +15,13 @@ import {
   createInteractiveRenderer,
   createPlainRenderer,
 } from "./render/index.ts";
+import {
+  createStateFileRenderer,
+  describeStarter,
+  sessionFile,
+} from "./render/stateFile.ts";
 import { runSession } from "./session.ts";
+import { pruneSessions, resolveStateDir } from "./stateDir.ts";
 import type { SetupError } from "./setupError.ts";
 
 const exitCodes = {
@@ -70,6 +79,22 @@ const main = async (): Promise<number> => {
   process.on("SIGTERM", stop);
 
   const renderer = createRenderer(interactive, stop);
+  const stateDir = resolveStateDir({
+    env: process.env,
+    platform: process.platform,
+    home: homedir(),
+  });
+  const sessionId = randomBytes(12).toString("hex");
+
+  pruneSessions({ dir: stateDir, now: Date.now() });
+
+  const stateFile = createStateFileRenderer({
+    file: sessionFile(stateDir, sessionId),
+    sessionId,
+    pid: process.pid,
+    startedBy: describeStarter(process.env),
+    cwd: process.cwd(),
+  });
 
   const { conclusion } = await runSession({
     cwd: process.cwd(),
@@ -77,11 +102,13 @@ const main = async (): Promise<number> => {
     interactive,
     emit: (event) => {
       renderer.handle(event);
+      stateFile.handle(event);
     },
     signal: abort.signal,
   });
 
   await renderer.close();
+  await stateFile.close();
 
   return exitCodes[conclusion];
 };

@@ -120,7 +120,7 @@ npm install @inngest/ci inngest
 npm install --save-dev inngest-cli
 ```
 
-`inngest-ci` starts a Dev Server from the `inngest-cli` package.
+`inngest-ci` starts a Dev Server from the `inngest-cli` package, or from a global install.
 
 ### 2. Create the client
 
@@ -271,6 +271,8 @@ npx inngest-ci deploy --data '{"env":"preview"}'
 
 Setup errors say what to change.
 
+Each session also writes its live state to `~/.local/state/inngest-ci/sessions` (or `$INNGEST_CI_STATE_DIR`) for editor integrations.
+
 ### Configure
 
 `inngest-ci` reads the `ci` key of `inngest.json` at the repository root.
@@ -305,6 +307,7 @@ With no `ci` key, `inngest-ci` looks for `ci/server.ts`, `ci/server.mts`, `ci/se
 1. The binary at `INNGEST_CI_DEV_SERVER_BIN`.
 2. The binary at `ci.devServer.bin`.
 3. The `inngest-cli` package in your project, version 1.45.1 or newer.
+4. `inngest-cli`, then `inngest`, on your `PATH` (a global install), at the same minimum version.
 
 ```bash
 npm install --save-dev inngest-cli
