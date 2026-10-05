@@ -32,7 +32,7 @@ import { filterPaths, git } from "../util.ts";
  * Patterns support `**`, `*`, `?`, and `{a,b}`. The changed files come from
  * the pull request or the push range on GitHub, and from git locally.
  *
- * When the change can't be read, no credentials, say — this answers `true`
+ * When the change can't be read (no credentials, say) this answers `true`
  * and notes it on the check, so work runs rather than being skipped wrongly.
  *
  * @throws {CiUsageError} When called outside a pipeline run.
