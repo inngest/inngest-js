@@ -1,7 +1,7 @@
 {
   "name": "@inngest/ci",
   "version": "0.0.0",
-  "description": "CI pipelines in TypeScript, run by Inngest on Sandboxes",
+  "description": "Inngest Labs: CI pipelines in TypeScript, run by Inngest on Sandboxes",
   "type": "module",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
@@ -43,6 +43,7 @@
   ],
   "keywords": [
     "inngest",
+    "inngest-labs",
     "ci",
     "continuous-integration",
     "sandbox",

@@ -1,11 +1,11 @@
 # @inngest/ci
 
-> Write CI pipelines in TypeScript and run every job on its own Inngest Sandbox.
+> [Inngest Labs](https://www.inngest.com/docs/labs/ci): write CI pipelines in TypeScript and run every job on its own Inngest Sandbox.
 
 `@inngest/ci` turns plain TypeScript functions into CI pipelines. Inngest runs each pipeline as a durable function and each job on its own [Sandbox](https://www.inngest.com/docs/sandboxes/overview), an ephemeral microVM. One run produces one trace that covers the pipeline, its jobs, and every command.
 
 > [!NOTE]
-> `@inngest/ci` is in beta, and APIs may change without a major version bump. Sandboxes are in open beta.
+> `@inngest/ci` is an [Inngest Labs](https://www.inngest.com/docs/labs) project: something we are building on the Inngest platform in the open. It is early, moving fast, and shaped by your feedback, so APIs may change between 0.x releases. Sandboxes are in open beta.
 
 With `@inngest/ci` you get:
 
@@ -209,7 +209,7 @@ INNGEST_DEV=1 npx tsx ci/send.ts
 
 `checkout()` uploads your working tree, including uncommitted changes and excluding ignored files. The upload is limited to 100 MiB.
 
-### Cleanup and beta behavior
+### Cleanup and current behavior
 
 - Inngest destroys every machine when the pipeline ends. A separate function destroys machines left behind by a run that failed or was cancelled.
 - The Dev Server runs commands on Sandboxes in your Inngest account, so you need `inngest login`. There is no local Sandbox runtime yet.

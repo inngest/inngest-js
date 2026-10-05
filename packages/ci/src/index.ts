@@ -21,7 +21,8 @@
  * );
  * ```
  *
- * Beta: APIs may change without a major version bump.
+ * An Inngest Labs project (https://www.inngest.com/docs/labs): APIs may change
+ * between 0.x releases.
  *
  * @module
  */

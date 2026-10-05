@@ -3,7 +3,7 @@
 Pipelines for a small app, written with [`@inngest/ci`](../../packages/ci) and run on Inngest Sandboxes.
 
 > [!NOTE]
-> `@inngest/ci` is in beta, and APIs may change without a major version bump.
+> `@inngest/ci` is an [Inngest Labs](https://www.inngest.com/docs/labs) project, so APIs may change between 0.x releases.
 
 ```
 ci/
