@@ -24,6 +24,7 @@ export const resolveMachineConfig = (
   config: MachineConfig | undefined,
 ): { vcpu: 1 | 2 | 4; memoryMb: number } => {
   const vcpu = config?.vcpu ?? 2;
+
   return { vcpu, memoryMb: memoryForVcpu[vcpu] };
 };
 
@@ -43,6 +44,7 @@ export const machineName = (runId: string, path: string): string => {
  */
 export const ensureMachine = (scope: CiJobScope): Promise<MachineHandle> => {
   scope.machine ??= createMachine(scope);
+
   return scope.machine;
 };
 
@@ -72,6 +74,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
   const name = machineName(run.runId, scope.path);
   const stepId = `${scope.path}${scopeSeparator}machine`;
+
   const machineConfig = resolveMachineConfig(
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
@@ -90,7 +93,9 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     "-c",
     machineSetupScript,
   ]);
+
   const handle: MachineHandle = { sandbox, name, id: sandbox.id };
+
   run.machines.set(scope.path, Promise.resolve(handle));
 
   return handle;
@@ -116,6 +121,7 @@ export const pauseMachine = async (scope: CiJobScope): Promise<void> => {
 
   try {
     const machine = await scope.machine;
+
     await machine.sandbox.pause(`${scope.path}${scopeSeparator}pause`, {
       timeout: pauseTimeoutMs,
     });
@@ -140,12 +146,15 @@ export const snapshotJob = (
   jobPath: string,
 ): Promise<string | undefined> => {
   const existing = run.snapshots.get(jobPath);
+
   if (existing) {
     return existing;
   }
 
   const created = createSnapshot(run, jobPath);
+
   run.snapshots.set(jobPath, created);
+
   return created;
 };
 
@@ -154,11 +163,13 @@ const createSnapshot = async (
   jobPath: string,
 ): Promise<string | undefined> => {
   const cached = run.cacheEntries.get(jobPath);
+
   if (cached?.snapshotId) {
     return cached.snapshotId;
   }
 
   const handle = await run.machines.get(jobPath);
+
   if (!handle) {
     return undefined;
   }
@@ -180,6 +191,7 @@ const createSnapshot = async (
     const snapshot = await handle.sandbox.snapshot(
       `${jobPath}${scopeSeparator}snapshot`,
     );
+
     return snapshot.id;
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
@@ -187,9 +199,11 @@ const createSnapshot = async (
     }
 
     run.snapshotsUnavailable = true;
+
     run.warnings.push(
       `fell back: snapshots unavailable (\`${jobPath}\`), so jobs started from it re-ran it on their own machines`,
     );
+
     return undefined;
   }
 };
@@ -207,11 +221,13 @@ const createSnapshot = async (
 const isSnapshotUnavailable = (error: unknown): boolean => {
   const cause = (error as { cause?: { code?: string; status?: number } })
     ?.cause;
+
   const limitCode = "sandbox_snapshot_limit_exceeded";
 
   if (cause?.status === 404 || cause?.status === 501) {
     return true;
   }
+
   if (
     cause?.code === limitCode ||
     (error as { code?: string })?.code === limitCode
@@ -220,6 +236,7 @@ const isSnapshotUnavailable = (error: unknown): boolean => {
   }
 
   const message = errorMessage(error).toLowerCase();
+
   return [
     "not implemented",
     "unsupported",
@@ -238,6 +255,7 @@ const isSnapshotUnavailable = (error: unknown): boolean => {
  */
 export const destroyRunMachines = async (run: CiRunScope): Promise<void> => {
   const ids = [...run.sandboxes];
+
   if (ids.length === 0) {
     return;
   }
@@ -250,8 +268,10 @@ export const destroyRunMachines = async (run: CiRunScope): Promise<void> => {
       for (const id of ids) {
         try {
           const sandbox = await run.ci.client.sandboxes.get(id);
+
           if (sandbox) {
             await sandbox.destroy();
+
             destroyed.push(id);
           }
         } catch {

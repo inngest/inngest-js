@@ -27,6 +27,7 @@ describe("pauseMachine", () => {
     expect(pause).toHaveBeenCalledWith(expect.stringContaining("pause"), {
       timeout: pauseTimeoutMs,
     });
+
     expect(pauseTimeoutMs).toBeLessThan(60_000);
   });
 

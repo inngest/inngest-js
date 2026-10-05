@@ -64,11 +64,13 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   }
 
   scope.fromCalled = true;
+
   scope.fromJobIds.push(job.id);
 
   const result = await job(input as never);
 
   const snapshotId = await snapshotJob(scope.run, job.id);
+
   if (snapshotId) {
     scope.fromSnapshotId = snapshotId;
   } else if (
@@ -109,6 +111,7 @@ const rerunOnThisMachine = async (
   // The parent may start from another job itself, which re-runs that one
   // here too.
   scope.fromCalled = false;
+
   try {
     await handler(input);
   } finally {

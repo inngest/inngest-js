@@ -95,6 +95,7 @@ export const buildArgv = (
     } else {
       argv.push(token);
     }
+
     open = true;
   };
 
@@ -104,18 +105,21 @@ export const buildArgv = (
       if (partIndex > 0) {
         open = false;
       }
+
       if (part !== "") {
         append(part);
       }
     }
 
     const value = values[index];
+
     if (value === undefined || !isPresent(value)) {
       continue;
     }
 
     if (Array.isArray(value)) {
       argv.push(...value.map(String));
+
       open = false;
     } else {
       append(String(value));
@@ -141,6 +145,7 @@ export const buildShellString = (
     out += chunk;
 
     const value = values[index];
+
     if (value === undefined || !isPresent(value)) {
       continue;
     }
@@ -160,6 +165,7 @@ export const buildShellString = (
 /** The id and name of a step nested under `stepId`. */
 const subStep = (stepId: string, suffix: string) => {
   const id = `${stepId}${scopeSeparator}${suffix}`;
+
   return { id, name: id };
 };
 
@@ -170,41 +176,49 @@ class CommandBuilder implements Command {
 
   constructor(getScope: () => CiJobScope, state: CommandState) {
     this.getScope = getScope;
+
     this.state = state;
   }
 
   env(vars: Record<string, string>): Command {
     Object.assign(this.state.env, vars);
+
     return this;
   }
 
   cwd(path: string): Command {
     this.state.cwd = path;
+
     return this;
   }
 
   as(name: string): Command {
     this.state.label = name;
+
     return this;
   }
 
   retries(count: number): Command {
     this.state.retries = count;
+
     return this;
   }
 
   nothrow(): Command {
     this.state.nothrow = true;
+
     return this;
   }
 
   timeout(duration: Duration): Command {
     this.state.timeout = duration;
+
     return this;
   }
 
   onTimeout(fn: () => Promise<unknown>): Command {
     this.state.onTimeout = fn;
+
     return this;
   }
 
@@ -214,7 +228,9 @@ class CommandBuilder implements Command {
       "ci:withSecret",
       "`withSecret()` passes the value as an environment variable from inside the step handler. It never appears in step input or output, but it isn't isolated from code running on the machine.",
     );
+
     this.state.secrets.push({ name, value });
+
     return this;
   }
 
@@ -224,6 +240,7 @@ class CommandBuilder implements Command {
 
   async lines(): Promise<string[]> {
     const text = await this.text();
+
     return text === "" ? [] : text.split("\n");
   }
 
@@ -244,6 +261,7 @@ class CommandBuilder implements Command {
     const scope = this.getScope();
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
+
     const process = await startProcess(
       machine,
       stepId,
@@ -266,6 +284,7 @@ class CommandBuilder implements Command {
           stepId,
           nextWait,
         });
+
         return readResult({ process: polled.process, stepId, argv, secrets });
       },
       kill: async (signal = 15) => {
@@ -276,7 +295,9 @@ class CommandBuilder implements Command {
           subStep(stepId, `output #${nextWait()}`),
           { tailBytes: opts?.tailBytes ?? outputTailBytes },
         );
+
         const decoded = decodeChunks(output);
+
         return maskSecrets(`${decoded.stdout}${decoded.stderr}`, secrets);
       },
     };
@@ -285,6 +306,7 @@ class CommandBuilder implements Command {
   /** Runs once however many times the command is awaited. */
   private exec(): Promise<CommandResult> {
     this.started ??= this.runWithRetries();
+
     return this.started;
   }
 
@@ -341,6 +363,7 @@ class CommandBuilder implements Command {
     for (let attempt = 1; ; attempt++) {
       const attemptId =
         attempts === 1 ? stepId : `${stepId} #attempt-${attempt}`;
+
       const result = await this.runOnce(scope, attemptId);
 
       if (result.exitCode === 0 || this.state.nothrow) {
@@ -354,6 +377,7 @@ class CommandBuilder implements Command {
         stderrTail: result.stderr,
         jobPath: scope.path,
       });
+
       if (attempt >= attempts) {
         throw error;
       }
@@ -374,6 +398,7 @@ class CommandBuilder implements Command {
     stepId: string,
   ): Promise<CommandResult> {
     const machine = await ensureMachine(scope);
+
     const timeoutMs = this.state.timeout
       ? durationToMs(this.state.timeout)
       : undefined;
@@ -418,7 +443,9 @@ class CommandBuilder implements Command {
       if (getSandboxError(error)?.code !== "sandbox_exec_timed_out") {
         throw error;
       }
+
       await this.state.onTimeout?.();
+
       throw this.timeoutError(scope);
     }
   }
@@ -430,6 +457,7 @@ class CommandBuilder implements Command {
     timeoutMs: number | undefined,
   ): Promise<CommandResult> {
     const started = Date.now();
+
     const process = await startProcess(
       machine,
       stepId,
@@ -447,7 +475,9 @@ class CommandBuilder implements Command {
 
     if (polled.timedOut) {
       await this.state.onTimeout?.();
+
       await process.signal(subStep(stepId, "timeout-kill"), { signal: 9 });
+
       throw this.timeoutError(scope);
     }
 
@@ -468,6 +498,7 @@ class CommandBuilder implements Command {
 
 const counter = (): (() => number) => {
   let count = 0;
+
   return () => {
     return ++count;
   };
@@ -488,6 +519,7 @@ const startProcess = async (
   },
 ): Promise<SandboxProcess> => {
   machine.claimedProcessIds ??= new Set<string>();
+
   const claimed = machine.claimedProcessIds;
 
   try {
@@ -495,7 +527,9 @@ const startProcess = async (
       subStep(stepId, "start"),
       options,
     );
+
     claimed.add(process.id);
+
     return process;
   } catch (error) {
     const adopted = await adoptAmbiguousStart(
@@ -505,7 +539,9 @@ const startProcess = async (
       claimed,
       error,
     );
+
     claimed.add(adopted.id);
+
     return adopted;
   }
 };
@@ -529,6 +565,7 @@ const adoptAmbiguousStart = async (
   error: unknown,
 ): Promise<SandboxProcess> => {
   const sandboxError = getSandboxError(error);
+
   if (
     sandboxError?.code !== "operation_ambiguous" ||
     sandboxError.action !== "process.start"
@@ -604,6 +641,7 @@ const pollUntilTerminal = async (opts: {
       subStep(opts.stepId, `wait #${index}`),
       interval,
     );
+
     elapsed += interval;
 
     current =
@@ -651,6 +689,7 @@ const processDurationMs = (
       new Date(process.startedAt).getTime()
     );
   }
+
   return fallbackStart ? Date.now() - fallbackStart : 0;
 };
 
@@ -740,6 +779,7 @@ export const createCommandTag = (
 
   tag.sh = (strings: TemplateStringsArray, ...values: CommandValue[]) => {
     const rendered = buildShellString([...strings], values);
+
     return createRawCommand(
       getScope,
       ["/bin/sh", "-c", rendered],

@@ -50,6 +50,7 @@ export const sandbox = async (
   const path = `${job.jobPath}${scopeSeparator}${name}`;
 
   const existing = job.extras?.get(name);
+
   const scope: CiJobScope =
     existing ??
     ({
@@ -66,6 +67,7 @@ export const sandbox = async (
     } satisfies CiJobScope);
 
   job.extras ??= new Map();
+
   job.extras.set(name, scope);
 
   // The machine is created up front here, because callers asked for it by
