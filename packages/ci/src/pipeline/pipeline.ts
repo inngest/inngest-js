@@ -177,6 +177,9 @@ const newRunScope = ({
   triggerKinds: string[];
 }): CiRunScope => {
   const repo = repoContextFromEvent(ctx.event);
+  const attempt: number = ctx.attempt ?? 0;
+  const retries = (config as { retries?: number }).retries ?? defaultRetries;
+  const maxAttempts: number = ctx.maxAttempts ?? retries + 1;
 
   return {
     ci: internals,
@@ -198,6 +201,12 @@ const newRunScope = ({
     sandboxes: new Set(),
     summaries: [],
     openChecks: new Map(),
+    deferredChecks: new Map(),
+    attempt,
+    maxAttempts,
+    willRetry: (error) => {
+      return willRetry(error, attempt, maxAttempts);
+    },
     // CI's own steps keep their scope inside the handler, so a call like
     // `github.rest` made from one still knows which run it's part of.
     step: withScopePreserved(ctx.step),
@@ -304,6 +313,8 @@ export const runPipeline = async ({
         countApi("skip");
       }
 
+      await completeDeferredJobChecks(run, checks);
+
       await completePipeline(run, checks, {
         conclusion: "success",
         title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
@@ -313,6 +324,35 @@ export const runPipeline = async ({
 
       return result;
     } catch (error) {
+      // A failed command's exit code is already recorded in its steps, and a
+      // usage error is the same on every attempt, so retrying the run would
+      // only replay the same failure.
+      const deterministic = isDeterministicFailure(error);
+
+      retrying = !deterministic && run.willRetry(error);
+
+      if (retrying) {
+        // The check steps are memoized, so completing a check as failed now
+        // would leave it failed even if the retry passes. They stay in
+        // progress until an attempt that's final.
+        const title = `Retrying (attempt ${run.attempt + 2} of ${run.maxAttempts})`;
+
+        for (const [jobPath, deferred] of run.deferredChecks) {
+          await checks.retrying({
+            run,
+            jobPath,
+            ...(deferred.name ? { name: deferred.name } : {}),
+            title,
+          });
+        }
+
+        await checks.retrying({ run, title });
+
+        throw error;
+      }
+
+      await completeDeferredJobChecks(run, checks);
+
       // Jobs that were still running when the run ended would otherwise leave
       // their checks spinning.
       await closeOpenJobChecks(run, checks);
@@ -324,14 +364,9 @@ export const runPipeline = async ({
         annotations: run.pipelineAnnotations,
       });
 
-      // A failed command's exit code is already recorded in its steps, and a
-      // usage error is the same on every attempt, so retrying the run would
-      // only replay the same failure.
-      if (isDeterministicFailure(error)) {
+      if (deterministic) {
         throw new NonRetriableError(error.message, { cause: error });
       }
-
-      retrying = willRetry(error, config, ctx);
 
       throw error;
     } finally {
@@ -435,22 +470,41 @@ const isDeterministicFailure = (
  */
 const willRetry = (
   error: unknown,
-  config: PipelineConfig,
-  // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-  ctx: any,
+  attempt: number,
+  maxAttempts: number,
 ): boolean => {
   if (error instanceof NonRetriableError || isDeterministicFailure(error)) {
     return false;
   }
 
-  const retries = (config as { retries?: number }).retries ?? defaultRetries;
-  const maxAttempts: number = ctx.maxAttempts ?? retries + 1;
-
-  return (ctx.attempt ?? 0) < maxAttempts - 1;
+  return attempt < maxAttempts - 1;
 };
 
 /** How many times Inngest retries a function that sets no `retries`. */
 const defaultRetries = 4;
+
+/**
+ * Complete the job checks that were held back for a retry that isn't coming
+ * after all: the run succeeded around the failed job, or this was the last
+ * attempt.
+ */
+const completeDeferredJobChecks = async (
+  run: CiRunScope,
+  checks: CheckReporter,
+): Promise<void> => {
+  const deferred = [...run.deferredChecks.entries()];
+
+  run.deferredChecks.clear();
+
+  for (const [jobPath, { name, ...result }] of deferred) {
+    await checks.jobComplete({
+      run,
+      jobPath,
+      ...(name ? { name } : {}),
+      ...result,
+    });
+  }
+};
 
 /**
  * Complete the job checks of anything still running when the run ended.

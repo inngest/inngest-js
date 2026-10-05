@@ -141,6 +141,26 @@ export interface CiRunScope {
    * are still going, these are completed rather than left spinning.
    */
   openChecks: Map<string, string | undefined>;
+  /**
+   * Job checks whose job failed with an error Inngest will retry. They stay in
+   * progress with their result held back, because a later attempt may pass.
+   */
+  deferredChecks: Map<
+    string,
+    {
+      name?: string;
+      conclusion: CheckConclusion;
+      title: string;
+      summary: string;
+      annotations: CheckAnnotation[];
+    }
+  >;
+  /** This attempt, counting from 0. */
+  attempt: number;
+  /** How many attempts Inngest makes in all. */
+  maxAttempts: number;
+  /** Whether Inngest will run the function again after this error. */
+  willRetry: (error: unknown) => boolean;
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GetStepTools<Inngest.Any>;
   sandboxTools: DurableSandboxTools;

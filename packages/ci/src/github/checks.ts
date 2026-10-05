@@ -59,6 +59,17 @@ export interface CheckReporter {
   jobComplete(
     args: { run: CiRunScope; jobPath: string; name?: string } & CheckResult,
   ): Promise<void>;
+  /**
+   * Keep a check in progress with a retry title, because the run will be
+   * attempted again and its own completion belongs to a later attempt. With no
+   * `jobPath` it's the pipeline's check.
+   */
+  retrying(args: {
+    run: CiRunScope;
+    jobPath?: string;
+    name?: string;
+    title: string;
+  }): Promise<void>;
   commandRetry(args: {
     run: CiRunScope;
     jobPath: string;
@@ -313,6 +324,37 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         result,
         { kind: "check", job: jobPath },
       );
+    },
+
+    retrying: async ({ run, jobPath, name, title }) => {
+      if (!run.checkName || (jobPath !== undefined && !run.jobChecks)) {
+        return;
+      }
+
+      const key = jobPath ?? "pipeline";
+      const checkName =
+        jobPath === undefined
+          ? run.checkName
+          : jobCheckName(run, jobPath, name);
+      const stepId = `github › check:${key}:retry:${run.attempt}`;
+
+      await run.step.run({ id: stepId, name: stepId }, async () => {
+        await tagStep(
+          run,
+          jobPath === undefined
+            ? { kind: "check" }
+            : { kind: "check", job: jobPath },
+        );
+
+        await sink.update?.({
+          run,
+          name: checkName,
+          title,
+          ...idFor(run, key),
+        });
+
+        return null;
+      });
     },
 
     commandRetry: async ({ run, jobPath, attempt, of, error }) => {

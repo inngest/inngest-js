@@ -1841,3 +1841,111 @@ describe("comment permissions", () => {
     });
   });
 });
+
+describe("checks across retries", () => {
+  test("a retried run's checks end with the last attempt's result", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        check_runs: [],
+      });
+
+      gh.route("POST /repos/inngest/inngest-js/check-runs", { id: 9 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
+      gh.route("GET /repos/inngest/inngest-js/check-runs/9", { id: 9 });
+
+      // Steps replay within an attempt, so the job fails by attempt rather
+      // than by how many times it has run.
+      let attempt = 0;
+
+      const flaky = ci.job("flaky", async () => {
+        if (attempt === 0) {
+          throw new Error("flaky infrastructure");
+        }
+
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, retries: 1 },
+        async (ctx) => {
+          attempt = ctx.attempt;
+
+          await flaky();
+        },
+      );
+
+      const result = await runFunction(pipeline, {
+        event: prEvent,
+        retries: 1,
+      });
+
+      expect(result.type).toBe("function-resolved");
+
+      const patches = gh.requests
+        .filter((request) => {
+          return request.method === "PATCH";
+        })
+        .map((request) => {
+          return request.body as {
+            status?: string;
+            conclusion?: string;
+            output?: { title?: string };
+          };
+        });
+
+      const completed = patches.filter((patch) => {
+        return patch.status === "completed";
+      });
+
+      // One completion per check, the job's and the pipeline's, both passing.
+      expect(
+        completed.map((patch) => {
+          return patch.conclusion;
+        }),
+      ).toEqual(["success", "success"]);
+
+      // Until then the checks only said a retry was coming.
+      expect(
+        patches.some((patch) => {
+          return patch.output?.title === "Retrying (attempt 2 of 2)";
+        }),
+      ).toBe(true);
+
+      const ends = result.metadata.filter((update) => {
+        return update.scope === "run" && "conclusion" in update.values;
+      });
+
+      expect(ends).toHaveLength(1);
+      expect(ends[0]?.values).toMatchObject({ conclusion: "success" });
+      expect(ends[0]?.step).toBe("github › check:pr:complete");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("the last attempt completes the checks as failed", async () => {
+    const { ci } = setup();
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async () => {
+        throw new Error("still broken");
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-rejected");
+
+    const ends = result.metadata.filter((update) => {
+      return update.scope === "run" && "conclusion" in update.values;
+    });
+
+    expect(ends).toHaveLength(1);
+    expect(ends[0]?.values).toMatchObject({ conclusion: "failure" });
+  });
+});

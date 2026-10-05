@@ -176,9 +176,12 @@ describe("run metadata", () => {
       throw new Error("lint failed");
     });
 
-    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      await lint();
-    });
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        await lint();
+      },
+    );
 
     const result = await runFunction(pipeline, { event: prEvent });
 

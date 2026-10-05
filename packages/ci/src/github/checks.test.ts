@@ -337,7 +337,7 @@ describe("a required check never hangs", () => {
     });
 
     const pipeline = ci.pipeline(
-      { id: "pr", on: [{ event: "test/event" }] },
+      { id: "pr", on: [{ event: "test/event" }], retries: 0 },
       async () => {
         return job();
       },

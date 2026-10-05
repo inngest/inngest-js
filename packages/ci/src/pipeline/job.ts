@@ -217,17 +217,25 @@ const jobBody = async ({
     });
 
     if (checked) {
-      await checks.jobComplete({
-        ...target,
+      const result = {
         conclusion,
         title,
         summary: jobFailureSummary(error, scope),
-        ...(scope.annotations.length > 0
-          ? { annotations: scope.annotations }
-          : {}),
-      });
+        annotations: scope.annotations,
+      };
 
       run.openChecks.delete(scope.path);
+
+      if (run.willRetry(error)) {
+        // A later attempt may pass, and the check's complete step is memoized,
+        // so the result is held back until the run knows it's final.
+        run.deferredChecks.set(scope.path, {
+          ...(checkName ? { name: checkName } : {}),
+          ...result,
+        });
+      } else {
+        await checks.jobComplete({ ...target, ...result });
+      }
     }
 
     throw error;
