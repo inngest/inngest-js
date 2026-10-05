@@ -9,6 +9,7 @@ import { CiUsageError } from "../errors.ts";
 import { getJobScope, getRunScope, nextStepId } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
 import { filterPaths, git } from "../util.ts";
+import { parsePorcelainPaths } from "./porcelain.ts";
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -114,8 +115,11 @@ export const changedFiles = async (): Promise<string[] | null> => {
 const listChangedFiles = async (
   repo: RepoContext | undefined,
 ): Promise<string[]> => {
+  // Without a repository there's nothing to compare, and an empty list would
+  // skip work that may have changed, so say so and the caller assumes
+  // everything changed.
   if (!repo) {
-    return [];
+    throw new CiUsageError("this run has no repository to read changes from.");
   }
 
   if (repo.local && process.env.INNGEST_CI_GITHUB !== "live") {
@@ -139,23 +143,58 @@ const listChangedFiles = async (
   }
 
   if (repo.baseSha && repo.sha) {
-    const comparison = await rest.repos.compareCommitsWithBasehead({
-      basehead: `${repo.baseSha}...${repo.sha}`,
-    });
+    const basehead = `${repo.baseSha}...${repo.sha}`;
 
-    return (comparison.files ?? []).map((file) => {
-      return file.filename;
+    return collectComparedFiles(async (page) => {
+      const comparison = await rest.repos.compareCommitsWithBasehead({
+        basehead,
+        per_page: comparePageSize,
+        page,
+      });
+
+      return (comparison.files ?? []).map((file) => {
+        return file.filename;
+      });
     });
   }
 
   return [];
 };
 
+/** GitHub's page size for a compare, and the most files it will list. */
+const comparePageSize = 100;
+const compareFileLimit = 300;
+
+/**
+ * Read a compare's files a page at a time. A compare lists at most 300 files
+ * and doesn't say when it stopped there, so reaching the limit means the list
+ * may be incomplete and the change is unknown.
+ */
+export const collectComparedFiles = async (
+  fetchPage: (page: number) => Promise<string[]>,
+): Promise<string[]> => {
+  const files: string[] = [];
+
+  for (let page = 1; files.length < compareFileLimit; page++) {
+    const batch = await fetchPage(page);
+
+    files.push(...batch);
+
+    if (batch.length < comparePageSize) {
+      return files;
+    }
+  }
+
+  throw new CiUsageError(
+    `the compare lists ${compareFileLimit} files, which is as many as GitHub returns, so some changed files may be missing.`,
+  );
+};
+
 /**
  * Paths changed locally against a base ref, including untracked files. This is
  * what `changed()` uses when a run came from a local fixture.
  */
-const localChangedFiles = async (
+export const localChangedFiles = async (
   cwd: string,
   baseRef: string,
 ): Promise<string[]> => {
@@ -163,9 +202,14 @@ const localChangedFiles = async (
 
   for (const target of [`origin/${baseRef}`, baseRef]) {
     try {
-      const diff = await git(cwd, ["diff", "--name-only", `${target}...HEAD`]);
+      const diff = await git(cwd, [
+        "diff",
+        "--name-only",
+        "-z",
+        `${target}...HEAD`,
+      ]);
 
-      committed = diff.split("\n").filter(Boolean);
+      committed = diff.split("\0").filter(Boolean);
 
       break;
     } catch {
@@ -182,15 +226,14 @@ const localChangedFiles = async (
     );
   }
 
-  const status = await git(cwd, ["status", "--porcelain"]);
+  const status = await git(cwd, [
+    "status",
+    "--porcelain",
+    "-z",
+    "--untracked-files=all",
+  ]);
 
-  const uncommitted = status
-    .split("\n")
-    .filter(Boolean)
-    // Renames read as "old -> new"; the new path is the interesting one.
-    .map((line) => {
-      return line.slice(3).trim().split(" -> ").pop() as string;
-    });
+  const uncommitted = parsePorcelainPaths(status);
 
   return [...new Set([...committed, ...uncommitted])];
 };
