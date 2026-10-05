@@ -3,7 +3,8 @@
  *
  * ```bash
  * pnpm ci:forward
- * gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3950
+ * gh extension install cli/gh-webhook
+ * gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3950 --secret="$GITHUB_WEBHOOK_SECRET"
  * ```
  *
  * It applies the same transform as `githubWebhookTransform`, so events look

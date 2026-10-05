@@ -117,7 +117,8 @@ To receive real webhooks locally, forward them to the Dev Server:
 
 ```bash
 INNGEST_DEV=1 pnpm ci:forward
-gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3950
+gh extension install cli/gh-webhook
+gh webhook forward --repo=owner/name --events='*' --url=http://localhost:3950 --secret="$GITHUB_WEBHOOK_SECRET"
 ```
 
 Set `GITHUB_WEBHOOK_SECRET` to the secret GitHub signs with. The forwarder verifies `X-Hub-Signature-256`, refuses to start without it, and listens on `127.0.0.1:3950` (override the port with `FORWARDER_PORT`).
