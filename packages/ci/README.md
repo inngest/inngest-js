@@ -821,7 +821,7 @@ await $`pnpm test`.timeout("10m").onTimeout(async () => {
 
 ## Run metadata
 
-Every pipeline run is tagged with `inngest.ci` metadata, visible on the run in Inngest. It tells Inngest the run is a CI run and which parts of `@inngest/ci` it used. It's sent with steps CI already runs, so it adds nothing to the trace.
+Every pipeline run is tagged with `userland.inngest-ci` metadata, visible on the run in Inngest. It tells Inngest the run is a CI run and which parts of `@inngest/ci` it used. It's sent with steps CI already runs, so it adds nothing to the trace.
 
 When the run starts:
 

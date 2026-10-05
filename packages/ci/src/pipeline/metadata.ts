@@ -1,5 +1,5 @@
 /**
- * Run metadata: the `inngest.ci` metadata attached to runs and steps, so
+ * Run metadata: the `userland.inngest-ci` metadata attached to runs and steps, so
  * Inngest can tell a run is a CI run and see how `@inngest/ci` is used.
  *
  * Metadata rides on steps CI already runs, so it adds no trace rows. Only a
@@ -14,8 +14,12 @@ import { version } from "../version.ts";
 import type { CiRunScope } from "./scope.ts";
 import { apiNames } from "./scope.ts";
 
-/** The metadata kind everything here is attached under. */
-export const metadataKind = "inngest.ci";
+/**
+ * The metadata kind everything here is attached under. It moves to
+ * `inngest.ci` once the backend allowlists that kind (inngest/inngest branch
+ * `jack/allow-inngest-ci-metadata`).
+ */
+export const metadataKind = "userland.inngest-ci";
 
 /** What a step is for, attached to the step that does it. */
 export interface StepTag {
@@ -163,7 +167,10 @@ export const tagStep = async (
       });
     }
   } catch (error) {
-    run.ci.logger?.warn({ error }, "Couldn't attach inngest.ci metadata");
+    run.ci.logger?.warn(
+      { error },
+      "Couldn't attach userland.inngest-ci metadata",
+    );
   }
 };
 

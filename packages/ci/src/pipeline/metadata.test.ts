@@ -1,5 +1,5 @@
 /**
- * Tests of the `inngest.ci` metadata: what a run and its steps are tagged
+ * Tests of the `userland.inngest-ci` metadata: what a run and its steps are tagged
  * with, that it's sent once however often the handler replays, and that it can
  * never fail a pipeline.
  *
@@ -114,7 +114,7 @@ describe("run metadata", () => {
 
     expect(start).toEqual({
       step: "github › check:pr:start",
-      kind: "inngest.ci",
+      kind: "userland.inngest-ci",
       scope: "run",
       op: "merge",
       values: {
@@ -132,7 +132,7 @@ describe("run metadata", () => {
     });
 
     expect(end?.step).toBe("github › check:pr:complete");
-    expect(end?.kind).toBe("inngest.ci");
+    expect(end?.kind).toBe("userland.inngest-ci");
     expect(end?.op).toBe("merge");
 
     expect(end?.values).toEqual({
@@ -332,7 +332,7 @@ describe("step metadata", () => {
     ]);
 
     for (const update of stepScoped(result.metadata)) {
-      expect(update.kind).toBe("inngest.ci");
+      expect(update.kind).toBe("userland.inngest-ci");
       expect(update.op).toBe("merge");
     }
   });
@@ -397,8 +397,14 @@ describe("failing to tag", () => {
     });
 
     expect(addMetadata.mock.calls).toEqual([
-      ["hashed", "inngest.ci", "run", "merge", { a: 1 }],
-      ["hashed", "inngest.ci", "step", "merge", { kind: "job", job: "test" }],
+      ["hashed", "userland.inngest-ci", "run", "merge", { a: 1 }],
+      [
+        "hashed",
+        "userland.inngest-ci",
+        "step",
+        "merge",
+        { kind: "job", job: "test" },
+      ],
     ]);
   });
 });

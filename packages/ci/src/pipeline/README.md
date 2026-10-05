@@ -6,7 +6,7 @@ The client and the run engine.
 - `pipeline.ts`: `ci.pipeline()`, running a pipeline, and the functions generated beside it (cleanup, re-runs, cache refreshes).
 - `job.ts`: `ci.job()` and the job body (checks, caching, pausing machines).
 - `matrix.ts`: `ci.matrix()`, matrix expansion and the concurrency pool.
-- `metadata.ts`: the `inngest.ci` metadata attached to runs and steps, and the helpers that build and attach it.
+- `metadata.ts`: the `userland.inngest-ci` metadata attached to runs and steps, and the helpers that build and attach it.
 - `scope.ts`: the run and job scopes held in async context.
 - `durable.ts`: durable proxies that run calls as steps.
 - `rerun.ts`: re-running a pipeline from a GitHub check.
