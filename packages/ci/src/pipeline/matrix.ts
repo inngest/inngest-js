@@ -115,7 +115,8 @@ export const expandMatrix = <TAxes extends Record<string, readonly unknown[]>>(
  *
  * With `failFast` off, everything runs and the failures are thrown together,
  * so one bad combination doesn't hide the rest. With it on, the first failure
- * rejects; the others keep running and their results are ignored.
+ * rejects and no queued combination starts; the ones already running finish
+ * and their results are ignored.
  */
 export const runPool = async <T>(
   tasks: Array<() => Promise<T>>,
@@ -126,9 +127,10 @@ export const runPool = async <T>(
   const results: T[] = new Array(tasks.length);
   const errors: unknown[] = [];
   let next = 0;
+  let stopped = false;
 
   const worker = async (): Promise<void> => {
-    while (next < tasks.length) {
+    while (!stopped && next < tasks.length) {
       const index = next++;
       const task = tasks[index];
 
@@ -140,6 +142,8 @@ export const runPool = async <T>(
         results[index] = await task();
       } catch (error) {
         if (failFast) {
+          stopped = true;
+
           throw error;
         }
 

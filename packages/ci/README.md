@@ -309,7 +309,7 @@ The handler receives `event`, `events`, `runId`, `pipelineId`, `repo`, `attempt`
 - `id` is unique in the app. It names the function, the run, and the check.
 - `check: false` turns off all checks. `check: { jobs: false }` keeps the pipeline check and drops the job checks.
 - `machine` is the default machine for the pipeline's jobs. A job's own `machine` overrides it. See [Machines](#machines).
-- `repo` (`"owner/name"`) gives crons and manual runs a repository to check out.
+- `repo` (`"owner/name"`) gives crons and manual runs a repository. The run resolves its default branch and head commit in a step before the handler starts, so `checkout()`, GitHub helpers, checks, and cache keys work. It needs GitHub credentials, so with the console reporter the repository has no commit.
 - Flow control options: `concurrency`, `throttle`, `rateLimit`, `debounce`, `priority`, `singleton`, `idempotency`, `batchEvents`, `timeouts`, `cancelOn`, `retries`, `name`, and `description`. See [flow control](https://www.inngest.com/docs/durable-execution/flow-control/concurrency).
 
 Return `ci.skip(reason)` to end a run early. The check completes as success with the reason, so a required check never waits.
@@ -358,7 +358,7 @@ export const merged = ci.pipeline(
 
 - `pullRequest()` defaults to `opened`, `synchronize`, and `reopened`.
 - A pipeline has at most 10 triggers, and `pullRequest()` uses one for each type.
-- `comment({ minPermission })` checks the author after the run starts. A user without the permission gets a reply and a neutral check.
+- `comment({ minPermission })` checks the author after the run starts, against the command the comment starts with. A user without the permission gets a reply and a neutral check.
 - Several triggers give a union type. Narrow it with `"pull_request" in event.data`.
 - A cron has no typed `event.data`. `ci.manual({ schema })` types it from any Standard Schema validator, such as Zod.
 
@@ -394,7 +394,7 @@ const build = ci.job({ id: "build", machine: { vcpu: 4 } }, async () => {
 | `check` | `false`, or `{ name? }` | No |
 | `keepOnFailure` | Duration, such as `"24h"` | No |
 
-`keepOnFailure` snapshots the machine when the job fails. The snapshot ID appears on the job check and in the pipeline summary.
+`keepOnFailure` snapshots the machine when the job fails. The snapshot ID appears on the job check and in the pipeline summary. The duration is currently ignored: the snapshot is kept for the platform's default retention.
 
 ### Commands
 
@@ -581,7 +581,7 @@ Call `compat()` to run every combination, or `compat({ node: "22" })` to run onl
 - Job IDs come from the values, such as `compat (node:22, db:sqlite)`. Adding a value does not change the others.
 - `exclude` removes combinations and `include` adds extra ones.
 - `concurrency` limits how many run at once. The default is all of them.
-- `failFast` is off by default. When it is on, the first failure ends the matrix, and running combinations are not cancelled.
+- `failFast` is off by default. When it is on, the first failure ends the matrix: combinations that have not started never start, and running ones are not cancelled.
 - `machine`, `cache`, and `check` accept a value or a function of the combination.
 - With `failFast` off, failures are thrown together as an `AggregateError` after every combination finishes.
 
@@ -608,6 +608,7 @@ const base = ci.job(
 - `key` is what the job depends on. If the key is unchanged since the last successful run, the job does not run. A job that started a machine is restored from its snapshot, and `from(base)` clones the saved machine.
 - `refresh` takes triggers that rebuild the cache ahead of time, so pull requests do not pay for it. Set `repo` on a pipeline so a cron has a repository to check out.
 - `scope` is `"branch"` by default. A pull request reads entries from its base branch and writes its own. `"global"` shares one entry set.
+- A job's input is part of its cache identity, so the same key with a different input is a separate entry.
 
 ```ts
 key: files("pnpm-lock.yaml")

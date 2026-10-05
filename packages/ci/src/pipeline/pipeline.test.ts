@@ -12,17 +12,20 @@ import {
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
-import { consoleReporter } from "../github/auth.ts";
+import { consoleReporter, githubToken } from "../github/auth.ts";
+import { github } from "../github/index.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { machineSetupScript } from "../machine/machine.ts";
+import { destroyRunMachines, machineSetupScript } from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { CacheStore } from "../types.ts";
 import { createCi } from "./createCi.ts";
+import { destroyOrphans } from "./pipeline.ts";
 
 const prEvent = {
   name: "github/pull_request.opened",
@@ -1066,6 +1069,38 @@ describe("cache", () => {
     expect(api.sandboxes.size).toBe(1);
   });
 
+  test("the same key with a different input is a different entry", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+
+    const runWith = async (version: string) => {
+      const { ci } = setup({ cacheStore: store, api });
+
+      const build = ci.job<string, string>(
+        { id: "setup", cache: { key: "v1" } },
+        async (input) => {
+          await $`pnpm install`;
+
+          return input;
+        },
+      );
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        return build(version);
+      });
+
+      return runFunction(pipeline, { event: prEvent });
+    };
+
+    expect((await runWith("1")).data).toBe("1");
+    expect((await runWith("2")).data).toBe("2");
+    expect(userCommands(api)).toHaveLength(2);
+
+    // The same input again is a hit.
+    expect((await runWith("1")).data).toBe("1");
+    expect(userCommands(api)).toHaveLength(2);
+  });
+
   test("a changed key misses and runs again", async () => {
     const store = memoryCacheStore();
     // The same machines and snapshots across both runs, like a real environment.
@@ -1449,5 +1484,284 @@ describe("errors", () => {
 
     expect(error.message).toContain("`pnpm test` exited with 1");
     expect(error.jobPath).toBe("test");
+  });
+});
+
+/** A CI client whose GitHub calls go to a fake. */
+const setupGitHub = (reporter: "checks" | "statuses" = "statuses") => {
+  const api = createFakeSandboxApi();
+  const client = createCiTestClient(api);
+  const gh = createFakeGitHub();
+
+  const ci = createCi(client, {
+    github: {
+      ...githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+      reporter,
+    },
+    cacheStore: memoryCacheStore(),
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
+    },
+  });
+
+  return { api, client, gh, ci };
+};
+
+describe("cleanup", () => {
+  const notFound = Object.assign(new Error("sandbox not found"), {
+    code: "sandbox_not_found",
+  });
+
+  const runWithSandboxes = (sandboxes: {
+    get: (id: string) => Promise<unknown>;
+  }) => {
+    return {
+      sandboxes: new Set(["a"]),
+      step: {
+        run: (_options: unknown, fn: () => unknown) => {
+          return fn();
+        },
+      },
+      ci: { client: { sandboxes } },
+      // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
+    } as any;
+  };
+
+  test("a machine that is already gone is not an error", async () => {
+    const run = runWithSandboxes({
+      get: async () => {
+        return {
+          destroy: async () => {
+            throw notFound;
+          },
+        };
+      },
+    });
+
+    await expect(destroyRunMachines(run)).resolves.toBeUndefined();
+  });
+
+  test("any other failure fails the step so it retries", async () => {
+    const run = runWithSandboxes({
+      get: async () => {
+        return {
+          destroy: async () => {
+            throw new Error("503 service unavailable");
+          },
+        };
+      },
+    });
+
+    await expect(destroyRunMachines(run)).rejects.toThrow("503");
+
+    const lookup = runWithSandboxes({
+      get: async () => {
+        throw new Error("network down");
+      },
+    });
+
+    await expect(destroyRunMachines(lookup)).rejects.toThrow("network down");
+  });
+
+  test("orphan recovery only ignores not-found", async () => {
+    const page = (destroy: () => Promise<unknown>) => {
+      return {
+        sandboxes: {
+          list: async () => {
+            return {
+              items: [{ name: "ci-run1-test", destroy }],
+              page: { hasMore: false },
+            };
+          },
+        },
+        // biome-ignore lint/suspicious/noExplicitAny: a partial client is enough here
+      } as any;
+    };
+
+    await expect(
+      destroyOrphans(
+        page(async () => {
+          throw notFound;
+        }),
+        "run1",
+      ),
+    ).resolves.toEqual({ destroyed: 0 });
+
+    await expect(
+      destroyOrphans(
+        page(async () => {
+          throw new Error("503 service unavailable");
+        }),
+        "run1",
+      ),
+    ).rejects.toThrow("503");
+  });
+
+  test("a retried run cleans up again instead of replaying the first cleanup", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+
+      throw new Error("flaky infrastructure");
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-rejected");
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id === "cleanup";
+      }),
+    ).toHaveLength(2);
+
+    expect(
+      [...api.sandboxes.values()].every((sandbox) => {
+        return sandbox.status === "TERMINATED";
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("repository for repo-less triggers", () => {
+  test("the configured repo is resolved to its default branch head", async () => {
+    const { ci, gh } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js", { default_branch: "main" });
+
+    gh.route("GET /repos/inngest/inngest-js/branches/main", {
+      commit: { sha: "cafe1234" },
+    });
+
+    const pipeline = ci.pipeline(
+      {
+        id: "nightly",
+        on: [{ event: "test/nightly" }],
+        repo: "inngest/inngest-js",
+        check: false,
+      },
+      async ({ repo }) => {
+        return repo;
+      },
+    );
+
+    const result = await runFunction(pipeline, {
+      event: { name: "test/nightly", data: {} },
+    });
+
+    expect(result.data).toMatchObject({
+      owner: "inngest",
+      name: "inngest-js",
+      fullName: "inngest/inngest-js",
+      sha: "cafe1234",
+      ref: "refs/heads/main",
+      baseRef: "main",
+    });
+
+    expect(result.stepIds).toContain("repo:resolve");
+  });
+});
+
+describe("pipeline check annotations", () => {
+  test("annotations made outside a job reach the pipeline check", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+
+    try {
+      const { ci, gh } = setupGitHub("checks");
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        check_runs: [],
+      });
+
+      gh.route("POST /repos/inngest/inngest-js/check-runs", { id: 9 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, check: { jobs: false } },
+        async () => {
+          await report.annotate([
+            { path: "src/a.ts", line: 4, message: "unused export" },
+          ]);
+        },
+      );
+
+      await runFunction(pipeline, { event: prEvent });
+
+      const completion = gh.requests.find((request) => {
+        return (
+          request.method === "PATCH" &&
+          (request.body as { status?: string })?.status === "completed"
+        );
+      });
+
+      expect(
+        (
+          completion?.body as {
+            output?: { annotations?: { path: string }[] };
+          }
+        )?.output?.annotations,
+      ).toMatchObject([{ path: "src/a.ts", message: "unused export" }]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("comment permissions", () => {
+  const commentEvent = (body: string) => {
+    return {
+      name: "github/issue_comment.created",
+      data: {
+        action: "created",
+        repository: { full_name: "inngest/inngest-js" },
+        issue: { number: 7, pull_request: {} },
+        comment: { body, user: { login: "alice" } },
+        _github: { event: "issue_comment", installationId: 1 },
+      },
+    };
+  };
+
+  const run = async (body: string) => {
+    const { ci, gh } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js/collaborators/alice/permission", {
+      permission: "write",
+    });
+
+    gh.route("GET /repos/inngest/inngest-js/issues/7/comments", []);
+    gh.route("POST /repos/inngest/inngest-js/issues/7/comments", { id: 1 });
+
+    const pipeline = ci.pipeline(
+      {
+        id: "commands",
+        on: [
+          github.comment({ command: "/test", minPermission: "read" }),
+          github.comment({ command: "/deploy", minPermission: "admin" }),
+        ],
+        check: false,
+      },
+      async () => {
+        return "ran";
+      },
+    );
+
+    return runFunction(pipeline, { event: commentEvent(body) });
+  };
+
+  test("a command needs the permission of its own trigger", async () => {
+    expect((await run("/test")).data).toBe("ran");
+
+    expect((await run("/deploy now")).data).toEqual({
+      skipped: "not permitted",
+    });
   });
 });

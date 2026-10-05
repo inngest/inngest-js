@@ -15,6 +15,7 @@ import {
   CommandFailedError,
   CommandTimeoutError,
 } from "../errors.ts";
+import type { GitHubProvider } from "../github/auth.ts";
 import type { CheckReporter } from "../github/checks.ts";
 import { pipelineSummary } from "../github/checks.ts";
 import {
@@ -33,7 +34,7 @@ import type {
   PipelineContext,
   RepoContext,
 } from "../types.ts";
-import { formatDuration } from "../util.ts";
+import { formatDuration, isSandboxNotFound } from "../util.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
@@ -70,15 +71,15 @@ export const definePipeline = ({
 
   // A comment trigger's `minPermission` can't be expressed in CEL, so it
   // travels beside the trigger and is checked when the run starts.
-  const permission = triggers
-    .map((trigger) => {
-      return commentPermissionFor(trigger);
-    })
-    .find(Boolean);
+  const permissions = triggers.flatMap((trigger) => {
+    const permission = commentPermissionFor(trigger);
+
+    return permission ? [permission] : [];
+  });
 
   const config: PipelineConfig = {
     ...rawConfig,
-    ...(permission ? { commentPermission: permission.minPermission } : {}),
+    ...(permissions.length > 0 ? { commentPermissions: permissions } : {}),
   };
 
   const fn = client.createFunction(
@@ -122,7 +123,7 @@ const flowControl = (config: PipelineConfig) => {
     check: _check,
     machine: _machine,
     repo: _repo,
-    commentPermission: _commentPermission,
+    commentPermissions: _commentPermissions,
     ...rest
   } = config;
 
@@ -166,6 +167,7 @@ const newRunScope = ({
     jobs: new Map(),
     machines: new Map(),
     snapshots: new Map(),
+    cacheKeys: new Map(),
     cacheEntries: new Map(),
     sandboxes: new Set(),
     summaries: [],
@@ -208,6 +210,13 @@ export const runPipeline = async ({
   const checks = internals.checks as CheckReporter;
 
   return runInScope({ run }, async () => {
+    // A trigger with no repository of its own, like a cron, gets the one the
+    // pipeline was configured with. Checks, checkout and cache keys all need
+    // it, so it's resolved before any of them run.
+    if (!run.repo && config.repo) {
+      run.repo = await resolveConfiguredRepo(run, config.repo);
+    }
+
     await checks.pipelineStart({ run });
 
     try {
@@ -219,6 +228,7 @@ export const runPipeline = async ({
           conclusion: "neutral",
           title: "Not permitted",
           summary: pipelineSummary(run),
+          annotations: run.pipelineAnnotations,
         });
 
         return { skipped: "not permitted" };
@@ -241,6 +251,7 @@ export const runPipeline = async ({
         conclusion: "success",
         title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
         summary: pipelineSummaryWithReports(run),
+        annotations: run.pipelineAnnotations,
       });
 
       return result;
@@ -254,6 +265,7 @@ export const runPipeline = async ({
         conclusion: conclusionForError(error),
         title: errorTitle(error, run),
         summary: pipelineSummaryWithReports(run),
+        annotations: run.pipelineAnnotations,
       });
 
       // A failed command's exit code is already recorded in its steps, so
@@ -267,9 +279,62 @@ export const runPipeline = async ({
 
       throw error;
     } finally {
-      await destroyRunMachines(run);
+      await destroyRunMachines(run, ctx.attempt ?? 0);
     }
   });
+};
+
+/**
+ * Look up the configured repository's default branch and its head commit, in a
+ * step so every replay sees the same commit.
+ *
+ * With no GitHub credentials, as with the console reporter in dev, there's
+ * nothing to ask, so the repository comes back without a commit.
+ */
+const resolveConfiguredRepo = (
+  run: CiRunScope,
+  fullName: string,
+): Promise<RepoContext> => {
+  const [owner = "", name = ""] = fullName.split("/");
+
+  if (!owner || !name) {
+    throw new CiUsageError(
+      `\`repo\` must be "owner/name", but got "${fullName}".`,
+    );
+  }
+
+  return run.step.run(
+    { id: `github › repo:resolve`, name: "repo:resolve" },
+    async (): Promise<RepoContext> => {
+      const base: RepoContext = { owner, name, fullName, sha: "" };
+      const provider = run.ci.github as GitHubProvider;
+
+      if (provider.kind === "console") {
+        return base;
+      }
+
+      const octokit = await provider.octokit({ owner, repo: name });
+      const { data: info } = await octokit.rest.repos.get({
+        owner,
+        repo: name,
+      });
+      const branch = info.default_branch;
+
+      const { data: head } = await octokit.rest.repos.getBranch({
+        owner,
+        repo: name,
+        branch,
+      });
+
+      return {
+        ...base,
+        sha: head.commit.sha,
+        ref: `refs/heads/${branch}`,
+        baseRef: branch,
+        trigger: (run.event as { name?: string } | undefined)?.name ?? "manual",
+      };
+    },
+  ) as Promise<RepoContext>;
 };
 
 /**
@@ -358,15 +423,18 @@ const checkCommentPermission = async (
   run: CiRunScope,
   config: PipelineConfig,
 ): Promise<boolean> => {
-  const minPermission = config.commentPermission as Permission | undefined;
-
-  if (!minPermission) {
-    return true;
-  }
-
   const event = run.event as { name?: string } | undefined;
 
   if (!event?.name?.startsWith("github/issue_comment")) {
+    return true;
+  }
+
+  const minPermission = permissionForComment(
+    config,
+    commentBody(run.event as { data?: unknown }),
+  );
+
+  if (!minPermission) {
     return true;
   }
 
@@ -395,6 +463,25 @@ const checkCommentPermission = async (
   }
 
   return allowed;
+};
+
+/**
+ * The permission of the command a comment starts with. When commands overlap,
+ * like `/test` and `/test-all`, the longest one is the command that was meant.
+ */
+const permissionForComment = (
+  config: PipelineConfig,
+  body: string,
+): Permission | undefined => {
+  const matched = (config.commentPermissions ?? [])
+    .filter(({ command }) => {
+      return body.startsWith(command);
+    })
+    .sort((a, b) => {
+      return b.command.length - a.command.length;
+    });
+
+  return matched[0]?.minPermission;
 };
 
 /**
@@ -462,7 +549,7 @@ const generatedFunctions = ({
  * machines are found by name. Listing has no name filter, so the comparison
  * happens here.
  */
-const destroyOrphans = async (
+export const destroyOrphans = async (
   client: Inngest.Any,
   runId: string,
 ): Promise<{ destroyed: number }> => {
@@ -482,8 +569,11 @@ const destroyOrphans = async (
           await sandbox.destroy();
 
           destroyed++;
-        } catch {
-          // Already gone.
+        } catch (error) {
+          // Anything but "not found" fails the step so it retries.
+          if (!isSandboxNotFound(error)) {
+            throw error;
+          }
         }
       }
     }

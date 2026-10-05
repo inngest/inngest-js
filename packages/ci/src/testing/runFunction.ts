@@ -68,6 +68,11 @@ export interface RunFunctionOptions {
   resolveWait?: (step: { id: string; displayName?: string }) => unknown;
   /** How many times a retriable step failure is retried. Defaults to 4. */
   stepAttempts?: number;
+  /**
+   * How many times a function that fails retriably is run again, with its
+   * step results kept and `attempt` counting up. Defaults to 0.
+   */
+  retries?: number;
   /** Called before each execution request, such as to advance a fake clock. */
   beforeRequest?: () => void;
 }
@@ -86,6 +91,8 @@ export const runFunction = async (
   const event = opts.event ?? { name: "test/event", data: {} };
   const maxRequests = opts.maxRequests ?? 200;
   const maxAttempts = opts.stepAttempts ?? 4;
+  const retries = opts.retries ?? 0;
+  let attempt = 0;
 
   // The state the executor would send back on each request.
   const stepState: Record<
@@ -102,7 +109,7 @@ export const runFunction = async (
   const request = async (runStep?: string): Promise<ExecutionResult> => {
     opts.beforeRequest?.();
 
-    return runOnce(fn, event, stepState, completionOrder, runStep);
+    return runOnce(fn, event, stepState, completionOrder, attempt, runStep);
   };
 
   const record = (step: Step): void => {
@@ -156,6 +163,12 @@ export const runFunction = async (
     }
 
     if (result.type === "function-rejected") {
+      if (result.retriable !== false && attempt < retries) {
+        attempt++;
+
+        continue;
+      }
+
       return {
         type: result.type,
         error: result.error,
@@ -208,6 +221,7 @@ const runOnce = async (
   event: EventPayload,
   stepState: object,
   completionOrder: string[],
+  attempt: number,
   runStep?: string,
 ): Promise<ExecutionResult> => {
   // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals, see the module comment
@@ -228,7 +242,7 @@ const runOnce = async (
   const execution = internals["createExecution"]({
     partialOptions: {
       client,
-      data: { event, events: [event], runId: "01TESTRUN", attempt: 0 },
+      data: { event, events: [event], runId: "01TESTRUN", attempt },
       runId: "01TESTRUN",
       stepState,
       stepCompletionOrder: completionOrder,

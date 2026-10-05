@@ -15,7 +15,7 @@ import type {
   CacheStore,
   RepoContext,
 } from "../types.ts";
-import { hash } from "../util.ts";
+import { hash, stableStringify } from "../util.ts";
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -87,7 +87,9 @@ export const fileCacheStore = (
  * Where a job reads and writes cache entries.
  *
  * With the default `"branch"` scope, a pull request reads entries built on the
- * branch it targets and writes its own, so one PR can't poison another.
+ * branch it targets and writes its own, so one PR can't poison another. A
+ * pull request's scope has a `:`, which a branch name can't contain, so a
+ * branch called `pr-4` never shares it.
  */
 export const cacheScopes = (
   repo: RepoContext | undefined,
@@ -100,7 +102,7 @@ export const cacheScopes = (
   const base = repo.baseRef ?? "default";
 
   if (repo.pullRequest) {
-    const own = `pr-${repo.pullRequest.number}`;
+    const own = `pr:${repo.pullRequest.number}`;
 
     return { read: [own, base], write: own };
   }
@@ -251,7 +253,9 @@ export const resolveParentKeys = async (
       continue;
     }
 
-    const key = await resolveCacheKey(run, cache.key);
+    const key =
+      run.cacheKeys.get(jobId) ?? (await resolveCacheKey(run, cache.key));
+
     const entry = await findEntry(run, cache, jobId, key);
 
     const parents = await resolveParentKeys(
@@ -274,6 +278,8 @@ export const resolveParentKeys = async (
 export const lookupCache = async (
   scope: CiJobScope,
   cache: CacheConfig,
+  /** The input the job was called with, which is part of its identity. */
+  input?: unknown,
 ): Promise<CacheLookup> => {
   const { run } = scope;
   const jobId = scope.config.id;
@@ -284,9 +290,16 @@ export const lookupCache = async (
       name: "cache:key",
     },
     async () => {
-      return resolveCacheKey(run, cache.key);
+      const key = await resolveCacheKey(run, cache.key);
+
+      // The same key with a different input is a different job.
+      return input === undefined
+        ? key
+        : hash(`${key}\0input:${stableStringify(input)}`);
     },
   )) as string;
+
+  run.cacheKeys.set(jobId, ownKey);
 
   const entry = (await run.step.run(
     {
