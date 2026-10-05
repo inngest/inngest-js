@@ -31,8 +31,9 @@ export const resolveMachineConfig = (
  * The name a machine is created with. It carries the run ID so orphaned
  * machines can be found and destroyed by the cleanup function.
  */
-export const machineName = (runId: string, path: string): string =>
-  boundedName(`ci-${runId}-${slug(path)}`);
+export const machineName = (runId: string, path: string): string => {
+  return boundedName(`ci-${runId}-${slug(path)}`);
+};
 
 /**
  * Create this scope's machine if it doesn't have one yet.
@@ -48,13 +49,14 @@ export const ensureMachine = (scope: CiJobScope): Promise<MachineHandle> => {
 /**
  * Run once on every machine before its first command.
  *
+ * WORKAROUNDS (Sandboxes API), delete each part once the platform covers it:
  * - Commands run in `/work` by default, and a sandbox won't start a process in
- *   a directory that doesn't exist. `checkout()` creates it, but a job doesn't
- *   have to check out.
- * - Sandboxes currently boot with the loopback interface down, so nothing can
- *   listen on or reach `127.0.0.1`, which breaks services started with
- *   `.background()` and `waitForHttp`/`waitForPort`. Bringing it up is a no-op
- *   once the platform does it itself.
+ *   a directory that doesn't exist, so it's created here. `checkout()` also
+ *   makes it, but a job doesn't have to check out.
+ * - Sandboxes boot with the loopback interface down, so nothing can listen on
+ *   or reach `127.0.0.1`, which breaks services started with `.background()`
+ *   and `waitForHttp`/`waitForPort`. Bringing it up is a no-op once the
+ *   platform does it itself.
  */
 export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true)`;
 
@@ -183,39 +185,46 @@ const createSnapshot = async (
 };
 
 /**
- * Snapshot endpoints may be missing in some environments, like an older Dev
- * Server, or the environment may have no snapshots left. Those failures fall
- * back to re-running the parent rather than failing the run; real failures
- * still surface.
+ * Whether a snapshot failed because snapshots can't be had here, as opposed
+ * to a real failure. The caller falls back to re-running the parent rather
+ * than failing the run.
+ *
+ * WORKAROUND (Sandboxes API): older Dev Servers have no snapshot endpoints
+ * (404, 501 or an "unsupported" message), and an environment can run out of
+ * snapshots (`sandbox_snapshot_limit_exceeded`). Delete this once neither
+ * happens; a real failure should then always surface.
  */
 const isSnapshotUnavailable = (error: unknown): boolean => {
-  const message = errorMessage(error).toLowerCase();
-  const code = (error as { cause?: { code?: string; status?: number } })?.cause;
+  const cause = (error as { cause?: { code?: string; status?: number } })
+    ?.cause;
+  const limitCode = "sandbox_snapshot_limit_exceeded";
 
-  if (code?.status === 404 || code?.status === 501) {
+  if (cause?.status === 404 || cause?.status === 501) {
     return true;
   }
-
-  const limitCode = "sandbox_snapshot_limit_exceeded";
   if (
-    code?.code === limitCode ||
+    cause?.code === limitCode ||
     (error as { code?: string })?.code === limitCode
   ) {
     return true;
   }
 
-  return (
-    message.includes("not implemented") ||
-    message.includes("unsupported") ||
-    message.includes("not supported") ||
-    message.includes("404") ||
-    message.includes("no route") ||
-    message.includes("unknown action")
-  );
+  const message = errorMessage(error).toLowerCase();
+  return [
+    "not implemented",
+    "unsupported",
+    "not supported",
+    "404",
+    "no route",
+    "unknown action",
+  ].some((text) => {
+    return message.includes(text);
+  });
 };
 
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+const errorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
 
 /**
  * Destroy every machine this run created. Tolerates machines that are already

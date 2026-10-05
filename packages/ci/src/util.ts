@@ -1,28 +1,33 @@
 /**
- * Small shared helpers: hashing, durations, glob matching, formatting and
- * warn-once.
+ * Small shared helpers: hashing, durations, glob matching, formatting,
+ * warn-once and running local git.
  *
  * @module
  */
 
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { promisify } from "node:util";
+
+const exec = promisify(execFile);
 
 /**
  * Hash a string to a short, stable hex digest. Used for cache keys and for
  * shortening names that would otherwise be too long.
  */
-export const hash = (input: string, length = 16): string =>
-  createHash("sha256").update(input).digest("hex").slice(0, length);
+export const hash = (input: string, length = 16): string => {
+  return createHash("sha256").update(input).digest("hex").slice(0, length);
+};
 
 /**
  * Turn a scope path into something safe for a sandbox name.
  */
-export const slug = (input: string): string =>
-  input
+export const slug = (input: string): string => {
+  return input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-+/g, "-");
+    .replace(/^-+|-+$/g, "");
+};
 
 /**
  * Sandbox names are limited to 255 characters, so long ones keep a readable
@@ -39,8 +44,9 @@ export const boundedName = (name: string, max = 255): string => {
 /**
  * Truncate a label for use in a step ID, keeping it readable.
  */
-export const truncateLabel = (label: string, max = 60): string =>
-  label.length <= max ? label : `${label.slice(0, max - 1)}…`;
+export const truncateLabel = (label: string, max = 60): string => {
+  return label.length <= max ? label : `${label.slice(0, max - 1)}…`;
+};
 
 /**
  * Keep the last `bytes` worth of a string, marking that it was cut.
@@ -71,8 +77,9 @@ export const maskSecrets = (input: string, secrets: string[]): string => {
 /**
  * Quote a value for `/bin/sh`, for `$.sh` only. `$` never shells out.
  */
-export const shellEscape = (value: string): string =>
-  `'${value.split("'").join(`'\\''`)}'`;
+export const shellEscape = (value: string): string => {
+  return `'${value.split("'").join(`'\\''`)}'`;
+};
 
 /**
  * A tiny glob matcher supporting `**`, `*`, `?`, and `{a,b}`.
@@ -111,7 +118,7 @@ export const globToRegExp = (pattern: string): RegExp => {
       const end = pattern.indexOf("}", i);
       if (end !== -1) {
         const options = pattern.slice(i + 1, end).split(",");
-        out += `(?:${options.map((option) => escapeRegExp(option)).join("|")})`;
+        out += `(?:${options.map(escapeRegExp).join("|")})`;
         i = end + 1;
         continue;
       }
@@ -124,14 +131,18 @@ export const globToRegExp = (pattern: string): RegExp => {
   return new RegExp(`^${out}$`);
 };
 
-const escapeRegExp = (input: string): string =>
-  input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (input: string): string => {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
 
 /**
  * Whether a path matches any of the given glob patterns.
  */
-export const matchesAny = (path: string, patterns: string[]): boolean =>
-  patterns.some((pattern) => globToRegExp(pattern).test(path));
+export const matchesAny = (path: string, patterns: string[]): boolean => {
+  return patterns.some((pattern) => {
+    return globToRegExp(pattern).test(path);
+  });
+};
 
 /**
  * Filter a list of paths by include and ignore patterns.
@@ -143,9 +154,9 @@ export const filterPaths = (
   const include = opts.include?.length ? opts.include : ["**"];
   const ignore = opts.ignore ?? [];
 
-  return paths.filter(
-    (path) => matchesAny(path, include) && !matchesAny(path, ignore),
-  );
+  return paths.filter((path) => {
+    return matchesAny(path, include) && !matchesAny(path, ignore);
+  });
 };
 
 /**
@@ -247,4 +258,15 @@ export const warnOnce = (
   }
   warned.add(key);
   (logger ?? console).warn({ feature: key }, message);
+};
+
+/**
+ * Run `git` in a local directory and return its stdout.
+ */
+export const git = async (cwd: string, args: string[]): Promise<string> => {
+  const { stdout } = await exec("git", args, {
+    cwd,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return stdout;
 };

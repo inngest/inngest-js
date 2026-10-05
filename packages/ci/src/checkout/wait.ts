@@ -17,8 +17,8 @@ import { durationToMs } from "../util.ts";
  */
 const waitHeadroomMs = 15_000;
 
-const waitScript = (check: string, timeoutMs: number) =>
-  [
+const waitScript = (check: string, timeoutMs: number): string => {
+  return [
     `deadline=$(( $(date +%s) + ${Math.ceil(timeoutMs / 1000)} ))`,
     "while [ $(date +%s) -lt $deadline ]; do",
     `  if ${check}; then exit 0; fi`,
@@ -26,6 +26,7 @@ const waitScript = (check: string, timeoutMs: number) =>
     "done",
     "exit 1",
   ].join("\n");
+};
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -42,14 +43,17 @@ const waitScript = (check: string, timeoutMs: number) =>
  * await waitForHttp("http://127.0.0.1:3000/health");
  * ```
  *
- * @param url - The URL to request, from the machine's point of view.
- * @param opts.status - The status code to wait for. Defaults to 200.
- * @param opts.timeout - How long to keep trying. Defaults to `"2m"`.
- * @param scope - Internal: the machine to run on. `sandbox()` passes its own.
  */
 export const waitForHttp = async (
+  /** The URL to request, from the machine's point of view. */
   url: string,
-  opts: { timeout?: Duration; status?: number } = {},
+  opts: {
+    /** How long to keep trying. Defaults to `"2m"`. */
+    timeout?: Duration;
+    /** The status code to wait for. Defaults to 200. */
+    status?: number;
+  } = {},
+  /** Internal: the machine to run on. `sandbox()` passes its own. */
   scope?: CiJobScope,
 ): Promise<void> => {
   const target = scope ?? requireJobScope("waitForHttp");
@@ -62,7 +66,9 @@ export const waitForHttp = async (
   );
 
   await createRawCommand(
-    () => target,
+    () => {
+      return target;
+    },
     ["/bin/sh", "-c", script],
     `waitForHttp ${url}`,
   ).timeout(`${timeoutMs + waitHeadroomMs}ms`);
@@ -82,13 +88,15 @@ export const waitForHttp = async (
  * Note: there are no port events yet, so this is a loop inside the machine
  * rather than a durable wait. It's still one step.
  *
- * @param port - The port to connect to on `127.0.0.1`.
- * @param opts.timeout - How long to keep trying. Defaults to `"2m"`.
- * @param scope - Internal: the machine to run on. `sandbox()` passes its own.
  */
 export const waitForPort = async (
+  /** The port to connect to on `127.0.0.1`. */
   port: number,
-  opts: { timeout?: Duration } = {},
+  opts: {
+    /** How long to keep trying. Defaults to `"2m"`. */
+    timeout?: Duration;
+  } = {},
+  /** Internal: the machine to run on. `sandbox()` passes its own. */
   scope?: CiJobScope,
 ): Promise<void> => {
   const target = scope ?? requireJobScope("waitForPort");
@@ -100,7 +108,9 @@ export const waitForPort = async (
   );
 
   await createRawCommand(
-    () => target,
+    () => {
+      return target;
+    },
     ["/bin/sh", "-c", script],
     `waitForPort ${port}`,
   ).timeout(`${timeoutMs + waitHeadroomMs}ms`);

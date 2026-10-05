@@ -39,27 +39,25 @@ import { snapshotJob } from "./machine.ts";
  * own machine and gives you its result, the second does that *and* starts this
  * job from where it finished.
  *
- * @param job - The job to start from. Its result type comes back.
- * @param input - The parent's input, when it takes one.
- * @returns Whatever the parent job returned.
+ * Resolves to whatever the parent job returned.
+ *
  * @throws {CiUsageError} When called outside a job, after this job's first
  * command, or a second time.
  */
-export async function from<TResult>(job: Job<TResult>): Promise<TResult>;
+export async function from<TResult>(
+  /** The job to start from. Its result type comes back. */
+  job: Job<TResult>,
+): Promise<TResult>;
 export async function from<TResult, TInput>(
+  /** The job to start from. Its result type comes back. */
   job: Job<TResult, TInput>,
+  /** The parent's input, when it takes one. */
   input: TInput,
 ): Promise<TResult>;
 export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   const scope = requireJobScope("from");
 
-  if (scope.machine) {
-    throw new CiUsageError(
-      "`from()` must come before this job's first command, and can only be called once.",
-    );
-  }
-
-  if (scope.fromCalled) {
+  if (scope.machine || scope.fromCalled) {
     throw new CiUsageError(
       "`from()` must come before this job's first command, and can only be called once.",
     );

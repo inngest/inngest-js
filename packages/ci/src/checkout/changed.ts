@@ -6,9 +6,9 @@
  */
 
 import { CiUsageError } from "../errors.ts";
-import { nextStepId } from "../pipeline/scope.ts";
+import { getJobScope, getRunScope, nextStepId } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
-import { filterPaths } from "../util.ts";
+import { filterPaths, git } from "../util.ts";
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -67,7 +67,6 @@ export async function changed(
  * be read — a cron with no repository, or a run with no GitHub credentials.
  */
 export const changedFiles = async (): Promise<string[] | null> => {
-  const { getRunScope } = await import("../pipeline/scope.ts");
   const run = getRunScope();
 
   if (!run) {
@@ -81,9 +80,7 @@ export const changedFiles = async (): Promise<string[] | null> => {
     return cached;
   }
 
-  const { getJobScope } = await import("../pipeline/scope.ts");
-  const scopePath = getJobScope()?.path;
-  const id = nextStepId(run, scopePath, "changed");
+  const id = nextStepId(run, getJobScope()?.path, "changed");
 
   const files = (await run.step.run({ id, name: id }, async () => {
     try {
@@ -118,7 +115,6 @@ const listChangedFiles = async (
   }
 
   if (repo.local && process.env.INNGEST_CI_GITHUB !== "live") {
-    const { localChangedFiles } = await import("./checkout.ts");
     return localChangedFiles(repo.local.path, repo.local.baseRef);
   }
 
@@ -133,7 +129,9 @@ const listChangedFiles = async (
 
     // Pull requests list at most 3000 files, which is also where this stops
     // being a useful signal.
-    return files.slice(0, 3000).map((file) => file.filename);
+    return files.slice(0, 3000).map((file) => {
+      return file.filename;
+    });
   }
 
   if (repo.baseSha && repo.sha) {
@@ -141,8 +139,42 @@ const listChangedFiles = async (
       basehead: `${repo.baseSha}...${repo.sha}`,
     });
 
-    return (comparison.files ?? []).map((file) => file.filename);
+    return (comparison.files ?? []).map((file) => {
+      return file.filename;
+    });
   }
 
   return [];
+};
+
+/**
+ * Paths changed locally against a base ref, including untracked files. This is
+ * what `changed()` uses when a run came from a local fixture.
+ */
+const localChangedFiles = async (
+  cwd: string,
+  baseRef: string,
+): Promise<string[]> => {
+  let committed: string[] = [];
+
+  for (const target of [`origin/${baseRef}`, baseRef, "HEAD"]) {
+    try {
+      const diff = await git(cwd, ["diff", "--name-only", `${target}...HEAD`]);
+      committed = diff.split("\n").filter(Boolean);
+      break;
+    } catch {
+      // Try the next candidate; a fresh clone may have no origin.
+    }
+  }
+
+  const status = await git(cwd, ["status", "--porcelain"]);
+  const uncommitted = status
+    .split("\n")
+    .filter(Boolean)
+    // Renames read as "old -> new"; the new path is the interesting one.
+    .map((line) => {
+      return line.slice(3).trim().split(" -> ").pop() as string;
+    });
+
+  return [...new Set([...committed, ...uncommitted])];
 };

@@ -38,12 +38,12 @@ import { ensureMachine } from "./machine.ts";
  * | follows on from earlier work | separate jobs, with `from()` |
  * | needs several machines at once | one job, with `sandbox()` |
  *
- * @param name - Unique within the job. It names the machine in the trace.
- * @param config - Machine settings, defaulting to the job's.
  * @throws {CiUsageError} When called outside a job.
  */
 export const sandbox = async (
+  /** Unique within the job. It names the machine in the trace. */
   name: string,
+  /** Machine settings, defaulting to the job's. */
   config: MachineConfig = {},
 ): Promise<ExtraMachine> => {
   const job = requireJobScope("sandbox");
@@ -75,12 +75,17 @@ export const sandbox = async (
 
   return {
     name,
-    $: createCommandTag(() => scope),
-    waitForPort: (port: number, opts?: { timeout?: Duration }) =>
-      waitForPort(port, opts ?? {}, scope),
+    $: createCommandTag(() => {
+      return scope;
+    }),
+    waitForPort: (port: number, opts?: { timeout?: Duration }) => {
+      return waitForPort(port, opts ?? {}, scope);
+    },
     waitForHttp: (
       url: string,
       opts?: { timeout?: Duration; status?: number },
-    ) => waitForHttp(url, opts ?? {}, scope),
+    ) => {
+      return waitForHttp(url, opts ?? {}, scope);
+    },
   };
 };
