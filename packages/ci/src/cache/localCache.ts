@@ -36,6 +36,7 @@ export const hashLocalFiles = async (
     // "<mode> <sha> <stage>\t<path>"
     const [meta, path] = line.split("\t");
     const sha = meta?.split(" ")[1];
+
     if (path && sha) {
       tracked.set(path, sha);
     }
@@ -66,10 +67,12 @@ export const hashLocalFiles = async (
     if (changed.has(path)) {
       try {
         const contents = await readFile(join(cwd, path));
+
         parts.push(`${path}:${hash(contents.toString("utf8"))}`);
       } catch {
         parts.push(`${path}:deleted`);
       }
+
       continue;
     }
 

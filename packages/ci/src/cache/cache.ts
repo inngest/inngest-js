@@ -58,6 +58,7 @@ export const fileCacheStore = (
 ): CacheStore => {
   const pathFor = async (key: string) => {
     const { join } = await import("node:path");
+
     return join(dir, `${hash(key, 32)}.json`);
   };
 
@@ -66,6 +67,7 @@ export const fileCacheStore = (
       try {
         const { readFile } = await import("node:fs/promises");
         const contents = await readFile(await pathFor(key), "utf8");
+
         return JSON.parse(contents) as CacheEntry;
       } catch {
         return undefined;
@@ -73,7 +75,9 @@ export const fileCacheStore = (
     },
     set: async (key, entry) => {
       const { mkdir, writeFile } = await import("node:fs/promises");
+
       await mkdir(dir, { recursive: true });
+
       await writeFile(await pathFor(key), JSON.stringify(entry, null, 2));
     },
   };
@@ -97,10 +101,12 @@ export const cacheScopes = (
 
   if (repo.pullRequest) {
     const own = `pr-${repo.pullRequest.number}`;
+
     return { read: [own, base], write: own };
   }
 
   const branch = repo.ref?.replace(/^refs\/heads\//, "") ?? base;
+
   return { read: [branch], write: branch };
 };
 
@@ -133,8 +139,10 @@ export const resolveCacheKey = async (
   for (const part of parts) {
     if (typeof part === "string") {
       resolved.push(part);
+
       continue;
     }
+
     resolved.push(await resolveFilesPart(run, part));
   }
 
@@ -149,6 +157,7 @@ const resolveFilesPart = async (
 
   if (repo?.local && process.env.INNGEST_CI_GITHUB !== "live") {
     const { hashLocalFiles } = await import("./localCache.ts");
+
     return hashLocalFiles(repo.local.path, part.patterns);
   }
 
@@ -216,6 +225,7 @@ const findEntry = async (
       return found;
     }
   }
+
   return undefined;
 };
 
@@ -243,6 +253,7 @@ export const resolveParentKeys = async (
 
     const key = await resolveCacheKey(run, cache.key);
     const entry = await findEntry(run, cache, jobId, key);
+
     const parents = await resolveParentKeys(
       run,
       Object.keys(entry?.fromKeys ?? {}),
@@ -317,7 +328,9 @@ export const storeCache = async (
     async () => {
       const fromKeys = await resolveParentKeys(run, scope.fromJobIds);
       const full: CacheEntry = { ...entry, key: lookup.ownKey, fromKeys };
+
       await run.ci.cacheStore.set(lookup.writeKey, full);
+
       return { key: lookup.writeKey };
     },
   );
