@@ -105,6 +105,17 @@ describe("cloneScript", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  test("a ref that git would read as an option is refused", () => {
+    expect(() => {
+      return cloneScript({
+        repo: repoContext(sha),
+        opts: { history: "full" },
+        target: join(root, "work"),
+        sha: "--upload-pack=touch /tmp/pwned",
+      });
+    }).toThrow("git would read as an option");
+  });
+
   test("a fork pull request fetches the pull request head", () => {
     git(origin, "checkout", "-q", "-b", "other");
     writeFileSync(join(origin, "fork.txt"), "from a fork");

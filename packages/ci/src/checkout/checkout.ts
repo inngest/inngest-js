@@ -148,6 +148,14 @@ export const cloneScript = (args: {
   sha: string;
 }): string => {
   const { repo, opts, sha } = args;
+
+  // Quoting stops the shell reading a ref, but git would still read one
+  // starting with `-` as an option.
+  if (sha.startsWith("-")) {
+    throw new CiUsageError(
+      `\`checkout()\` was given the ref \`${sha}\`, which git would read as an option.`,
+    );
+  }
   const target = shellEscape(args.target);
   const filter = opts.history === "full" ? "" : "--filter=blob:none";
 
