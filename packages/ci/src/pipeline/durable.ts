@@ -1,6 +1,6 @@
 /**
  * Durable proxies: wrapping a client so its calls run as steps, and the rules
- * for which methods run as steps, run directly, or are unsupported.
+ * for which methods run as steps and which run directly.
  *
  * @module
  */
@@ -9,7 +9,7 @@ import { getAsyncCtx } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
 import { getJobScope, getRunScope, nextStepId } from "./scope.ts";
 
-export type DurableBehaviour = "step" | "direct" | "unsupported";
+export type DurableBehaviour = "step" | "direct";
 
 /**
  * Reading this property off a durable proxy returns the property path it
@@ -36,9 +36,6 @@ export interface DurableOptions {
    */
   rules: Array<[pattern: string, behaviour: DurableBehaviour]>;
 
-  /** Transform arguments before the call, like adding defaults. */
-  args?: (args: unknown[], ctx: { path: string[] }) => unknown[];
-
   /**
    * Transform arguments once the method is resolved, for defaults that depend
    * on the method itself. Runs inside the step, after the client is built.
@@ -57,9 +54,6 @@ export interface DurableOptions {
     ctx: { path: string[] },
     // biome-ignore lint/suspicious/noConfusingVoidType: a handler that maps nothing can just return
   ) => Error | undefined | null | false | void;
-
-  /** The message thrown for `unsupported` paths. */
-  unsupportedMessage?: (path: string[]) => string;
 
   // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
   logger?: { warn: (...args: any[]) => void };
@@ -103,7 +97,9 @@ const makeProxy = (
   options: DurableOptions,
 ): unknown => {
   // The target is a function so the proxy is callable at any depth.
-  const target = () => undefined;
+  const target = () => {
+    return undefined;
+  };
 
   return new Proxy(target, {
     get(_target, prop) {
@@ -125,7 +121,9 @@ const makeProxy = (
       // `.with()` is reserved on the root proxy. It sets the ID for the next
       // call without advancing the counter.
       if (prop === "with" && path.length === 0) {
-        return (opts: CallOverrides) => makeProxy([], opts, client, options);
+        return (opts: CallOverrides) => {
+          return makeProxy([], opts, client, options);
+        };
       }
 
       return makeProxy([...path, prop], overrides, client, options);
@@ -142,19 +140,12 @@ const call = async (
   overrides: CallOverrides,
   client: object | (() => Promise<object>),
   options: DurableOptions,
-  rawArgs: unknown[],
+  args: unknown[],
 ): Promise<unknown> => {
   const behaviour = behaviourFor(path, options.rules);
-
-  if (behaviour === "unsupported") {
-    throw new CiUsageError(
-      options.unsupportedMessage?.(path) ??
-        `\`${options.name}.${path.join(".")}\` can't run as a step. Call it inside \`step.run\` with the underlying client.`,
-    );
-  }
-
-  const args = options.args?.(rawArgs, { path }) ?? rawArgs;
-  const invoke = () => invokeOnClient(client, path, args, options);
+  const invoke = () => {
+    return invokeOnClient(client, path, args, options);
+  };
 
   const asyncCtx = await getAsyncCtx();
   const execution = asyncCtx?.execution;
@@ -169,7 +160,7 @@ const call = async (
   const label = `${options.name}.${path.join(".")}`;
   const id = overrides.id
     ? scopedId(overrides.id)
-    : stepIdFor(label, options, execution.instance);
+    : stepIdFor(label, execution.instance);
 
   // Inside a run, CI's own step tools are used so the scope is still there
   // inside the handler; that's how the call knows which repository it's for.
@@ -244,16 +235,12 @@ const matchesPattern = (path: string[], pattern: string): boolean => {
   if (segments.length !== path.length) {
     return false;
   }
-  return segments.every(
-    (segment, index) => segment === "*" || segment === path[index],
-  );
+  return segments.every((segment, index) => {
+    return segment === "*" || segment === path[index];
+  });
 };
 
-const stepIdFor = (
-  label: string,
-  options: DurableOptions,
-  execution: object,
-): string => {
+const stepIdFor = (label: string, execution: object): string => {
   const run = getRunScope();
   if (run) {
     return nextStepId(run, getJobScope()?.path, label);

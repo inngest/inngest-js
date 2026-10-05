@@ -8,7 +8,7 @@
 
 import type { Inngest, InngestFunction } from "inngest";
 import { internalEvents, NonRetriableError } from "inngest";
-import type { DurableSandboxTools } from "inngest/experimental";
+import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { getAsyncCtx, sandboxMiddleware } from "inngest/experimental";
 import {
   CiUsageError,
@@ -42,13 +42,11 @@ import { initCiAls, runInScope, withScopePreserved } from "./scope.ts";
 export const definePipeline = ({
   client,
   internals,
-  jobs,
   rawConfig,
   handler,
 }: {
   client: Inngest.Any;
   internals: CiInternals;
-  jobs: Map<string, RegisteredJob>;
   rawConfig: PipelineConfig;
   handler: (ctx: PipelineContext) => Promise<unknown>;
 }): {
@@ -73,7 +71,9 @@ export const definePipeline = ({
   // A comment trigger's `minPermission` can't be expressed in CEL, so it
   // travels beside the trigger and is checked when the run starts.
   const permission = triggers
-    .map((trigger) => commentPermissionFor(trigger))
+    .map((trigger) => {
+      return commentPermissionFor(trigger);
+    })
     .find(Boolean);
 
   const config: PipelineConfig = {
@@ -89,7 +89,9 @@ export const definePipeline = ({
       middleware: [sandboxMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-    async (ctx: any) => runPipeline({ internals, config, handler, ctx, jobs }),
+    async (ctx: any) => {
+      return runPipeline({ internals, config, handler, ctx });
+    },
   );
 
   return {
@@ -103,14 +105,15 @@ export const definePipeline = ({
  * A function's triggers are declared with it, and the platform caps how many
  * it will take. Ten is the documented limit at the time of writing.
  */
-export const maxTriggersPerFunction = 10;
+const maxTriggersPerFunction = 10;
 
 /**
  * `on` takes one trigger or any nesting of arrays of them, since
  * `github.pullRequest()` is itself an array. The executor wants one flat list.
  */
-const flattenTriggers = (on: CiTriggerInput): CiTrigger[] =>
-  (Array.isArray(on) ? on.flat(Infinity) : [on]) as CiTrigger[];
+const flattenTriggers = (on: CiTriggerInput): CiTrigger[] => {
+  return (Array.isArray(on) ? on.flat(Infinity) : [on]) as CiTrigger[];
+};
 
 const flowControl = (config: PipelineConfig) => {
   const {
@@ -131,8 +134,54 @@ interface RunPipelineArgs {
   handler: (ctx: PipelineContext) => Promise<unknown>;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
-  jobs: Map<string, RegisteredJob>;
 }
+
+const newRunScope = ({
+  internals,
+  config,
+  ctx,
+  asyncCtx,
+}: {
+  internals: CiInternals;
+  config: PipelineConfig;
+  // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
+  ctx: any;
+  asyncCtx: AsyncContext;
+}): CiRunScope => {
+  const repo = repoContextFromEvent(ctx.event);
+
+  return {
+    ci: internals,
+    runId: ctx.runId,
+    functionId: config.id,
+    pipelineId: config.id,
+    ...(config.check === false
+      ? {}
+      : { checkName: config.check?.name ?? config.id }),
+    jobChecks: config.check === false ? false : config.check?.jobs !== false,
+    ...(config.machine ? { machine: config.machine } : {}),
+    event: ctx.event,
+    ...(repo ? { repo } : {}),
+    jobs: new Map(),
+    machines: new Map(),
+    snapshots: new Map(),
+    cacheEntries: new Map(),
+    sandboxes: new Set(),
+    summaries: [],
+    openChecks: new Map(),
+    // CI's own steps keep their scope inside the handler, so a call like
+    // `github.rest` made from one still knows which run it's part of.
+    step: withScopePreserved(ctx.step),
+    sandboxTools: (ctx.step as { sandbox?: DurableSandboxTools })
+      .sandbox as DurableSandboxTools,
+    asyncCtx,
+    counters: new Map(),
+    snapshotsUnavailable: false,
+    warnings: [],
+    pipelineSummaries: [],
+    pipelineAnnotations: [],
+  };
+};
 
 /**
  * Run a pipeline: set up the run scope, report the pipeline check, run the
@@ -153,43 +202,8 @@ export const runPipeline = async ({
     );
   }
 
-  const sandboxTools = (ctx.step as { sandbox?: DurableSandboxTools }).sandbox;
-
-  const run: CiRunScope = {
-    ci: internals,
-    runId: ctx.runId,
-    functionId: config.id,
-    pipelineId: config.id,
-    ...(config.check === false
-      ? {}
-      : { checkName: config.check?.name ?? config.id }),
-    jobChecks: config.check === false ? false : config.check?.jobs !== false,
-    ...(config.machine ? { machine: config.machine } : {}),
-    event: ctx.event,
-    ...(repoContextFromEvent(ctx.event)
-      ? { repo: repoContextFromEvent(ctx.event) as RepoContext }
-      : {}),
-    jobs: new Map(),
-    machines: new Map(),
-    snapshots: new Map(),
-    cacheEntries: new Map(),
-    sandboxes: new Set(),
-    summaries: [],
-    openChecks: new Map(),
-    // CI's own steps keep their scope inside the handler, so a call like
-    // `github.rest` made from one still knows which run it's part of.
-    step: withScopePreserved(ctx.step),
-    sandboxTools: sandboxTools as DurableSandboxTools,
-    asyncCtx,
-    counters: new Map(),
-    snapshotsUnavailable: false,
-    warnings: [],
-    pipelineSummaries: [],
-    pipelineAnnotations: [],
-  };
-
+  const run = newRunScope({ internals, config, ctx, asyncCtx });
   const checks = internals.checks as CheckReporter;
-  const started = Date.now();
 
   return runInScope({ run }, async () => {
     await checks.pipelineStart({ run });
@@ -250,7 +264,6 @@ export const runPipeline = async ({
 
       throw error;
     } finally {
-      void started;
       await destroyRunMachines(run);
     }
   });
@@ -287,22 +300,26 @@ const closeOpenJobChecks = async (
   }
 };
 
-const pipelineSummaryWithReports = (run: CiRunScope): string =>
-  [pipelineSummary(run), ...run.pipelineSummaries].join("\n\n");
+const pipelineSummaryWithReports = (run: CiRunScope): string => {
+  return [pipelineSummary(run), ...run.pipelineSummaries].join("\n\n");
+};
 
 const summaryTitle = (run: CiRunScope): string => {
-  const failed = run.summaries.filter(
-    (summary) => summary.conclusion !== "success",
-  );
+  const failed = run.summaries.filter((summary) => {
+    return summary.conclusion !== "success";
+  });
 
   if (failed.length > 0) {
-    return `${failed.map((summary) => summary.path).join(", ")} failed`;
+    return `${failed
+      .map((summary) => {
+        return summary.path;
+      })
+      .join(", ")} failed`;
   }
 
-  const total = run.summaries.reduce(
-    (sum, summary) => sum + summary.durationMs,
-    0,
-  );
+  const total = run.summaries.reduce((sum, summary) => {
+    return sum + summary.durationMs;
+  }, 0);
 
   return run.summaries.length === 0
     ? "Nothing to do"
@@ -310,9 +327,9 @@ const summaryTitle = (run: CiRunScope): string => {
 };
 
 const errorTitle = (error: unknown, run: CiRunScope): string => {
-  const failed = run.summaries.find(
-    (summary) => summary.conclusion !== "success",
-  );
+  const failed = run.summaries.find((summary) => {
+    return summary.conclusion !== "success";
+  });
 
   if (failed) {
     return `${failed.path}: ${failed.title}`;
@@ -323,10 +340,11 @@ const errorTitle = (error: unknown, run: CiRunScope): string => {
     : "Failed";
 };
 
-const asSkip = (result: unknown): CiSkip | undefined =>
-  (result as CiSkip | undefined)?.kind === "inngest/ci.skip"
+const asSkip = (result: unknown): CiSkip | undefined => {
+  return (result as CiSkip | undefined)?.kind === "inngest/ci.skip"
     ? (result as CiSkip)
     : undefined;
+};
 
 /**
  * Comment triggers can't express a permission check in CEL, so it happens here
@@ -403,39 +421,8 @@ const generatedFunctions = ({
       async ({ event, step }: any) => {
         const runId = event?.data?.run_id ?? event?.data?.runId;
 
-        // A run that ended permanently never reached its own cleanup step, so
-        // its machines are found by name. Listing has no name filter, so the
-        // comparison happens here.
         return step.run("destroy-orphans", async () => {
-          if (!runId) {
-            return { destroyed: 0 };
-          }
-
-          const prefix = `ci-${runId}-`;
-          let cursor: string | undefined;
-          let destroyed = 0;
-
-          do {
-            const page = await client.sandboxes.list({
-              ...(cursor ? { cursor } : {}),
-              limit: 100,
-            });
-
-            for (const sandbox of page.items) {
-              if (sandbox.name.startsWith(prefix)) {
-                try {
-                  await sandbox.destroy();
-                  destroyed++;
-                } catch {
-                  // Already gone.
-                }
-              }
-            }
-
-            cursor = page.page.hasMore ? page.page.cursor : undefined;
-          } while (cursor);
-
-          return { destroyed };
+          return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
         });
       },
     ),
@@ -459,6 +446,42 @@ const generatedFunctions = ({
   );
 
   return functions;
+};
+
+/**
+ * A run that ended permanently never reached its own cleanup step, so its
+ * machines are found by name. Listing has no name filter, so the comparison
+ * happens here.
+ */
+const destroyOrphans = async (
+  client: Inngest.Any,
+  runId: string,
+): Promise<{ destroyed: number }> => {
+  const prefix = `ci-${runId}-`;
+  let cursor: string | undefined;
+  let destroyed = 0;
+
+  do {
+    const page = await client.sandboxes.list({
+      ...(cursor ? { cursor } : {}),
+      limit: 100,
+    });
+
+    for (const sandbox of page.items) {
+      if (sandbox.name.startsWith(prefix)) {
+        try {
+          await sandbox.destroy();
+          destroyed++;
+        } catch {
+          // Already gone.
+        }
+      }
+    }
+
+    cursor = page.page.hasMore ? page.page.cursor : undefined;
+  } while (cursor);
+
+  return { destroyed };
 };
 
 /**
@@ -499,8 +522,8 @@ export const cacheRefreshFunctions = ({
           middleware: [sandboxMiddleware()],
         },
         // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-        async (ctx: any) =>
-          runPipeline({
+        async (ctx: any) => {
+          return runPipeline({
             internals,
             config: {
               id,
@@ -509,35 +532,18 @@ export const cacheRefreshFunctions = ({
               ...(repo ? { repo } : {}),
             },
             handler: async () => {
-              const registered = jobs.get(job.id);
-              return registered ? jobBodyForRefresh(registered) : null;
+              return runJob({
+                config: job.config,
+                handler: job.handler,
+                input: undefined,
+              });
             },
             ctx,
-            jobs,
-          }),
+          });
+        },
       ),
     );
   }
 
   return functions;
-};
-
-/**
- * A refresh run calls the job the same way a pipeline would, so `from()` and
- * dedupe behave identically.
- */
-const jobBodyForRefresh = async (job: RegisteredJob): Promise<unknown> => {
-  const { getRunScope } = await import("./scope.ts");
-  const run = getRunScope();
-
-  if (!run) {
-    return null;
-  }
-
-  return runJob({
-    internals: run.ci,
-    config: job.config,
-    handler: job.handler,
-    input: undefined,
-  });
 };

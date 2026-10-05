@@ -61,7 +61,6 @@ export const sandbox = async (
       fromJobIds: [],
       annotations: [],
       summaries: [],
-      checkStarted: false,
       env: {},
       secrets: [],
     } satisfies CiJobScope);

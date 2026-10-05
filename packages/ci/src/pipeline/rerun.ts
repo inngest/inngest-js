@@ -68,7 +68,9 @@ export const rerunEventFor = async ({
         repo,
         state: "open",
       });
-      pullRequest = data.find((pr) => pr.head.sha === sha);
+      pullRequest = data.find((pr) => {
+        return pr.head.sha === sha;
+      });
     } catch {
       // Without credentials the re-run still works for push pipelines.
     }

@@ -443,10 +443,7 @@ describe("durable()", () => {
     // biome-ignore lint/suspicious/noExplicitAny: test shape
     durable<any>(client(), {
       name: "fake",
-      rules: [
-        ["top.stream", "unsupported"],
-        ["top.*", "step"],
-      ],
+      rules: [["top.*", "step"]],
       ...overrides,
     });
 
@@ -456,30 +453,12 @@ describe("durable()", () => {
     expect(await fake.direct.helper("x")).toEqual({ data: "local:x" });
   });
 
-  test("unsupported paths explain the escape hatch", async () => {
-    const fake = build({
-      unsupportedMessage: (path) => `\`${path.join(".")}\` is a stream`,
-    });
-
-    await expect(fake.top.stream()).rejects.toBeInstanceOf(CiUsageError);
-    await expect(fake.top.stream()).rejects.toThrow("is a stream");
-  });
-
   test("results and errors can be transformed", async () => {
     const fake = build({
       result: (value) => (value as { data: unknown }).data,
     });
 
     expect(await fake.top.call("hello")).toBe("hello");
-  });
-
-  test("arguments can be transformed before the call", async () => {
-    const fake = build({
-      args: (args) => [`transformed:${String(args[0])}`],
-      result: (value) => (value as { data: unknown }).data,
-    });
-
-    expect(await fake.top.call("hello")).toBe("transformed:hello");
   });
 
   test("onError maps failures", async () => {

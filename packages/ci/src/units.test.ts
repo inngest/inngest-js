@@ -143,11 +143,11 @@ describe("glob matching", () => {
 describe("durable rules", () => {
   test("first match wins and `*` matches one segment", () => {
     const rules = [
-      ["paginate.iterator", "unsupported"],
+      ["paginate.iterator", "direct"],
       ["*.*", "step"],
-    ] as Array<[string, "step" | "direct" | "unsupported"]>;
+    ] as Array<[string, "step" | "direct"]>;
 
-    expect(behaviourFor(["paginate", "iterator"], rules)).toBe("unsupported");
+    expect(behaviourFor(["paginate", "iterator"], rules)).toBe("direct");
     expect(behaviourFor(["repos", "get"], rules)).toBe("step");
     expect(behaviourFor(["repos"], rules)).toBe("direct");
     expect(behaviourFor(["a", "b", "c"], rules)).toBe("direct");

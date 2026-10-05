@@ -1,6 +1,6 @@
 /**
  * The run and job scopes held in async context: what a running pipeline or
- job knows about itself, and the helpers that read them.
+ * job knows about itself, and the helpers that read them.
  *
  * @module
  */
@@ -147,8 +147,6 @@ export interface CiJobScope {
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];
-  /** Set once the job check has been created. */
-  checkStarted: boolean;
   /** Environment defaults for commands in this scope. */
   env: Record<string, string>;
   cwd?: string;
@@ -169,8 +167,12 @@ type CiAls = {
 };
 
 const fallbackAls: CiAls = {
-  getStore: () => undefined,
-  run: (_store, fn) => fn(),
+  getStore: () => {
+    return undefined;
+  },
+  run: (_store, fn) => {
+    return fn();
+  },
 };
 
 let resolvedAls: CiAls | undefined;
@@ -198,10 +200,16 @@ export const initCiAls = async (): Promise<CiAls> => {
   return alsPromise;
 };
 
-const getStore = (): CiStore | undefined => resolvedAls?.getStore();
+const getStore = (): CiStore | undefined => {
+  return resolvedAls?.getStore();
+};
 
-export const getRunScope = (): CiRunScope | undefined => getStore()?.run;
-export const getJobScope = (): CiJobScope | undefined => getStore()?.job;
+export const getRunScope = (): CiRunScope | undefined => {
+  return getStore()?.run;
+};
+export const getJobScope = (): CiJobScope | undefined => {
+  return getStore()?.job;
+};
 
 export const runInScope = <R>(store: CiStore, fn: () => R): R => {
   return (resolvedAls ?? fallbackAls).run(store, fn);
@@ -285,11 +293,11 @@ export const withStepIdPrefix = <T extends object>(
             prefix === undefined
               ? idOrOptions
               : prefixStepId(idOrOptions, prefix),
-            ...rest.map((arg) =>
-              typeof arg === "function"
+            ...rest.map((arg) => {
+              return typeof arg === "function"
                 ? inScope(store, arg as (...args: unknown[]) => unknown)
-                : arg,
-            ),
+                : arg;
+            }),
           ]);
         };
         cache.set(prop, wrapped);
@@ -316,15 +324,23 @@ const inScope = (
   // biome-ignore lint/suspicious/noExplicitAny: any step handler
   fn: (...args: any[]) => unknown,
   // biome-ignore lint/suspicious/noExplicitAny: any step handler
-): ((...args: any[]) => unknown) =>
-  store ? (...args) => runInScope(store, () => fn(...args)) : fn;
+): ((...args: any[]) => unknown) => {
+  return store
+    ? (...args) => {
+        return runInScope(store, () => {
+          return fn(...args);
+        });
+      }
+    : fn;
+};
 
 /**
  * Step tools that keep the CI scope alive inside their handlers, without
  * touching IDs. CI's own steps write their IDs out in full.
  */
-export const withScopePreserved = <T extends object>(tools: T): T =>
-  withStepIdPrefix(tools);
+export const withScopePreserved = <T extends object>(tools: T): T => {
+  return withStepIdPrefix(tools);
+};
 
 const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
   if (typeof idOrOptions === "string") {
@@ -373,7 +389,7 @@ export const runJobBody = async <R>(
     },
   };
 
-  return runWithAsyncCtx(scopedCtx, () =>
-    runInScope({ run: scope.run, job: scope }, fn),
-  );
+  return runWithAsyncCtx(scopedCtx, () => {
+    return runInScope({ run: scope.run, job: scope }, fn);
+  });
 };

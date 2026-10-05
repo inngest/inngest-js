@@ -1,6 +1,6 @@
 /**
- * Cache stores (memory, file, Inngest) and the cache machinery behind a job's
- `cache` option: keys, lookups, storing entries, and the `files()` key helper.
+ * Cache stores (memory and file) and the machinery behind a job's `cache`
+ * option: keys, lookups, storing entries, and the `files()` key helper.
  *
  * @module
  */
@@ -31,7 +31,9 @@ export const memoryCacheStore = (): CacheStore => {
   const entries = new Map<string, CacheEntry>();
 
   return {
-    get: async (key) => entries.get(key),
+    get: async (key) => {
+      return entries.get(key);
+    },
     set: async (key, entry) => {
       entries.set(key, entry);
     },
@@ -49,10 +51,11 @@ export const memoryCacheStore = (): CacheStore => {
  *   cacheStore: fileCacheStore(".inngest/ci-cache"),
  * });
  * ```
- *
- * @param dir - Where to write entries. Defaults to `.inngest/ci-cache`.
  */
-export const fileCacheStore = (dir = ".inngest/ci-cache"): CacheStore => {
+export const fileCacheStore = (
+  /** Where to write entries. */
+  dir = ".inngest/ci-cache",
+): CacheStore => {
   const pathFor = async (key: string) => {
     const { join } = await import("node:path");
     return join(dir, `${hash(key, 32)}.json`);
@@ -101,8 +104,9 @@ export const cacheScopes = (
   return { read: [branch], write: branch };
 };
 
-export const storeKey = (scope: string, jobId: string, key: string): string =>
-  `${scope}:${jobId}:${key}`;
+export const storeKey = (scope: string, jobId: string, key: string): string => {
+  return `${scope}:${jobId}:${key}`;
+};
 
 /**
  * Resolve the parts of a cache key into a single hash.
@@ -161,20 +165,32 @@ const resolveFilesPart = async (
   });
 
   const entries = (tree.tree ?? [])
-    .filter((entry) => entry.type === "blob" && entry.path)
-    .map((entry) => ({ path: entry.path as string, sha: entry.sha ?? "" }));
+    .filter((entry) => {
+      return entry.type === "blob" && entry.path;
+    })
+    .map((entry) => {
+      return { path: entry.path as string, sha: entry.sha ?? "" };
+    });
 
   const matched = filterPaths(
-    entries.map((entry) => entry.path),
+    entries.map((entry) => {
+      return entry.path;
+    }),
     { include: part.patterns },
   );
 
-  const byPath = new Map(entries.map((entry) => [entry.path, entry.sha]));
+  const byPath = new Map(
+    entries.map((entry) => {
+      return [entry.path, entry.sha];
+    }),
+  );
 
   return hash(
     matched
       .sort()
-      .map((path) => `${path}:${byPath.get(path) ?? ""}`)
+      .map((path) => {
+        return `${path}:${byPath.get(path) ?? ""}`;
+      })
       .join("\n"),
   );
 };
@@ -346,10 +362,14 @@ export const snapshotIsReady = async (
  * Contents are read from the git tree for the run's commit, or from the
  * working tree locally, so uncommitted changes change the key too.
  *
- * @param patterns - Glob patterns, supporting `**`, `*`, `?`, and `{a,b}`.
+ * Patterns support `**`, `*`, `?`, and `{a,b}`.
  */
-export const files = (...patterns: string[]): CacheKeyPart => ({
-  kind: "inngest/ci.cacheKeyPart",
-  type: "files",
-  patterns,
-});
+export const files = (
+  /** Glob patterns for the files to hash. */ ...patterns: string[]
+): CacheKeyPart => {
+  return {
+    kind: "inngest/ci.cacheKeyPart",
+    type: "files",
+    patterns,
+  };
+};

@@ -21,7 +21,7 @@ import {
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
 import type {
-  CacheEntry,
+  CacheStore,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
@@ -37,7 +37,6 @@ import type {
 } from "../types.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
-
 import { createMatrix } from "./matrix.ts";
 import { cacheRefreshFunctions, definePipeline } from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
@@ -48,11 +47,8 @@ export interface CiOptions {
    * to no reporting otherwise.
    */
   github?: GitHubProvider;
-  /** Where cache entries are stored. Defaults to `memoryCacheStore()` in dev. */
-  cacheStore?: {
-    get(key: string): Promise<CacheEntry | undefined>;
-    set(key: string, entry: CacheEntry): Promise<void>;
-  };
+  /** Where cache entries are stored. Defaults to `memoryCacheStore()`. */
+  cacheStore?: CacheStore;
   /** Default machine for jobs. */
   machine?: MachineConfig;
   /** Builds the link shown on checks. */
@@ -191,7 +187,9 @@ export interface Ci {
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // Read on use rather than here: the client resolves its mode from env vars
   // that some runtimes only provide per request.
-  const isDev = () => client.mode === "dev";
+  const isDev = () => {
+    return client.mode === "dev";
+  };
 
   // The provider answers `github.rest` and `github.token()` whatever mode
   // we're in; only where checks *go* changes in dev.
@@ -228,7 +226,6 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       } = definePipeline({
         client,
         internals,
-        jobs,
         rawConfig,
         handler,
       });
@@ -242,29 +239,37 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
     // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
     job: ((idOrConfig: any, handler: any) => {
-      return defineJob({ internals, jobs, idOrConfig, handler });
+      return defineJob({ jobs, idOrConfig, handler });
       // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
     }) as any,
 
-    matrix: (config, handler) => createMatrix(ci, config, handler),
+    matrix: (config, handler) => {
+      return createMatrix(ci, config, handler);
+    },
 
-    manual: (opts) => ({
-      event: `ci/manual.${opts.pipelineId ?? "*"}`,
-      ...(opts.schema ? { schema: opts.schema } : {}),
-    }),
+    manual: (opts) => {
+      return {
+        event: `ci/manual.${opts.pipelineId ?? "*"}`,
+        ...(opts.schema ? { schema: opts.schema } : {}),
+      };
+    },
 
-    skip: (reason) => ({ kind: "inngest/ci.skip", reason }),
+    skip: (reason) => {
+      return { kind: "inngest/ci.skip", reason };
+    },
 
-    functions: () => [
-      ...pipelines,
-      ...generated,
-      ...cacheRefreshFunctions({
-        client,
-        internals,
-        jobs,
-        ...(pipelineRepo ? { repo: pipelineRepo } : {}),
-      }),
-    ],
+    functions: () => {
+      return [
+        ...pipelines,
+        ...generated,
+        ...cacheRefreshFunctions({
+          client,
+          internals,
+          jobs,
+          ...(pipelineRepo ? { repo: pipelineRepo } : {}),
+        }),
+      ];
+    },
   };
 
   return ci;
@@ -307,12 +312,19 @@ const sinkFor = (
 
   // Chosen per call, because whether we're in dev is only known once the
   // client has its env vars.
-  const pick = () =>
-    isDev() && process.env.INNGEST_CI_GITHUB !== "live" ? toConsole : toGitHub;
+  const pick = () => {
+    return isDev() && process.env.INNGEST_CI_GITHUB !== "live"
+      ? toConsole
+      : toGitHub;
+  };
 
   return {
-    start: (args) => pick().start(args),
-    complete: (args) => pick().complete(args),
+    start: (args) => {
+      return pick().start(args);
+    },
+    complete: (args) => {
+      return pick().complete(args);
+    },
     update: async (args) => {
       await pick().update?.(args);
     },
@@ -324,9 +336,8 @@ const sinkFor = (
  */
 const consoleHistory: Parameters<typeof consoleSink>[1] = [];
 
-const defaultRunUrl =
-  (client: Inngest.Any, isDev: () => boolean) =>
-  ({ runId }: { runId: string; functionId: string }) => {
+const defaultRunUrl = (client: Inngest.Any, isDev: () => boolean) => {
+  return ({ runId }: { runId: string; functionId: string }) => {
     if (isDev()) {
       const base =
         process.env.INNGEST_DEV_SERVER_URL ??
@@ -342,3 +353,4 @@ const defaultRunUrl =
 
     return `https://app.inngest.com/env/${env}/runs/${runId}`;
   };
+};
