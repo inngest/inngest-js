@@ -13,7 +13,18 @@
 
 - Every file opens with a short block comment saying what the file is for and what belongs in it, tagged `@module`.
 - No `@param` tags. Document a parameter or option with a `/** … */` comment directly on it.
-- Arrow functions always use `{}` and an explicit `return`.
+- Put an empty line between statements. The only exception is a run of related statements that each fit on one line, such as a few variables set up for the code below; those may sit together. A statement that spans several lines always gets an empty line before it (unless it opens the block) and after it. Biome has no rule for this, but its formatter keeps single blank lines, so apply it by hand.
+
+  ```ts
+  const { owner, repo } = github.repo();
+  const sha = event.data.after;
+
+  await runMe();
+
+  return true;
+  ```
+
+- Arrow functions use `{}` and an explicit `return` by default. An expression body is fine only for a trivial one-liner that never wraps and is unlikely to grow, such as `.map((job) => job.id)`. Expect it rarely.
 
 ## Docs
 
