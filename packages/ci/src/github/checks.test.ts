@@ -224,6 +224,44 @@ describe("attempt reporting", () => {
   });
 });
 
+describe("live updates", () => {
+  test("an in-progress update keeps the summary the check already has", async () => {
+    const gh = createFakeGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js/check-runs/55", {
+      id: 55,
+      output: { title: "old", summary: "the existing summary" },
+    });
+    gh.route("PATCH /repos/inngest/inngest-js/check-runs/55", { id: 55 });
+
+    const sink = checksSink(
+      githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    );
+
+    await sink.update?.({
+      run: fakeRun(),
+      name: "pr / test",
+      title: "Running `pnpm test`",
+      checkRunId: 55,
+    });
+
+    const patch = gh.requests.find((request) => {
+      return request.method === "PATCH";
+    });
+
+    expect(patch?.body).toMatchObject({
+      output: {
+        title: "Running `pnpm test`",
+        summary: "the existing summary",
+      },
+    });
+  });
+});
+
 describe("pipeline summary", () => {
   test("lists jobs, links the trace, and names kept machines", () => {
     const summary = pipelineSummary(

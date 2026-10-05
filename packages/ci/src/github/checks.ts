@@ -549,11 +549,19 @@ export const checksSink = (provider: GitHubProvider): CheckSink => ({
         : { installationId: repo.installationId }),
     });
 
+    // `output.summary` is required on every update and replaces what's there,
+    // so send back what the check already shows.
+    const current = await octokit.rest.checks.get({
+      owner: repo.owner,
+      repo: repo.name,
+      check_run_id: checkRunId,
+    });
+
     await octokit.rest.checks.update({
       owner: repo.owner,
       repo: repo.name,
       check_run_id: checkRunId,
-      output: { title: name, summary: title },
+      output: { title, summary: current.data.output?.summary || name },
     });
   },
 });
