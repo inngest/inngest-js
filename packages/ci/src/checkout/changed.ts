@@ -159,9 +159,9 @@ const localChangedFiles = async (
   cwd: string,
   baseRef: string,
 ): Promise<string[]> => {
-  let committed: string[] = [];
+  let committed: string[] | undefined;
 
-  for (const target of [`origin/${baseRef}`, baseRef, "HEAD"]) {
+  for (const target of [`origin/${baseRef}`, baseRef]) {
     try {
       const diff = await git(cwd, ["diff", "--name-only", `${target}...HEAD`]);
 
@@ -171,6 +171,15 @@ const localChangedFiles = async (
     } catch {
       // Try the next candidate; a fresh clone may have no origin.
     }
+  }
+
+  // Without the base there is nothing to compare against, and an empty diff
+  // would skip work that may have changed. Say so, and the caller assumes
+  // everything changed.
+  if (!committed) {
+    throw new CiUsageError(
+      `\`changed()\` could not find \`${baseRef}\` in \`${cwd}\` to compare against.`,
+    );
   }
 
   const status = await git(cwd, ["status", "--porcelain"]);

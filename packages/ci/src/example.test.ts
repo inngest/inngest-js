@@ -4,6 +4,10 @@
  * @module
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { step } from "inngest";
 import { describe, expect, test } from "vitest";
 import { files, memoryCacheStore } from "./cache/cache.ts";
@@ -26,6 +30,37 @@ import { runFunction } from "./testing/runFunction.ts";
  * This is here so the code in `examples/ci-pipelines/ci/` is covered by
  * something that actually runs it.
  */
+/**
+ * A throwaway git repository whose `feature` branch changes a source file,
+ * so `changed()` sees the same thing wherever the tests run. Without
+ * `withBase`, there is no `main` to compare against.
+ */
+const makeRepo = ({ withBase }: { withBase: boolean }): string => {
+  const dir = mkdtempSync(join(tmpdir(), "inngest-ci-example-"));
+
+  const git = (...args: string[]) => {
+    execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+  };
+
+  git("init", "-q", "-b", withBase ? "main" : "feature");
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "test");
+  writeFileSync(join(dir, "README.md"), "fixture\n");
+  git("add", ".");
+  git("commit", "-q", "-m", "base");
+
+  if (withBase) {
+    git("checkout", "-q", "-b", "feature");
+  }
+
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "index.ts"), "export {};\n");
+  git("add", ".");
+  git("commit", "-q", "-m", "change");
+
+  return dir;
+};
+
 const prEvent = {
   name: "github/pull_request.opened",
   data: {
@@ -42,7 +77,7 @@ const prEvent = {
     },
     // A local fixture, as `pnpm ci:send` builds: `changed()` and `checkout()`
     // use the working tree rather than GitHub.
-    local: { path: process.cwd(), baseRef: "main" },
+    local: { path: makeRepo({ withBase: true }), baseRef: "main" },
   },
 };
 
@@ -151,6 +186,24 @@ const buildPipeline = () => {
 };
 
 describe("the example's pr pipeline", () => {
+  test("runs everything when the base branch can't be found", async () => {
+    const { pipeline } = buildPipeline();
+
+    const event = {
+      ...prEvent,
+      data: {
+        ...prEvent.data,
+        local: { path: makeRepo({ withBase: false }), baseRef: "main" },
+      },
+    };
+
+    const result = await runFunction(pipeline, { event, maxRequests: 400 });
+
+    expect(result.data).toEqual({
+      testedAgainst: "https://preview.example.dev",
+    });
+  });
+
   test("runs every job, and reports every check", async () => {
     const { api, reporter, pipeline } = buildPipeline();
 
