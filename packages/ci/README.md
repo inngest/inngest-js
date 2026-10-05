@@ -219,9 +219,7 @@ INNGEST_DEV=1 npx tsx ci/send.ts
 
 Every run opens in the Inngest dashboard as one trace: the pipeline, each job, each command, and the Sandbox steps behind them.
 
-<!-- TODO: add media/trace.png, a dashboard screenshot of one pipeline run showing the pipeline, its jobs, commands, and Sandbox steps. -->
-
-![A trace of one pipeline run in the Inngest dashboard](https://raw.githubusercontent.com/inngest/inngest-js/main/packages/ci/media/trace.png)
+![The trace of the example pr pipeline in the Inngest Dev Server: pipeline and job checks, cache lookups, then the base job creating its machine, checking out the repository and installing dependencies](https://raw.githubusercontent.com/inngest/inngest-js/main/packages/ci/media/trace.png)
 
 On GitHub, the same run appears as one check for the pipeline and one for each job:
 
