@@ -10,8 +10,11 @@ import type { CheckAnnotation, CheckConclusion } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import type { GitHubProvider } from "./auth.ts";
 
-/** GitHub truncates check output, so we do it first and say so. */
-export const maxSummaryLength = 65_000;
+/**
+ * GitHub rejects `output.summary` over 65535 bytes (not characters), so we
+ * truncate first and say so.
+ */
+export const maxSummaryBytes = 65_000;
 
 /** GitHub accepts at most 50 annotations per request, and appends them. */
 export const annotationBatchSize = 50;
@@ -113,10 +116,21 @@ export interface NormalisedAnnotation {
   raw_details?: string;
 }
 
-export const truncateSummary = (summary: string): string =>
-  summary.length <= maxSummaryLength
-    ? summary
-    : `${summary.slice(0, maxSummaryLength - 40)}\n\n_…truncated, see the trace._`;
+/** Cut to `maxSummaryBytes` of UTF-8, never splitting a code point. */
+export const truncateSummary = (summary: string): string => {
+  const bytes = Buffer.from(summary, "utf8");
+  if (bytes.length <= maxSummaryBytes) {
+    return summary;
+  }
+
+  const notice = "\n\n_…truncated, see the trace._";
+  let end = maxSummaryBytes - Buffer.byteLength(notice);
+  // Back up over continuation bytes (10xxxxxx) to the start of a code point.
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) {
+    end--;
+  }
+  return `${bytes.subarray(0, end).toString("utf8")}${notice}`;
+};
 
 export const batchAnnotations = (
   annotations: NormalisedAnnotation[],

@@ -21,6 +21,7 @@ import {
   pipelineSummary,
   resetTitleThrottle,
   statusesSink,
+  truncateSummary,
 } from "./checks.ts";
 
 const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope =>
@@ -221,6 +222,16 @@ describe("attempt reporting", () => {
     expect(updates).toEqual([
       { name: "pr / test", title: "Attempt 1 of 2: `pnpm test` exited with 1" },
     ]);
+  });
+});
+
+describe("summary truncation", () => {
+  test("multi-byte text is cut by UTF-8 bytes without splitting a character", () => {
+    const summary = truncateSummary("€".repeat(30_000));
+
+    expect(Buffer.byteLength(summary)).toBeLessThanOrEqual(65_535);
+    expect(summary).not.toContain("�");
+    expect(summary).toContain("truncated");
   });
 });
 
