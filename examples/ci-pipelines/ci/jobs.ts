@@ -1,5 +1,6 @@
 import {
   $,
+  checkout,
   files,
   from,
   github,
@@ -27,12 +28,14 @@ export const base = ci.job(
 
 export const lint = ci.job("lint", async () => {
   await from(base);
+  await checkout();
 
   await $`pnpm lint`.cwd(appDir);
 });
 
 export const test = ci.job("test", async () => {
   await from(base);
+  await checkout();
 
   const result = await $`pnpm test`.cwd(appDir).retries(1);
 
@@ -41,10 +44,23 @@ export const test = ci.job("test", async () => {
   return result.exitCode;
 });
 
+export const build = ci.job(
+  "build",
+  async (input: { target: "web" | "api" }) => {
+    await from(base);
+    await checkout();
+
+    await $`pnpm build`.cwd(appDir).env({ BUILD_TARGET: input.target });
+
+    return input.target;
+  },
+);
+
 export const compat = ci.matrix(
   { id: "compat", axes: { node: ["20", "22"] } },
   async ({ node }) => {
     await from(base);
+    await checkout();
 
     await $`node --version`;
 
@@ -56,6 +72,7 @@ export const compat = ci.matrix(
 
 export const e2e = ci.job("e2e", async () => {
   await from(base);
+  await checkout();
 
   await $`node -e ${"require('http').createServer((_,res)=>res.end('ok')).listen(3000)"}`.background();
   await waitForHttp("http://127.0.0.1:3000");
