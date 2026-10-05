@@ -32,7 +32,7 @@ import { filterPaths, git } from "../util.ts";
  * Patterns support `**`, `*`, `?`, and `{a,b}`. The changed files come from
  * the pull request or the push range on GitHub, and from git locally.
  *
- * When the change can't be read — no credentials, say — this answers `true`
+ * When the change can't be read, no credentials, say — this answers `true`
  * and notes it on the check, so work runs rather than being skipped wrongly.
  *
  * @throws {CiUsageError} When called outside a pipeline run.
@@ -64,7 +64,7 @@ export async function changed(
 
 /**
  * The paths changed by whatever triggered this run, or `null` when they can't
- * be read — a cron with no repository, or a run with no GitHub credentials.
+ * be read, a cron with no repository, or a run with no GitHub credentials.
  */
 export const changedFiles = async (): Promise<string[] | null> => {
   const run = getRunScope();

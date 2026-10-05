@@ -35,7 +35,7 @@ const waitScript = (check: string, timeoutMs: number): string => {
  * Wait for a URL on the machine to answer, instead of sleeping and hoping.
  *
  * The retry loop runs on the machine rather than from your app, so it's one
- * step however long it takes, and the URL is one the machine can reach —
+ * step however long it takes, and the URL is one the machine can reach,
  * usually `127.0.0.1`.
  *
  * ```ts
