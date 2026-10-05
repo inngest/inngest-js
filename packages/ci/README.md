@@ -307,10 +307,12 @@ The handler receives `event`, `events`, `runId`, `pipelineId`, `repo`, `attempt`
 | `id` | `string` | Yes |
 | `on` | A trigger, or an array of triggers | Yes |
 | `check` | `false`, or `{ name?, jobs? }` | No |
+| `machine` | `{ vcpu?: 1 \| 2 \| 4 }` | No |
 | `repo` | `string` | No |
 
 - `id` is unique in the app. It names the function, the run, and the check.
 - `check: false` turns off all checks. `check: { jobs: false }` keeps the pipeline check and drops the job checks.
+- `machine` is the default machine for the pipeline's jobs. A job's own `machine` overrides it. See [Machines](#machines).
 - `repo` (`"owner/name"`) gives crons and manual runs a repository to check out.
 - Flow control options: `concurrency`, `throttle`, `rateLimit`, `debounce`, `priority`, `singleton`, `idempotency`, `batchEvents`, `timeouts`, `cancelOn`, `retries`, `name`, and `description`. See [flow control](https://www.inngest.com/docs/durable-execution/flow-control/concurrency).
 
@@ -435,16 +437,17 @@ await $.sh`pnpm build && pnpm test | tee test.log`;
 | `.env(vars)` | Sets environment variables for this command. |
 | `.cwd(path)` | Sets the directory. The default is `/work`. |
 | `.timeout(duration)` | Throws `CommandTimeoutError` after the duration. |
-| `.onTimeout(fn)` | Runs `fn` when the timeout hits, before the command stops. |
-| `.background()` | Starts the command and returns a process with `exited()`, `kill()`, and `output()`. |
+| `.onTimeout(fn)` | Runs `fn` when the timeout hits, then throws. |
+| `.background()` | Starts the command and returns a process with `id`, `exited()`, `kill(signal?)`, and `output({ tailBytes? })`. |
 | `.as(name)` | Names the step in the trace. |
 | `.withSecret(name, value)` | Passes an environment variable and masks it in output. |
-| `.text()`, `.lines()`, `.json()` | Returns stdout as a string, an array of lines, or parsed JSON. |
+| `.text()`, `.lines()`, `.json()` | Returns stdout as a trimmed string, an array of lines, or parsed JSON. |
 
 - `$` runs without a shell. `$.sh` runs `/bin/sh -c` and escapes interpolated values.
 - A result holds `exitCode`, `stdout`, `stderr`, `truncated`, and `durationMs`. `stdout` and `stderr` keep the last 64 KiB.
 - `$` outside a job throws `CiUsageError`.
-- Output arrives when the command ends, and `.timeout()` is approximate because Inngest polls for exit.
+- `.background()` returns once the process starts. `kill()` sends `SIGTERM` unless you pass a signal number, `output()` reads the last 64 KiB by default, and `exited()` polls for exit. It ignores `.retries()`, `.timeout()`, and `.nothrow()`.
+- Output arrives when the command ends. A `.timeout()` of 5 minutes or less is exact. A longer one is approximate because Inngest polls for exit.
 
 > [!WARNING]
 > `.withSecret()` hides the value from the trace and from check output. Code running on the machine can still read it.
@@ -473,14 +476,14 @@ A **machine** is a Sandbox: an ephemeral Linux microVM. Each job gets one on its
 | 2 (default) | 2 GiB |
 | 4 | 4 GiB |
 
-Set `machine` on a job, or on `createCi` for every job.
+Set `machine` on a job, on its pipeline, or on `createCi` for every job. The first one set wins in that order, and the default is 2 vCPUs.
 
 - Inngest pauses a machine when its job finishes, so a later `from()` can snapshot it, and destroys every machine when the pipeline ends.
 - Only `$` runs on the machine. The rest of your handler runs in your app.
 - Commands run in `/work` by default, which is where `checkout()` puts the repository.
 - `checkout()` clones the commit that triggered the run with a short-lived token that never appears in the trace. Locally it uploads your working tree.
 
-`checkout()` options: `ref`, `submodules`, `history` (`"shallow"` or `"full"`), and `path`.
+`checkout()` options: `ref`, `submodules`, `history` (`"shallow"` or `"full"`), and `path`. `history` defaults to `"shallow"`, which skips file contents until they are needed, and `path` defaults to `/work`. Commands after a `checkout({ path })` run in that path. A local checkout uploads your working tree and ignores `ref`, `submodules`, and `history`. `checkout()` throws `CiUsageError` when the run has no repository, so set `repo` on the pipeline.
 
 ### Starting from another job
 
@@ -508,9 +511,9 @@ const test = ci.job("test", async () => {
   <img alt="Three jobs layered with from(): base, build, and test. In the first run all three run. In the second run the base cache key is unchanged, so base is restored without running. The build key changed, so build runs again from the base snapshot, and test runs from the new build snapshot." src="https://raw.githubusercontent.com/inngest/inngest-js/main/packages/ci/media/from-light.svg">
 </picture>
 
-Each job builds on the snapshot of the one before it. When a job's [cache key](#caching) is unchanged, Inngest skips the job and restores its saved machine. When a key changes, only that job and the jobs after it run again.
+Each job builds on the snapshot of the one before it. When a job's [cache key](#caching) is unchanged, Inngest skips the job and restores its saved machine. When a cached job's key changes, it runs again, and so does every cached job that starts from it, directly or through other cached jobs.
 
-- `from()` returns the parent's result.
+- `from()` returns the parent's result. Pass the parent's input as the second argument when it takes one.
 - Call `from()` before the job's first command, and once per job.
 - `await base()` runs `base` on its own machine. `await from(base)` runs it and then starts this job from where it finished.
 - Choose the parent at runtime:
@@ -617,7 +620,7 @@ key: [files("go.mod", "go.sum"), "go1.25"]
 ```
 
 - `files()` hashes the matched files in the git tree for the run's commit. Locally it hashes the working tree.
-- A job's key does not include its parent's key. Add the parent's files to the child's key when the child depends on them.
+- A cached job also depends on the cached jobs it starts `from()`. When one of them changes its key, the child's entry is stale and the job runs again. This holds up the whole chain of cached parents. An uncached parent has no key and never invalidates its children, so add its files to the child's key when the child depends on them.
 - The first run of a job always misses.
 - A job without a machine caches its result. Reused jobs show as passed.
 - Do not cache tests that call the network.
@@ -658,9 +661,9 @@ await report.annotate([
 ]);
 ```
 
-- `report.summary(markdown)` stacks sections. GitHub truncates summaries at 65,000 characters.
+- `report.summary(markdown)` stacks sections. Inngest truncates a summary at 65,000 bytes, under GitHub's limit of 65,535 bytes, and links to the trace.
 - `report.annotate(annotations)` puts annotations on the diff. Inngest sends them in batches of 50, the GitHub limit per request. Entries without a `path` or a `message` are dropped.
-- A GitHub "Re-run" restarts the whole pipeline. Passed jobs are reused only when they have a `cache` key.
+- A GitHub "Re-run" on a pipeline or job check, or "Re-run all" on the check suite, restarts the whole pipeline. Passed jobs are reused only when they have a `cache` key.
 
 ### GitHub
 
