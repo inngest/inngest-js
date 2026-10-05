@@ -97,6 +97,14 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 };
 
 /**
+ * How long a pause may wait for the sandbox to report PAUSED. The SDK's
+ * default is 5 minutes, and a pause the platform accepts but never completes
+ * (the sandbox goes back to STARTING) would hold the whole pipeline that long
+ * for what is only an optimisation. A healthy pause takes about 10 seconds.
+ */
+export const pauseTimeoutMs = 30_000;
+
+/**
  * Pause a finished job's machine rather than destroying it, so a later
  * `from()` can still snapshot it. Everything is destroyed at the end of the
  * run.
@@ -108,7 +116,9 @@ export const pauseMachine = async (scope: CiJobScope): Promise<void> => {
 
   try {
     const machine = await scope.machine;
-    await machine.sandbox.pause(`${scope.path}${scopeSeparator}pause`);
+    await machine.sandbox.pause(`${scope.path}${scopeSeparator}pause`, {
+      timeout: pauseTimeoutMs,
+    });
   } catch (error) {
     // Pausing is an optimisation; a machine that can't pause is still
     // destroyed at the end of the run.

@@ -274,9 +274,9 @@ const cases: Case[] = [
       const out = completed(run!) as { a: Output; b: Output };
       deepStrictEqual(out.a, {
         parent: { built: "yes" },
-        marker: "from-setup",
+        marker: "from-base",
       });
-      deepStrictEqual(out.b, { marker: "from-setup", seesA: false });
+      deepStrictEqual(out.b, { marker: "from-base", seesA: false });
     },
   },
   {
