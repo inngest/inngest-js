@@ -69,6 +69,10 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
 
   scope.fromJobIds.push(job.id);
 
+  if (input !== undefined) {
+    scope.fromInputs[job.id] = input;
+  }
+
   const result = await job(input as never);
 
   const snapshotId = await snapshotJob(scope.run, job.id);

@@ -1323,6 +1323,58 @@ describe("checks", () => {
     ]);
   });
 
+  test("a cached child of a parent called with an input hits again, and misses when that input changes", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+
+    const runWith = async (version: string) => {
+      const { ci } = setup({ cacheStore: store, api });
+
+      const parent = ci.job(
+        { id: "setup", cache: { key: "p" } },
+        async (input: { version: string }) => {
+          await $`pnpm install ${input.version}`;
+
+          return input.version;
+        },
+      );
+
+      const child = ci.job(
+        { id: "test", cache: { key: "t" } },
+        async (input: { version: string }) => {
+          await from(parent, input);
+
+          await $`pnpm test`;
+        },
+      );
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return child({ version });
+        }),
+        { event: prEvent },
+      );
+    };
+
+    const testRuns = () => {
+      return userCommands(api).filter((argv) => {
+        return argv[1] === "test";
+      }).length;
+    };
+
+    await runWith("1");
+
+    expect(testRuns()).toBe(1);
+
+    await runWith("1");
+
+    expect(testRuns()).toBe(1);
+
+    await runWith("2");
+
+    expect(testRuns()).toBe(2);
+  });
+
   test("a cache hit reads as restored, never skipped", async () => {
     const store = memoryCacheStore();
     // The same machines and snapshots across both runs, like a real environment.

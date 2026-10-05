@@ -207,6 +207,23 @@ const resolveFilesPart = async (
   );
 };
 
+/**
+ * A job's own cache key: its resolved key, with the input it was called with
+ * folded in, since the same key with a different input is a different job.
+ * Lookups, stores and parent keys all go through this, so they always agree.
+ */
+export const jobCacheKey = async (
+  run: CiRunScope,
+  cache: CacheConfig,
+  input: unknown,
+): Promise<string> => {
+  const key = await resolveCacheKey(run, cache.key);
+
+  return input === undefined
+    ? key
+    : hash(`${key}\0input:${stableStringify(input)}`);
+};
+
 export interface CacheLookup {
   /** The key this job's entry is stored under. */
   writeKey: string;
@@ -244,6 +261,8 @@ const findEntry = async (
 export const resolveParentKeys = async (
   run: CiRunScope,
   jobIds: string[],
+  /** The input each parent was called with, by job ID. */
+  inputs: Record<string, unknown>,
 ): Promise<Record<string, string>> => {
   const keys: Record<string, string> = {};
 
@@ -254,14 +273,14 @@ export const resolveParentKeys = async (
       continue;
     }
 
-    const key =
-      run.cacheKeys.get(jobId) ?? (await resolveCacheKey(run, cache.key));
+    const key = await jobCacheKey(run, cache, inputs[jobId]);
 
     const entry = await findEntry(run, cache, jobId, key);
 
     const parents = await resolveParentKeys(
       run,
       Object.keys(entry?.fromKeys ?? {}),
+      entry?.fromInputs ?? {},
     );
 
     keys[jobId] = hash(
@@ -296,16 +315,9 @@ export const lookupCache = async (
     async () => {
       await tagStep(run, tag);
 
-      const key = await resolveCacheKey(run, cache.key);
-
-      // The same key with a different input is a different job.
-      return input === undefined
-        ? key
-        : hash(`${key}\0input:${stableStringify(input)}`);
+      return jobCacheKey(run, cache, input);
     },
   )) as string;
-
-  run.cacheKeys.set(jobId, ownKey);
 
   const entry = (await run.step.run(
     {
@@ -317,7 +329,11 @@ export const lookupCache = async (
 
       const found = await findEntry(run, cache, jobId, ownKey);
       const built = found?.fromKeys ?? {};
-      const current = await resolveParentKeys(run, Object.keys(built));
+      const current = await resolveParentKeys(
+        run,
+        Object.keys(built),
+        found?.fromInputs ?? {},
+      );
       const unchanged = JSON.stringify(current) === JSON.stringify(built);
 
       return found && unchanged ? found : null;
@@ -337,7 +353,7 @@ export const lookupCache = async (
 export const storeCache = async (
   scope: CiJobScope,
   lookup: CacheLookup,
-  entry: Omit<CacheEntry, "key" | "fromKeys">,
+  entry: Omit<CacheEntry, "key" | "fromKeys" | "fromInputs">,
 ): Promise<void> => {
   const { run } = scope;
 
@@ -347,8 +363,19 @@ export const storeCache = async (
       name: "cache:store",
     },
     async () => {
-      const fromKeys = await resolveParentKeys(run, scope.fromJobIds);
-      const full: CacheEntry = { ...entry, key: lookup.ownKey, fromKeys };
+      const fromInputs = scope.fromInputs;
+      const fromKeys = await resolveParentKeys(
+        run,
+        scope.fromJobIds,
+        fromInputs,
+      );
+
+      const full: CacheEntry = {
+        ...entry,
+        key: lookup.ownKey,
+        fromKeys,
+        fromInputs,
+      };
 
       await run.ci.cacheStore.set(lookup.writeKey, full);
 

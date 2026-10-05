@@ -128,8 +128,6 @@ export interface CiRunScope {
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
-  /** The cache key each job in this run looked up, keyed by job ID. */
-  cacheKeys: Map<string, string>;
   /** Cache entries resolved this run, keyed by job path. */
   cacheEntries: Map<string, CacheEntry | undefined>;
   /** Sandbox IDs created in this run, for cleanup. */
@@ -193,6 +191,8 @@ export interface CiJobScope {
   fromSnapshotId?: string;
   fromCalled: boolean;
   fromJobIds: string[];
+  /** The input each `from()` parent was called with, by job ID. */
+  fromInputs: Record<string, unknown>;
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];

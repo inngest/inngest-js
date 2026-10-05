@@ -66,6 +66,7 @@ export const sandbox = async (
       config: { ...job.config, id: path, machine: config },
       fromCalled: false,
       fromJobIds: [],
+      fromInputs: {},
       annotations: [],
       summaries: [],
       env: {},

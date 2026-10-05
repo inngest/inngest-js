@@ -186,7 +186,6 @@ const newRunScope = ({
     jobs: new Map(),
     machines: new Map(),
     snapshots: new Map(),
-    cacheKeys: new Map(),
     cacheEntries: new Map(),
     sandboxes: new Set(),
     summaries: [],

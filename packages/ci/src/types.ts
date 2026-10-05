@@ -208,6 +208,8 @@ export interface CacheEntry {
   builtBy: { runId: string; sha?: string; trigger: string };
   /** The keys of the cached jobs this job started `from()` when it was built. */
   fromKeys?: Record<string, string>;
+  /** The input each of those jobs was called with, by job ID. */
+  fromInputs?: Record<string, unknown>;
 }
 
 /**

@@ -118,6 +118,7 @@ const jobBody = async ({
     config,
     fromCalled: false,
     fromJobIds: [],
+    fromInputs: {},
     annotations: [],
     summaries: [],
     env: {},
