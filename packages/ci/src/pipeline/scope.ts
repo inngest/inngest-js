@@ -14,6 +14,7 @@ import type {
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
+  MachineConfig,
   RepoContext,
 } from "../types.ts";
 
@@ -92,6 +93,8 @@ export interface CiRunScope {
   /** The pipeline check's name. `undefined` when checks are off. */
   checkName?: string;
   jobChecks: boolean;
+  /** The pipeline's default machine, for jobs that set none. */
+  machine?: MachineConfig;
   event: unknown;
   repo?: RepoContext;
   /** Jobs that have started in this run, keyed by job ID. */

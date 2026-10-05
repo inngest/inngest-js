@@ -744,6 +744,39 @@ describe("machines", () => {
     });
   });
 
+  test("machines resolve job, then pipeline, then client", async () => {
+    const api = createFakeSandboxApi();
+    const ci = createCi(createCiTestClient(api), {
+      github: consoleReporter(),
+      machine: { vcpu: 1 },
+    });
+
+    const plain = ci.job("plain", async () => {
+      await $`pnpm build`;
+    });
+    const own = ci.job({ id: "own", machine: { vcpu: 2 } }, async () => {
+      await $`pnpm build`;
+    });
+
+    const inPipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, machine: { vcpu: 4 } },
+      async () => {
+        await plain();
+        await own();
+      },
+    );
+    const noMachine = ci.pipeline({ id: "other", on: prTrigger }, async () => {
+      return plain();
+    });
+
+    await runFunction(inPipeline, { event: prEvent });
+    expect([...api.sandboxes.values()].map((box) => box.vcpu)).toEqual([4, 2]);
+
+    api.sandboxes.clear();
+    await runFunction(noMachine, { event: prEvent });
+    expect([...api.sandboxes.values()].map((box) => box.vcpu)).toEqual([1]);
+  });
+
   test("an extra machine gets its own sandbox and scope", async () => {
     const { api, ci } = setup();
 

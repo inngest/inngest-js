@@ -164,6 +164,7 @@ export const runPipeline = async ({
       ? {}
       : { checkName: config.check?.name ?? config.id }),
     jobChecks: config.check === false ? false : config.check?.jobs !== false,
+    ...(config.machine ? { machine: config.machine } : {}),
     event: ctx.event,
     ...(repoContextFromEvent(ctx.event)
       ? { repo: repoContextFromEvent(ctx.event) as RepoContext }

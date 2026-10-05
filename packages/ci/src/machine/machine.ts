@@ -71,7 +71,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   const name = machineName(run.runId, scope.path);
   const stepId = `${scope.path}${scopeSeparator}machine`;
   const machineConfig = resolveMachineConfig(
-    scope.config.machine ?? run.ci.defaultMachine,
+    scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
 
   const sandbox = scope.fromSnapshotId
