@@ -22,9 +22,9 @@ export const shard = async <T>(
 ): Promise<T> => {
   requireJobScope("shard");
 
-  const shardFiles = opts.files.filter((_file, index) => {
-    return index % opts.total === opts.index;
-  });
-
-  return run(shardFiles);
+  return run(
+    opts.files.filter((_file, index) => {
+      return index % opts.total === opts.index;
+    }),
+  );
 };
