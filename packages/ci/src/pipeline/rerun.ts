@@ -33,8 +33,11 @@ export const rerunEventFor = async ({
   const checkName =
     config.check === false ? config.id : (config.check?.name ?? config.id);
 
-  // Only act on checks this pipeline created.
+  // A suite has no name or external_id, and only the app that owns it hears
+  // about its re-request, so re-run for the suite's commit. A check run is
+  // only ours if it carries our name or external_id.
   const mine =
+    !event?.data?.check_run ||
     name === checkName ||
     name?.startsWith(`${checkName} / `) ||
     Boolean(externalId);

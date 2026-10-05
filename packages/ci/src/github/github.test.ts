@@ -9,6 +9,7 @@ import { shard } from "../checkout/shard.ts";
 import { CiUsageError } from "../errors.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { durable, resetDurableWarnings } from "../pipeline/durable.ts";
+import { rerunEventFor } from "../pipeline/rerun.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -614,5 +615,37 @@ describe("shard", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toEqual(["a", "c"]);
+  });
+});
+
+describe("re-running from a check suite", () => {
+  test("`check_suite.rerequested` resends the trigger for the suite's commit", async () => {
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const result = await rerunEventFor({
+      event: {
+        name: "github/check_suite.rerequested",
+        data: {
+          action: "rerequested",
+          check_suite: { id: 9, head_sha: "abc1234", head_branch: "main" },
+          repository: {
+            full_name: "inngest/inngest-js",
+            default_branch: "main",
+          },
+        },
+      },
+      step: {
+        run: async (_id: string, fn: () => Promise<unknown>) => {
+          return fn();
+        },
+      },
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    expect(result).toMatchObject({ rerun: true, sha: "abc1234" });
+    expect(send).toHaveBeenCalledOnce();
   });
 });
