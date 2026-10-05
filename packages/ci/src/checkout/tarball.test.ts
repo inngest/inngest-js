@@ -9,8 +9,11 @@ import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  lstatSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,5 +71,40 @@ describe("buildWorkingTreeTarball", () => {
         `contents of ${path.length}`,
       );
     }
+  });
+
+  test("symlinks are archived as links and their targets are never read", async () => {
+    const source = join(root, "source");
+    const dest = join(root, "dest");
+    const outside = join(root, "outside-secret.txt");
+    const longTarget = `../${"t".repeat(150)}`;
+
+    mkdirSync(source);
+    mkdirSync(dest);
+
+    writeFileSync(outside, "TOP-SECRET-CONTENTS");
+    writeFileSync(join(source, "real.txt"), "real");
+
+    symlinkSync(outside, join(source, "escape"));
+    symlinkSync("real.txt", join(source, "inside"));
+    symlinkSync(longTarget, join(source, "long"));
+
+    execFileSync("git", ["init", "-q"], { cwd: source });
+
+    const tarball = await buildWorkingTreeTarball(source);
+
+    expect(Buffer.from(tarball).toString("latin1")).not.toContain(
+      "TOP-SECRET-CONTENTS",
+    );
+
+    writeFileSync(join(root, "work.tar"), tarball);
+
+    execFileSync("tar", ["-xf", join(root, "work.tar"), "-C", dest]);
+
+    expect(lstatSync(join(dest, "escape")).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(dest, "escape"))).toBe(outside);
+    expect(readlinkSync(join(dest, "inside"))).toBe("real.txt");
+    expect(readlinkSync(join(dest, "long"))).toBe(longTarget);
+    expect(readFileSync(join(dest, "inside"), "utf8")).toBe("real");
   });
 });

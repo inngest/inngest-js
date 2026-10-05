@@ -5,7 +5,7 @@
  * @module
  */
 
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { git } from "../util.ts";
 
@@ -69,6 +69,7 @@ const header = (fields: {
   size: number;
   mode: number;
   typeflag: string;
+  linkname?: string;
 }): Uint8Array => {
   const block = new Uint8Array(blockSize);
 
@@ -84,6 +85,7 @@ const header = (fields: {
   write(octal(Math.floor(Date.now() / 1000), 12), 136, 12);
   write("        ", 148, 8); // checksum placeholder
   write(fields.typeflag, 156, 1);
+  write(fields.linkname ?? "", 157, 100);
   write("ustar\0", 257, 6);
   write("00", 263, 2);
   write(fields.prefix, 345, 155);
@@ -121,7 +123,8 @@ const workingTreeFiles = async (cwd: string): Promise<string[]> => {
  *
  * This is a small ustar writer rather than a dependency: the machine has
  * `tar`, the format is a few fixed-width fields, and CI only ever writes
- * regular files. Long paths use ustar's `prefix` field, or a PAX extended
+ * regular files and symlinks. A symlink is written as a link entry and its
+ * target is never read, so a link out of the tree can't pull in other files. Long paths use ustar's `prefix` field, or a PAX extended
  * header when no `/` split fits.
  */
 export const buildWorkingTreeTarball = async (
@@ -133,19 +136,23 @@ export const buildWorkingTreeTarball = async (
   for (const relative of files) {
     const absolute = join(cwd, relative);
 
-    let contents: Uint8Array;
+    let contents = new Uint8Array(0);
+    let linkname: string | undefined;
     let mode = 0o644;
 
     try {
-      const info = await stat(absolute);
+      const info = await lstat(absolute);
 
-      if (!info.isFile()) {
+      if (info.isSymbolicLink()) {
+        linkname = await readlink(absolute);
+        mode = 0o777;
+      } else if (info.isFile()) {
+        mode = info.mode & 0o777;
+
+        contents = new Uint8Array(await readFile(absolute));
+      } else {
         continue;
       }
-
-      mode = info.mode & 0o777;
-
-      contents = new Uint8Array(await readFile(absolute));
     } catch {
       // Deleted between listing and reading.
       continue;
@@ -153,8 +160,15 @@ export const buildWorkingTreeTarball = async (
 
     const split = splitName(encoder.encode(relative));
 
-    if (!split) {
-      const record = paxRecord("path", relative);
+    // A link target past the header's 100 bytes needs a PAX record too.
+    const longLink =
+      linkname !== undefined && encoder.encode(linkname).byteLength > 100;
+
+    if (!split || longLink) {
+      const record = new Uint8Array([
+        ...(split ? [] : paxRecord("path", relative)),
+        ...(longLink ? paxRecord("linkpath", linkname as string) : []),
+      ]);
 
       blocks.push(
         header({
@@ -177,7 +191,8 @@ export const buildWorkingTreeTarball = async (
         prefix,
         size: contents.byteLength,
         mode,
-        typeflag: "0",
+        typeflag: linkname === undefined ? "0" : "2",
+        ...(linkname === undefined ? {} : { linkname }),
       }),
       padded(contents),
     );
