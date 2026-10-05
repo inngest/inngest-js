@@ -129,9 +129,11 @@ describe("pipeline triggers type the event", () => {
 
       // The transform's additions are there too.
       expectTypeOf(ctx.event.data._github.event).toBeString();
+
       expectTypeOf(ctx.event.data._github.installationId).toEqualTypeOf<
         number | undefined
       >();
+
       expectTypeOf(ctx.event.data.local).toEqualTypeOf<
         { path: string; baseRef: string } | undefined
       >();
@@ -232,9 +234,11 @@ describe("pipeline triggers type the event", () => {
       expectTypeOf(ctx.pipelineId).toBeString();
       expectTypeOf(ctx.attempt).toBeNumber();
       expectTypeOf(ctx.repo).toEqualTypeOf<RepoContext | undefined>();
+
       expectTypeOf(ctx.events).toEqualTypeOf<
         CiEvent<GitHubEventData<PushEvent>>[]
       >();
+
       expectTypeOf(ctx.logger.info).toBeFunction();
     });
   });
@@ -252,6 +256,7 @@ describe("pipeline triggers type the event", () => {
 
     expectTypeOf(prTriggers).toBeArray();
     expectTypeOf(prTriggers).toExtend<CiTrigger[]>();
+
     // They're ordinary function triggers underneath.
     expectTypeOf<(typeof prTriggers)[number]>().toExtend<{
       event?: unknown;
@@ -297,6 +302,7 @@ describe("jobs infer their input and result", () => {
       node: string;
       db: "sqlite" | "postgres";
     }>();
+
     expectTypeOf(job).returns.resolves.toEqualTypeOf<"sqlite" | "postgres">();
   });
 
@@ -349,6 +355,7 @@ describe("from() carries the parent's result", () => {
   const setup = ci.job("setup", async () => {
     return { installed: true };
   });
+
   const withInput = ci.job("with-input", async (node: string) => {
     return node.length;
   });
@@ -379,6 +386,7 @@ describe("matrices keep their literal values", () => {
       async (combo) => {
         expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
         expectTypeOf(combo.db).toEqualTypeOf<"sqlite" | "postgres">();
+
         return combo.node;
       },
     );
@@ -395,6 +403,7 @@ describe("matrices keep their literal values", () => {
     expectTypeOf(matrix).toExtend<
       Matrix<{ node: readonly ["20", "22"] }, number>
     >();
+
     expectTypeOf(matrix).returns.resolves.toEqualTypeOf<number[]>();
     expectTypeOf(matrix.id).toBeString();
   });
@@ -409,6 +418,7 @@ describe("matrices keep their literal values", () => {
 
     types(async () => {
       expectTypeOf(await matrix()).toEqualTypeOf<("20" | "22")[]>();
+
       await matrix({ node: "22" });
 
       // @ts-expect-error "21" isn't one of the values
@@ -451,6 +461,7 @@ describe("matrices keep their literal values", () => {
         axes: { node: ["20", "22"] },
         machine: (combo) => {
           expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
+
           return { vcpu: combo.node === "22" ? 4 : 2 };
         },
         cache: (combo) => {
@@ -497,9 +508,11 @@ describe("commands", () => {
     types(async () => {
       expectTypeOf(await $`git rev-parse HEAD`.text()).toBeString();
       expectTypeOf(await $`ls`.lines()).toEqualTypeOf<string[]>();
+
       expectTypeOf(
         await $`cat package.json`.json<{ name: string }>(),
       ).toEqualTypeOf<{ name: string }>();
+
       expectTypeOf(await $`cat package.json`.json()).toBeUnknown();
     });
   });
@@ -521,10 +534,15 @@ describe("commands", () => {
       const flag: false | string[] = false;
 
       $`pnpm --filter ${"web"} test`;
+
       $`pnpm test --bail ${1}`;
+
       $`pnpm test ${["--reporter", "json"]}`;
+
       $`pnpm test ${flag}`;
+
       $`pnpm test ${undefined}`;
+
       $`pnpm test ${null}`;
 
       // @ts-expect-error an object has no sensible argument form
@@ -547,9 +565,11 @@ describe("helpers", () => {
       expectTypeOf(await checkout()).toBeVoid();
       expectTypeOf(await checkout({ ref: "abc", submodules: true })).toBeVoid();
       expectTypeOf(await changed("src/**")).toBeBoolean();
+
       expectTypeOf(
         await changed({ include: ["src/**"], ignore: ["**/*.md"] }),
       ).toBeBoolean();
+
       expectTypeOf(await waitForHttp("http://127.0.0.1:3000")).toBeVoid();
       expectTypeOf(await waitForPort(3000, { timeout: "30s" })).toBeVoid();
 
@@ -564,12 +584,15 @@ describe("helpers", () => {
     ci.job({ id: "a", cache: { key: files("a") } }, async () => {
       return 1;
     });
+
     ci.job({ id: "b", cache: { key: "v1" } }, async () => {
       return 1;
     });
+
     ci.job({ id: "c", cache: { key: [files("a"), "go1.25"] } }, async () => {
       return 1;
     });
+
     ci.job(
       {
         id: "d",
@@ -599,6 +622,7 @@ describe("helpers", () => {
       expectTypeOf(extra.$`pnpm start`).toExtend<Command>();
       expectTypeOf(extra.$.sh`a && b`).toExtend<Command>();
       expectTypeOf(await extra.waitForPort(3000)).toBeVoid();
+
       expectTypeOf(
         await extra.waitForHttp("http://127.0.0.1:3000", { status: 204 }),
       ).toBeVoid();
@@ -608,6 +632,7 @@ describe("helpers", () => {
   test("report takes markdown and annotations", () => {
     types(async () => {
       expectTypeOf(await report.summary("**hi**")).toBeVoid();
+
       expectTypeOf(
         await report.annotate([
           { path: "src/a.ts", line: 4, message: "flaky" },
@@ -644,6 +669,7 @@ describe("github.rest", () => {
       expectTypeOf(release.id).toBeNumber();
 
       const repository = await github.rest.repos.get({});
+
       expectTypeOf(repository.default_branch).toBeString();
     });
   });
@@ -651,6 +677,7 @@ describe("github.rest", () => {
   test("owner and repo are optional, and still accepted", () => {
     types(() => {
       github.rest.pulls.get({ pull_number: 7 });
+
       github.rest.pulls.get({
         owner: "inngest",
         repo: "inngest-js",
@@ -678,6 +705,7 @@ describe("github.rest", () => {
       expectTypeOf(scoped.git.createRef).toEqualTypeOf<
         typeof github.rest.git.createRef
       >();
+
       expectTypeOf(
         (await scoped.git.createRef({ ref: "refs/tags/v1", sha: "abc" })).ref,
       ).toBeString();
@@ -760,6 +788,7 @@ describe("github helpers", () => {
       expectTypeOf(
         await fixtures.push({ ref: "refs/heads/main" }),
       ).toEqualTypeOf<typeof event>();
+
       expectTypeOf(
         await fixtures.comment({ body: "/prerelease" }),
       ).toEqualTypeOf<typeof event>();
@@ -854,9 +883,11 @@ describe("the entry point exports what the docs use", () => {
 
     // The errors are classes, so it's their instances that matter.
     expectTypeOf<InstanceType<typeof entry.CiUsageError>>().toExtend<Error>();
+
     expectTypeOf<
       InstanceType<typeof entry.CommandFailedError>
     >().toExtend<Error>();
+
     expectTypeOf<
       InstanceType<typeof entry.CommandTimeoutError>
     >().toExtend<Error>();
@@ -918,6 +949,7 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf<EntryDuration>().toBeString();
     expectTypeOf<EntryJob<number, string>>().toExtend<Job<number, string>>();
     expectTypeOf<EntryCiEvent<{ a: 1 }>["data"]>().toEqualTypeOf<{ a: 1 }>();
+
     expectTypeOf<
       EntryPullRequestEventFor<"closed">["action"]
     >().toEqualTypeOf<"closed">();

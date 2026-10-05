@@ -48,6 +48,7 @@ const prEvent = {
 
 const buildPipeline = () => {
   const api = createFakeSandboxApi();
+
   api.script([
     { match: "pnpm install", stdout: "installed" },
     { match: "serve", ticks: 1, stdout: "listening" },
@@ -71,25 +72,31 @@ const buildPipeline = () => {
     { id: "setup", cache: { key: files("pnpm-lock.yaml") } },
     async () => {
       await checkout();
+
       await $`pnpm install`;
+
       return { installed: true };
     },
   );
 
   const lint = ci.job("lint", async () => {
     await from(setup);
+
     await $`pnpm lint`;
   });
 
   const test = ci.job("test", async () => {
     await from(setup);
+
     await $`pnpm test`.retries(1);
   });
 
   const compat = (node: string) => {
     return ci.job(`compat (node:${node})`, async () => {
       await from(setup);
+
       await $`pnpm test`.env({ NODE_VERSION: node });
+
       return node;
     })();
   };
@@ -98,9 +105,11 @@ const buildPipeline = () => {
   const deploy = ci.job("deploy", async () => {
     return step.run("create-deployment", async () => {
       deployAttempts += 1;
+
       if (deployAttempts === 1) {
         throw new Error("deploy provider returned 503");
       }
+
       return { url: "https://preview.example.dev" };
     });
   });
@@ -108,9 +117,13 @@ const buildPipeline = () => {
   const e2e = (baseUrl: string) => {
     return ci.job("e2e", async () => {
       await from(setup);
+
       await $`serve`.background();
+
       await waitForHttp("http://127.0.0.1:3000");
+
       await $`pnpm exec playwright test`.env({ BASE_URL: baseUrl });
+
       return { testedAgainst: baseUrl };
     })();
   };
@@ -129,6 +142,7 @@ const buildPipeline = () => {
       await Promise.all([lint(), test(), ...["20", "22"].map(compat)]);
 
       const preview = await deploy();
+
       return e2e(preview.url);
     },
   );
@@ -149,6 +163,7 @@ describe("the example's pr pipeline", () => {
       type: result.type,
       error: (result.error as { message?: string })?.message,
     }).toEqual({ type: "function-resolved", error: undefined });
+
     expect(result.data).toEqual({
       testedAgainst: "https://preview.example.dev",
     });
@@ -156,6 +171,7 @@ describe("the example's pr pipeline", () => {
     // One machine for setup, and one clone each for the jobs that start from
     // it. `deploy` never gets one.
     const machines = [...api.sandboxes.values()];
+
     expect(
       machines.map((machine) => {
         return machine.name;
@@ -168,12 +184,14 @@ describe("the example's pr pipeline", () => {
       "ci-01TESTRUN-compat-node-22",
       "ci-01TESTRUN-e2e",
     ]);
+
     // Everything but setup is a clone of setup's snapshot.
     expect(
       machines.filter((machine) => {
         return machine.snapshotId;
       }),
     ).toHaveLength(5);
+
     expect(api.snapshots.size).toBe(1);
 
     // Setup installed once, however many jobs started from it.
@@ -212,6 +230,7 @@ describe("the example's pr pipeline", () => {
 
   test("a failing test fails its job check and the pipeline check", async () => {
     const { api, reporter, pipeline } = buildPipeline();
+
     api.script([
       { match: "pnpm install", stdout: "installed" },
       { match: "pnpm test", exitCode: 1, stderr: "1 failing" },
@@ -235,6 +254,7 @@ describe("the example's pr pipeline", () => {
     });
 
     expect(failed.length).toBeGreaterThan(0);
+
     expect(
       failed.every((entry) => {
         return entry.title === "`pnpm test` exited with 1";
@@ -260,6 +280,7 @@ describe("the example's pr pipeline", () => {
         }),
       ),
     );
+
     expect(
       completed.filter((entry) => {
         return entry.conclusion === "cancelled";
@@ -269,6 +290,7 @@ describe("the example's pr pipeline", () => {
     const pipelineCheck = completed.find((entry) => {
       return entry.name === "pr";
     });
+
     expect(pipelineCheck?.conclusion).toBe("failure");
     expect(pipelineCheck?.title).toContain("exited with 1");
   });

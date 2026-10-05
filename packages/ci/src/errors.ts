@@ -17,6 +17,7 @@
 export class CiUsageError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
+
     this.name = "CiUsageError";
   }
 }
@@ -46,11 +47,17 @@ export class CommandFailedError extends Error {
         options.stderrTail ? `\n${options.stderrTail}` : ""
       }`,
     );
+
     this.name = "CommandFailedError";
+
     this.command = options.command;
+
     this.exitCode = options.exitCode;
+
     this.stdoutTail = options.stdoutTail;
+
     this.stderrTail = options.stderrTail;
+
     this.jobPath = options.jobPath;
   }
 }
@@ -74,9 +81,13 @@ export class CommandTimeoutError extends Error {
     super(
       `\`${options.command.join(" ")}\` timed out after ${options.timeout}`,
     );
+
     this.name = "CommandTimeoutError";
+
     this.command = options.command;
+
     this.timeout = options.timeout;
+
     this.jobPath = options.jobPath;
   }
 }

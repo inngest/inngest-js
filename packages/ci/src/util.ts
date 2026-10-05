@@ -37,7 +37,9 @@ export const boundedName = (name: string, max = 255): string => {
   if (name.length <= max) {
     return name;
   }
+
   const suffix = `-${hash(name, 8)}`;
+
   return `${name.slice(0, max - suffix.length)}${suffix}`;
 };
 
@@ -58,6 +60,7 @@ export const tail = (
   if (input.length <= bytes) {
     return { text: input, truncated: false };
   }
+
   return { text: input.slice(input.length - bytes), truncated: true };
 };
 
@@ -66,11 +69,13 @@ export const tail = (
  */
 export const maskSecrets = (input: string, secrets: string[]): string => {
   let output = input;
+
   for (const secret of secrets) {
     if (secret) {
       output = output.split(secret).join("***");
     }
   }
+
   return output;
 };
 
@@ -96,35 +101,49 @@ export const globToRegExp = (pattern: string): RegExp => {
 
     if (char === "*") {
       const isDouble = pattern[i + 1] === "*";
+
       if (isDouble) {
         const followedBySlash = pattern[i + 2] === "/";
+
         // `**/` matches any number of leading directories, including none.
         out += followedBySlash ? "(?:.*/)?" : ".*";
+
         i += followedBySlash ? 3 : 2;
+
         continue;
       }
+
       out += "[^/]*";
+
       i += 1;
+
       continue;
     }
 
     if (char === "?") {
       out += "[^/]";
+
       i += 1;
+
       continue;
     }
 
     if (char === "{") {
       const end = pattern.indexOf("}", i);
+
       if (end !== -1) {
         const options = pattern.slice(i + 1, end).split(",");
+
         out += `(?:${options.map(escapeRegExp).join("|")})`;
+
         i = end + 1;
+
         continue;
       }
     }
 
     out += escapeRegExp(char as string);
+
     i += 1;
   }
 
@@ -170,25 +189,33 @@ export const durationToMs = (duration: string): number => {
 
   for (const match of matches) {
     found = true;
+
     const value = Number(match[1]);
+
     switch (match[2]) {
       case "ms":
         total += value;
+
         break;
       case "s":
         total += value * 1000;
+
         break;
       case "m":
         total += value * 60_000;
+
         break;
       case "h":
         total += value * 3_600_000;
+
         break;
       case "d":
         total += value * 86_400_000;
+
         break;
       case "w":
         total += value * 604_800_000;
+
         break;
     }
   }
@@ -229,11 +256,13 @@ export const formatRelative = (from: string, now = Date.now()): string => {
   if (minutes < 1) {
     return "just now";
   }
+
   if (minutes < 60) {
     return `${minutes}m ago`;
   }
 
   const hours = Math.floor(minutes / 60);
+
   if (hours < 24) {
     return `${hours}h ago`;
   }
@@ -256,7 +285,9 @@ export const warnOnce = (
   if (warned.has(key)) {
     return;
   }
+
   warned.add(key);
+
   (logger ?? console).warn({ feature: key }, message);
 };
 
@@ -268,6 +299,7 @@ export const git = async (cwd: string, args: string[]): Promise<string> => {
     cwd,
     maxBuffer: 64 * 1024 * 1024,
   });
+
   return stdout;
 };
 

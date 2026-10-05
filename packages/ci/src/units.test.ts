@@ -77,11 +77,13 @@ describe("$ parsing", () => {
       "pnpm",
       "test",
     ]);
+
     expect(argv(["pnpm test ", ""], null)).toEqual(["pnpm", "test"]);
   });
 
   test("a conditional array works", () => {
     const cond = true;
+
     expect(argv(["pnpm test ", ""], cond && ["--bail", "1"])).toEqual([
       "pnpm",
       "test",
@@ -203,11 +205,15 @@ describe("matrix pool", () => {
     const tasks = Array.from({ length: 6 }, () => {
       return async () => {
         running++;
+
         peak = Math.max(peak, running);
+
         await new Promise((resolve) => {
           return setTimeout(resolve, 1);
         });
+
         running--;
+
         return 1;
       };
     });
@@ -224,9 +230,11 @@ describe("matrix pool", () => {
     const tasks = [0, 1, 2].map((index) => {
       return async () => {
         ran.push(index);
+
         if (index !== 1) {
           throw new Error(`boom ${index}`);
         }
+
         return index;
       };
     });
@@ -234,6 +242,7 @@ describe("matrix pool", () => {
     await expect(runPool(tasks, undefined, false)).rejects.toThrow(
       "2 job(s) failed",
     );
+
     expect(ran).toEqual([0, 1, 2]);
   });
 
@@ -289,6 +298,7 @@ describe("GitHub triggers", () => {
     const [trigger] = comment({ command: "/prerelease" });
 
     expect(trigger?.event).toBe("github/issue_comment.created");
+
     expect(trigger?.if).toContain(
       'event.data.comment.body.startsWith("/prerelease")',
     );
@@ -296,6 +306,7 @@ describe("GitHub triggers", () => {
 
   test("merge groups and check suites have triggers", () => {
     expect(mergeGroup()[0]?.event).toBe("github/merge_group.checks_requested");
+
     expect(checkSuite({ branch: "main" })[0]?.if).toContain(
       'event.data.check_suite.head_branch == "main"',
     );
@@ -325,6 +336,7 @@ describe("webhook transform", () => {
     );
 
     expect(result.name).toBe("github/pull_request.opened");
+
     expect(result.data._github).toMatchObject({
       event: "pull_request",
       delivery: "abc",
@@ -349,6 +361,7 @@ describe("webhook transform", () => {
 
   test("the helper agrees with the transform", () => {
     expect(githubEventName("push", undefined)).toBe("github/push");
+
     expect(githubEventName("pull_request", { action: "opened" })).toBe(
       "github/pull_request.opened",
     );
@@ -529,9 +542,11 @@ describe("formatting", () => {
 
   test("relative times read as check summaries", () => {
     const now = Date.now();
+
     expect(
       formatRelative(new Date(now - 5 * 3_600_000).toISOString(), now),
     ).toBe("5h ago");
+
     expect(formatRelative(new Date(now - 30_000).toISOString(), now)).toBe(
       "just now",
     );
@@ -541,6 +556,7 @@ describe("formatting", () => {
     expect(durationToMs("10m")).toBe(600_000);
     expect(durationToMs("1h30m")).toBe(5_400_000);
     expect(durationToMs("250ms")).toBe(250);
+
     expect(() => {
       return durationToMs("soon");
     }).toThrow();

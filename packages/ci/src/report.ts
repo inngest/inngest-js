@@ -44,6 +44,7 @@ export const report = {
 
     if (job) {
       job.summaries.push(markdown);
+
       return;
     }
 
@@ -83,6 +84,7 @@ export const report = {
     });
 
     const id = nextStepId(run, job?.path, "report:annotate");
+
     await run.step.run({ id, name: id }, () => {
       return {
         count: valid.length,
@@ -91,6 +93,7 @@ export const report = {
 
     if (job) {
       job.annotations.push(...valid);
+
       return;
     }
 
