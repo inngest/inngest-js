@@ -59,6 +59,7 @@ let gh: FakeGitHub;
 
 beforeEach(() => {
   gh = createFakeGitHub();
+
   resetDurableWarnings();
 });
 
@@ -75,6 +76,7 @@ describe("github.rest", () => {
       const release = await github.rest.repos.createRelease({
         tag_name: "v1.4.0",
       });
+
       return release.html_url;
     });
 
@@ -88,11 +90,14 @@ describe("github.rest", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
+
     // `data` is returned, not the whole response.
     expect(result.data).toBe(
       "https://github.com/inngest/inngest-js/releases/v1",
     );
+
     expect(result.stepIds).toContain("release › github.repos.createRelease");
+
     expect(gh.requests[0]).toMatchObject({
       method: "POST",
       path: "/repos/inngest/inngest-js/releases",
@@ -118,6 +123,7 @@ describe("github.rest", () => {
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
+
     const calls = result.stepIds.filter((id) => {
       return id.startsWith("read › github.repos.get");
     });
@@ -166,6 +172,7 @@ describe("github.rest", () => {
       return step.run("read-both", async () => {
         const repo = await github.rest.repos.get({});
         const pull = await github.rest.pulls.get({ pull_number: 7 });
+
         return { branch: repo.default_branch, mergeable: pull.mergeable };
       });
     });
@@ -182,12 +189,14 @@ describe("github.rest", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toEqual({ branch: "main", mergeable: true });
+
     // One step for the two calls, not three.
     expect(
       result.stepIds.filter((id) => {
         return id.includes("github.");
       }),
     ).toEqual([]);
+
     expect(result.stepIds).toContain("read › read-both");
   });
 
@@ -214,6 +223,7 @@ describe("github.rest", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-rejected");
+
     expect(String((result.error as { message?: string })?.message)).toContain(
       "GitHub 404",
     );
@@ -244,12 +254,14 @@ describe("github.rest", () => {
 describe("github helpers", () => {
   test("stickyComment creates a comment, then updates it", async () => {
     gh.route("GET /repos/inngest/inngest-js/issues/7/comments", []);
+
     gh.route("POST /repos/inngest/inngest-js/issues/7/comments", {
       id: 99,
       html_url: "https://github.com/c/99",
     });
 
     const first = setup(gh);
+
     const firstJob = first.ci.job("comment", async () => {
       return github.stickyComment(
         "preview",
@@ -273,12 +285,14 @@ describe("github helpers", () => {
     gh.route("GET /repos/inngest/inngest-js/issues/7/comments", [
       { id: 99, body: "<!-- inngest-ci:preview -->\nold" },
     ]);
+
     gh.route("PATCH /repos/inngest/inngest-js/issues/comments/99", {
       id: 99,
       html_url: "https://github.com/c/99",
     });
 
     const second = setup(gh);
+
     const secondJob = second.ci.job("comment", async () => {
       return github.stickyComment(
         "preview",
@@ -301,6 +315,7 @@ describe("github helpers", () => {
     });
 
     expect(patches).toHaveLength(1);
+
     expect(patches[0]?.path).toBe(
       "/repos/inngest/inngest-js/issues/comments/99",
     );
@@ -343,6 +358,7 @@ describe("github helpers", () => {
       { message: "Reference does not exist" },
       422,
     );
+
     gh.route("POST /repos/inngest/inngest-js/git/refs", {
       ref: "refs/heads/next",
     });
@@ -361,6 +377,7 @@ describe("github helpers", () => {
     );
 
     expect(result.data).toEqual({ created: true });
+
     expect(
       gh.requests.some((request) => {
         return (
@@ -416,6 +433,7 @@ describe("github helpers", () => {
     );
 
     expect(result.data).toEqual({ vercel: "success" });
+
     // Nothing was waited on, because the check was already done.
     expect(
       result.stepIds.some((id) => {
@@ -556,6 +574,7 @@ describe("durable()", () => {
     // Awaiting a proxy must not hang or call anything: without the `then`
     // guard, `await` would treat it as a thenable and invoke it.
     const awaited = await fake.top;
+
     expect(typeof awaited).toBe("function");
   });
 
@@ -567,15 +586,18 @@ describe("durable()", () => {
     >(
       async () => {
         built++;
+
         return client();
       },
       { name: "fake", rules: [["top.*", "step"]] },
     );
 
     const method = fake.top?.call;
+
     expect(built).toBe(0);
 
     await method?.();
+
     expect(built).toBe(1);
   });
 

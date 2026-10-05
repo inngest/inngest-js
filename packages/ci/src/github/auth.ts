@@ -88,6 +88,7 @@ export const githubApp = (
 
   const octokitFor = async (ctx?: AuthContext): Promise<Octokit> => {
     const { appId, privateKey } = resolve();
+
     const installationId =
       ctx?.installationId ??
       (process.env.GITHUB_INSTALLATION_ID
@@ -114,9 +115,11 @@ export const githubApp = (
     octokit: octokitFor,
     token: async (ctx) => {
       const octokit = await octokitFor(ctx);
+
       const auth = (await octokit.auth({ type: "installation" })) as {
         token: string;
       };
+
       return auth.token;
     },
   };
@@ -141,11 +144,13 @@ export const githubToken = (
 ): GitHubTokenProvider => {
   const resolve = () => {
     const token = opts.token ?? process.env.GITHUB_TOKEN;
+
     if (!token) {
       throw new CiUsageError(
         "`githubToken()` needs a token. Pass one directly or set `GITHUB_TOKEN`.",
       );
     }
+
     return token;
   };
 

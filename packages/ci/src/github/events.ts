@@ -160,6 +160,7 @@ export const repoContextFromEvent = (
 
   if (data.pull_request) {
     const number = data.pull_request.number ?? data.number;
+
     return {
       ...base,
       sha: data.pull_request.head?.sha ?? "",

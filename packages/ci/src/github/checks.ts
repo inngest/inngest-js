@@ -103,16 +103,19 @@ export interface NormalisedAnnotation {
 /** Cut to `maxSummaryBytes` of UTF-8, never splitting a code point. */
 export const truncateSummary = (summary: string): string => {
   const bytes = Buffer.from(summary, "utf8");
+
   if (bytes.length <= maxSummaryBytes) {
     return summary;
   }
 
   const notice = "\n\n_…truncated, see the trace._";
   let end = maxSummaryBytes - Buffer.byteLength(notice);
+
   // Back up over continuation bytes (10xxxxxx) to the start of a code point.
   while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) {
     end--;
   }
+
   return `${bytes.subarray(0, end).toString("utf8")}${notice}`;
 };
 
@@ -120,9 +123,11 @@ export const batchAnnotations = (
   annotations: NormalisedAnnotation[],
 ): NormalisedAnnotation[][] => {
   const batches: NormalisedAnnotation[][] = [];
+
   for (let i = 0; i < annotations.length; i += annotationBatchSize) {
     batches.push(annotations.slice(i, i + annotationBatchSize));
   }
+
   return batches;
 };
 
@@ -133,6 +138,7 @@ export const normaliseAnnotation = (
   annotation: CheckAnnotation,
 ): NormalisedAnnotation => {
   const start = annotation.start_line ?? annotation.line ?? 1;
+
   return {
     path: annotation.path,
     message: annotation.message,
@@ -171,6 +177,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
   const idFor = (key: string) => {
     const checkRunId = checkRunIds.get(key);
+
     return checkRunId === undefined ? {} : { checkRunId };
   };
 
@@ -215,6 +222,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       if (!run.checkName) {
         return;
       }
+
       await start(
         run,
         "pipeline",
@@ -227,6 +235,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       if (!run.checkName) {
         return;
       }
+
       await complete(
         run,
         "pipeline",
@@ -240,6 +249,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       if (!run.checkName || !run.jobChecks) {
         return;
       }
+
       await start(
         run,
         jobPath,
@@ -252,6 +262,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       if (!run.checkName || !run.jobChecks) {
         return;
       }
+
       await complete(
         run,
         jobPath,
@@ -280,6 +291,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
             title: `Attempt ${attempt} of ${of}: ${message}`,
             ...idFor(jobPath),
           });
+
           return null;
         },
       );
@@ -294,9 +306,11 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       // one must never fail the command it was describing.
       const key = `${run.runId}:${jobPath}`;
       const now = Date.now();
+
       if (now - (lastTitleUpdate.get(key) ?? 0) < titleThrottleMs) {
         return;
       }
+
       lastTitleUpdate.set(key, now);
 
       try {
@@ -365,7 +379,9 @@ export const consoleSink = (
         status: "in_progress",
         url: detailsUrl,
       });
+
       write(`[${run.pipelineId}] … ${name}`, { check: name, url: detailsUrl });
+
       return {};
     },
     complete: async ({ run, name, conclusion, title, detailsUrl }) => {
@@ -378,6 +394,7 @@ export const consoleSink = (
         title,
         url: detailsUrl,
       });
+
       write(
         `[${run.pipelineId}] ${conclusionSymbols[conclusion] ?? "•"} ${name}  ${title}  → ${detailsUrl}`,
         { check: name, conclusion, url: detailsUrl },
@@ -426,6 +443,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
   return {
     start: async ({ run, name, externalId, detailsUrl }) => {
       const repo = run.repo;
+
       if (!repo?.sha) {
         return {};
       }
@@ -463,13 +481,16 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       checkRunId,
     }) => {
       const repo = run.repo;
+
       if (!repo?.sha) {
         return;
       }
 
       const octokit = await clientFor(provider, repo);
+
       const id =
         checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
+
       const [firstBatch, ...otherBatches] = batchAnnotations(annotations);
 
       const base = {
@@ -513,6 +534,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
     update: async ({ run, name, title, checkRunId }) => {
       const repo = run.repo;
+
       if (!repo?.sha || checkRunId === undefined) {
         return;
       }
@@ -565,6 +587,7 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
     description: string,
   ) => {
     const repo = run.repo;
+
     if (!repo?.sha) {
       return;
     }
@@ -585,6 +608,7 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
   return {
     start: async ({ run, name, detailsUrl }) => {
       await post(run, name, detailsUrl, "pending", "Running");
+
       return {};
     },
     complete: async ({ run, name, detailsUrl, conclusion, title }) => {

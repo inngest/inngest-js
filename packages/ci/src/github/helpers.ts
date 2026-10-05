@@ -74,6 +74,7 @@ const requireSha = (api: string, sha?: string): string => {
 const insideStep = async (): Promise<boolean> => {
   const { getAsyncCtx } = await import("inngest/experimental");
   const ctx = await getAsyncCtx();
+
   return Boolean(ctx?.execution?.executingStep);
 };
 
@@ -191,6 +192,7 @@ export const token = async (): Promise<string> => {
  */
 export const octokit = async (): Promise<Octokit> => {
   await requireInsideStep("github.octokit()");
+
   return octokitForRun();
 };
 
@@ -269,6 +271,7 @@ export const graphql = async <T = unknown>(
 ): Promise<T> => {
   const call = async () => {
     const client = await octokitForRun();
+
     return withMappedErrors(async () => {
       return (await client.graphql(query, variables)) as T;
     });
@@ -312,6 +315,7 @@ const resolveMethod = (client: Octokit, path: string[]): unknown => {
 
 const repoParamsIfKnown = (): Record<string, unknown> => {
   const current = getRunScope()?.repo;
+
   return current ? { owner: current.owner, repo: current.name } : {};
 };
 
@@ -370,6 +374,7 @@ export const upsertPullRequest = async (opts: {
 }): Promise<{ number: number; url: string; created: boolean }> => {
   return helperStep("upsertPullRequest", opts.head, async () => {
     const context = repo();
+
     const base =
       opts.base ?? (await rest.repos.get({})).default_branch ?? "main";
 
@@ -387,6 +392,7 @@ export const upsertPullRequest = async (opts: {
         title: opts.title,
         body: opts.body,
       });
+
       return { number: updated.number, url: updated.html_url, created: false };
     }
 
@@ -414,10 +420,12 @@ export const forcePushRef = async (
 
     try {
       await rest.git.updateRef({ ref: normalised, sha, force: true });
+
       return { created: false };
     } catch (error) {
       const status = (error as { status?: number; cause?: { status?: number } })
         .status;
+
       const message = errorMessage(error);
 
       const missing =
@@ -430,6 +438,7 @@ export const forcePushRef = async (
       }
 
       await rest.git.createRef({ ref: `refs/${normalised}`, sha });
+
       return { created: true };
     }
   });
@@ -447,6 +456,7 @@ export const canUser = async (
       const result = await rest.repos.getCollaboratorPermissionLevel({
         username: login,
       });
+
       return hasPermission(result.permission, permission);
     } catch {
       // A 403 or 404 here means "can't see it", which is the same as "no".

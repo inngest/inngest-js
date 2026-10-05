@@ -83,6 +83,7 @@ describe("check idempotency", () => {
     });
 
     expect(result).toEqual({ id: 55 });
+
     expect(
       gh.requests.filter((request) => {
         return request.method === "POST";
@@ -96,6 +97,7 @@ describe("check idempotency", () => {
     gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
       check_runs: [{ id: 1, external_id: "someone-else", name: "pr" }],
     });
+
     gh.route("POST /repos/inngest/inngest-js/check-runs", { id: 77 });
 
     const sink = checksSink(
@@ -152,6 +154,7 @@ describe("check idempotency", () => {
     });
 
     expect(updates).toHaveLength(3);
+
     expect(
       updates.map((request) => {
         return (request.body as { output: { annotations: unknown[] } }).output
@@ -164,6 +167,7 @@ describe("check idempotency", () => {
 describe("commit statuses", () => {
   test("conclusions map onto the four status states", async () => {
     const gh = createFakeGitHub();
+
     gh.route("POST /repos/inngest/inngest-js/statuses/abc1234", {});
 
     const sink = statusesSink(
@@ -257,6 +261,7 @@ describe("live updates", () => {
       id: 55,
       output: { title: "old", summary: "the existing summary" },
     });
+
     gh.route("PATCH /repos/inngest/inngest-js/check-runs/55", { id: 55 });
 
     const sink = checksSink(
@@ -357,6 +362,7 @@ describe("dev mode", () => {
     const gh = createFakeGitHub();
     // The test client is in dev mode, as it is against the Dev Server.
     const client = createCiTestClient(createFakeSandboxApi());
+
     const ci = createCi(client, {
       github: githubToken({
         token: "t",
@@ -368,6 +374,7 @@ describe("dev mode", () => {
     const job = ci.job("build", async () => {
       return "built";
     });
+
     const pipeline = ci.pipeline(
       { id: "pr", on: [{ event: "github/pull_request.opened" }] },
       async () => {

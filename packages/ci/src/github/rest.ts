@@ -62,6 +62,7 @@ export const setFallbackGitHub = (
   installationId?: number,
 ): void => {
   fallbackProvider = provider;
+
   fallbackInstallationId = installationId;
 };
 
@@ -73,6 +74,7 @@ export const setFallbackGitHub = (
  */
 export const octokitForRun = async (): Promise<Octokit> => {
   const run = getRunScope();
+
   const provider = (run?.ci.github ?? fallbackProvider) as
     | GitHubProvider
     | undefined;
@@ -99,6 +101,7 @@ export const currentRepoParams = ():
   | { owner: string; repo: string }
   | undefined => {
   const repo = getRunScope()?.repo;
+
   return repo ? { owner: repo.owner, repo: repo.name } : undefined;
 };
 
@@ -186,11 +189,13 @@ export const rest: DurableGitHubRest = durable<DurableGitHubRest>(
       }
 
       const defaults = currentRepoParams();
+
       if (!defaults) {
         return args;
       }
 
       const params = (args[0] ?? {}) as Record<string, unknown>;
+
       return [{ ...defaults, ...params }, ...args.slice(1)];
     },
     result: (value) => {

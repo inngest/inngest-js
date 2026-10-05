@@ -65,9 +65,11 @@ export const hasPermission = (
   // GitHub reports "admin", "write", "read", and "none" for the permission
   // level, plus "triage" and "maintain" on some plans.
   const actualIndex = permissionOrder.indexOf(actual as Permission);
+
   if (actualIndex === -1) {
     return false;
   }
+
   return actualIndex >= permissionOrder.indexOf(required);
 };
 
@@ -79,9 +81,11 @@ const joinConditions = (
   conditions: Array<string | undefined>,
 ): string | undefined => {
   const parts = conditions.filter(Boolean) as string[];
+
   if (parts.length === 0) {
     return undefined;
   }
+
   return parts
     .map((part) => {
       return `(${part})`;

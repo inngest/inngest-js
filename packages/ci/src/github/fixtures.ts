@@ -23,6 +23,7 @@ const repoPath = (cwd?: string): string => {
 
 const git = async (args: string[], cwd: string): Promise<string> => {
   const { stdout } = await exec("git", args, { cwd });
+
   return stdout.trim();
 };
 
@@ -60,6 +61,7 @@ interface FixtureBase {
 
 const repository = async (fullName: string) => {
   const [owner = "local", name = "repo"] = fullName.split("/");
+
   return {
     id: 1,
     name,
@@ -109,9 +111,11 @@ export const fixtures = {
     const baseRef = opts.base ?? "main";
 
     const headSha = await safeGit(["rev-parse", "HEAD"], cwd, "0".repeat(40));
+
     const headRef =
       opts.head ??
       (await safeGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd, "local"));
+
     const baseSha =
       (await safeGit(["merge-base", "HEAD", `origin/${baseRef}`], cwd)) ||
       (await safeGit(["rev-parse", `${baseRef}`], cwd, headSha));
@@ -150,9 +154,11 @@ export const fixtures = {
   ): Promise<{ name: string; data: Record<string, unknown> }> => {
     const cwd = repoPath(opts.cwd);
     const fullName = await repoFullName(cwd, opts.repo);
+
     const branch =
       (await safeGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd, "main")) ||
       "main";
+
     const ref = opts.ref ?? `refs/heads/${branch}`;
     const after = await safeGit(["rev-parse", "HEAD"], cwd, "0".repeat(40));
     const before = await safeGit(["rev-parse", "HEAD~1"], cwd, after);
@@ -190,6 +196,7 @@ export const fixtures = {
     const fullName = await repoFullName(cwd, opts.repo);
     const repo = await repository(fullName);
     const number = opts.number ?? 1;
+
     const branch =
       (await safeGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd, "main")) ||
       "main";
