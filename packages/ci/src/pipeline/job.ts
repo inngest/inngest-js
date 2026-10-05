@@ -133,7 +133,7 @@ const jobBody = async ({
   const jobChecksOn = config.check !== false;
 
   const cacheLookup = config.cache
-    ? await lookupCache(scope, config.cache, {})
+    ? await lookupCache(scope, config.cache)
     : undefined;
 
   // A hit with a usable snapshot means the job doesn't run at all, and jobs
@@ -211,9 +211,6 @@ const jobBody = async ({
           ...(run.repo?.sha ? { sha: run.repo.sha } : {}),
           trigger: (run.event as { name?: string })?.name ?? "manual",
         },
-        ...(scope.fromJobIds.length > 0
-          ? { fromJobIds: scope.fromJobIds }
-          : {}),
       });
     }
 

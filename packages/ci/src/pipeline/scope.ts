@@ -73,6 +73,8 @@ export interface CiInternals {
   github: any;
   // biome-ignore lint/suspicious/noExplicitAny: CacheStore
   cacheStore: any;
+  /** Every job defined on the client, so a cache key can look up its parents. */
+  jobs: Map<string, { config: JobConfig }>;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any

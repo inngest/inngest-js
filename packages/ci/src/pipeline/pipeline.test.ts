@@ -945,6 +945,42 @@ describe("cache", () => {
     ).toHaveLength(1);
   });
 
+  test("a cached job is rebuilt when a job it starts from changes its key", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+
+    const runWith = async (setupKey: string) => {
+      const { ci } = setup({ cacheStore: store, api });
+      const setupJob = ci.job(
+        { id: "setup", cache: { key: setupKey } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+      const test = ci.job({ id: "test", cache: { key: "t" } }, async () => {
+        await from(setupJob);
+        await $`pnpm test`;
+      });
+
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => test()),
+        { event: prEvent },
+      );
+    };
+    const testRuns = () => {
+      return userCommands(api).filter((argv) => argv[1] === "test").length;
+    };
+
+    await runWith("lock-1");
+    expect(testRuns()).toBe(1);
+
+    await runWith("lock-1");
+    expect(testRuns()).toBe(1);
+
+    await runWith("lock-2");
+    expect(testRuns()).toBe(2);
+  });
+
   test("files() keys are resolved through the repository", async () => {
     expect(files("pnpm-lock.yaml", ".nvmrc")).toEqual({
       kind: "inngest/ci.cacheKeyPart",

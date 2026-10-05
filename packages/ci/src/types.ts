@@ -178,8 +178,8 @@ export interface CacheEntry {
   result: unknown;
   builtAt: string;
   builtBy: { runId: string; sha?: string; trigger: string };
-  /** Parent jobs this job started `from()` when it last ran. */
-  fromJobIds?: string[];
+  /** The keys of the cached jobs this job started `from()` when it was built. */
+  fromKeys?: Record<string, string>;
 }
 
 /**
