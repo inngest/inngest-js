@@ -32,6 +32,7 @@ const readBody = (req: import("node:http").IncomingMessage): Promise<string> =>
 createServer(async (req, res) => {
   if (req.method !== "POST") {
     res.writeHead(405).end();
+
     return;
   }
 
@@ -44,13 +45,16 @@ createServer(async (req, res) => {
 
     if (!ok) {
       console.warn({ signature }, "Rejected a webhook with a bad signature");
+
       res.writeHead(401).end();
+
       return;
     }
   }
 
   const event = String(req.headers["x-github-event"] ?? "unknown");
   const delivery = req.headers["x-github-delivery"];
+
   const payload = JSON.parse(body) as {
     action?: string;
     installation?: { id?: number };
@@ -71,6 +75,7 @@ createServer(async (req, res) => {
   });
 
   console.log({ name, delivery }, "Forwarded a GitHub webhook");
+
   res.writeHead(202).end();
 }).listen(port, () => {
   console.log(

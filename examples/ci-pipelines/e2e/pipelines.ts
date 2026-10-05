@@ -49,6 +49,7 @@ export const pipelines = [
   ci.pipeline({ id: "e2e-changed", on: on("changed") }, async () => {
     const src = await changed("src/**");
     const docs = await changed("docs/**");
+
     const ignoringSrc = await changed({
       ignore: ["src/**", "uncommitted.txt"],
     });

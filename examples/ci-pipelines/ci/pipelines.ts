@@ -28,6 +28,7 @@ export const pr = ci.pipeline(
     }
 
     await Promise.all([lint(), test(), compat()]);
+
     await e2e();
   },
 );

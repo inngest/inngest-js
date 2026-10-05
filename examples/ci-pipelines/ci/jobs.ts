@@ -27,6 +27,7 @@ export const base = ci.job(
 
 export const lint = ci.job("lint", async () => {
   await from(base);
+
   await $`pnpm lint`.cwd(appDir);
 });
 
@@ -46,8 +47,11 @@ export const compat = ci.matrix(
   { id: "compat", axes: { node: ["20", "22"] } },
   async ({ node }) => {
     await from(base);
+
     await $`node --version`;
+
     await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: node });
+
     return node;
   },
 );
@@ -87,6 +91,7 @@ export const release = ci.job("release", async () => {
   });
 
   await github.forcePushRef("heads/ci-example-next", sha);
+
   await github.stickyComment("release", `Released ${created.html_url}`);
 
   return { released: true, url: created.html_url };

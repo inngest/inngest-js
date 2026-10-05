@@ -23,5 +23,6 @@ test("flaky when asked", () => {
   if (process.env.FLAKY === "1" && Math.random() < 0.5) {
     assert.fail("flaked");
   }
+
   assert.ok(true);
 });

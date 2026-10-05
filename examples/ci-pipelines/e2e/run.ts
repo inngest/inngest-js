@@ -36,8 +36,10 @@ process.env.INNGEST_DEV = devUrl;
 
 const makeFixture = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "inngest-ci-e2e-"));
+
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: dir, stdio: "pipe" }).toString().trim();
+
   const write = (path: string, body: string) => {
     mkdirSync(join(dir, path, ".."), { recursive: true });
     writeFileSync(join(dir, path), body);
@@ -46,11 +48,14 @@ const makeFixture = (): string => {
   git("init", "-q", "-b", "main");
   git("config", "user.email", "e2e@example.com");
   git("config", "user.name", "e2e");
+
   write(
     "package.json",
     JSON.stringify({ name: "ci-e2e-fixture", type: "module" }, null, 2),
   );
+
   write("src/sum.js", "export const sum = (a, b) => a + b;\n");
+
   write(
     "src/sum.test.js",
     [
@@ -61,16 +66,19 @@ const makeFixture = (): string => {
       "",
     ].join("\n"),
   );
+
   write("docs/guide.md", "# Guide\n");
   git("add", ".");
   git("commit", "-q", "-m", "base");
 
   // The pull request changes only `src/`.
   git("checkout", "-q", "-b", "feature");
+
   write(
     "src/sum.js",
     "// changed on the branch\nexport const sum = (a, b) => a + b;\n",
   );
+
   git("commit", "-q", "-am", "change src");
 
   // Untracked but not ignored: `checkout()` uploads the working tree.
@@ -89,11 +97,13 @@ interface Run {
 
 const devApi = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const res = await fetch(new URL(path, devUrl), init);
+
   if (!res.ok) {
     throw new Error(
       `${init?.method ?? "GET"} ${path}: ${res.status} ${await res.text()}`,
     );
   }
+
   return (await res.json()) as T;
 };
 
@@ -125,10 +135,12 @@ const runState = async (
 
   try {
     const parsed = JSON.parse(run.output) as unknown;
+
     if (Array.isArray(parsed)) {
       const done = parsed.find((op) => op?.op === "RunComplete");
       return { status: run.status, output: done ? done.data : parsed };
     }
+
     return { status: run.status, output: parsed };
   } catch {
     return { status: run.status, output: run.output };
@@ -163,9 +175,11 @@ const cancelAndWaitForCleanup = async (
   const { functions } = await gql<{
     functions: { id: string; slug: string }[];
   }>("{ functions { id slug } }", {});
+
   const cleanup = functions.find((f) => {
     return f.slug === `${run.function.slug}/cleanup`;
   });
+
   if (!cleanup) {
     return;
   }
@@ -178,6 +192,7 @@ const cancelAndWaitForCleanup = async (
       "query ($filter: RunsFilterV2!) { runs(first: 20, filter: $filter, orderBy: [{ field: QUEUED_AT, direction: DESC }]) { edges { node { status } } } }",
       { filter: { from: since, functionIDs: [cleanup.id] } },
     );
+
     const nodes = runs.edges.map((e) => {
       return e.node;
     });
@@ -200,17 +215,20 @@ const waitForRun = async (eventId: string, timeoutMs: number): Promise<Run> => {
       const { data } = await devApi<{ data: Run[] }>(
         `/v1/events/${eventId}/runs`,
       );
+
       if (data.length > 1) {
         throw new Error(
           `event ${eventId} started ${data.length} runs; expected 1`,
         );
       }
+
       runId = data[0]?.run_id;
     }
 
     if (runId) {
       const state = await runState(runId);
       status = state.status;
+
       if (terminal.has(state.status)) {
         return {
           run_id: runId,
@@ -242,15 +260,18 @@ const mapLimit = async <T, R>(
 ): Promise<R[]> => {
   const results: R[] = new Array(items.length);
   let next = 0;
+
   const worker = async () => {
     while (next < items.length) {
       const index = next++;
       results[index] = await fn(items[index]!);
     }
   };
+
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, worker),
   );
+
   return results;
 };
 
@@ -268,6 +289,7 @@ interface Case {
 
 const completed = (run: Run): Output => {
   equal(run.status, "Completed", `run failed: ${JSON.stringify(run.output)}`);
+
   return run.output as Output;
 };
 
@@ -284,17 +306,21 @@ const cases: Case[] = [
       equal(out.cwd, "/work/src");
       equal(out.softExit, 3);
       equal(out.spread, "a b c");
+
       ok(
         !String(out.secret).includes("s3cr3t-value"),
         `secret leaked: ${out.secret}`,
       );
+
       equal(out.namedExit, 0);
+
       deepStrictEqual(out.failure, {
         name: "CommandFailedError",
         isCommandFailed: true,
         exitCode: 2,
         stderrTail: (out.failure as Output | undefined)?.stderrTail,
       });
+
       ok(String((out.failure as Output).stderrTail).includes("boom"));
     },
   },
@@ -320,10 +346,12 @@ const cases: Case[] = [
     id: "from",
     check: ([run]) => {
       const out = completed(run!) as { a: Output; b: Output };
+
       deepStrictEqual(out.a, {
         parent: { built: "yes" },
         marker: "from-base",
       });
+
       deepStrictEqual(out.b, { marker: "from-base", seesA: false });
     },
   },
@@ -349,9 +377,11 @@ const cases: Case[] = [
     check: ([run]) => {
       const out = completed(run!);
       const all = JSON.stringify(out.all);
+
       for (const combo of ["a-s", "a-l", "b-s"]) {
         ok(all.includes(combo), `matrix missing ${combo}: ${all}`);
       }
+
       ok(!all.includes("b-l"), `excluded combo ran: ${all}`);
       ok(JSON.stringify(out.one).includes("a-l"));
     },
@@ -360,6 +390,7 @@ const cases: Case[] = [
     id: "changed",
     check: ([run]) => {
       const out = completed(run!);
+
       ok(
         JSON.stringify(out).includes("src=true ignoringSrc=false"),
         `unexpected skip output: ${JSON.stringify(out)}`,
@@ -398,6 +429,7 @@ const cases: Case[] = [
     check: ([run]) => {
       equal(run!.status, "Failed");
       const text = JSON.stringify(run!.output);
+
       ok(
         text.includes("CommandFailedError") || text.includes("exited with 7"),
         text,
@@ -420,10 +452,13 @@ const cases: Case[] = [
 
 const main = async () => {
   const only = process.argv.slice(2);
+
   const selected = only.length
     ? cases.filter((c) => only.includes(c.id))
     : cases;
+
   const unknown = only.filter((id) => !cases.some((c) => c.id === id));
+
   if (unknown.length) {
     throw new Error(`unknown cases: ${unknown.join(", ")}`);
   }
@@ -434,12 +469,15 @@ const main = async () => {
   // Imported here rather than at the top so the client sees INNGEST_DEV: it
   // reads its environment when it's constructed.
   const { ci, inngest } = await import("./client.ts");
+
   await import("./pipelines.ts");
+
   const handler = serve({ client: inngest, functions: ci.functions() });
   const server = createServer((req, res) => handler(req, res)).listen(port);
 
   // Register the app with the Dev Server.
   const sync = await fetch(appUrl, { method: "PUT" });
+
   if (!sync.ok) {
     throw new Error(`sync failed: ${sync.status} ${await sync.text()}`);
   }
@@ -449,19 +487,25 @@ const main = async () => {
 
   const results = await mapLimit(selected, concurrency, async (c) => {
     const started = Date.now();
+
     try {
       const runs: Run[] = [];
+
       for (let i = 0; i < (c.sends ?? 1); i++) {
         const event = await fixtures.pullRequest({
           cwd: fixture,
           repo: `e2e/${c.id}`,
         });
+
         const { ids } = await inngest.send(event);
+
         // Real runs finish in well under a minute, so anything past this is
         // stuck rather than slow.
         runs.push(await waitForRun(ids[0]!, c.timeoutMs ?? 90_000));
       }
+
       c.check(runs);
+
       return { id: c.id, ok: true, secs: (Date.now() - started) / 1000 };
     } catch (error) {
       return {
@@ -488,5 +532,6 @@ const main = async () => {
 
 main().catch((error) => {
   console.error(error);
+
   process.exit(1);
 });

@@ -31,12 +31,15 @@ export const commandsJob = ci.job("commands", async () => {
   const soft = await $`sh -c ${"exit 3"}`.nothrow();
   const skipFlag = false;
   const spread = await $`echo a ${skipFlag && "--nope"} ${["b", "c"]}`.text();
+
   const secret = await $`sh -c ${"echo token=$TOKEN"}`
     .withSecret("TOKEN", "s3cr3t-value")
     .text();
+
   const named = await $`true`.as("a named command");
 
   let failure: Record<string, unknown> | undefined;
+
   try {
     await $`sh -c ${"echo boom >&2; exit 2"}`;
   } catch (error) {
@@ -68,6 +71,7 @@ export const timeoutJob = ci.job("timeout", async () => {
 
   try {
     await $`sleep 30`.timeout("2s");
+
     outcomes.captured = "no error";
   } catch (error) {
     outcomes.captured = errorName(error);
@@ -76,6 +80,7 @@ export const timeoutJob = ci.job("timeout", async () => {
 
   try {
     await $`sleep 300`.timeout("70s");
+
     outcomes.process = "no error";
   } catch (error) {
     outcomes.process = errorName(error);
@@ -95,19 +100,24 @@ export const retriesJob = ci.job("retries", async () => {
 
 export const base = ci.job("base", async () => {
   await checkout();
+
   await $.sh`echo from-base > /work/marker`;
+
   return { built: "yes" };
 });
 
 export const childA = ci.job("child-a", async () => {
   const parent = await from(base);
   const marker = await $`cat /work/marker`.text();
+
   await $.sh`echo a > /work/only-a`;
+
   return { parent, marker };
 });
 
 export const childB = ci.job("child-b", async () => {
   await from(base);
+
   const marker = await $`cat /work/marker`.text();
   const seesA = await $`test -f /work/only-a`.nothrow();
   return { marker, seesA: seesA.exitCode === 0 };
@@ -116,10 +126,15 @@ export const childB = ci.job("child-b", async () => {
 export const servicesJob = ci.job("services", async () => {
   const server =
     await $`node -e ${"require('http').createServer((_,res)=>res.end('pong')).listen(3000)"}`.background();
+
   await waitForHttp("http://127.0.0.1:3000");
+
   await waitForPort(3000);
+
   const body = await $`curl -s http://127.0.0.1:3000`.text();
+
   await server.kill();
+
   const exited = await server.exited();
 
   let waitError: string | undefined;
@@ -134,11 +149,15 @@ export const servicesJob = ci.job("services", async () => {
 
 export const twoMachinesJob = ci.job("two-machines", async () => {
   const api = await sandbox("api");
+
   await api.$`node -e ${"require('http').createServer((_,res)=>res.end('api')).listen(3000)"}`.background();
+
   await api.waitForPort(3000);
+
   const apiHost = await api.$`hostname`.text();
 
   await checkout();
+
   const jobHost = await $`hostname`.text();
   const jobSeesServer = await $`sh -c ${"nc -z 127.0.0.1 3000"}`.nothrow();
 
@@ -163,6 +182,7 @@ export const cachedJob = ci.job(
   { id: "cached", cache: { key: [files("package.json"), "v1"] } },
   async () => {
     await checkout();
+
     const stamp = await $`date +%s%N`.text();
     return { stamp };
   },
@@ -184,8 +204,11 @@ export const noMachineJob = ci.job("no-machine", async () => {
   const value = await step.run("compute", () => {
     return 21 * 2;
   });
+
   const { owner, repo, sha, number } = github.repo();
+
   await report.summary(`computed ${value}`);
+
   return { value, owner, repo, hasSha: sha.length === 40, number };
 });
 
@@ -195,9 +218,11 @@ export const failingJob = ci.job("failing", async () => {
 
 export const checkoutJob = ci.job("checkout", async () => {
   await checkout();
+
   const tracked = await $`cat src/sum.js`.text();
   const uncommitted = await $`cat uncommitted.txt`.nothrow();
   const test = await $`node --test src/sum.test.js`.nothrow();
+
   return {
     hasSum: tracked.includes("export const sum"),
     uncommitted: uncommitted.stdout.trim(),
