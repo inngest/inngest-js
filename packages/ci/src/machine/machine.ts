@@ -13,7 +13,7 @@ import type {
 } from "../pipeline/scope.ts";
 import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
-import { boundedName, slug } from "../util.ts";
+import { boundedName, errorMessage, slug } from "../util.ts";
 
 /**
  * Memory is paired with vCPU count, so a job only picks one number.
@@ -220,10 +220,6 @@ const isSnapshotUnavailable = (error: unknown): boolean => {
   ].some((text) => {
     return message.includes(text);
   });
-};
-
-const errorMessage = (error: unknown): string => {
-  return error instanceof Error ? error.message : String(error);
 };
 
 /**

@@ -1,6 +1,6 @@
 /**
  * GitHub providers: `githubApp`, `githubToken` and `consoleReporter`, and the
- Octokit clients built from them.
+ * Octokit clients built from them.
  *
  * @module
  */
@@ -152,13 +152,16 @@ export const githubToken = (
   return {
     kind: "token",
     reporter: "statuses",
-    octokit: async () =>
-      new Octokit({
+    octokit: async () => {
+      return new Octokit({
         auth: resolve(),
         ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
         ...(opts.fetch ? { request: { fetch: opts.fetch } } : {}),
-      }),
-    token: async () => resolve(),
+      });
+    },
+    token: async () => {
+      return resolve();
+    },
   };
 };
 
@@ -174,10 +177,11 @@ export const githubToken = (
 export const consoleReporter = (): ConsoleProvider => {
   const history: ConsoleCheckRecord[] = [];
 
-  const credentialsError = () =>
-    new CiUsageError(
+  const credentialsError = () => {
+    return new CiUsageError(
       "This pipeline is using the console reporter, which has no GitHub credentials. Pass `github: githubApp({ … })` to `createCi`, or set `INNGEST_CI_GITHUB=live`, to call the GitHub API.",
     );
+  };
 
   return {
     kind: "console",

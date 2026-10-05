@@ -270,3 +270,8 @@ export const git = async (cwd: string, args: string[]): Promise<string> => {
   });
   return stdout;
 };
+
+/** The message of anything thrown, whether or not it's an `Error`. */
+export const errorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};

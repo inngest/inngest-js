@@ -1,17 +1,20 @@
 /**
  * Reporting pipeline and job progress as GitHub check runs, commit statuses or
- console output, and the summaries shown on them.
+ * console output, and the summaries shown on them.
  *
  * @module
  */
 
 import type { CiRunScope } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
-import { formatDuration } from "../util.ts";
-import type { GitHubProvider } from "./auth.ts";
+import { errorMessage, formatDuration } from "../util.ts";
+import type { GitHubProvider, Octokit } from "./auth.ts";
 
-/** GitHub truncates check output, so we do it first and say so. */
-export const maxSummaryLength = 65_000;
+/**
+ * GitHub rejects `output.summary` over 65535 bytes (not characters), so we
+ * truncate first and say so.
+ */
+export const maxSummaryBytes = 65_000;
 
 /** GitHub accepts at most 50 annotations per request, and appends them. */
 export const annotationBatchSize = 50;
@@ -19,43 +22,27 @@ export const annotationBatchSize = 50;
 /** How often a "current command" title update may be sent per check. */
 export const titleThrottleMs = 10_000;
 
-export interface CheckStartArgs {
-  run: CiRunScope;
-  /** `pipeline` for the pipeline check, or the job path. */
-  key: string;
-  name: string;
-  title?: string;
-}
-
-export interface CheckCompleteArgs extends CheckStartArgs {
+/** What a check is told when it finishes. */
+interface CheckResult {
   conclusion: CheckConclusion;
   title: string;
-  summary?: string;
-  annotations?: CheckAnnotation[];
+  summary?: string | undefined;
+  annotations?: CheckAnnotation[] | undefined;
 }
 
 export interface CheckReporter {
   pipelineStart(args: { run: CiRunScope }): Promise<void>;
-  pipelineComplete(args: {
-    run: CiRunScope;
-    conclusion: CheckConclusion;
-    title: string;
-    summary?: string;
-  }): Promise<void>;
+  pipelineComplete(
+    args: { run: CiRunScope } & Omit<CheckResult, "annotations">,
+  ): Promise<void>;
   jobStart(args: {
     run: CiRunScope;
     jobPath: string;
     name?: string;
   }): Promise<void>;
-  jobComplete(args: {
-    run: CiRunScope;
-    jobPath: string;
-    name?: string;
-    conclusion: CheckConclusion;
-    title: string;
-    summary?: string;
-    annotations?: CheckAnnotation[];
-  }): Promise<void>;
+  jobComplete(
+    args: { run: CiRunScope; jobPath: string; name?: string } & CheckResult,
+  ): Promise<void>;
   commandRetry(args: {
     run: CiRunScope;
     jobPath: string;
@@ -113,10 +100,21 @@ export interface NormalisedAnnotation {
   raw_details?: string;
 }
 
-export const truncateSummary = (summary: string): string =>
-  summary.length <= maxSummaryLength
-    ? summary
-    : `${summary.slice(0, maxSummaryLength - 40)}\n\n_…truncated, see the trace._`;
+/** Cut to `maxSummaryBytes` of UTF-8, never splitting a code point. */
+export const truncateSummary = (summary: string): string => {
+  const bytes = Buffer.from(summary, "utf8");
+  if (bytes.length <= maxSummaryBytes) {
+    return summary;
+  }
+
+  const notice = "\n\n_…truncated, see the trace._";
+  let end = maxSummaryBytes - Buffer.byteLength(notice);
+  // Back up over continuation bytes (10xxxxxx) to the start of a code point.
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) {
+    end--;
+  }
+  return `${bytes.subarray(0, end).toString("utf8")}${notice}`;
+};
 
 export const batchAnnotations = (
   annotations: NormalisedAnnotation[],
@@ -157,8 +155,24 @@ const lastTitleUpdate = new Map<string, number>();
 export const createCheckReporter = (sink: CheckSink): CheckReporter => {
   const checkRunIds = new Map<string, number>();
 
-  const jobCheckName = (run: CiRunScope, jobPath: string, name?: string) =>
-    `${run.checkName ?? run.pipelineId} / ${name ?? jobPath}`;
+  const jobCheckName = (run: CiRunScope, jobPath: string, name?: string) => {
+    return `${run.checkName ?? run.pipelineId} / ${name ?? jobPath}`;
+  };
+
+  const identity = (run: CiRunScope, key: string) => {
+    return {
+      externalId: `${run.runId}:${key}`,
+      detailsUrl: run.ci.runUrl({
+        runId: run.runId,
+        functionId: run.functionId,
+      }),
+    };
+  };
+
+  const idFor = (key: string) => {
+    const checkRunId = checkRunIds.get(key);
+    return checkRunId === undefined ? {} : { checkRunId };
+  };
 
   const start = async (
     run: CiRunScope,
@@ -166,15 +180,9 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     name: string,
     stepId: string,
   ) => {
-    const externalId = `${run.runId}:${key}`;
-    const detailsUrl = run.ci.runUrl({
-      runId: run.runId,
-      functionId: run.functionId,
+    const result = await run.step.run({ id: stepId, name: stepId }, () => {
+      return sink.start({ run, name, ...identity(run, key) });
     });
-
-    const result = await run.step.run({ id: stepId, name: stepId }, () =>
-      sink.start({ run, name, externalId, detailsUrl }),
-    );
 
     if (result?.id) {
       checkRunIds.set(key, result.id);
@@ -186,33 +194,20 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     key: string,
     name: string,
     stepId: string,
-    args: {
-      conclusion: CheckConclusion;
-      title: string;
-      summary?: string;
-      annotations?: CheckAnnotation[];
-    },
+    result: CheckResult,
   ) => {
-    const externalId = `${run.runId}:${key}`;
-    const detailsUrl = run.ci.runUrl({
-      runId: run.runId,
-      functionId: run.functionId,
-    });
-    const checkRunId = checkRunIds.get(key);
-
-    await run.step.run({ id: stepId, name: stepId }, () =>
-      sink.complete({
+    await run.step.run({ id: stepId, name: stepId }, () => {
+      return sink.complete({
         run,
         name,
-        externalId,
-        detailsUrl,
-        conclusion: args.conclusion,
-        title: args.title,
-        summary: truncateSummary(args.summary ?? ""),
-        annotations: (args.annotations ?? []).map(normaliseAnnotation),
-        ...(checkRunId === undefined ? {} : { checkRunId }),
-      }),
-    );
+        ...identity(run, key),
+        conclusion: result.conclusion,
+        title: result.title,
+        summary: truncateSummary(result.summary ?? ""),
+        annotations: (result.annotations ?? []).map(normaliseAnnotation),
+        ...idFor(key),
+      });
+    });
   };
 
   return {
@@ -228,7 +223,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       );
     },
 
-    pipelineComplete: async ({ run, conclusion, title, summary }) => {
+    pipelineComplete: async ({ run, ...result }) => {
       if (!run.checkName) {
         return;
       }
@@ -237,7 +232,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         "pipeline",
         run.checkName,
         `github › check:${run.checkName}:complete`,
-        { conclusion, title, ...(summary === undefined ? {} : { summary }) },
+        result,
       );
     },
 
@@ -253,15 +248,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       );
     },
 
-    jobComplete: async ({
-      run,
-      jobPath,
-      name,
-      conclusion,
-      title,
-      summary,
-      annotations,
-    }) => {
+    jobComplete: async ({ run, jobPath, name, ...result }) => {
       if (!run.checkName || !run.jobChecks) {
         return;
       }
@@ -270,12 +257,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         jobPath,
         jobCheckName(run, jobPath, name),
         `github › check:${jobPath}:complete`,
-        {
-          conclusion,
-          title,
-          ...(summary === undefined ? {} : { summary }),
-          ...(annotations === undefined ? {} : { annotations }),
-        },
+        result,
       );
     },
 
@@ -284,22 +266,22 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error).split("\n")[0];
 
       await run.step.run(
         {
           id: `github › check:${jobPath}:attempt:${attempt}`,
           name: `check:${jobPath}:attempt:${attempt}`,
         },
-        () =>
-          sink.update?.({
+        async () => {
+          await sink.update?.({
             run,
             name: jobCheckName(run, jobPath),
-            title: `Attempt ${attempt} of ${of}: ${message.split("\n")[0]}`,
-            ...(checkRunIds.has(jobPath)
-              ? { checkRunId: checkRunIds.get(jobPath) as number }
-              : {}),
-          }) ?? Promise.resolve(null),
+            title: `Attempt ${attempt} of ${of}: ${message}`,
+            ...idFor(jobPath),
+          });
+          return null;
+        },
       );
     },
 
@@ -322,9 +304,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: jobCheckName(run, jobPath),
           title: `Running \`${command}\``,
-          ...(checkRunIds.has(jobPath)
-            ? { checkRunId: checkRunIds.get(jobPath) as number }
-            : {}),
+          ...idFor(jobPath),
         });
       } catch {
         // Best effort.
@@ -337,8 +317,23 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
  * A reporter that does nothing, used when there's no provider.
  */
 export const noopSink: CheckSink = {
-  start: async () => ({}),
-  complete: async () => undefined,
+  start: async () => {
+    return {};
+  },
+  complete: async () => {
+    return undefined;
+  },
+};
+
+const conclusionSymbols: Record<string, string> = {
+  success: "✓",
+  failure: "✕",
+  timed_out: "✕",
+  cancelled: "⊘",
+  neutral: "•",
+  skipped: "•",
+  stale: "•",
+  action_required: "!",
 };
 
 /**
@@ -357,17 +352,6 @@ export const consoleSink = (
     url?: string;
   }>,
 ): CheckSink => {
-  const symbols: Record<string, string> = {
-    success: "✓",
-    failure: "✕",
-    timed_out: "✕",
-    cancelled: "⊘",
-    neutral: "•",
-    skipped: "•",
-    stale: "•",
-    action_required: "!",
-  };
-
   const write = (line: string, meta: Record<string, unknown>) => {
     (logger ?? console).info(meta, line);
   };
@@ -395,7 +379,7 @@ export const consoleSink = (
         url: detailsUrl,
       });
       write(
-        `[${run.pipelineId}] ${symbols[conclusion] ?? "•"} ${name}  ${title}  → ${detailsUrl}`,
+        `[${run.pipelineId}] ${conclusionSymbols[conclusion] ?? "•"} ${name}  ${title}  → ${detailsUrl}`,
         { check: name, conclusion, url: detailsUrl },
       );
     },
@@ -405,24 +389,28 @@ export const consoleSink = (
   };
 };
 
+type Repo = NonNullable<CiRunScope["repo"]>;
+
+const clientFor = (provider: GitHubProvider, repo: Repo) => {
+  return provider.octokit(
+    repo.installationId === undefined
+      ? {}
+      : { installationId: repo.installationId },
+  );
+};
+
 /**
  * Real GitHub checks, through the Checks API.
  */
-export const checksSink = (provider: GitHubProvider): CheckSink => ({
-  start: async ({ run, name, externalId, detailsUrl }) => {
-    const repo = run.repo;
-    if (!repo?.sha) {
-      return {};
-    }
-
-    const octokit = await provider.octokit({
-      ...(repo.installationId === undefined
-        ? {}
-        : { installationId: repo.installationId }),
-    });
-
-    // A retried step must not create a second check run, so look for one this
-    // run already created first.
+export const checksSink = (provider: GitHubProvider): CheckSink => {
+  // A retried step must not create a second check run, so look for one this
+  // run already created.
+  const findCheckRun = async (
+    octokit: Octokit,
+    repo: Repo,
+    name: string,
+    externalId: string,
+  ) => {
     const existing = await octokit.rest.checks.listForRef({
       owner: repo.owner,
       repo: repo.name,
@@ -430,202 +418,177 @@ export const checksSink = (provider: GitHubProvider): CheckSink => ({
       check_name: name,
     });
 
-    const match = existing.data.check_runs.find(
-      (checkRun) => checkRun.external_id === externalId,
-    );
+    return existing.data.check_runs.find((checkRun) => {
+      return checkRun.external_id === externalId;
+    })?.id;
+  };
 
-    if (match) {
-      return { id: match.id };
-    }
+  return {
+    start: async ({ run, name, externalId, detailsUrl }) => {
+      const repo = run.repo;
+      if (!repo?.sha) {
+        return {};
+      }
 
-    const created = await octokit.rest.checks.create({
-      owner: repo.owner,
-      repo: repo.name,
-      name,
-      head_sha: repo.sha,
-      status: "in_progress",
-      external_id: externalId,
-      details_url: detailsUrl,
-      started_at: new Date().toISOString(),
-    });
+      const octokit = await clientFor(provider, repo);
+      const existingId = await findCheckRun(octokit, repo, name, externalId);
 
-    return { id: created.data.id };
-  },
+      if (existingId !== undefined) {
+        return { id: existingId };
+      }
 
-  complete: async ({
-    run,
-    name,
-    externalId,
-    detailsUrl,
-    conclusion,
-    title,
-    summary,
-    annotations,
-    checkRunId,
-  }) => {
-    const repo = run.repo;
-    if (!repo?.sha) {
-      return;
-    }
-
-    const octokit = await provider.octokit({
-      ...(repo.installationId === undefined
-        ? {}
-        : { installationId: repo.installationId }),
-    });
-
-    let id = checkRunId;
-
-    if (!id) {
-      const existing = await octokit.rest.checks.listForRef({
+      const created = await octokit.rest.checks.create({
         owner: repo.owner,
         repo: repo.name,
-        ref: repo.sha,
-        check_name: name,
+        name,
+        head_sha: repo.sha,
+        status: "in_progress",
+        external_id: externalId,
+        details_url: detailsUrl,
+        started_at: new Date().toISOString(),
       });
-      id = existing.data.check_runs.find(
-        (checkRun) => checkRun.external_id === externalId,
-      )?.id;
-    }
 
-    const batches = batchAnnotations(annotations);
+      return { id: created.data.id };
+    },
 
-    const base = {
-      owner: repo.owner,
-      repo: repo.name,
+    complete: async ({
+      run,
       name,
-      head_sha: repo.sha,
-      details_url: detailsUrl,
-      external_id: externalId,
-    };
+      externalId,
+      detailsUrl,
+      conclusion,
+      title,
+      summary,
+      annotations,
+      checkRunId,
+    }) => {
+      const repo = run.repo;
+      if (!repo?.sha) {
+        return;
+      }
 
-    if (!id) {
-      const created = await octokit.rest.checks.create({
+      const octokit = await clientFor(provider, repo);
+      const id =
+        checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
+      const [firstBatch, ...otherBatches] = batchAnnotations(annotations);
+
+      const base = {
+        owner: repo.owner,
+        repo: repo.name,
+        name,
+        head_sha: repo.sha,
+        details_url: detailsUrl,
+        external_id: externalId,
+      };
+
+      const completed = {
         ...base,
-        status: "completed",
+        status: "completed" as const,
         conclusion,
         completed_at: new Date().toISOString(),
         output: {
           title,
           summary,
-          ...(batches[0] ? { annotations: batches[0] } : {}),
+          ...(firstBatch ? { annotations: firstBatch } : {}),
         },
+      };
+
+      const checkRun =
+        id === undefined
+          ? await octokit.rest.checks.create(completed)
+          : await octokit.rest.checks.update({
+              ...completed,
+              check_run_id: id,
+            });
+
+      // GitHub appends annotations, so the rest go up in further updates.
+      for (const batch of otherBatches) {
+        await octokit.rest.checks.update({
+          ...base,
+          check_run_id: checkRun.data.id,
+          output: { title, summary, annotations: batch },
+        });
+      }
+    },
+
+    update: async ({ run, name, title, checkRunId }) => {
+      const repo = run.repo;
+      if (!repo?.sha || checkRunId === undefined) {
+        return;
+      }
+
+      const octokit = await clientFor(provider, repo);
+
+      // `output.summary` is required on every update and replaces what's
+      // there, so send back what the check already shows.
+      const current = await octokit.rest.checks.get({
+        owner: repo.owner,
+        repo: repo.name,
+        check_run_id: checkRunId,
       });
-      id = created.data.id;
-    } else {
+
       await octokit.rest.checks.update({
-        ...base,
-        check_run_id: id,
-        status: "completed",
-        conclusion,
-        completed_at: new Date().toISOString(),
-        output: {
-          title,
-          summary,
-          ...(batches[0] ? { annotations: batches[0] } : {}),
-        },
+        owner: repo.owner,
+        repo: repo.name,
+        check_run_id: checkRunId,
+        output: { title, summary: current.data.output?.summary || name },
       });
-    }
+    },
+  };
+};
 
-    // GitHub appends annotations, so the rest go up in further updates.
-    for (const batch of batches.slice(1)) {
-      await octokit.rest.checks.update({
-        ...base,
-        check_run_id: id,
-        output: { title, summary, annotations: batch },
-      });
-    }
-  },
+type StatusState = "error" | "failure" | "pending" | "success";
 
-  update: async ({ run, name, title, checkRunId }) => {
-    const repo = run.repo;
-    if (!repo?.sha || !checkRunId) {
-      return;
-    }
-
-    const octokit = await provider.octokit({
-      ...(repo.installationId === undefined
-        ? {}
-        : { installationId: repo.installationId }),
-    });
-
-    await octokit.rest.checks.update({
-      owner: repo.owner,
-      repo: repo.name,
-      check_run_id: checkRunId,
-      output: { title: name, summary: title },
-    });
-  },
-});
+const statusFor = (conclusion: CheckConclusion): StatusState => {
+  switch (conclusion) {
+    case "success":
+    case "neutral":
+    case "skipped":
+      return "success";
+    case "failure":
+    case "timed_out":
+      return "failure";
+    default:
+      return "error";
+  }
+};
 
 /**
  * Commit statuses, for token auth. There are no summaries or annotations.
  */
 export const statusesSink = (provider: GitHubProvider): CheckSink => {
-  const state = (
-    conclusion: CheckConclusion,
-  ): "error" | "failure" | "pending" | "success" => {
-    switch (conclusion) {
-      case "success":
-      case "neutral":
-      case "skipped":
-        return "success";
-      case "failure":
-      case "timed_out":
-        return "failure";
-      default:
-        return "error";
-    }
-  };
-
-  const post = async (args: {
-    run: CiRunScope;
-    name: string;
-    detailsUrl: string;
-    status: "error" | "failure" | "pending" | "success";
-    description: string;
-  }) => {
-    const repo = args.run.repo;
+  const post = async (
+    run: CiRunScope,
+    name: string,
+    detailsUrl: string,
+    state: StatusState,
+    description: string,
+  ) => {
+    const repo = run.repo;
     if (!repo?.sha) {
       return;
     }
 
-    const octokit = await provider.octokit({
-      ...(repo.installationId === undefined
-        ? {}
-        : { installationId: repo.installationId }),
-    });
+    const octokit = await clientFor(provider, repo);
 
     await octokit.rest.repos.createCommitStatus({
       owner: repo.owner,
       repo: repo.name,
       sha: repo.sha,
-      state: args.status,
-      context: args.name,
-      target_url: args.detailsUrl,
-      description: args.description.slice(0, 140),
+      state,
+      context: name,
+      target_url: detailsUrl,
+      description: description.slice(0, 140),
     });
   };
 
   return {
     start: async ({ run, name, detailsUrl }) => {
-      await post({
-        run,
-        name,
-        detailsUrl,
-        status: "pending",
-        description: "Running",
-      });
+      await post(run, name, detailsUrl, "pending", "Running");
       return {};
     },
     complete: async ({ run, name, detailsUrl, conclusion, title }) => {
-      await post({
-        run,
-        name,
-        detailsUrl,
-        status: state(conclusion),
-        description: title,
-      });
+      await post(run, name, detailsUrl, statusFor(conclusion), title);
     },
   };
 };
@@ -635,17 +598,17 @@ export const statusesSink = (provider: GitHubProvider): CheckSink => {
  * and any snapshots kept for debugging.
  */
 export const pipelineSummary = (run: CiRunScope): string => {
-  const rows = run.summaries.map(
-    (summary) =>
-      `| ${summary.path} | ${summary.conclusion} | ${summary.title} | ${formatDuration(summary.durationMs)} |`,
-  );
+  const rows = run.summaries.map((summary) => {
+    return `| ${summary.path} | ${summary.conclusion} | ${summary.title} | ${formatDuration(summary.durationMs)} |`;
+  });
 
   const kept = run.summaries
-    .filter((summary) => summary.keptSnapshotId)
-    .map(
-      (summary) =>
-        `- \`${summary.path}\` kept as snapshot \`${summary.keptSnapshotId}\``,
-    );
+    .filter((summary) => {
+      return summary.keptSnapshotId;
+    })
+    .map((summary) => {
+      return `- \`${summary.path}\` kept as snapshot \`${summary.keptSnapshotId}\``;
+    });
 
   return [
     "| Job | Result | Detail | Duration |",
@@ -655,7 +618,13 @@ export const pipelineSummary = (run: CiRunScope): string => {
     `[View the trace](${run.ci.runUrl({ runId: run.runId, functionId: run.functionId })})`,
     ...(kept.length > 0 ? ["", "**Kept machines**", ...kept] : []),
     ...(run.warnings.length > 0
-      ? ["", "**Notes**", ...run.warnings.map((warning) => `- ${warning}`)]
+      ? [
+          "",
+          "**Notes**",
+          ...run.warnings.map((warning) => {
+            return `- ${warning}`;
+          }),
+        ]
       : []),
   ].join("\n");
 };

@@ -25,21 +25,22 @@ export const report = {
   /**
    * Add a section to the check's summary, as markdown.
    *
-   * Summaries are truncated at GitHub's 65,000 character limit, with a note
-   * pointing at the trace.
+   * Called several times, sections stack. Summaries are truncated to fit
+   * GitHub's 65535 byte limit, with a note pointing at the trace.
    *
-   * @param markdown - What to add. Called several times, sections stack.
    * @throws {CiUsageError} When called outside a pipeline run.
    */
-  summary: async (markdown: string): Promise<void> => {
+  summary: async (/** What to add. */ markdown: string): Promise<void> => {
     const run = requireRunScope("report.summary");
     const job = getJobScope();
 
     const id = nextStepId(run, job?.path, "report:summary");
 
-    await run.step.run({ id, name: id }, () => ({
-      length: markdown.length,
-    }));
+    await run.step.run({ id, name: id }, () => {
+      return {
+        length: markdown.length,
+      };
+    });
 
     if (job) {
       job.summaries.push(markdown);
@@ -68,22 +69,25 @@ export const report = {
    * ]);
    * ```
    *
-   * @param annotations - Anything without a `path` and a `message` is
-   * dropped, since GitHub would reject the whole batch.
+   * Anything without a `path` and a `message` is dropped, since GitHub would
+   * reject the whole batch.
+   *
    * @throws {CiUsageError} When called outside a pipeline run.
    */
   annotate: async (annotations: CheckAnnotation[]): Promise<void> => {
     const run = requireRunScope("report.annotate");
     const job = getJobScope();
 
-    const valid = annotations.filter(
-      (annotation) => annotation.path && annotation.message,
-    );
+    const valid = annotations.filter((annotation) => {
+      return annotation.path && annotation.message;
+    });
 
     const id = nextStepId(run, job?.path, "report:annotate");
-    await run.step.run({ id, name: id }, () => ({
-      count: valid.length,
-    }));
+    await run.step.run({ id, name: id }, () => {
+      return {
+        count: valid.length,
+      };
+    });
 
     if (job) {
       job.annotations.push(...valid);

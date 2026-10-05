@@ -1,6 +1,6 @@
 /**
  * GitHub event triggers (`github.pullRequest()`, `github.push()`, comment
- triggers) and the permission rules attached to them.
+ * triggers) and the permission rules attached to them.
  *
  * @module
  */
@@ -71,8 +71,9 @@ export const hasPermission = (
   return actualIndex >= permissionOrder.indexOf(required);
 };
 
-const repoCondition = (repo: string | undefined): string | undefined =>
-  repo ? `event.data.repository.full_name == "${repo}"` : undefined;
+const repoCondition = (repo: string | undefined): string | undefined => {
+  return repo ? `event.data.repository.full_name == "${repo}"` : undefined;
+};
 
 const joinConditions = (
   conditions: Array<string | undefined>,
@@ -81,14 +82,34 @@ const joinConditions = (
   if (parts.length === 0) {
     return undefined;
   }
-  return parts.map((part) => `(${part})`).join(" && ");
+  return parts
+    .map((part) => {
+      return `(${part})`;
+    })
+    .join(" && ");
 };
 
-const anyOf = (expressions: string[]): string | undefined =>
-  expressions.length === 0 ? undefined : expressions.join(" || ");
+const anyOf = (expressions: string[]): string | undefined => {
+  return expressions.length === 0 ? undefined : expressions.join(" || ");
+};
 
-const trigger = <TData>(event: string, condition?: string): CiTrigger<TData> =>
-  condition ? { event, if: condition } : { event };
+const trigger = <TData>(
+  event: string,
+  condition?: string,
+): CiTrigger<TData> => {
+  return condition ? { event, if: condition } : { event };
+};
+
+export interface PullRequestOptions<
+  TTypes extends readonly PullRequestAction[],
+> {
+  /** Only run for pull requests targeting these branches. */
+  branches?: string[];
+  /** Which pull request actions to run for. Defaults to `opened`, `synchronize`, and `reopened`. */
+  types?: TTypes;
+  /** Only run for this `owner/name`, for pipelines watching another repository. */
+  repo?: string;
+}
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -107,12 +128,6 @@ const trigger = <TData>(event: string, condition?: string): CiTrigger<TData> =>
  *   },
  * );
  * ```
- *
- * @param opts.branches - Only run for pull requests targeting these branches.
- * @param opts.types - Which pull request actions to run for. Defaults to
- * `opened`, `synchronize`, and `reopened`.
- * @param opts.repo - Only run for this `owner/name`, for pipelines watching
- * another repository.
  */
 export const pullRequest = <
   const TTypes extends readonly PullRequestAction[] = readonly [
@@ -121,7 +136,7 @@ export const pullRequest = <
     "reopened",
   ],
 >(
-  opts: { branches?: string[]; types?: TTypes; repo?: string } = {},
+  opts: PullRequestOptions<TTypes> = {},
 ): CiTrigger<PullRequestEventFor<TTypes[number]>>[] => {
   const types: readonly PullRequestAction[] = opts.types ?? [
     "opened",
@@ -130,20 +145,29 @@ export const pullRequest = <
   ];
 
   const branchCondition = anyOf(
-    (opts.branches ?? []).map(
-      (branch) => `event.data.pull_request.base.ref == "${branch}"`,
-    ),
+    (opts.branches ?? []).map((branch) => {
+      return `event.data.pull_request.base.ref == "${branch}"`;
+    }),
   );
 
   const condition = joinConditions([branchCondition, repoCondition(opts.repo)]);
 
-  return types.map((type) =>
-    trigger<PullRequestEventFor<TTypes[number]>>(
+  return types.map((type) => {
+    return trigger<PullRequestEventFor<TTypes[number]>>(
       `github/pull_request.${type}`,
       condition,
-    ),
-  );
+    );
+  });
 };
+
+export interface PushOptions {
+  /** Branch names to run for. Omit for every branch. */
+  branches?: string[];
+  /** Tag patterns to run for, like `v*`. */
+  tags?: string[];
+  /** Only run for this `owner/name`. */
+  repo?: string;
+}
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -161,20 +185,24 @@ export const pullRequest = <
  *   },
  * );
  * ```
- *
- * @param opts.branches - Branch names to run for. Omit for every branch.
- * @param opts.tags - Tag patterns to run for, like `v*`.
- * @param opts.repo - Only run for this `owner/name`.
  */
 export const push = (
-  opts: { branches?: string[]; tags?: string[]; repo?: string } = {},
+  opts: PushOptions = {},
 ): CiTrigger<GitHubEventData<PushEvent>>[] => {
   const refs = [
-    ...(opts.branches ?? []).map((branch) => `refs/heads/${branch}`),
-    ...(opts.tags ?? []).map((tag) => `refs/tags/${tag}`),
+    ...(opts.branches ?? []).map((branch) => {
+      return `refs/heads/${branch}`;
+    }),
+    ...(opts.tags ?? []).map((tag) => {
+      return `refs/tags/${tag}`;
+    }),
   ];
 
-  const refCondition = anyOf(refs.map((ref) => `event.data.ref == "${ref}"`));
+  const refCondition = anyOf(
+    refs.map((ref) => {
+      return `event.data.ref == "${ref}"`;
+    }),
+  );
 
   const condition = joinConditions([
     refCondition,
@@ -184,6 +212,15 @@ export const push = (
 
   return [trigger<GitHubEventData<PushEvent>>("github/push", condition)];
 };
+
+export interface CommentOptions {
+  /** The prefix a comment must start with. */
+  command: string;
+  /** The permission the author needs on the repo. */
+  minPermission?: Permission;
+  /** Only run for this `owner/name`. */
+  repo?: string;
+}
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -206,16 +243,10 @@ export const push = (
  *   },
  * );
  * ```
- *
- * @param opts.command - The prefix a comment must start with.
- * @param opts.minPermission - The permission the author needs on the repo.
- * @param opts.repo - Only run for this `owner/name`.
  */
-export const comment = (opts: {
-  command: string;
-  minPermission?: Permission;
-  repo?: string;
-}): CiTrigger<GitHubEventData<IssueCommentCreatedEvent>>[] => {
+export const comment = (
+  opts: CommentOptions,
+): CiTrigger<GitHubEventData<IssueCommentCreatedEvent>>[] => {
   const condition = joinConditions([
     `event.data.comment.body.startsWith("${opts.command}")`,
     repoCondition(opts.repo),
@@ -248,38 +279,48 @@ const commentPermissions = new WeakMap<
  */
 export const commentPermissionFor = (
   trigger: CiTrigger,
-): { command: string; minPermission: Permission } | undefined =>
-  commentPermissions.get(trigger as object);
+): { command: string; minPermission: Permission } | undefined => {
+  return commentPermissions.get(trigger as object);
+};
+
+export interface RepoOptions {
+  /** Only run for this `owner/name`. */
+  repo?: string;
+}
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
  * Run when GitHub's merge queue asks for checks on a group.
- *
- * @param opts.repo - Only run for this `owner/name`.
  */
 export const mergeGroup = (
-  opts: { repo?: string } = {},
-): CiTrigger<GitHubEventData<MergeGroupChecksRequestedEvent>>[] => [
-  trigger<GitHubEventData<MergeGroupChecksRequestedEvent>>(
-    "github/merge_group.checks_requested",
-    repoCondition(opts.repo),
-  ),
-];
+  opts: RepoOptions = {},
+): CiTrigger<GitHubEventData<MergeGroupChecksRequestedEvent>>[] => {
+  return [
+    trigger<GitHubEventData<MergeGroupChecksRequestedEvent>>(
+      "github/merge_group.checks_requested",
+      repoCondition(opts.repo),
+    ),
+  ];
+};
+
+export interface CheckSuiteOptions {
+  /** Only run for suites on this branch. */
+  branch?: string;
+  /** Only run for this `owner/name`. */
+  repo?: string;
+}
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
  * Run when a check suite finishes, which is how you react to someone else's
- * checks — "you broke main", or "main is green again".
- *
- * @param opts.branch - Only run for suites on this branch.
- * @param opts.repo - Only run for this `owner/name`.
+ * checks - "you broke main", or "main is green again".
  */
 export const checkSuite = (
-  opts: { branch?: string; repo?: string } = {},
+  opts: CheckSuiteOptions = {},
 ): CiTrigger<GitHubEventData<CheckSuiteCompletedEvent>>[] => {
   const condition = joinConditions([
     opts.branch
