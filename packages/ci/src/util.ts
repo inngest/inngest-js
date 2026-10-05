@@ -8,6 +8,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
+import { CiUsageError } from "./errors.ts";
 
 const exec = promisify(execFile);
 
@@ -181,15 +182,20 @@ export const filterPaths = (
 /**
  * Parse a duration string like `"10m"` into milliseconds. Only the small
  * subset CI uses is supported, because these are written by hand in pipelines.
+ * The whole string must be made of durations, so a typo fails instead of
+ * silently changing a timeout.
  */
 export const durationToMs = (duration: string): number => {
+  if (!/^\s*(?:\d+\s*(?:ms|s|m|h|d|w)\s*)+$/.test(duration)) {
+    throw new CiUsageError(
+      `Could not parse duration "${duration}". Use a number and a unit, like "90s", "10m" or "1h30m". Units are ms, s, m, h, d and w.`,
+    );
+  }
+
   const matches = duration.matchAll(/(\d+)\s*(ms|s|m|h|d|w)/g);
   let total = 0;
-  let found = false;
 
   for (const match of matches) {
-    found = true;
-
     const value = Number(match[1]);
 
     switch (match[2]) {
@@ -220,11 +226,51 @@ export const durationToMs = (duration: string): number => {
     }
   }
 
-  if (!found) {
-    throw new Error(`Could not parse duration "${duration}"`);
+  return total;
+};
+
+/**
+ * Stringify a value so that equal values give equal strings whatever order
+ * their object keys were written in.
+ */
+export const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value
+      .map((item) => {
+        return stableStringify(item);
+      })
+      .join(",")}]`;
   }
 
-  return total;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => {
+        return item !== undefined;
+      })
+      .sort(([left], [right]) => {
+        return left < right ? -1 : 1;
+      })
+      .map(([key, item]) => {
+        return `${JSON.stringify(key)}:${stableStringify(item)}`;
+      });
+
+    return `{${entries.join(",")}}`;
+  }
+
+  return JSON.stringify(value) ?? "null";
+};
+
+/**
+ * Whether the Sandbox API said the machine doesn't exist, which is the only
+ * failure cleanup may ignore.
+ */
+export const isSandboxNotFound = (error: unknown): boolean => {
+  const code = (error as { code?: string } | undefined)?.code;
+
+  const causeCode = (error as { cause?: { code?: string } } | undefined)?.cause
+    ?.code;
+
+  return code === "sandbox_not_found" || causeCode === "sandbox_not_found";
 };
 
 /**

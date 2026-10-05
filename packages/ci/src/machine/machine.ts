@@ -13,7 +13,7 @@ import type {
 } from "../pipeline/scope.ts";
 import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
-import { boundedName, errorMessage, slug } from "../util.ts";
+import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
 
 /**
  * Memory is paired with vCPU count, so a job only picks one number.
@@ -253,7 +253,10 @@ const isSnapshotUnavailable = (error: unknown): boolean => {
  * Destroy every machine this run created. Tolerates machines that are already
  * gone, because cleanup also runs after failures.
  */
-export const destroyRunMachines = async (run: CiRunScope): Promise<void> => {
+export const destroyRunMachines = async (
+  run: CiRunScope,
+  attempt = 0,
+): Promise<void> => {
   const ids = [...run.sandboxes];
 
   if (ids.length === 0) {
@@ -261,7 +264,10 @@ export const destroyRunMachines = async (run: CiRunScope): Promise<void> => {
   }
 
   await run.step.run(
-    { id: `pipeline${scopeSeparator}cleanup`, name: "cleanup" },
+    {
+      id: `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+      name: "cleanup",
+    },
     async () => {
       const destroyed: string[] = [];
 
@@ -274,8 +280,12 @@ export const destroyRunMachines = async (run: CiRunScope): Promise<void> => {
 
             destroyed.push(id);
           }
-        } catch {
-          // Already gone, or gone by the time we asked.
+        } catch (error) {
+          // Anything but "not found" fails the step so it retries; ignoring it
+          // would leave a billable machine running.
+          if (!isSandboxNotFound(error)) {
+            throw error;
+          }
         }
       }
 

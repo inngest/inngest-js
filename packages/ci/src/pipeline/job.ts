@@ -133,7 +133,7 @@ const jobBody = async ({
   };
 
   const cacheLookup = config.cache
-    ? await lookupCache(scope, config.cache)
+    ? await lookupCache(scope, config.cache, input)
     : undefined;
 
   if (cacheLookup?.entry) {

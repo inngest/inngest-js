@@ -32,9 +32,7 @@ interface CheckResult {
 
 export interface CheckReporter {
   pipelineStart(args: { run: CiRunScope }): Promise<void>;
-  pipelineComplete(
-    args: { run: CiRunScope } & Omit<CheckResult, "annotations">,
-  ): Promise<void>;
+  pipelineComplete(args: { run: CiRunScope } & CheckResult): Promise<void>;
   /**
    * Start a job's check. Returns when the job started, read inside the step so
    * it's memoized, or `undefined` when there's no check to start.

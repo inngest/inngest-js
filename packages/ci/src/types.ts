@@ -261,6 +261,9 @@ export interface JobConfig<_TInput = void> {
   /**
    * Snapshot the machine if the job fails, so you can start from where it
    * broke. The snapshot ID is on the job's check and in the run's summary.
+   *
+   * The duration is currently ignored: the snapshot is kept for the
+   * platform's default retention, whatever you pass.
    */
   keepOnFailure?: Duration;
 }
@@ -322,13 +325,17 @@ export interface PipelineConfig<
    */
   repo?: string;
   /**
-   * Set from a `github.comment({ minPermission })` trigger. CEL can't ask
-   * GitHub whether someone is allowed, so the run checks it and reports
-   * "Not permitted" instead.
+   * Set from `github.comment({ minPermission })` triggers, one per command.
+   * CEL can't ask GitHub whether someone is allowed, so the run checks the
+   * permission of the command that matched and reports "Not permitted"
+   * instead.
    *
    * @internal
    */
-  commentPermission?: "read" | "triage" | "write" | "maintain" | "admin";
+  commentPermissions?: {
+    command: string;
+    minPermission: "read" | "triage" | "write" | "maintain" | "admin";
+  }[];
 }
 
 /**

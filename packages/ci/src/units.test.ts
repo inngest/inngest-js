@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from "vitest";
 import { cacheScopes, storeKey } from "./cache/cache.ts";
+import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
   normaliseAnnotation,
@@ -37,6 +38,7 @@ import {
   globToRegExp,
   maskSecrets,
   shellEscape,
+  stableStringify,
   truncateLabel,
 } from "./util.ts";
 
@@ -257,6 +259,41 @@ describe("matrix pool", () => {
     ];
 
     await expect(runPool(tasks, 1, true)).rejects.toThrow("first");
+  });
+
+  test("with failFast, queued tasks don't start after a failure", async () => {
+    const started: number[] = [];
+
+    const tasks = [
+      async () => {
+        started.push(0);
+
+        throw new Error("first");
+      },
+      async () => {
+        started.push(1);
+
+        await new Promise((resolve) => {
+          return setTimeout(resolve, 20);
+        });
+
+        return 1;
+      },
+      async () => {
+        started.push(2);
+
+        return 2;
+      },
+    ];
+
+    await expect(runPool(tasks, 2, true)).rejects.toThrow("first");
+
+    // Let the task that was already running finish and look for more work.
+    await new Promise((resolve) => {
+      return setTimeout(resolve, 50);
+    });
+
+    expect(started).toEqual([0, 1]);
   });
 });
 
@@ -516,7 +553,25 @@ describe("cache scopes", () => {
         },
         undefined,
       ),
-    ).toEqual({ read: ["pr-4", "main"], write: "pr-4" });
+    ).toEqual({ read: ["pr:4", "main"], write: "pr:4" });
+  });
+
+  test("a branch named like a pull request has its own scope", () => {
+    const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
+
+    const branch = cacheScopes({ ...repo, ref: "refs/heads/pr-4" }, undefined);
+
+    const pullRequest = cacheScopes(
+      {
+        ...repo,
+        baseRef: "main",
+        pullRequest: { number: 4, headRef: "f", fork: false },
+      },
+      undefined,
+    );
+
+    expect(branch.write).not.toBe(pullRequest.write);
+    expect(pullRequest.read).not.toContain(branch.write);
   });
 
   test("global scope ignores branches", () => {
@@ -559,7 +614,25 @@ describe("formatting", () => {
 
     expect(() => {
       return durationToMs("soon");
-    }).toThrow();
+    }).toThrow(CiUsageError);
+  });
+
+  test("malformed durations are rejected rather than partly read", () => {
+    for (const bad of ["1 month", "1h garbage", "10", "", "m5", "-5m"]) {
+      expect(() => {
+        return durationToMs(bad);
+      }).toThrow(CiUsageError);
+    }
+
+    expect(durationToMs("1h 30m")).toBe(5_400_000);
+  });
+
+  test("stable strings ignore key order", () => {
+    expect(stableStringify({ b: 1, a: { d: [1, 2], c: undefined } })).toBe(
+      stableStringify({ a: { d: [1, 2] }, b: 1 }),
+    );
+
+    expect(stableStringify({ a: 1 })).not.toBe(stableStringify({ a: 2 }));
   });
 
   test("labels truncate", () => {
