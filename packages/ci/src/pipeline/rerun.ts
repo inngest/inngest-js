@@ -63,13 +63,6 @@ export const rerunEventFor = async ({
   const headBranch: string | undefined =
     suite?.head_branch ?? checkRun?.head_branch;
 
-  // A fork's branch is not a branch of this repository, so it must never be
-  // re-sent as a push to one.
-  const headRepo: string | undefined =
-    checkRun?.head_repository?.full_name ?? suite?.head_repository?.full_name;
-
-  const fromFork = Boolean(headRepo) && headRepo !== repository.full_name;
-
   const rerunOf = externalId?.split(":")[0];
 
   // Every pipeline hears the same webhook, so they all send the same ID and
@@ -86,6 +79,7 @@ export const rerunEventFor = async ({
     ];
 
     let pullRequest: unknown = payloadPullRequest;
+    let branchVerified = false;
 
     try {
       const octokit = await octokitForRun();
@@ -109,21 +103,29 @@ export const rerunEventFor = async ({
         pullRequest = data.find((pr) => {
           return pr.state === "open" && pr.head.sha === sha;
         });
+
+        // A branch name alone proves nothing: a fork's `main` is not ours. Only
+        // re-push a branch whose head is this very commit.
+        if (!pullRequest && headBranch) {
+          const { data: branch } = await octokit.rest.repos.getBranch({
+            owner,
+            repo,
+            branch: headBranch,
+          });
+
+          branchVerified = branch?.commit?.sha === sha;
+        }
       }
     } catch {
-      // Without credentials the payload's own pull request, or the branch,
-      // is all there is to go on.
+      // Without credentials the payload's own pull request is all there is to
+      // go on.
     }
 
-    if (!pullRequest && fromFork) {
+    if (!pullRequest && !branchVerified) {
       return {
         rerun: false,
-        reason: "fork check with no pull request to re-run",
+        reason: "no pull request, and the branch could not be verified",
       };
-    }
-
-    if (!pullRequest && !headBranch) {
-      return { rerun: false, reason: "no pull request or branch to re-run" };
     }
 
     await client.send({

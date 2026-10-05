@@ -691,6 +691,14 @@ describe("shard", () => {
 
 describe("re-running from a check suite", () => {
   test("`check_suite.rerequested` resends the trigger for the suite's commit", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/pulls", []);
+
+    gh.route("GET /repos/inngest/inngest-js/branches/main", {
+      commit: { sha: "abc1234" },
+    });
+
     const send = vi.fn(async () => {
       return undefined;
     });
@@ -863,6 +871,10 @@ describe("re-running from a check run", () => {
     event: unknown,
     config: Record<string, unknown> = { id: "pr" },
   ) => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/pulls", []);
+
     const send = vi.fn(async () => {
       return undefined;
     });
@@ -909,6 +921,10 @@ describe("re-running from a check run", () => {
   });
 
   test("the resent event has an ID derived from the delivery", async () => {
+    gh.route("GET /repos/inngest/inngest-js/branches/feature", {
+      commit: { sha: "abc1234" },
+    });
+
     const { send } = await rerun(
       checkRunEvent({ name: "pr / test", external_id: "RUN:test" }),
     );
@@ -919,6 +935,10 @@ describe("re-running from a check run", () => {
   });
 
   test("a check on a branch re-pushes that branch, not the default one", async () => {
+    gh.route("GET /repos/inngest/inngest-js/branches/feature", {
+      commit: { sha: "abc1234" },
+    });
+
     const { send } = await rerun(checkRunEvent({ name: "pr" }));
 
     expect(send).toHaveBeenCalledWith(
@@ -987,6 +1007,64 @@ describe("re-running a check from a fork", () => {
       client: { send } as never,
       config: { id: "pr" } as never,
     });
+
+    expect(result).toMatchObject({ rerun: false });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("re-running a check whose branch moved or is not ours", () => {
+  const rerunSuite = async () => {
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const result = await rerunEventFor({
+      event: {
+        id: "evt-1",
+        name: "github/check_suite.rerequested",
+        data: {
+          check_suite: { head_sha: "abc1234", head_branch: "main" },
+          repository: { full_name: "inngest/inngest-js" },
+        },
+      },
+      step: {
+        run: async (_id: string, fn: () => Promise<unknown>) => {
+          return fn();
+        },
+      },
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    return { result, send };
+  };
+
+  test("a branch head that is a different commit sends nothing", async () => {
+    setup(gh);
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/pulls", []);
+
+    gh.route("GET /repos/inngest/inngest-js/branches/main", {
+      commit: { sha: "someoneelse" },
+    });
+
+    const { result, send } = await rerunSuite();
+
+    expect(result).toMatchObject({ rerun: false });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test("a failed branch lookup sends nothing", async () => {
+    setup(gh);
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/branches/main",
+      { message: "Not Found" },
+      404,
+    );
+
+    const { result, send } = await rerunSuite();
 
     expect(result).toMatchObject({ rerun: false });
     expect(send).not.toHaveBeenCalled();
