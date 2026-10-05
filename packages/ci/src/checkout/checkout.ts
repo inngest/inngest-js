@@ -9,6 +9,7 @@ import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
 import {
+  countApi,
   defaultCwd,
   requireJobScope,
   scopeSeparator,
@@ -64,6 +65,8 @@ interface CheckoutOptions {
  */
 export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const scope = requireJobScope("checkout");
+
+  countApi("checkout");
   const { run } = scope;
   const repo = run.repo;
   const target = opts.path ?? defaultCwd;

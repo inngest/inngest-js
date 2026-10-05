@@ -14,6 +14,7 @@ import {
 } from "../errors.ts";
 import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
+  countApi,
   defaultCwd,
   nextStepId,
   requireJobScope,
@@ -255,6 +256,8 @@ class CommandBuilder implements Command {
 
   async background(): Promise<BackgroundProcess> {
     const scope = this.getScope();
+
+    countApi("background");
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
 
@@ -301,7 +304,11 @@ class CommandBuilder implements Command {
 
   /** Runs once however many times the command is awaited. */
   private exec(): Promise<CommandResult> {
-    this.started ??= this.runWithRetries();
+    if (!this.started) {
+      countApi("commands");
+
+      this.started = this.runWithRetries();
+    }
 
     return this.started;
   }

@@ -4,7 +4,12 @@
  * @module
  */
 
-import { getJobScope, nextStepId, requireRunScope } from "./pipeline/scope.ts";
+import {
+  countApi,
+  getJobScope,
+  nextStepId,
+  requireRunScope,
+} from "./pipeline/scope.ts";
 import type { CheckAnnotation } from "./types.ts";
 
 /**
@@ -32,6 +37,8 @@ export const report = {
    */
   summary: async (/** What to add. */ markdown: string): Promise<void> => {
     const run = requireRunScope("report.summary");
+
+    countApi("report");
     const job = getJobScope();
 
     const id = nextStepId(run, job?.path, "report:summary");
@@ -77,6 +84,8 @@ export const report = {
    */
   annotate: async (annotations: CheckAnnotation[]): Promise<void> => {
     const run = requireRunScope("report.annotate");
+
+    countApi("report");
     const job = getJobScope();
 
     const valid = annotations.filter((annotation) => {

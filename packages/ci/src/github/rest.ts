@@ -11,7 +11,7 @@ import { NonRetriableError, RetryAfterError } from "inngest";
 import type { Jsonify } from "inngest/types";
 import { CiUsageError } from "../errors.ts";
 import { durable } from "../pipeline/durable.ts";
-import { getRunScope } from "../pipeline/scope.ts";
+import { countApi, getRunScope } from "../pipeline/scope.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
 
 export type { RestEndpointMethodTypes };
@@ -183,6 +183,9 @@ export const rest: DurableGitHubRest = durable<DurableGitHubRest>(
     name: "github",
     // Every method under `octokit.rest` is exactly one HTTP request.
     rules: [["*.*", "step"]],
+    onStep: () => {
+      countApi("githubRest");
+    },
     argsWithMethod: (args, { method }) => {
       if (!takesOwnerAndRepo(method)) {
         return args;

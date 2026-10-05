@@ -22,6 +22,14 @@ const StepOpCode = {
   StepPlanned: "StepPlanned",
 } as const;
 
+/** A metadata update a step carried on its result, as the executor gets it. */
+export interface MetadataUpdate {
+  kind: string;
+  scope: string;
+  op: string;
+  values: Record<string, unknown>;
+}
+
 /** A step as the executor reports it, whether planned or just run. */
 interface Step {
   id: string;
@@ -30,6 +38,7 @@ interface Step {
   name?: string;
   data?: unknown;
   error?: unknown;
+  metadata?: MetadataUpdate[];
 }
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
@@ -55,6 +64,12 @@ export interface RunResult {
   stepIds: string[];
   /** Step data keyed by display name. */
   steps: Record<string, unknown>;
+  /**
+   * Metadata updates in the order steps ran them, each with the display name
+   * of the step that carried it. A step that fails and retries carries its
+   * metadata on every attempt, so it can appear more than once.
+   */
+  metadata: Array<MetadataUpdate & { step: string }>;
 }
 
 export interface RunFunctionOptions {
@@ -105,6 +120,7 @@ export const runFunction = async (
 
   const stepIds: string[] = [];
   const steps: Record<string, unknown> = {};
+  const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
     opts.beforeRequest?.();
@@ -142,6 +158,13 @@ export const runFunction = async (
       return;
     }
 
+    for (const update of step.metadata ?? []) {
+      metadata.push({
+        step: step.displayName ?? step.name ?? step.id,
+        ...update,
+      });
+    }
+
     if (isFailed(step) && result.retriable !== false) {
       const seen = (attempts.get(step.id) ?? 0) + 1;
 
@@ -159,7 +182,7 @@ export const runFunction = async (
     const result = await request();
 
     if (result.type === "function-resolved") {
-      return { type: result.type, data: result.data, stepIds, steps };
+      return { type: result.type, data: result.data, stepIds, steps, metadata };
     }
 
     if (result.type === "function-rejected") {
@@ -175,6 +198,7 @@ export const runFunction = async (
         retriable: result.retriable,
         stepIds,
         steps,
+        metadata,
       };
     }
 

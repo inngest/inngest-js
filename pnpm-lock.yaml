@@ -88,6 +88,9 @@ importers:
       '@types/node':
         specifier: ~24.3.0
         version: 24.3.0
+      genversion:
+        specifier: ^3.1.1
+        version: 3.1.1
       inngest:
         specifier: link:../inngest/dist
         version: link:../inngest/dist

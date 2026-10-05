@@ -7,7 +7,7 @@
 
 import { CiUsageError } from "../errors.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
-import { jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
+import { countApi, jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
 import type { AnyJob, Job } from "../types.ts";
 import { snapshotJob } from "./machine.ts";
 
@@ -56,6 +56,8 @@ export async function from<TResult, TInput>(
 ): Promise<TResult>;
 export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   const scope = requireJobScope("from");
+
+  countApi("from");
 
   if (scope.machine || scope.fromCalled) {
     throw new CiUsageError(

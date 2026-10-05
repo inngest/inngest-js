@@ -9,7 +9,11 @@
 import type { Inngest, InngestFunction } from "inngest";
 import { internalEvents, NonRetriableError } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
-import { getAsyncCtx, sandboxMiddleware } from "inngest/experimental";
+import {
+  getAsyncCtx,
+  metadataMiddleware,
+  sandboxMiddleware,
+} from "inngest/experimental";
 import {
   CiUsageError,
   CommandFailedError,
@@ -37,8 +41,20 @@ import type {
 import { formatDuration, isSandboxNotFound } from "../util.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
+import {
+  metadataStep,
+  runEndMetadata,
+  runStartMetadata,
+  triggerKinds,
+} from "./metadata.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
-import { initCiAls, runInScope, withScopePreserved } from "./scope.ts";
+import {
+  apiNames,
+  countApi,
+  initCiAls,
+  runInScope,
+  withScopePreserved,
+} from "./scope.ts";
 
 export const definePipeline = ({
   client,
@@ -87,11 +103,17 @@ export const definePipeline = ({
       ...flowControl(config),
       id: config.id,
       triggers,
-      middleware: [sandboxMiddleware()],
+      middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
     // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
     async (ctx: any) => {
-      return runPipeline({ internals, config, handler, ctx });
+      return runPipeline({
+        internals,
+        config,
+        handler,
+        ctx,
+        triggerKinds: triggerKinds(triggers),
+      });
     },
   );
 
@@ -136,6 +158,8 @@ interface RunPipelineArgs {
   handler: (ctx: PipelineContext) => Promise<unknown>;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
+  /** The kinds of trigger the pipeline has, for run metadata. */
+  triggerKinds: string[];
 }
 
 const newRunScope = ({
@@ -143,12 +167,14 @@ const newRunScope = ({
   config,
   ctx,
   asyncCtx,
+  triggerKinds,
 }: {
   internals: CiInternals;
   config: PipelineConfig;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
   asyncCtx: AsyncContext;
+  triggerKinds: string[];
 }): CiRunScope => {
   const repo = repoContextFromEvent(ctx.event);
 
@@ -183,6 +209,12 @@ const newRunScope = ({
     warnings: [],
     pipelineSummaries: [],
     pipelineAnnotations: [],
+    triggerKinds,
+    apis: Object.fromEntries(
+      apiNames.map((name) => {
+        return [name, 0];
+      }),
+    ) as CiRunScope["apis"],
   };
 };
 
@@ -195,6 +227,7 @@ export const runPipeline = async ({
   config,
   handler,
   ctx,
+  triggerKinds,
 }: RunPipelineArgs): Promise<unknown> => {
   await initCiAls();
 
@@ -206,7 +239,13 @@ export const runPipeline = async ({
     );
   }
 
-  const run = newRunScope({ internals, config, ctx, asyncCtx });
+  const run = newRunScope({
+    internals,
+    config,
+    ctx,
+    asyncCtx,
+    triggerKinds,
+  });
   const checks = internals.checks as CheckReporter;
 
   return runInScope({ run }, async () => {
@@ -217,7 +256,18 @@ export const runPipeline = async ({
       run.repo = await resolveConfiguredRepo(run, config.repo);
     }
 
-    await checks.pipelineStart({ run });
+    // The check's step carries the run's metadata. With checks off there's no
+    // such step, so one of its own does, and its time is the run's start.
+    run.startedAt =
+      (await checks.pipelineStart({
+        run,
+        metadata: () => {
+          return runStartMetadata(run);
+        },
+      })) ??
+      (await metadataStep(run, "ci › metadata:start", () => {
+        return runStartMetadata(run);
+      }));
 
     // A run that is about to be retried keeps its machines: the retry replays
     // the memoized machine IDs and needs them alive. The generated cleanup
@@ -228,8 +278,7 @@ export const runPipeline = async ({
       const permitted = await checkCommentPermission(run, config);
 
       if (!permitted) {
-        await checks.pipelineComplete({
-          run,
+        await completePipeline(run, checks, {
           conclusion: "neutral",
           title: "Not permitted",
           summary: pipelineSummary(run),
@@ -251,8 +300,11 @@ export const runPipeline = async ({
 
       const skip = asSkip(result);
 
-      await checks.pipelineComplete({
-        run,
+      if (skip) {
+        countApi("skip");
+      }
+
+      await completePipeline(run, checks, {
         conclusion: "success",
         title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
         summary: pipelineSummaryWithReports(run),
@@ -265,8 +317,7 @@ export const runPipeline = async ({
       // their checks spinning.
       await closeOpenJobChecks(run, checks);
 
-      await checks.pipelineComplete({
-        run,
+      await completePipeline(run, checks, {
         conclusion: conclusionForError(error),
         title: errorTitle(error, run),
         summary: pipelineSummaryWithReports(run),
@@ -289,6 +340,29 @@ export const runPipeline = async ({
       }
     }
   });
+};
+
+/**
+ * Complete the pipeline's check, with the run's closing metadata on its step,
+ * or on a step of its own when checks are off.
+ */
+const completePipeline = async (
+  run: CiRunScope,
+  checks: CheckReporter,
+  result: Omit<
+    Parameters<CheckReporter["pipelineComplete"]>[0],
+    "run" | "metadata"
+  >,
+): Promise<void> => {
+  const metadata = () => {
+    return runEndMetadata(run, result.conclusion);
+  };
+
+  await checks.pipelineComplete({ run, ...result, metadata });
+
+  if (!run.checkName) {
+    await metadataStep(run, "ci › metadata:end", metadata);
+  }
 };
 
 /**
@@ -661,11 +735,12 @@ export const cacheRefreshFunctions = ({
           id,
           triggers: refresh,
           singleton: { key: `"${job.id}"`, mode: "skip" },
-          middleware: [sandboxMiddleware()],
+          middleware: [sandboxMiddleware(), metadataMiddleware()],
         },
         // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
         async (ctx: any) => {
           return runPipeline({
+            triggerKinds: triggerKinds(refresh),
             internals,
             config: {
               id,

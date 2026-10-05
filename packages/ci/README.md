@@ -36,6 +36,7 @@ With `@inngest/ci` you get:
   - [GitHub](#github)
   - [Steps inside jobs](#steps-inside-jobs)
 - [Recipes](#recipes)
+- [Run metadata](#run-metadata)
 - [Next steps](#next-steps)
 
 ## Example
@@ -817,6 +818,42 @@ await $`pnpm test`.timeout("10m").onTimeout(async () => {
 | Name a command in the trace | `` await $`pnpm test`.as("unit tests") `` |
 | Turn off a job's check | `ci.job({ id: "notify", check: false }, fn)` |
 | Rename the pipeline check | `check: { name: "CI" }` |
+
+## Run metadata
+
+Every pipeline run is tagged with `inngest.ci` metadata, visible on the run in Inngest. It tells Inngest the run is a CI run and which parts of `@inngest/ci` it used. It's sent with steps CI already runs, so it adds nothing to the trace.
+
+When the run starts:
+
+```json
+{
+  "package": "@inngest/ci",
+  "version": "0.1.0",
+  "pipeline": "pr",
+  "triggers": ["github.pull_request"],
+  "event": "github/pull_request.opened",
+  "local": false,
+  "repo": "inngest/inngest-js",
+  "ref": "feature",
+  "sha": "abc1234",
+  "pullRequest": 7
+}
+```
+
+`repo`, `ref`, `sha` and `pullRequest` identify your repository, branch, commit and pull request, and are left out when the run has none.
+
+When the run ends:
+
+```json
+{
+  "conclusion": "success",
+  "durationMs": 184000,
+  "jobs": { "total": 3, "passed": 2, "failed": 0, "cached": 1, "skipped": 0, "cancelled": 0 },
+  "apis": { "from": 1, "matrix": 1, "cache": 1, "commands": 6, "githubRest": 0 }
+}
+```
+
+`apis` counts calls in the run to `from`, `matrix`, `cache`, `sandbox`, `checkout`, `changed`, `report`, `waitFor`, `waitForChecks`, `waitForWorkflow`, `commands`, `background`, `shard`, `skip`, `githubRest` and `githubHelpers`. Job and check steps carry a small `{ job, kind }` tag too. Commands, output, and secrets are never recorded.
 
 ## Next steps
 

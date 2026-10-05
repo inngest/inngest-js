@@ -4,7 +4,7 @@
  * @module
  */
 
-import { requireJobScope } from "../pipeline/scope.ts";
+import { countApi, requireJobScope } from "../pipeline/scope.ts";
 
 export interface ShardOptions {
   total: number;
@@ -21,6 +21,8 @@ export const shard = async <T>(
   run: (files: string[]) => Promise<T>,
 ): Promise<T> => {
   requireJobScope("shard");
+
+  countApi("shard");
 
   return run(
     opts.files.filter((_file, index) => {

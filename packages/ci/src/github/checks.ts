@@ -5,6 +5,7 @@
  * @module
  */
 
+import { type StepTag, tagStep } from "../pipeline/metadata.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
 import { errorMessage, formatDuration } from "../util.ts";
@@ -30,9 +31,22 @@ interface CheckResult {
   annotations?: CheckAnnotation[] | undefined;
 }
 
+/** Run metadata to attach to the pipeline check's step, read inside the step. */
+interface RunMetadata {
+  metadata?: () => Record<string, unknown>;
+}
+
 export interface CheckReporter {
-  pipelineStart(args: { run: CiRunScope }): Promise<void>;
-  pipelineComplete(args: { run: CiRunScope } & CheckResult): Promise<void>;
+  /**
+   * Start the pipeline's check. Returns when the run started, read inside the
+   * step so it's memoized, or `undefined` when checks are off.
+   */
+  pipelineStart(
+    args: { run: CiRunScope } & RunMetadata,
+  ): Promise<number | undefined>;
+  pipelineComplete(
+    args: { run: CiRunScope } & RunMetadata & CheckResult,
+  ): Promise<void>;
   /**
    * Start a job's check. Returns when the job started, read inside the step so
    * it's memoized, or `undefined` when there's no check to start.
@@ -192,10 +206,14 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     key: string,
     name: string,
     stepId: string,
+    tag: StepTag,
+    metadata?: () => Record<string, unknown>,
   ) => {
     const result = await run.step.run(
       { id: stepId, name: stepId },
       async () => {
+        await tagStep(run, tag, metadata?.());
+
         const started = await sink.start({ run, name, ...identity(run, key) });
 
         return { ...started, startedAt: Date.now() };
@@ -215,8 +233,12 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     name: string,
     stepId: string,
     result: CheckResult,
+    tag: StepTag,
+    metadata?: () => Record<string, unknown>,
   ) => {
-    await run.step.run({ id: stepId, name: stepId }, () => {
+    await run.step.run({ id: stepId, name: stepId }, async () => {
+      await tagStep(run, tag, metadata?.());
+
       return sink.complete({
         run,
         name,
@@ -233,20 +255,22 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
   };
 
   return {
-    pipelineStart: async ({ run }) => {
+    pipelineStart: async ({ run, metadata }) => {
       if (!run.checkName) {
-        return;
+        return undefined;
       }
 
-      await start(
+      return start(
         run,
         "pipeline",
         run.checkName,
         `github › check:${run.checkName}:start`,
+        { kind: "check" },
+        metadata,
       );
     },
 
-    pipelineComplete: async ({ run, ...result }) => {
+    pipelineComplete: async ({ run, metadata, ...result }) => {
       if (!run.checkName) {
         return;
       }
@@ -257,6 +281,8 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         run.checkName,
         `github › check:${run.checkName}:complete`,
         result,
+        { kind: "check" },
+        metadata,
       );
     },
 
@@ -270,6 +296,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         jobPath,
         jobCheckName(run, jobPath, name),
         `github › check:${jobPath}:start`,
+        { kind: "check", job: jobPath },
       );
     },
 
@@ -284,6 +311,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         jobCheckName(run, jobPath, name),
         `github › check:${jobPath}:complete`,
         result,
+        { kind: "check", job: jobPath },
       );
     },
 

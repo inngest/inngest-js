@@ -20,6 +20,7 @@ import type {
   JobConfig,
 } from "../types.ts";
 import { formatDuration, formatRelative } from "../util.ts";
+import { tagStep } from "./metadata.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import { getRunScope, jobHandlerKey, runJobBody } from "./scope.ts";
 
@@ -240,7 +241,9 @@ const jobBody = async ({
 const durableNow = (run: CiRunScope, jobPath: string): Promise<number> => {
   const id = `start:${jobPath}`;
 
-  return run.step.run({ id, name: id }, () => {
+  return run.step.run({ id, name: id }, async () => {
+    await tagStep(run, { kind: "job", job: jobPath });
+
     return Date.now();
   });
 };

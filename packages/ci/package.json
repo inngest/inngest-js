@@ -8,10 +8,13 @@
   },
   "scripts": {
     "test": "vitest run",
+    "genversion": "genversion --semi --double --es6 ./src/version.ts",
+    "prebuild": "pnpm run genversion",
     "build": "tsdown --config tsdown.config.ts",
     "type-check": "tsc --noEmit",
     "lint": "biome lint .",
     "format:check": "biome format .",
+    "release:version": "pnpm run genversion",
     "postversion": "pnpm run build",
     "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-ci.tgz"
@@ -71,6 +74,7 @@
   },
   "devDependencies": {
     "@types/node": "~24.3.0",
+    "genversion": "^3.1.1",
     "inngest": "link:../inngest/dist",
     "tsdown": "^0.23.0",
     "typescript": "^6.0.3",

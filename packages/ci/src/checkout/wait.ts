@@ -7,7 +7,7 @@
 
 import { createRawCommand } from "../machine/command.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
-import { requireJobScope } from "../pipeline/scope.ts";
+import { countApi, requireJobScope } from "../pipeline/scope.ts";
 import type { Duration } from "../types.ts";
 import { durationToMs, shellEscape } from "../util.ts";
 
@@ -69,6 +69,8 @@ export const waitForHttp = async (
   scope?: CiJobScope,
 ): Promise<void> => {
   const target = scope ?? requireJobScope("waitForHttp");
+
+  countApi("waitFor");
   const timeoutMs = durationToMs(opts.timeout ?? "2m");
   const expected = opts.status ?? 200;
 
@@ -109,6 +111,8 @@ export const waitForPort = async (
   scope?: CiJobScope,
 ): Promise<void> => {
   const target = scope ?? requireJobScope("waitForPort");
+
+  countApi("waitFor");
   const timeoutMs = durationToMs(opts.timeout ?? "2m");
 
   const script = waitScript(
