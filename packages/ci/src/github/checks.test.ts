@@ -24,8 +24,8 @@ import {
   truncateSummary,
 } from "./checks.ts";
 
-const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope =>
-  ({
+const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
+  return {
     runId: "01TESTRUN",
     functionId: "pr",
     pipelineId: "pr",
@@ -50,11 +50,14 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope =>
     pipelineSummaries: [],
     pipelineAnnotations: [],
     ci: {
-      runUrl: ({ runId }: { runId: string }) => `http://trace/${runId}`,
+      runUrl: ({ runId }: { runId: string }) => {
+        return `http://trace/${runId}`;
+      },
     },
     ...overrides,
     // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
-  }) as any;
+  } as any;
+};
 
 describe("check idempotency", () => {
   test("a retried create reuses the check run it already made", async () => {
@@ -81,7 +84,9 @@ describe("check idempotency", () => {
 
     expect(result).toEqual({ id: 55 });
     expect(
-      gh.requests.filter((request) => request.method === "POST"),
+      gh.requests.filter((request) => {
+        return request.method === "POST";
+      }),
     ).toHaveLength(0);
   });
 
@@ -132,25 +137,26 @@ describe("check idempotency", () => {
       conclusion: "failure",
       title: "failed",
       summary: "…",
-      annotations: Array.from({ length: 120 }, (_, index) =>
-        normaliseAnnotation({
+      annotations: Array.from({ length: 120 }, (_, index) => {
+        return normaliseAnnotation({
           path: "app/src/sum.ts",
           line: index + 1,
           message: "boom",
-        }),
-      ),
+        });
+      }),
       checkRunId: 55,
     });
 
-    const updates = gh.requests.filter((request) => request.method === "PATCH");
+    const updates = gh.requests.filter((request) => {
+      return request.method === "PATCH";
+    });
 
     expect(updates).toHaveLength(3);
     expect(
-      updates.map(
-        (request) =>
-          (request.body as { output: { annotations: unknown[] } }).output
-            .annotations.length,
-      ),
+      updates.map((request) => {
+        return (request.body as { output: { annotations: unknown[] } }).output
+          .annotations.length;
+      }),
     ).toEqual([50, 50, 20]);
   });
 });
@@ -184,7 +190,9 @@ describe("commit statuses", () => {
     }
 
     expect(
-      gh.requests.map((request) => (request.body as { state: string }).state),
+      gh.requests.map((request) => {
+        return (request.body as { state: string }).state;
+      }),
     ).toEqual(["success", "failure", "error"]);
   });
 });
@@ -196,8 +204,12 @@ describe("attempt reporting", () => {
     const updates: Array<{ name: string; title: string }> = [];
 
     const reporter = createCheckReporter({
-      start: async () => ({ id: 1 }),
-      complete: async () => undefined,
+      start: async () => {
+        return { id: 1 };
+      },
+      complete: async () => {
+        return undefined;
+      },
       update: async ({ name, title }) => {
         updates.push({ name, title });
       },
@@ -205,8 +217,10 @@ describe("attempt reporting", () => {
 
     const run = fakeRun({
       step: {
-        // biome-ignore lint/suspicious/noExplicitAny: a stub step tool
-        run: (async (_id: unknown, fn: () => unknown) => fn()) as any,
+        run: (async (_id: unknown, fn: () => unknown) => {
+          return fn();
+          // biome-ignore lint/suspicious/noExplicitAny: a stub step tool
+        }) as any,
         // biome-ignore lint/suspicious/noExplicitAny: a stub step tool
       } as any,
     });
@@ -319,16 +333,18 @@ describe("a required check never hangs", () => {
 
     const pipeline = ci.pipeline(
       { id: "pr", on: [{ event: "test/event" }] },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline);
 
     expect(result.type).toBe("function-rejected");
 
-    const pipelineCheck = reporter.history.filter(
-      (entry) => entry.name === "pr" && entry.status === "completed",
-    );
+    const pipelineCheck = reporter.history.filter((entry) => {
+      return entry.name === "pr" && entry.status === "completed";
+    });
 
     expect(pipelineCheck).toHaveLength(1);
     expect(pipelineCheck[0]?.conclusion).toBe("failure");
@@ -349,10 +365,14 @@ describe("dev mode", () => {
       }),
     });
 
-    const job = ci.job("build", async () => "built");
+    const job = ci.job("build", async () => {
+      return "built";
+    });
     const pipeline = ci.pipeline(
       { id: "pr", on: [{ event: "github/pull_request.opened" }] },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, {

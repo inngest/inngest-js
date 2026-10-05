@@ -25,7 +25,7 @@ type RestEndpointMethods = Octokit["rest"];
  * This is written as two mapped types with `as` clauses rather than
  * `Omit`/`Pick`: Octokit's parameters carry a string index signature, and
  * `Omit` over such a type collapses every specific key into the index
- * signature — which would quietly accept `{ pull_number: "7" }`.
+ * signature - which would quietly accept `{ pull_number: "7" }`.
  */
 type RepoDefaults<TParams> = {
   [K in keyof TParams as K extends "owner" | "repo" ? never : K]: TParams[K];
@@ -171,7 +171,11 @@ export const mapGitHubError = (error: unknown): Error | undefined => {
  * Every Octokit REST method, with each call run as a step.
  */
 export const rest: DurableGitHubRest = durable<DurableGitHubRest>(
-  () => octokitForRun().then((octokit) => octokit.rest),
+  () => {
+    return octokitForRun().then((octokit) => {
+      return octokit.rest;
+    });
+  },
   {
     name: "github",
     // Every method under `octokit.rest` is exactly one HTTP request.
@@ -189,9 +193,14 @@ export const rest: DurableGitHubRest = durable<DurableGitHubRest>(
       const params = (args[0] ?? {}) as Record<string, unknown>;
       return [{ ...defaults, ...params }, ...args.slice(1)];
     },
-    result: (value) => (value as { data?: unknown })?.data,
-    onError: (error) => mapGitHubError(error),
-    unsupportedMessage: (path) =>
-      `\`github.rest.${path.join(".")}\` returns a stream, so it can't be a step. Call it inside \`step.run\` with \`github.octokit()\`.`,
+    result: (value) => {
+      return (value as { data?: unknown })?.data;
+    },
+    onError: (error) => {
+      return mapGitHubError(error);
+    },
+    unsupportedMessage: (path) => {
+      return `\`github.rest.${path.join(".")}\` returns a stream, so it can't be a step. Call it inside \`step.run\` with \`github.octokit()\`.`;
+    },
   },
 );

@@ -23,15 +23,17 @@ import type { RepoContext } from "../types.ts";
  * githubEventName("push", payload);        // "github/push"
  * githubEventName("pull_request", payload) // "github/pull_request.opened"
  * ```
- *
- * @param event - The `X-GitHub-Event` header.
- * @param payload - The webhook's body, for its `action` if it has one.
  */
 export const githubEventName = (
+  /** The `X-GitHub-Event` header. */
   event: string,
+  /** The webhook's body, for its `action` if it has one. */
   payload: { action?: string } | undefined,
-): string =>
-  payload?.action ? `github/${event}.${payload.action}` : `github/${event}`;
+): string => {
+  return payload?.action
+    ? `github/${event}.${payload.action}`
+    : `github/${event}`;
+};
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
@@ -227,12 +229,15 @@ export const repoContextFromEvent = (
 /**
  * The comment body for a `github.comment()` trigger, if this event is one.
  */
-export const commentBody = (event: { data?: unknown } | undefined): string =>
-  ((event?.data as GithubEventData)?.comment?.body ?? "").trim();
+export const commentBody = (event: { data?: unknown } | undefined): string => {
+  return ((event?.data as GithubEventData)?.comment?.body ?? "").trim();
+};
 
 /**
  * The login of whoever wrote the comment, for the permission check.
  */
 export const commentAuthor = (
   event: { data?: unknown } | undefined,
-): string | undefined => (event?.data as GithubEventData)?.comment?.user?.login;
+): string | undefined => {
+  return (event?.data as GithubEventData)?.comment?.user?.login;
+};

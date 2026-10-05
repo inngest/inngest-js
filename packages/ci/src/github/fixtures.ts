@@ -17,7 +17,9 @@ const exec = promisify(execFile);
  * The event travels to another process, which may have a different working
  * directory, so `data.local.path` is always absolute.
  */
-const repoPath = (cwd?: string): string => resolve(cwd ?? process.cwd());
+const repoPath = (cwd?: string): string => {
+  return resolve(cwd ?? process.cwd());
+};
 
 const git = async (args: string[], cwd: string): Promise<string> => {
   const { stdout } = await exec("git", args, { cwd });
@@ -69,15 +71,17 @@ const repository = async (fullName: string) => {
   };
 };
 
-const meta = (event: string) => ({
-  _github: {
-    event,
-    delivery: `local-${Date.now()}`,
-    installationId: process.env.GITHUB_INSTALLATION_ID
-      ? Number(process.env.GITHUB_INSTALLATION_ID)
-      : undefined,
-  },
-});
+const meta = (event: string) => {
+  return {
+    _github: {
+      event,
+      delivery: `local-${Date.now()}`,
+      installationId: process.env.GITHUB_INSTALLATION_ID
+        ? Number(process.env.GITHUB_INSTALLATION_ID)
+        : undefined,
+    },
+  };
+};
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without

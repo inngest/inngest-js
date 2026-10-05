@@ -47,7 +47,9 @@ const setup = (gh: FakeGitHub) => {
       baseUrl: "https://api.github.test",
       fetch: gh.fetch,
     }),
-    runUrl: ({ runId }) => `http://localhost:8288/run?runID=${runId}`,
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
+    },
   });
 
   return { api, client, ci };
@@ -78,7 +80,9 @@ describe("github.rest", () => {
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
@@ -108,13 +112,15 @@ describe("github.rest", () => {
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
-    const calls = result.stepIds.filter((id) =>
-      id.startsWith("read › github.repos.get"),
-    );
+    const calls = result.stepIds.filter((id) => {
+      return id.startsWith("read › github.repos.get");
+    });
 
     expect(calls).toEqual([
       "read › github.repos.get",
@@ -138,7 +144,9 @@ describe("github.rest", () => {
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
@@ -166,14 +174,20 @@ describe("github.rest", () => {
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toEqual({ branch: "main", mergeable: true });
     // One step for the two calls, not three.
-    expect(result.stepIds.filter((id) => id.includes("github."))).toEqual([]);
+    expect(
+      result.stepIds.filter((id) => {
+        return id.includes("github.");
+      }),
+    ).toEqual([]);
     expect(result.stepIds).toContain("read › read-both");
   });
 
@@ -192,7 +206,9 @@ describe("github.rest", () => {
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
@@ -208,11 +224,15 @@ describe("github.rest", () => {
 
     const { ci } = setup(gh);
 
-    const job = ci.job("read", async () => github.rest.repos.get({}));
+    const job = ci.job("read", async () => {
+      return github.rest.repos.get({});
+    });
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
@@ -230,14 +250,17 @@ describe("github helpers", () => {
     });
 
     const first = setup(gh);
-    const firstJob = first.ci.job("comment", async () =>
-      github.stickyComment("preview", "Preview: https://preview.example"),
-    );
+    const firstJob = first.ci.job("comment", async () => {
+      return github.stickyComment(
+        "preview",
+        "Preview: https://preview.example",
+      );
+    });
 
     const firstResult = await runFunction(
-      first.ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () =>
-        firstJob(),
-      ),
+      first.ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return firstJob();
+      }),
       { event: prEvent },
     );
 
@@ -256,18 +279,26 @@ describe("github helpers", () => {
     });
 
     const second = setup(gh);
-    const secondJob = second.ci.job("comment", async () =>
-      github.stickyComment("preview", "Preview: https://preview-2.example"),
-    );
+    const secondJob = second.ci.job("comment", async () => {
+      return github.stickyComment(
+        "preview",
+        "Preview: https://preview-2.example",
+      );
+    });
 
     await runFunction(
-      second.ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () =>
-        secondJob(),
+      second.ci.pipeline(
+        { id: "pr", on: prTrigger, check: false },
+        async () => {
+          return secondJob();
+        },
       ),
       { event: prEvent },
     );
 
-    const patches = gh.requests.filter((request) => request.method === "PATCH");
+    const patches = gh.requests.filter((request) => {
+      return request.method === "PATCH";
+    });
 
     expect(patches).toHaveLength(1);
     expect(patches[0]?.path).toBe(
@@ -278,13 +309,15 @@ describe("github helpers", () => {
   test("stickyComment without a pull request says what to pass", async () => {
     const { ci } = setup(gh);
 
-    const job = ci.job("comment", async () =>
-      github.stickyComment("preview", "hello"),
-    );
+    const job = ci.job("comment", async () => {
+      return github.stickyComment("preview", "hello");
+    });
 
     const pipeline = ci.pipeline(
       { id: "push", on: [{ event: "github/push" }], check: false },
-      async () => job(),
+      async () => {
+        return job();
+      },
     );
 
     const result = await runFunction(pipeline, {
@@ -316,22 +349,25 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
-    const job = ci.job("push-ref", async () =>
-      github.forcePushRef("heads/next", "abc1234"),
-    );
+    const job = ci.job("push-ref", async () => {
+      return github.forcePushRef("heads/next", "abc1234");
+    });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => job()),
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
       { event: prEvent },
     );
 
     expect(result.data).toEqual({ created: true });
     expect(
-      gh.requests.some(
-        (request) =>
+      gh.requests.some((request) => {
+        return (
           request.method === "POST" &&
-          request.path === "/repos/inngest/inngest-js/git/refs",
-      ),
+          request.path === "/repos/inngest/inngest-js/git/refs"
+        );
+      }),
     ).toBe(true);
   });
 
@@ -342,13 +378,17 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
-    const job = ci.job("permission", async () => ({
-      write: await github.canUser("someone", "write"),
-      admin: await github.canUser("someone", "admin"),
-    }));
+    const job = ci.job("permission", async () => {
+      return {
+        write: await github.canUser("someone", "write"),
+        admin: await github.canUser("someone", "admin"),
+      };
+    });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => job()),
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
       { event: prEvent },
     );
 
@@ -364,19 +404,23 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
-    const job = ci.job("wait", async () =>
-      github.waitForChecks({ names: ["vercel"] }),
-    );
+    const job = ci.job("wait", async () => {
+      return github.waitForChecks({ names: ["vercel"] });
+    });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => job()),
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
       { event: prEvent },
     );
 
     expect(result.data).toEqual({ vercel: "success" });
     // Nothing was waited on, because the check was already done.
     expect(
-      result.stepIds.some((id) => id.includes("waitForChecks:vercel")),
+      result.stepIds.some((id) => {
+        return id.includes("waitForChecks:vercel");
+      }),
     ).toBe(false);
   });
 
@@ -387,21 +431,24 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
-    const job = ci.job("wait", async () =>
-      github.waitForChecks({ names: ["vercel"], timeout: "10m" }),
-    );
+    const job = ci.job("wait", async () => {
+      return github.waitForChecks({ names: ["vercel"], timeout: "10m" });
+    });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => job()),
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
       {
         event: prEvent,
-        resolveWait: (step) =>
-          step.displayName?.includes("waitForChecks")
+        resolveWait: (step) => {
+          return step.displayName?.includes("waitForChecks")
             ? {
                 name: "github/check_run.completed",
                 data: { check_run: { name: "vercel", conclusion: "failure" } },
               }
-            : null,
+            : null;
+        },
       },
     );
 
@@ -414,10 +461,14 @@ describe("github helpers", () => {
   test("github.token() and github.octokit() throw outside a step", async () => {
     const { ci } = setup(gh);
 
-    const job = ci.job("token", async () => github.token());
+    const job = ci.job("token", async () => {
+      return github.token();
+    });
 
     const result = await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => job()),
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
       { event: prEvent },
     );
 
@@ -428,21 +479,31 @@ describe("github helpers", () => {
 });
 
 describe("durable()", () => {
-  const client = () => ({
-    top: {
-      call: async (value: unknown) => ({ data: value }),
-      stream: async () => ({ data: "stream" }),
-    },
-    // biome-ignore lint/suspicious/noExplicitAny: test client
-    direct: { helper: (value: any) => ({ data: `local:${value}` }) },
-  });
+  const client = () => {
+    return {
+      top: {
+        call: async (value: unknown) => {
+          return { data: value };
+        },
+        stream: async () => {
+          return { data: "stream" };
+        },
+      },
+      direct: {
+        // biome-ignore lint/suspicious/noExplicitAny: test client
+        helper: (value: any) => {
+          return { data: `local:${value}` };
+        },
+      },
+    };
+  };
 
   const build = (
     overrides: Partial<Parameters<typeof durable>[1]> = {},
     // biome-ignore lint/suspicious/noExplicitAny: test shape
-  ): any =>
+  ): any => {
     // biome-ignore lint/suspicious/noExplicitAny: test shape
-    durable<any>(client(), {
+    return durable<any>(client(), {
       name: "fake",
       rules: [
         ["top.stream", "unsupported"],
@@ -450,6 +511,7 @@ describe("durable()", () => {
       ],
       ...overrides,
     });
+  };
 
   test("unmatched paths are called directly, outside a run", async () => {
     const fake = build();
@@ -459,7 +521,9 @@ describe("durable()", () => {
 
   test("unsupported paths explain the escape hatch", async () => {
     const fake = build({
-      unsupportedMessage: (path) => `\`${path.join(".")}\` is a stream`,
+      unsupportedMessage: (path) => {
+        return `\`${path.join(".")}\` is a stream`;
+      },
     });
 
     await expect(fake.top.stream()).rejects.toBeInstanceOf(CiUsageError);
@@ -468,7 +532,9 @@ describe("durable()", () => {
 
   test("results and errors can be transformed", async () => {
     const fake = build({
-      result: (value) => (value as { data: unknown }).data,
+      result: (value) => {
+        return (value as { data: unknown }).data;
+      },
     });
 
     expect(await fake.top.call("hello")).toBe("hello");
@@ -476,8 +542,12 @@ describe("durable()", () => {
 
   test("arguments can be transformed before the call", async () => {
     const fake = build({
-      args: (args) => [`transformed:${String(args[0])}`],
-      result: (value) => (value as { data: unknown }).data,
+      args: (args) => {
+        return [`transformed:${String(args[0])}`];
+      },
+      result: (value) => {
+        return (value as { data: unknown }).data;
+      },
     });
 
     expect(await fake.top.call("hello")).toBe("transformed:hello");
@@ -495,7 +565,9 @@ describe("durable()", () => {
       {
         name: "fake",
         rules: [["top.*", "step"]],
-        onError: (error) => new Error(`mapped: ${(error as Error).message}`),
+        onError: (error) => {
+          return new Error(`mapped: ${(error as Error).message}`);
+        },
       },
     );
 
@@ -580,7 +652,9 @@ describe("durable()", () => {
     });
 
     await runFunction(
-      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => job()),
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
       { event: prEvent },
     );
 

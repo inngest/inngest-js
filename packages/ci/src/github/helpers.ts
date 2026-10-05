@@ -29,8 +29,8 @@ const helperStep = async <T>(
 ): Promise<T> => {
   const run = requireRunScope(`github.${helper}`);
 
-  // Inside a step already — a helper calling `github.paginate`, or user code
-  // grouping calls in `step.run` — this runs directly rather than nesting.
+  // Inside a step already - a helper calling `github.paginate`, or user code
+  // grouping calls in `step.run` - this runs directly rather than nesting.
   if (await insideStep()) {
     return fn();
   }
@@ -198,13 +198,11 @@ export type ItemOf<TMethod extends DurableListMethod> = Awaited<
  *
  * comments[0]?.body; // string | undefined
  * ```
- *
- * @param method - A list method from `github.rest`, passed rather than called.
- * @param params - The method's parameters. `owner` and `repo` default to the
- * run's repository.
  */
 export const paginate = async <TMethod extends DurableListMethod>(
+  /** A list method from `github.rest`, passed rather than called. */
   method: TMethod,
+  /** The method's parameters. `owner` and `repo` default to the run's repository. */
   params?: ParamsOf<TMethod>,
 ): Promise<ItemOf<TMethod>[]> => {
   const path = methodPath(method);
@@ -308,8 +306,8 @@ export const stickyComment = async (
   key: string,
   body: string,
   opts?: { issueNumber?: number },
-): Promise<{ id: number; url: string }> =>
-  helperStep("stickyComment", key, async () => {
+): Promise<{ id: number; url: string }> => {
+  return helperStep("stickyComment", key, async () => {
     const context = repo();
     const issueNumber = opts?.issueNumber ?? context.number;
 
@@ -326,7 +324,9 @@ export const stickyComment = async (
       issue_number: issueNumber,
     });
 
-    const existing = comments.find((comment) => comment.body?.includes(marker));
+    const existing = comments.find((comment) => {
+      return comment.body?.includes(marker);
+    });
 
     const result = existing
       ? await rest.issues.updateComment({
@@ -340,6 +340,7 @@ export const stickyComment = async (
 
     return { id: result.id, url: result.html_url };
   });
+};
 
 /**
  * Open a pull request, or update the one that's already open.
@@ -350,8 +351,8 @@ export const upsertPullRequest = async (opts: {
   title: string;
   body: string;
   draft?: boolean;
-}): Promise<{ number: number; url: string; created: boolean }> =>
-  helperStep("upsertPullRequest", opts.head, async () => {
+}): Promise<{ number: number; url: string; created: boolean }> => {
+  return helperStep("upsertPullRequest", opts.head, async () => {
     const context = repo();
     const base =
       opts.base ?? (await rest.repos.get({})).default_branch ?? "main";
@@ -383,6 +384,7 @@ export const upsertPullRequest = async (opts: {
 
     return { number: created.number, url: created.html_url, created: true };
   });
+};
 
 /**
  * Move a branch or tag to a commit, creating it if it doesn't exist.
@@ -390,8 +392,8 @@ export const upsertPullRequest = async (opts: {
 export const forcePushRef = async (
   ref: string,
   sha: string,
-): Promise<{ created: boolean }> =>
-  helperStep("forcePushRef", ref, async () => {
+): Promise<{ created: boolean }> => {
+  return helperStep("forcePushRef", ref, async () => {
     const normalised = ref.replace(/^refs\//, "");
 
     try {
@@ -415,6 +417,7 @@ export const forcePushRef = async (
       return { created: true };
     }
   });
+};
 
 /**
  * Whether a user has at least the given permission on the repository.
@@ -422,8 +425,8 @@ export const forcePushRef = async (
 export const canUser = async (
   login: string,
   permission: Permission,
-): Promise<boolean> =>
-  helperStep("canUser", `${login}:${permission}`, async () => {
+): Promise<boolean> => {
+  return helperStep("canUser", `${login}:${permission}`, async () => {
     try {
       const result = await rest.repos.getCollaboratorPermissionLevel({
         username: login,
@@ -434,6 +437,7 @@ export const canUser = async (
       return false;
     }
   });
+};
 
 /**
  * Wait for other checks on a commit to finish, without keeping a machine busy.
@@ -477,7 +481,9 @@ export const waitForChecks = async (opts: {
     },
   );
 
-  const missing = opts.names.filter((name) => !(name in known));
+  const missing = opts.names.filter((name) => {
+    return !(name in known);
+  });
 
   const waited = await Promise.all(
     missing.map(async (name) => {
@@ -530,9 +536,9 @@ export const waitForWorkflow = async (opts: {
       head_sha: sha,
     });
 
-    const completed = (result.workflow_runs ?? []).find(
-      (workflowRun) => workflowRun.status === "completed",
-    );
+    const completed = (result.workflow_runs ?? []).find((workflowRun) => {
+      return workflowRun.status === "completed";
+    });
 
     return completed?.conclusion ?? null;
   });
