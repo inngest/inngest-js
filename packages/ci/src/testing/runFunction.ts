@@ -90,6 +90,7 @@ export const runFunction = async (
     string,
     { id: string; data?: unknown; error?: unknown }
   > = {};
+
   const completionOrder: string[] = [];
   const attempts = new Map<string, number>();
 
@@ -109,10 +110,13 @@ export const runFunction = async (
       ...(isFailed(step) || step.data === undefined ? {} : { data: step.data }),
       ...(step.error === undefined ? {} : { error: step.error }),
     };
+
     completionOrder.push(step.id);
 
     const label = step.displayName ?? step.name ?? step.id;
+
     stepIds.push(label);
+
     steps[label] = step.data;
   };
 
@@ -129,6 +133,7 @@ export const runFunction = async (
 
     if (isFailed(step) && result.retriable !== false) {
       const seen = (attempts.get(step.id) ?? 0) + 1;
+
       attempts.set(step.id, seen);
 
       if (seen < maxAttempts) {
@@ -158,6 +163,7 @@ export const runFunction = async (
 
     if (result.type === "step-ran") {
       recordRan(result);
+
       continue;
     }
 
@@ -177,6 +183,7 @@ export const runFunction = async (
             : { displayName: planned.displayName }),
           data: opts.resolveWait ? opts.resolveWait(planned) : null,
         });
+
         continue;
       }
 
@@ -233,5 +240,6 @@ const runOnce = async (
   });
 
   const { ctx: _ctx, ops: _ops, ...result } = await execution.start();
+
   return result;
 };

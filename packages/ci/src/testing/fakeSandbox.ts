@@ -8,6 +8,7 @@
 
 const uuid = (seed: number): string => {
   const hex = seed.toString(16).padStart(12, "0");
+
   return `11111111-1111-4111-8111-${hex}`;
 };
 
@@ -194,6 +195,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
   const scriptFor = (argv: string[]): CommandScript => {
     const joined = argv.join(" ");
+
     return (
       scripts.find((script) => {
         return joined.includes(script.match);
@@ -209,8 +211,11 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
     if (process.ticksUntilExit <= 0) {
       process.state = "EXITED";
+
       process.exitCode = scriptFor(process.command).exitCode ?? 0;
+
       process.endedAt = now();
+
       return;
     }
 
@@ -223,6 +228,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   ): Handler => {
     return (req) => {
       const sandbox = sandboxes.get(req.params.id ?? "");
+
       return sandbox ? handler(req, sandbox) : json(404, null);
     };
   };
@@ -233,6 +239,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   ): Handler => {
     return onSandbox((req) => {
       const process = processes.get(req.params.processId ?? "");
+
       return process ? handler(req, process) : json(404, null);
     });
   };
@@ -258,12 +265,15 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     };
 
     sandboxes.set(sandbox.id, sandbox);
+
     return json(201, sandboxResource(sandbox));
   };
 
   const execInSandbox: Handler = onSandbox(({ body }) => {
     const argv = toArgv(body.command);
+
     commands.push(argv);
+
     const script = scriptFor(argv);
 
     // Cloud answers an exec that runs past its timeout with a 504.
@@ -293,13 +303,17 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     }
 
     const snapshot = { id: nextId(), status: "READY", sandboxId: sandbox.id };
+
     snapshots.set(snapshot.id, snapshot);
+
     return json(201, snapshotResource(snapshot));
   });
 
   const startProcess: Handler = onSandbox(({ body }, sandbox) => {
     const argv = toArgv(body.command);
+
     commands.push(argv);
+
     const script = scriptFor(argv);
 
     const process: FakeProcess = {
@@ -319,6 +333,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     // Cloud sometimes answers a start that succeeded with a 409.
     if (script.ambiguousStarts && script.ambiguousStarts > 0) {
       script.ambiguousStarts--;
+
       return apiError(
         409,
         "operation_ambiguous",
@@ -363,8 +378,11 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
 
   const signalProcess: Handler = onProcess(({ body }, process) => {
     process.state = "KILLED";
+
     process.terminationSignal = body?.signal ?? 15;
+
     process.endedAt = now();
+
     return noContent();
   });
 
@@ -394,6 +412,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       path: new RegExp(`${SANDBOX}$`),
       handler: onSandbox((_req, sandbox) => {
         sandbox.status = "TERMINATED";
+
         return noContent();
       }),
     },
@@ -407,6 +426,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       path: new RegExp(`${SANDBOX}/pause$`),
       handler: onSandbox((_req, sandbox) => {
         sandbox.status = "PAUSED";
+
         return json(200, sandboxResource(sandbox));
       }),
     },
@@ -415,6 +435,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       path: new RegExp(`${SANDBOX}/resume$`),
       handler: onSandbox((_req, sandbox) => {
         sandbox.status = "RUNNING";
+
         return json(200, sandboxResource(sandbox));
       }),
     },
@@ -447,6 +468,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
             return process.sandboxId === sandbox.id;
           })
           .map(processResource);
+
         return json(200, items, { page: { limit: 50 } });
       }),
     },
@@ -455,6 +477,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       path: new RegExp(`${PROCESS}$`),
       handler: onProcess((_req, process) => {
         tick(process);
+
         return json(200, processResource(process));
       }),
     },
@@ -478,6 +501,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       path: /^\/v2\/snapshots\/(?<id>[^/]+)$/,
       handler: ({ params }) => {
         const snapshot = snapshots.get(params.id ?? "");
+
         return snapshot
           ? json(200, snapshotResource(snapshot))
           : apiError(404, "sandbox_snapshot_not_found", "snapshot not found");
@@ -498,6 +522,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
         }
 
         snapshots.delete(snapshot.id);
+
         return noContent();
       },
     },
@@ -511,7 +536,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       typeof input === "string" ? input : input.toString(),
       "http://sandbox.test",
     );
+
     const method = (init?.method ?? "GET").toUpperCase();
+
     requests.push(`${method} ${url.pathname}`);
 
     // File uploads send bytes, so only JSON bodies are parsed.
@@ -519,6 +546,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       (init?.headers as Record<string, string> | undefined)?.["Content-Type"] ??
         "",
     );
+
     const body =
       init?.body && contentType.includes("application/json")
         ? JSON.parse(String(init.body))
