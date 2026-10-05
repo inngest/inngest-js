@@ -7,4 +7,5 @@ How `inngest-ci` draws a session. Both renderers only see `SessionEvent`s (`../e
 - `format.ts`: colour (off without a TTY or with `NO_COLOR`), durations, truncation and status icons.
 - `interactive.ts`: redraws the frame in place, handles keys and restores the terminal on every exit path.
 - `plain.ts`: one line per transition for logs and agents.
+- `stateFile.ts`: writes the model as a session state file, atomically and throttled. Always attached beside the visible renderer.
 - `open.ts`: opens a URL in the browser.
