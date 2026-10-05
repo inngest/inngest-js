@@ -10,9 +10,87 @@ import { join } from "node:path";
 import { git } from "../util.ts";
 
 const blockSize = 512;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 const octal = (value: number, length: number): string => {
   return `${value.toString(8).padStart(length - 1, "0")}\0`;
+};
+
+/** Zero-pad to a whole number of tar blocks. */
+const padded = (data: Uint8Array): Uint8Array => {
+  const out = new Uint8Array(
+    Math.ceil(data.byteLength / blockSize) * blockSize,
+  );
+  out.set(data);
+  return out;
+};
+
+/**
+ * Split a path at a `/` into ustar's `prefix` (up to 155 bytes) and `name` (up
+ * to 100 bytes) fields. Returns undefined when it can't be split to fit.
+ */
+const splitName = (
+  path: Uint8Array,
+): { prefix: string; name: string } | undefined => {
+  if (path.byteLength <= 100) {
+    return { prefix: "", name: decoder.decode(path) };
+  }
+
+  for (let i = path.byteLength - 1; i > 0; i--) {
+    if (path[i] === 0x2f && path.byteLength - i - 1 <= 100 && i <= 155) {
+      return {
+        prefix: decoder.decode(path.slice(0, i)),
+        name: decoder.decode(path.slice(i + 1)),
+      };
+    }
+  }
+
+  return undefined;
+};
+
+/** A PAX record is `<length> <key>=<value>\n`, where length counts itself. */
+const paxRecord = (key: string, value: string): Uint8Array => {
+  const body = ` ${key}=${value}\n`;
+  let length = encoder.encode(body).byteLength;
+  while (encoder.encode(`${length}${body}`).byteLength !== length) {
+    length = encoder.encode(`${length}${body}`).byteLength;
+  }
+  return encoder.encode(`${length}${body}`);
+};
+
+const header = (fields: {
+  name: string;
+  prefix: string;
+  size: number;
+  mode: number;
+  typeflag: string;
+}): Uint8Array => {
+  const block = new Uint8Array(blockSize);
+  const write = (text: string, offset: number, length: number) => {
+    block.set(encoder.encode(text).slice(0, length), offset);
+  };
+
+  write(fields.name, 0, 100);
+  write(octal(fields.mode, 8), 100, 8);
+  write(octal(0, 8), 108, 8);
+  write(octal(0, 8), 116, 8);
+  write(octal(fields.size, 12), 124, 12);
+  write(octal(Math.floor(Date.now() / 1000), 12), 136, 12);
+  write("        ", 148, 8); // checksum placeholder
+  write(fields.typeflag, 156, 1);
+  write("ustar\0", 257, 6);
+  write("00", 263, 2);
+  write(fields.prefix, 345, 155);
+
+  let checksum = 0;
+  for (const byte of block) {
+    checksum += byte;
+  }
+  write(octal(checksum, 7), 148, 7);
+  block[155] = 0x20;
+
+  return block;
 };
 
 /**
@@ -34,14 +112,14 @@ const workingTreeFiles = async (cwd: string): Promise<string[]> => {
  *
  * This is a small ustar writer rather than a dependency: the machine has
  * `tar`, the format is a few fixed-width fields, and CI only ever writes
- * regular files.
+ * regular files. Long paths use ustar's `prefix` field, or a PAX extended
+ * header when no `/` split fits.
  */
 export const buildWorkingTreeTarball = async (
   cwd: string,
 ): Promise<Uint8Array> => {
   const files = await workingTreeFiles(cwd);
   const blocks: Uint8Array[] = [];
-  const encoder = new TextEncoder();
 
   for (const relative of files) {
     const absolute = join(cwd, relative);
@@ -61,39 +139,34 @@ export const buildWorkingTreeTarball = async (
       continue;
     }
 
-    const header = new Uint8Array(blockSize);
-    const write = (text: string, offset: number, length: number) => {
-      header.set(encoder.encode(text).slice(0, length), offset);
-    };
+    const split = splitName(encoder.encode(relative));
 
-    // Names over 100 bytes aren't split across ustar's `prefix` field, so the
-    // tail is kept.
-    const name = relative.length > 100 ? relative.slice(-100) : relative;
-
-    write(name, 0, 100);
-    write(octal(mode, 8), 100, 8);
-    write(octal(0, 8), 108, 8);
-    write(octal(0, 8), 116, 8);
-    write(octal(contents.byteLength, 12), 124, 12);
-    write(octal(Math.floor(Date.now() / 1000), 12), 136, 12);
-    write("        ", 148, 8); // checksum placeholder
-    write("0", 156, 1);
-    write("ustar\0", 257, 6);
-    write("00", 263, 2);
-
-    let checksum = 0;
-    for (const byte of header) {
-      checksum += byte;
+    if (!split) {
+      const record = paxRecord("path", relative);
+      blocks.push(
+        header({
+          name: "PaxHeader",
+          prefix: "",
+          size: record.byteLength,
+          mode: 0o644,
+          typeflag: "x",
+        }),
+        padded(record),
+      );
     }
-    write(octal(checksum, 7), 148, 7);
-    header[155] = 0x20;
 
-    blocks.push(header, contents);
-
-    const padding = (blockSize - (contents.byteLength % blockSize)) % blockSize;
-    if (padding > 0) {
-      blocks.push(new Uint8Array(padding));
-    }
+    // Without a split, PAX supplies the real path and this name is a stub.
+    const { prefix, name } = split ?? { prefix: "", name: relative };
+    blocks.push(
+      header({
+        name,
+        prefix,
+        size: contents.byteLength,
+        mode,
+        typeflag: "0",
+      }),
+      padded(contents),
+    );
   }
 
   // Two empty blocks end the archive.
