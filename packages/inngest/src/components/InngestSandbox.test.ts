@@ -228,6 +228,48 @@ const resultForOperation = (
   }
 };
 
+describe("snapshot.clone validation", () => {
+  test.each([
+    { environment: { APP_SECRET: "FROM_CLONE" } },
+    { environment: {} },
+    { secrets: [secretName] },
+    { vcpu: 4 },
+    { memoryMb: 4096 },
+  ])("rejects unsupported options %j before dispatch", async (override) => {
+    const { kind: _kind, version: _version, ...resource } = snapshotRef;
+    const fetchMock = vi.fn(async () => Response.json({ data: resource }));
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+    const rawTool: SandboxRawTool = vi.fn(async (_id, operation) =>
+      resultForOperation(operation),
+    );
+    const direct = await client.snapshots.get(snapshotId);
+    const durable = await createSandboxTools(() => rawTool).snapshots.get(
+      "get-snapshot",
+      snapshotId,
+    );
+    if (!direct || !durable) {
+      throw new Error("Expected snapshots");
+    }
+    vi.mocked(fetchMock).mockClear();
+    vi.mocked(rawTool).mockClear();
+
+    const options = { name: "snapshot-clone", ...override };
+    await expect(direct.clone(options)).rejects.toBeInstanceOf(
+      SandboxValidationError,
+    );
+    await expect(durable.clone("clone", options)).rejects.toBeInstanceOf(
+      SandboxValidationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(rawTool).not.toHaveBeenCalled();
+  });
+});
+
 describe("step.sandbox", () => {
   test("uses UUID identity and exposes the complete durable lifecycle", async () => {
     const operations: SandboxOperationV1[] = [];
