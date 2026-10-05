@@ -793,6 +793,6 @@ export const createCommandTag = (
  * `.nothrow()` was used.
  * @throws {CommandTimeoutError} When `.timeout()` passes.
  */
-export const $: CommandTag & { sh: CommandTag } = createCommandTag(() =>
-  requireJobScope("$"),
-);
+export const $: CommandTag & { sh: CommandTag } = createCommandTag(() => {
+  return requireJobScope("$");
+});

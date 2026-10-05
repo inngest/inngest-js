@@ -41,9 +41,10 @@ import {
 } from "./util.ts";
 
 describe("$ parsing", () => {
-  const argv = (strings: string[], ...values: unknown[]) =>
+  const argv = (strings: string[], ...values: unknown[]) => {
     // biome-ignore lint/suspicious/noExplicitAny: mirrors a tagged template call
-    buildArgv(strings, values as any);
+    return buildArgv(strings, values as any);
+  };
 
   test("splits static text on whitespace", () => {
     expect(argv(["pnpm install --frozen-lockfile"])).toEqual([
@@ -199,12 +200,16 @@ describe("matrix pool", () => {
     let running = 0;
     let peak = 0;
 
-    const tasks = Array.from({ length: 6 }, () => async () => {
-      running++;
-      peak = Math.max(peak, running);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      running--;
-      return 1;
+    const tasks = Array.from({ length: 6 }, () => {
+      return async () => {
+        running++;
+        peak = Math.max(peak, running);
+        await new Promise((resolve) => {
+          return setTimeout(resolve, 1);
+        });
+        running--;
+        return 1;
+      };
     });
 
     const results = await runPool(tasks, 2, false);
@@ -216,12 +221,14 @@ describe("matrix pool", () => {
   test("without failFast every task runs and failures throw together", async () => {
     const ran: number[] = [];
 
-    const tasks = [0, 1, 2].map((index) => async () => {
-      ran.push(index);
-      if (index !== 1) {
-        throw new Error(`boom ${index}`);
-      }
-      return index;
+    const tasks = [0, 1, 2].map((index) => {
+      return async () => {
+        ran.push(index);
+        if (index !== 1) {
+          throw new Error(`boom ${index}`);
+        }
+        return index;
+      };
     });
 
     await expect(runPool(tasks, undefined, false)).rejects.toThrow(
@@ -235,7 +242,9 @@ describe("matrix pool", () => {
       async () => {
         throw new Error("first");
       },
-      async () => 2,
+      async () => {
+        return 2;
+      },
     ];
 
     await expect(runPool(tasks, 1, true)).rejects.toThrow("first");
@@ -244,7 +253,11 @@ describe("matrix pool", () => {
 
 describe("GitHub triggers", () => {
   test("pull requests default to opened, synchronize, and reopened", () => {
-    expect(pullRequest().map((trigger) => trigger.event)).toEqual([
+    expect(
+      pullRequest().map((trigger) => {
+        return trigger.event;
+      }),
+    ).toEqual([
       "github/pull_request.opened",
       "github/pull_request.synchronize",
       "github/pull_request.reopened",
@@ -446,13 +459,21 @@ describe("check output limits", () => {
   });
 
   test("annotations batch in 50s", () => {
-    const annotations = Array.from({ length: 120 }, (_, index) =>
-      normaliseAnnotation({ path: "a.ts", line: index + 1, message: "x" }),
-    );
+    const annotations = Array.from({ length: 120 }, (_, index) => {
+      return normaliseAnnotation({
+        path: "a.ts",
+        line: index + 1,
+        message: "x",
+      });
+    });
 
     const batches = batchAnnotations(annotations);
 
-    expect(batches.map((batch) => batch.length)).toEqual([50, 50, 20]);
+    expect(
+      batches.map((batch) => {
+        return batch.length;
+      }),
+    ).toEqual([50, 50, 20]);
   });
 
   test("annotations get GitHub's shape", () => {
@@ -520,7 +541,9 @@ describe("formatting", () => {
     expect(durationToMs("10m")).toBe(600_000);
     expect(durationToMs("1h30m")).toBe(5_400_000);
     expect(durationToMs("250ms")).toBe(250);
-    expect(() => durationToMs("soon")).toThrow();
+    expect(() => {
+      return durationToMs("soon");
+    }).toThrow();
   });
 
   test("labels truncate", () => {
