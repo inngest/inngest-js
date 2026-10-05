@@ -1,6 +1,6 @@
 /**
  * Hashing local working-tree files for `files()` cache keys when a run came
- from a local fixture.
+ * from a local fixture.
  *
  * @module
  */
@@ -49,8 +49,12 @@ export const hashLocalFiles = async (
     dirty
       .split("\n")
       .filter(Boolean)
-      .map((line) => line.slice(3).trim())
-      .map((path) => path.split(" -> ").pop() as string),
+      .map((line) => {
+        return line.slice(3).trim();
+      })
+      .map((path) => {
+        return path.split(" -> ").pop() as string;
+      }),
   );
 
   const candidates = [...new Set([...tracked.keys(), ...changed])];

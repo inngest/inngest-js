@@ -1,6 +1,6 @@
 /**
  * The run and job scopes held in async context: what a running pipeline or
- job knows about itself, and the helpers that read them.
+ * job knows about itself, and the helpers that read them.
  *
  * @module
  */
@@ -14,6 +14,7 @@ import type {
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
+  MachineConfig,
   RepoContext,
 } from "../types.ts";
 
@@ -73,6 +74,8 @@ export interface CiInternals {
   github: any;
   // biome-ignore lint/suspicious/noExplicitAny: CacheStore
   cacheStore: any;
+  /** Every job defined on the client, so a cache key can look up its parents. */
+  jobs: Map<string, { config: JobConfig }>;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
@@ -90,6 +93,8 @@ export interface CiRunScope {
   /** The pipeline check's name. `undefined` when checks are off. */
   checkName?: string;
   jobChecks: boolean;
+  /** The pipeline's default machine, for jobs that set none. */
+  machine?: MachineConfig;
   event: unknown;
   repo?: RepoContext;
   /** Jobs that have started in this run, keyed by job ID. */
@@ -142,8 +147,6 @@ export interface CiJobScope {
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];
-  /** Set once the job check has been created. */
-  checkStarted: boolean;
   /** Environment defaults for commands in this scope. */
   env: Record<string, string>;
   cwd?: string;
@@ -164,8 +167,12 @@ type CiAls = {
 };
 
 const fallbackAls: CiAls = {
-  getStore: () => undefined,
-  run: (_store, fn) => fn(),
+  getStore: () => {
+    return undefined;
+  },
+  run: (_store, fn) => {
+    return fn();
+  },
 };
 
 let resolvedAls: CiAls | undefined;
@@ -193,10 +200,16 @@ export const initCiAls = async (): Promise<CiAls> => {
   return alsPromise;
 };
 
-const getStore = (): CiStore | undefined => resolvedAls?.getStore();
+const getStore = (): CiStore | undefined => {
+  return resolvedAls?.getStore();
+};
 
-export const getRunScope = (): CiRunScope | undefined => getStore()?.run;
-export const getJobScope = (): CiJobScope | undefined => getStore()?.job;
+export const getRunScope = (): CiRunScope | undefined => {
+  return getStore()?.run;
+};
+export const getJobScope = (): CiJobScope | undefined => {
+  return getStore()?.job;
+};
 
 export const runInScope = <R>(store: CiStore, fn: () => R): R => {
   return (resolvedAls ?? fallbackAls).run(store, fn);
@@ -280,11 +293,11 @@ export const withStepIdPrefix = <T extends object>(
             prefix === undefined
               ? idOrOptions
               : prefixStepId(idOrOptions, prefix),
-            ...rest.map((arg) =>
-              typeof arg === "function"
+            ...rest.map((arg) => {
+              return typeof arg === "function"
                 ? inScope(store, arg as (...args: unknown[]) => unknown)
-                : arg,
-            ),
+                : arg;
+            }),
           ]);
         };
         cache.set(prop, wrapped);
@@ -311,15 +324,23 @@ const inScope = (
   // biome-ignore lint/suspicious/noExplicitAny: any step handler
   fn: (...args: any[]) => unknown,
   // biome-ignore lint/suspicious/noExplicitAny: any step handler
-): ((...args: any[]) => unknown) =>
-  store ? (...args) => runInScope(store, () => fn(...args)) : fn;
+): ((...args: any[]) => unknown) => {
+  return store
+    ? (...args) => {
+        return runInScope(store, () => {
+          return fn(...args);
+        });
+      }
+    : fn;
+};
 
 /**
  * Step tools that keep the CI scope alive inside their handlers, without
  * touching IDs. CI's own steps write their IDs out in full.
  */
-export const withScopePreserved = <T extends object>(tools: T): T =>
-  withStepIdPrefix(tools);
+export const withScopePreserved = <T extends object>(tools: T): T => {
+  return withStepIdPrefix(tools);
+};
 
 const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
   if (typeof idOrOptions === "string") {
@@ -368,7 +389,7 @@ export const runJobBody = async <R>(
     },
   };
 
-  return runWithAsyncCtx(scopedCtx, () =>
-    runInScope({ run: scope.run, job: scope }, fn),
-  );
+  return runWithAsyncCtx(scopedCtx, () => {
+    return runInScope({ run: scope.run, job: scope }, fn);
+  });
 };

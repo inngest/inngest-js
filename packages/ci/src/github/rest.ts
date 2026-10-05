@@ -199,8 +199,5 @@ export const rest: DurableGitHubRest = durable<DurableGitHubRest>(
     onError: (error) => {
       return mapGitHubError(error);
     },
-    unsupportedMessage: (path) => {
-      return `\`github.rest.${path.join(".")}\` returns a stream, so it can't be a step. Call it inside \`step.run\` with \`github.octokit()\`.`;
-    },
   },
 );

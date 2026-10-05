@@ -13,10 +13,15 @@ import {
 } from "../errors.ts";
 import type { CheckReporter } from "../github/checks.ts";
 import { pauseMachine, snapshotJob } from "../machine/machine.ts";
-import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
+import type {
+  AnyJob,
+  CacheEntry,
+  CheckConclusion,
+  JobConfig,
+} from "../types.ts";
 import { formatDuration, formatRelative } from "../util.ts";
-import type { CiInternals, CiJobScope, CiRunScope } from "./scope.ts";
-import { jobHandlerKey, runJobBody } from "./scope.ts";
+import type { CiJobScope, CiRunScope } from "./scope.ts";
+import { getRunScope, jobHandlerKey, runJobBody } from "./scope.ts";
 
 export interface RegisteredJob {
   id: string;
@@ -26,12 +31,10 @@ export interface RegisteredJob {
 }
 
 export const defineJob = ({
-  internals,
   jobs,
   idOrConfig,
   handler,
 }: {
-  internals: CiInternals;
   jobs: Map<string, RegisteredJob>;
   // biome-ignore lint/suspicious/noExplicitAny: overloaded signature
   idOrConfig: any;
@@ -46,8 +49,9 @@ export const defineJob = ({
   // being registered again is expected.
   jobs.set(config.id, { id: config.id, config, handler });
 
-  const job = ((input: unknown) =>
-    runJob({ internals, config, handler, input })) as AnyJob;
+  const job = ((input: unknown) => {
+    return runJob({ config, handler, input });
+  }) as AnyJob;
 
   Object.defineProperties(job, {
     id: { value: config.id, enumerable: true },
@@ -59,14 +63,10 @@ export const defineJob = ({
 };
 
 export const conclusionForError = (error: unknown): CheckConclusion => {
-  if (error instanceof CommandTimeoutError) {
-    return "timed_out";
-  }
-  return "failure";
+  return error instanceof CommandTimeoutError ? "timed_out" : "failure";
 };
 
 interface RunJobArgs {
-  internals: CiInternals;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
   handler: (input: any) => Promise<any>;
@@ -81,7 +81,6 @@ export const runJob = async ({
   handler,
   input,
 }: RunJobArgs): Promise<unknown> => {
-  const { getRunScope } = await import("./scope.ts");
   const run = getRunScope();
 
   if (!run) {
@@ -106,13 +105,7 @@ const jobBody = async ({
   config,
   handler,
   input,
-}: {
-  run: CiRunScope;
-  config: JobConfig;
-  // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<any>;
-  input: unknown;
-}): Promise<unknown> => {
+}: RunJobArgs & { run: CiRunScope }): Promise<unknown> => {
   const checks = run.ci.checks as CheckReporter;
   const scope: CiJobScope = {
     run,
@@ -123,98 +116,49 @@ const jobBody = async ({
     fromJobIds: [],
     annotations: [],
     summaries: [],
-    checkStarted: false,
     env: {},
     secrets: [],
   };
 
   const startedAt = Date.now();
-  const jobCheckName = config.check === false ? undefined : config.check?.name;
-  const jobChecksOn = config.check !== false;
+  const checkName = config.check === false ? undefined : config.check?.name;
+  const checked = config.check !== false;
+  const target = {
+    run,
+    jobPath: scope.path,
+    ...(checkName ? { name: checkName } : {}),
+  };
 
   const cacheLookup = config.cache
-    ? await lookupCache(scope, config.cache, {})
+    ? await lookupCache(scope, config.cache)
     : undefined;
 
-  // A hit with a usable snapshot means the job doesn't run at all, and jobs
-  // that start from it clone the saved machine.
   if (cacheLookup?.entry) {
-    const entry = cacheLookup.entry;
-    const usable = entry.snapshotId
-      ? await snapshotIsReady(run, scope.path, entry.snapshotId)
-      : true;
+    const title = await restoreFromCache(scope, cacheLookup.entry);
 
-    if (usable) {
-      run.cacheEntries.set(config.id, entry);
-
-      if (entry.snapshotId) {
-        run.snapshots.set(config.id, Promise.resolve(entry.snapshotId));
+    if (title) {
+      if (checked) {
+        await checks.jobStart(target);
+        await checks.jobComplete({ ...target, conclusion: "success", title });
       }
-
-      const title = entry.snapshotId
-        ? `Restored, built ${formatRelative(entry.builtAt)} by ${entry.builtBy.trigger}`
-        : `Passed at ${(entry.builtBy.sha ?? "").slice(0, 7)}, no changes since`;
-
-      run.summaries.push({
-        path: scope.path,
-        conclusion: "success",
-        title,
-        durationMs: 0,
-        cached: true,
-      });
-
-      if (jobChecksOn) {
-        await checks.jobStart({
-          run,
-          jobPath: scope.path,
-          ...(jobCheckName ? { name: jobCheckName } : {}),
-        });
-        await checks.jobComplete({
-          run,
-          jobPath: scope.path,
-          ...(jobCheckName ? { name: jobCheckName } : {}),
-          conclusion: "success",
-          title,
-        });
-      }
-
-      return entry.result;
+      return cacheLookup.entry.result;
     }
   }
 
-  if (jobChecksOn) {
-    await checks.jobStart({
-      run,
-      jobPath: scope.path,
-      ...(jobCheckName ? { name: jobCheckName } : {}),
-    });
-    run.openChecks.set(scope.path, jobCheckName);
+  if (checked) {
+    await checks.jobStart(target);
+    run.openChecks.set(scope.path, checkName);
   }
 
   try {
-    const result = await runJobBody(scope, () => handler(input));
+    const result = await runJobBody(scope, () => {
+      return handler(input);
+    });
     const durationMs = Date.now() - startedAt;
     const title = `Passed in ${formatDuration(durationMs)}`;
 
     if (cacheLookup) {
-      const snapshotId = scope.machine
-        ? await snapshotJob(run, scope.path)
-        : undefined;
-
-      await storeCache(scope, cacheLookup, {
-        jobId: config.id,
-        ...(snapshotId ? { snapshotId } : {}),
-        result,
-        builtAt: new Date().toISOString(),
-        builtBy: {
-          runId: run.runId,
-          ...(run.repo?.sha ? { sha: run.repo.sha } : {}),
-          trigger: (run.event as { name?: string })?.name ?? "manual",
-        },
-        ...(scope.fromJobIds.length > 0
-          ? { fromJobIds: scope.fromJobIds }
-          : {}),
-      });
+      await storeCache(scope, cacheLookup, await cacheEntryFor(scope, result));
     }
 
     run.summaries.push({
@@ -224,11 +168,9 @@ const jobBody = async ({
       durationMs,
     });
 
-    if (jobChecksOn) {
+    if (checked) {
       await checks.jobComplete({
-        run,
-        jobPath: scope.path,
-        ...(jobCheckName ? { name: jobCheckName } : {}),
+        ...target,
         conclusion: "success",
         title,
         ...(scope.summaries.length > 0
@@ -262,11 +204,9 @@ const jobBody = async ({
       ...(keptSnapshotId ? { keptSnapshotId } : {}),
     });
 
-    if (jobChecksOn) {
+    if (checked) {
       await checks.jobComplete({
-        run,
-        jobPath: scope.path,
-        ...(jobCheckName ? { name: jobCheckName } : {}),
+        ...target,
         conclusion,
         title,
         summary: jobFailureSummary(error, scope),
@@ -279,6 +219,67 @@ const jobBody = async ({
 
     throw error;
   }
+};
+
+/**
+ * Use a cache hit if its snapshot is still there, so the job doesn't run and
+ * jobs that start from it clone the saved machine. Returns the summary title,
+ * or `undefined` when the entry is unusable.
+ */
+const restoreFromCache = async (
+  scope: CiJobScope,
+  entry: CacheEntry,
+): Promise<string | undefined> => {
+  const { run } = scope;
+
+  if (
+    entry.snapshotId &&
+    !(await snapshotIsReady(run, scope.path, entry.snapshotId))
+  ) {
+    return undefined;
+  }
+
+  run.cacheEntries.set(scope.config.id, entry);
+
+  if (entry.snapshotId) {
+    run.snapshots.set(scope.config.id, Promise.resolve(entry.snapshotId));
+  }
+
+  const title = entry.snapshotId
+    ? `Restored, built ${formatRelative(entry.builtAt)} by ${entry.builtBy.trigger}`
+    : `Passed at ${(entry.builtBy.sha ?? "").slice(0, 7)}, no changes since`;
+
+  run.summaries.push({
+    path: scope.path,
+    conclusion: "success",
+    title,
+    durationMs: 0,
+    cached: true,
+  });
+
+  return title;
+};
+
+const cacheEntryFor = async (
+  scope: CiJobScope,
+  result: unknown,
+): Promise<Omit<CacheEntry, "key" | "fromKeys">> => {
+  const { run } = scope;
+  const snapshotId = scope.machine
+    ? await snapshotJob(run, scope.path)
+    : undefined;
+
+  return {
+    jobId: scope.config.id,
+    ...(snapshotId ? { snapshotId } : {}),
+    result,
+    builtAt: new Date().toISOString(),
+    builtBy: {
+      runId: run.runId,
+      ...(run.repo?.sha ? { sha: run.repo.sha } : {}),
+      trigger: (run.event as { name?: string })?.name ?? "manual",
+    },
+  };
 };
 
 const jobErrorTitle = (error: unknown): string => {

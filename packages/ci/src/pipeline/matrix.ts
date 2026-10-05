@@ -20,33 +20,39 @@ export const createMatrix = <
   handler: (combo: MatrixCombo<TAxes>) => Promise<TResult>,
 ): Matrix<TAxes, TResult> => {
   const matrix = (async (only?: Partial<MatrixCombo<TAxes>>) => {
-    const combos = expandMatrix(config).filter((combo) =>
-      only
-        ? Object.entries(only).every(
-            ([key, value]) => combo[key as keyof MatrixCombo<TAxes>] === value,
-          )
-        : true,
-    );
+    const combos = expandMatrix(config).filter((combo) => {
+      return only
+        ? Object.entries(only).every(([key, value]) => {
+            return combo[key as keyof MatrixCombo<TAxes>] === value;
+          })
+        : true;
+    });
 
-    const tasks = combos.map((combo) => async () => {
-      const machine =
-        typeof config.machine === "function"
-          ? config.machine(combo)
-          : config.machine;
-      const cache =
-        typeof config.cache === "function" ? config.cache(combo) : config.cache;
+    const tasks = combos.map((combo) => {
+      return async () => {
+        const machine =
+          typeof config.machine === "function"
+            ? config.machine(combo)
+            : config.machine;
+        const cache =
+          typeof config.cache === "function"
+            ? config.cache(combo)
+            : config.cache;
 
-      const job = ci.job<TResult>(
-        {
-          id: matrixJobId(config.id, combo),
-          ...(machine ? { machine } : {}),
-          ...(cache ? { cache } : {}),
-          ...(config.check === undefined ? {} : { check: config.check }),
-        },
-        () => handler(combo),
-      );
+        const job = ci.job<TResult>(
+          {
+            id: matrixJobId(config.id, combo),
+            ...(machine ? { machine } : {}),
+            ...(cache ? { cache } : {}),
+            ...(config.check === undefined ? {} : { check: config.check }),
+          },
+          () => {
+            return handler(combo);
+          },
+        );
 
-      return job();
+        return job();
+      };
     });
 
     return runPool(tasks, config.concurrency, config.failFast ?? false);
@@ -60,10 +66,13 @@ export const createMatrix = <
 export const matrixJobId = (
   id: string,
   combo: Record<string, unknown>,
-): string =>
-  `${id} (${Object.entries(combo)
-    .map(([key, value]) => `${key}:${String(value)}`)
+): string => {
+  return `${id} (${Object.entries(combo)
+    .map(([key, value]) => {
+      return `${key}:${String(value)}`;
+    })
     .join(", ")})`;
+};
 
 /**
  * Every combination of the axes, in declaration order, with `exclude` removed
@@ -78,17 +87,20 @@ export const expandMatrix = <TAxes extends Record<string, readonly unknown[]>>(
 
   for (const key of keys) {
     const values = config.axes[key] ?? [];
-    combos = combos.flatMap((combo) =>
-      values.map((value) => ({ ...combo, [key]: value })),
-    );
+    combos = combos.flatMap((combo) => {
+      return values.map((value) => {
+        return { ...combo, [key]: value };
+      });
+    });
   }
 
-  const excluded = combos.filter(
-    (combo) =>
-      !(config.exclude ?? []).some((exclusion) =>
-        Object.entries(exclusion).every(([key, value]) => combo[key] === value),
-      ),
-  );
+  const excluded = combos.filter((combo) => {
+    return !(config.exclude ?? []).some((exclusion) => {
+      return Object.entries(exclusion).every(([key, value]) => {
+        return combo[key] === value;
+      });
+    });
+  });
 
   return [
     ...excluded,
@@ -132,9 +144,9 @@ export const runPool = async <T>(
     }
   };
 
-  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () =>
-    worker(),
-  );
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => {
+    return worker();
+  });
 
   await Promise.all(workers);
 
