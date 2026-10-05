@@ -34,6 +34,7 @@ export const createMatrix = <
           typeof config.machine === "function"
             ? config.machine(combo)
             : config.machine;
+
         const cache =
           typeof config.cache === "function"
             ? config.cache(combo)
@@ -87,6 +88,7 @@ export const expandMatrix = <TAxes extends Record<string, readonly unknown[]>>(
 
   for (const key of keys) {
     const values = config.axes[key] ?? [];
+
     combos = combos.flatMap((combo) => {
       return values.map((value) => {
         return { ...combo, [key]: value };
@@ -129,6 +131,7 @@ export const runPool = async <T>(
     while (next < tasks.length) {
       const index = next++;
       const task = tasks[index];
+
       if (!task) {
         continue;
       }
@@ -139,6 +142,7 @@ export const runPool = async <T>(
         if (failFast) {
           throw error;
         }
+
         errors.push(error);
       }
     }

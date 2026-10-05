@@ -90,11 +90,13 @@ export const runJob = async ({
   }
 
   const existing = run.jobs.get(config.id);
+
   if (existing) {
     return existing;
   }
 
   const started = jobBody({ run, config, handler, input });
+
   run.jobs.set(config.id, started);
 
   return started;
@@ -107,6 +109,7 @@ const jobBody = async ({
   input,
 }: RunJobArgs & { run: CiRunScope }): Promise<unknown> => {
   const checks = run.ci.checks as CheckReporter;
+
   const scope: CiJobScope = {
     run,
     path: config.id,
@@ -123,6 +126,7 @@ const jobBody = async ({
   const startedAt = Date.now();
   const checkName = config.check === false ? undefined : config.check?.name;
   const checked = config.check !== false;
+
   const target = {
     run,
     jobPath: scope.path,
@@ -141,12 +145,14 @@ const jobBody = async ({
         await checks.jobStart(target);
         await checks.jobComplete({ ...target, conclusion: "success", title });
       }
+
       return cacheLookup.entry.result;
     }
   }
 
   if (checked) {
     await checks.jobStart(target);
+
     run.openChecks.set(scope.path, checkName);
   }
 
@@ -154,6 +160,7 @@ const jobBody = async ({
     const result = await runJobBody(scope, () => {
       return handler(input);
     });
+
     const durationMs = Date.now() - startedAt;
     const title = `Passed in ${formatDuration(durationMs)}`;
 
@@ -180,6 +187,7 @@ const jobBody = async ({
           ? { annotations: scope.annotations }
           : {}),
       });
+
       run.openChecks.delete(scope.path);
     }
 
@@ -214,6 +222,7 @@ const jobBody = async ({
           ? { annotations: scope.annotations }
           : {}),
       });
+
       run.openChecks.delete(scope.path);
     }
 
@@ -265,6 +274,7 @@ const cacheEntryFor = async (
   result: unknown,
 ): Promise<Omit<CacheEntry, "key" | "fromKeys">> => {
   const { run } = scope;
+
   const snapshotId = scope.machine
     ? await snapshotJob(run, scope.path)
     : undefined;

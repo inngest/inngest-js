@@ -125,6 +125,7 @@ const flowControl = (config: PipelineConfig) => {
     commentPermission: _commentPermission,
     ...rest
   } = config;
+
   return rest;
 };
 
@@ -196,6 +197,7 @@ export const runPipeline = async ({
   await initCiAls();
 
   const asyncCtx = await getAsyncCtx();
+
   if (!asyncCtx?.execution) {
     throw new CiUsageError(
       "A pipeline ran without an Inngest execution context. Pipelines must be served through `serve()` with `ci.functions()`.",
@@ -218,6 +220,7 @@ export const runPipeline = async ({
           title: "Not permitted",
           summary: pipelineSummary(run),
         });
+
         return { skipped: "not permitted" };
       }
 
@@ -280,6 +283,7 @@ const closeOpenJobChecks = async (
   checks: CheckReporter,
 ): Promise<void> => {
   const open = [...run.openChecks.entries()];
+
   run.openChecks.clear();
 
   for (const [jobPath, name] of open) {
@@ -361,11 +365,13 @@ const checkCommentPermission = async (
   }
 
   const event = run.event as { name?: string } | undefined;
+
   if (!event?.name?.startsWith("github/issue_comment")) {
     return true;
   }
 
   const login = commentAuthor(run.event as { data?: unknown });
+
   if (!login) {
     return false;
   }
@@ -377,10 +383,12 @@ const checkCommentPermission = async (
       { id: "github › comment:denied", name: "comment:denied" },
       async () => {
         const { stickyComment } = await import("../github/helpers.ts");
+
         await stickyComment(
           "permission",
           `@${login} you need \`${minPermission}\` permission to run \`${commentBody(run.event as { data?: unknown }).split(" ")[0]}\`.`,
         );
+
         return { denied: login };
       },
     );
@@ -440,6 +448,7 @@ const generatedFunctions = ({
       // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
       async ({ event, step }: any) => {
         const { rerunEventFor } = await import("./rerun.ts");
+
         return rerunEventFor({ event, step, client, config });
       },
     ),
@@ -471,6 +480,7 @@ const destroyOrphans = async (
       if (sandbox.name.startsWith(prefix)) {
         try {
           await sandbox.destroy();
+
           destroyed++;
         } catch {
           // Already gone.
@@ -507,6 +517,7 @@ export const cacheRefreshFunctions = ({
 
   for (const job of jobs.values()) {
     const refresh = job.config.cache?.refresh;
+
     if (!refresh || refresh.length === 0) {
       continue;
     }

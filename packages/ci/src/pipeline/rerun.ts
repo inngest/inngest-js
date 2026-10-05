@@ -30,6 +30,7 @@ export const rerunEventFor = async ({
   const checkRun = event?.data?.check_run ?? event?.data?.check_suite;
   const externalId: string | undefined = checkRun?.external_id;
   const name: string | undefined = checkRun?.name;
+
   const checkName =
     config.check === false ? config.id : (config.check?.name ?? config.id);
 
@@ -57,6 +58,7 @@ export const rerunEventFor = async ({
 
   return step.run("resend-trigger", async () => {
     const { octokitForRun } = await import("../github/rest.ts");
+
     const [owner, repo] = String(repository.full_name).split("/") as [
       string,
       string,
@@ -66,11 +68,13 @@ export const rerunEventFor = async ({
 
     try {
       const octokit = await octokitForRun();
+
       const { data } = await octokit.rest.pulls.list({
         owner,
         repo,
         state: "open",
       });
+
       pullRequest = data.find((pr) => {
         return pr.head.sha === sha;
       });

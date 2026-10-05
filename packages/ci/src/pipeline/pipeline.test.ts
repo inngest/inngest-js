@@ -79,7 +79,9 @@ describe("pipelines and jobs", () => {
 
     const test = ci.job("test", async () => {
       await $`pnpm install`;
+
       await $`pnpm test`;
+
       return "done";
     });
 
@@ -91,10 +93,12 @@ describe("pipelines and jobs", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(result.data).toBe("done");
+
     expect(userCommands(api)).toEqual([
       ["pnpm", "install"],
       ["pnpm", "test"],
     ]);
+
     expect(api.sandboxes.size).toBe(1);
     expect([...api.sandboxes.values()][0]?.name).toBe("ci-01TESTRUN-test");
   });
@@ -119,6 +123,7 @@ describe("pipelines and jobs", () => {
       ["/bin/sh", "-c", machineSetupScript],
       ["pnpm", "build"],
     ]);
+
     expect(machineSetupScript).toContain("mkdir -p /work");
     expect(machineSetupScript).toContain("ip link set lo up");
   });
@@ -146,11 +151,13 @@ describe("pipelines and jobs", () => {
 
     const build = ci.job("build", async () => {
       await $`pnpm build`;
+
       return "built";
     });
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       const [a, b] = await Promise.all([build(), build()]);
+
       return { a, b };
     });
 
@@ -159,6 +166,7 @@ describe("pipelines and jobs", () => {
     expect(result.data).toEqual({ a: "built", b: "built" });
     // One machine and one command, however many callers there were.
     expect(api.sandboxes.size).toBe(1);
+
     expect(
       userCommands(api).filter((argv) => {
         return argv[1] === "build";
@@ -172,12 +180,14 @@ describe("pipelines and jobs", () => {
     const one = ci.job("one", async () => {
       await $`echo one`;
     });
+
     const two = ci.job("two", async () => {
       await $`echo two`;
     });
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       await one();
+
       await two();
     });
 
@@ -185,11 +195,13 @@ describe("pipelines and jobs", () => {
 
     expect(result.stepIds).toContain("one › machine");
     expect(result.stepIds).toContain("two › machine");
+
     expect(
       result.stepIds.some((id) => {
         return id.startsWith("one › echo one");
       }),
     ).toBe(true);
+
     expect(
       result.stepIds.some((id) => {
         return id.startsWith("two › echo two");
@@ -202,6 +214,7 @@ describe("pipelines and jobs", () => {
 
     const job = ci.job("build", async () => {
       await $`pnpm build`;
+
       await $`pnpm build`;
     });
 
@@ -210,6 +223,7 @@ describe("pipelines and jobs", () => {
     });
 
     const result = await runFunction(pipeline, { event: prEvent });
+
     const buildSteps = result.stepIds.filter((id) => {
       return id.startsWith("build › pnpm build");
     });
@@ -243,6 +257,7 @@ describe("pipelines and jobs", () => {
 
   test("a job called outside a pipeline throws", async () => {
     const { ci } = setup();
+
     const job = ci.job("test", async () => {
       return undefined;
     });
@@ -260,6 +275,7 @@ describe("pipelines and jobs", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-rejected");
+
     expect(String((result.error as { message?: string })?.message)).toContain(
       "Wrap it in `ci.job()`",
     );
@@ -269,6 +285,7 @@ describe("pipelines and jobs", () => {
 describe("commands", () => {
   test("a non-zero exit fails the job with its output", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "pnpm test", exitCode: 1, stderr: "1 test failed" }]);
 
     const job = ci.job("test", async () => {
@@ -282,19 +299,23 @@ describe("commands", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-rejected");
+
     expect(String((result.error as { message?: string })?.message)).toContain(
       "`pnpm test` exited with 1",
     );
+
     // Retrying the run would only replay the recorded exit code.
     expect(result.retriable).toBe(false);
   });
 
   test("`.nothrow()` returns the exit code instead", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "pnpm lint", exitCode: 3, stdout: "nope" }]);
 
     const job = ci.job("lint", async () => {
       const result = await $`pnpm lint`.nothrow();
+
       return result.exitCode;
     });
 
@@ -310,6 +331,7 @@ describe("commands", () => {
 
   test("`.text()` reads stdout", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "git rev-parse", stdout: "abc1234\n" }]);
 
     const job = ci.job("sha", async () => {
@@ -327,6 +349,7 @@ describe("commands", () => {
 
   test("`.lines()` and `.json()` parse stdout", async () => {
     const { api, ci } = setup();
+
     api.script([
       { match: "list", stdout: "a\nb\n" },
       { match: "config", stdout: '{"ok":true}' },
@@ -351,6 +374,7 @@ describe("commands", () => {
 
   test("`.retries()` reruns a failing command as new steps", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "flaky", exitCode: 1, stderr: "flake" }]);
 
     const job = ci.job("test", async () => {
@@ -364,11 +388,13 @@ describe("commands", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-rejected");
+
     expect(
       result.stepIds.some((id) => {
         return id.includes("#attempt-1");
       }),
     ).toBe(true);
+
     expect(
       result.stepIds.some((id) => {
         return id.includes("#attempt-2");
@@ -378,6 +404,7 @@ describe("commands", () => {
 
   test("a command that needs several polls still completes", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "slow", ticks: 3, stdout: "eventually" }]);
 
     const job = ci.job("slow", async () => {
@@ -391,6 +418,7 @@ describe("commands", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toBe("eventually");
+
     expect(
       result.stepIds.filter((id) => {
         return id.includes("wait #");
@@ -400,6 +428,7 @@ describe("commands", () => {
 
   test("a short command with a timeout runs as one captured step", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "quick", stdout: "fast" }]);
 
     const job = ci.job("quick", async () => {
@@ -413,11 +442,13 @@ describe("commands", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toBe("fast");
+
     expect(
       api.requests.some((request) => {
         return request.endsWith("/exec");
       }),
     ).toBe(true);
+
     expect(
       result.stepIds.some((id) => {
         return id.includes("wait #");
@@ -427,14 +458,17 @@ describe("commands", () => {
 
   test("a captured command that times out throws CommandTimeoutError", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "hang", execTimesOut: true }]);
 
     const job = ci.job("hang", async () => {
       let lookedAround = false;
+
       try {
         await $`hang`.timeout("2s").onTimeout(async () => {
           lookedAround = true;
         });
+
         return "no error";
       } catch (error) {
         return {
@@ -460,10 +494,12 @@ describe("commands", () => {
 
   test("secrets are masked in output and never in step input", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "publish", stdout: "used npm_s3cret to publish" }]);
 
     const job = ci.job("release", async () => {
       const result = await $`publish`.withSecret("NPM_TOKEN", "npm_s3cret");
+
       return result.stdout;
     });
 
@@ -479,12 +515,15 @@ describe("commands", () => {
 
   test("a background process can be waited on and killed", async () => {
     const { api, ci } = setup();
+
     api.script([{ match: "serve", ticks: 1, stdout: "listening" }]);
 
     const job = ci.job("e2e", async () => {
       const server = await $`serve`.background();
       const output = await server.output();
+
       await server.kill();
+
       return output;
     });
 
@@ -495,6 +534,7 @@ describe("commands", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toBe("listening");
+
     expect(
       api.requests.some((request) => {
         return request.includes("/signals");
@@ -507,6 +547,7 @@ describe("commands", () => {
 
     const job = ci.job("quiet", async () => {
       const result = await $`true`;
+
       return { exitCode: result.exitCode, stdout: result.stdout };
     });
 
@@ -522,6 +563,7 @@ describe("commands", () => {
 
   test("an ambiguous start adopts the process that did start", async () => {
     const { api, ci } = setup();
+
     api.script([
       { match: "first", stdout: "one" },
       { match: "second", stdout: "two", ambiguousStarts: 1 },
@@ -532,6 +574,7 @@ describe("commands", () => {
       const first = await $`first`.text();
       const second = await $`second`.text();
       const server = await $`server`.background();
+
       return { first, second, server: await server.output() };
     });
 
@@ -542,12 +585,14 @@ describe("commands", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.data).toEqual({ first: "one", second: "two", server: "up" });
+
     // Each start ran once: reconciling never starts the command again.
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
       }),
     ).toEqual(["first", "second", "server"]);
+
     expect(
       result.stepIds.filter((id) => {
         return id.endsWith("reconcile");
@@ -557,16 +602,22 @@ describe("commands", () => {
 
   test("an ambiguous start with nothing to adopt still fails", async () => {
     const api = createFakeSandboxApi();
+
     api.script([{ match: "gone", ambiguousStarts: 1 }]);
+
     // The process the 409 was about doesn't show up in the list.
     const fetch = api.fetch;
+
     api.fetch = async (input, init) => {
       const response = await fetch(input, init);
+
       if (response.status === 409) {
         api.processes.clear();
       }
+
       return response;
     };
+
     const { ci } = setup({ api });
 
     const job = ci.job("lost", async () => {
@@ -590,22 +641,27 @@ describe("from()", () => {
 
     const install = ci.job("setup", async () => {
       await $`pnpm install`;
+
       return "installed";
     });
 
     const lint = ci.job("lint", async () => {
       const parent = await from(install);
+
       await $`pnpm lint`;
+
       return parent;
     });
 
     const test = ci.job("test", async () => {
       await from(install);
+
       await $`pnpm test`;
     });
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       const [lintResult] = await Promise.all([lint(), test()]);
+
       return lintResult;
     });
 
@@ -618,6 +674,7 @@ describe("from()", () => {
     const cloned = [...api.sandboxes.values()].filter((sandbox) => {
       return sandbox.snapshotId;
     });
+
     expect(cloned).toHaveLength(2);
   });
 
@@ -627,8 +684,10 @@ describe("from()", () => {
     const parent = ci.job("parent", async () => {
       return undefined;
     });
+
     const child = ci.job("child", async () => {
       await $`echo hi`;
+
       await from(parent);
     });
 
@@ -649,9 +708,11 @@ describe("from()", () => {
     const a = ci.job("a", async () => {
       return undefined;
     });
+
     const b = ci.job("b", async () => {
       return undefined;
     });
+
     const child = ci.job("child", async () => {
       await from(a);
       await from(b);
@@ -674,12 +735,15 @@ describe("from()", () => {
   }: ReturnType<typeof setup>) => {
     const install = ci.job("setup", async () => {
       await $`pnpm install`;
+
       return "installed";
     });
 
     const test = ci.job("test", async () => {
       const parent = await from(install);
+
       await $`pnpm test`;
+
       return parent;
     });
 
@@ -693,11 +757,13 @@ describe("from()", () => {
     // The child still gets the parent's original result…
     expect(result.data).toBe("installed");
     expect(api.sandboxes.size).toBe(2);
+
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
         return !sandbox.snapshotId;
       }),
     ).toBe(true);
+
     // …and re-ran the parent on its own machine before its own commands.
     expect(
       userCommands(api).map((argv) => {
@@ -708,6 +774,7 @@ describe("from()", () => {
 
   test("re-runs the parent when snapshots aren't available", async () => {
     const ctx = setup();
+
     ctx.api.disableSnapshots();
 
     await runFromWithoutSnapshots(ctx);
@@ -715,6 +782,7 @@ describe("from()", () => {
 
   test("re-runs the parent when the snapshot limit is reached", async () => {
     const ctx = setup();
+
     ctx.api.exhaustSnapshots();
 
     await runFromWithoutSnapshots(ctx);
@@ -722,6 +790,7 @@ describe("from()", () => {
 
   test("re-runs a chain of parents without snapshots", async () => {
     const { api, ci } = setup();
+
     api.disableSnapshots();
 
     const install = ci.job("install", async () => {
@@ -730,11 +799,13 @@ describe("from()", () => {
 
     const build = ci.job("build", async () => {
       await from(install);
+
       await $`pnpm build`;
     });
 
     const test = ci.job("test", async () => {
       await from(build);
+
       await $`pnpm test`;
     });
 
@@ -746,6 +817,7 @@ describe("from()", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(api.sandboxes.size).toBe(3);
+
     expect(
       userCommands(api).map((argv) => {
         return argv.join(" ");
@@ -783,6 +855,7 @@ describe("machines", () => {
         return request.includes("/pause");
       }),
     ).toBe(true);
+
     expect(
       [...api.sandboxes.values()].every((sandbox) => {
         return sandbox.status === "TERMINATED";
@@ -811,6 +884,7 @@ describe("machines", () => {
 
   test("machines resolve job, then pipeline, then client", async () => {
     const api = createFakeSandboxApi();
+
     const ci = createCi(createCiTestClient(api), {
       github: consoleReporter(),
       machine: { vcpu: 1 },
@@ -819,6 +893,7 @@ describe("machines", () => {
     const plain = ci.job("plain", async () => {
       await $`pnpm build`;
     });
+
     const own = ci.job({ id: "own", machine: { vcpu: 2 } }, async () => {
       await $`pnpm build`;
     });
@@ -827,14 +902,17 @@ describe("machines", () => {
       { id: "pr", on: prTrigger, machine: { vcpu: 4 } },
       async () => {
         await plain();
+
         await own();
       },
     );
+
     const noMachine = ci.pipeline({ id: "other", on: prTrigger }, async () => {
       return plain();
     });
 
     await runFunction(inPipeline, { event: prEvent });
+
     expect(
       [...api.sandboxes.values()].map((box) => {
         return box.vcpu;
@@ -842,7 +920,9 @@ describe("machines", () => {
     ).toEqual([4, 2]);
 
     api.sandboxes.clear();
+
     await runFunction(noMachine, { event: prEvent });
+
     expect(
       [...api.sandboxes.values()].map((box) => {
         return box.vcpu;
@@ -855,7 +935,9 @@ describe("machines", () => {
 
     const job = ci.job("e2e", async () => {
       const api2 = await sandbox("api");
+
       await api2.$`pnpm start`;
+
       await $`pnpm test`;
     });
 
@@ -867,6 +949,7 @@ describe("machines", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(api.sandboxes.size).toBe(2);
+
     expect(
       result.stepIds.some((id) => {
         return id.startsWith("e2e › api › pnpm start");
@@ -883,6 +966,7 @@ describe("matrix", () => {
       { id: "compat", axes: { node: ["20", "22"] } },
       async ({ node }) => {
         await $`pnpm test --node ${node}`;
+
         return node;
       },
     );
@@ -895,6 +979,7 @@ describe("matrix", () => {
 
     expect(result.data).toEqual(["20", "22"]);
     expect(api.sandboxes.size).toBe(2);
+
     expect(
       result.stepIds.some((id) => {
         return id.startsWith("compat (node:20) › machine");
@@ -909,6 +994,7 @@ describe("matrix", () => {
       { id: "compat", axes: { node: ["20", "22"] } },
       async ({ node }) => {
         await $`pnpm test`;
+
         return node;
       },
     );
@@ -931,10 +1017,12 @@ describe("cache", () => {
     const api = createFakeSandboxApi();
 
     const first = setup({ cacheStore: store, api });
+
     const build = first.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
+
         return "built";
       },
     );
@@ -949,13 +1037,16 @@ describe("cache", () => {
     expect((await runFunction(firstPipeline, { event: prEvent })).data).toBe(
       "built",
     );
+
     expect(userCommands(first.api)).toHaveLength(1);
 
     const second = setup({ cacheStore: store, api });
+
     const build2 = second.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
+
         return "built again";
       },
     );
@@ -981,13 +1072,16 @@ describe("cache", () => {
     const api = createFakeSandboxApi();
 
     const first = setup({ cacheStore: store, api });
+
     const job1 = first.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
+
         return 1;
       },
     );
+
     await runFunction(
       first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return job1();
@@ -996,10 +1090,12 @@ describe("cache", () => {
     );
 
     const second = setup({ cacheStore: store, api });
+
     const job2 = second.ci.job(
       { id: "setup", cache: { key: "v2" } },
       async () => {
         await $`pnpm install`;
+
         return 2;
       },
     );
@@ -1021,13 +1117,16 @@ describe("cache", () => {
     const api = createFakeSandboxApi();
 
     const first = setup({ cacheStore: store, api });
+
     const setupJob = first.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
+
         return "installed";
       },
     );
+
     await runFunction(
       first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return setupJob();
@@ -1036,15 +1135,19 @@ describe("cache", () => {
     );
 
     const second = setup({ cacheStore: store, api });
+
     const setupJob2 = second.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
+
         return "installed";
       },
     );
+
     const test = second.ci.job("test", async () => {
       await from(setupJob2);
+
       await $`pnpm test`;
     });
 
@@ -1056,11 +1159,13 @@ describe("cache", () => {
     );
 
     expect(result.type).toBe("function-resolved");
+
     // `setup` was restored, so only the child job's command ran this time.
     expect(userCommands(api)).toEqual([
       ["pnpm", "install"],
       ["pnpm", "test"],
     ]);
+
     // …and the child cloned the cached snapshot rather than starting fresh.
     expect(
       [...api.sandboxes.values()].filter((machine) => {
@@ -1075,14 +1180,17 @@ describe("cache", () => {
 
     const runWith = async (setupKey: string) => {
       const { ci } = setup({ cacheStore: store, api });
+
       const setupJob = ci.job(
         { id: "setup", cache: { key: setupKey } },
         async () => {
           await $`pnpm install`;
         },
       );
+
       const test = ci.job({ id: "test", cache: { key: "t" } }, async () => {
         await from(setupJob);
+
         await $`pnpm test`;
       });
 
@@ -1093,6 +1201,7 @@ describe("cache", () => {
         { event: prEvent },
       );
     };
+
     const testRuns = () => {
       return userCommands(api).filter((argv) => {
         return argv[1] === "test";
@@ -1100,12 +1209,15 @@ describe("cache", () => {
     };
 
     await runWith("lock-1");
+
     expect(testRuns()).toBe(1);
 
     await runWith("lock-1");
+
     expect(testRuns()).toBe(1);
 
     await runWith("lock-2");
+
     expect(testRuns()).toBe(2);
   });
 
@@ -1133,6 +1245,7 @@ describe("checks", () => {
     });
 
     expect(completed).toHaveLength(1);
+
     expect(completed[0]).toMatchObject({
       name: "pr",
       conclusion: "success",
@@ -1142,6 +1255,7 @@ describe("checks", () => {
 
   test("a failing job fails its own check and the pipeline check", async () => {
     const { api, ci, reporter } = setup();
+
     api.script([{ match: "pnpm test", exitCode: 1, stderr: "boom" }]);
 
     const test = ci.job("test", async () => {
@@ -1174,12 +1288,14 @@ describe("checks", () => {
     const api = createFakeSandboxApi();
 
     const first = setup({ cacheStore: store, api });
+
     const job1 = first.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
       },
     );
+
     await runFunction(
       first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return job1();
@@ -1188,12 +1304,14 @@ describe("checks", () => {
     );
 
     const second = setup({ cacheStore: store, api });
+
     const job2 = second.ci.job(
       { id: "setup", cache: { key: "v1" } },
       async () => {
         await $`pnpm install`;
       },
     );
+
     await runFunction(
       second.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
         return job2();

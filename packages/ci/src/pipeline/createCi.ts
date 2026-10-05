@@ -195,6 +195,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
+
   const internals: CiInternals = {
     client,
     isDev,
@@ -231,7 +232,9 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       });
 
       pipelineRepo ??= config.repo;
+
       pipelines.push(fn);
+
       generated.push(...extra);
 
       return fn;
@@ -343,6 +346,7 @@ const defaultRunUrl = (client: Inngest.Any, isDev: () => boolean) => {
         process.env.INNGEST_DEV_SERVER_URL ??
         process.env.INNGEST_BASE_URL ??
         "http://localhost:8288";
+
       return `${base.replace(/\/$/, "")}/run?runID=${runId}`;
     }
 

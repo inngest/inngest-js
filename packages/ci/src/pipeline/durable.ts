@@ -23,6 +23,7 @@ export const durablePathKey = "__durablePath";
  */
 export const durablePath = (value: unknown): string[] | undefined => {
   const path = (value as Record<string, unknown> | undefined)?.[durablePathKey];
+
   return Array.isArray(path) ? (path as string[]) : undefined;
 };
 
@@ -143,6 +144,7 @@ const call = async (
   args: unknown[],
 ): Promise<unknown> => {
   const behaviour = behaviourFor(path, options.rules);
+
   const invoke = () => {
     return invokeOnClient(client, path, args, options);
   };
@@ -154,10 +156,12 @@ const call = async (
     if (behaviour === "direct" && execution && !execution.executingStep) {
       warnDirect(path, options);
     }
+
     return invoke();
   }
 
   const label = `${options.name}.${path.join(".")}`;
+
   const id = overrides.id
     ? scopedId(overrides.id)
     : stepIdFor(label, execution.instance);
@@ -187,6 +191,7 @@ const invokeOnClient = async (
 
   for (const segment of path) {
     owner = value as object;
+
     value = (owner as Record<string, unknown>)[segment];
   }
 
@@ -204,12 +209,15 @@ const invokeOnClient = async (
       owner,
       finalArgs,
     );
+
     return options.result ? options.result(result, { path }) : result;
   } catch (error) {
     const mapped = options.onError?.(error, { path });
+
     if (mapped) {
       throw mapped;
     }
+
     throw error;
   }
 };
@@ -227,14 +235,17 @@ export const behaviourFor = (
       return behaviour;
     }
   }
+
   return "direct";
 };
 
 const matchesPattern = (path: string[], pattern: string): boolean => {
   const segments = pattern.split(".");
+
   if (segments.length !== path.length) {
     return false;
   }
+
   return segments.every((segment, index) => {
     return segment === "*" || segment === path[index];
   });
@@ -242,32 +253,41 @@ const matchesPattern = (path: string[], pattern: string): boolean => {
 
 const stepIdFor = (label: string, execution: object): string => {
   const run = getRunScope();
+
   if (run) {
     return nextStepId(run, getJobScope()?.path, label);
   }
 
   let counters = looseCounters.get(execution);
+
   if (!counters) {
     counters = new Map();
+
     looseCounters.set(execution, counters);
   }
 
   const seen = (counters.get(label) ?? 0) + 1;
+
   counters.set(label, seen);
+
   return seen === 1 ? label : `${label} #${seen}`;
 };
 
 const scopedId = (id: string): string => {
   const job = getJobScope();
+
   return job ? `${job.path} › ${id}` : id;
 };
 
 const warnDirect = (path: string[], options: DurableOptions): void => {
   const key = `${options.name}.${path.join(".")}`;
+
   if (warnedDirect.has(key)) {
     return;
   }
+
   warnedDirect.add(key);
+
   (options.logger ?? console).warn(
     { path: key },
     `\`${key}()\` ran outside a step.`,

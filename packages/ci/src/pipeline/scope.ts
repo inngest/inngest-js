@@ -190,10 +190,12 @@ export const initCiAls = async (): Promise<CiAls> => {
   alsPromise ??= (async () => {
     try {
       const { AsyncLocalStorage } = await import("node:async_hooks");
+
       resolvedAls = new AsyncLocalStorage<CiStore>();
     } catch {
       resolvedAls = fallbackAls;
     }
+
     return resolvedAls;
   })();
 
@@ -220,26 +222,31 @@ export const runInScope = <R>(store: CiStore, fn: () => R): R => {
  */
 export const requireJobScope = (api: string): CiJobScope => {
   const job = getJobScope();
+
   if (!job) {
     if (getRunScope()) {
       throw new CiUsageError(
         `\`${api}\` was called outside a job, so there's no machine to run it on. Wrap it in \`ci.job()\`.`,
       );
     }
+
     throw new CiUsageError(
       `\`${api}\` was called outside a pipeline run. Call it from a job inside \`ci.pipeline()\`.`,
     );
   }
+
   return job;
 };
 
 export const requireRunScope = (api: string): CiRunScope => {
   const run = getRunScope();
+
   if (!run) {
     throw new CiUsageError(
       `\`${api}\` was called outside a pipeline run. Call it from inside \`ci.pipeline()\`.`,
     );
   }
+
   return run;
 };
 
@@ -254,7 +261,9 @@ export const nextStepId = (
 ): string => {
   const base = scopePath ? `${scopePath}${scopeSeparator}${label}` : label;
   const seen = (run.counters.get(base) ?? 0) + 1;
+
   run.counters.set(base, seen);
+
   return seen === 1 ? base : `${base} #${seen}`;
 };
 
@@ -300,13 +309,17 @@ export const withStepIdPrefix = <T extends object>(
             }),
           ]);
         };
+
         cache.set(prop, wrapped);
+
         return wrapped;
       }
 
       if (value && typeof value === "object") {
         const wrapped = withStepIdPrefix(value as object, prefix);
+
         cache.set(prop, wrapped);
+
         return wrapped;
       }
 
@@ -354,6 +367,7 @@ const prefixStepId = (idOrOptions: unknown, prefix: string): unknown => {
     typeof (idOrOptions as { id: unknown }).id === "string"
   ) {
     const opts = idOrOptions as { id: string; name?: string };
+
     return {
       ...opts,
       id: `${prefix}${scopeSeparator}${opts.id}`,
