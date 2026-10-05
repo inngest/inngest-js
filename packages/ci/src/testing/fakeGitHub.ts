@@ -38,11 +38,11 @@ export const createFakeGitHub = (): FakeGitHub => {
       ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}),
     });
 
-    const route = routes.find(({ pattern }) =>
-      pattern.endsWith("*")
+    const route = routes.find(({ pattern }) => {
+      return pattern.endsWith("*")
         ? key.startsWith(pattern.slice(0, -1))
-        : pattern === key,
-    );
+        : pattern === key;
+    });
 
     return new Response(JSON.stringify(route?.body ?? {}), {
       status: route?.status ?? 200,
