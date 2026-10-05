@@ -68,6 +68,8 @@ export interface RunFunctionOptions {
   resolveWait?: (step: { id: string; displayName?: string }) => unknown;
   /** How many times a retriable step failure is retried. Defaults to 4. */
   stepAttempts?: number;
+  /** Called before each execution request, such as to advance a fake clock. */
+  beforeRequest?: () => void;
 }
 
 const isFailed = (step: Step): boolean => {
@@ -98,6 +100,8 @@ export const runFunction = async (
   const steps: Record<string, unknown> = {};
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
+    opts.beforeRequest?.();
+
     return runOnce(fn, event, stepState, completionOrder, runStep);
   };
 

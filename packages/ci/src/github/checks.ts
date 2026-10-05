@@ -35,11 +35,15 @@ export interface CheckReporter {
   pipelineComplete(
     args: { run: CiRunScope } & Omit<CheckResult, "annotations">,
   ): Promise<void>;
+  /**
+   * Start a job's check. Returns when the job started, read inside the step so
+   * it's memoized, or `undefined` when there's no check to start.
+   */
   jobStart(args: {
     run: CiRunScope;
     jobPath: string;
     name?: string;
-  }): Promise<void>;
+  }): Promise<number | undefined>;
   jobComplete(
     args: { run: CiRunScope; jobPath: string; name?: string } & CheckResult,
   ): Promise<void>;
@@ -187,13 +191,20 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     name: string,
     stepId: string,
   ) => {
-    const result = await run.step.run({ id: stepId, name: stepId }, () => {
-      return sink.start({ run, name, ...identity(run, key) });
-    });
+    const result = await run.step.run(
+      { id: stepId, name: stepId },
+      async () => {
+        const started = await sink.start({ run, name, ...identity(run, key) });
+
+        return { ...started, startedAt: Date.now() };
+      },
+    );
 
     if (result?.id) {
       checkRunIds.set(key, result.id);
     }
+
+    return result?.startedAt;
   };
 
   const complete = async (
@@ -247,10 +258,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
     jobStart: async ({ run, jobPath, name }) => {
       if (!run.checkName || !run.jobChecks) {
-        return;
+        return undefined;
       }
 
-      await start(
+      return start(
         run,
         jobPath,
         jobCheckName(run, jobPath, name),

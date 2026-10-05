@@ -5,7 +5,7 @@
  * @module
  */
 
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { files, memoryCacheStore } from "../cache/cache.ts";
 import {
   CiUsageError,
@@ -1380,6 +1380,60 @@ describe("checks", () => {
 
     expect(result.type).toBe("function-resolved");
     expect(result.stepIds).toContain("test › report:summary");
+  });
+});
+
+describe("job durations", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Run a one-command pipeline where every execution request is 10s later. */
+  const runTimed = async (check?: false) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
+    const { ci, reporter } = setup();
+
+    const job = ci.job("test", async () => {
+      await $`pnpm install`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, ...(check === false ? { check } : {}) },
+      async () => {
+        return job();
+      },
+    );
+
+    const result = await runFunction(pipeline, {
+      event: prEvent,
+      beforeRequest: () => {
+        vi.setSystemTime(Date.now() + 10_000);
+      },
+    });
+
+    return { result, reporter };
+  };
+
+  test("a job's duration spans its steps, not the last replay", async () => {
+    const { result, reporter } = await runTimed();
+
+    expect(result.type).toBe("function-resolved");
+
+    const completed = reporter.history.find((entry) => {
+      return entry.status === "completed" && entry.name === "pr / test";
+    });
+
+    expect(completed?.title).toMatch(/^Passed in (\d+m )?\d+s$/);
+    expect(completed?.title).not.toMatch(/ms$/);
+  });
+
+  test("a job without a check still times its steps", async () => {
+    const { result } = await runTimed(false);
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.stepIds).toContain("start:test");
   });
 });
 

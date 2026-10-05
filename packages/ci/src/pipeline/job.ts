@@ -123,7 +123,6 @@ const jobBody = async ({
     secrets: [],
   };
 
-  const startedAt = Date.now();
   const checkName = config.check === false ? undefined : config.check?.name;
   const checked = config.check !== false;
 
@@ -150,9 +149,13 @@ const jobBody = async ({
     }
   }
 
-  if (checked) {
-    await checks.jobStart(target);
+  // Handlers replay from the top on every step, so reading the clock here
+  // would time the last replay. The start comes from the check's step, which
+  // memoizes it, or from a step of its own when there's no check.
+  const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
+  const startedAt = checkStartedAt ?? (await durableNow(run, scope.path));
 
+  if (checked) {
     run.openChecks.set(scope.path, checkName);
   }
 
@@ -228,6 +231,18 @@ const jobBody = async ({
 
     throw error;
   }
+};
+
+/**
+ * The time, memoized. Only for a job whose check didn't start, which has no
+ * step to carry its start time.
+ */
+const durableNow = (run: CiRunScope, jobPath: string): Promise<number> => {
+  const id = `start:${jobPath}`;
+
+  return run.step.run({ id, name: id }, () => {
+    return Date.now();
+  });
 };
 
 /**

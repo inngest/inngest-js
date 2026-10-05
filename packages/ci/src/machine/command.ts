@@ -418,7 +418,6 @@ class CommandBuilder implements Command {
     stepId: string,
     timeoutMs: number,
   ): Promise<CommandResult> {
-    const started = Date.now();
     const secrets = this.secretValues(scope);
     const { command, ...options } = this.spawnOptions(scope);
 
@@ -434,7 +433,9 @@ class CommandBuilder implements Command {
         stdout: maskSecrets(result.stdout, secrets),
         stderr: maskSecrets(result.stderr, secrets),
         truncated: result.output?.truncated === true,
-        durationMs: Date.now() - started,
+        // The sandbox doesn't time a captured exec, and a clock read out here
+        // would span a replay, not the command.
+        durationMs: 0,
       };
     } catch (error) {
       // The sandbox answers an exec that outlives its timeout with an error,
@@ -456,8 +457,6 @@ class CommandBuilder implements Command {
     stepId: string,
     timeoutMs: number | undefined,
   ): Promise<CommandResult> {
-    const started = Date.now();
-
     const process = await startProcess(
       machine,
       stepId,
@@ -486,7 +485,6 @@ class CommandBuilder implements Command {
       stepId,
       argv: this.state.argv,
       secrets: this.secretValues(scope),
-      startedAt: started,
     });
 
     await publishOutput(scope, stepId, "stdout", result.stdout);
@@ -659,7 +657,6 @@ const readResult = async (opts: {
   stepId: string;
   argv: string[];
   secrets: string[];
-  startedAt?: number;
 }): Promise<CommandResult> => {
   const output = await opts.process.getOutput(subStep(opts.stepId, "output"), {
     tailBytes: outputTailBytes,
@@ -675,14 +672,19 @@ const readResult = async (opts: {
     stdout: maskSecrets(stdout.text, opts.secrets),
     stderr: maskSecrets(stderr.text, opts.secrets),
     truncated: stdout.truncated || stderr.truncated,
-    durationMs: processDurationMs(opts.process, opts.startedAt),
+    durationMs: processDurationMs(opts.process),
   };
 };
 
-const processDurationMs = (
-  process: { startedAt?: string; endedAt?: string },
-  fallbackStart?: number,
-): number => {
+/**
+ * How long a process ran, from the timestamps the sandbox gives it. Reading
+ * the clock here instead would measure replays, not the process, since the
+ * handler re-runs from the top on every step.
+ */
+const processDurationMs = (process: {
+  startedAt?: string;
+  endedAt?: string;
+}): number => {
   if (process.startedAt && process.endedAt) {
     return (
       new Date(process.endedAt).getTime() -
@@ -690,7 +692,7 @@ const processDurationMs = (
     );
   }
 
-  return fallbackStart ? Date.now() - fallbackStart : 0;
+  return 0;
 };
 
 /**
