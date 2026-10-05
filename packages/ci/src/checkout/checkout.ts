@@ -66,6 +66,7 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const { run } = scope;
   const repo = run.repo;
   const target = opts.path ?? defaultCwd;
+
   const local =
     repo?.local && process.env.INNGEST_CI_GITHUB !== "live" ? repo.local : null;
 
@@ -82,6 +83,7 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
     if (local) {
       return uploadWorkingTree(run, machine, local.path, target);
     }
+
     return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
   });
 
@@ -90,9 +92,11 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
 
 const getSandbox = async (run: CiRunScope, machine: MachineHandle) => {
   const sandbox = await run.ci.client.sandboxes.get(machine.id);
+
   if (!sandbox) {
     throw new Error(`Machine ${machine.id} is gone`);
   }
+
   return sandbox;
 };
 
@@ -113,13 +117,16 @@ const uploadWorkingTree = async (
   const sandbox = await getSandbox(run, machine);
 
   await sandbox.commands.run(["/bin/mkdir", "-p", target]);
+
   await sandbox.files.upload({
     path: `${target}/.inngest-ci-source.tar`,
     data: new Blob([new Uint8Array(tarball)]),
   });
+
   await sandbox.commands.run(["/bin/tar", "-xf", ".inngest-ci-source.tar"], {
     cwd: target,
   });
+
   await sandbox.commands.run(["/bin/rm", "-f", ".inngest-ci-source.tar"], {
     cwd: target,
   });

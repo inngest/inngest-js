@@ -22,7 +22,9 @@ const padded = (data: Uint8Array): Uint8Array => {
   const out = new Uint8Array(
     Math.ceil(data.byteLength / blockSize) * blockSize,
   );
+
   out.set(data);
+
   return out;
 };
 
@@ -53,9 +55,11 @@ const splitName = (
 const paxRecord = (key: string, value: string): Uint8Array => {
   const body = ` ${key}=${value}\n`;
   let length = encoder.encode(body).byteLength;
+
   while (encoder.encode(`${length}${body}`).byteLength !== length) {
     length = encoder.encode(`${length}${body}`).byteLength;
   }
+
   return encoder.encode(`${length}${body}`);
 };
 
@@ -67,6 +71,7 @@ const header = (fields: {
   typeflag: string;
 }): Uint8Array => {
   const block = new Uint8Array(blockSize);
+
   const write = (text: string, offset: number, length: number) => {
     block.set(encoder.encode(text).slice(0, length), offset);
   };
@@ -84,10 +89,13 @@ const header = (fields: {
   write(fields.prefix, 345, 155);
 
   let checksum = 0;
+
   for (const byte of block) {
     checksum += byte;
   }
+
   write(octal(checksum, 7), 148, 7);
+
   block[155] = 0x20;
 
   return block;
@@ -104,6 +112,7 @@ const workingTreeFiles = async (cwd: string): Promise<string[]> => {
     "--exclude-standard",
     "-z",
   ]);
+
   return stdout.split("\0").filter(Boolean);
 };
 
@@ -129,10 +138,13 @@ export const buildWorkingTreeTarball = async (
 
     try {
       const info = await stat(absolute);
+
       if (!info.isFile()) {
         continue;
       }
+
       mode = info.mode & 0o777;
+
       contents = new Uint8Array(await readFile(absolute));
     } catch {
       // Deleted between listing and reading.
@@ -143,6 +155,7 @@ export const buildWorkingTreeTarball = async (
 
     if (!split) {
       const record = paxRecord("path", relative);
+
       blocks.push(
         header({
           name: "PaxHeader",
@@ -157,6 +170,7 @@ export const buildWorkingTreeTarball = async (
 
     // Without a split, PAX supplies the real path and this name is a stub.
     const { prefix, name } = split ?? { prefix: "", name: relative };
+
     blocks.push(
       header({
         name,
@@ -175,11 +189,13 @@ export const buildWorkingTreeTarball = async (
   const total = blocks.reduce((sum, block) => {
     return sum + block.byteLength;
   }, 0);
+
   const tarball = new Uint8Array(total);
   let offset = 0;
 
   for (const block of blocks) {
     tarball.set(block, offset);
+
     offset += block.byteLength;
   }
 

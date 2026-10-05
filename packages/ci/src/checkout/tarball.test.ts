@@ -33,8 +33,10 @@ describe("buildWorkingTreeTarball", () => {
   test("extracts long nested paths at the right place with system tar", async () => {
     const source = join(root, "source");
     const dest = join(root, "dest");
+
     mkdirSync(source);
     mkdirSync(dest);
+
     execFileSync("git", ["init", "-q"], { cwd: source });
 
     const paths = [
@@ -48,7 +50,9 @@ describe("buildWorkingTreeTarball", () => {
 
     for (const path of paths) {
       const absolute = join(source, path);
+
       mkdirSync(join(absolute, ".."), { recursive: true });
+
       writeFileSync(absolute, `contents of ${path.length}`);
     }
 
@@ -56,6 +60,7 @@ describe("buildWorkingTreeTarball", () => {
       join(root, "work.tar"),
       await buildWorkingTreeTarball(source),
     );
+
     execFileSync("tar", ["-xf", join(root, "work.tar"), "-C", dest]);
 
     for (const path of paths) {

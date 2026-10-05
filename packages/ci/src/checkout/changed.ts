@@ -46,6 +46,7 @@ export async function changed(
   ...args: [{ include?: string[]; ignore?: string[] }] | string[]
 ): Promise<boolean> {
   const first = args[0];
+
   const opts =
     typeof first === "object" && first !== null
       ? first
@@ -76,6 +77,7 @@ export const changedFiles = async (): Promise<string[] | null> => {
   }
 
   const cached = run.changedFiles;
+
   if (cached) {
     return cached;
   }
@@ -100,10 +102,12 @@ export const changedFiles = async (): Promise<string[] | null> => {
     run.warnings.push(
       `\`changed()\` assumed everything changed: ${files.reason}`,
     );
+
     return null;
   }
 
   run.changedFiles = files;
+
   return files;
 };
 
@@ -160,7 +164,9 @@ const localChangedFiles = async (
   for (const target of [`origin/${baseRef}`, baseRef, "HEAD"]) {
     try {
       const diff = await git(cwd, ["diff", "--name-only", `${target}...HEAD`]);
+
       committed = diff.split("\n").filter(Boolean);
+
       break;
     } catch {
       // Try the next candidate; a fresh clone may have no origin.
@@ -168,6 +174,7 @@ const localChangedFiles = async (
   }
 
   const status = await git(cwd, ["status", "--porcelain"]);
+
   const uncommitted = status
     .split("\n")
     .filter(Boolean)
