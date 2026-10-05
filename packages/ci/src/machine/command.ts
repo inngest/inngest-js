@@ -1,13 +1,19 @@
+/**
+ * Running commands on a job's machine: the `$` tag, its builder methods and
+ the raw command helpers other APIs reuse.
+ *
+ * @module
+ */
+
 import { getSandboxError } from "inngest/experimental";
-import { CommandFailedError, CommandTimeoutError } from "./errors.ts";
-import { ensureMachine } from "./machine.ts";
-import type { CiJobScope, MachineHandle } from "./scope.ts";
+import { CommandFailedError, CommandTimeoutError } from "../errors.ts";
+import type { CiJobScope, MachineHandle } from "../pipeline/scope.ts";
 import {
   defaultCwd,
   nextStepId,
   requireJobScope,
   scopeSeparator,
-} from "./scope.ts";
+} from "../pipeline/scope.ts";
 import type {
   BackgroundProcess,
   Command,
@@ -15,7 +21,7 @@ import type {
   CommandTag,
   CommandValue,
   Duration,
-} from "./types.ts";
+} from "../types.ts";
 import {
   durationToMs,
   maskSecrets,
@@ -23,7 +29,8 @@ import {
   tail,
   truncateLabel,
   warnOnce,
-} from "./util.ts";
+} from "../util.ts";
+import { ensureMachine } from "./machine.ts";
 
 /**
  * Captured `commands.run` is capped at five minutes, so anything longer runs

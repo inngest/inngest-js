@@ -1,4 +1,11 @@
-import type { CiRunScope } from "../scope.ts";
+/**
+ * Reporting pipeline and job progress as GitHub check runs, commit statuses or
+ console output, and the summaries shown on them.
+ *
+ * @module
+ */
+
+import type { CiRunScope } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
 import { formatDuration } from "../util.ts";
 import type { GitHubProvider } from "./auth.ts";

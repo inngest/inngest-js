@@ -1,9 +1,16 @@
+/**
+ * Hashing local working-tree files for `files()` cache keys when a run came
+ from a local fixture.
+ *
+ * @module
+ */
+
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { filterPaths, hash } from "./util.ts";
+import { filterPaths, hash } from "../util.ts";
 
 const exec = promisify(execFile);
 

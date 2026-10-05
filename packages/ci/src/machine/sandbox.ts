@@ -1,10 +1,16 @@
+/**
+ * The `sandbox()` API: extra machines a job can run alongside its own.
+ *
+ * @module
+ */
+
+import { waitForHttp, waitForPort } from "../checkout/wait.ts";
+import { CiNotSupportedError } from "../errors.ts";
+import type { CiJobScope } from "../pipeline/scope.ts";
+import { requireJobScope, scopeSeparator } from "../pipeline/scope.ts";
+import type { Duration, ExtraMachine, MachineConfig } from "../types.ts";
 import { createCommandTag } from "./command.ts";
-import { CiNotSupportedError } from "./errors.ts";
-import { waitForHttp, waitForPort } from "./helpers.ts";
 import { ensureMachine } from "./machine.ts";
-import type { CiJobScope } from "./scope.ts";
-import { requireJobScope, scopeSeparator } from "./scope.ts";
-import type { Duration, ExtraMachine, MachineConfig } from "./types.ts";
 
 /**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without

@@ -1,5 +1,11 @@
+/**
+ * APIs that exist in the types but the platform can't do yet.
+ *
+ * @module
+ */
+
 import { CiNotSupportedError } from "./errors.ts";
-import { requireJobScope } from "./scope.ts";
+import { requireJobScope } from "./pipeline/scope.ts";
 import type { Command, Duration } from "./types.ts";
 import { warnOnce } from "./util.ts";
 

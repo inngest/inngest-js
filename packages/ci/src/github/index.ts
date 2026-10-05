@@ -1,3 +1,9 @@
+/**
+ * The `github` namespace: triggers and helpers gathered into one export.
+ *
+ * @module
+ */
+
 import {
   canUser,
   forcePushRef,

@@ -1,18 +1,20 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+/**
+ * Tests for the `github` helpers, REST wrapper, triggers and providers.
+ *
+ * @module
+ */
 
-import { createCi } from "./createCi.ts";
-import { durable, resetDurableWarnings } from "./durable.ts";
-import { CiNotSupportedError, CiUsageError } from "./errors.ts";
-import { consoleReporter, githubToken } from "./github/auth.ts";
-import { github } from "./github/index.ts";
-import {
-  createCiTestClient,
-  createFakeGitHub,
-  createFakeSandboxApi,
-  type FakeGitHub,
-  runFunction,
-} from "./testHelpers.ts";
-import { oidc, shard, shell, vercel } from "./unsupported.ts";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { CiNotSupportedError, CiUsageError } from "../errors.ts";
+import { createCi } from "../pipeline/createCi.ts";
+import { durable, resetDurableWarnings } from "../pipeline/durable.ts";
+import { createCiTestClient } from "../testing/client.ts";
+import { createFakeGitHub, type FakeGitHub } from "../testing/fakeGitHub.ts";
+import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import { runFunction } from "../testing/runFunction.ts";
+import { oidc, shard, shell, vercel } from "../unsupported.ts";
+import { consoleReporter, githubToken } from "./auth.ts";
+import { github } from "./index.ts";
 
 const prTrigger = [{ event: "github/pull_request.opened" }];
 

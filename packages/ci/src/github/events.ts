@@ -1,3 +1,10 @@
+/**
+ * Turning GitHub webhooks into Inngest events and reading repository context
+ from them.
+ *
+ * @module
+ */
+
 import type { WebhookEvent } from "@octokit/webhooks-types";
 
 import type { RepoContext } from "../types.ts";

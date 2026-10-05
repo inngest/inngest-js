@@ -1,5 +1,11 @@
+/**
+ * The `report` API: adding annotations and summaries to the current check.
+ *
+ * @module
+ */
+
 import { CiNotSupportedError } from "./errors.ts";
-import { getJobScope, nextStepId, requireRunScope } from "./scope.ts";
+import { getJobScope, nextStepId, requireRunScope } from "./pipeline/scope.ts";
 import type { CheckAnnotation } from "./types.ts";
 
 /**

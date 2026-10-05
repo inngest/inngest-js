@@ -1,14 +1,21 @@
+/**
+ * The run and job scopes held in async context: what a running pipeline or
+ job knows about itself, and the helpers that read them.
+ *
+ * @module
+ */
+
 import type { GetStepTools, Inngest } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
-import { CiUsageError } from "./errors.ts";
+import { CiUsageError } from "../errors.ts";
 import type {
   CacheEntry,
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
   RepoContext,
-} from "./types.ts";
+} from "../types.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a

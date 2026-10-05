@@ -1,6 +1,17 @@
-import { durablePath } from "../durable.ts";
+/**
+ * The durable GitHub helpers behind `github.*`: tokens, comments, permissions,
+ pagination and waiting for checks.
+ *
+ * @module
+ */
+
 import { CiUsageError } from "../errors.ts";
-import { getJobScope, getRunScope, requireRunScope } from "../scope.ts";
+import { durablePath } from "../pipeline/durable.ts";
+import {
+  getJobScope,
+  getRunScope,
+  requireRunScope,
+} from "../pipeline/scope.ts";
 import type { CheckConclusion, Duration } from "../types.ts";
 import { hash } from "../util.ts";
 import type { Octokit } from "./auth.ts";

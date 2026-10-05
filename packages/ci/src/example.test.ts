@@ -1,17 +1,22 @@
-import { describe, expect, test } from "vitest";
+/**
+ * The README example, run end to end against the fake sandbox API.
+ *
+ * @module
+ */
 
 import { step } from "inngest";
-import { memoryCacheStore } from "./cache.ts";
-import { $ } from "./command.ts";
-import { createCi } from "./createCi.ts";
+import { describe, expect, test } from "vitest";
+import { files, memoryCacheStore } from "./cache/cache.ts";
+import { changed } from "./checkout/changed.ts";
+import { checkout } from "./checkout/checkout.ts";
+import { waitForHttp } from "./checkout/wait.ts";
 import { consoleReporter } from "./github/auth.ts";
-import { changed, checkout, files, waitForHttp } from "./helpers.ts";
-import { from } from "./machine.ts";
-import {
-  createCiTestClient,
-  createFakeSandboxApi,
-  runFunction,
-} from "./testHelpers.ts";
+import { $ } from "./machine/command.ts";
+import { from } from "./machine/from.ts";
+import { createCi } from "./pipeline/createCi.ts";
+import { createCiTestClient } from "./testing/client.ts";
+import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
+import { runFunction } from "./testing/runFunction.ts";
 
 /**
  * The shape of the example's `pr` pipeline, run end to end: a cached setup

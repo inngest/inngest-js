@@ -8,11 +8,34 @@
  *
  * What's being pinned down is the developer experience: what you get without
  * writing a single type argument, and what the checker stops you doing.
+ *
+ * @module
  */
 
 import type { PushEvent } from "@octokit/webhooks-types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expectTypeOf, test } from "vitest";
+import { fileCacheStore, files, memoryCacheStore } from "./cache/cache.ts";
+import { changed } from "./checkout/changed.ts";
+import { checkout } from "./checkout/checkout.ts";
+import { waitForHttp, waitForPort } from "./checkout/wait.ts";
+import type {
+  CiNotSupportedError,
+  CiUsageError,
+  CommandFailedError,
+  CommandTimeoutError,
+} from "./errors.ts";
+import type {
+  ConsoleProvider,
+  GitHubAppProvider,
+  GitHubProvider,
+  GitHubTokenProvider,
+} from "./github/auth.ts";
+import { consoleReporter, githubApp, githubToken } from "./github/auth.ts";
+import type { GitHubEventData } from "./github/events.ts";
+import { fixtures } from "./github/fixtures.ts";
+import type { RunRepo } from "./github/helpers.ts";
+import { github } from "./github/index.ts";
 import type {
   BackgroundProcess as EntryBackgroundProcess,
   CacheConfig as EntryCacheConfig,
@@ -53,38 +76,13 @@ import type {
   RunRepo as EntryRunRepo,
   ShardOptions as EntryShardOptions,
 } from "./index.ts";
-
-import { fileCacheStore, memoryCacheStore } from "./cache.ts";
-import { $ } from "./command.ts";
-import { createCi } from "./createCi.ts";
-import type {
-  CiNotSupportedError,
-  CiUsageError,
-  CommandFailedError,
-  CommandTimeoutError,
-} from "./errors.ts";
-import { sandbox } from "./extraMachine.ts";
-import type {
-  ConsoleProvider,
-  GitHubAppProvider,
-  GitHubProvider,
-  GitHubTokenProvider,
-} from "./github/auth.ts";
-import { consoleReporter, githubApp, githubToken } from "./github/auth.ts";
-import type { GitHubEventData } from "./github/events.ts";
-import { fixtures } from "./github/fixtures.ts";
-import type { RunRepo } from "./github/helpers.ts";
-import { github } from "./github/index.ts";
-import {
-  changed,
-  checkout,
-  files,
-  waitForHttp,
-  waitForPort,
-} from "./helpers.ts";
-import { from } from "./machine.ts";
+import { $ } from "./machine/command.ts";
+import { from } from "./machine/from.ts";
+import { sandbox } from "./machine/sandbox.ts";
+import { createCi } from "./pipeline/createCi.ts";
 import { report } from "./report.ts";
-import { createCiTestClient, createFakeSandboxApi } from "./testHelpers.ts";
+import { createCiTestClient } from "./testing/client.ts";
+import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import type {
   BackgroundProcess,
   CacheEntry,

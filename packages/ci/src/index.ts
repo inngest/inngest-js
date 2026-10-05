@@ -28,16 +28,16 @@
  */
 
 // Cache
+// Helpers
 export {
   fileCacheStore,
+  files,
   inngestCacheStore,
   memoryCacheStore,
-} from "./cache.ts";
-// Commands
-export { $ } from "./command.ts";
-// Client
-export type { Ci, CiOptions } from "./createCi.ts";
-export { createCi } from "./createCi.ts";
+} from "./cache/cache.ts";
+export { changed } from "./checkout/changed.ts";
+export { checkout } from "./checkout/checkout.ts";
+export { waitForHttp, waitForPort } from "./checkout/wait.ts";
 // Errors
 export {
   CiNotSupportedError,
@@ -45,8 +45,6 @@ export {
   CommandFailedError,
   CommandTimeoutError,
 } from "./errors.ts";
-// Extra machines
-export { sandbox } from "./extraMachine.ts";
 // GitHub
 export type {
   ConsoleProvider,
@@ -79,16 +77,15 @@ export type {
   PullRequestAction,
   PullRequestEventFor,
 } from "./github/triggers.ts";
-// Helpers
-export {
-  changed,
-  checkout,
-  files,
-  waitForHttp,
-  waitForPort,
-} from "./helpers.ts";
+// Commands
+export { $ } from "./machine/command.ts";
 // Machines
-export { from } from "./machine.ts";
+export { from } from "./machine/from.ts";
+// Extra machines
+export { sandbox } from "./machine/sandbox.ts";
+// Client
+export type { Ci, CiOptions } from "./pipeline/createCi.ts";
+export { createCi } from "./pipeline/createCi.ts";
 // Reporting
 export { report } from "./report.ts";
 // Types

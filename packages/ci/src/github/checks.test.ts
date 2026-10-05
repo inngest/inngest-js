@@ -1,10 +1,22 @@
+/**
+ * Tests for check reporting (check runs, statuses, console), the GitHub
+ skip/permission flows, and the deprecation markers on unsupported APIs.
+ *
+ * @module
+ */
+
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { createCi } from "./createCi.ts";
-import { consoleReporter, githubToken } from "./github/auth.ts";
+import { createCi } from "../pipeline/createCi.ts";
+import type { CiRunScope } from "../pipeline/scope.ts";
+import { createCiTestClient } from "../testing/client.ts";
+import { createFakeGitHub } from "../testing/fakeGitHub.ts";
+import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import { runFunction } from "../testing/runFunction.ts";
+import { consoleReporter, githubToken } from "./auth.ts";
 import {
   checksSink,
   createCheckReporter,
@@ -12,14 +24,7 @@ import {
   pipelineSummary,
   resetTitleThrottle,
   statusesSink,
-} from "./github/checks.ts";
-import type { CiRunScope } from "./scope.ts";
-import {
-  createCiTestClient,
-  createFakeGitHub,
-  createFakeSandboxApi,
-  runFunction,
-} from "./testHelpers.ts";
+} from "./checks.ts";
 
 const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope =>
   ({
@@ -328,14 +333,14 @@ describe("dev mode", () => {
 
 describe("deprecated APIs are marked", () => {
   const read = (file: string) =>
-    readFile(join(import.meta.dirname, file), "utf8");
+    readFile(join(import.meta.dirname, "..", file), "utf8");
 
   test.each([
     ["unsupported.ts", "shell"],
     ["unsupported.ts", "oidc"],
     ["unsupported.ts", "vercel"],
     ["unsupported.ts", "rerunFromFailedJob"],
-    ["cache.ts", "inngestCacheStore"],
+    ["cache/cache.ts", "inngestCacheStore"],
     ["report.ts", "junit"],
   ])("%s marks %s @deprecated", async (file, name) => {
     const source = await read(file);

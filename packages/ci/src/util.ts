@@ -1,3 +1,10 @@
+/**
+ * Small shared helpers: hashing, durations, glob matching, formatting and
+ warn-once.
+ *
+ * @module
+ */
+
 // `hash.js` is CommonJS, so it's imported as a default like the rest of the
 // SDK does; a named import breaks under Node's ESM loader.
 import hashjs from "hash.js";

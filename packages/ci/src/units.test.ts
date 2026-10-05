@@ -1,8 +1,12 @@
+/**
+ * Unit tests for pure helpers across the package: parsing, matching, matrix
+ expansion, GitHub mapping, cache scopes and formatting.
+ *
+ * @module
+ */
+
 import { describe, expect, test } from "vitest";
-import { cacheScopes, storeKey } from "./cache.ts";
-import { buildArgv, buildShellString } from "./command.ts";
-import { expandMatrix, matrixJobId, runPool } from "./createCi.ts";
-import { behaviourFor } from "./durable.ts";
+import { cacheScopes, storeKey } from "./cache/cache.ts";
 import {
   batchAnnotations,
   normaliseAnnotation,
@@ -22,6 +26,9 @@ import {
   pullRequest,
   push,
 } from "./github/triggers.ts";
+import { buildArgv, buildShellString } from "./machine/command.ts";
+import { behaviourFor } from "./pipeline/durable.ts";
+import { expandMatrix, matrixJobId, runPool } from "./pipeline/matrix.ts";
 import {
   durationToMs,
   filterPaths,

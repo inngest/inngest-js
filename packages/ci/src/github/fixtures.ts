@@ -1,3 +1,10 @@
+/**
+ * Local event fixtures that stand in for GitHub webhooks when running a
+ pipeline from a working tree.
+ *
+ * @module
+ */
+
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";

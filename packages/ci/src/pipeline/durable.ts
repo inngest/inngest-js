@@ -1,5 +1,12 @@
+/**
+ * Durable proxies: wrapping a client so its calls run as steps, and the rules
+ * for which methods run as steps, run directly, or are unsupported.
+ *
+ * @module
+ */
+
 import { getAsyncCtx } from "inngest/experimental";
-import { CiUsageError } from "./errors.ts";
+import { CiUsageError } from "../errors.ts";
 import { getJobScope, getRunScope, nextStepId } from "./scope.ts";
 
 export type DurableBehaviour = "step" | "direct" | "unsupported";

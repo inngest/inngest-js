@@ -1,3 +1,10 @@
+/**
+ * GitHub providers: `githubApp`, `githubToken` and `consoleReporter`, and the
+ Octokit clients built from them.
+ *
+ * @module
+ */
+
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
 

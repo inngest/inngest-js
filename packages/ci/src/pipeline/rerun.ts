@@ -1,5 +1,11 @@
+/**
+ * Re-running a pipeline when a GitHub check is re-requested.
+ *
+ * @module
+ */
+
 import type { Inngest } from "inngest";
-import type { PipelineConfig } from "./types.ts";
+import type { PipelineConfig } from "../types.ts";
 
 /**
  * Re-run a pipeline from a GitHub check's "Re-run" button.
@@ -47,7 +53,7 @@ export const rerunEventFor = async ({
   const rerunOf = externalId?.split(":")[0];
 
   return step.run("resend-trigger", async () => {
-    const { octokitForRun } = await import("./github/rest.ts");
+    const { octokitForRun } = await import("../github/rest.ts");
     const [owner, repo] = String(repository.full_name).split("/") as [
       string,
       string,

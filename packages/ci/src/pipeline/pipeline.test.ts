@@ -1,23 +1,28 @@
+/**
+ * End-to-end tests of pipelines, jobs, machines, caching and reporting,
+ driven through the fake sandbox API.
+ *
+ * @module
+ */
+
 import { describe, expect, test } from "vitest";
-import { memoryCacheStore } from "./cache.ts";
-import { $ } from "./command.ts";
-import { createCi } from "./createCi.ts";
+import { files, memoryCacheStore } from "../cache/cache.ts";
 import {
   CiUsageError,
   CommandFailedError,
   CommandTimeoutError,
-} from "./errors.ts";
-import { sandbox } from "./extraMachine.ts";
-import { consoleReporter } from "./github/auth.ts";
-import { files } from "./helpers.ts";
-import { from, machineSetupScript } from "./machine.ts";
-import { report } from "./report.ts";
-import {
-  createCiTestClient,
-  createFakeSandboxApi,
-  runFunction,
-} from "./testHelpers.ts";
-import type { CacheStore } from "./types.ts";
+} from "../errors.ts";
+import { consoleReporter } from "../github/auth.ts";
+import { $ } from "../machine/command.ts";
+import { from } from "../machine/from.ts";
+import { machineSetupScript } from "../machine/machine.ts";
+import { sandbox } from "../machine/sandbox.ts";
+import { report } from "../report.ts";
+import { createCiTestClient } from "../testing/client.ts";
+import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import { runFunction } from "../testing/runFunction.ts";
+import type { CacheStore } from "../types.ts";
+import { createCi } from "./createCi.ts";
 
 const prEvent = {
   name: "github/pull_request.opened",

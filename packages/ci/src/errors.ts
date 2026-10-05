@@ -3,6 +3,8 @@
  *
  * Messages are written to say what happened and how to fix it, because CI
  * failures are usually read by someone who didn't write the pipeline.
+ *
+ * @module
  */
 
 /**

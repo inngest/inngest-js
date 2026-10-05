@@ -1,10 +1,17 @@
+/**
+ * The durable GitHub REST client, `github.rest`, and mapping GitHub errors to
+ retry behaviour.
+ *
+ * @module
+ */
+
 import type { RestEndpointMethodTypes } from "@octokit/rest";
 
 import { NonRetriableError, RetryAfterError } from "inngest";
 import type { Jsonify } from "inngest/types";
-import { durable } from "../durable.ts";
 import { CiUsageError } from "../errors.ts";
-import { getRunScope } from "../scope.ts";
+import { durable } from "../pipeline/durable.ts";
+import { getRunScope } from "../pipeline/scope.ts";
 import type { GitHubProvider, Octokit } from "./auth.ts";
 
 export type { RestEndpointMethodTypes };

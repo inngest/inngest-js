@@ -1,3 +1,10 @@
+/**
+ * The public types of `@inngest/ci`: configs, commands, caches, matrices and
+ the trigger shapes.
+ *
+ * @module
+ */
+
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
 import type { InngestFunction } from "inngest";
