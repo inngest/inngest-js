@@ -1,12 +1,9 @@
 /**
- * EXPERIMENTAL: `@inngest/ci` is an early prototype. Everything exported here
- * may change without a major version bump.
- *
  * Write CI in TypeScript. A pipeline runs when something happens and calls
  * your jobs; each job gets its own machine when it runs its first command.
  *
  * ```ts
- * import { createCi, github, checkout } from "@inngest/ci";
+ * import { $, checkout, createCi, github } from "@inngest/ci";
  *
  * export const ci = createCi(inngest);
  *
@@ -23,6 +20,8 @@
  *   },
  * );
  * ```
+ *
+ * Beta: APIs may change without a major version bump.
  *
  * @module
  */
