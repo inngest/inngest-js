@@ -1799,6 +1799,49 @@ describe("repository for repo-less triggers", () => {
   });
 });
 
+describe("failures that retrying cannot fix", () => {
+  test("a failed matrix with failFast off fails once and cleans up", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "pnpm test", exitCode: 1, stderr: "nope" }]);
+
+    const compat = ci.matrix(
+      { id: "compat", axes: { node: ["20", "22"] } },
+      async ({ node }) => {
+        await $`pnpm test --node ${node}`;
+      },
+    );
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return compat();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    expect(
+      [...api.sandboxes.values()].every((sandbox) => {
+        return sandbox.status === "TERMINATED";
+      }),
+    ).toBe(true);
+  });
+
+  test("a malformed repo fails when the pipeline is defined", () => {
+    const { ci } = setup();
+
+    for (const repo of ["my-app", "a/b/c", "/b", "a/"]) {
+      expect(() => {
+        return ci.pipeline(
+          { id: "nightly", on: [{ event: "test/nightly" }], repo },
+          async () => {},
+        );
+      }).toThrow(CiUsageError);
+    }
+  });
+});
+
 describe("pipeline check annotations", () => {
   test("annotations made outside a job reach the pipeline check", async () => {
     vi.stubEnv("INNGEST_CI_GITHUB", "live");

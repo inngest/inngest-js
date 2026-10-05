@@ -80,6 +80,10 @@ export const definePipeline = ({
     );
   }
 
+  if (rawConfig.repo !== undefined) {
+    parseRepo(rawConfig.repo);
+  }
+
   // A comment trigger's `minPermission` can't be expressed in CEL, so it
   // travels beside the trigger and is checked when the run starts.
   const permissions = triggers.flatMap((trigger) => {
@@ -215,11 +219,39 @@ const newRunScope = ({
   };
 };
 
+/** Split a configured `repo` into its owner and name. */
+const parseRepo = (fullName: string): { owner: string; name: string } => {
+  const [owner, name, ...rest] = fullName.split("/");
+
+  if (!owner || !name || rest.length > 0) {
+    throw new CiUsageError(
+      `\`repo\` must be "owner/name", but got "${fullName}".`,
+    );
+  }
+
+  return { owner, name };
+};
+
 /**
  * Run a pipeline: set up the run scope, report the pipeline check, run the
  * handler, then always complete the check and destroy the machines.
+ *
+ * A usage error is the same on every attempt, so one thrown before the
+ * handler's own error handling takes over is made non-retriable here.
  */
-export const runPipeline = async ({
+export const runPipeline = async (args: RunPipelineArgs): Promise<unknown> => {
+  try {
+    return await runPipelineAttempt(args);
+  } catch (error) {
+    if (error instanceof CiUsageError) {
+      throw new NonRetriableError(error.message, { cause: error });
+    }
+
+    throw error;
+  }
+};
+
+const runPipelineAttempt = async ({
   internals,
   config,
   handler,
@@ -399,13 +431,7 @@ const resolveConfiguredRepo = (
   run: CiRunScope,
   fullName: string,
 ): Promise<RepoContext> => {
-  const [owner = "", name = ""] = fullName.split("/");
-
-  if (!owner || !name) {
-    throw new CiUsageError(
-      `\`repo\` must be "owner/name", but got "${fullName}".`,
-    );
-  }
+  const { owner, name } = parseRepo(fullName);
 
   return run.step.run(
     { id: `github › repo:resolve`, name: "repo:resolve" },
@@ -442,9 +468,17 @@ const resolveConfiguredRepo = (
 };
 
 /** Errors that replaying the run would only reproduce. */
-const isDeterministicFailure = (
-  error: unknown,
-): error is CommandFailedError | CommandTimeoutError | CiUsageError => {
+const isDeterministicFailure = (error: unknown): error is Error => {
+  // A matrix with `failFast` off rejects with every combination's error.
+  if (error instanceof AggregateError) {
+    return (
+      error.errors.length > 0 &&
+      error.errors.every((inner) => {
+        return isDeterministicFailure(inner);
+      })
+    );
+  }
+
   return (
     error instanceof CommandFailedError ||
     error instanceof CommandTimeoutError ||
