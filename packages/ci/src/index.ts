@@ -27,15 +27,15 @@
  * @module
  */
 
-// Cache and checkout helpers
+// Caching
 export {
   fileCacheStore,
   files,
   memoryCacheStore,
 } from "./cache/cache.ts";
+// Checkout, sharding and waiting
 export { changed } from "./checkout/changed.ts";
 export { checkout } from "./checkout/checkout.ts";
-// Sharding
 export type { ShardOptions } from "./checkout/shard.ts";
 export { shard } from "./checkout/shard.ts";
 export { waitForHttp, waitForPort } from "./checkout/wait.ts";
@@ -45,7 +45,7 @@ export {
   CommandFailedError,
   CommandTimeoutError,
 } from "./errors.ts";
-// GitHub
+// GitHub: triggers, REST client, auth and webhook wiring
 export type {
   ConsoleProvider,
   GitHubAppProvider,
@@ -77,17 +77,16 @@ export type {
   PullRequestAction,
   PullRequestEventFor,
 } from "./github/triggers.ts";
-// Commands
+// Commands and machines
 export { $ } from "./machine/command.ts";
-// Machines
 export { from } from "./machine/from.ts";
-// Extra machines
 export { sandbox } from "./machine/sandbox.ts";
-// Client
+// Client and pipelines
 export type { Ci, CiOptions } from "./pipeline/createCi.ts";
 export { createCi } from "./pipeline/createCi.ts";
 // Reporting
 export { report } from "./report.ts";
+
 // Types
 export type {
   BackgroundProcess,

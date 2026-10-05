@@ -60,7 +60,9 @@ const buildPipeline = () => {
   const ci = createCi(client, {
     github: reporter,
     cacheStore: memoryCacheStore(),
-    runUrl: ({ runId }) => `http://localhost:8288/run?runID=${runId}`,
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
+    },
   });
 
   let deployAttempts = 0;
@@ -84,32 +86,34 @@ const buildPipeline = () => {
     await $`pnpm test`.retries(1);
   });
 
-  const compat = (node: string) =>
-    ci.job(`compat (node:${node})`, async () => {
+  const compat = (node: string) => {
+    return ci.job(`compat (node:${node})`, async () => {
       await from(setup);
       await $`pnpm test`.env({ NODE_VERSION: node });
       return node;
     })();
+  };
 
   // No commands, so no machine: the SDK call fails once and is retried.
-  const deploy = ci.job("deploy", async () =>
-    step.run("create-deployment", async () => {
+  const deploy = ci.job("deploy", async () => {
+    return step.run("create-deployment", async () => {
       deployAttempts += 1;
       if (deployAttempts === 1) {
         throw new Error("deploy provider returned 503");
       }
       return { url: "https://preview.example.dev" };
-    }),
-  );
+    });
+  });
 
-  const e2e = (baseUrl: string) =>
-    ci.job("e2e", async () => {
+  const e2e = (baseUrl: string) => {
+    return ci.job("e2e", async () => {
       await from(setup);
       await $`serve`.background();
       await waitForHttp("http://127.0.0.1:3000");
       await $`pnpm exec playwright test`.env({ BASE_URL: baseUrl });
       return { testedAgainst: baseUrl };
     })();
+  };
 
   const pipeline = ci.pipeline(
     {
@@ -152,7 +156,11 @@ describe("the example's pr pipeline", () => {
     // One machine for setup, and one clone each for the jobs that start from
     // it. `deploy` never gets one.
     const machines = [...api.sandboxes.values()];
-    expect(machines.map((machine) => machine.name)).toEqual([
+    expect(
+      machines.map((machine) => {
+        return machine.name;
+      }),
+    ).toEqual([
       "ci-01TESTRUN-setup",
       "ci-01TESTRUN-lint",
       "ci-01TESTRUN-test",
@@ -161,17 +169,27 @@ describe("the example's pr pipeline", () => {
       "ci-01TESTRUN-e2e",
     ]);
     // Everything but setup is a clone of setup's snapshot.
-    expect(machines.filter((machine) => machine.snapshotId)).toHaveLength(5);
+    expect(
+      machines.filter((machine) => {
+        return machine.snapshotId;
+      }),
+    ).toHaveLength(5);
     expect(api.snapshots.size).toBe(1);
 
     // Setup installed once, however many jobs started from it.
     expect(
-      api.commands.filter((argv) => argv.join(" ") === "pnpm install"),
+      api.commands.filter((argv) => {
+        return argv.join(" ") === "pnpm install";
+      }),
     ).toHaveLength(1);
 
     const completed = reporter.history
-      .filter((entry) => entry.status === "completed")
-      .map((entry) => `${entry.name}: ${entry.conclusion}`);
+      .filter((entry) => {
+        return entry.status === "completed";
+      })
+      .map((entry) => {
+        return `${entry.name}: ${entry.conclusion}`;
+      });
 
     expect(completed).toEqual([
       "pr / setup: success",
@@ -185,9 +203,11 @@ describe("the example's pr pipeline", () => {
     ]);
 
     // Every machine is destroyed with the run.
-    expect(machines.every((machine) => machine.status === "TERMINATED")).toBe(
-      true,
-    );
+    expect(
+      machines.every((machine) => {
+        return machine.status === "TERMINATED";
+      }),
+    ).toBe(true);
   });
 
   test("a failing test fails its job check and the pipeline check", async () => {
@@ -204,35 +224,51 @@ describe("the example's pr pipeline", () => {
 
     expect(result.type).toBe("function-rejected");
 
-    const completed = reporter.history.filter(
-      (entry) => entry.status === "completed",
-    );
+    const completed = reporter.history.filter((entry) => {
+      return entry.status === "completed";
+    });
 
     // `test` and both `compat` jobs run `pnpm test`, and they're started with
     // `Promise.all`, so whichever fails first ends the run.
-    const failed = completed.filter(
-      (entry) => entry.conclusion === "failure" && entry.name !== "pr",
-    );
+    const failed = completed.filter((entry) => {
+      return entry.conclusion === "failure" && entry.name !== "pr";
+    });
 
     expect(failed.length).toBeGreaterThan(0);
     expect(
-      failed.every((entry) => entry.title === "`pnpm test` exited with 1"),
+      failed.every((entry) => {
+        return entry.title === "`pnpm test` exited with 1";
+      }),
     ).toBe(true);
 
     // The jobs that were still going are cancelled rather than left spinning,
     // and every check that started has finished.
-    const started = reporter.history.filter(
-      (entry) => entry.status === "in_progress",
-    );
+    const started = reporter.history.filter((entry) => {
+      return entry.status === "in_progress";
+    });
 
-    expect(new Set(completed.map((entry) => entry.name))).toEqual(
-      new Set(started.map((entry) => entry.name)),
+    expect(
+      new Set(
+        completed.map((entry) => {
+          return entry.name;
+        }),
+      ),
+    ).toEqual(
+      new Set(
+        started.map((entry) => {
+          return entry.name;
+        }),
+      ),
     );
     expect(
-      completed.filter((entry) => entry.conclusion === "cancelled").length,
+      completed.filter((entry) => {
+        return entry.conclusion === "cancelled";
+      }).length,
     ).toBeGreaterThan(0);
 
-    const pipelineCheck = completed.find((entry) => entry.name === "pr");
+    const pipelineCheck = completed.find((entry) => {
+      return entry.name === "pr";
+    });
     expect(pipelineCheck?.conclusion).toBe("failure");
     expect(pipelineCheck?.title).toContain("exited with 1");
   });

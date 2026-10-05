@@ -13,8 +13,8 @@ import type { FakeSandboxApi } from "./fakeSandbox.ts";
 export const createCiTestClient = (
   sandboxApi: FakeSandboxApi,
   id = "ci-test",
-): Inngest.Any =>
-  new Inngest({
+): Inngest.Any => {
+  return new Inngest({
     id,
     isDev: true,
     eventKey: "test-key",
@@ -22,9 +22,18 @@ export const createCiTestClient = (
     signingKey: "signkey-test-12345",
     fetch: sandboxApi.fetch,
     logger: {
-      info: () => undefined,
-      warn: () => undefined,
-      error: () => undefined,
-      debug: () => undefined,
+      info: () => {
+        return undefined;
+      },
+      warn: () => {
+        return undefined;
+      },
+      error: () => {
+        return undefined;
+      },
+      debug: () => {
+        return undefined;
+      },
     },
   });
+};

@@ -108,10 +108,12 @@ const definePipeline = ci.pipeline;
 /**
  * Type-check a body without running it.
  *
- * Most of what's asserted here needs a pipeline run to execute — `$`, a job,
- * `github.rest` — so the body is handed to the checker and never called.
+ * Most of what's asserted here needs a pipeline run to execute (`$`, a job,
+ * `github.rest`), so the body is handed to the checker and never called.
  */
-const types = (_body: () => Promise<unknown> | unknown): void => undefined;
+const types = (_body: () => Promise<unknown> | unknown): void => {
+  return undefined;
+};
 
 describe("pipeline triggers type the event", () => {
   test("a pull request pipeline knows its payload", () => {
@@ -206,9 +208,11 @@ describe("pipeline triggers type the event", () => {
         "~standard": {
           version: 1,
           vendor: "test",
-          validate: (value) => ({
-            value: value as { environment: "preview" | "production" },
-          }),
+          validate: (value) => {
+            return {
+              value: value as { environment: "preview" | "production" },
+            };
+          },
         },
       };
 
@@ -238,9 +242,9 @@ describe("pipeline triggers type the event", () => {
   test("a handler may return anything, including `ci.skip`", () => {
     expectTypeOf(ci.skip).returns.toEqualTypeOf<CiSkip>();
 
-    definePipeline({ id: "skips", on: github.push() }, async () =>
-      ci.skip("nothing to do"),
-    );
+    definePipeline({ id: "skips", on: github.push() }, async () => {
+      return ci.skip("nothing to do");
+    });
   });
 
   test("triggers are values you can pass around", () => {
@@ -262,7 +266,9 @@ describe("pipeline triggers type the event", () => {
 
 describe("jobs infer their input and result", () => {
   test("no input", () => {
-    const job = ci.job("plain", async () => 42);
+    const job = ci.job("plain", async () => {
+      return 42;
+    });
 
     expectTypeOf(job).toExtend<Job<number>>();
     expectTypeOf(job).returns.resolves.toBeNumber();
@@ -271,7 +277,9 @@ describe("jobs infer their input and result", () => {
   });
 
   test("an input, inferred from the handler", () => {
-    const job = ci.job("with-input", async (node: string) => node.length);
+    const job = ci.job("with-input", async (node: string) => {
+      return node.length;
+    });
 
     expectTypeOf(job).parameter(0).toBeString();
     expectTypeOf(job).returns.resolves.toBeNumber();
@@ -280,7 +288,9 @@ describe("jobs infer their input and result", () => {
   test("an object input", () => {
     const job = ci.job(
       "combo",
-      async (input: { node: string; db: "sqlite" | "postgres" }) => input.db,
+      async (input: { node: string; db: "sqlite" | "postgres" }) => {
+        return input.db;
+      },
     );
 
     expectTypeOf(job).parameter(0).toEqualTypeOf<{
@@ -293,7 +303,9 @@ describe("jobs infer their input and result", () => {
   test("config objects work the same way", () => {
     const job = ci.job(
       { id: "cached", cache: { key: files("pnpm-lock.yaml") } },
-      async () => ({ built: true }),
+      async () => {
+        return { built: true };
+      },
     );
 
     expectTypeOf(job).returns.resolves.toEqualTypeOf<{ built: boolean }>();
@@ -308,7 +320,9 @@ describe("jobs infer their input and result", () => {
   });
 
   test("the checker rejects the wrong input", () => {
-    const job = ci.job("needs-string", async (node: string) => node);
+    const job = ci.job("needs-string", async (node: string) => {
+      return node;
+    });
 
     types(async () => {
       // @ts-expect-error a number isn't a string
@@ -319,7 +333,9 @@ describe("jobs infer their input and result", () => {
   });
 
   test("a job with no input takes no argument", () => {
-    const job = ci.job("plain", async () => 1);
+    const job = ci.job("plain", async () => {
+      return 1;
+    });
 
     types(async () => {
       await job();
@@ -330,8 +346,12 @@ describe("jobs infer their input and result", () => {
 });
 
 describe("from() carries the parent's result", () => {
-  const setup = ci.job("setup", async () => ({ installed: true }));
-  const withInput = ci.job("with-input", async (node: string) => node.length);
+  const setup = ci.job("setup", async () => {
+    return { installed: true };
+  });
+  const withInput = ci.job("with-input", async (node: string) => {
+    return node.length;
+  });
 
   test("the result type comes back", () => {
     types(async () => {
@@ -367,7 +387,9 @@ describe("matrices keep their literal values", () => {
   test("the matrix itself is typed", () => {
     const matrix = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => node.length,
+      async ({ node }) => {
+        return node.length;
+      },
     );
 
     expectTypeOf(matrix).toExtend<
@@ -380,7 +402,9 @@ describe("matrices keep their literal values", () => {
   test("running part of a matrix is checked", () => {
     const matrix = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => node,
+      async ({ node }) => {
+        return node;
+      },
     );
 
     types(async () => {
@@ -402,7 +426,9 @@ describe("matrices keep their literal values", () => {
         exclude: [{ node: "20", db: "postgres" }],
         include: [{ node: "22", db: "sqlite" }],
       },
-      async (combo) => combo.node,
+      async (combo) => {
+        return combo.node;
+      },
     );
 
     ci.matrix(
@@ -412,7 +438,9 @@ describe("matrices keep their literal values", () => {
         // @ts-expect-error "21" was never an axis value
         exclude: [{ node: "21" }],
       },
-      async (combo) => combo.node,
+      async (combo) => {
+        return combo.node;
+      },
     );
   });
 
@@ -425,9 +453,13 @@ describe("matrices keep their literal values", () => {
           expectTypeOf(combo.node).toEqualTypeOf<"20" | "22">();
           return { vcpu: combo.node === "22" ? 4 : 2 };
         },
-        cache: (combo) => ({ key: [files("pnpm-lock.yaml"), combo.node] }),
+        cache: (combo) => {
+          return { key: [files("pnpm-lock.yaml"), combo.node] };
+        },
       },
-      async ({ node }) => node,
+      async ({ node }) => {
+        return node;
+      },
     );
   });
 });
@@ -454,7 +486,9 @@ describe("commands", () => {
           .retries(2)
           .nothrow()
           .timeout("10m")
-          .onTimeout(async () => undefined),
+          .onTimeout(async () => {
+            return undefined;
+          }),
       ).toExtend<Command>();
     });
   });
@@ -527,13 +561,33 @@ describe("helpers", () => {
   test("files() is a cache key part, and keys compose", () => {
     expectTypeOf(files("pnpm-lock.yaml")).toEqualTypeOf<CacheKeyPart>();
 
-    ci.job({ id: "a", cache: { key: files("a") } }, async () => 1);
-    ci.job({ id: "b", cache: { key: "v1" } }, async () => 1);
-    ci.job({ id: "c", cache: { key: [files("a"), "go1.25"] } }, async () => 1);
-    ci.job({ id: "d", cache: { key: async () => "computed" } }, async () => 1);
+    ci.job({ id: "a", cache: { key: files("a") } }, async () => {
+      return 1;
+    });
+    ci.job({ id: "b", cache: { key: "v1" } }, async () => {
+      return 1;
+    });
+    ci.job({ id: "c", cache: { key: [files("a"), "go1.25"] } }, async () => {
+      return 1;
+    });
+    ci.job(
+      {
+        id: "d",
+        cache: {
+          key: async () => {
+            return "computed";
+          },
+        },
+      },
+      async () => {
+        return 1;
+      },
+    );
 
     // @ts-expect-error a number isn't a key part
-    ci.job({ id: "e", cache: { key: 42 } }, async () => 1);
+    ci.job({ id: "e", cache: { key: 42 } }, async () => {
+      return 1;
+    });
   });
 
   test("an extra machine has its own command tag", () => {
@@ -734,8 +788,12 @@ describe("providers and stores", () => {
     expectTypeOf(fileCacheStore(".cache")).toEqualTypeOf<CacheStore>();
 
     const custom: CacheStore = {
-      get: async () => undefined,
-      set: async () => undefined,
+      get: async () => {
+        return undefined;
+      },
+      set: async () => {
+        return undefined;
+      },
     };
 
     expectTypeOf(custom.get).returns.resolves.toEqualTypeOf<
@@ -746,7 +804,9 @@ describe("providers and stores", () => {
       github: consoleReporter(),
       cacheStore: custom,
       machine: { vcpu: 4 },
-      runUrl: ({ runId, functionId }) => `${functionId}/${runId}`,
+      runUrl: ({ runId, functionId }) => {
+        return `${functionId}/${runId}`;
+      },
     });
 
     createCi(createCiTestClient(createFakeSandboxApi()), {
@@ -804,7 +864,7 @@ describe("the entry point exports what the docs use", () => {
 
   /**
    * Writing a helper that takes a pipeline's event, or a custom cache store,
-   * shouldn't mean reaching into the package's internals — so every type a
+   * shouldn't mean reaching into the package's internals, so every type a
    * user might need to name is importable from `inngest/ci`.
    *
    * This import *is* the test: if one of them stops being exported, it fails

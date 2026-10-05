@@ -1,6 +1,7 @@
 /**
  * The public types of `@inngest/ci`: configs, commands, caches, matrices and
- the trigger shapes.
+ * the trigger shapes. These double as the user docs in editor hovers, so every
+ * exported type says what it is for.
  *
  * @module
  */
@@ -75,8 +76,11 @@ export interface CiEvent<TData = Record<string, unknown>> {
   name: string;
   /** The event's payload, typed by the pipeline's triggers. */
   data: TData;
+  /** The event's ID, if it was sent with one. */
   id?: string;
+  /** When the event happened, in milliseconds since the epoch. */
   ts?: number;
+  /** The event's schema version, if it has one. */
   v?: string;
 }
 
@@ -117,15 +121,23 @@ export interface MachineConfig {
  * Where a pipeline run came from, derived from the trigger event.
  */
 export interface RepoContext {
+  /** The repository's owner, like `inngest`. */
   owner: string;
+  /** The repository's name without the owner, like `inngest-js`. */
   name: string;
+  /** The owner and name together, like `inngest/inngest-js`. */
   fullName: string;
   /** The PR head sha, push after sha, or merge group head sha. */
   sha: string;
+  /** The branch or tag the run is for, like `refs/heads/main`. */
   ref?: string;
+  /** The commit the change is based on, for diffs. */
   baseSha?: string;
+  /** The branch the change is based on, like `main`. */
   baseRef?: string;
+  /** Set for pull request runs. `fork` is true when the head is another repo. */
   pullRequest?: { number: number; headRef: string; fork: boolean };
+  /** The GitHub App installation the event came from, if any. */
   installationId?: number;
   /** Set by local fixtures, so `checkout()` can use the working tree. */
   local?: { path: string; baseRef: string };
@@ -142,12 +154,19 @@ export interface CacheKeyPart {
   readonly patterns: string[];
 }
 
+/**
+ * What a job's cache is keyed on: a string, a `files()` part, a list of those
+ * joined together, or a function that computes the key when the job runs.
+ */
 export type CacheKey =
   | CacheKeyPart
   | string
   | (CacheKeyPart | string)[]
   | (() => Promise<string>);
 
+/**
+ * A job's cache settings.
+ */
 export interface CacheConfig {
   /**
    * What the job depends on. If nothing in the key changed since the last
@@ -171,12 +190,21 @@ export interface CacheConfig {
   scope?: "branch" | "global";
 }
 
+/**
+ * A stored cache entry: a job's last successful result and where it came from.
+ */
 export interface CacheEntry {
+  /** The resolved cache key. */
   key: string;
+  /** The job that wrote the entry. */
   jobId: string;
+  /** The snapshot of the job's machine, if one was taken, for `from()`. */
   snapshotId?: string;
+  /** What the job returned. */
   result: unknown;
+  /** When the entry was written, as an ISO timestamp. */
   builtAt: string;
+  /** The run that wrote the entry. */
   builtBy: { runId: string; sha?: string; trigger: string };
   /** Parent jobs this job started `from()` when it last ran. */
   fromJobIds?: string[];
@@ -187,13 +215,19 @@ export interface CacheEntry {
  *
  * ```ts
  * const redisCacheStore = (redis: Redis): CacheStore => ({
- *   get: async (key) => JSON.parse((await redis.get(key)) ?? "null") ?? undefined,
- *   set: async (key, entry) => void redis.set(key, JSON.stringify(entry)),
+ *   get: async (key) => {
+ *     return JSON.parse((await redis.get(key)) ?? "null") ?? undefined;
+ *   },
+ *   set: async (key, entry) => {
+ *     await redis.set(key, JSON.stringify(entry));
+ *   },
  * });
  * ```
  */
 export interface CacheStore {
+  /** Read an entry, or `undefined` if there isn't one. */
   get(key: string): Promise<CacheEntry | undefined>;
+  /** Write an entry, replacing any under the same key. */
   set(key: string, entry: CacheEntry): Promise<void>;
 }
 
@@ -373,7 +407,7 @@ export interface BackgroundProcess {
  * What can be interpolated into a command.
  *
  * Each value becomes one argument, arrays spread into several, and `null`,
- * `undefined`, and `false` are dropped — so `${cond && ["--flag", x]}` works.
+ * `undefined`, and `false` are dropped, so `${cond && ["--flag", x]}` works.
  */
 export type CommandValue =
   | string
@@ -475,10 +509,18 @@ export type CommandTag = (
   ...values: CommandValue[]
 ) => Command;
 
+/**
+ * A second machine for a job, like a database to test against. Commands run on
+ * it, not on the job's own machine.
+ */
 export interface ExtraMachine {
+  /** The name it was given, unique within the job. */
   readonly name: string;
+  /** Run a command on this machine. `$.sh` runs a shell script. */
   $: CommandTag & { sh: CommandTag };
+  /** Wait until something listens on `port`, or throw after `timeout`. */
   waitForPort(port: number, opts?: { timeout?: Duration }): Promise<void>;
+  /** Wait until `url` answers (with `status`, if given), or throw after `timeout`. */
   waitForHttp(
     url: string,
     opts?: { timeout?: Duration; status?: number },
@@ -559,6 +601,9 @@ export interface Matrix<TAxes extends MatrixAxes, TResult> {
   readonly id: string;
 }
 
+/**
+ * How a check ended, as GitHub names it.
+ */
 export type CheckConclusion =
   | "success"
   | "failure"
@@ -569,14 +614,21 @@ export type CheckConclusion =
   | "skipped"
   | "stale";
 
+/**
+ * A note on a line of a file, shown on the check and in the pull request diff.
+ */
 export interface CheckAnnotation {
+  /** The file, relative to the repository root. */
   path: string;
   /** Shorthand for `start_line` and `end_line`. */
   line?: number;
   start_line?: number;
   end_line?: number;
   annotation_level?: "notice" | "warning" | "failure";
+  /** What to say about the line. */
   message: string;
+  /** A short heading for the annotation. */
   title?: string;
+  /** Longer details, shown when the annotation is expanded. */
   raw_details?: string;
 }
