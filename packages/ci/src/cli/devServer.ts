@@ -5,7 +5,15 @@
  * @module
  */
 
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  accessSync,
+  constants,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -80,46 +88,117 @@ export const isSupportedVersion = (
 };
 
 const installFix =
-  "Install it with `npm i -D inngest-cli`, or set INNGEST_CI_DEV_SERVER_BIN to a local Dev Server build.";
+  "Install it with `npm i -D inngest-cli` or globally with `npm i -g inngest-cli`, or set INNGEST_CI_DEV_SERVER_BIN to a Dev Server build.";
 
 /**
- * The Dev Server binary: `INNGEST_CI_DEV_SERVER_BIN`, then `ci.devServer.bin`,
- * then the `inngest-cli` package installed in the project.
+ * The first executable called `name` on `PATH`, searched by hand so no `which`
+ * is needed. On Windows each `PATHEXT` extension is tried too.
+ */
+export const findOnPath = (
+  name: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): string | undefined => {
+  const windows = platform === "win32";
+  const dirs = (env.PATH ?? "").split(windows ? ";" : ":").filter(Boolean);
+  const extensions = windows
+    ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")
+    : [""];
+
+  for (const dir of dirs) {
+    for (const extension of extensions) {
+      const candidate = join(dir, name + extension);
+
+      try {
+        accessSync(candidate, windows ? constants.F_OK : constants.X_OK);
+
+        if (statSync(candidate).isFile()) {
+          return candidate;
+        }
+      } catch {
+        // Not here; keep looking.
+      }
+    }
+  }
+
+  return undefined;
+};
+
+/** What `<bin> --version` reports, like `1.45.1` or `dev-abc`, if it runs. */
+const binaryVersion = (bin: string): string | undefined => {
+  try {
+    const output = execFileSync(bin, ["--version"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+
+    return output.match(/\b(dev-\S*|\d+\.\d+\.\d+\S*)/)?.[1];
+  } catch {
+    return undefined;
+  }
+};
+
+/** What the resolution reads from the machine, injectable for tests. */
+export interface ResolveDeps {
+  env: NodeJS.ProcessEnv;
+  platform: NodeJS.Platform;
+  /** The version a binary reports, or undefined when it can't be told. */
+  versionOf(bin: string): string | undefined;
+}
+
+/**
+ * The Dev Server binary, from the first of these that exists:
+ * `INNGEST_CI_DEV_SERVER_BIN`, `ci.devServer.bin`, the `inngest-cli` package
+ * installed in the project, then `inngest-cli` and `inngest` on `PATH`. Every
+ * source is held to the minimum version; dev builds always pass, and a binary
+ * that won't say its version is trusted.
  */
 export const resolveDevServerBin = (
   config: Pick<CiConfig, "root" | "devServerBin">,
-  env: NodeJS.ProcessEnv = process.env,
+  deps: Partial<ResolveDeps> = {},
 ): string => {
-  const configured = env.INNGEST_CI_DEV_SERVER_BIN || config.devServerBin;
+  const env = deps.env ?? process.env;
+  const platform = deps.platform ?? process.platform;
+  const versionOf = deps.versionOf ?? binaryVersion;
+  let bin = env.INNGEST_CI_DEV_SERVER_BIN || config.devServerBin;
+  let version: string | undefined;
 
-  if (configured) {
-    return configured;
+  if (!bin) {
+    try {
+      const packageJson = createRequire(
+        join(config.root, "package.json"),
+      ).resolve("inngest-cli/package.json");
+
+      bin = join(dirname(packageJson), "bin", "inngest");
+      version = (
+        JSON.parse(readFileSync(packageJson, "utf8")) as { version: string }
+      ).version;
+    } catch {
+      // Not installed in the project; try the machine.
+    }
   }
 
-  let packageJson: string;
+  bin ??=
+    findOnPath("inngest-cli", env, platform) ??
+    findOnPath("inngest", env, platform);
 
-  try {
-    packageJson = createRequire(join(config.root, "package.json")).resolve(
-      "inngest-cli/package.json",
+  if (!bin) {
+    throw new SetupError(
+      "Could not find a Dev Server: none is configured, installed in the project or on PATH.",
+      { fix: installFix },
     );
-  } catch {
-    throw new SetupError("Could not find a Dev Server.", {
-      fix: installFix,
-    });
   }
 
-  const { version } = JSON.parse(readFileSync(packageJson, "utf8")) as {
-    version: string;
-  };
+  version ??= versionOf(bin);
 
-  if (!isSupportedVersion(version)) {
+  if (version && !isSupportedVersion(version)) {
     throw new SetupError(
       `inngest-cli ${version} is too old. inngest-ci needs ${MIN_DEV_SERVER_VERSION} or newer.`,
       { fix: installFix },
     );
   }
 
-  return join(dirname(packageJson), "bin", "inngest");
+  return bin;
 };
 
 /** The arguments to `inngest dev` for an isolated Dev Server. */

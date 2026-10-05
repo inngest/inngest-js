@@ -4,10 +4,15 @@
  * @module
  */
 
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import {
   devServerArgs,
+  findOnPath,
   isSupportedVersion,
   resolveDevServerBin,
 } from "./devServer.ts";
@@ -49,18 +54,90 @@ describe("devServerArgs", () => {
 });
 
 describe("resolveDevServerBin", () => {
+  const withBins = (names: string[]) => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-path-"));
+
+    for (const name of names) {
+      writeFileSync(join(dir, name), "#!/bin/sh\n", { mode: 0o755 });
+    }
+
+    return dir;
+  };
+
   test("prefers the env var, then the config", () => {
     const config = { root: "/nowhere", devServerBin: "/from/config" };
+    const env = { INNGEST_CI_DEV_SERVER_BIN: "/from/env" };
 
-    expect(
-      resolveDevServerBin(config, { INNGEST_CI_DEV_SERVER_BIN: "/from/env" }),
-    ).toBe("/from/env");
-    expect(resolveDevServerBin(config, {})).toBe("/from/config");
+    expect(resolveDevServerBin(config, { env })).toBe("/from/env");
+    expect(resolveDevServerBin(config, { env: {} })).toBe("/from/config");
   });
 
-  test("without a binary or inngest-cli, says how to install one", () => {
-    expect(() => resolveDevServerBin({ root: "/nowhere" }, {})).toThrow(
-      /Could not find a Dev Server/,
+  test("prefers the project's package over PATH", () => {
+    const root = mkdtempSync(join(tmpdir(), "ci-root-"));
+    const pkg = join(root, "node_modules", "inngest-cli");
+
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "inngest-cli", version: "1.46.0" }),
     );
+
+    const bin = resolveDevServerBin(
+      { root },
+      { env: { PATH: withBins(["inngest-cli"]) } },
+    );
+
+    expect(bin).toBe(join(pkg, "bin", "inngest"));
+  });
+
+  test("falls back to inngest-cli, then inngest, on PATH", () => {
+    const both = withBins(["inngest", "inngest-cli"]);
+    const only = withBins(["inngest"]);
+    const deps = { platform: "linux" as const, versionOf: () => "1.46.0" };
+
+    expect(
+      resolveDevServerBin(
+        { root: "/nowhere" },
+        { ...deps, env: { PATH: `${only}:${both}` } },
+      ),
+    ).toBe(join(both, "inngest-cli"));
+    expect(
+      resolveDevServerBin(
+        { root: "/nowhere" },
+        { ...deps, env: { PATH: only } },
+      ),
+    ).toBe(join(only, "inngest"));
+  });
+
+  test("honors PATHEXT on Windows", () => {
+    const dir = withBins(["inngest-cli.CMD"]);
+
+    expect(
+      findOnPath("inngest-cli", { PATH: dir, PATHEXT: ".EXE;.CMD" }, "win32"),
+    ).toBe(join(dir, "inngest-cli.CMD"));
+  });
+
+  test("rejects an old PATH binary but accepts a dev build", () => {
+    const dir = withBins(["inngest-cli"]);
+    const resolve = (version: string) => {
+      return resolveDevServerBin(
+        { root: "/nowhere" },
+        {
+          env: { PATH: dir },
+          versionOf: () => {
+            return version;
+          },
+        },
+      );
+    };
+
+    expect(() => resolve("1.40.0")).toThrow(/too old/);
+    expect(resolve("dev-abc")).toBe(join(dir, "inngest-cli"));
+  });
+
+  test("with nothing found, says how to install one", () => {
+    expect(() =>
+      resolveDevServerBin({ root: "/nowhere" }, { env: { PATH: "" } }),
+    ).toThrow(/Could not find a Dev Server/);
   });
 });
