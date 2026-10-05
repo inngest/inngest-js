@@ -179,8 +179,12 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     };
   };
 
-  const idFor = (key: string) => {
-    const checkRunId = checkRunIds.get(key);
+  const idKey = (run: CiRunScope, key: string) => {
+    return `${run.runId}:${key}`;
+  };
+
+  const idFor = (run: CiRunScope, key: string) => {
+    const checkRunId = checkRunIds.get(idKey(run, key));
 
     return checkRunId === undefined ? {} : { checkRunId };
   };
@@ -201,7 +205,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     );
 
     if (result?.id) {
-      checkRunIds.set(key, result.id);
+      checkRunIds.set(idKey(run, key), result.id);
     }
 
     return result?.startedAt;
@@ -223,9 +227,11 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         title: result.title,
         summary: truncateSummary(result.summary ?? ""),
         annotations: (result.annotations ?? []).map(normaliseAnnotation),
-        ...idFor(key),
+        ...idFor(run, key),
       });
     });
+
+    checkRunIds.delete(idKey(run, key));
   };
 
   return {
@@ -300,7 +306,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
             run,
             name: jobCheckName(run, jobPath),
             title: `Attempt ${attempt} of ${of}: ${message}`,
-            ...idFor(jobPath),
+            ...idFor(run, jobPath),
           });
 
           return null;
@@ -329,7 +335,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: jobCheckName(run, jobPath),
           title: `Running \`${command}\``,
-          ...idFor(jobPath),
+          ...idFor(run, jobPath),
         });
       } catch {
         // Best effort.

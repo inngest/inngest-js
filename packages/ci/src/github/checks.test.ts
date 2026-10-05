@@ -403,3 +403,52 @@ describe("dev mode", () => {
     expect(gh.requests).toEqual([]);
   });
 });
+
+describe("check run IDs across runs", () => {
+  test("two runs of one pipeline each complete their own check", async () => {
+    const completed: Array<{ runId: string; checkRunId?: number }> = [];
+    let next = 100;
+
+    const reporter = createCheckReporter({
+      start: async () => {
+        next += 1;
+
+        return { id: next };
+      },
+      complete: async ({ run, checkRunId }) => {
+        completed.push({ runId: run.runId, checkRunId });
+      },
+    });
+
+    const step = {
+      run: (async (_id: unknown, fn: () => unknown) => {
+        return fn();
+        // biome-ignore lint/suspicious/noExplicitAny: a stub step tool
+      }) as any,
+      // biome-ignore lint/suspicious/noExplicitAny: a stub step tool
+    } as any;
+
+    const runA = fakeRun({ runId: "A", step });
+    const runB = fakeRun({ runId: "B", step });
+
+    await reporter.pipelineStart({ run: runA });
+    await reporter.pipelineStart({ run: runB });
+
+    await reporter.pipelineComplete({
+      run: runA,
+      conclusion: "success",
+      title: "ok",
+    });
+
+    await reporter.pipelineComplete({
+      run: runB,
+      conclusion: "success",
+      title: "ok",
+    });
+
+    expect(completed).toEqual([
+      { runId: "A", checkRunId: 101 },
+      { runId: "B", checkRunId: 102 },
+    ]);
+  });
+});
