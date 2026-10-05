@@ -9,6 +9,7 @@ import type { GetStepTools, Inngest } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
+import type { LocalReporter } from "../local/reporter.ts";
 import type {
   CacheEntry,
   CheckAnnotation,
@@ -78,6 +79,8 @@ export interface CiInternals {
   jobs: Map<string, { config: JobConfig }>;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
+  /** Tells the `inngest-ci` CLI what's happening, when it started the app. */
+  reporter: LocalReporter;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
   isDev: () => boolean;

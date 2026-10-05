@@ -353,3 +353,11 @@ export const git = async (cwd: string, args: string[]): Promise<string> => {
 export const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
 };
+
+/** Where the Dev Server's UI shows a run. */
+export const devServerRunUrl = (
+  devServerUrl: string,
+  runId: string,
+): string => {
+  return `${devServerUrl.replace(/\/$/, "")}/run?runID=${runId}`;
+};

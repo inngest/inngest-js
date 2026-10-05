@@ -46,8 +46,14 @@ export const defineJob = ({
   const config: JobConfig =
     typeof idOrConfig === "string" ? { id: idOrConfig } : idOrConfig;
 
-  // Curried job factories build a new job object per call, so the same ID
-  // being registered again is expected.
+  // Inside a run, curried job factories and matrices build a new job object
+  // per call, so the same ID being registered again is expected.
+  if (jobs.has(config.id) && !getRunScope()) {
+    throw new CiUsageError(
+      `Job IDs must be unique per app, and "${config.id}" is already defined.`,
+    );
+  }
+
   jobs.set(config.id, { id: config.id, config, handler });
 
   const job = ((input: unknown) => {

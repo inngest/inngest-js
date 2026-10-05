@@ -20,6 +20,10 @@ import {
   statusesSink,
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
+import type { LocalManifest } from "../local/protocol.ts";
+import { runJobFunctionId } from "../local/protocol.ts";
+import { createLocalReporter, isLocal } from "../local/reporter.ts";
+import { runJobFunction } from "../local/runJob.ts";
 import type {
   CacheStore,
   CiSkip,
@@ -35,10 +39,15 @@ import type {
   PipelineConfig,
   PipelineContext,
 } from "../types.ts";
+import { devServerRunUrl } from "../util.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
 import { createMatrix } from "./matrix.ts";
-import { cacheRefreshFunctions, definePipeline } from "./pipeline.ts";
+import {
+  cacheRefreshFunctions,
+  cleanupFunction,
+  definePipeline,
+} from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
 
 export interface CiOptions {
@@ -159,6 +168,18 @@ export interface Ci {
   skip(reason: string): CiSkip;
 
   /**
+   * Whether this run was started on your machine by `inngest-ci`. Use it to
+   * leave out what only makes sense in CI.
+   *
+   * ```ts
+   * if (ci.local) {
+   *   return ci.skip("not releasing from a local run");
+   * }
+   * ```
+   */
+  readonly local: boolean;
+
+  /**
    * Every function to pass to `serve()`: your pipelines, plus the ones CI
    * needs behind the scenes for cleanup, cache refreshes, and re-runs.
    *
@@ -195,12 +216,17 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
+  const matrices = new Map<string, Matrix<MatrixAxes, unknown>>();
+  const reporter = createLocalReporter();
 
   const internals: CiInternals = {
     client,
     isDev,
     github: provider,
-    checks: createCheckReporter(sinkFor(provider, client, isDev)),
+    checks: createCheckReporter(
+      reporter.sink(sinkFor(provider, client, isDev)),
+    ),
+    reporter,
     cacheStore: options.cacheStore ?? memoryCacheStore(),
     jobs,
     ...(options.machine ? { defaultMachine: options.machine } : {}),
@@ -214,6 +240,8 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
   const generated: InngestFunction.Any[] = [];
   const pipelines: InngestFunction.Any[] = [];
+  const manifestPipelines: LocalManifest["pipelines"] = [];
+  const manifestMatrices: LocalManifest["matrices"] = [];
 
   /** The first `repo` a pipeline set, used by refresh runs that have none. */
   let pipelineRepo: string | undefined;
@@ -223,6 +251,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       const {
         fn,
         config,
+        triggers,
         generated: extra,
       } = definePipeline({
         client,
@@ -234,6 +263,11 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       pipelineRepo ??= config.repo;
 
       pipelines.push(fn);
+
+      manifestPipelines.push({
+        id: config.id,
+        triggers: triggers.map(manifestTrigger),
+      });
 
       generated.push(...extra);
 
@@ -247,7 +281,16 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     }) as any,
 
     matrix: (config, handler) => {
-      return createMatrix(ci, config, handler);
+      const matrix = createMatrix(ci, config, handler);
+
+      matrices.set(config.id, matrix as Matrix<MatrixAxes, unknown>);
+
+      manifestMatrices.push({
+        id: config.id,
+        axes: config.axes as unknown as LocalManifest["matrices"][number]["axes"],
+      });
+
+      return matrix;
     },
 
     manual: (opts) => {
@@ -261,10 +304,30 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       return { kind: "inngest/ci.skip", reason };
     },
 
+    get local() {
+      return isLocal();
+    },
+
     functions: () => {
+      reporter.manifest(() => {
+        return {
+          pipelines: manifestPipelines,
+          jobs: [...jobs.keys()].map((id) => {
+            return { id };
+          }),
+          matrices: manifestMatrices,
+        };
+      });
+
       return [
         ...pipelines,
         ...generated,
+        ...(isLocal()
+          ? [
+              runJobFunction({ client, internals, jobs, matrices }),
+              cleanupFunction({ client, config: { id: runJobFunctionId } }),
+            ]
+          : []),
         ...cacheRefreshFunctions({
           client,
           internals,
@@ -276,6 +339,20 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   };
 
   return ci;
+};
+
+const manifestTrigger = (
+  trigger: CiTrigger,
+): LocalManifest["pipelines"][number]["triggers"][number] => {
+  if (trigger.event !== undefined) {
+    return {
+      event:
+        typeof trigger.event === "string" ? trigger.event : trigger.event.name,
+      ...(trigger.if ? { if: trigger.if } : {}),
+    };
+  }
+
+  return { cron: trigger.cron };
 };
 
 /**
@@ -347,7 +424,7 @@ const defaultRunUrl = (client: Inngest.Any, isDev: () => boolean) => {
         process.env.INNGEST_BASE_URL ??
         "http://localhost:8288";
 
-      return `${base.replace(/\/$/, "")}/run?runID=${runId}`;
+      return devServerRunUrl(base, runId);
     }
 
     const env =

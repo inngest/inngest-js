@@ -64,6 +64,7 @@ export const definePipeline = ({
 }): {
   fn: InngestFunction.Any;
   config: PipelineConfig;
+  triggers: CiTrigger[];
   generated: InngestFunction.Any[];
 } => {
   const triggers = flattenTriggers(rawConfig.on);
@@ -118,6 +119,7 @@ export const definePipeline = ({
   return {
     fn,
     config,
+    triggers,
     generated: generatedFunctions({ client, config }),
   };
 };
@@ -676,6 +678,42 @@ const permissionForComment = (
 };
 
 /**
+ * Destroys the machines of a run of `config.id` that ended permanently, by
+ * failure or cancellation, without reaching its own cleanup step.
+ */
+export const cleanupFunction = ({
+  client,
+  config,
+}: {
+  client: Inngest.Any;
+  config: Pick<PipelineConfig, "id">;
+}): InngestFunction.Any => {
+  return client.createFunction(
+    {
+      id: `${config.id}/cleanup`,
+      triggers: [
+        {
+          event: internalEvents.FunctionFailed,
+          if: `event.data.function_id == "${client.id}-${config.id}"`,
+        },
+        {
+          event: internalEvents.FunctionCancelled,
+          if: `event.data.function_id == "${client.id}-${config.id}"`,
+        },
+      ],
+    },
+    // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
+    async ({ event, step }: any) => {
+      const runId = event?.data?.run_id ?? event?.data?.runId;
+
+      return step.run("destroy-orphans", async () => {
+        return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
+      });
+    },
+  );
+};
+
+/**
  * The functions a pipeline needs behind the scenes: cleanup after a permanent
  * failure or cancellation, and re-runs from a GitHub check.
  */
@@ -686,33 +724,9 @@ const generatedFunctions = ({
   client: Inngest.Any;
   config: PipelineConfig;
 }): InngestFunction.Any[] => {
-  const functions: InngestFunction.Any[] = [];
-
-  functions.push(
-    client.createFunction(
-      {
-        id: `${config.id}/cleanup`,
-        triggers: [
-          {
-            event: internalEvents.FunctionFailed,
-            if: `event.data.function_id == "${client.id}-${config.id}"`,
-          },
-          {
-            event: internalEvents.FunctionCancelled,
-            if: `event.data.function_id == "${client.id}-${config.id}"`,
-          },
-        ],
-      },
-      // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
-      async ({ event, step }: any) => {
-        const runId = event?.data?.run_id ?? event?.data?.runId;
-
-        return step.run("destroy-orphans", async () => {
-          return runId ? destroyOrphans(client, runId) : { destroyed: 0 };
-        });
-      },
-    ),
-  );
+  const functions: InngestFunction.Any[] = [
+    cleanupFunction({ client, config }),
+  ];
 
   functions.push(
     client.createFunction(
