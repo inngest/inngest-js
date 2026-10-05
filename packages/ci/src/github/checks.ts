@@ -1,14 +1,14 @@
 /**
  * Reporting pipeline and job progress as GitHub check runs, commit statuses or
- console output, and the summaries shown on them.
+ * console output, and the summaries shown on them.
  *
  * @module
  */
 
 import type { CiRunScope } from "../pipeline/scope.ts";
 import type { CheckAnnotation, CheckConclusion } from "../types.ts";
-import { formatDuration } from "../util.ts";
-import type { GitHubProvider } from "./auth.ts";
+import { errorMessage, formatDuration } from "../util.ts";
+import type { GitHubProvider, Octokit } from "./auth.ts";
 
 /**
  * GitHub rejects `output.summary` over 65535 bytes (not characters), so we
@@ -22,43 +22,27 @@ export const annotationBatchSize = 50;
 /** How often a "current command" title update may be sent per check. */
 export const titleThrottleMs = 10_000;
 
-export interface CheckStartArgs {
-  run: CiRunScope;
-  /** `pipeline` for the pipeline check, or the job path. */
-  key: string;
-  name: string;
-  title?: string;
-}
-
-export interface CheckCompleteArgs extends CheckStartArgs {
+/** What a check is told when it finishes. */
+interface CheckResult {
   conclusion: CheckConclusion;
   title: string;
-  summary?: string;
-  annotations?: CheckAnnotation[];
+  summary?: string | undefined;
+  annotations?: CheckAnnotation[] | undefined;
 }
 
 export interface CheckReporter {
   pipelineStart(args: { run: CiRunScope }): Promise<void>;
-  pipelineComplete(args: {
-    run: CiRunScope;
-    conclusion: CheckConclusion;
-    title: string;
-    summary?: string;
-  }): Promise<void>;
+  pipelineComplete(
+    args: { run: CiRunScope } & Omit<CheckResult, "annotations">,
+  ): Promise<void>;
   jobStart(args: {
     run: CiRunScope;
     jobPath: string;
     name?: string;
   }): Promise<void>;
-  jobComplete(args: {
-    run: CiRunScope;
-    jobPath: string;
-    name?: string;
-    conclusion: CheckConclusion;
-    title: string;
-    summary?: string;
-    annotations?: CheckAnnotation[];
-  }): Promise<void>;
+  jobComplete(
+    args: { run: CiRunScope; jobPath: string; name?: string } & CheckResult,
+  ): Promise<void>;
   commandRetry(args: {
     run: CiRunScope;
     jobPath: string;
@@ -175,20 +159,29 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     return `${run.checkName ?? run.pipelineId} / ${name ?? jobPath}`;
   };
 
+  const identity = (run: CiRunScope, key: string) => {
+    return {
+      externalId: `${run.runId}:${key}`,
+      detailsUrl: run.ci.runUrl({
+        runId: run.runId,
+        functionId: run.functionId,
+      }),
+    };
+  };
+
+  const idFor = (key: string) => {
+    const checkRunId = checkRunIds.get(key);
+    return checkRunId === undefined ? {} : { checkRunId };
+  };
+
   const start = async (
     run: CiRunScope,
     key: string,
     name: string,
     stepId: string,
   ) => {
-    const externalId = `${run.runId}:${key}`;
-    const detailsUrl = run.ci.runUrl({
-      runId: run.runId,
-      functionId: run.functionId,
-    });
-
     const result = await run.step.run({ id: stepId, name: stepId }, () => {
-      return sink.start({ run, name, externalId, detailsUrl });
+      return sink.start({ run, name, ...identity(run, key) });
     });
 
     if (result?.id) {
@@ -201,31 +194,18 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     key: string,
     name: string,
     stepId: string,
-    args: {
-      conclusion: CheckConclusion;
-      title: string;
-      summary?: string;
-      annotations?: CheckAnnotation[];
-    },
+    result: CheckResult,
   ) => {
-    const externalId = `${run.runId}:${key}`;
-    const detailsUrl = run.ci.runUrl({
-      runId: run.runId,
-      functionId: run.functionId,
-    });
-    const checkRunId = checkRunIds.get(key);
-
     await run.step.run({ id: stepId, name: stepId }, () => {
       return sink.complete({
         run,
         name,
-        externalId,
-        detailsUrl,
-        conclusion: args.conclusion,
-        title: args.title,
-        summary: truncateSummary(args.summary ?? ""),
-        annotations: (args.annotations ?? []).map(normaliseAnnotation),
-        ...(checkRunId === undefined ? {} : { checkRunId }),
+        ...identity(run, key),
+        conclusion: result.conclusion,
+        title: result.title,
+        summary: truncateSummary(result.summary ?? ""),
+        annotations: (result.annotations ?? []).map(normaliseAnnotation),
+        ...idFor(key),
       });
     });
   };
@@ -243,7 +223,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       );
     },
 
-    pipelineComplete: async ({ run, conclusion, title, summary }) => {
+    pipelineComplete: async ({ run, ...result }) => {
       if (!run.checkName) {
         return;
       }
@@ -252,7 +232,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         "pipeline",
         run.checkName,
         `github › check:${run.checkName}:complete`,
-        { conclusion, title, ...(summary === undefined ? {} : { summary }) },
+        result,
       );
     },
 
@@ -268,15 +248,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       );
     },
 
-    jobComplete: async ({
-      run,
-      jobPath,
-      name,
-      conclusion,
-      title,
-      summary,
-      annotations,
-    }) => {
+    jobComplete: async ({ run, jobPath, name, ...result }) => {
       if (!run.checkName || !run.jobChecks) {
         return;
       }
@@ -285,12 +257,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         jobPath,
         jobCheckName(run, jobPath, name),
         `github › check:${jobPath}:complete`,
-        {
-          conclusion,
-          title,
-          ...(summary === undefined ? {} : { summary }),
-          ...(annotations === undefined ? {} : { annotations }),
-        },
+        result,
       );
     },
 
@@ -299,24 +266,21 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         return;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error).split("\n")[0];
 
       await run.step.run(
         {
           id: `github › check:${jobPath}:attempt:${attempt}`,
           name: `check:${jobPath}:attempt:${attempt}`,
         },
-        () => {
-          return (
-            sink.update?.({
-              run,
-              name: jobCheckName(run, jobPath),
-              title: `Attempt ${attempt} of ${of}: ${message.split("\n")[0]}`,
-              ...(checkRunIds.has(jobPath)
-                ? { checkRunId: checkRunIds.get(jobPath) as number }
-                : {}),
-            }) ?? Promise.resolve(null)
-          );
+        async () => {
+          await sink.update?.({
+            run,
+            name: jobCheckName(run, jobPath),
+            title: `Attempt ${attempt} of ${of}: ${message}`,
+            ...idFor(jobPath),
+          });
+          return null;
         },
       );
     },
@@ -340,9 +304,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           run,
           name: jobCheckName(run, jobPath),
           title: `Running \`${command}\``,
-          ...(checkRunIds.has(jobPath)
-            ? { checkRunId: checkRunIds.get(jobPath) as number }
-            : {}),
+          ...idFor(jobPath),
         });
       } catch {
         // Best effort.
@@ -363,6 +325,17 @@ export const noopSink: CheckSink = {
   },
 };
 
+const conclusionSymbols: Record<string, string> = {
+  success: "✓",
+  failure: "✕",
+  timed_out: "✕",
+  cancelled: "⊘",
+  neutral: "•",
+  skipped: "•",
+  stale: "•",
+  action_required: "!",
+};
+
 /**
  * Prints each transition to the SDK logger, one line per transition.
  */
@@ -379,17 +352,6 @@ export const consoleSink = (
     url?: string;
   }>,
 ): CheckSink => {
-  const symbols: Record<string, string> = {
-    success: "✓",
-    failure: "✕",
-    timed_out: "✕",
-    cancelled: "⊘",
-    neutral: "•",
-    skipped: "•",
-    stale: "•",
-    action_required: "!",
-  };
-
   const write = (line: string, meta: Record<string, unknown>) => {
     (logger ?? console).info(meta, line);
   };
@@ -417,7 +379,7 @@ export const consoleSink = (
         url: detailsUrl,
       });
       write(
-        `[${run.pipelineId}] ${symbols[conclusion] ?? "•"} ${name}  ${title}  → ${detailsUrl}`,
+        `[${run.pipelineId}] ${conclusionSymbols[conclusion] ?? "•"} ${name}  ${title}  → ${detailsUrl}`,
         { check: name, conclusion, url: detailsUrl },
       );
     },
@@ -427,10 +389,40 @@ export const consoleSink = (
   };
 };
 
+type Repo = NonNullable<CiRunScope["repo"]>;
+
+const clientFor = (provider: GitHubProvider, repo: Repo) => {
+  return provider.octokit(
+    repo.installationId === undefined
+      ? {}
+      : { installationId: repo.installationId },
+  );
+};
+
 /**
  * Real GitHub checks, through the Checks API.
  */
 export const checksSink = (provider: GitHubProvider): CheckSink => {
+  // A retried step must not create a second check run, so look for one this
+  // run already created.
+  const findCheckRun = async (
+    octokit: Octokit,
+    repo: Repo,
+    name: string,
+    externalId: string,
+  ) => {
+    const existing = await octokit.rest.checks.listForRef({
+      owner: repo.owner,
+      repo: repo.name,
+      ref: repo.sha,
+      check_name: name,
+    });
+
+    return existing.data.check_runs.find((checkRun) => {
+      return checkRun.external_id === externalId;
+    })?.id;
+  };
+
   return {
     start: async ({ run, name, externalId, detailsUrl }) => {
       const repo = run.repo;
@@ -438,27 +430,11 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         return {};
       }
 
-      const octokit = await provider.octokit({
-        ...(repo.installationId === undefined
-          ? {}
-          : { installationId: repo.installationId }),
-      });
+      const octokit = await clientFor(provider, repo);
+      const existingId = await findCheckRun(octokit, repo, name, externalId);
 
-      // A retried step must not create a second check run, so look for one this
-      // run already created first.
-      const existing = await octokit.rest.checks.listForRef({
-        owner: repo.owner,
-        repo: repo.name,
-        ref: repo.sha,
-        check_name: name,
-      });
-
-      const match = existing.data.check_runs.find((checkRun) => {
-        return checkRun.external_id === externalId;
-      });
-
-      if (match) {
-        return { id: match.id };
+      if (existingId !== undefined) {
+        return { id: existingId };
       }
 
       const created = await octokit.rest.checks.create({
@@ -491,27 +467,10 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         return;
       }
 
-      const octokit = await provider.octokit({
-        ...(repo.installationId === undefined
-          ? {}
-          : { installationId: repo.installationId }),
-      });
-
-      let id = checkRunId;
-
-      if (!id) {
-        const existing = await octokit.rest.checks.listForRef({
-          owner: repo.owner,
-          repo: repo.name,
-          ref: repo.sha,
-          check_name: name,
-        });
-        id = existing.data.check_runs.find((checkRun) => {
-          return checkRun.external_id === externalId;
-        })?.id;
-      }
-
-      const batches = batchAnnotations(annotations);
+      const octokit = await clientFor(provider, repo);
+      const id =
+        checkRunId ?? (await findCheckRun(octokit, repo, name, externalId));
+      const [firstBatch, ...otherBatches] = batchAnnotations(annotations);
 
       const base = {
         owner: repo.owner,
@@ -522,39 +481,31 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         external_id: externalId,
       };
 
-      if (!id) {
-        const created = await octokit.rest.checks.create({
-          ...base,
-          status: "completed",
-          conclusion,
-          completed_at: new Date().toISOString(),
-          output: {
-            title,
-            summary,
-            ...(batches[0] ? { annotations: batches[0] } : {}),
-          },
-        });
-        id = created.data.id;
-      } else {
-        await octokit.rest.checks.update({
-          ...base,
-          check_run_id: id,
-          status: "completed",
-          conclusion,
-          completed_at: new Date().toISOString(),
-          output: {
-            title,
-            summary,
-            ...(batches[0] ? { annotations: batches[0] } : {}),
-          },
-        });
-      }
+      const completed = {
+        ...base,
+        status: "completed" as const,
+        conclusion,
+        completed_at: new Date().toISOString(),
+        output: {
+          title,
+          summary,
+          ...(firstBatch ? { annotations: firstBatch } : {}),
+        },
+      };
+
+      const checkRun =
+        id === undefined
+          ? await octokit.rest.checks.create(completed)
+          : await octokit.rest.checks.update({
+              ...completed,
+              check_run_id: id,
+            });
 
       // GitHub appends annotations, so the rest go up in further updates.
-      for (const batch of batches.slice(1)) {
+      for (const batch of otherBatches) {
         await octokit.rest.checks.update({
           ...base,
-          check_run_id: id,
+          check_run_id: checkRun.data.id,
           output: { title, summary, annotations: batch },
         });
       }
@@ -562,18 +513,14 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
 
     update: async ({ run, name, title, checkRunId }) => {
       const repo = run.repo;
-      if (!repo?.sha || !checkRunId) {
+      if (!repo?.sha || checkRunId === undefined) {
         return;
       }
 
-      const octokit = await provider.octokit({
-        ...(repo.installationId === undefined
-          ? {}
-          : { installationId: repo.installationId }),
-      });
+      const octokit = await clientFor(provider, repo);
 
-      // `output.summary` is required on every update and replaces what's there,
-      // so send back what the check already shows.
+      // `output.summary` is required on every update and replaces what's
+      // there, so send back what the check already shows.
       const current = await octokit.rest.checks.get({
         owner: repo.owner,
         repo: repo.name,
@@ -590,74 +537,58 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
   };
 };
 
+type StatusState = "error" | "failure" | "pending" | "success";
+
+const statusFor = (conclusion: CheckConclusion): StatusState => {
+  switch (conclusion) {
+    case "success":
+    case "neutral":
+    case "skipped":
+      return "success";
+    case "failure":
+    case "timed_out":
+      return "failure";
+    default:
+      return "error";
+  }
+};
+
 /**
  * Commit statuses, for token auth. There are no summaries or annotations.
  */
 export const statusesSink = (provider: GitHubProvider): CheckSink => {
-  const state = (
-    conclusion: CheckConclusion,
-  ): "error" | "failure" | "pending" | "success" => {
-    switch (conclusion) {
-      case "success":
-      case "neutral":
-      case "skipped":
-        return "success";
-      case "failure":
-      case "timed_out":
-        return "failure";
-      default:
-        return "error";
-    }
-  };
-
-  const post = async (args: {
-    run: CiRunScope;
-    name: string;
-    detailsUrl: string;
-    status: "error" | "failure" | "pending" | "success";
-    description: string;
-  }) => {
-    const repo = args.run.repo;
+  const post = async (
+    run: CiRunScope,
+    name: string,
+    detailsUrl: string,
+    state: StatusState,
+    description: string,
+  ) => {
+    const repo = run.repo;
     if (!repo?.sha) {
       return;
     }
 
-    const octokit = await provider.octokit({
-      ...(repo.installationId === undefined
-        ? {}
-        : { installationId: repo.installationId }),
-    });
+    const octokit = await clientFor(provider, repo);
 
     await octokit.rest.repos.createCommitStatus({
       owner: repo.owner,
       repo: repo.name,
       sha: repo.sha,
-      state: args.status,
-      context: args.name,
-      target_url: args.detailsUrl,
-      description: args.description.slice(0, 140),
+      state,
+      context: name,
+      target_url: detailsUrl,
+      description: description.slice(0, 140),
     });
   };
 
   return {
     start: async ({ run, name, detailsUrl }) => {
-      await post({
-        run,
-        name,
-        detailsUrl,
-        status: "pending",
-        description: "Running",
-      });
+      await post(run, name, detailsUrl, "pending", "Running");
       return {};
     },
     complete: async ({ run, name, detailsUrl, conclusion, title }) => {
-      await post({
-        run,
-        name,
-        detailsUrl,
-        status: state(conclusion),
-        description: title,
-      });
+      await post(run, name, detailsUrl, statusFor(conclusion), title);
     },
   };
 };

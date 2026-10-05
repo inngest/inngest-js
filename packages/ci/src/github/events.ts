@@ -1,6 +1,6 @@
 /**
  * Turning GitHub webhooks into Inngest events and reading repository context
- from them.
+ * from them.
  *
  * @module
  */

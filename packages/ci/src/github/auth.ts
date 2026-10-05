@@ -1,6 +1,6 @@
 /**
  * GitHub providers: `githubApp`, `githubToken` and `consoleReporter`, and the
- Octokit clients built from them.
+ * Octokit clients built from them.
  *
  * @module
  */

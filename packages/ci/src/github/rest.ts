@@ -1,6 +1,6 @@
 /**
  * The durable GitHub REST client, `github.rest`, and mapping GitHub errors to
- retry behaviour.
+ * retry behaviour.
  *
  * @module
  */

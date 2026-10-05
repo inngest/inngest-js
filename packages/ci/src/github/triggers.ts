@@ -1,6 +1,6 @@
 /**
  * GitHub event triggers (`github.pullRequest()`, `github.push()`, comment
- triggers) and the permission rules attached to them.
+ * triggers) and the permission rules attached to them.
  *
  * @module
  */

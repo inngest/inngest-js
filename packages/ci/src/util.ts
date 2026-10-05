@@ -248,3 +248,8 @@ export const warnOnce = (
   warned.add(key);
   (logger ?? console).warn({ feature: key }, message);
 };
+
+/** The message of anything thrown, whether or not it's an `Error`. */
+export const errorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};

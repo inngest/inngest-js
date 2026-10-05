@@ -1,6 +1,6 @@
 /**
  * Local event fixtures that stand in for GitHub webhooks when running a
- pipeline from a working tree.
+ * pipeline from a working tree.
  *
  * @module
  */

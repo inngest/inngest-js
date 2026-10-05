@@ -1,6 +1,6 @@
 /**
  * The durable GitHub helpers behind `github.*`: tokens, comments, permissions,
- pagination and waiting for checks.
+ * pagination and waiting for checks.
  *
  * @module
  */
@@ -13,7 +13,7 @@ import {
   requireRunScope,
 } from "../pipeline/scope.ts";
 import type { CheckConclusion, Duration } from "../types.ts";
-import { hash } from "../util.ts";
+import { errorMessage, hash } from "../util.ts";
 import type { Octokit } from "./auth.ts";
 import { mapGitHubError, octokitForRun, rest } from "./rest.ts";
 import { hasPermission, type Permission } from "./triggers.ts";
@@ -39,6 +39,36 @@ const helperStep = async <T>(
   const id = `${job ? `${job.path} › ` : ""}github › ${helper}:${key}`;
 
   return run.step.run({ id, name: id }, fn) as Promise<T>;
+};
+
+/** Run `call` as a step when inside a run, or directly when outside one. */
+const stepIfInRun = <T>(
+  helper: string,
+  key: string,
+  call: () => Promise<T>,
+): Promise<T> => {
+  return getRunScope() ? helperStep(helper, key, call) : call();
+};
+
+/** Octokit's own errors, mapped to the retry semantics the executor needs. */
+const withMappedErrors = async <T>(fn: () => Promise<T>): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error) {
+    throw mapGitHubError(error) ?? error;
+  }
+};
+
+const requireSha = (api: string, sha?: string): string => {
+  const resolved = sha ?? requireRunScope(api).repo?.sha;
+
+  if (!resolved) {
+    throw new CiUsageError(
+      `\`${api}()\` needs a commit. This run has no repository, so pass \`{ sha }\`.`,
+    );
+  }
+
+  return resolved;
 };
 
 const insideStep = async (): Promise<boolean> => {
@@ -211,30 +241,23 @@ export const paginate = async <TMethod extends DurableListMethod>(
     const client = await octokitForRun();
     const resolved = resolveMethod(client, path);
 
-    try {
-      // Octokit's `paginate` overloads are written for literal routes and
-      // concrete methods; the value resolved above is one of its own methods,
-      // which satisfies them at runtime.
-      const runPaginate = client.paginate as (
-        method: unknown,
-        params?: Record<string, unknown>,
-      ) => Promise<unknown[]>;
+    // Octokit's `paginate` overloads are written for literal routes and
+    // concrete methods; the value resolved above is one of its own methods,
+    // which satisfies them at runtime.
+    const runPaginate = client.paginate as (
+      method: unknown,
+      params?: Record<string, unknown>,
+    ) => Promise<unknown[]>;
 
+    return withMappedErrors(async () => {
       return (await runPaginate(resolved, {
         ...repoParamsIfKnown(),
         ...(params as Record<string, unknown> | undefined),
       })) as ItemOf<TMethod>[];
-    } catch (error) {
-      const mapped = mapGitHubError(error);
-      throw mapped ?? error;
-    }
+    });
   };
 
-  if (!getRunScope()) {
-    return call();
-  }
-
-  return helperStep("paginate", path.join("."), call);
+  return stepIfInRun("paginate", path.join("."), call);
 };
 
 /**
@@ -246,19 +269,12 @@ export const graphql = async <T = unknown>(
 ): Promise<T> => {
   const call = async () => {
     const client = await octokitForRun();
-    try {
+    return withMappedErrors(async () => {
       return (await client.graphql(query, variables)) as T;
-    } catch (error) {
-      const mapped = mapGitHubError(error);
-      throw mapped ?? error;
-    }
+    });
   };
 
-  if (!getRunScope()) {
-    return call();
-  }
-
-  return helperStep("graphql", hash(query, 8), call);
+  return stepIfInRun("graphql", hash(query, 8), call);
 };
 
 /**
@@ -402,7 +418,7 @@ export const forcePushRef = async (
     } catch (error) {
       const status = (error as { status?: number; cause?: { status?: number } })
         .status;
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
 
       const missing =
         status === 422 ||
@@ -452,13 +468,7 @@ export const waitForChecks = async (opts: {
   timeout?: Duration;
 }): Promise<Record<string, CheckConclusion | "timed_out">> => {
   const run = requireRunScope("github.waitForChecks");
-  const sha = opts.sha ?? run.repo?.sha;
-
-  if (!sha) {
-    throw new CiUsageError(
-      "`github.waitForChecks()` needs a commit. This run has no repository, so pass `{ sha }`.",
-    );
-  }
+  const sha = requireSha("github.waitForChecks", opts.sha);
 
   const known = await helperStep(
     "waitForChecks",
@@ -522,13 +532,7 @@ export const waitForWorkflow = async (opts: {
   timeout?: Duration;
 }): Promise<CheckConclusion | "timed_out"> => {
   const run = requireRunScope("github.waitForWorkflow");
-  const sha = opts.sha ?? run.repo?.sha;
-
-  if (!sha) {
-    throw new CiUsageError(
-      "`github.waitForWorkflow()` needs a commit. This run has no repository, so pass `{ sha }`.",
-    );
-  }
+  const sha = requireSha("github.waitForWorkflow", opts.sha);
 
   const known = await helperStep("waitForWorkflow", opts.workflow, async () => {
     const result = await rest.actions.listWorkflowRuns({

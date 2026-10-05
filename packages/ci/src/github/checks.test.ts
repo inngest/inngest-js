@@ -1,6 +1,6 @@
 /**
  * Tests for check reporting (check runs, statuses, console), the GitHub
- skip/permission flows, and the deprecation markers on unsupported APIs.
+ * skip/permission flows, and the deprecation markers on unsupported APIs.
  *
  * @module
  */
