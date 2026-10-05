@@ -432,10 +432,9 @@ class CommandBuilder implements Command {
         exitCode: result.exitCode,
         stdout: maskSecrets(result.stdout, secrets),
         stderr: maskSecrets(result.stderr, secrets),
+        // No `durationMs`: the sandbox doesn't time a captured exec, and a clock
+        // read out here would span a replay, not the command.
         truncated: result.output?.truncated === true,
-        // The sandbox doesn't time a captured exec, and a clock read out here
-        // would span a replay, not the command.
-        durationMs: 0,
       };
     } catch (error) {
       // The sandbox answers an exec that outlives its timeout with an error,
@@ -672,7 +671,7 @@ const readResult = async (opts: {
     stdout: maskSecrets(stdout.text, opts.secrets),
     stderr: maskSecrets(stderr.text, opts.secrets),
     truncated: stdout.truncated || stderr.truncated,
-    durationMs: processDurationMs(opts.process),
+    ...processDuration(opts.process),
   };
 };
 
@@ -681,18 +680,19 @@ const readResult = async (opts: {
  * the clock here instead would measure replays, not the process, since the
  * handler re-runs from the top on every step.
  */
-const processDurationMs = (process: {
+const processDuration = (process: {
   startedAt?: string;
   endedAt?: string;
-}): number => {
-  if (process.startedAt && process.endedAt) {
-    return (
-      new Date(process.endedAt).getTime() -
-      new Date(process.startedAt).getTime()
-    );
+}): { durationMs?: number } => {
+  if (!process.startedAt || !process.endedAt) {
+    return {};
   }
 
-  return 0;
+  return {
+    durationMs:
+      new Date(process.endedAt).getTime() -
+      new Date(process.startedAt).getTime(),
+  };
 };
 
 /**

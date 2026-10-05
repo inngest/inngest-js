@@ -36,9 +36,7 @@ export const test = ci.job("test", async () => {
 
   const result = await $`pnpm test`.cwd(appDir).retries(1);
 
-  await report.summary(
-    `Tests finished in ${Math.round(result.durationMs / 1000)}s`,
-  );
+  await report.summary(`Tests exited with ${result.exitCode}`);
 
   return result.exitCode;
 });

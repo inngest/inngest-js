@@ -442,7 +442,7 @@ await $.sh`pnpm build && pnpm test | tee test.log`;
 | `.text()`, `.lines()`, `.json()` | Returns stdout as a trimmed string, an array of lines, or parsed JSON. |
 
 - `$` runs without a shell. `$.sh` runs `/bin/sh -c` and escapes interpolated values.
-- A result holds `exitCode`, `stdout`, `stderr`, `truncated`, and `durationMs`. `stdout` and `stderr` keep the last 64 KiB.
+- A result holds `exitCode`, `stdout`, `stderr`, `truncated`, and `durationMs`. `stdout` and `stderr` keep the last 64 KiB. `durationMs` is missing when the Sandbox API doesn't time the command, which today is any command with a timeout of 5 minutes or less.
 - `$` outside a job throws `CiUsageError`.
 - `.background()` returns once the process starts. `kill()` sends `SIGTERM` unless you pass a signal number, `output()` reads the last 64 KiB by default, and `exited()` polls for exit. It ignores `.retries()`, `.timeout()`, and `.nothrow()`.
 - Output arrives when the command ends. A `.timeout()` of 5 minutes or less is exact. A longer one is approximate because Inngest polls for exit.
@@ -850,6 +850,7 @@ This is not a roadmap. It has no order and no promises. Each row is something we
 | Named base images shared across runs<br>One build per parent shared by every job and concurrent run<br>A cache store that works across processes and deploys with no setup | Custom images in Sandboxes<br>Looking up snapshots by key or label |
 | Machines that reach each other, such as a database on its own machine<br>Preview URLs for a server running in a job | Private networking between Sandboxes<br>Public ports |
 | Live command output<br>Exact `.timeout()` | Streaming process output<br>A process exit signal a run can wait on |
+| A duration for every command | Start and end times on Sandbox command results |
 | Jobs that survive retries cleanly<br>Machines cleaned up on cancel and failure with no extra function | Sandboxes owned by the run<br>Sandbox operations as durable steps |
 | Jobs longer than 1 hour<br>Commands that run for hours | Longer Sandbox lifetimes<br>Durable waits on background processes |
 | Shell into a failed job's machine | SSH or PTY exec in Sandboxes<br>Keeping failed Sandboxes |

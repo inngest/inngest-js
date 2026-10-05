@@ -385,8 +385,12 @@ export interface CommandResult {
   stderr: string;
   /** Whether output was cut to fit. The whole of it is on the machine. */
   truncated: boolean;
-  /** How long the command took, as far as the machine could tell. */
-  durationMs: number;
+  /**
+   * How long the command ran, from the machine's own timestamps. Missing when
+   * the Sandbox API doesn't report them, which today is commands with a
+   * timeout of 5 minutes or less.
+   */
+  durationMs?: number;
 }
 
 /**
