@@ -9,7 +9,7 @@
  */
 
 import { getAsyncCtx } from "inngest/experimental";
-import type { CheckConclusion, CiTrigger } from "../types.ts";
+import type { CheckConclusion } from "../types.ts";
 import { version } from "../version.ts";
 import type { CiRunScope } from "./scope.ts";
 import { apiNames } from "./scope.ts";
@@ -29,45 +29,16 @@ export interface StepTag {
 }
 
 /**
- * The kinds of trigger a pipeline has: `github.pull_request` for
- * `github/pull_request.opened`, `cron`, `manual`, or the event name itself.
- */
-export const triggerKinds = (triggers: CiTrigger[]): string[] => {
-  const kinds = triggers.map((trigger) => {
-    const { event, cron } = trigger as { event?: string; cron?: string };
-
-    if (cron !== undefined) {
-      return "cron";
-    }
-
-    if (event?.startsWith("ci/manual.")) {
-      return "manual";
-    }
-
-    if (event?.startsWith("github/")) {
-      return `github.${event.slice("github/".length).split(".")[0]}`;
-    }
-
-    return event ?? "unknown";
-  });
-
-  return [...new Set(kinds)];
-};
-
-/**
- * What's known when the run starts: which package and pipeline, what
- * triggered it, and which repository, ref and commit it's for.
+ * What's known when the run starts: which package, whether it's a local run,
+ * and which repository, ref and commit it's for. The pipeline, its triggers
+ * and the event are already on the run, as the function and its trigger.
  */
 export const runStartMetadata = (run: CiRunScope): Record<string, unknown> => {
   const { repo } = run;
-  const eventName = (run.event as { name?: string } | undefined)?.name;
 
   return {
     package: "@inngest/ci",
     version,
-    pipeline: run.pipelineId,
-    triggers: run.triggerKinds,
-    ...(eventName ? { event: eventName } : {}),
     local: run.ci.isDev() || Boolean(repo?.local),
     ...(repo
       ? {
@@ -81,10 +52,9 @@ export const runStartMetadata = (run: CiRunScope): Record<string, unknown> => {
 };
 
 /**
- * What's known when the run ends: how it concluded, how long it took, how its
- * jobs fared and which APIs it called.
- *
- * Reads the clock, so only call it from inside a step.
+ * What's known when the run ends: how it concluded in CI terms (a skipped
+ * pipeline is a successful run), how its jobs fared and which APIs it called.
+ * The run's own duration is already tracked by Inngest.
  */
 export const runEndMetadata = (
   run: CiRunScope,
@@ -98,9 +68,6 @@ export const runEndMetadata = (
 
   return {
     conclusion,
-    ...(run.startedAt === undefined
-      ? {}
-      : { durationMs: Date.now() - run.startedAt }),
     jobs: {
       total: run.summaries.length,
       passed: count((summary) => {

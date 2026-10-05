@@ -829,9 +829,6 @@ When the run starts:
 {
   "package": "@inngest/ci",
   "version": "0.1.0",
-  "pipeline": "pr",
-  "triggers": ["github.pull_request"],
-  "event": "github/pull_request.opened",
   "local": false,
   "repo": "inngest/inngest-js",
   "ref": "feature",
@@ -840,14 +837,13 @@ When the run starts:
 }
 ```
 
-`repo`, `ref`, `sha` and `pullRequest` identify your repository, branch, commit and pull request, and are left out when the run has none.
+`repo`, `ref`, `sha` and `pullRequest` identify your repository, branch, commit and pull request, and are left out when the run has none. The pipeline, its trigger and the run's duration aren't repeated here: they're already on the run.
 
 When the run ends:
 
 ```json
 {
   "conclusion": "success",
-  "durationMs": 184000,
   "jobs": { "total": 3, "passed": 2, "failed": 0, "cached": 1, "skipped": 0, "cancelled": 0 },
   "apis": { "from": 1, "matrix": 1, "cache": 1, "commands": 6, "githubRest": 0 }
 }

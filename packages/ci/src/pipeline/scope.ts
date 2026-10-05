@@ -178,15 +178,8 @@ export interface CiRunScope {
   pipelineSummaries: string[];
   /** Annotations added with `report.annotate()` outside a job. */
   pipelineAnnotations: CheckAnnotation[];
-  /** The kinds of trigger the pipeline has, like `github.pull_request`. */
-  triggerKinds: string[];
   /** How many times each public API was called in this run. */
   apis: Record<ApiName, number>;
-  /**
-   * When the run started, from the step that memoizes it, so durations
-   * survive replays.
-   */
-  startedAt?: number;
 }
 
 export interface CiJobScope {

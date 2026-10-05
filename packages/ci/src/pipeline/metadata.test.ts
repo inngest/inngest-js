@@ -19,7 +19,7 @@ import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
 import { createCi } from "./createCi.ts";
-import { runEndMetadata, tagStep, triggerKinds } from "./metadata.ts";
+import { tagStep } from "./metadata.ts";
 import type { CiRunScope } from "./scope.ts";
 
 const prEvent = {
@@ -120,9 +120,6 @@ describe("run metadata", () => {
       values: {
         package: "@inngest/ci",
         version,
-        pipeline: "pr",
-        triggers: ["github.pull_request"],
-        event: "github/pull_request.opened",
         local: true,
         repo: "inngest/inngest-js",
         ref: "feature",
@@ -137,7 +134,6 @@ describe("run metadata", () => {
 
     expect(end?.values).toEqual({
       conclusion: "success",
-      durationMs: expect.any(Number),
       jobs: {
         total: 5,
         passed: 5,
@@ -264,9 +260,6 @@ describe("run metadata", () => {
     ).toEqual(["ci › metadata:start", "ci › metadata:end"]);
 
     expect(updates[0]?.values).toMatchObject({
-      pipeline: "nightly",
-      triggers: ["cron"],
-      event: "inngest/scheduled.timer",
       local: true,
     });
 
@@ -274,7 +267,6 @@ describe("run metadata", () => {
 
     expect(updates[1]?.values).toMatchObject({
       conclusion: "success",
-      durationMs: expect.any(Number),
     });
 
     expect(result.stepIds).toContain("ci › metadata:start");
@@ -410,34 +402,6 @@ describe("failing to tag", () => {
 });
 
 describe("pieces", () => {
-  test("trigger kinds name the source, not the action", () => {
-    expect(
-      triggerKinds([
-        { event: "github/pull_request.opened" },
-        { event: "github/pull_request.synchronize" },
-        { event: "github/push" },
-        { cron: "0 3 * * *" },
-        { event: "ci/manual.deploy" },
-        { event: "app/custom" },
-      ]),
-    ).toEqual([
-      "github.pull_request",
-      "github.push",
-      "cron",
-      "manual",
-      "app/custom",
-    ]);
-  });
-
-  test("a run with no start time has no duration", () => {
-    const run = {
-      summaries: [],
-      apis: {},
-    } as unknown as CiRunScope;
-
-    expect(runEndMetadata(run, "success")).not.toHaveProperty("durationMs");
-  });
-
   test("the generated version is the package's version", () => {
     const pkg = JSON.parse(
       readFileSync(new URL("../../package.json", import.meta.url), "utf8"),

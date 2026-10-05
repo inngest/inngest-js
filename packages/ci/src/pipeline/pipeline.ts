@@ -41,12 +41,7 @@ import type {
 import { formatDuration, isSandboxNotFound } from "../util.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
-import {
-  metadataStep,
-  runEndMetadata,
-  runStartMetadata,
-  triggerKinds,
-} from "./metadata.ts";
+import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
 import type { CiInternals, CiRunScope } from "./scope.ts";
 import {
   apiNames,
@@ -112,7 +107,6 @@ export const definePipeline = ({
         config,
         handler,
         ctx,
-        triggerKinds: triggerKinds(triggers),
       });
     },
   );
@@ -158,8 +152,6 @@ interface RunPipelineArgs {
   handler: (ctx: PipelineContext) => Promise<unknown>;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
-  /** The kinds of trigger the pipeline has, for run metadata. */
-  triggerKinds: string[];
 }
 
 const newRunScope = ({
@@ -167,14 +159,12 @@ const newRunScope = ({
   config,
   ctx,
   asyncCtx,
-  triggerKinds,
 }: {
   internals: CiInternals;
   config: PipelineConfig;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
   asyncCtx: AsyncContext;
-  triggerKinds: string[];
 }): CiRunScope => {
   const repo = repoContextFromEvent(ctx.event);
   const attempt: number = ctx.attempt ?? 0;
@@ -218,7 +208,6 @@ const newRunScope = ({
     warnings: [],
     pipelineSummaries: [],
     pipelineAnnotations: [],
-    triggerKinds,
     apis: Object.fromEntries(
       apiNames.map((name) => {
         return [name, 0];
@@ -236,7 +225,6 @@ export const runPipeline = async ({
   config,
   handler,
   ctx,
-  triggerKinds,
 }: RunPipelineArgs): Promise<unknown> => {
   await initCiAls();
 
@@ -253,7 +241,6 @@ export const runPipeline = async ({
     config,
     ctx,
     asyncCtx,
-    triggerKinds,
   });
   const checks = internals.checks as CheckReporter;
 
@@ -266,17 +253,19 @@ export const runPipeline = async ({
     }
 
     // The check's step carries the run's metadata. With checks off there's no
-    // such step, so one of its own does, and its time is the run's start.
-    run.startedAt =
-      (await checks.pipelineStart({
-        run,
-        metadata: () => {
-          return runStartMetadata(run);
-        },
-      })) ??
-      (await metadataStep(run, "ci › metadata:start", () => {
+    // such step, so one of its own does.
+    const checkStarted = await checks.pipelineStart({
+      run,
+      metadata: () => {
         return runStartMetadata(run);
-      }));
+      },
+    });
+
+    if (checkStarted === undefined) {
+      await metadataStep(run, "ci › metadata:start", () => {
+        return runStartMetadata(run);
+      });
+    }
 
     // A run that is about to be retried keeps its machines: the retry replays
     // the memoized machine IDs and needs them alive. The generated cleanup
@@ -794,7 +783,6 @@ export const cacheRefreshFunctions = ({
         // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
         async (ctx: any) => {
           return runPipeline({
-            triggerKinds: triggerKinds(refresh),
             internals,
             config: {
               id,
