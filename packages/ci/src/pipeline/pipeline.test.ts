@@ -1653,6 +1653,33 @@ describe("cleanup", () => {
     ).toBe(true);
   });
 
+  test("a usage error isn't retried and cleans up straight away", async () => {
+    const { api, ci } = setup();
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+      await $`publish`.withSecret("NPM_TOKEN", "npm_s3cret");
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async () => {
+        return job();
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    expect(
+      [...api.sandboxes.values()].every((sandbox) => {
+        return sandbox.status === "TERMINATED";
+      }),
+    ).toBe(true);
+  });
+
   test("the last attempt cleans up when it fails", async () => {
     const { api, ci } = setup();
 

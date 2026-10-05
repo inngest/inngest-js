@@ -307,10 +307,7 @@ const cases: Case[] = [
       equal(out.softExit, 3);
       equal(out.spread, "a b c");
 
-      ok(
-        !String(out.secret).includes("s3cr3t-value"),
-        `secret leaked: ${out.secret}`,
-      );
+      equal(out.secret, "CiUsageError");
 
       equal(out.namedExit, 0);
 

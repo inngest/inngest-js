@@ -32,9 +32,15 @@ export const commandsJob = ci.job("commands", async () => {
   const skipFlag = false;
   const spread = await $`echo a ${skipFlag && "--nope"} ${["b", "c"]}`.text();
 
-  const secret = await $`sh -c ${"echo token=$TOKEN"}`
-    .withSecret("TOKEN", "s3cr3t-value")
-    .text();
+  let secret: string;
+
+  try {
+    await $`true`.withSecret("TOKEN", "s3cr3t-value");
+
+    secret = "no error";
+  } catch (error) {
+    secret = errorName(error);
+  }
 
   const named = await $`true`.as("a named command");
 

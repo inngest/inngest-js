@@ -273,12 +273,10 @@ export const runPipeline = async ({
         annotations: run.pipelineAnnotations,
       });
 
-      // A failed command's exit code is already recorded in its steps, so
-      // retrying the run would only replay the same failure.
-      if (
-        error instanceof CommandFailedError ||
-        error instanceof CommandTimeoutError
-      ) {
+      // A failed command's exit code is already recorded in its steps, and a
+      // usage error is the same on every attempt, so retrying the run would
+      // only replay the same failure.
+      if (isDeterministicFailure(error)) {
         throw new NonRetriableError(error.message, { cause: error });
       }
 
@@ -346,6 +344,17 @@ const resolveConfiguredRepo = (
   ) as Promise<RepoContext>;
 };
 
+/** Errors that replaying the run would only reproduce. */
+const isDeterministicFailure = (
+  error: unknown,
+): error is CommandFailedError | CommandTimeoutError | CiUsageError => {
+  return (
+    error instanceof CommandFailedError ||
+    error instanceof CommandTimeoutError ||
+    error instanceof CiUsageError
+  );
+};
+
 /**
  * Whether Inngest will run the function again after this error: it isn't
  * non-retriable and attempts remain.
@@ -356,11 +365,7 @@ const willRetry = (
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any,
 ): boolean => {
-  if (
-    error instanceof NonRetriableError ||
-    error instanceof CommandFailedError ||
-    error instanceof CommandTimeoutError
-  ) {
+  if (error instanceof NonRetriableError || isDeterministicFailure(error)) {
     return false;
   }
 
