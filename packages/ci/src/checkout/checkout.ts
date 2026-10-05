@@ -11,9 +11,13 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { CiUsageError } from "../errors.ts";
-import { defaultCwd } from "../machine/command.ts";
+
 import { ensureMachine } from "../machine/machine.ts";
-import { requireJobScope, scopeSeparator } from "../pipeline/scope.ts";
+import {
+  defaultCwd,
+  requireJobScope,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
 
 const exec = promisify(execFile);
 

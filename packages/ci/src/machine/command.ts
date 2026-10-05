@@ -1,6 +1,7 @@
 /**
  * Running commands on a job's machine: the `$` tag, its builder methods and
- the raw command helpers other APIs reuse.
+ * the raw command helper other APIs reuse. Process plumbing for the sandbox
+ * API (start, poll, read output) lives here too.
  *
  * @module
  */
@@ -36,12 +37,10 @@ import { ensureMachine } from "./machine.ts";
  * Captured `commands.run` is capped at five minutes, so anything longer runs
  * as a managed process instead.
  */
-export const capturedExecLimitMs = 5 * 60 * 1000;
+const capturedExecLimitMs = 5 * 60 * 1000;
 
 /** How much of each stream is kept on a `CommandResult`. */
-export const outputTailBytes = 64 * 1024;
-
-export { defaultCwd };
+const outputTailBytes = 64 * 1024;
 
 const terminalStates = new Set(["EXITED", "KILLED", "FAILED", "LOST"]);
 
@@ -50,7 +49,11 @@ const terminalStates = new Set(["EXITED", "KILLED", "FAILED", "LOST"]);
  * repeats. There are no process exit events yet, so the loop is how a command
  * longer than the captured-exec cap is followed.
  */
-const pollIntervalsMs = [1000, 2000, 5000, 10_000, 15_000];
+const pollIntervalsMs = [1000, 2000, 5000, 10_000];
+const maxPollIntervalMs = 15_000;
+
+// biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess, loose like MachineHandle
+type SandboxProcess = any;
 
 interface CommandState {
   argv: string[];
@@ -63,6 +66,10 @@ interface CommandState {
   onTimeout?: () => Promise<unknown>;
   secrets: Array<{ name: string; value: string }>;
 }
+
+const isPresent = (value: CommandValue): boolean => {
+  return value !== null && value !== undefined && value !== false;
+};
 
 /**
  * Build the argv for a `$` template.
@@ -79,56 +86,45 @@ export const buildArgv = (
   values: CommandValue[],
 ): string[] => {
   const argv: string[] = [];
-  let openToken = false;
+  // Whether the last argument can still grow, because nothing has closed it.
+  let open = false;
 
-  const push = (token: string, joinable: boolean) => {
-    if (joinable && openToken && argv.length > 0) {
+  const append = (token: string) => {
+    if (open) {
       argv[argv.length - 1] = `${argv[argv.length - 1]}${token}`;
-      return;
+    } else {
+      argv.push(token);
     }
-    argv.push(token);
+    open = true;
   };
 
   for (const [index, chunk] of strings.entries()) {
-    const tokens = chunk.split(/\s+/);
-    for (const [tokenIndex, token] of tokens.entries()) {
-      if (token === "") {
-        // Whitespace closes the current argument.
-        if (tokenIndex > 0 || chunk.length > 0) {
-          openToken = false;
-        }
-        continue;
+    for (const [partIndex, part] of chunk.split(/\s+/).entries()) {
+      // Whitespace sits between every part after the first.
+      if (partIndex > 0) {
+        open = false;
       }
-      push(token, tokenIndex === 0);
-      openToken = true;
+      if (part !== "") {
+        append(part);
+      }
     }
 
-    // Trailing whitespace closes the current argument.
-    if (chunk !== "" && /\s$/.test(chunk)) {
-      openToken = false;
+    const value = values[index];
+    if (value === undefined || !isPresent(value)) {
+      continue;
     }
 
-    if (index < values.length) {
-      const value = values[index];
-
-      if (value === null || value === undefined || value === false) {
-        continue;
-      }
-
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          argv.push(String(item));
-        }
-        openToken = false;
-        continue;
-      }
-
-      push(String(value), openToken);
-      openToken = true;
+    if (Array.isArray(value)) {
+      argv.push(...value.map(String));
+      open = false;
+    } else {
+      append(String(value));
     }
   }
 
-  return argv.filter((token) => token !== "");
+  return argv.filter((token) => {
+    return token !== "";
+  });
 };
 
 /**
@@ -144,20 +140,27 @@ export const buildShellString = (
   for (const [index, chunk] of strings.entries()) {
     out += chunk;
 
-    if (index < values.length) {
-      const value = values[index];
-      if (value === null || value === undefined || value === false) {
-        continue;
-      }
-      if (Array.isArray(value)) {
-        out += value.map((item) => shellEscape(String(item))).join(" ");
-        continue;
-      }
-      out += shellEscape(String(value));
+    const value = values[index];
+    if (value === undefined || !isPresent(value)) {
+      continue;
     }
+
+    out += Array.isArray(value)
+      ? value
+          .map((item) => {
+            return shellEscape(String(item));
+          })
+          .join(" ")
+      : shellEscape(String(value));
   }
 
   return out;
+};
+
+/** The id and name of a step nested under `stepId`. */
+const subStep = (stepId: string, suffix: string) => {
+  const id = `${stepId}${scopeSeparator}${suffix}`;
+  return { id, name: id };
 };
 
 class CommandBuilder implements Command {
@@ -206,9 +209,8 @@ class CommandBuilder implements Command {
   }
 
   withSecret(name: string, value: string): Command {
-    const scope = this.getScope();
     warnOnce(
-      scope.run.ci.logger,
+      this.getScope().run.ci.logger,
       "ci:withSecret",
       "`withSecret()` passes the value as an environment variable from inside the step handler. It never appears in step input or output, but it isn't isolated from code running on the machine.",
     );
@@ -229,61 +231,6 @@ class CommandBuilder implements Command {
     return JSON.parse((await this.exec()).stdout) as T;
   }
 
-  async background(): Promise<BackgroundProcess> {
-    const scope = this.getScope();
-    const stepId = this.stepId(scope);
-    const machine = await ensureMachine(scope);
-
-    const process = await startProcess(machine, stepId, {
-      command: this.state.argv,
-      environment: this.environment(scope),
-      cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
-    });
-
-    const argv = this.state.argv;
-    const secrets = this.secretValues(scope);
-    let waits = 0;
-
-    return {
-      id: process.id,
-      exited: async () => {
-        const terminal = await pollUntilTerminal({
-          scope,
-          machine,
-          process,
-          stepId,
-          nextWait: () => ++waits,
-        });
-        return readResult({
-          process: terminal,
-          stepId,
-          argv,
-          secrets,
-        });
-      },
-      kill: async (signal = 15) => {
-        await process.signal(
-          {
-            id: `${stepId}${scopeSeparator}kill`,
-            name: `${stepId}${scopeSeparator}kill`,
-          },
-          { signal },
-        );
-      },
-      output: async (opts) => {
-        const result = await process.getOutput(
-          {
-            id: `${stepId}${scopeSeparator}output #${++waits}`,
-            name: `${stepId}${scopeSeparator}output #${waits}`,
-          },
-          { tailBytes: opts?.tailBytes ?? outputTailBytes },
-        );
-        const decoded = decodeChunks(result);
-        return maskSecrets(`${decoded.stdout}${decoded.stderr}`, secrets);
-      },
-    };
-  }
-
   then<TResult1 = CommandResult, TResult2 = never>(
     onfulfilled?:
       | ((value: CommandResult) => TResult1 | PromiseLike<TResult1>)
@@ -291,6 +238,54 @@ class CommandBuilder implements Command {
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2> {
     return this.exec().then(onfulfilled, onrejected);
+  }
+
+  async background(): Promise<BackgroundProcess> {
+    const scope = this.getScope();
+    const stepId = this.stepId(scope);
+    const machine = await ensureMachine(scope);
+    const process = await startProcess(
+      machine,
+      stepId,
+      this.spawnOptions(scope),
+    );
+
+    const argv = this.state.argv;
+    const secrets = this.secretValues(scope);
+    // Numbers the follow-up steps, so calling `exited()` or `output()` more
+    // than once never reuses a step ID.
+    const nextWait = counter();
+
+    return {
+      id: process.id,
+      exited: async () => {
+        const polled = await pollUntilTerminal({
+          scope,
+          machine,
+          process,
+          stepId,
+          nextWait,
+        });
+        return readResult({ process: polled.process, stepId, argv, secrets });
+      },
+      kill: async (signal = 15) => {
+        await process.signal(subStep(stepId, "kill"), { signal });
+      },
+      output: async (opts) => {
+        const output = await process.getOutput(
+          subStep(stepId, `output #${nextWait()}`),
+          { tailBytes: opts?.tailBytes ?? outputTailBytes },
+        );
+        const decoded = decodeChunks(output);
+        return maskSecrets(`${decoded.stdout}${decoded.stderr}`, secrets);
+      },
+    };
+  }
+
+  /** Runs once however many times the command is awaited. */
+  private exec(): Promise<CommandResult> {
+    this.started ??= this.runWithRetries();
+    return this.started;
   }
 
   private labelText(): string {
@@ -306,116 +301,108 @@ class CommandBuilder implements Command {
       ...scope.env,
       ...this.state.env,
       ...Object.fromEntries(
-        this.state.secrets.map((secret) => [secret.name, secret.value]),
+        this.state.secrets.map((secret) => {
+          return [secret.name, secret.value];
+        }),
       ),
     };
   }
 
   private secretValues(scope: CiJobScope): string[] {
-    return [...scope.secrets, ...this.state.secrets.map((s) => s.value)];
+    return [
+      ...scope.secrets,
+      ...this.state.secrets.map((secret) => {
+        return secret.value;
+      }),
+    ];
   }
 
-  private exec(): Promise<CommandResult> {
-    this.started ??= this.run();
-    return this.started;
+  private spawnOptions(scope: CiJobScope) {
+    return {
+      command: this.state.argv,
+      environment: this.environment(scope),
+      cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
+    };
   }
 
-  private async run(): Promise<CommandResult> {
+  private timeoutError(scope: CiJobScope): CommandTimeoutError {
+    return new CommandTimeoutError({
+      command: this.state.argv,
+      timeout: this.state.timeout ?? "",
+      jobPath: scope.path,
+    });
+  }
+
+  private async runWithRetries(): Promise<CommandResult> {
     const scope = this.getScope();
     const stepId = this.stepId(scope);
     const attempts = Math.max(0, this.state.retries) + 1;
 
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= attempts; attempt++) {
+    for (let attempt = 1; ; attempt++) {
       const attemptId =
         attempts === 1 ? stepId : `${stepId} #attempt-${attempt}`;
+      const result = await this.runOnce(scope, attemptId);
 
-      try {
-        const result = await this.runOnce(scope, attemptId);
-
-        if (result.exitCode !== 0 && !this.state.nothrow) {
-          throw new CommandFailedError({
-            command: this.state.argv,
-            exitCode: result.exitCode,
-            stdoutTail: result.stdout,
-            stderrTail: result.stderr,
-            jobPath: scope.path,
-          });
-        }
-
+      if (result.exitCode === 0 || this.state.nothrow) {
         return result;
-      } catch (error) {
-        lastError = error;
-
-        const retriable =
-          error instanceof CommandFailedError && attempt < attempts;
-        if (!retriable) {
-          throw error;
-        }
-
-        await scope.run.ci.checks?.commandRetry?.({
-          run: scope.run,
-          jobPath: scope.jobPath,
-          attempt,
-          of: attempts,
-          error,
-        });
       }
-    }
 
-    throw lastError;
+      const error = new CommandFailedError({
+        command: this.state.argv,
+        exitCode: result.exitCode,
+        stdoutTail: result.stdout,
+        stderrTail: result.stderr,
+        jobPath: scope.path,
+      });
+      if (attempt >= attempts) {
+        throw error;
+      }
+
+      await scope.run.ci.checks?.commandRetry?.({
+        run: scope.run,
+        jobPath: scope.jobPath,
+        attempt,
+        of: attempts,
+        error,
+      });
+    }
   }
 
+  /** One attempt, which never throws for a non-zero exit. */
   private async runOnce(
     scope: CiJobScope,
     stepId: string,
   ): Promise<CommandResult> {
     const machine = await ensureMachine(scope);
-    const started = Date.now();
     const timeoutMs = this.state.timeout
       ? durationToMs(this.state.timeout)
       : undefined;
-    const secrets = this.secretValues(scope);
 
     // Short commands with an explicit timeout run as one captured step, which
     // is cheaper and keeps the trace tidy.
     if (timeoutMs !== undefined && timeoutMs <= capturedExecLimitMs) {
-      let result: {
-        exitCode: number;
-        stdout: string;
-        stderr: string;
-        output?: { truncated?: boolean };
-      };
+      return this.runCaptured(scope, machine, stepId, timeoutMs);
+    }
 
-      try {
-        result = await machine.sandbox.commands.run(
-          { id: stepId, name: stepId },
-          this.state.argv,
-          {
-            environment: this.environment(scope),
-            cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
-            timeout: timeoutMs,
-          },
-        );
-      } catch (error) {
-        // The sandbox answers an exec that outlives its timeout with an
-        // error, not a result, so it's mapped onto the same error a managed
-        // process's timeout gives.
-        if (getSandboxError(error)?.code !== "sandbox_exec_timed_out") {
-          throw error;
-        }
+    return this.runManaged(scope, machine, stepId, timeoutMs);
+  }
 
-        if (this.state.onTimeout) {
-          await this.state.onTimeout();
-        }
+  private async runCaptured(
+    scope: CiJobScope,
+    machine: MachineHandle,
+    stepId: string,
+    timeoutMs: number,
+  ): Promise<CommandResult> {
+    const started = Date.now();
+    const secrets = this.secretValues(scope);
+    const { command, ...options } = this.spawnOptions(scope);
 
-        throw new CommandTimeoutError({
-          command: this.state.argv,
-          timeout: this.state.timeout ?? "",
-          jobPath: scope.path,
-        });
-      }
+    try {
+      const result = await machine.sandbox.commands.run(
+        { id: stepId, name: stepId },
+        command,
+        { ...options, timeout: timeoutMs },
+      );
 
       return {
         exitCode: result.exitCode,
@@ -424,153 +411,166 @@ class CommandBuilder implements Command {
         truncated: result.output?.truncated === true,
         durationMs: Date.now() - started,
       };
+    } catch (error) {
+      // The sandbox answers an exec that outlives its timeout with an error,
+      // not a result, so it's mapped onto the same error a managed process's
+      // timeout gives.
+      if (getSandboxError(error)?.code !== "sandbox_exec_timed_out") {
+        throw error;
+      }
+      await this.state.onTimeout?.();
+      throw this.timeoutError(scope);
     }
+  }
 
-    const process = await startProcess(machine, stepId, {
-      command: this.state.argv,
-      environment: this.environment(scope),
-      cwd: this.state.cwd ?? scope.cwd ?? defaultCwd,
-    });
+  private async runManaged(
+    scope: CiJobScope,
+    machine: MachineHandle,
+    stepId: string,
+    timeoutMs: number | undefined,
+  ): Promise<CommandResult> {
+    const started = Date.now();
+    const process = await startProcess(
+      machine,
+      stepId,
+      this.spawnOptions(scope),
+    );
 
-    let waits = 0;
-    const terminal = await pollUntilTerminal({
+    const polled = await pollUntilTerminal({
       scope,
       machine,
       process,
       stepId,
-      nextWait: () => ++waits,
+      nextWait: counter(),
       timeoutMs,
-      onTimeout: async () => {
-        if (this.state.onTimeout) {
-          await this.state.onTimeout();
-        }
-
-        await process.signal(
-          {
-            id: `${stepId}${scopeSeparator}timeout-kill`,
-            name: `${stepId}${scopeSeparator}timeout-kill`,
-          },
-          { signal: 9 },
-        );
-
-        throw new CommandTimeoutError({
-          command: this.state.argv,
-          timeout: this.state.timeout ?? "",
-          jobPath: scope.path,
-        });
-      },
     });
 
+    if (polled.timedOut) {
+      await this.state.onTimeout?.();
+      await process.signal(subStep(stepId, "timeout-kill"), { signal: 9 });
+      throw this.timeoutError(scope);
+    }
+
     const result = await readResult({
-      process: terminal,
+      process: polled.process,
       stepId,
       argv: this.state.argv,
-      secrets,
+      secrets: this.secretValues(scope),
       startedAt: started,
     });
 
-    await publishOutput(scope, {
-      jobPath: scope.path,
-      stepId,
-      stream: "stdout",
-      text: result.stdout,
-    });
-
-    await publishOutput(scope, {
-      jobPath: scope.path,
-      stepId,
-      stream: "stderr",
-      text: result.stderr,
-    });
+    await publishOutput(scope, stepId, "stdout", result.stdout);
+    await publishOutput(scope, stepId, "stderr", result.stderr);
 
     return result;
   }
 }
 
-interface StartedProcess {
-  id: string;
-  command: readonly string[];
-  startedAt?: string;
-}
-
-const isAmbiguousStart = (error: unknown): boolean => {
-  const sandboxError = getSandboxError(error);
-  return (
-    sandboxError?.code === "operation_ambiguous" &&
-    sandboxError.action === "process.start"
-  );
+const counter = (): (() => number) => {
+  let count = 0;
+  return () => {
+    return ++count;
+  };
 };
 
-const sameArgv = (a: readonly string[], b: readonly string[]): boolean =>
-  a.length === b.length && a.every((arg, i) => arg === b[i]);
-
 /**
- * Start a managed process, reconciling an ambiguous start.
- *
- * Cloud can answer a start that succeeded with `409 operation_ambiguous`, and
- * the error says to list processes and reconcile before starting another. So
- * this lists them, as a step, and adopts the newest process running the same
- * command that this run hasn't already claimed. It never starts the command a
- * second time; with nothing to adopt, the original error stands.
+ * Start a managed process. Cloud can answer a start that succeeded with an
+ * ambiguous error, in which case the process that did start is adopted
+ * instead of starting the command a second time.
  */
 const startProcess = async (
   machine: MachineHandle,
   stepId: string,
   options: {
     command: string[];
-    environment?: Record<string, string>;
+    environment: Record<string, string>;
     cwd: string;
   },
-  // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess, loose like MachineHandle
-): Promise<any> => {
+): Promise<SandboxProcess> => {
   machine.claimedProcessIds ??= new Set<string>();
   const claimed = machine.claimedProcessIds;
-  const claim = <T extends { id: string }>(process: T): T => {
-    claimed.add(process.id);
-    return process;
-  };
 
   try {
-    return claim(
-      await machine.sandbox.processes.start(
-        {
-          id: `${stepId}${scopeSeparator}start`,
-          name: `${stepId}${scopeSeparator}start`,
-        },
-        options,
-      ),
+    const process = await machine.sandbox.processes.start(
+      subStep(stepId, "start"),
+      options,
     );
+    claimed.add(process.id);
+    return process;
   } catch (error) {
-    if (!isAmbiguousStart(error)) {
-      throw error;
-    }
-
-    const listed = (await machine.sandbox.processes.list(
-      {
-        id: `${stepId}${scopeSeparator}reconcile`,
-        name: `${stepId}${scopeSeparator}reconcile`,
-      },
-      { limit: 250 },
-    )) as { items: StartedProcess[] };
-
-    const [match] = listed.items
-      .filter(
-        (process) =>
-          !claimed.has(process.id) &&
-          sameArgv(process.command, options.command),
-      )
-      .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
-
-    if (!match) {
-      throw error;
-    }
-
-    return claim(match);
+    const adopted = await adoptAmbiguousStart(
+      machine,
+      stepId,
+      options.command,
+      claimed,
+      error,
+    );
+    claimed.add(adopted.id);
+    return adopted;
   }
 };
 
 /**
- * Follow a managed process until it reaches a terminal state.
+ * WORKAROUND (Sandboxes API): Cloud can answer a `process.start` that
+ * succeeded with `409 operation_ambiguous`, and the error says to list
+ * processes and reconcile before starting another. Delete this, and the
+ * `claimedProcessIds` bookkeeping on `MachineHandle`, once starts are no
+ * longer ambiguous.
+ *
+ * This lists processes, as a step, and returns the newest one running the
+ * same command that this run hasn't already claimed. With nothing to adopt,
+ * or any other error, the original error is rethrown.
+ */
+const adoptAmbiguousStart = async (
+  machine: MachineHandle,
+  stepId: string,
+  command: readonly string[],
+  claimed: ReadonlySet<string>,
+  error: unknown,
+): Promise<SandboxProcess> => {
+  const sandboxError = getSandboxError(error);
+  if (
+    sandboxError?.code !== "operation_ambiguous" ||
+    sandboxError.action !== "process.start"
+  ) {
+    throw error;
+  }
+
+  const listed = (await machine.sandbox.processes.list(
+    subStep(stepId, "reconcile"),
+    { limit: 250 },
+  )) as {
+    items: Array<{
+      id: string;
+      command: readonly string[];
+      startedAt?: string;
+    }>;
+  };
+
+  const [match] = listed.items
+    .filter((process) => {
+      return (
+        !claimed.has(process.id) &&
+        process.command.length === command.length &&
+        process.command.every((arg, index) => {
+          return arg === command[index];
+        })
+      );
+    })
+    .sort((a, b) => {
+      return (b.startedAt ?? "").localeCompare(a.startedAt ?? "");
+    });
+
+  if (!match) {
+    throw error;
+  }
+
+  return match;
+};
+
+/**
+ * Follow a managed process until it reaches a terminal state, or until
+ * `timeoutMs` of polling has passed.
  *
  * Each check is its own step, with a durable sleep between them, so a command
  * can run for as long as it needs without holding a worker.
@@ -582,72 +582,50 @@ const startProcess = async (
  */
 const pollUntilTerminal = async (opts: {
   scope: CiJobScope;
-  // biome-ignore lint/suspicious/noExplicitAny: MachineHandle
-  machine: any;
-  // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess
-  process: any;
+  machine: MachineHandle;
+  process: SandboxProcess;
   stepId: string;
+  /** Numbers each wait, so step IDs stay unique across calls. */
   nextWait: () => number;
-  timeoutMs?: number;
-  onTimeout?: () => Promise<never>;
-  // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess
-}): Promise<any> => {
+  timeoutMs?: number | undefined;
+}): Promise<{ process: SandboxProcess; timedOut: boolean }> => {
   let current = opts.process;
   let elapsed = 0;
 
   while (!terminalStates.has(current.state)) {
     if (opts.timeoutMs !== undefined && elapsed >= opts.timeoutMs) {
-      if (opts.onTimeout) {
-        await opts.onTimeout();
-      }
-      return current;
+      return { process: current, timedOut: true };
     }
 
     const index = opts.nextWait();
-    const interval =
-      pollIntervalsMs[Math.min(index - 1, pollIntervalsMs.length - 1)] ??
-      15_000;
+    const interval = pollIntervalsMs[index - 1] ?? maxPollIntervalMs;
 
     await opts.scope.run.step.sleep(
-      {
-        id: `${opts.stepId}${scopeSeparator}wait #${index}`,
-        name: `${opts.stepId}${scopeSeparator}wait #${index}`,
-      },
+      subStep(opts.stepId, `wait #${index}`),
       interval,
     );
     elapsed += interval;
 
-    const refreshed = await opts.machine.sandbox.processes.get(
-      {
-        id: `${opts.stepId}${scopeSeparator}check #${index}`,
-        name: `${opts.stepId}${scopeSeparator}check #${index}`,
-      },
-      current.id,
-    );
-
-    if (refreshed) {
-      current = refreshed;
-    }
+    current =
+      (await opts.machine.sandbox.processes.get(
+        subStep(opts.stepId, `check #${index}`),
+        current.id,
+      )) ?? current;
   }
 
-  return current;
+  return { process: current, timedOut: false };
 };
 
 const readResult = async (opts: {
-  // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess
-  process: any;
+  process: SandboxProcess;
   stepId: string;
   argv: string[];
   secrets: string[];
   startedAt?: number;
 }): Promise<CommandResult> => {
-  const output = await opts.process.getOutput(
-    {
-      id: `${opts.stepId}${scopeSeparator}output`,
-      name: `${opts.stepId}${scopeSeparator}output`,
-    },
-    { tailBytes: outputTailBytes },
-  );
+  const output = await opts.process.getOutput(subStep(opts.stepId, "output"), {
+    tailBytes: outputTailBytes,
+  });
 
   const decoded = decodeChunks(output);
   const stdout = tail(decoded.stdout, outputTailBytes);
@@ -684,16 +662,13 @@ const processDurationMs = (
  * realtime guidance for high-frequency updates: a failure here must never fail
  * the command it was describing.
  */
-export const publishOutput = async (
+const publishOutput = async (
   scope: CiJobScope,
-  payload: {
-    jobPath: string;
-    stepId: string;
-    stream: "stdout" | "stderr";
-    text: string;
-  },
+  stepId: string,
+  stream: "stdout" | "stderr",
+  text: string,
 ): Promise<void> => {
-  if (!payload.text) {
+  if (!text) {
     return;
   }
 
@@ -704,7 +679,7 @@ export const publishOutput = async (
         topic: "output",
         config: {},
       },
-      payload,
+      { jobPath: scope.path, stepId, stream, text },
     );
   } catch {
     // Best effort.
@@ -713,7 +688,7 @@ export const publishOutput = async (
 
 const decoder = new TextDecoder();
 
-export const decodeChunks = (output: {
+const decodeChunks = (output: {
   chunks?: Array<{ stream: string; data: unknown }>;
 }): { stdout: string; stderr: string } => {
   let stdout = "";
@@ -742,8 +717,8 @@ export const createRawCommand = (
   getScope: () => CiJobScope,
   argv: string[],
   label?: string,
-): Command =>
-  new CommandBuilder(getScope, {
+): Command => {
+  return new CommandBuilder(getScope, {
     argv,
     ...(label === undefined ? {} : { label }),
     env: {},
@@ -751,6 +726,7 @@ export const createRawCommand = (
     nothrow: false,
     secrets: [],
   });
+};
 
 /**
  * Build a `$` tag bound to a particular scope's machine.
@@ -758,25 +734,17 @@ export const createRawCommand = (
 export const createCommandTag = (
   getScope: () => CiJobScope,
 ): CommandTag & { sh: CommandTag } => {
-  const tag = ((strings: TemplateStringsArray, ...values: CommandValue[]) =>
-    new CommandBuilder(getScope, {
-      argv: buildArgv([...strings], values),
-      env: {},
-      retries: 0,
-      nothrow: false,
-      secrets: [],
-    })) as unknown as CommandTag & { sh: CommandTag };
+  const tag = ((strings: TemplateStringsArray, ...values: CommandValue[]) => {
+    return createRawCommand(getScope, buildArgv([...strings], values));
+  }) as unknown as CommandTag & { sh: CommandTag };
 
   tag.sh = (strings: TemplateStringsArray, ...values: CommandValue[]) => {
     const rendered = buildShellString([...strings], values);
-    return new CommandBuilder(getScope, {
-      argv: ["/bin/sh", "-c", rendered],
-      label: truncateLabel(rendered),
-      env: {},
-      retries: 0,
-      nothrow: false,
-      secrets: [],
-    });
+    return createRawCommand(
+      getScope,
+      ["/bin/sh", "-c", rendered],
+      truncateLabel(rendered),
+    );
   };
 
   return tag;
