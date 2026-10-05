@@ -9,13 +9,25 @@ import { createRawCommand } from "../machine/command.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
 import { requireJobScope } from "../pipeline/scope.ts";
 import type { Duration } from "../types.ts";
-import { durationToMs } from "../util.ts";
+import { durationToMs, shellEscape } from "../util.ts";
 
 /**
  * How much longer the command running a wait loop is given than the loop
  * itself, so the loop's own deadline decides and its failure is the one seen.
  */
 const waitHeadroomMs = 15_000;
+
+/** The script that polls `url` until it answers with `expected`. */
+export const httpWaitScript = (
+  url: string,
+  expected: number,
+  timeoutMs: number,
+): string => {
+  return waitScript(
+    `[ "$(curl -s -o /dev/null -w '%{http_code}' ${shellEscape(url)})" = "${expected}" ]`,
+    timeoutMs,
+  );
+};
 
 const waitScript = (check: string, timeoutMs: number): string => {
   return [
@@ -60,10 +72,7 @@ export const waitForHttp = async (
   const timeoutMs = durationToMs(opts.timeout ?? "2m");
   const expected = opts.status ?? 200;
 
-  const script = waitScript(
-    `[ "$(curl -s -o /dev/null -w '%{http_code}' ${url})" = "${expected}" ]`,
-    timeoutMs,
-  );
+  const script = httpWaitScript(url, expected, timeoutMs);
 
   await createRawCommand(
     () => {
