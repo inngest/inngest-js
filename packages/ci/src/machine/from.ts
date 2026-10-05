@@ -69,6 +69,8 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
 
   scope.fromJobIds.push(job.id);
 
+  scope.run.ci.reporter.jobFrom(scope, job.id);
+
   if (input !== undefined) {
     scope.fromInputs[job.id] = input;
   }

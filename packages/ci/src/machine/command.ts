@@ -357,7 +357,13 @@ class CommandBuilder implements Command {
       const attemptId =
         attempts === 1 ? stepId : `${stepId} #attempt-${attempt}`;
 
+      const attemptInfo = { id: stepId, name: this.labelText(), attempt };
+
+      scope.run.ci.reporter.commandStarted(scope, attemptInfo);
+
       const result = await this.runOnce(scope, attemptId);
+
+      scope.run.ci.reporter.commandFinished(scope, attemptInfo, result);
 
       if (result.exitCode === 0 || this.state.nothrow) {
         return result;

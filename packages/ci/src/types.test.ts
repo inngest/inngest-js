@@ -278,7 +278,7 @@ describe("jobs infer their input and result", () => {
   });
 
   test("an input, inferred from the handler", () => {
-    const job = ci.job("with-input", async (node: string) => {
+    const job = ci.job("with-input-inferred", async (node: string) => {
       return node.length;
     });
 
@@ -335,7 +335,7 @@ describe("jobs infer their input and result", () => {
   });
 
   test("a job with no input takes no argument", () => {
-    const job = ci.job("plain", async () => {
+    const job = ci.job("plain-no-argument", async () => {
       return 1;
     });
 
