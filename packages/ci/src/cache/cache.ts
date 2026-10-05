@@ -5,8 +5,9 @@
  * @module
  */
 
+import { tagStep } from "../pipeline/metadata.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { scopeSeparator } from "../pipeline/scope.ts";
+import { countApi, scopeSeparator } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheEntry,
@@ -283,6 +284,9 @@ export const lookupCache = async (
 ): Promise<CacheLookup> => {
   const { run } = scope;
   const jobId = scope.config.id;
+  const tag = { kind: "cache", job: scope.path } as const;
+
+  countApi("cache");
 
   const ownKey = (await run.step.run(
     {
@@ -290,6 +294,8 @@ export const lookupCache = async (
       name: "cache:key",
     },
     async () => {
+      await tagStep(run, tag);
+
       const key = await resolveCacheKey(run, cache.key);
 
       // The same key with a different input is a different job.
@@ -307,6 +313,8 @@ export const lookupCache = async (
       name: "cache:lookup",
     },
     async () => {
+      await tagStep(run, tag);
+
       const found = await findEntry(run, cache, jobId, ownKey);
       const built = found?.fromKeys ?? {};
       const current = await resolveParentKeys(run, Object.keys(built));

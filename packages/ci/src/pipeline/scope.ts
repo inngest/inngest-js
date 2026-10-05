@@ -85,6 +85,31 @@ export interface CiInternals {
   logger?: { warn: (...args: any[]) => void };
 }
 
+/**
+ * The public APIs counted in run metadata. Each is counted where it's called,
+ * so the counts say which parts of `@inngest/ci` a run used.
+ */
+export const apiNames = [
+  "from",
+  "matrix",
+  "cache",
+  "sandbox",
+  "checkout",
+  "changed",
+  "report",
+  "githubRest",
+  "githubHelpers",
+  "waitForChecks",
+  "waitForWorkflow",
+  "waitFor",
+  "commands",
+  "background",
+  "shard",
+  "skip",
+] as const;
+
+export type ApiName = (typeof apiNames)[number];
+
 export interface CiRunScope {
   ci: CiInternals;
   runId: string;
@@ -133,6 +158,15 @@ export interface CiRunScope {
   pipelineSummaries: string[];
   /** Annotations added with `report.annotate()` outside a job. */
   pipelineAnnotations: CheckAnnotation[];
+  /** The kinds of trigger the pipeline has, like `github.pull_request`. */
+  triggerKinds: string[];
+  /** How many times each public API was called in this run. */
+  apis: Record<ApiName, number>;
+  /**
+   * When the run started, from the step that memoizes it, so durations
+   * survive replays.
+   */
+  startedAt?: number;
 }
 
 export interface CiJobScope {
@@ -213,6 +247,18 @@ export const getRunScope = (): CiRunScope | undefined => {
 };
 export const getJobScope = (): CiJobScope | undefined => {
   return getStore()?.job;
+};
+
+/**
+ * Count a call to a public API in the current run, for run metadata. Outside a
+ * run there's nothing to count into.
+ */
+export const countApi = (api: ApiName): void => {
+  const run = getRunScope();
+
+  if (run) {
+    run.apis[api] += 1;
+  }
 };
 
 export const runInScope = <R>(store: CiStore, fn: () => R): R => {

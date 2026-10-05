@@ -4,6 +4,7 @@
  * @module
  */
 
+import { countApi } from "../pipeline/scope.ts";
 import {
   canUser,
   forcePushRef,
@@ -27,6 +28,21 @@ import {
 } from "./triggers.ts";
 
 /**
+ * Count each call of a helper in the run's metadata, then call it.
+ *
+ * Only the exported helpers are wrapped, so CI using one of its own isn't
+ * counted as the user using it.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: wraps helpers of any signature
+const counted = <TFn extends (...args: any[]) => any>(fn: TFn): TFn => {
+  return ((...args: Parameters<TFn>) => {
+    countApi("githubHelpers");
+
+    return fn(...args);
+  }) as TFn;
+};
+
+/**
  * EXPERIMENTAL: This API is not yet stable and may change in the future without
  * a major version bump.
  *
@@ -45,19 +61,19 @@ export const github = {
   rest,
 
   // Helpers
-  stickyComment,
-  upsertPullRequest,
-  forcePushRef,
-  canUser,
+  stickyComment: counted(stickyComment),
+  upsertPullRequest: counted(upsertPullRequest),
+  forcePushRef: counted(forcePushRef),
+  canUser: counted(canUser),
   waitForChecks,
   waitForWorkflow,
-  paginate,
-  graphql,
+  paginate: counted(paginate),
+  graphql: counted(graphql),
 
   // Context and escape hatches
-  repo,
-  token,
-  octokit,
+  repo: counted(repo),
+  token: counted(token),
+  octokit: counted(octokit),
 };
 
 export type Github = typeof github;

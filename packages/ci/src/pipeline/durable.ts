@@ -56,6 +56,12 @@ export interface DurableOptions {
     // biome-ignore lint/suspicious/noConfusingVoidType: a handler that maps nothing can just return
   ) => Error | undefined | null | false | void;
 
+  /**
+   * Called each time a call runs as a step of its own, which is neither a call
+   * made inside another step nor one that runs directly.
+   */
+  onStep?: (ctx: { path: string[] }) => void;
+
   // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
   logger?: { warn: (...args: any[]) => void };
 }
@@ -159,6 +165,8 @@ const call = async (
 
     return invoke();
   }
+
+  options.onStep?.({ path });
 
   const label = `${options.name}.${path.join(".")}`;
 

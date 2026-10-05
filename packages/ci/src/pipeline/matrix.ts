@@ -7,6 +7,7 @@
 
 import type { Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
+import { countApi } from "./scope.ts";
 
 /**
  * Expand a matrix into its combinations and run them as jobs.
@@ -20,6 +21,8 @@ export const createMatrix = <
   handler: (combo: MatrixCombo<TAxes>) => Promise<TResult>,
 ): Matrix<TAxes, TResult> => {
   const matrix = (async (only?: Partial<MatrixCombo<TAxes>>) => {
+    countApi("matrix");
+
     const combos = expandMatrix(config).filter((combo) => {
       return only
         ? Object.entries(only).every(([key, value]) => {

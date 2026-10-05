@@ -9,6 +9,7 @@ import { RetryAfterError } from "inngest";
 import { CiUsageError } from "../errors.ts";
 import { durablePath } from "../pipeline/durable.ts";
 import {
+  countApi,
   getJobScope,
   getRunScope,
   requireRunScope,
@@ -496,6 +497,8 @@ export const waitForChecks = async (opts: {
   timeout?: Duration;
 }): Promise<Record<string, CheckConclusion | "timed_out">> => {
   const run = requireRunScope("github.waitForChecks");
+
+  countApi("waitForChecks");
   const sha = requireSha("github.waitForChecks", opts.sha);
 
   const known = await helperStep(
@@ -569,6 +572,8 @@ export const waitForWorkflow = async (opts: {
   timeout?: Duration;
 }): Promise<CheckConclusion | "timed_out"> => {
   const run = requireRunScope("github.waitForWorkflow");
+
+  countApi("waitForWorkflow");
   const sha = requireSha("github.waitForWorkflow", opts.sha);
 
   const known = await helperStep("waitForWorkflow", opts.workflow, async () => {

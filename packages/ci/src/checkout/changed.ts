@@ -6,7 +6,12 @@
  */
 
 import { CiUsageError } from "../errors.ts";
-import { getJobScope, getRunScope, nextStepId } from "../pipeline/scope.ts";
+import {
+  countApi,
+  getJobScope,
+  getRunScope,
+  nextStepId,
+} from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
 import { filterPaths, git } from "../util.ts";
 import { parsePorcelainPaths } from "./porcelain.ts";
@@ -52,6 +57,8 @@ export async function changed(
     typeof first === "object" && first !== null
       ? first
       : { include: args as string[] };
+
+  countApi("changed");
 
   const files = await changedFiles();
 
