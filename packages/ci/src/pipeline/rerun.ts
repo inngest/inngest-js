@@ -63,6 +63,13 @@ export const rerunEventFor = async ({
   const headBranch: string | undefined =
     suite?.head_branch ?? checkRun?.head_branch;
 
+  // A fork's branch is not a branch of this repository, so it must never be
+  // re-sent as a push to one.
+  const headRepo: string | undefined =
+    checkRun?.head_repository?.full_name ?? suite?.head_repository?.full_name;
+
+  const fromFork = Boolean(headRepo) && headRepo !== repository.full_name;
+
   const rerunOf = externalId?.split(":")[0];
 
   // Every pipeline hears the same webhook, so they all send the same ID and
@@ -106,6 +113,13 @@ export const rerunEventFor = async ({
     } catch {
       // Without credentials the payload's own pull request, or the branch,
       // is all there is to go on.
+    }
+
+    if (!pullRequest && fromFork) {
+      return {
+        rerun: false,
+        reason: "fork check with no pull request to re-run",
+      };
     }
 
     if (!pullRequest && !headBranch) {

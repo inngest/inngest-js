@@ -959,3 +959,36 @@ describe("re-running from a check run", () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe("re-running a check from a fork", () => {
+  test("with no pull request, nothing is sent", async () => {
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const result = await rerunEventFor({
+      event: {
+        id: "evt-1",
+        name: "github/check_suite.rerequested",
+        data: {
+          check_suite: {
+            head_sha: "abc1234",
+            head_branch: "main",
+            head_repository: { full_name: "someone/inngest-js" },
+          },
+          repository: { full_name: "inngest/inngest-js" },
+        },
+      },
+      step: {
+        run: async (_id: string, fn: () => Promise<unknown>) => {
+          return fn();
+        },
+      },
+      client: { send } as never,
+      config: { id: "pr" } as never,
+    });
+
+    expect(result).toMatchObject({ rerun: false });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
