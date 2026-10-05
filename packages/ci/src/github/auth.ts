@@ -184,7 +184,7 @@ export const consoleReporter = (): ConsoleProvider => {
 
   const credentialsError = () => {
     return new CiUsageError(
-      "This pipeline is using the console reporter, which has no GitHub credentials. Pass `github: githubApp({ … })` to `createCi`, or set `INNGEST_CI_GITHUB=live`, to call the GitHub API.",
+      "This pipeline is using the console reporter, which has no GitHub credentials. Pass `github: githubApp({ … })` or `githubToken({ … })` to `createCi` to call the GitHub API.",
     );
   };
 

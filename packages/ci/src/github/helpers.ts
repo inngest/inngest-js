@@ -5,6 +5,7 @@
  * @module
  */
 
+import { RetryAfterError } from "inngest";
 import { CiUsageError } from "../errors.ts";
 import { durablePath } from "../pipeline/durable.ts";
 import {
@@ -444,6 +445,11 @@ export const forcePushRef = async (
   });
 };
 
+interface ErrorWithStatus {
+  status?: number;
+  cause?: { status?: number };
+}
+
 /**
  * Whether a user has at least the given permission on the repository.
  */
@@ -458,9 +464,21 @@ export const canUser = async (
       });
 
       return hasPermission(result.permission, permission);
-    } catch {
+    } catch (error) {
+      const status =
+        (error as ErrorWithStatus).status ??
+        (error as ErrorWithStatus).cause?.status;
+
       // A 403 or 404 here means "can't see it", which is the same as "no".
-      return false;
+      // Rate limits and server errors must retry, not become a "no".
+      if (
+        (status === 403 || status === 404) &&
+        !(error instanceof RetryAfterError)
+      ) {
+        return false;
+      }
+
+      throw error;
     }
   });
 };
@@ -484,10 +502,19 @@ export const waitForChecks = async (opts: {
     "waitForChecks",
     hash(opts.names.join(","), 8),
     async () => {
-      const result = await rest.checks.listForRef({ ref: sha });
+      const client = await octokitForRun();
+
+      const checkRuns = await withMappedErrors(async () => {
+        return client.paginate(client.rest.checks.listForRef, {
+          ...repoParamsIfKnown(),
+          ref: sha,
+          per_page: 100,
+        } as { owner: string; repo: string; ref: string; per_page: number });
+      });
+
       const completed: Record<string, string> = {};
 
-      for (const checkRun of result.check_runs ?? []) {
+      for (const checkRun of checkRuns) {
         if (
           checkRun.status === "completed" &&
           checkRun.conclusion &&
@@ -515,7 +542,7 @@ export const waitForChecks = async (opts: {
         {
           event: "github/check_run.completed",
           timeout: opts.timeout ?? "1h",
-          if: `async.data.check_run.name == "${name}" && async.data.check_run.head_sha == "${sha}"`,
+          if: `async.data.check_run.name == ${JSON.stringify(name)} && async.data.check_run.head_sha == ${JSON.stringify(sha)}`,
         },
         // biome-ignore lint/suspicious/noExplicitAny: event shape is the user's
       )) as any;
@@ -561,6 +588,10 @@ export const waitForWorkflow = async (opts: {
     return known as CheckConclusion;
   }
 
+  const workflowMatch = /^\d+$/.test(opts.workflow)
+    ? `async.data.workflow_run.workflow_id == ${opts.workflow}`
+    : `async.data.workflow_run.path.endsWith(${JSON.stringify(`/${opts.workflow}`)})`;
+
   const event = (await run.step.waitForEvent(
     {
       id: `github › waitForWorkflow:${opts.workflow}`,
@@ -569,7 +600,7 @@ export const waitForWorkflow = async (opts: {
     {
       event: "github/workflow_run.completed",
       timeout: opts.timeout ?? "1h",
-      if: `async.data.workflow_run.head_sha == "${sha}"`,
+      if: `async.data.workflow_run.head_sha == ${JSON.stringify(sha)} && ${workflowMatch}`,
     },
     // biome-ignore lint/suspicious/noExplicitAny: event shape is the user's
   )) as any;

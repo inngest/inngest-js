@@ -414,6 +414,7 @@ describe("github helpers", () => {
 
   test("waitForChecks keeps checks that already finished", async () => {
     gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+      total_count: 1,
       check_runs: [
         { name: "vercel", status: "completed", conclusion: "success" },
       ],
@@ -444,6 +445,7 @@ describe("github helpers", () => {
 
   test("waitForChecks waits for the ones that haven't", async () => {
     gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+      total_count: 0,
       check_runs: [],
     });
 
@@ -716,5 +718,244 @@ describe("re-running from a check suite", () => {
 
     expect(result).toMatchObject({ rerun: true, sha: "abc1234" });
     expect(send).toHaveBeenCalledOnce();
+  });
+});
+
+describe("helper edge cases", () => {
+  test("canUser answers false for a 404 but retries a server error", async () => {
+    gh.route(
+      "GET /repos/inngest/inngest-js/collaborators/ghost/permission",
+      { message: "Not Found" },
+      404,
+    );
+
+    gh.route(
+      "GET /repos/inngest/inngest-js/collaborators/flaky/permission",
+      { message: "Server Error" },
+      500,
+    );
+
+    const { ci } = setup(gh);
+
+    const job = ci.job("permission", async () => {
+      const ghost = await github.canUser("ghost", "write");
+
+      let flaky: unknown = "unset";
+
+      try {
+        flaky = await github.canUser("flaky", "write");
+      } catch {
+        flaky = "threw";
+      }
+
+      return { ghost, flaky };
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.data).toEqual({ ghost: false, flaky: "threw" });
+  });
+
+  test("waitForChecks reads every page of check runs", async () => {
+    const requested: string[] = [];
+
+    const pages = [
+      {
+        check_runs: [
+          { name: "lint", status: "completed", conclusion: "success" },
+        ],
+        link: '<https://api.github.test/repos/inngest/inngest-js/commits/abc1234/check-runs?per_page=100&page=2>; rel="next"',
+      },
+      {
+        check_runs: [
+          { name: "vercel", status: "completed", conclusion: "success" },
+        ],
+      },
+    ];
+
+    gh.fetch = (async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" ? input : input.toString());
+
+      requested.push(url.search);
+
+      const page = pages[url.searchParams.get("page") === "2" ? 1 : 0];
+
+      const response = new Response(
+        JSON.stringify({
+          total_count: 2,
+          check_runs: page?.check_runs,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ...(page?.link ? { Link: page.link } : {}),
+          },
+        },
+      );
+
+      Object.defineProperty(response, "url", { value: url.href });
+
+      return response;
+    }) as typeof fetch;
+
+    const { ci } = setup(gh);
+
+    const job = ci.job("wait", async () => {
+      return github.waitForChecks({ names: ["vercel"] });
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.data).toEqual({ vercel: "success" });
+    expect(requested[0]).toContain("per_page=100");
+    expect(requested).toHaveLength(2);
+  });
+
+  test("waitForWorkflow only accepts the requested workflow", async () => {
+    gh.route("GET /repos/inngest/inngest-js/actions/workflows/*", {
+      workflow_runs: [],
+    });
+
+    const { ci } = setup(gh);
+    const conditions: string[] = [];
+
+    const job = ci.job("wait", async () => {
+      const byName = await github.waitForWorkflow({ workflow: "deploy.yml" });
+      const byId = await github.waitForWorkflow({ workflow: "1234" });
+
+      return { byName, byId };
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
+        return job();
+      }),
+      {
+        event: prEvent,
+        resolveWait: (step) => {
+          conditions.push(
+            String((step as { opts?: { if?: string } }).opts?.if),
+          );
+
+          return null;
+        },
+      },
+    );
+
+    expect(conditions[0]).toContain('path.endsWith("/deploy.yml")');
+    expect(conditions[0]).toContain('head_sha == "abc1234"');
+  });
+});
+
+describe("re-running from a check run", () => {
+  const rerun = async (
+    event: unknown,
+    config: Record<string, unknown> = { id: "pr" },
+  ) => {
+    const send = vi.fn(async () => {
+      return undefined;
+    });
+
+    const result = await rerunEventFor({
+      event,
+      step: {
+        run: async (_id: string, fn: () => Promise<unknown>) => {
+          return fn();
+        },
+      },
+      client: { send } as never,
+      config: config as never,
+    });
+
+    return { result, send };
+  };
+
+  const checkRunEvent = (checkRun: Record<string, unknown>) => {
+    return {
+      id: "evt-1",
+      name: "github/check_run.rerequested",
+      data: {
+        action: "rerequested",
+        check_run: {
+          id: 5,
+          head_sha: "abc1234",
+          check_suite: { head_branch: "feature" },
+          ...checkRun,
+        },
+        repository: { full_name: "inngest/inngest-js", default_branch: "main" },
+        _github: { delivery: "delivery-1" },
+      },
+    };
+  };
+
+  test("another app's check with an external ID is not ours", async () => {
+    const { result, send } = await rerun(
+      checkRunEvent({ name: "other-app", external_id: "something" }),
+    );
+
+    expect(result).toMatchObject({ rerun: false });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  test("the resent event has an ID derived from the delivery", async () => {
+    const { send } = await rerun(
+      checkRunEvent({ name: "pr / test", external_id: "RUN:test" }),
+    );
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ci-rerun-delivery-1" }),
+    );
+  });
+
+  test("a check on a branch re-pushes that branch, not the default one", async () => {
+    const { send } = await rerun(checkRunEvent({ name: "pr" }));
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "github/push",
+        data: expect.objectContaining({
+          ref: "refs/heads/feature",
+          after: "abc1234",
+        }),
+      }),
+    );
+  });
+
+  test("a check's own pull request is used without listing PRs", async () => {
+    const { send } = await rerun(
+      checkRunEvent({
+        name: "pr",
+        pull_requests: [{ number: 12, head: { sha: "abc1234", ref: "f" } }],
+      }),
+    );
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "github/pull_request.synchronize",
+        data: expect.objectContaining({ number: 12 }),
+      }),
+    );
+  });
+
+  test("nothing is sent when there is no pull request or branch", async () => {
+    const event = checkRunEvent({ name: "pr" });
+
+    event.data.check_run.check_suite = undefined as never;
+
+    const { result, send } = await rerun(event);
+
+    expect(result).toMatchObject({ rerun: false });
+    expect(send).not.toHaveBeenCalled();
   });
 });
