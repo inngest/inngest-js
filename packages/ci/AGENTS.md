@@ -7,7 +7,7 @@
 - `@inngest/ci` is the only entrypoint. Export public API from `src/index.ts` only.
 - Import the SDK only through its public entrypoints: `inngest`, `inngest/experimental` and `inngest/types`. Never deep-import SDK internals; `inngest` is a peer dependency.
 - Keep the user-facing API independent of the Sandboxes API. Sandbox quirks are handled here, not exposed.
-- Don't export APIs that throw because the platform can't do them yet. List them in the README's "Things we want to do".
+- Don't export APIs that throw because the platform can't do them yet. Don't put roadmap or wishlist content in the README; it's tracked privately.
 
 ## Code style
 
