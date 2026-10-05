@@ -140,6 +140,56 @@ const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const statusName = (status: string) =>
   status.charAt(0) + status.slice(1).toLowerCase();
 
+/**
+ * Cancel a run, then wait (up to `timeoutMs`) for the pipeline's generated
+ * cleanup function to finish. It's triggered by the cancellation and destroys
+ * the run's sandboxes, so the app must stay up until it's done.
+ */
+const cancelAndWaitForCleanup = async (
+  runId: string,
+  timeoutMs = 60_000,
+): Promise<void> => {
+  const { run } = await gql<{ run: { function: { slug: string } } }>(
+    "query ($id: String!) { run(runID: $id) { function { slug } } }",
+    { id: runId },
+  );
+
+  const since = new Date(Date.now() - 5000).toISOString();
+
+  await gql("mutation ($id: ULID!) { cancelRun(runID: $id) { id } }", {
+    id: runId,
+  });
+
+  const { functions } = await gql<{
+    functions: { id: string; slug: string }[];
+  }>("{ functions { id slug } }", {});
+  const cleanup = functions.find((f) => {
+    return f.slug === `${run.function.slug}/cleanup`;
+  });
+  if (!cleanup) {
+    return;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { runs } = await gql<{
+      runs: { edges: { node: { status: string } }[] };
+    }>(
+      "query ($filter: RunsFilterV2!) { runs(first: 20, filter: $filter, orderBy: [{ field: QUEUED_AT, direction: DESC }]) { edges { node { status } } } }",
+      { filter: { from: since, functionIDs: [cleanup.id] } },
+    );
+    const nodes = runs.edges.map((e) => {
+      return e.node;
+    });
+
+    if (nodes.length && nodes.every((n) => terminal.has(n.status))) {
+      return;
+    }
+
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+};
+
 const waitForRun = async (eventId: string, timeoutMs: number): Promise<Run> => {
   const deadline = Date.now() + timeoutMs;
   let runId: string | undefined;
@@ -176,9 +226,7 @@ const waitForRun = async (eventId: string, timeoutMs: number): Promise<Run> => {
   // Cancel rather than abandon it, so CI's cleanup runs while the app is
   // still up and its machines are destroyed.
   if (runId) {
-    await gql("mutation ($id: ULID!) { cancelRun(runID: $id) { id } }", {
-      id: runId,
-    }).catch(() => undefined);
+    await cancelAndWaitForCleanup(runId).catch(() => undefined);
   }
 
   throw new Error(
