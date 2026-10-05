@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "Inngest Labs: CI pipelines in TypeScript, run by Inngest on Sandboxes",
   "type": "module",
+  "bin": {
+    "inngest-ci": "./cli.mjs"
+  },
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
@@ -64,7 +67,13 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "inngest": "^4.22.0"
+    "inngest": "^4.22.0",
+    "inngest-cli": ">=1.45.1"
+  },
+  "peerDependenciesMeta": {
+    "inngest-cli": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@octokit/auth-app": "^8.3.1",
