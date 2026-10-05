@@ -44,10 +44,15 @@ export const createFakeGitHub = (): FakeGitHub => {
         : pattern === key;
     });
 
-    return new Response(JSON.stringify(route?.body ?? {}), {
+    const response = new Response(JSON.stringify(route?.body ?? {}), {
       status: route?.status ?? 200,
       headers: { "Content-Type": "application/json" },
     });
+
+    // Octokit's pagination reads the request URL from the response.
+    Object.defineProperty(response, "url", { value: url.href });
+
+    return response;
   }) as typeof fetch;
 
   return {
