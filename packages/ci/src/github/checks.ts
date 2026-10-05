@@ -12,7 +12,7 @@ import type { GitHubProvider, Octokit } from "./auth.ts";
 
 /**
  * GitHub rejects `output.summary` over 65535 bytes (not characters), so we
- * truncate first and say so.
+ * truncate to 65,000 bytes first, leaving room for the truncation note.
  */
 export const maxSummaryBytes = 65_000;
 

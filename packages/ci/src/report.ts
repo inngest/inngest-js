@@ -25,8 +25,8 @@ export const report = {
   /**
    * Add a section to the check's summary, as markdown.
    *
-   * Called several times, sections stack. Summaries are truncated to fit
-   * GitHub's 65535 byte limit, with a note pointing at the trace.
+   * Called several times, sections stack. Summaries are truncated to 65,000
+   * bytes, under GitHub's 65535 byte limit, with a note pointing at the trace.
    *
    * @throws {CiUsageError} When called outside a pipeline run.
    */
