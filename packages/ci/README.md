@@ -12,7 +12,7 @@ With `@inngest/ci` you get:
 - **Plain TypeScript, not YAML.** Use `if`, loops, `Promise.all`, types, and your own SDKs.
 - **Durable jobs.** Inngest saves finished commands and steps. A retry never reruns work that already passed.
 - **Jobs that start from other jobs.** `from()` starts a job on a copy of another job's machine, like Docker layers.
-- **The same code locally.** Run a pipeline against the Dev Server with your uncommitted changes.
+- **The same code locally.** Run any pipeline or job from your terminal on real Sandboxes, against your uncommitted changes.
 - **GitHub checks.** One check for each pipeline and one for each job.
 - **Flow control.** Cancel superseded runs, cap concurrency, debounce, throttle, and rate limit pipelines.
 
@@ -20,6 +20,14 @@ With `@inngest/ci` you get:
 
 - [Example](#example)
 - [Quick start](#quick-start)
+- [Run locally](#run-locally)
+  - [Run one job](#run-one-job)
+  - [Choose the event](#choose-the-event)
+  - [Flags](#flags)
+  - [Exit codes](#exit-codes)
+  - [Configure](#configure)
+  - [The Dev Server](#the-dev-server)
+  - [Send an event yourself](#send-an-event-yourself)
 - [See the result](#see-the-result)
 - [Run on GitHub](#run-on-github)
 - [Concepts](#concepts)
@@ -33,6 +41,7 @@ With `@inngest/ci` you get:
   - [Matrices](#matrices)
   - [Caching](#caching)
   - [Checks and reports](#checks-and-reports)
+  - [Local runs](#local-runs)
   - [GitHub](#github)
   - [Steps inside jobs](#steps-inside-jobs)
 - [Recipes](#recipes)
@@ -90,7 +99,7 @@ A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, 
 
 ## Quick start
 
-Run the example above against the Dev Server. Checks print to your terminal.
+Run the example above on your machine. Checks print to your terminal.
 
 ### Before you start
 
@@ -108,7 +117,10 @@ npx inngest-cli@latest login
 
 ```bash
 npm install @inngest/ci inngest
+npm install --save-dev inngest-cli
 ```
+
+`inngest-ci` starts a Dev Server from the `inngest-cli` package.
 
 ### 2. Create the client
 
@@ -170,43 +182,148 @@ import "./pipelines";
 
 const server = createServer({ client: inngest, functions: ci.functions() });
 
-server.listen(3000);
+server.listen(Number(process.env.PORT ?? 3000));
 ```
 
-`ci.functions()` returns your pipelines plus the functions CI needs behind the scenes: machine cleanup and cache refreshes.
+`ci.functions()` returns your pipelines plus the functions CI needs behind the scenes: machine cleanup, cache refreshes, and running a single job locally. The server must listen on `PORT`, which `inngest-ci` sets.
 
-### 5. Run locally
-
-Start the Dev Server and your app in two terminals:
+### 5. Run it
 
 ```bash
-npx inngest-cli@latest dev
+npx inngest-ci pr
 ```
+
+`inngest-ci` starts a Dev Server and `ci/server.ts`, sends a pull request event built from your current checkout, and shows the run live. `checkout()` uploads your working tree, including uncommitted changes and excluding ignored files. The upload is limited to 100 MiB.
+
+## Run locally
+
+`inngest-ci <target>` runs one pipeline or one job on real Sandboxes against your working tree.
 
 ```bash
-INNGEST_DEV=1 npx tsx ci/server.ts
+npx inngest-ci pr
+npx inngest-ci lint
 ```
 
-Send a pull request event built from your current checkout:
+It starts a Dev Server and your app for the run, and stops both when the run ends. In a terminal it draws the run live:
 
-`ci/send.ts`
+```
+inngest-ci pr  pull_request.opened · jack/ci-package @ 70f798f + uncommitted
+Dev Server  http://127.0.0.1:24288   app  ci/server.ts · synced
+◐ pr                                   1m 12s
+├─ ✓ base   restored from cache        0.8s
+├─ ✓ lint   pnpm lint                  22s
+└─ ◐ test   pnpm test · attempt 2 of 2 41s
+```
+
+| Key | Does |
+| --- | --- |
+| `↑` `↓` | Moves the highlight across runs and jobs. |
+| `enter` | Opens the highlighted run's trace. |
+| `q`, `Ctrl-C` | Cancels the run, cleans up, and exits. |
+
+Pass `--no-interactive` to print one line per transition instead. This is also the default without a terminal, such as in a log or for an agent.
+
+### Run one job
+
+A target that names a job runs only that job.
+
+```bash
+npx inngest-ci test
+npx inngest-ci build --input '{"target":"web"}'
+npx inngest-ci compat --node 22
+```
+
+- `--input` is the job's input, as JSON.
+- A matrix takes one flag for each axis. With no axis flags, it runs every combination.
+- If a name is both a pipeline and a job, pass `--pipeline <name>` or `--job <name>`.
+
+### Choose the event
+
+A pipeline runs on an event built from your current checkout. For a pipeline with several triggers, `--event` picks one. Without a terminal, `--event` is required. In a terminal, the first trigger is used.
+
+```bash
+npx inngest-ci release --event push
+npx inngest-ci deploy --data '{"env":"preview"}'
+```
+
+`--data` is the `event.data` for a [`ci.manual()`](#triggers) trigger.
+
+### Flags
+
+| Flag | Does |
+| --- | --- |
+| `--pipeline <id>` | Runs the pipeline with this ID. |
+| `--job <id>` | Runs the job with this ID. |
+| `--event <name>` | Picks a trigger when the pipeline has several. |
+| `--data <json>` | Sets `event.data` for a `ci.manual()` trigger. |
+| `--input <json>` | Sets a job's input. |
+| `--<axis> <value>` | Picks a matrix combination. |
+| `--no-interactive` | Prints plain lines instead of the live view. |
+| `--help` | Prints usage. |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The run passed. |
+| `1` | The run failed or was cancelled. |
+| `2` | Setup failed, such as a missing config, an unknown target, or a Dev Server that did not start. |
+
+Setup errors say what to change.
+
+### Configure
+
+`inngest-ci` reads the `ci` key of `inngest.json` at the repository root.
+
+```json
+{
+  "ci": {
+    "start": "tsx server.ts",
+    "path": "/api/inngest",
+    "dir": ".inngest/ci",
+    "devServer": { "bin": "/path/to/inngest" }
+  }
+}
+```
+
+| Key | Default | Does |
+| --- | --- | --- |
+| `start` | | The shell command that serves your app. It must listen on `PORT`. |
+| `path` | `/api/inngest` | Where your app serves Inngest. |
+| `dir` | `.inngest/ci` | Where runs keep their files, relative to the repository root. |
+| `devServer.bin` | | The path to a Dev Server binary. |
+
+With no `ci` key, `inngest-ci` looks for `ci/server.ts`, `ci/server.mts`, `ci/server.js`, or `ci/server.mjs` and starts it with `tsx` or `node`.
+
+- Your app starts with `PORT` and `INNGEST_DEV=1` set. `ci.functions()` must be in what it serves. [`ci.local`](#local-runs) is `true`.
+- Add `.inngest/ci/` to `.gitignore`. It holds the Dev Server's data and the logs in `logs/dev-server.log` and `logs/app.log`.
+
+### The Dev Server
+
+`inngest-ci` uses the first of these:
+
+1. The binary at `INNGEST_CI_DEV_SERVER_BIN`.
+2. The binary at `ci.devServer.bin`.
+3. The `inngest-cli` package in your project, version 1.45.1 or newer.
+
+```bash
+npm install --save-dev inngest-cli
+```
+
+It starts the Dev Server on free ports and stops it when the run ends.
+
+### Send an event yourself
+
+`fixtures` builds the same events `inngest-ci` sends. Use it to send one from your own script.
 
 ```ts
 import { fixtures } from "@inngest/ci";
-import { inngest } from "./client";
+import { inngest } from "./ci/client";
 
-async function main() {
-  await inngest.send(await fixtures.pullRequest());
-}
-
-main();
+await inngest.send(await fixtures.pullRequest());
 ```
 
-```bash
-INNGEST_DEV=1 npx tsx ci/send.ts
-```
-
-`checkout()` uploads your working tree, including uncommitted changes and excluding ignored files. The upload is limited to 100 MiB.
+`fixtures.push()` and `fixtures.comment()` build the other GitHub events.
 
 ### Cleanup and current behavior
 
@@ -660,6 +777,25 @@ await report.annotate([
 - `report.summary(markdown)` stacks sections. Inngest truncates a summary at 65,000 bytes, under GitHub's limit of 65,535 bytes, and links to the trace.
 - `report.annotate(annotations)` puts annotations on the diff. Inngest sends them in batches of 50, the GitHub limit per request. Entries without a `path` or a `message` are dropped.
 - A GitHub "Re-run" on a pipeline or job check, or "Re-run all" on the check suite, restarts the whole pipeline. Passed jobs are reused only when they have a `cache` key.
+
+### Local runs
+
+`ci.local` is `true` in a run started by [`inngest-ci`](#run-locally). Use it to skip work that must not happen from a laptop.
+
+```ts
+export const release = ci.pipeline(
+  { id: "release", on: github.push({ branches: ["main"] }) },
+  async () => {
+    await test();
+
+    if (ci.local) {
+      return ci.skip("not publishing from a local run");
+    }
+
+    await publish();
+  },
+);
+```
 
 ### GitHub
 
