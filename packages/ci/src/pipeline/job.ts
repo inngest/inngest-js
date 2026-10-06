@@ -5,7 +5,12 @@
  * @module
  */
 
-import { lookupCache, snapshotIsReady, storeCache } from "../cache/cache.ts";
+import {
+  describeCached,
+  lookupCache,
+  snapshotIsReady,
+  storeCache,
+} from "../cache/cache.ts";
 import {
   CiUsageError,
   CommandFailedError,
@@ -19,7 +24,7 @@ import type {
   CheckConclusion,
   JobConfig,
 } from "../types.ts";
-import { formatDuration, formatRelative } from "../util.ts";
+import { formatDuration } from "../util.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import { getRunScope, jobHandlerKey, runJobBody } from "./scope.ts";
@@ -183,8 +188,12 @@ const jobBody = async ({
     ? await lookupCache(scope, config.cache, input)
     : undefined;
 
-  if (cacheLookup?.entry) {
-    const title = await restoreFromCache(scope, cacheLookup.entry);
+  if (cacheLookup?.entry && !cacheLookup.entry.invalid) {
+    const title = await restoreFromCache(
+      scope,
+      cacheLookup.entry,
+      cacheLookup.writeKey,
+    );
 
     if (title) {
       if (checked) {
@@ -310,6 +319,7 @@ const durableNow = (run: CiRunScope, jobPath: string): Promise<number> => {
 const restoreFromCache = async (
   scope: CiJobScope,
   entry: CacheEntry,
+  writeKey: string,
 ): Promise<string | undefined> => {
   const { run } = scope;
 
@@ -322,12 +332,17 @@ const restoreFromCache = async (
 
   run.cacheEntries.set(scope.config.id, entry);
 
+  run.cacheWriteKeys ??= new Map();
+  run.cacheWriteKeys.set(scope.config.id, writeKey);
+
   if (entry.snapshotId) {
     run.snapshots.set(scope.config.id, Promise.resolve(entry.snapshotId));
   }
 
   const title = entry.snapshotId
-    ? `Restored, built ${formatRelative(entry.builtAt)} by ${entry.builtBy.trigger}`
+    ? `${describeCached(entry).replace(/^./, (first) => {
+        return first.toUpperCase();
+      })} by ${entry.builtBy.trigger}`
     : `Passed at ${(entry.builtBy.sha ?? "").slice(0, 7)}, no changes since`;
 
   run.summaries.push({

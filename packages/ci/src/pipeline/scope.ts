@@ -133,6 +133,10 @@ export interface CiRunScope {
   snapshots: Map<string, Promise<string | undefined>>;
   /** Cache entries resolved this run, keyed by job path. */
   cacheEntries: Map<string, CacheEntry | undefined>;
+  /** Where each restored cache entry lives, keyed by job path. */
+  cacheWriteKeys?: Map<string, string>;
+  /** Snapshots that failed to start this run, so no other job tries them. */
+  badSnapshots?: Set<string>;
   /** Sandbox IDs created in this run, for cleanup. */
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
@@ -192,6 +196,19 @@ export interface CiJobScope {
   config: JobConfig;
   machine?: Promise<MachineHandle>;
   fromSnapshotId?: string;
+  /** Re-runs the `from()` parent on this job's machine. Set by `from()`. */
+  rebuildParent?: () => Promise<void>;
+  /**
+   * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
+   * has to be brought to where the snapshot would have been.
+   */
+  restoreFallback?: () => Promise<void>;
+  /** What the job's first machine is for, shown while it starts. */
+  startNote?: string;
+  /** Set while `restoreFallback` runs, whose own commands must not wait on it. */
+  restoringFallback?: boolean;
+  /** The one run of `restoreFallback`, shared by concurrent first commands. */
+  fallbackRan?: Promise<void>;
   fromCalled: boolean;
   fromJobIds: string[];
   /** The input each `from()` parent was called with, by job ID. */

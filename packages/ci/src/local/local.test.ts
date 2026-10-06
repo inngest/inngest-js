@@ -9,15 +9,18 @@ import type { Server } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { memoryCacheStore } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { repo } from "../github/helpers.ts";
 import { $ } from "../machine/command.ts";
+import { from } from "../machine/from.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { fakeSchema } from "../testing/schema.ts";
 import { runFunction } from "../testing/runFunction.ts";
+import { fakeSchema } from "../testing/schema.ts";
+import type { CacheStore } from "../types.ts";
 import type { LocalMessage, RunJobEventData } from "./protocol.ts";
 import { localEnv, runJobEvent, runJobFunctionId } from "./protocol.ts";
 
@@ -37,11 +40,17 @@ const runJobData = (
   };
 };
 
-const setup = () => {
-  const api = createFakeSandboxApi();
+const setup = (
+  opts: {
+    api?: ReturnType<typeof createFakeSandboxApi>;
+    cacheStore?: CacheStore;
+  } = {},
+) => {
+  const api = opts.api ?? createFakeSandboxApi();
 
   const ci = createCi(createCiTestClient(api), {
     github: consoleReporter(),
+    ...(opts.cacheStore ? { cacheStore: opts.cacheStore } : {}),
     runUrl: ({ runId }) => {
       return `http://localhost:8288/run?runID=${runId}`;
     },
@@ -573,5 +582,157 @@ describe("the run-job function", () => {
       status: "failed",
       reason: "test: `pnpm test` exited with 1",
     });
+  });
+});
+
+describe("what a job says while it starts from a parent", () => {
+  const defineJobs = (
+    ci: ReturnType<typeof createCi>,
+    opts: { cache: boolean; commands: boolean },
+  ) => {
+    const base = ci.job(
+      { id: "base", ...(opts.cache ? { cache: { key: "v1" } } : {}) },
+      async () => {
+        if (opts.commands) {
+          await $`pnpm install`;
+        }
+      },
+    );
+
+    ci.job("child", async () => {
+      await from(base);
+
+      await $`pnpm test`;
+    });
+  };
+
+  const runChild = async (ci: ReturnType<typeof createCi>) => {
+    return runFunction(functionFor(ci, runJobFunctionId) as never, {
+      event: runJobData({ job: "child" }),
+    });
+  };
+
+  const activities = (messages: LocalMessage[]): string[] => {
+    return messages.flatMap((message) => {
+      return message.kind === "activity" && message.jobId === "child"
+        ? [message.text]
+        : [];
+    });
+  };
+
+  const run = async (
+    opts: {
+      cache: boolean;
+      commands?: boolean;
+      api?: ReturnType<typeof createFakeSandboxApi>;
+      cacheStore?: CacheStore;
+    },
+    prepare?: (api: ReturnType<typeof createFakeSandboxApi>) => void,
+  ) => {
+    vi.stubEnv(localEnv.local, "1");
+
+    const messages = await listen();
+    const { api, ci } = setup({
+      ...(opts.api ? { api: opts.api } : {}),
+      ...(opts.cacheStore ? { cacheStore: opts.cacheStore } : {}),
+    });
+
+    prepare?.(api);
+
+    defineJobs(ci, { cache: opts.cache, commands: opts.commands ?? true });
+
+    const result = await runChild(ci);
+
+    await vi.waitFor(() => {
+      expect(kinds(messages, "run").length).toBeGreaterThan(1);
+    });
+
+    return { api, result, texts: activities(messages) };
+  };
+
+  test("a snapshot from this run says so", async () => {
+    const { texts } = await run({ cache: false });
+
+    expect(texts).toContain("waiting for base to finish…");
+    expect(texts).toContain("starting from base: snapshot from this run");
+  });
+
+  test("a cached snapshot says how old it is and which run built it", async () => {
+    const api = createFakeSandboxApi();
+    const cacheStore = memoryCacheStore();
+
+    await run({ cache: true, api, cacheStore });
+
+    const { texts } = await run({ cache: true, api, cacheStore });
+
+    expect(texts).toContain("waiting for base to finish…");
+
+    expect(
+      texts.some((text) => {
+        return /^starting from base: cached snapshot, built just now \(run …\w{6}\)$/.test(
+          text,
+        );
+      }),
+    ).toBe(true);
+  });
+
+  test("a cached entry with no snapshot says it is rebuilding", async () => {
+    const api = createFakeSandboxApi();
+    const cacheStore = memoryCacheStore();
+
+    await run({ cache: true, commands: false, api, cacheStore });
+
+    const { texts } = await run({
+      cache: true,
+      commands: false,
+      api,
+      cacheStore,
+    });
+
+    expect(texts).toContain("rebuilding base: no cached snapshot");
+  });
+
+  test("unavailable snapshots say so", async () => {
+    const { texts } = await run({ cache: false }, (api) => {
+      api.disableSnapshots();
+    });
+
+    expect(texts).toContain("rebuilding base: snapshots unavailable");
+  });
+
+  test("a cached snapshot that won't start is rebuilt and its entry invalidated", async () => {
+    const api = createFakeSandboxApi();
+    const inner = memoryCacheStore();
+    const writes: { invalid?: boolean }[] = [];
+    const cacheStore: CacheStore = {
+      get: inner.get,
+      set: async (key, entry) => {
+        writes.push(entry);
+
+        await inner.set(key, entry);
+      },
+    };
+
+    await run({ cache: true, api, cacheStore });
+
+    api.commands.length = 0;
+    api.failSnapshotStarts();
+
+    const { result, texts } = await run({ cache: true, api, cacheStore });
+
+    expect(result.type).toBe("function-resolved");
+    expect(texts).toContain("rebuilding base: cached snapshot wouldn't start");
+
+    const ran = api.commands.map((argv) => {
+      return argv.join(" ");
+    });
+
+    expect(
+      ran.some((command) => {
+        return command.includes("pnpm install");
+      }),
+    ).toBe(true);
+
+    expect(writes.at(-1)?.invalid).toBe(true);
   });
 });

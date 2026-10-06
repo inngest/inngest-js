@@ -44,6 +44,8 @@ export interface SessionState {
     pipelineId: string;
     url: string;
     status: LocalStatus;
+    /** Why the run failed or was skipped, when it says. */
+    reason?: string;
     startedAt: number;
     endedAt?: number;
     jobs: {
@@ -134,6 +136,7 @@ export const toSessionState = (
         pipelineId: run.name,
         url: run.url,
         status: run.status,
+        reason: run.reason,
         startedAt: run.startedAt,
         endedAt: run.endedAt,
         jobs: run.jobs.map((job) => {

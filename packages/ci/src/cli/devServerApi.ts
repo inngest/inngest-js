@@ -27,6 +27,41 @@ export interface RunInfo {
   terminal?: LocalStatus;
 }
 
+/**
+ * The first meaningful line of a failed run's output. A single run answers
+ * with the error as the output (`{ name, message, stack }`), and the list
+ * wraps it (`{ error: { … } }`); a run that threw a bare string is the string.
+ */
+export const failureReason = (output: unknown): string | undefined => {
+  const first = (text: unknown): string | undefined => {
+    return typeof text === "string"
+      ? text
+          .split("\n")
+          .map((line) => {
+            return line.trim();
+          })
+          .find(Boolean)
+      : undefined;
+  };
+
+  if (typeof output !== "object" || output === null) {
+    return first(output);
+  }
+
+  const { error, message, name } = output as {
+    error?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+
+  return (
+    first(message) ??
+    failureReason(error) ??
+    (typeof error === "string" ? first(error) : undefined) ??
+    first(name)
+  );
+};
+
 /** Whether the Dev Server answers its health check. */
 export const isHealthy = async (devServerUrl: string): Promise<boolean> => {
   try {
@@ -117,6 +152,32 @@ export const findRun = async (
   });
 
   return run ? toRunInfo(run) : undefined;
+};
+
+/**
+ * Why a run failed, from its output: the run's own error, such as a step's
+ * `NonRetriableError` that ended it before any check could say so. Asking
+ * for it never fails the run it describes.
+ */
+export const runFailureReason = async (
+  devServerUrl: string,
+  runId: string,
+): Promise<string | undefined> => {
+  try {
+    const response = await request(
+      `${devServerUrl}/v2/runs/${runId}?includeOutput=true`,
+    );
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const body = (await response.json()) as { data?: { output?: unknown } };
+
+    return failureReason(body.data?.output);
+  } catch {
+    return undefined;
+  }
 };
 
 /** Ask the Dev Server to cancel a run. */

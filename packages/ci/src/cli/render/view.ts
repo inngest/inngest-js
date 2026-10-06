@@ -7,6 +7,7 @@
  * @module
  */
 
+import { stripVTControlCharacters } from "node:util";
 import type { LocalStatus } from "../../local/protocol.ts";
 import {
   compose,
@@ -200,9 +201,12 @@ const rowsOf = (model: Model, clock: number): Row[] => {
       status: run.status,
       name: oneLine(run.name),
       bold: true,
-      detail: oneLine(run.reason ?? ""),
+      detail: run.status === "failed" ? "" : oneLine(run.reason ?? ""),
       elapsedMs: elapsed(run, clock),
-      body: [],
+      body:
+        run.status === "failed" && run.reason
+          ? [{ text: oneLine(run.reason), red: true }]
+          : [],
       bodyIndent: "  ",
     };
 
@@ -348,9 +352,21 @@ const summaryLines = (model: Model, width: number, paint: Paint): string[] => {
   }[conclusion];
 
   const [run] = model.runs;
+  const failure = model.runs.find((item) => {
+    return item.status === "failed" && item.reason;
+  });
+  const lead = `  ${outcome} ${paint("dim", `in ${took}`)}`;
+  const plainLead = stripVTControlCharacters(lead).length;
+  const why =
+    conclusion === "failed" && failure?.reason
+      ? truncate(
+          ` — ${model.runs.length > 1 ? `${failure.name}: ` : ""}${oneLine(failure.reason)}`,
+          Math.max(0, width - plainLead),
+        )
+      : "";
 
   return [
-    `  ${outcome} ${paint("dim", `in ${took}`)}`,
+    `${lead}${paint("dim", why)}`,
     ...(run && model.runs.length === 1
       ? [
           `  ${compose(width - 2, paint, [

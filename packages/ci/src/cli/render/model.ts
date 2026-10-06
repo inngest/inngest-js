@@ -156,6 +156,47 @@ const reduceCommand = (
   };
 };
 
+/** The title a job that never got to finish is closed with. */
+const cancelledTitle = "Cancelled: the run ended first";
+
+/**
+ * Close the jobs a failed or cancelled run left running or queued, so none
+ * hangs. When a failed run left one job open, that job was the one active
+ * when it failed: it fails with the run's reason. Otherwise they're cancelled.
+ */
+const closeOpenJobs = (run: RunView, at: number): RunView => {
+  if (run.status !== "failed" && run.status !== "cancelled") {
+    return run;
+  }
+
+  const open = run.jobs.filter((job) => {
+    return !isTerminal(job.status);
+  });
+
+  if (open.length === 0) {
+    return run;
+  }
+
+  const culprit = run.status === "failed" && open.length === 1;
+
+  return {
+    ...run,
+    jobs: run.jobs.map((job): JobView => {
+      if (isTerminal(job.status)) {
+        return job;
+      }
+
+      return {
+        ...job,
+        status: culprit ? "failed" : "cancelled",
+        title: job.title ?? (culprit ? run.reason : cancelledTitle),
+        activity: undefined,
+        endedAt: at,
+      };
+    }),
+  };
+};
+
 const updateRun = (
   model: Model,
   runId: string,
@@ -257,14 +298,17 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
             };
           },
           (run) => {
-            return {
-              ...run,
-              status: event.status,
-              startedAt: startedAt(run, event.status, event.at),
-              reason: event.reason,
-              url: event.url,
-              endedAt: endedAt(event.status, event.at),
-            };
+            return closeOpenJobs(
+              {
+                ...run,
+                status: event.status,
+                startedAt: startedAt(run, event.status, event.at),
+                reason: event.reason,
+                url: event.url,
+                endedAt: endedAt(event.status, event.at),
+              },
+              event.at,
+            );
           },
         ),
       };

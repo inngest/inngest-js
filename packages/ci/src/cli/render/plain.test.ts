@@ -4,11 +4,11 @@
  * @module
  */
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { SessionEvent } from "../events.ts";
 import { createPaint } from "./format.ts";
 import { initialModel, reduce } from "./model.ts";
-import { plainLines } from "./plain.ts";
+import { createPlainRenderer, plainLines } from "./plain.ts";
 
 const paint = createPaint(false);
 
@@ -144,6 +144,101 @@ describe("plainLines", () => {
       "job lint: creating machine…",
       "passed in 4.0s",
       "open lint: inngest-ci open r1",
+    ]);
+  });
+});
+
+describe("the plain renderer's output", () => {
+  const capture = async (events: SessionEvent[]): Promise<string[]> => {
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
+      text: string,
+      done?: () => void,
+    ) => {
+      written.push(text);
+      done?.();
+
+      return true;
+    }) as never);
+
+    try {
+      const renderer = createPlainRenderer();
+
+      for (const event of events) {
+        renderer.handle(event);
+      }
+
+      await renderer.close();
+    } finally {
+      spy.mockRestore();
+    }
+
+    return written.join("").split("\n").filter(Boolean);
+  };
+
+  test("a run that failed outside its jobs says why, and so do the job and summary", async () => {
+    const reason = "Sandbox did not reach RUNNING within 120000 milliseconds";
+
+    expect(
+      await capture([
+        {
+          kind: "run",
+          eventId: "e1",
+          runId: "r",
+          pipelineId: "pr",
+          status: "running",
+          url: "u",
+          at: 0,
+        },
+        { kind: "job", runId: "r", jobId: "lint", status: "running", at: 1 },
+        {
+          kind: "run",
+          eventId: "e1",
+          runId: "r",
+          pipelineId: "pr",
+          status: "failed",
+          reason,
+          url: "u",
+          at: 2000,
+        },
+        { kind: "done", conclusion: "failed", at: 2000 },
+      ]),
+    ).toEqual([
+      "run pr: running",
+      "job lint: running",
+      `run pr: failed — ${reason} (2.0s)`,
+      `job lint: failed — ${reason} (1.9s)`,
+      `failed in 2.0s — ${reason}`,
+      "open pr: inngest-ci open r",
+    ]);
+  });
+
+  test("a reason that arrives after the failure is still printed", async () => {
+    const lines = await capture([
+      {
+        kind: "run",
+        eventId: "e1",
+        runId: "r",
+        pipelineId: "pr",
+        status: "failed",
+        url: "u",
+        at: 0,
+      },
+      {
+        kind: "run",
+        eventId: "e1",
+        runId: "r",
+        pipelineId: "pr",
+        status: "failed",
+        reason: "why",
+        url: "u",
+        at: 1,
+      },
+    ]);
+
+    expect(lines).toEqual([
+      "run pr: failed (0.0s)",
+      "run pr: failed — why (0.0s)",
     ]);
   });
 });

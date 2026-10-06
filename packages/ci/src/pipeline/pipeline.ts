@@ -489,6 +489,19 @@ const isDeterministicFailure = (error: unknown): error is Error => {
 };
 
 /**
+ * Whether the error is a `NonRetriableError`. A step's error comes back into
+ * the handler as a `StepError` that only carries the name, so `instanceof`
+ * alone misses a non-retriable step failure, and the run would wait for a
+ * retry that never comes, leaving its checks open.
+ */
+const isNonRetriable = (error: unknown): boolean => {
+  return (
+    error instanceof NonRetriableError ||
+    (error as { name?: unknown } | undefined)?.name === "NonRetriableError"
+  );
+};
+
+/**
  * Whether Inngest will run the function again after this error: it isn't
  * non-retriable and attempts remain.
  */
@@ -497,7 +510,7 @@ const willRetry = (
   attempt: number,
   maxAttempts: number,
 ): boolean => {
-  if (error instanceof NonRetriableError || isDeterministicFailure(error)) {
+  if (isNonRetriable(error) || isDeterministicFailure(error)) {
     return false;
   }
 
