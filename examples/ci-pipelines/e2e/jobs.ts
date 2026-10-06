@@ -189,10 +189,18 @@ export const cachedJob = ci.job(
   async () => {
     await checkout();
 
-    const stamp = await $`date +%s%N`.text();
-    return { stamp };
+    await $.sh`date +%s%N > /tmp/stamp`;
   },
 );
+
+/** Reads the stamp `cached` left on its machine, which a restore keeps. */
+export const cachedReader = ci.job("cached-reader", async () => {
+  await from(cachedJob);
+
+  const stamp = await $`cat /tmp/stamp`.text();
+
+  return { stamp };
+});
 
 export const pauseJob = ci.job("pause", async () => {
   await $.sh`echo before > /tmp/state`;

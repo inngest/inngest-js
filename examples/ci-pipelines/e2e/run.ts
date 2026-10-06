@@ -400,7 +400,11 @@ const cases: Case[] = [
     check: ([first, second]) => {
       const a = completed(first!);
       const b = completed(second!);
-      deepStrictEqual(b, a, "second run should restore the first run's result");
+      deepStrictEqual(
+        b,
+        a,
+        "second run should start from the first run's cached snapshot",
+      );
     },
   },
   {

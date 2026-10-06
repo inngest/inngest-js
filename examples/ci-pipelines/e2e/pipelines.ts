@@ -2,7 +2,7 @@ import { changed, github } from "@inngest/ci";
 
 import { ci } from "./client.ts";
 import {
-  cachedJob,
+  cachedReader,
   checkoutJob,
   commandsJob,
   childA,
@@ -61,7 +61,7 @@ export const pipelines = [
     return { unexpected: "docs changed" };
   }),
   ci.pipeline({ id: "e2e-cache", on: on("cache") }, () => {
-    return cachedJob();
+    return cachedReader();
   }),
   ci.pipeline({ id: "e2e-pause", on: on("pause") }, () => {
     return pauseJob();
