@@ -46,6 +46,11 @@ export type SessionEvent =
       at: number;
     }
   | {
+      /** The session starts over, after the person ran setup again. */
+      kind: "restart";
+      at: number;
+    }
+  | {
       kind: "ready";
       /** The Dev Server's UI, like `http://127.0.0.1:24288`. */
       devServerUrl: string;

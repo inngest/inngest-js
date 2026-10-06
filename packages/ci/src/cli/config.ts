@@ -39,6 +39,34 @@ const startFix = (start: string): string => {
 };
 
 /**
+ * Nothing says how to start the app: no `ci.start` and no `ci/server.*`.
+ * Guided setup, or the error that stands in for it, answers this.
+ */
+export class NoConfigError extends SetupError {
+  constructor() {
+    super("No command to start your app.", { fix: startFix("tsx server.ts") });
+
+    this.name = "NoConfigError";
+  }
+}
+
+/**
+ * `from` and each directory above it, nearest first, up to and including
+ * `to`, or the filesystem root if `to` isn't above.
+ */
+export const ancestors = (from: string, to: string): string[] => {
+  const dirs: string[] = [];
+
+  for (let dir = from; ; dir = dirname(dir)) {
+    dirs.push(dir);
+
+    if (dir === to || dirname(dir) === dir) {
+      return dirs;
+    }
+  }
+};
+
+/**
  * The git repository's root, which is what a run uploads to its Sandboxes.
  */
 export const findGitRoot = async (cwd: string): Promise<string> => {
@@ -148,9 +176,7 @@ export const loadConfig = async (root: string): Promise<CiConfig> => {
     })?.start;
 
   if (!start) {
-    throw new SetupError("No command to start your app.", {
-      fix: startFix("tsx server.ts"),
-    });
+    throw new NoConfigError();
   }
 
   return {

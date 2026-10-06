@@ -20,6 +20,7 @@ import {
   statusesSink,
 } from "../github/checks.ts";
 import { setFallbackGitHub } from "../github/rest.ts";
+import { jsonSchemaOf } from "../local/jsonSchema.ts";
 import type { LocalManifest } from "../local/protocol.ts";
 import { runJobFunctionId } from "../local/protocol.ts";
 import { createLocalReporter, isLocal } from "../local/reporter.ts";
@@ -42,7 +43,7 @@ import type {
 import { devServerRunUrl } from "../util.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
-import { createMatrix } from "./matrix.ts";
+import { createMatrix, expandMatrix } from "./matrix.ts";
 import {
   cacheRefreshFunctions,
   cleanupFunction,
@@ -103,7 +104,23 @@ export interface Ci {
    *   return node;
    * });
    * ```
+   *
+   * Give it an `input` schema to validate the input, and to have
+   * `inngest-ci` ask for it field by field:
+   *
+   * ```ts
+   * const build = ci.job(
+   *   { id: "build", input: z.object({ target: z.enum(["web", "api"]) }) },
+   *   async ({ target }) => {
+   *     await $`pnpm build --target ${target}`;
+   *   },
+   * );
+   * ```
    */
+  job<TSchema extends StandardSchemaV1, TResult>(
+    config: JobConfig & { input: TSchema },
+    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<TResult>,
+  ): Job<TResult, StandardSchemaV1.InferInput<TSchema>>;
   job<TResult, TInput = void>(
     idOrConfig: string | JobConfig<TInput>,
     handler: (input: TInput) => Promise<TResult>,
@@ -288,6 +305,9 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       manifestMatrices.push({
         id: config.id,
         axes: config.axes as unknown as LocalManifest["matrices"][number]["axes"],
+        combos: expandMatrix(
+          config,
+        ) as unknown as LocalManifest["matrices"][number]["combos"],
       });
 
       return matrix;
@@ -312,9 +332,15 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
       reporter.manifest(() => {
         return {
           pipelines: manifestPipelines,
-          jobs: [...jobs.values()].map(({ id, handler }) => {
+          jobs: [...jobs.values()].map(({ id, config, handler }) => {
+            const input = jsonSchemaOf(config.input);
+
             // A handler that declares a parameter takes an input.
-            return { id, takesInput: handler.length > 0 };
+            return {
+              id,
+              takesInput: handler.length > 0,
+              ...(input ? { input } : {}),
+            };
           }),
           matrices: manifestMatrices,
         };
@@ -346,10 +372,16 @@ const manifestTrigger = (
   trigger: CiTrigger,
 ): LocalManifest["pipelines"][number]["triggers"][number] => {
   if (trigger.event !== undefined) {
+    // `ci.manual()` keeps its schema on the trigger.
+    const schema = jsonSchemaOf(
+      (trigger as { schema?: StandardSchemaV1 }).schema,
+    );
+
     return {
       event:
         typeof trigger.event === "string" ? trigger.event : trigger.event.name,
       ...(trigger.if ? { if: trigger.if } : {}),
+      ...(schema ? { schema } : {}),
     };
   }
 

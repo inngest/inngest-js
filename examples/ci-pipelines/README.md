@@ -56,17 +56,18 @@ pnpm run ci pr
 
 `inngest-ci` needs a Dev Server binary. Install `inngest-cli`, or point `INNGEST_CI_DEV_SERVER_BIN` at a local build. See [Run locally](../../packages/ci/README.md#run-locally).
 
-Press `enter` to open the run's trace. `pr` has several triggers, so a plain terminal run uses the first, `pull_request.opened`; with `--no-interactive`, pick one with `--event`.
+Press `enter` to open the run's trace. `pr` has several triggers, so a terminal run asks which one; with `--no-interactive`, pick one with `--event`. Run `pnpm run ci` with no target to pick pipelines and jobs, several at once.
 
 Try the other commands from this directory. Add `--no-interactive` to any of them for plain output.
 
 ```bash
 pnpm run ci lint                                  # one job
 pnpm run ci build --input '{"target":"web"}'      # a job with input
-pnpm run ci compat --node 22                      # one matrix combination
+pnpm run ci compat --node 22                      # the node 22 combinations
 pnpm run ci compat                                # every combination
 pnpm run ci pr --event pull_request.synchronize   # pick a trigger
 pnpm run ci deploy --data '{"target":"api"}'      # a manual trigger
+pnpm run ci deploy                                # asks for its data, field by field
 pnpm run ci --pipeline release --event push      # skipped: ci.local
 ```
 

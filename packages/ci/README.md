@@ -24,7 +24,7 @@ With `@inngest/ci` you get:
   - [Pick what to run](#pick-what-to-run)
   - [Run one job](#run-one-job)
   - [Choose the event](#choose-the-event)
-  - [Saved input](#saved-input)
+  - [Input forms](#input-forms)
   - [Open an earlier run](#open-an-earlier-run)
   - [Flags](#flags)
   - [Exit codes](#exit-codes)
@@ -200,13 +200,31 @@ npx inngest-ci pr
 
 ## Run locally
 
-`inngest-ci <target>` runs one pipeline or one job on real Sandboxes against your working tree. With no target, a terminal shows a picker.
+`inngest-ci <target>` runs one pipeline or one job on real Sandboxes against your working tree. With no target, a terminal shows a picker. A target that needs input asks for it field by field, from its schema.
 
 ```bash
 npx inngest-ci pr
 npx inngest-ci lint
 npx inngest-ci
 ```
+
+The first time, `inngest-ci` finds how your app serves `ci.functions()` and sets itself up. In a terminal it shows what it found and asks you to confirm:
+
+```
+  CI      ci/client.ts (ci)
+  Server  server.ts
+  Start   pnpm run start
+  Path    /api/inngest
+
+  Run inngest-ci with this?
+› Yes
+  Use another server
+  Edit the start command and path
+```
+
+It writes the `ci` key of `inngest.json`, offers to add `.inngest/` to `.gitignore`, and carries straight on with your run. If a later run can't start your app, it shows why and offers to run setup again. Nothing in your code is run to find any of this. See [Configure](#configure) to edit it by hand.
+
+Without a terminal, such as for an agent, a missing config is a setup error that says what was found and prints the `inngest.json` to write.
 
 It starts a Dev Server and your app, and stops both when you quit. In a terminal it draws the runs live:
 
@@ -233,15 +251,29 @@ Pass `--no-interactive` to print one line per transition instead. This is also t
 
 ### Pick what to run
 
-Run `inngest-ci` with no target in a terminal to pick from your pipelines, jobs and matrices. A matrix shows its number of combinations.
+Run `inngest-ci` with no target in a terminal to pick from your pipelines, jobs and matrices.
 
 | Key | Does |
 | --- | --- |
 | `↑` `↓` | Moves. |
-| `space` | Selects. |
-| `→` `←` | Opens and closes a matrix's combinations. `all` is the default. |
+| `space` | Selects. On a matrix, an axis or a value, it selects everything under it. |
+| `→` `←` | Opens and closes a matrix and its axes. |
 | `enter` | Runs the selection in parallel, or the highlighted row if nothing is selected. |
 | `q`, `esc` | Quits. |
+
+A matrix is a tree of its axes and their values. `●` is all selected, `◐` some and `○` none.
+
+```
+  ◐ compat   2/4 combinations
+    ◐ os: *
+      ● linux
+      ○ mac
+    ● node: *
+      ● 20
+      ● 22
+```
+
+The count is the selected combinations out of those the matrix runs, so `exclude` and `include` count. A combination is selected when every value in it is.
 
 Without a terminal, no target is an error that lists what you can run.
 
@@ -253,10 +285,11 @@ A target that names a job runs only that job.
 npx inngest-ci test
 npx inngest-ci build --input '{"target":"web"}'
 npx inngest-ci compat --node 22
+npx inngest-ci compat --node 20 --node 22 --os linux
 ```
 
 - `--input` is the job's input, as JSON.
-- A matrix takes one flag for each axis. With no axis flags, it runs every combination.
+- A matrix takes `--<axis> <value>` to limit it. Repeat an axis for several values: the last command runs the combinations with node 20 or 22 on linux. With no axis flags, it runs every combination.
 - If a name is both a pipeline and a job, pass `--pipeline <name>` or `--job <name>`.
 
 ### Choose the event
@@ -268,13 +301,36 @@ npx inngest-ci release --event push
 npx inngest-ci deploy --data '{"env":"preview"}'
 ```
 
-`--data` is the `event.data` for a [`ci.manual()`](#triggers) trigger, or `{"body": "..."}` for a comment trigger.
+`--data` is the `event.data` for a [`ci.manual()`](#triggers) trigger, or `{"body": "..."}` for a comment trigger. Given a schema, `--data` and `--input` are checked against it, and a mismatch lists the fields it wants.
 
-### Saved input
+### Input forms
 
-In a terminal, a target that needs data asks for it: a trigger, the JSON for a `ci.manual()` trigger, a comment's text, a job's input or a matrix combination. Flags skip the question they answer.
+In a terminal, a target that needs data asks for it: a trigger, a comment's text, the data of a `ci.manual({ schema })` trigger, or the input of a job with an [`input` schema](#jobs). The data is asked field by field, from the schema, so you never face a blank line.
 
-After a run with typed data, it offers to save it as a fixture. Fixtures are files in `<dir>/fixtures/<target>/<name>.json`. The next time, the prompt lists them first.
+```
+  deploy · event data
+
+  ✓ target  api
+
+  dryRun  2 of 3 · optional · default yes
+  Build and check without releasing
+› yes  default
+  no
+  leave out
+
+  ↑↓ move · enter pick · esc cancel
+```
+
+- Each field shows its description, its default and whether it is required. `enter` accepts the default, and on an empty optional field leaves it out.
+- Objects are asked a property at a time, with nested ones by path, like `build.target`.
+- A string with an `enum`, or a union of literals, is a list. A boolean is yes or no. A number is checked against its `min` and `max`. A list of strings or numbers takes one item at a time, and an empty entry finishes it.
+- Anything else, such as a union of objects or a record, is a line of JSON for that field, starting from an example.
+- A mistake shows under the field, which stays until it is right.
+- At the end, the form shows the finished JSON. Choose Run, Edit a field or Start over.
+
+The form is built from the schema's JSON Schema, which `inngest-ci` takes from any library that can write one, such as Zod 4. A schema it can't read, such as Valibot's, gets a JSON line with a note saying so. A job that takes input but has no `input` schema says to add one.
+
+After a run with typed data, it offers to save it as a fixture. Fixtures are files in `<dir>/fixtures/<target>/<name>.json`. The next time, the prompt offers each one to use as it is, or to start from, which fills the form with its values. New starts with a blank form.
 
 ```bash
 npx inngest-ci deploy --fixture nightly-api
@@ -301,7 +357,7 @@ Each session keeps its runs in its own Dev Server database, `<dir>/dev-server/<s
 | `--data <json>` | Sets `event.data` for a `ci.manual()` or comment trigger. |
 | `--input <json>` | Sets a job's input. |
 | `--fixture <name>` | Uses a saved input. |
-| `--<axis> <value>` | Picks a matrix combination. |
+| `--<axis> <value>` | Limits a matrix to a value of an axis. Repeat it for several. |
 | `--no-interactive` | Prints plain lines instead of the live view. |
 | `--help` | Prints usage. |
 
@@ -339,10 +395,12 @@ Each session also writes its live state to `~/.local/state/inngest-ci/sessions` 
 | `dir` | `.inngest/ci` | Where runs keep their files, relative to the repository root. |
 | `devServer.bin` | | The path to a Dev Server binary. |
 
-With no `ci` key, `inngest-ci` looks for `ci/server.ts`, `ci/server.mts`, `ci/server.js`, or `ci/server.mjs` and starts it with `tsx` or `node`.
+`inngest-ci` writes this for you the first time. Edit it by hand to change the start command or path, to move `dir`, or to point at a Dev Server binary. Setup keeps every other key.
+
+With no `ci` key, `inngest-ci` looks for `ci/server.ts`, `ci/server.mts`, `ci/server.js`, or `ci/server.mjs` and starts it with `tsx` or `node`. If there is none, it runs setup.
 
 - Your app starts with `PORT` and `INNGEST_DEV=1` set. `ci.functions()` must be in what it serves. [`ci.local`](#local-runs) is `true`.
-- Add `.inngest/ci/` to `.gitignore`. It holds the Dev Server's data, saved fixtures and the logs in `logs/dev-server.log` and `logs/app.log`.
+- Add `.inngest/` to `.gitignore`; setup offers to. It holds the Dev Server's data, saved fixtures and the logs in `logs/dev-server.log` and `logs/app.log`.
 
 ### The Dev Server
 
@@ -525,7 +583,7 @@ export const merged = ci.pipeline(
 - A pipeline has at most 10 triggers, and `pullRequest()` uses one for each type.
 - `comment({ minPermission })` checks the author after the run starts, against the command the comment starts with. A user without the permission gets a reply and a neutral check.
 - Several triggers give a union type. Narrow it with `"pull_request" in event.data`.
-- A cron has no typed `event.data`. `ci.manual({ schema })` types it from any Standard Schema validator, such as Zod.
+- A cron has no typed `event.data`. `ci.manual({ schema })` types it from any Standard Schema validator, such as Zod, and `inngest-ci` asks for its fields in a [form](#input-forms).
 
 ### Jobs
 
@@ -558,6 +616,26 @@ const build = ci.job({ id: "build", machine: { vcpu: 4 } }, async () => {
 | `cache` | `{ key?, refresh?, scope? }` | No |
 | `check` | `false`, or `{ name? }` | No |
 | `keepOnFailure` | Duration, such as `"24h"` | No |
+| `input` | Any Standard Schema | No |
+
+`input` validates what the job is called with, and types it. The handler gets the schema's output, defaults applied. A call that doesn't match throws a `CiUsageError` that lists each issue's path and message. `inngest-ci` asks for the input in a [form](#input-forms).
+
+```ts
+const build = ci.job(
+  {
+    id: "build",
+    input: z.object({
+      target: z.enum(["web", "api"]),
+      minify: z.boolean().default(true),
+    }),
+  },
+  async ({ target, minify }) => {
+    await $`pnpm build --target ${target} ${minify ? "--minify" : ""}`;
+  },
+);
+
+await build({ target: "web" });
+```
 
 `keepOnFailure` snapshots the machine when the job fails. The snapshot ID appears on the job check and in the pipeline summary. The duration is currently ignored: the snapshot is kept for the platform's default retention.
 

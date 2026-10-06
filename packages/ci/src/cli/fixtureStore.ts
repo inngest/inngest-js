@@ -48,12 +48,12 @@ export const listFixtures = (dir: string, targetId: string): string[] => {
     .sort();
 };
 
-/** Read a saved input. A missing one is a setup error that lists what exists. */
-export const loadFixture = (
+/** A fixture as saved: its input and when it was saved. */
+const readFixture = (
   dir: string,
   targetId: string,
   name: string,
-): RunInput => {
+): RunInput & { savedAt?: string } => {
   const file = join(folder(dir, targetId), `${name}.json`);
 
   if (!namePattern.test(name) || !existsSync(file)) {
@@ -66,7 +66,16 @@ export const loadFixture = (
     });
   }
 
-  const { savedAt: _, ...input } = JSON.parse(readFileSync(file, "utf8"));
+  return JSON.parse(readFileSync(file, "utf8"));
+};
+
+/** Read a saved input. A missing one is a setup error that lists what exists. */
+export const loadFixture = (
+  dir: string,
+  targetId: string,
+  name: string,
+): RunInput => {
+  const { savedAt: _, ...input } = readFixture(dir, targetId, name);
 
   return input;
 };
@@ -89,14 +98,21 @@ export const saveFixture = (opts: {
   );
 };
 
-/** Everything saved for a target, by name. */
+/** Everything saved for a target, by name, the one saved longest ago first. */
 export const loadFixtures = (
   dir: string,
   targetId: string,
 ): Record<string, RunInput> => {
   return Object.fromEntries(
-    listFixtures(dir, targetId).map((name) => {
-      return [name, loadFixture(dir, targetId, name)];
-    }),
+    listFixtures(dir, targetId)
+      .map((name) => {
+        return { name, ...readFixture(dir, targetId, name) };
+      })
+      .sort((a, b) => {
+        return (a.savedAt ?? "").localeCompare(b.savedAt ?? "");
+      })
+      .map(({ name, savedAt: _, ...input }) => {
+        return [name, input];
+      }),
   );
 };

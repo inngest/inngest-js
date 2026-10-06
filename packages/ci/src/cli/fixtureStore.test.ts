@@ -50,12 +50,26 @@ describe("fixtures", () => {
 
   test("reads back what was saved, without the time", () => {
     const root = dir();
-    const input = { input: { target: "web" }, combo: {} };
+    const input = { input: { target: "web" }, combos: [{ os: "linux" }] };
 
     saveFixture({ dir: root, targetId: "build", name: "web", input, now: 0 });
 
     expect(loadFixture(root, "build", "web")).toEqual(input);
     expect(loadFixtures(root, "build")).toEqual({ web: input });
+  });
+
+  test("reads everything saved for a target, the one saved longest ago first", () => {
+    const root = dir();
+
+    for (const [name, now] of [
+      ["b", 2000],
+      ["a", 3000],
+      ["c", 1000],
+    ] as const) {
+      saveFixture({ dir: root, targetId: "t", name, input: {}, now });
+    }
+
+    expect(Object.keys(loadFixtures(root, "t"))).toEqual(["c", "b", "a"]);
   });
 
   test("lists names sorted, and nothing for a target with none", () => {

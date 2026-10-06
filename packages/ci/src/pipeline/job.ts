@@ -109,12 +109,47 @@ export const runJob = async ({
   return started;
 };
 
+/**
+ * What the job's `input` schema makes of `input`: the validated value, with
+ * its defaults applied. Without a schema, the input as given. Pure, so a
+ * handler replaying from the top gets the same answer without a step.
+ */
+const validateInput = async (
+  config: JobConfig,
+  input: unknown,
+): Promise<unknown> => {
+  if (!config.input) {
+    return input;
+  }
+
+  const result = await config.input["~standard"].validate(input);
+
+  if (!result.issues) {
+    return result.value;
+  }
+
+  const problems = result.issues.map((issue) => {
+    const path = (issue.path ?? [])
+      .map((segment) => {
+        return String(typeof segment === "object" ? segment.key : segment);
+      })
+      .join(".");
+
+    return `  - ${path ? `${path}: ` : ""}${issue.message}`;
+  });
+
+  throw new CiUsageError(
+    `The input for job "${config.id}" doesn't match its \`input\` schema:\n${problems.join("\n")}`,
+  );
+};
+
 const jobBody = async ({
   run,
   config,
   handler,
-  input,
+  input: given,
 }: RunJobArgs & { run: CiRunScope }): Promise<unknown> => {
+  const input = await validateInput(config, given);
   const checks = run.ci.checks as CheckReporter;
 
   const scope: CiJobScope = {

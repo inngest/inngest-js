@@ -6,6 +6,7 @@
  * @module
  */
 
+import type { JsonSchema } from "../local/jsonSchema.ts";
 import { fixtures } from "../github/fixtures.ts";
 import type { PullRequestAction } from "../github/triggers.ts";
 import {
@@ -34,8 +35,15 @@ export type Target =
       id: string;
       /** Whether the job's handler declares a parameter. */
       takesInput: boolean;
-      /** Set for a matrix. */
+      /** The JSON Schema of the job's `input` schema, if it has one. */
+      input?: JsonSchema;
+      /**
+       * Set for a matrix: its axes' values, with any value an `include`
+       * combination adds.
+       */
       axes?: Record<string, AxisValue[]>;
+      /** Set for a matrix: the combinations it really runs. */
+      combos?: Combo[];
     };
 
 export interface LocalEvent {
@@ -57,6 +65,33 @@ const list = (items: string[]): string => {
   return items.length ? items.join(", ") : "none";
 };
 
+/**
+ * The values of each axis: the matrix's own, then any value only an `include`
+ * combination uses, so every combination's values can be told apart.
+ */
+const axisValues = (
+  axes: LocalManifest["matrices"][number]["axes"],
+  combos: Combo[],
+): Record<string, AxisValue[]> => {
+  const merged = Object.fromEntries(
+    Object.entries(axes).map(([axis, values]) => {
+      return [axis, [...values]];
+    }),
+  );
+
+  for (const combo of combos) {
+    for (const [axis, value] of Object.entries(combo)) {
+      merged[axis] ??= [];
+
+      if (!merged[axis].includes(value)) {
+        merged[axis].push(value);
+      }
+    }
+  }
+
+  return merged;
+};
+
 /** Everything the manifest defines that can run: pipelines, jobs, then matrices. */
 export const targetsOf = (manifest: LocalManifest): Target[] => {
   return [
@@ -64,14 +99,20 @@ export const targetsOf = (manifest: LocalManifest): Target[] => {
       return { kind: "pipeline", id: pipeline.id, triggers: pipeline.triggers };
     }),
     ...manifest.jobs.map((job): Target => {
-      return { kind: "job", id: job.id, takesInput: job.takesInput };
+      return {
+        kind: "job",
+        id: job.id,
+        takesInput: job.takesInput,
+        input: job.input,
+      };
     }),
     ...manifest.matrices.map((matrix): Target => {
       return {
         kind: "job",
         id: matrix.id,
         takesInput: false,
-        axes: matrix.axes,
+        axes: axisValues(matrix.axes, matrix.combos),
+        combos: matrix.combos,
       };
     }),
   ];
@@ -220,61 +261,72 @@ export const describeRepo = async (cwd: string): Promise<LocalRepo> => {
 };
 
 /**
- * The matrix combination from `--<axis> <value>` flags: `undefined` for none,
- * which runs every combination. Values are matched against the axis's own, so
- * `--node 22` finds the number `22`.
+ * The combinations `--<axis> <value>` flags pick: `undefined` for none, which
+ * runs every combination. An axis given several times takes all its values,
+ * and an axis left out takes any. Values are matched against the axis's own,
+ * so `--node 22` finds the number `22`.
  */
-export const parseCombo = (
-  axes: Record<string, AxisValue[]> | undefined,
-  flags: Record<string, string>,
-): Combo | undefined => {
+export const selectCombos = (
+  target: Extract<Target, { kind: "job" }>,
+  flags: Record<string, string[]>,
+): Combo[] | undefined => {
   const given = Object.keys(flags);
+  const { axes, combos } = target;
 
   if (given.length === 0) {
     return undefined;
   }
 
-  if (!axes) {
+  if (!axes || !combos) {
     throw new SetupError(
       `This job isn't a matrix, so --${given[0]} doesn't apply.`,
     );
   }
 
-  const unknown = given.find((axis) => {
-    return !(axis in axes);
+  const chosen = new Map<string, AxisValue[]>();
+
+  for (const axis of given) {
+    const values = axes[axis];
+
+    if (!values) {
+      throw new SetupError(`Unknown option --${axis}.`, {
+        fix: `Axes: ${list(Object.keys(axes))}`,
+      });
+    }
+
+    chosen.set(
+      axis,
+      (flags[axis] ?? []).map((flag) => {
+        const value = values.find((candidate) => {
+          return String(candidate) === flag;
+        });
+
+        if (value === undefined) {
+          throw new SetupError(`"${flag}" isn't a value of ${axis}.`, {
+            fix: `Values: ${values.join(", ")}`,
+          });
+        }
+
+        return value;
+      }),
+    );
+  }
+
+  const picked = combos.filter((combo) => {
+    return [...chosen].every(([axis, values]) => {
+      return values.some((value) => {
+        return combo[axis] === value;
+      });
+    });
   });
 
-  if (unknown) {
-    throw new SetupError(`Unknown option --${unknown}.`, {
-      fix: `Axes: ${list(Object.keys(axes))}`,
+  if (picked.length === 0) {
+    throw new SetupError("No combination of the matrix has those values.", {
+      fix: `Combinations: ${combos.map(describeCombo).join("; ")}`,
     });
   }
 
-  const combo: Combo = {};
-
-  for (const [axis, values] of Object.entries(axes)) {
-    const flag = flags[axis];
-
-    if (flag === undefined) {
-      throw new SetupError(`Missing --${axis}.`, {
-        fix: `Give every axis, or none to run every combination. Axes: ${list(Object.keys(axes))}`,
-      });
-    }
-
-    const value = values.find((candidate) => {
-      return String(candidate) === flag;
-    });
-
-    if (value === undefined) {
-      throw new SetupError(`"${flag}" isn't a value of ${axis}.`, {
-        fix: `Values: ${values.join(", ")}`,
-      });
-    }
-
-    combo[axis] = value;
-  }
-
-  return combo;
+  return picked;
 };
 
 /** The event that runs one job, or one combination of a matrix. */
@@ -282,8 +334,8 @@ export const buildJobEvent = (opts: {
   target: Extract<Target, { kind: "job" }>;
   repo: LocalRepo;
   input?: unknown;
-  /** A matrix's combination. Left out, every combination runs. */
-  combo?: Combo;
+  /** The combinations of a matrix to run. Left out, every one runs. */
+  combos?: Combo[];
 }): LocalEvent => {
   const data: RunJobEventData = {
     ...opts.repo.fixtureData,
@@ -294,25 +346,11 @@ export const buildJobEvent = (opts: {
     data.input = opts.input;
   }
 
-  if (opts.combo && Object.keys(opts.combo).length > 0) {
-    data.combo = opts.combo;
+  if (opts.combos) {
+    data.combos = opts.combos;
   }
 
   return { name: runJobEvent, data };
-};
-
-/** Every combination of a matrix's axes, in declaration order. */
-export const combinations = (axes: Record<string, AxisValue[]>): Combo[] => {
-  return Object.entries(axes).reduce<Combo[]>(
-    (combos, [axis, values]) => {
-      return combos.flatMap((combo) => {
-        return values.map((value) => {
-          return { ...combo, [axis]: value };
-        });
-      });
-    },
-    [{}],
-  );
 };
 
 /** A combination as a job names it, like `node:22, os:linux`. */
@@ -322,4 +360,13 @@ export const describeCombo = (combo: Combo): string => {
       return `${axis}:${value}`;
     })
     .join(", ");
+};
+
+/** A selection of combinations as a run is labelled: the one it is, or how many. */
+export const describeCombos = (combos: Combo[]): string => {
+  const [only] = combos;
+
+  return only && combos.length === 1
+    ? describeCombo(only)
+    : `${combos.length} combinations`;
 };

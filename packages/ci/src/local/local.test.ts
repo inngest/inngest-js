@@ -16,6 +16,7 @@ import { $ } from "../machine/command.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import { fakeSchema } from "../testing/schema.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { LocalMessage, RunJobEventData } from "./protocol.ts";
 import { localEnv, runJobEvent, runJobFunctionId } from "./protocol.ts";
@@ -213,8 +214,23 @@ describe("the manifest", () => {
       return name;
     });
 
+    ci.job(
+      {
+        id: "build",
+        input: fakeSchema<{ target: string }>({ target: "string" }),
+      },
+      async () => {
+        return undefined;
+      },
+    );
+
     ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"], os: ["linux"] } },
+      {
+        id: "compat",
+        axes: { node: ["20", "22"], os: ["linux", "mac"] },
+        exclude: [{ os: "mac" }],
+        include: [{ node: "22", os: "mac" }],
+      },
       async () => {
         return undefined;
       },
@@ -224,6 +240,40 @@ describe("the manifest", () => {
       {
         id: "pr",
         on: [...prTrigger, { cron: "0 0 * * *" }],
+      },
+      async () => {
+        return undefined;
+      },
+    );
+
+    ci.pipeline(
+      {
+        id: "deploy",
+        on: ci.manual({
+          pipelineId: "deploy",
+          schema: fakeSchema<{ target: string }>({ target: "string" }),
+        }),
+      },
+      async () => {
+        return undefined;
+      },
+    );
+
+    ci.pipeline(
+      {
+        id: "readme",
+        on: ci.manual({
+          pipelineId: "readme",
+          schema: {
+            "~standard": {
+              version: 1,
+              vendor: "test",
+              validate: (value: unknown) => {
+                return { value };
+              },
+            },
+          },
+        }),
       },
       async () => {
         return undefined;
@@ -254,14 +304,47 @@ describe("the manifest", () => {
                 { cron: "0 0 * * *" },
               ],
             },
+            {
+              id: "deploy",
+              triggers: [
+                {
+                  event: "ci/manual.deploy",
+                  schema: {
+                    type: "object",
+                    properties: { target: { type: "string" } },
+                    required: ["target"],
+                  },
+                },
+              ],
+            },
+            // A schema that can't be written as JSON Schema sends none.
+            { id: "readme", triggers: [{ event: "ci/manual.readme" }] },
           ],
           jobs: [
             { id: "lint", takesInput: false },
             { id: "greet", takesInput: true },
+            {
+              id: "build",
+              takesInput: false,
+              input: {
+                type: "object",
+                properties: { target: { type: "string" } },
+                required: ["target"],
+              },
+            },
             { id: "test", takesInput: false },
           ],
           matrices: [
-            { id: "compat", axes: { node: ["20", "22"], os: ["linux"] } },
+            {
+              id: "compat",
+              axes: { node: ["20", "22"], os: ["linux", "mac"] },
+              // The real expansion: `exclude` removed every mac and `include` added one back.
+              combos: [
+                { node: "20", os: "linux" },
+                { node: "22", os: "linux" },
+                { node: "22", os: "mac" },
+              ],
+            },
           ],
         },
       },
@@ -312,32 +395,78 @@ describe("the run-job function", () => {
     });
   });
 
-  test("runs one combination of a matrix, or all of them", async () => {
+  test("runs the combinations it is given, or all of them", async () => {
     const { ci } = setupLocal();
-    const ran: string[] = [];
 
     ci.matrix(
-      { id: "compat", axes: { node: ["20", "22"] } },
-      async ({ node }) => {
-        ran.push(node);
-
-        return node;
+      {
+        id: "compat",
+        axes: { node: ["20", "22"], os: ["linux", "mac"] },
+        exclude: [{ os: "mac" }],
+        include: [{ node: "22", os: "mac" }],
+      },
+      async ({ node, os }) => {
+        return `${node} ${os}`;
       },
     );
 
     const fn = functionFor(ci, runJobFunctionId);
 
-    const one = await runFunction(fn as never, {
-      event: runJobData({ job: "compat", combo: { node: "22" } }),
+    const some = await runFunction(fn as never, {
+      event: runJobData({
+        job: "compat",
+        combos: [
+          { node: "22", os: "linux" },
+          { node: "22", os: "mac" },
+          // Excluded, so it isn't a combination and doesn't run.
+          { node: "20", os: "mac" },
+        ],
+      }),
     });
 
-    expect(one.data).toEqual(["22"]);
+    expect(some.data).toEqual(["22 linux", "22 mac"]);
 
     const all = await runFunction(fn as never, {
       event: runJobData({ job: "compat" }),
     });
 
-    expect(all.data).toEqual(["20", "22"]);
+    expect(all.data).toEqual(["20 linux", "22 linux", "22 mac"]);
+  });
+
+  test("runs a subset of a matrix in one run, each combination as its own job", async () => {
+    const messages = await listen();
+    const { ci } = setupLocal();
+
+    ci.matrix(
+      { id: "compat", axes: { node: ["20", "22", "24"] }, concurrency: 1 },
+      async ({ node }) => {
+        await $`node --version`;
+
+        return node;
+      },
+    );
+
+    const result = await runFunction(
+      functionFor(ci, runJobFunctionId) as never,
+      {
+        event: runJobData({
+          job: "compat",
+          combos: [{ node: "20" }, { node: "24" }],
+        }),
+      },
+    );
+
+    expect(result.data).toEqual(["20", "24"]);
+
+    await vi.waitFor(() => {
+      expect(
+        new Set(
+          kinds(messages, "job").map((message) => {
+            return message.kind === "job" ? message.jobId : "";
+          }),
+        ),
+      ).toEqual(new Set(["compat (node:20)", "compat (node:24)"]));
+    });
   });
 
   test("an unknown job is a usage error", async () => {

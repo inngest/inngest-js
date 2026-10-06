@@ -25,7 +25,7 @@ describe("parseCliArgs", () => {
       event: "push",
       data: '{"a":1}',
       noInteractive: true,
-      combo: {},
+      axes: {},
     });
   });
 
@@ -61,7 +61,20 @@ describe("parseCliArgs", () => {
     const args = parseCliArgs(["compat", "--os", "linux", "--node=22"]);
 
     expect(args.name).toBe("compat");
-    expect(args.combo).toEqual({ os: "linux", node: "22" });
+    expect(args.axes).toEqual({ os: ["linux"], node: ["22"] });
+  });
+
+  test("collects a repeated axis option into its values", () => {
+    const args = parseCliArgs([
+      "compat",
+      "--node",
+      "20",
+      "--os=linux",
+      "--node",
+      "22",
+    ]);
+
+    expect(args.axes).toEqual({ node: ["20", "22"], os: ["linux"] });
   });
 
   test("reads --job and --help", () => {

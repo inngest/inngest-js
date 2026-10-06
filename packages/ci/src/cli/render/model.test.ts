@@ -217,3 +217,16 @@ describe("reduce", () => {
     expect(after.runs[0]?.jobs).toHaveLength(1);
   });
 });
+
+describe("restart", () => {
+  test("forgets the attempt that failed, keeping only when it began", () => {
+    const model = play([
+      { kind: "stage", stage: "app", status: "failed", at: 5 },
+      { kind: "setup-error", message: "The app exited.", at: 6 },
+      { kind: "done", conclusion: "setup-error", at: 7 },
+      { kind: "restart", at: 8 },
+    ]);
+
+    expect(model).toEqual({ stages: [], runs: [], startedAt: 8 });
+  });
+});

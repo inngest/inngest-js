@@ -1,19 +1,20 @@
 /**
  * The data a run needs beyond its target, and where it comes from. For each
- * piece, a flag beats a saved fixture, which beats asking.
+ * piece, a flag beats a saved fixture, which beats asking. Asking is a form
+ * built from the data's schema, so a person is led through it field by field.
  *
  * @module
  */
 
+import type { JsonSchema } from "../local/jsonSchema.ts";
 import type { CliArgs } from "./args.ts";
+import { describeFields, describeProblems } from "./prompt/formSchema.ts";
 import type { Prompter } from "./prompter.ts";
 import { SetupError } from "./setupError.ts";
 import {
   type Combo,
-  combinations,
-  describeCombo,
   matchTrigger,
-  parseCombo,
+  selectCombos,
   type Target,
   triggerEvents,
 } from "./target.ts";
@@ -26,8 +27,8 @@ export interface RunInput {
   data?: Record<string, unknown>;
   /** A job's input. */
   input?: unknown;
-  /** A matrix's combination; `{}` is every one. */
-  combo?: Combo;
+  /** The combinations of a matrix to run; absent is every one. */
+  combos?: Combo[];
 }
 
 export interface ResolvedInput {
@@ -35,6 +36,9 @@ export interface ResolvedInput {
   /** Whether anything was asked, which makes it worth saving as a fixture. */
   entered: boolean;
 }
+
+type PipelineTarget = Extract<Target, { kind: "pipeline" }>;
+type JobTarget = Extract<Target, { kind: "job" }>;
 
 const parseJson = (flag: string, value: string): unknown => {
   try {
@@ -46,7 +50,7 @@ const parseJson = (flag: string, value: string): unknown => {
 
 /** What the command line says about `target`. */
 export const flagInput = (
-  args: Pick<CliArgs, "event" | "data" | "input" | "combo">,
+  args: Pick<CliArgs, "event" | "data" | "input" | "axes">,
   target: Target,
 ): RunInput => {
   if (target.kind === "pipeline") {
@@ -61,61 +65,130 @@ export const flagInput = (
 
   return {
     input: args.input ? parseJson("input", args.input) : undefined,
-    combo: parseCombo(target.axes, args.combo),
+    combos: selectCombos(target, args.axes),
   };
-};
-
-/** What is wrong with `text` as JSON, if anything. */
-const checkJson = (text: string): string | undefined => {
-  try {
-    JSON.parse(text);
-
-    return undefined;
-  } catch {
-    return "Not valid JSON.";
-  }
-};
-
-const checkJsonObject = (text: string): string | undefined => {
-  if (text === "") {
-    return undefined;
-  }
-
-  return (
-    checkJson(text) ?? (/^\s*\{/.test(text) ? undefined : "Not an object.")
-  );
 };
 
 const checkComment = (text: string): string | undefined => {
   return text.trim() ? undefined : "Enter the comment.";
 };
 
-/** Ask for a manual or comment trigger's `event.data`. */
-const askData = async (
-  ask: Prompter,
+/** The JSON Schema of the data a manual trigger takes, if it could be had. */
+const manualSchema = (
+  target: PipelineTarget,
   trigger: string,
-): Promise<Record<string, unknown> | undefined> => {
-  if (trigger.startsWith("ci/manual.")) {
-    const text = await ask.line(
-      "Event data, as JSON (empty for none)",
-      checkJsonObject,
-    );
-
-    return text ? JSON.parse(text) : {};
-  }
-
-  if (trigger === "github/issue_comment.created") {
-    return { body: await ask.line("Comment", checkComment) };
+): JsonSchema | undefined => {
+  for (const candidate of target.triggers) {
+    if ("event" in candidate && candidate.event === trigger) {
+      return candidate.schema;
+    }
   }
 
   return undefined;
 };
 
 /**
+ * Refuse data that surely doesn't match its schema, naming the fields it
+ * wants, so a flag or a fixture fails here rather than in the run. Data that
+ * isn't there only fails when the schema requires something.
+ */
+const checkAgainstSchema = (opts: {
+  schema: JsonSchema | undefined;
+  value: unknown;
+  what: string;
+  flag: string;
+}): void => {
+  const { schema, value, what, flag } = opts;
+
+  if (!schema || (value === undefined && !schema.required?.length)) {
+    return;
+  }
+
+  const problems = describeProblems(schema, value ?? {});
+
+  if (problems.length === 0) {
+    return;
+  }
+
+  const lines = problems.map((problem) => {
+    return `  ${problem}`;
+  });
+
+  throw new SetupError(
+    `${what} doesn't match its schema:\n${lines.join("\n")}`,
+    {
+      fix: `Fields: ${describeFields(schema)}\nPass them as JSON with ${flag}.`,
+    },
+  );
+};
+
+/** Ask for a manual or comment trigger's `event.data`. */
+const askData = async (
+  ask: Prompter,
+  target: PipelineTarget,
+  trigger: string,
+  initial: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown> | undefined> => {
+  if (trigger.startsWith("ci/manual.")) {
+    const schema = manualSchema(target, trigger);
+    const title = `${target.id} · event data`;
+    const data = await ask.form(
+      schema
+        ? { title, schema, initial }
+        : {
+            title,
+            schema: { type: "object" },
+            note: `${target.id}'s data schema can't be shown as a form, so enter its data as JSON.`,
+            initial,
+          },
+    );
+
+    return (data ?? {}) as Record<string, unknown>;
+  }
+
+  if (trigger === "github/issue_comment.created") {
+    const body = typeof initial?.body === "string" ? initial.body : undefined;
+
+    return { body: await ask.line("Comment", checkComment, body) };
+  }
+
+  return undefined;
+};
+
+/** Ask for a job's input: a form from its `input` schema, or JSON without one. */
+const askInput = (
+  ask: Prompter,
+  target: JobTarget,
+  initial: unknown,
+): Promise<unknown> => {
+  const title = `${target.id} · input`;
+
+  if (target.input) {
+    return ask.form({ title, schema: target.input, initial });
+  }
+
+  return ask.form({
+    title,
+    schema: {},
+    note: `${target.id} takes input but has no schema. Add \`input: <schema>\` to \`ci.job\` to get a form.`,
+    initial,
+  });
+};
+
+/** What was last entered as a job's input, from the saved inputs (oldest first). */
+const lastInput = (saved: Record<string, RunInput>): unknown => {
+  return Object.values(saved)
+    .reverse()
+    .find((fixture) => {
+      return fixture.input !== undefined;
+    })?.input;
+};
+
+/**
  * Work out what to run `target` with. `flags` are what the command line gave
  * and `fixture` is the saved input `--fixture` named; `saved` is every saved
- * input, offered when nothing else was given. Questions are only asked when
- * there is a `ask`, and only for what is still missing.
+ * input, oldest first, offered when nothing else was given. Questions are only
+ * asked when there is a `ask`, and only for what is still missing.
  */
 export const resolveInput = async (opts: {
   target: Target;
@@ -131,19 +204,31 @@ export const resolveInput = async (opts: {
   const names = Object.keys(opts.saved);
   let entered = false;
   let fixture = opts.fixture;
+  /** A saved input the form starts from, rather than uses as it is. */
+  let seed: RunInput | undefined;
 
   if (!fixture && !given && ask && names.length > 0) {
-    fixture = await ask.choose("Use saved data?", [
-      ...names.map((name) => {
-        return { label: `use fixture: ${name}`, value: opts.saved[name] };
+    const chosen = await ask.choose(`Saved data for ${target.id}`, [
+      ...names.flatMap((name) => {
+        const input = opts.saved[name] as RunInput;
+
+        return [
+          { label: `Use ${name}`, value: { input, edit: false } },
+          { label: `Start from ${name}`, value: { input, edit: true } },
+        ];
       }),
-      { label: "enter new", value: undefined },
+      { label: "New", value: undefined },
     ]);
+
+    fixture = chosen?.edit ? undefined : chosen?.input;
+    seed = chosen?.edit ? chosen.input : undefined;
   }
+
+  const base = fixture ?? seed;
 
   if (target.kind === "pipeline") {
     const events = triggerEvents(target.triggers);
-    let trigger = flags.trigger ?? fixture?.trigger;
+    let trigger = flags.trigger ?? base?.trigger;
 
     if (!trigger && events.length === 1) {
       trigger = events[0];
@@ -168,8 +253,15 @@ export const resolveInput = async (opts: {
     let data = flags.data ?? fixture?.data;
 
     if (!data && ask) {
-      data = await askData(ask, trigger);
+      data = await askData(ask, target, trigger, seed?.data);
       entered ||= data !== undefined;
+    } else if (trigger.startsWith("ci/manual.")) {
+      checkAgainstSchema({
+        schema: manualSchema(target, trigger),
+        value: data,
+        what: `The data for ${target.id}`,
+        flag: "--data",
+      });
     }
 
     return { input: { trigger, data }, entered };
@@ -179,20 +271,19 @@ export const resolveInput = async (opts: {
 
   if (input === undefined && target.takesInput && ask) {
     entered = true;
-    input = JSON.parse(await ask.line("Input, as JSON", checkJson));
+    input = await askInput(
+      ask,
+      target,
+      seed?.input ?? (target.input ? undefined : lastInput(opts.saved)),
+    );
+  } else if (target.takesInput) {
+    checkAgainstSchema({
+      schema: target.input,
+      value: input,
+      what: `The input for ${target.id}`,
+      flag: "--input",
+    });
   }
 
-  let combo = flags.combo ?? fixture?.combo;
-
-  if (!combo && target.axes && ask) {
-    entered = true;
-    combo = await ask.choose("Which combination?", [
-      { label: "all", value: {} },
-      ...combinations(target.axes).map((value) => {
-        return { label: describeCombo(value), value };
-      }),
-    ]);
-  }
-
-  return { input: { input, combo }, entered };
+  return { input: { input, combos: flags.combos ?? fixture?.combos }, entered };
 };

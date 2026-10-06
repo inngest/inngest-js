@@ -22,6 +22,7 @@ import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import { fakeSchema } from "../testing/schema.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { CacheStore } from "../types.ts";
 import { createCi } from "./createCi.ts";
@@ -282,6 +283,94 @@ describe("pipelines and jobs", () => {
     expect(String((result.error as { message?: string })?.message)).toContain(
       "Wrap it in `ci.job()`",
     );
+  });
+});
+
+describe("a job's input schema", () => {
+  const input = fakeSchema<{ target: string; minify: boolean }>(
+    { target: "string", minify: "boolean" },
+    { minify: true },
+  );
+
+  test("validates the input before the job runs, and gives the handler the result", async () => {
+    const { api, ci } = setup();
+
+    const build = ci.job({ id: "build", input }, async ({ target, minify }) => {
+      await $`pnpm build --target ${target}`;
+
+      return { target, minify };
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return build({ target: "web" });
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    // The default was applied.
+    expect(result.data).toEqual({ target: "web", minify: true });
+    expect(userCommands(api)).toHaveLength(1);
+  });
+
+  test("an input that doesn't match throws a usage error listing each issue, and runs nothing", async () => {
+    const { api, ci } = setup();
+
+    const build = ci.job({ id: "build", input }, async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        return build({ minify: "yes" });
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    const message = String((result.error as Error).message);
+
+    expect(message).toContain('"build"');
+    expect(message).toContain("target: Required");
+    expect(message).toContain("minify: Expected boolean");
+    expect(api.sandboxes.size).toBe(0);
+  });
+
+  test("is checked when a job is started from, too", async () => {
+    const { ci } = setup();
+
+    const base = ci.job({ id: "base", input }, async ({ target }) => {
+      await $`pnpm install --target ${target}`;
+
+      return target;
+    });
+
+    const test = ci.job("test", async () => {
+      return from(base, { target: "web" });
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return test();
+    });
+
+    expect((await runFunction(pipeline, { event: prEvent })).data).toBe("web");
+  });
+
+  test("a job without a schema takes its input as given", async () => {
+    const { ci } = setup();
+
+    const greet = ci.job("greet", async (name: string) => {
+      return name;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return greet("jack");
+    });
+
+    expect((await runFunction(pipeline, { event: prEvent })).data).toBe("jack");
   });
 });
 
