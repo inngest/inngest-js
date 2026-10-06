@@ -935,3 +935,77 @@ describe("what a job says while it starts from a parent", () => {
     });
   });
 });
+
+describe("a cached job built in its own run", () => {
+  test("reports its jobs and commands under the pipeline's job, with its own run's URL", async () => {
+    vi.stubEnv(localEnv.local, "1");
+
+    const messages = await listen();
+    const { ci } = setup();
+
+    ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const result = await runFunction(
+      functionFor(ci, runJobFunctionId) as never,
+      {
+        event: runJobData({ job: "base" }),
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(kinds(messages, "command").length).toBeGreaterThan(0);
+    });
+
+    expect(result.type).toBe("function-resolved");
+
+    // The build's own run is never a run of the session.
+    const runs = kinds(messages, "run") as Extract<
+      LocalMessage,
+      { kind: "run" }
+    >[];
+
+    expect(
+      new Set(
+        runs.map((message) => {
+          return message.pipelineId;
+        }),
+      ),
+    ).toEqual(new Set([runJobFunctionId]));
+
+    const runIds = new Set(
+      messages.flatMap((message) => {
+        return message.kind === "manifest" ? [] : [message.runId];
+      }),
+    );
+
+    expect(runIds).toEqual(new Set(["01TESTRUN"]));
+
+    const command = messages.find((message) => {
+      return message.kind === "command";
+    });
+
+    expect(command).toMatchObject({ jobId: "base", name: "pnpm install" });
+
+    expect(
+      messages.some((message) => {
+        return (
+          message.kind === "job" &&
+          message.jobId === "base" &&
+          /runID=01TESTINVOKED\d+/.test(message.url ?? "")
+        );
+      }),
+    ).toBe(true);
+
+    expect(
+      messages.some((message) => {
+        return (
+          message.kind === "activity" &&
+          message.jobId === "base" &&
+          message.text === "building in its own run"
+        );
+      }),
+    ).toBe(true);
+  });
+});

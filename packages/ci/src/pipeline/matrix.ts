@@ -5,9 +5,9 @@
  * @module
  */
 
-import type { Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
+import type { JobConfig, Matrix, MatrixCombo, MatrixConfig } from "../types.ts";
 import type { Ci } from "./createCi.ts";
-import { countApi } from "./scope.ts";
+import { countApi, matrixOriginKey } from "./scope.ts";
 
 /**
  * Where a matrix keeps the function that runs exactly the combinations it's
@@ -62,7 +62,8 @@ export const createMatrix = <
             ...(machine ? { machine } : {}),
             ...(cache ? { cache } : {}),
             ...(config.check === undefined ? {} : { check: config.check }),
-          },
+            [matrixOriginKey]: { id: config.id, combo },
+          } as JobConfig,
           () => {
             return handler(combo);
           },

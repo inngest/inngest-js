@@ -2169,3 +2169,218 @@ describe("checks across retries", () => {
     expect(ends[0]?.values).toMatchObject({ conclusion: "failure" });
   });
 });
+
+describe("cache builds in their own run", () => {
+  const buildJob = (ci: ReturnType<typeof setup>["ci"], key = "v1") => {
+    return ci.job({ id: "base", cache: { key } }, async () => {
+      await $`pnpm install`;
+
+      return "installed";
+    });
+  };
+
+  const childPipeline = (
+    ci: ReturnType<typeof setup>["ci"],
+    base: ReturnType<typeof buildJob>,
+  ) => {
+    const lint = ci.job("lint", async () => {
+      await from(base);
+
+      await $`pnpm lint`;
+    });
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return lint();
+    });
+  };
+
+  const installs = (api: ReturnType<typeof createFakeSandboxApi>) => {
+    return userCommands(api).filter((argv) => {
+      return argv[1] === "install";
+    }).length;
+  };
+
+  test("a miss invokes the build function, and children start from its snapshot", async () => {
+    const { api, ci, reporter } = setup();
+    const base = buildJob(ci);
+
+    const pipeline = childPipeline(ci, base);
+
+    expect(
+      ci.functions().find((fn) => {
+        return fn.opts.id === "ci/cache-build/base";
+      })?.opts.name,
+    ).toBe("build base");
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.stepIds).toContain("build base");
+
+    const machines = [...api.sandboxes.values()];
+
+    // The build's machine belongs to the build's run, not the pipeline's.
+    expect(machines[0]?.name).toMatch(/^ci-01TESTINVOKED\d+-base$/);
+
+    const child = machines.find((machine) => {
+      return machine.name === "ci-01TESTRUN-lint";
+    });
+
+    expect(child?.snapshotId).toBeTruthy();
+    expect(installs(api)).toBe(1);
+
+    // A fresh build completes like one built inline.
+    expect(
+      reporter.history.find((entry) => {
+        return entry.name === "pr / base" && entry.status === "completed";
+      })?.title,
+    ).toMatch(/^Passed in /);
+  });
+
+  test("a hit asks the build function and builds nothing", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+
+    for (let i = 0; i < 2; i++) {
+      const { ci } = setup({ cacheStore: store, api });
+
+      await runFunction(childPipeline(ci, buildJob(ci)), { event: prEvent });
+    }
+
+    expect(installs(api)).toBe(1);
+  });
+
+  test("two pipelines needing the same key build it once", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+
+    // Two runs of one app, which share the cache store and the sandboxes.
+    const { ci } = setup({ cacheStore: store, api });
+    const base = buildJob(ci);
+
+    const first = childPipeline(ci, base);
+    const second = ci.pipeline({ id: "push", on: prTrigger }, async () => {
+      return base();
+    });
+
+    const [a, b] = await Promise.all([
+      runFunction(first, { event: prEvent, runId: "01RUNA" }),
+      runFunction(second, { event: prEvent, runId: "01RUNB" }),
+    ]);
+
+    expect(a.type).toBe("function-resolved");
+    expect(b.type).toBe("function-resolved");
+    expect(b.data).toBe("installed");
+    expect(installs(api)).toBe(1);
+
+    const snapshots = [...api.sandboxes.values()].filter((machine) => {
+      return machine.snapshotId;
+    });
+
+    expect(snapshots.length).toBeGreaterThan(0);
+  });
+
+  test("a failed build fails the job with its reason and writes nothing", async () => {
+    const store = memoryCacheStore();
+    const set = vi.spyOn(store, "set");
+    const { ci, reporter } = setup({ cacheStore: store });
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      throw new NonRetriableError("registry is down");
+    });
+
+    const result = await runFunction(childPipeline(ci, base), {
+      event: prEvent,
+    });
+
+    expect(result.type).toBe("function-rejected");
+
+    const failed = reporter.history.find((entry) => {
+      return entry.name === "pr / base" && entry.status === "completed";
+    });
+
+    expect(failed?.conclusion).toBe("failure");
+    expect(failed?.title).toContain("registry is down");
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  test("the build run posts no check of its own", async () => {
+    const { ci, reporter } = setup();
+
+    await runFunction(childPipeline(ci, buildJob(ci)), { event: prEvent });
+
+    expect(
+      new Set(
+        reporter.history.map((entry) => {
+          return entry.pipeline;
+        }),
+      ),
+    ).toEqual(new Set(["pr"]));
+
+    const started = reporter.history.filter((entry) => {
+      return entry.name === "pr / base" && entry.status === "in_progress";
+    });
+
+    expect(started).toHaveLength(1);
+  });
+
+  test("the job's check says it is building in its own run, with its URL", async () => {
+    const { client, ci } = setup();
+    const info = vi.spyOn(
+      (client as unknown as { logger: { info: (...args: unknown[]) => void } })
+        .logger,
+      "info",
+    );
+
+    await runFunction(childPipeline(ci, buildJob(ci)), { event: prEvent });
+
+    const lines = info.mock.calls.map((call) => {
+      return String(call[1]);
+    });
+
+    expect(
+      lines.some((line) => {
+        return (
+          line.includes("pr / base") &&
+          line.includes("Building in its own run") &&
+          /localhost:8288\/run\?runID=01TESTINVOKED\d+/.test(line)
+        );
+      }),
+    ).toBe(true);
+  });
+
+  test("a cached matrix combination is built by its matrix's function", async () => {
+    const { api, ci } = setup();
+
+    const compat = ci.matrix(
+      { id: "compat", axes: { node: ["20", "22"] }, cache: { key: "m1" } },
+      async ({ node }) => {
+        await $`fnm use ${node}`;
+      },
+    );
+
+    const names = ci
+      .functions()
+      .map((fn) => {
+        return fn.opts.id;
+      })
+      .filter((id) => {
+        return id.startsWith("ci/cache-build/") && !id.endsWith("/cleanup");
+      });
+
+    expect(names).toEqual(["ci/cache-build/compat"]);
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await compat();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv[0] === "fnm";
+      }),
+    ).toHaveLength(2);
+  });
+});

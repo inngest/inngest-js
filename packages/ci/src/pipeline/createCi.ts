@@ -43,6 +43,7 @@ import type {
 import { devServerRunUrl } from "../util.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
+import { cacheBuildFunction } from "./cacheBuild.ts";
 import { createMatrix, expandMatrix } from "./matrix.ts";
 import {
   cacheRefreshFunctions,
@@ -50,6 +51,7 @@ import {
   definePipeline,
 } from "./pipeline.ts";
 import type { CiInternals } from "./scope.ts";
+import { matrixOriginOf } from "./scope.ts";
 
 export interface CiOptions {
   /**
@@ -235,6 +237,9 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   const jobs = new Map<string, RegisteredJob>();
   const matrices = new Map<string, Matrix<MatrixAxes, unknown>>();
   const reporter = createLocalReporter();
+  /** The matrices with a `cache`, whose combinations have a build function. */
+  const cachedMatrixIds = new Set<string>();
+  const buildFunctions = new Map<string, InngestFunction.Any>();
 
   const internals: CiInternals = {
     client,
@@ -246,6 +251,19 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     reporter,
     cacheStore: options.cacheStore ?? memoryCacheStore(),
     jobs,
+    // One build function per cached job or matrix, made when first needed so
+    // a pipeline can invoke it whether or not `functions()` has run.
+    cacheBuild: (target) => {
+      let fn = buildFunctions.get(target);
+
+      if (!fn) {
+        fn = cacheBuildFunction({ client, internals, jobs, matrices, target });
+
+        buildFunctions.set(target, fn);
+      }
+
+      return fn;
+    },
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),
     logger: (
@@ -302,6 +320,10 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
 
       matrices.set(config.id, matrix as Matrix<MatrixAxes, unknown>);
 
+      if (config.cache) {
+        cachedMatrixIds.add(config.id);
+      }
+
       manifestMatrices.push({
         id: config.id,
         axes: config.axes as unknown as LocalManifest["matrices"][number]["axes"],
@@ -346,9 +368,31 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
         };
       });
 
+      // A matrix's jobs only exist once it runs, so its build function is for
+      // the matrix, not for each combination.
+      const buildTargets = [
+        ...[...jobs.values()]
+          .filter(({ config }) => {
+            return config.cache && !matrixOriginOf(config);
+          })
+          .map(({ id }) => {
+            return id;
+          }),
+        ...cachedMatrixIds,
+      ];
+
       return [
         ...pipelines,
         ...generated,
+        ...buildTargets.flatMap((target) => {
+          return [
+            internals.cacheBuild(target),
+            cleanupFunction({
+              client,
+              config: { id: `ci/cache-build/${target}` },
+            }),
+          ];
+        }),
         ...(isLocal()
           ? [
               runJobFunction({ client, internals, jobs, matrices }),

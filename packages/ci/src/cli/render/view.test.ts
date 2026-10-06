@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import type { SessionEvent } from "../events.ts";
 import { createPaint, formatElapsed, truncate } from "./format.ts";
 import { initialModel, reduce } from "./model.ts";
-import { frame, selectableRunIds } from "./view.ts";
+import { frame, selectableUrls } from "./view.ts";
 
 const paint = createPaint(false);
 
@@ -212,9 +212,13 @@ describe("frame", () => {
   });
 });
 
-describe("selectableRunIds", () => {
-  test("lists each run, then its jobs, as the run they open", () => {
-    expect(selectableRunIds(model)).toEqual(["r1", "r1", "r1"]);
+describe("selectableUrls", () => {
+  test("lists each run's URL, then its jobs', which fall back to the run's", () => {
+    expect(selectableUrls(model)).toEqual([
+      "http://run",
+      "http://run",
+      "http://run",
+    ]);
   });
 });
 
@@ -255,5 +259,56 @@ describe("a failed run's reason", () => {
 
     expect(text.split(reason).length - 1).toBe(4);
     expect(text).toContain(`✕ Failed in 2.0s — ${reason}`);
+  });
+});
+
+describe("a job built in its own run", () => {
+  test("opens that run on Enter, and shows what the parent is doing in the child", () => {
+    const built = [
+      ...events.slice(0, 3),
+      { kind: "job", runId: "r1", jobId: "base", status: "running", at: 1000 },
+      {
+        kind: "job",
+        runId: "r1",
+        jobId: "base",
+        status: "running",
+        url: "http://build",
+        at: 1001,
+      },
+      {
+        kind: "job",
+        runId: "r1",
+        jobId: "test",
+        status: "running",
+        parentId: "base",
+        at: 1002,
+      },
+      {
+        kind: "activity",
+        runId: "r1",
+        jobId: "test",
+        text: "waiting for base…",
+        at: 1003,
+      },
+      {
+        kind: "activity",
+        runId: "r1",
+        jobId: "base",
+        text: "building in its own run",
+        at: 1004,
+      },
+    ] as SessionEvent[];
+
+    const state = built.reduce(reduce, initialModel);
+
+    expect(selectableUrls(state)).toEqual([
+      "http://run",
+      "http://build",
+      "http://run",
+    ]);
+
+    expect(frame(state, { width: 80, now: 6000, paint }).join("\n")).toContain(
+      "waiting for base · building in its own run",
+    );
   });
 });

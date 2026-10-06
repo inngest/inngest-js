@@ -6,7 +6,13 @@
 
 import { describe, expect, test } from "vitest";
 import type { SessionEvent } from "../events.ts";
-import { initialModel, type Model, reduce, runsStartedAt } from "./model.ts";
+import {
+  displayActivity,
+  initialModel,
+  type Model,
+  reduce,
+  runsStartedAt,
+} from "./model.ts";
 
 const play = (events: SessionEvent[]): Model => {
   return events.reduce(reduce, initialModel);
@@ -292,5 +298,127 @@ describe("a run that ends with jobs still open", () => {
     ]);
 
     expect(model.runs[0]?.jobs[0]?.status).toBe("running");
+  });
+});
+
+describe("a job in a run of its own", () => {
+  test("keeps the URL of the run that builds it, through the job's end", () => {
+    const model = play([
+      run("running", 0),
+      job("base", "running", 1),
+      { ...job("base", "running", 2), url: "http://build" },
+      job("base", "passed", 3),
+      { ...job("base", "running", 4), url: "http://build" },
+    ]);
+
+    expect(model.runs[0]?.jobs[0]).toMatchObject({
+      status: "passed",
+      url: "http://build",
+    });
+  });
+
+  test("shows the commands the build run sends under the job", () => {
+    const model = play([
+      run("running", 0),
+      job("base", "running", 1),
+      {
+        kind: "command",
+        runId: "r1",
+        jobId: "base",
+        commandId: "c1",
+        name: "pnpm install",
+        attempt: 1,
+        status: "running",
+        at: 2,
+      },
+    ]);
+
+    expect(model.runs).toHaveLength(1);
+    expect(model.runs[0]?.jobs[0]?.commands[0]?.name).toBe("pnpm install");
+  });
+});
+
+describe("a job waiting for its parent", () => {
+  const activity = (jobId: string, text: string, at: number) => {
+    return { kind: "activity", runId: "r1", jobId, text, at } as const;
+  };
+
+  const waiting = (events: SessionEvent[]) => {
+    const model = play([
+      run("running", 0),
+      job("base", "running", 1),
+      job("test", "running", 2, { parentId: "base" }),
+      activity("test", "waiting for base…", 3),
+      ...events,
+    ]);
+    const [parent, child] = model.runs[0]?.jobs ?? [];
+
+    return child && model.runs[0]
+      ? displayActivity(model.runs[0], child)
+      : parent;
+  };
+
+  test("says plainly that it waits while the parent is idle or unknown", () => {
+    expect(waiting([])).toBe("waiting for base");
+  });
+
+  test("mirrors the parent as it checks the cache, runs a command and builds", () => {
+    expect(waiting([activity("base", "checking cache…", 4)])).toBe(
+      "waiting for base · checking cache",
+    );
+
+    expect(
+      waiting([
+        activity("base", "checking cache…", 4),
+        {
+          kind: "command",
+          runId: "r1",
+          jobId: "base",
+          commandId: "c1",
+          name: "pnpm install",
+          attempt: 1,
+          status: "running",
+          at: 5,
+        },
+      ]),
+    ).toBe("waiting for base · pnpm install");
+
+    expect(
+      waiting([
+        activity("base", "checking cache…", 4),
+        activity("base", "building in its own run", 5),
+      ]),
+    ).toBe("waiting for base · building in its own run");
+  });
+
+  test("goes back to plain once the parent's command finishes", () => {
+    expect(
+      waiting([
+        {
+          kind: "command",
+          runId: "r1",
+          jobId: "base",
+          commandId: "c1",
+          name: "pnpm install",
+          attempt: 1,
+          status: "passed",
+          at: 5,
+        },
+      ]),
+    ).toBe("waiting for base");
+  });
+
+  test("leaves other activity as it is", () => {
+    const model = play([
+      run("running", 0),
+      job("test", "running", 1),
+      activity("test", "creating machine…", 2),
+    ]);
+
+    expect(
+      model.runs[0] && model.runs[0].jobs[0]
+        ? displayActivity(model.runs[0], model.runs[0].jobs[0])
+        : undefined,
+    ).toBe("creating machine…");
   });
 });

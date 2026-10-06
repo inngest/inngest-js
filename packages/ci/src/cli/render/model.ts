@@ -34,6 +34,8 @@ export interface JobView {
   /** The job it started `from()`, when known. */
   parentId?: string;
   title?: string;
+  /** Where the job's own run is, when another run builds it. */
+  url?: string;
   /** What it's doing while no command runs. A command message clears it. */
   activity?: string;
   /** In order of first appearance. */
@@ -82,6 +84,57 @@ export const isTerminal = (status: LocalStatus): boolean => {
 };
 
 export const initialModel: Model = { stages: [], runs: [] };
+
+/** The parent a job's activity says it is waiting for, if it does. */
+export const waitingFor = (job: JobView): string | undefined => {
+  return /^waiting for (.+?)…?$/.exec(job.activity ?? "")?.[1];
+};
+
+/** What a job is doing, in the words of the person looking at it. */
+const stateOf = (job: JobView): string | undefined => {
+  if (isTerminal(job.status) || job.status === "queued") {
+    return undefined;
+  }
+
+  const running = job.commands.filter((command) => {
+    return command.status === "running";
+  });
+  const command = running[running.length - 1];
+
+  if (command) {
+    return command.name.replace(/\s+/g, " ").trim();
+  }
+
+  // A parent that is itself waiting adds nothing the child can use.
+  return job.activity && !waitingFor(job)
+    ? job.activity.replace(/…$/, "")
+    : undefined;
+};
+
+/**
+ * A job's activity as it's shown. A job waiting for its parent says what the
+ * parent is doing, like `waiting for base · pnpm install`, and just
+ * `waiting for base` while the parent is idle or unknown.
+ */
+export const displayActivity = (
+  run: RunView,
+  job: JobView,
+): string | undefined => {
+  const parentId = waitingFor(job);
+
+  if (parentId === undefined) {
+    return job.activity;
+  }
+
+  const parent = run.jobs.find((candidate) => {
+    return candidate.jobId === parentId;
+  });
+  const state = parent ? stateOf(parent) : undefined;
+
+  return state
+    ? `waiting for ${parentId} · ${state}`
+    : `waiting for ${parentId}`;
+};
 
 /** When the current runs began: the session's start, until they're chosen. */
 export const runsStartedAt = (model: Model): number => {
@@ -332,8 +385,15 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
               };
             },
             (job) => {
+              // A build run reports where it is while the job is running. A
+              // replay of that after the job ended must not reopen it.
+              if (event.url && isTerminal(job.status)) {
+                return { ...job, url: event.url };
+              }
+
               return {
                 ...job,
+                url: event.url ?? job.url,
                 status: event.status,
                 startedAt: startedAt(job, event.status, event.at),
                 parentId: event.parentId ?? job.parentId,

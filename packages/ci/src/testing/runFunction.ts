@@ -14,9 +14,11 @@
  */
 
 import type { EventPayload, InngestFunction } from "inngest";
+import { createdFunctions } from "./client.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
+  InvokeFunction: "InvokeFunction",
   StepError: "StepError",
   StepFailed: "StepFailed",
   StepPlanned: "StepPlanned",
@@ -90,7 +92,113 @@ export interface RunFunctionOptions {
   retries?: number;
   /** Called before each execution request, such as to advance a fake clock. */
   beforeRequest?: () => void;
+  /**
+   * The functions `step.invoke` can reach. Defaults to every function the
+   * test client created. An invoked function runs to completion like any
+   * other, under its own `concurrency` key, and its output or error comes
+   * back as the invoke's.
+   */
+  functions?: InngestFunction.Any[];
+  /** The run's ID. Defaults to `01TESTRUN`. */
+  runId?: string;
 }
+
+let invokedRuns = 0;
+
+/** Tails of the queues for each concurrency key, so runs of one key take turns. */
+const keyQueues = new Map<string, Promise<unknown>>();
+
+/** The value of a simple `event.data.<field>` concurrency key. */
+const concurrencyKeyOf = (
+  fn: InngestFunction.Any,
+  event: EventPayload,
+): string | undefined => {
+  // biome-ignore lint/suspicious/noExplicitAny: reading the function's options
+  const limits = (fn as any).opts?.concurrency as
+    | { key?: string; limit: number }[]
+    | undefined;
+
+  const key = limits?.find((limit) => {
+    return limit.limit === 1 && limit.key?.startsWith("event.data.");
+  })?.key;
+
+  if (!key) {
+    return undefined;
+  }
+
+  const value = (event.data as Record<string, unknown>)[
+    key.slice("event.data.".length)
+  ];
+
+  // biome-ignore lint/suspicious/noExplicitAny: reading the function's options
+  return `${(fn as any).opts?.id}:${String(value)}`;
+};
+
+/** Run `task` after every earlier one for `key`. */
+const inTurn = async <T>(key: string, task: () => Promise<T>): Promise<T> => {
+  const before = keyQueues.get(key) ?? Promise.resolve();
+  const mine = before.then(task, task);
+
+  keyQueues.set(
+    key,
+    mine.catch(() => {
+      return undefined;
+    }),
+  );
+
+  return mine;
+};
+
+/** Run an invoked function the way the executor would, and report the outcome. */
+const runInvoked = async (
+  caller: InngestFunction.Any,
+  opts: RunFunctionOptions,
+  planned: { id: string; opts?: unknown },
+): Promise<{ data?: unknown; error?: unknown }> => {
+  const call = planned.opts as {
+    function_id: string;
+    payload: { data?: unknown };
+  };
+
+  const functions =
+    opts.functions ??
+    // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+    createdFunctions.get((caller as any).client) ??
+    [];
+
+  const target = functions.find((fn) => {
+    // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals
+    const internals = fn as any;
+
+    return call.function_id.endsWith(`-${internals.opts.id}`);
+  });
+
+  if (!target) {
+    throw new Error(`No function to invoke for ${call.function_id}`);
+  }
+
+  const event: EventPayload = {
+    name: "inngest/function.invoked",
+    data: (call.payload.data ?? {}) as Record<string, unknown>,
+  };
+
+  const key = concurrencyKeyOf(target, event);
+  const run = () => {
+    invokedRuns++;
+
+    return runFunction(target, {
+      ...opts,
+      event,
+      runId: `01TESTINVOKED${invokedRuns}`,
+    });
+  };
+
+  const child = await (key ? inTurn(key, run) : run());
+
+  return child.type === "function-resolved"
+    ? { data: child.data }
+    : { error: child.error };
+};
 
 const isFailed = (step: Step): boolean => {
   return step.op === StepOpCode.StepError || step.op === StepOpCode.StepFailed;
@@ -104,6 +212,7 @@ export const runFunction = async (
   opts: RunFunctionOptions = {},
 ): Promise<RunResult> => {
   const event = opts.event ?? { name: "test/event", data: {} };
+  const runId = opts.runId ?? "01TESTRUN";
   const maxRequests = opts.maxRequests ?? 200;
   const maxAttempts = opts.stepAttempts ?? 4;
   const retries = opts.retries ?? 0;
@@ -125,7 +234,15 @@ export const runFunction = async (
   const request = async (runStep?: string): Promise<ExecutionResult> => {
     opts.beforeRequest?.();
 
-    return runOnce(fn, event, stepState, completionOrder, attempt, runStep);
+    return runOnce(
+      fn,
+      event,
+      stepState,
+      completionOrder,
+      attempt,
+      runId,
+      runStep,
+    );
   };
 
   const record = (step: Step): void => {
@@ -213,6 +330,22 @@ export const runFunction = async (
     }
 
     for (const planned of result.steps ?? []) {
+      if (planned.op === StepOpCode.InvokeFunction) {
+        const outcome = await runInvoked(fn, opts, planned);
+
+        record({
+          id: planned.id,
+          ...(planned.displayName === undefined
+            ? {}
+            : { displayName: planned.displayName }),
+          ...(outcome.error === undefined
+            ? { data: outcome.data ?? null }
+            : { error: outcome.error }),
+        });
+
+        continue;
+      }
+
       // Only `step.run` steps are asked to run. Everything else (sleeps,
       // waits) is fulfilled by the executor writing state, so the harness
       // does the same.
@@ -246,6 +379,7 @@ const runOnce = async (
   stepState: object,
   completionOrder: string[],
   attempt: number,
+  runId: string,
   runStep?: string,
 ): Promise<ExecutionResult> => {
   // biome-ignore lint/suspicious/noExplicitAny: reaching into the SDK's internals, see the module comment
@@ -266,8 +400,8 @@ const runOnce = async (
   const execution = internals["createExecution"]({
     partialOptions: {
       client,
-      data: { event, events: [event], runId: "01TESTRUN", attempt },
-      runId: "01TESTRUN",
+      data: { event, events: [event], runId, attempt },
+      runId,
       stepState,
       stepCompletionOrder: completionOrder,
       handlerKind: "main",

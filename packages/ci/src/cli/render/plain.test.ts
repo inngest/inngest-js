@@ -242,3 +242,43 @@ describe("the plain renderer's output", () => {
     ]);
   });
 });
+
+describe("a job waiting for its parent in the plain view", () => {
+  test("repeats what the parent is doing as it changes", () => {
+    const events: SessionEvent[] = [
+      {
+        kind: "run",
+        eventId: "e1",
+        runId: "r1",
+        pipelineId: "pr",
+        status: "running",
+        url: "u",
+        at: 0,
+      },
+      { kind: "job", runId: "r1", jobId: "base", status: "running", at: 1 },
+      { kind: "job", runId: "r1", jobId: "test", status: "running", at: 2 },
+      {
+        kind: "activity",
+        runId: "r1",
+        jobId: "test",
+        text: "waiting for base…",
+        at: 3,
+      },
+      {
+        kind: "activity",
+        runId: "r1",
+        jobId: "base",
+        text: "building in its own run",
+        at: 4,
+      },
+    ];
+
+    expect(lines(events)).toEqual(
+      expect.arrayContaining([
+        "job test: waiting for base",
+        "job base: building in its own run",
+        "job test: waiting for base · building in its own run",
+      ]),
+    );
+  });
+});

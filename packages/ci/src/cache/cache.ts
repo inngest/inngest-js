@@ -292,6 +292,48 @@ export const resolveParentKeys = async (
 };
 
 /**
+ * Compute this job's key and where its entry is written, as a memoized step.
+ * What a pipeline needs to ask a build function for the entry.
+ */
+export const cacheTarget = async (
+  scope: CiJobScope,
+  cache: CacheConfig,
+  /** The input the job was called with, which is part of its identity. */
+  input?: unknown,
+): Promise<CacheLookup> => {
+  const { run } = scope;
+  const jobId = scope.config.id;
+  const tag = { kind: "cache", job: scope.path } as const;
+
+  countApi("cache");
+
+  // A build run was handed the key the run that invoked it concurrency-limits
+  // on, so the two can't drift apart.
+  const given = run.build?.jobId === jobId ? run.build : undefined;
+
+  const ownKey =
+    given?.ownKey ??
+    ((await run.step.run(
+      {
+        id: `${scope.path}${scopeSeparator}cache:key`,
+        name: "cache:key",
+      },
+      async () => {
+        await tagStep(run, tag);
+
+        return jobCacheKey(run, cache, input);
+      },
+    )) as string);
+
+  return {
+    writeKey:
+      given?.cacheKey ??
+      storeKey(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    ownKey,
+  };
+};
+
+/**
  * Compute this job's key and look for an entry, both as memoized steps. An
  * entry is a miss if any parent's key has changed since it was built.
  */
@@ -304,20 +346,8 @@ export const lookupCache = async (
   const { run } = scope;
   const jobId = scope.config.id;
   const tag = { kind: "cache", job: scope.path } as const;
-
-  countApi("cache");
-
-  const ownKey = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:key`,
-      name: "cache:key",
-    },
-    async () => {
-      await tagStep(run, tag);
-
-      return jobCacheKey(run, cache, input);
-    },
-  )) as string;
+  const target = await cacheTarget(scope, cache, input);
+  const { ownKey } = target;
 
   const entry = (await run.step.run(
     {
@@ -340,11 +370,7 @@ export const lookupCache = async (
     },
   )) as CacheEntry | null;
 
-  return {
-    writeKey: storeKey(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
-    ownKey,
-    ...(entry ? { entry } : {}),
-  };
+  return { ...target, ...(entry ? { entry } : {}) };
 };
 
 /**
@@ -354,10 +380,10 @@ export const storeCache = async (
   scope: CiJobScope,
   lookup: CacheLookup,
   entry: Omit<CacheEntry, "key" | "fromKeys" | "fromInputs">,
-): Promise<void> => {
+): Promise<CacheEntry> => {
   const { run } = scope;
 
-  await run.step.run(
+  return run.step.run(
     {
       id: `${scope.path}${scopeSeparator}cache:store`,
       name: "cache:store",
@@ -379,9 +405,9 @@ export const storeCache = async (
 
       await run.ci.cacheStore.set(lookup.writeKey, full);
 
-      return { key: lookup.writeKey };
+      return full;
     },
-  );
+  ) as Promise<CacheEntry>;
 };
 
 /**

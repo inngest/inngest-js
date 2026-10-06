@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { GetStepTools, Inngest } from "inngest";
+import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
@@ -18,6 +18,7 @@ import type {
   MachineConfig,
   RepoContext,
 } from "../types.ts";
+import type { CacheBuildData } from "./cacheBuild.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a
@@ -34,6 +35,23 @@ export const defaultCwd = "/work";
  * when there are no snapshots to copy from.
  */
 export const jobHandlerKey = Symbol("inngest/ci.jobHandler");
+
+/**
+ * Where a matrix combination's job config remembers the matrix and combination
+ * it came from, so its cache entry is built by the matrix's build function.
+ */
+export const matrixOriginKey = Symbol("inngest/ci.matrixOrigin");
+
+/** The matrix and combination a job was expanded from, if it was. */
+export const matrixOriginOf = (
+  config: JobConfig,
+): { id: string; combo: Record<string, unknown> } | undefined => {
+  return (
+    config as unknown as {
+      [matrixOriginKey]?: { id: string; combo: Record<string, unknown> };
+    }
+  )[matrixOriginKey];
+};
 
 /**
  * A machine held by a job or an extra machine scope. It's a promise so
@@ -83,6 +101,11 @@ export interface CiInternals {
   reporter: LocalReporter;
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
+  /**
+   * The function that builds the cache entries of a job, or of a matrix's
+   * combinations, in a run of its own. `target` is the job or matrix ID.
+   */
+  cacheBuild: (target: string) => InngestFunction.Any;
   isDev: () => boolean;
   // biome-ignore lint/suspicious/noExplicitAny: any logger-ish
   logger?: { warn: (...args: any[]) => void };
@@ -142,6 +165,11 @@ export interface CiRunScope {
    * didn't. Jobs that come later wait on it rather than probe again.
    */
   snapshotProbes?: Map<string, Promise<string | undefined>>;
+  /**
+   * Set when this run is a cache build: one job's entry, built for the run
+   * that invoked it. It has no checks of its own and reports to that run.
+   */
+  build?: CacheBuildData;
   /** Sandbox IDs created in this run, for cleanup. */
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */

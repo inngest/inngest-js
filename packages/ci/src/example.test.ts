@@ -221,8 +221,8 @@ describe("the example's pr pipeline", () => {
       testedAgainst: "https://preview.example.dev",
     });
 
-    // One machine for setup, and one clone each for the jobs that start from
-    // it. `deploy` never gets one.
+    // One machine for setup, built in its own run, and one clone each for the
+    // jobs that start from it. `deploy` never gets one.
     const machines = [...api.sandboxes.values()];
 
     expect(
@@ -230,7 +230,7 @@ describe("the example's pr pipeline", () => {
         return machine.name;
       }),
     ).toEqual([
-      "ci-01TESTRUN-setup",
+      expect.stringMatching(/^ci-01TESTINVOKED\d+-setup$/),
       "ci-01TESTRUN-lint",
       "ci-01TESTRUN-test",
       "ci-01TESTRUN-compat-node-20",
