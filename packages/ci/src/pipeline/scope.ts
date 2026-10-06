@@ -123,7 +123,7 @@ export interface CiRunScope {
   event: unknown;
   repo?: RepoContext;
   /** Jobs that have started in this run, keyed by job ID. */
-  jobs: Map<string, Promise<unknown>>;
+  jobs: Map<string, Promise<void>>;
   /** Machines created in this run, keyed by scope path. */
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */

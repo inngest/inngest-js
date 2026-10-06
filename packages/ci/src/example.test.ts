@@ -102,14 +102,15 @@ const buildPipeline = () => {
 
   let deployAttempts = 0;
 
+  // What the jobs saw, since jobs return nothing.
+  const seen: { previewUrl?: string; testedAgainst?: string } = {};
+
   const setup = ci.job(
     { id: "setup", cache: { key: files("pnpm-lock.yaml") } },
     async () => {
       await checkout();
 
       await $`pnpm install`;
-
-      return { installed: true };
     },
   );
 
@@ -130,14 +131,12 @@ const buildPipeline = () => {
       await from(setup);
 
       await $`pnpm test`.env({ NODE_VERSION: node });
-
-      return node;
     })();
   };
 
   // No commands, so no machine: the SDK call fails once and is retried.
   const deploy = ci.job("deploy", async () => {
-    return step.run("create-deployment", async () => {
+    const created = await step.run("create-deployment", async () => {
       deployAttempts += 1;
 
       if (deployAttempts === 1) {
@@ -146,6 +145,8 @@ const buildPipeline = () => {
 
       return { url: "https://preview.example.dev" };
     });
+
+    seen.previewUrl = created.url;
   });
 
   const e2e = (baseUrl: string) => {
@@ -158,7 +159,7 @@ const buildPipeline = () => {
 
       await $`pnpm exec playwright test`.env({ BASE_URL: baseUrl });
 
-      return { testedAgainst: baseUrl };
+      seen.testedAgainst = baseUrl;
     })();
   };
 
@@ -175,18 +176,29 @@ const buildPipeline = () => {
 
       await Promise.all([lint(), test(), ...["20", "22"].map(compat)]);
 
-      const preview = await deploy();
+      await deploy();
 
-      return e2e(preview.url);
+      await e2e(seen.previewUrl as string);
+
+      return;
     },
   );
 
-  return { api, ci, reporter, pipeline };
+  return {
+    api,
+    ci,
+    reporter,
+    pipeline,
+    seen,
+    deploys: () => {
+      return deployAttempts;
+    },
+  };
 };
 
 describe("the example's pr pipeline", () => {
   test("runs everything when the base branch can't be found", async () => {
-    const { pipeline } = buildPipeline();
+    const { pipeline, seen } = buildPipeline();
 
     const event = {
       ...prEvent,
@@ -198,13 +210,12 @@ describe("the example's pr pipeline", () => {
 
     const result = await runFunction(pipeline, { event, maxRequests: 400 });
 
-    expect(result.data).toEqual({
-      testedAgainst: "https://preview.example.dev",
-    });
+    expect(result.type).toBe("function-resolved");
+    expect(seen.testedAgainst).toBe("https://preview.example.dev");
   });
 
   test("runs every job, and reports every check", async () => {
-    const { api, reporter, pipeline } = buildPipeline();
+    const { api, reporter, pipeline, seen, deploys } = buildPipeline();
 
     const result = await runFunction(pipeline, {
       event: prEvent,
@@ -216,9 +227,9 @@ describe("the example's pr pipeline", () => {
       error: (result.error as { message?: string })?.message,
     }).toEqual({ type: "function-resolved", error: undefined });
 
-    expect(result.data).toEqual({
-      testedAgainst: "https://preview.example.dev",
-    });
+    // `deploy` returns nothing, so `e2e` is handed its URL by the pipeline.
+    expect(seen.testedAgainst).toBe("https://preview.example.dev");
+    expect(deploys()).toBe(2);
 
     // One machine for setup, and one clone each for the jobs that start from
     // it. `deploy` never gets one.

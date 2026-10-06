@@ -28,7 +28,7 @@ export interface RegisteredJob {
   id: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<any>;
+  handler: (input: any) => Promise<void>;
 }
 
 export const defineJob = ({
@@ -70,7 +70,7 @@ export const conclusionForError = (error: unknown): CheckConclusion => {
 interface RunJobArgs {
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<any>;
+  handler: (input: any) => Promise<void>;
   input: unknown;
 }
 
@@ -81,7 +81,7 @@ export const runJob = async ({
   config,
   handler,
   input,
-}: RunJobArgs): Promise<unknown> => {
+}: RunJobArgs): Promise<void> => {
   const run = getRunScope();
 
   if (!run) {
@@ -108,7 +108,7 @@ const jobBody = async ({
   config,
   handler,
   input,
-}: RunJobArgs & { run: CiRunScope }): Promise<unknown> => {
+}: RunJobArgs & { run: CiRunScope }): Promise<void> => {
   const checks = run.ci.checks as CheckReporter;
 
   const scope: CiJobScope = {
@@ -147,7 +147,7 @@ const jobBody = async ({
         await checks.jobComplete({ ...target, conclusion: "success", title });
       }
 
-      return cacheLookup.entry.result;
+      return;
     }
   }
 
@@ -162,7 +162,7 @@ const jobBody = async ({
   }
 
   try {
-    const result = await runJobBody(scope, () => {
+    await runJobBody(scope, () => {
       return handler(input);
     });
 
@@ -170,7 +170,7 @@ const jobBody = async ({
     const title = `Passed in ${formatDuration(durationMs)}`;
 
     if (cacheLookup) {
-      await storeCache(scope, cacheLookup, await cacheEntryFor(scope, result));
+      await storeCache(scope, cacheLookup, await cacheEntryFor(scope));
     }
 
     run.summaries.push({
@@ -197,8 +197,6 @@ const jobBody = async ({
     }
 
     await pauseMachine(scope);
-
-    return result;
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const conclusion = conclusionForError(error);
@@ -298,7 +296,6 @@ const restoreFromCache = async (
 
 const cacheEntryFor = async (
   scope: CiJobScope,
-  result: unknown,
 ): Promise<Omit<CacheEntry, "key" | "fromKeys">> => {
   const { run } = scope;
 
@@ -309,7 +306,6 @@ const cacheEntryFor = async (
   return {
     jobId: scope.config.id,
     ...(snapshotId ? { snapshotId } : {}),
-    result,
     builtAt: new Date().toISOString(),
     builtBy: {
       runId: run.runId,

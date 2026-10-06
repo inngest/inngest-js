@@ -37,8 +37,6 @@ export const test = ci.job("test", async () => {
   const result = await $`pnpm test`.cwd(appDir).retries(1);
 
   await report.summary(`Tests exited with ${result.exitCode}`);
-
-  return result.exitCode;
 });
 
 export const compat = ci.matrix(
@@ -49,8 +47,6 @@ export const compat = ci.matrix(
     await $`node --version`;
 
     await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: node });
-
-    return node;
   },
 );
 
@@ -81,7 +77,9 @@ export const release = ci.job("release", async () => {
   });
 
   if (!approval) {
-    return { released: false, reason: "not approved in 24h" };
+    await report.summary("Not approved in 24h, so nothing was released.");
+
+    return;
   }
 
   const created = await github.rest.repos.createRelease({
@@ -94,6 +92,4 @@ export const release = ci.job("release", async () => {
   if (number) {
     await github.stickyComment("release", `Released ${created.html_url}`);
   }
-
-  return { released: true, url: created.html_url };
 });

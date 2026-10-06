@@ -191,7 +191,7 @@ export interface CacheConfig {
 }
 
 /**
- * A stored cache entry: a job's last successful result and where it came from.
+ * A stored cache entry: a job's last successful run and where it came from.
  */
 export interface CacheEntry {
   /** The resolved cache key. */
@@ -200,8 +200,6 @@ export interface CacheEntry {
   jobId: string;
   /** The snapshot of the job's machine, if one was taken, for `from()`. */
   snapshotId?: string;
-  /** What the job returned. */
-  result: unknown;
   /** When the entry was written, as an ISO timestamp. */
   builtAt: string;
   /** The run that wrote the entry. */
@@ -238,7 +236,8 @@ export interface JobConfig<_TInput = void> {
   /** Machine settings for this job, overriding the pipeline's and the client's. */
   machine?: MachineConfig;
   /**
-   * Reuse the job's last result when nothing it depends on has changed.
+   * Skip the job when nothing it depends on has changed since it last passed,
+   * and let jobs that start `from()` it reuse its machine.
    *
    * "Cache" reads oddly for a job like `test`, where nothing is restored and
    * the job simply doesn't need to run again. The trace and checks say what
@@ -263,19 +262,21 @@ export interface JobConfig<_TInput = void> {
  *
  * Calling it twice in one run joins the run already in progress, so two parts
  * of a pipeline can both depend on it without it running twice.
+ *
+ * A job is called for its side effects, so it resolves to nothing.
  */
-export interface Job<TResult = unknown, TInput = void> {
-  (input: TInput): Promise<TResult>;
+export interface Job<TInput = void> {
+  (input: TInput): Promise<void>;
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
   readonly kind: "inngest/ci.job";
 }
 
 /**
- * Any job, regardless of its input and result types.
+ * Any job, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job
-export type AnyJob = Job<any, any>;
+export type AnyJob = Job<any>;
 
 /**
  * A pipeline's options. Every flow control option `createFunction` takes works
@@ -577,7 +578,7 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
   concurrency?: number;
   /**
    * Stop the rest when one fails. Off by default, so one bad combination
-   * doesn't hide the others' results.
+   * doesn't hide the others' failures.
    */
   failFast?: boolean;
   /** Machine settings, per combination if you need them to differ. */
@@ -598,8 +599,8 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
  * await compat({ node: "22", db: "postgres" }); // just the one
  * ```
  */
-export interface Matrix<TAxes extends MatrixAxes, TResult> {
-  (only?: Partial<MatrixCombo<TAxes>>): Promise<TResult[]>;
+export interface Matrix<TAxes extends MatrixAxes> {
+  (only?: Partial<MatrixCombo<TAxes>>): Promise<void>;
   /** The matrix's ID, as given to `ci.matrix()`. */
   readonly id: string;
 }

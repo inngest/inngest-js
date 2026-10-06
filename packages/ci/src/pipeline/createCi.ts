@@ -78,8 +78,9 @@ export interface Ci {
   /**
    * Define a job: a unit of work with its own machine, called like a function.
    *
-   * Its input and result are inferred from the handler, and it runs once per
-   * pipeline run however many times it's called.
+   * Its input is inferred from the handler, and it runs once per pipeline run
+   * however many times it's called. It has no return value, and a handler
+   * that returns one is a type error.
    *
    * ```ts
    * const test = ci.job("test", async () => {
@@ -89,14 +90,13 @@ export interface Ci {
    *
    * const compat = ci.job("compat", async (node: string) => {
    *   await $`fnm use ${node}`;
-   *   return node;
    * });
    * ```
    */
-  job<TResult, TInput = void>(
+  job<TInput = void>(
     idOrConfig: string | JobConfig<TInput>,
-    handler: (input: TInput) => Promise<TResult>,
-  ): Job<TResult, TInput>;
+    handler: (input: TInput) => Promise<void>,
+  ): Job<TInput>;
 
   /**
    * Define a matrix: one job per combination of the axes.
@@ -113,10 +113,10 @@ export interface Ci {
    * );
    * ```
    */
-  matrix<const TAxes extends MatrixAxes, TResult>(
+  matrix<const TAxes extends MatrixAxes>(
     config: MatrixConfig<TAxes>,
-    handler: (combo: MatrixCombo<TAxes>) => Promise<TResult>,
-  ): Matrix<TAxes, TResult>;
+    handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
+  ): Matrix<TAxes>;
 
   /**
    * A manual trigger with a typed payload, sent as `ci/manual.<pipelineId>`.

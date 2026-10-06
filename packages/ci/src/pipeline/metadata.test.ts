@@ -301,9 +301,7 @@ describe("step metadata", () => {
       await $`pnpm build`;
     });
 
-    const plain = ci.job({ id: "plain", check: false }, async () => {
-      return "ok";
-    });
+    const plain = ci.job({ id: "plain", check: false }, async () => {});
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       await built();

@@ -203,6 +203,7 @@ describe("matrix pool", () => {
   test("concurrency limits how many run at once", async () => {
     let running = 0;
     let peak = 0;
+    let finished = 0;
 
     const tasks = Array.from({ length: 6 }, () => {
       return async () => {
@@ -215,14 +216,13 @@ describe("matrix pool", () => {
         });
 
         running--;
-
-        return 1;
+        finished++;
       };
     });
 
-    const results = await runPool(tasks, 2, false);
+    await runPool(tasks, 2, false);
 
-    expect(results).toHaveLength(6);
+    expect(finished).toBe(6);
     expect(peak).toBeLessThanOrEqual(2);
   });
 
@@ -236,8 +236,6 @@ describe("matrix pool", () => {
         if (index !== 1) {
           throw new Error(`boom ${index}`);
         }
-
-        return index;
       };
     });
 
@@ -254,7 +252,7 @@ describe("matrix pool", () => {
         throw new Error("first");
       },
       async () => {
-        return 2;
+        return;
       },
     ];
 
@@ -276,13 +274,9 @@ describe("matrix pool", () => {
         await new Promise((resolve) => {
           return setTimeout(resolve, 20);
         });
-
-        return 1;
       },
       async () => {
         started.push(2);
-
-        return 2;
       },
     ];
 
