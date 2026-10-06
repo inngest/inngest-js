@@ -7,9 +7,10 @@ The `inngest-ci` command: runs pipelines and jobs of the user's app locally, or 
 - `config.ts`: finds the project root (nearest `inngest.json`, never above the git root) and validates its `ci` key, with the `ci/server.*` convention as fallback. Nothing to start the app with is a `NoConfigError`, which setup answers.
 - `setup/`: detecting how the project serves `ci.functions()` and writing the config, with a person's confirmation in a terminal.
 - `devServer.ts`: binary resolution (env, config, project `inngest-cli`, then `PATH`), the version check, the isolating flags, and start and readiness. Each session has its own persisted database, because two Dev Servers can't share one.
-- `devServerApi.ts`: the Dev Server REST calls (`/health`, `/dev`, `/e/local`, `/v2/runs`). REST only, never GraphQL.
+- `devServerApi.ts`: the Dev Server REST calls (`/health`, `/dev`, `/e/local`, `/v2/runs`, and the Sandbox access check on `/dev/cloud/status` and `/v2/sandboxes`). REST only, never GraphQL.
 - `app.ts`: starts the app with the CLI's env and waits for the sync and the manifest. Its `PATH` starts with the project's `node_modules/.bin` directories, nearest first.
 - `process.ts`: spawns a process group with a log file, stops it (`SIGTERM`, then `SIGKILL`), scrubs `INNGEST_*` from env, reads log tails.
+- `sandboxAccess.ts`: the setup errors for a Dev Server that is not logged in, a login without one environment, or an account without Sandbox access.
 - `ports.ts`: `freePorts()`.
 - `reporterServer.ts`: loopback server that receives the app's `LocalMessage`s (see `../local/protocol.ts`).
 - `target.ts`: lists and matches targets in the manifest, picks matrix combinations from axis flags, and builds the trigger or run-job event from `fixtures`.

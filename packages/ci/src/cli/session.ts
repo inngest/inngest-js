@@ -16,7 +16,11 @@ import {
   type LocalStatus,
   runJobFunctionId,
 } from "../local/protocol.ts";
-import { devServerRunUrl, errorMessage } from "../util.ts";
+import {
+  devServerRunUrl,
+  errorMessage,
+  sandboxAccessProblem,
+} from "../util.ts";
 import { startApp, waitForSync } from "./app.ts";
 import type { CliArgs } from "./args.ts";
 import { findGitRoot, findProjectRoot } from "./config.ts";
@@ -29,6 +33,7 @@ import {
   cancelRun,
   findRun,
   runFailureReason,
+  sandboxAccessProblemOf,
   sendEvent,
 } from "./devServerApi.ts";
 import type {
@@ -55,6 +60,7 @@ import { isTerminal } from "./render/model.ts";
 import { type ReporterServer, startReporterServer } from "./reporterServer.ts";
 import { combineConclusions, createRouter, type SentRun } from "./runs.ts";
 import { configure, confirm } from "./setup/guided.ts";
+import { sandboxAccessError } from "./sandboxAccess.ts";
 import { SetupError } from "./setupError.ts";
 import {
   buildJobEvent,
@@ -293,6 +299,14 @@ const watchRun = async (opts: {
           });
         }
 
+        const access = sandboxAccessProblem(reportedReason ?? reason);
+
+        if (failed && access) {
+          fail(sandboxAccessError(access));
+
+          return;
+        }
+
         finish(reportedStatus ?? run.terminal);
 
         return;
@@ -526,6 +540,13 @@ const boot = async (
   onCleanup(stopping(devServer.process));
 
   stage("dev-server", "done", devServer.url);
+
+  const access = await sandboxAccessProblemOf(devServer.url);
+
+  if (access) {
+    throw sandboxAccessError(access);
+  }
+
   stage("app", "running");
 
   const app = startApp({

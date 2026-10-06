@@ -6,7 +6,11 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { failureReason, runFailureReason } from "./devServerApi.ts";
+import {
+  failureReason,
+  runFailureReason,
+  sandboxAccessProblemOf,
+} from "./devServerApi.ts";
 
 const message = "Sandbox did not reach RUNNING within 120000 milliseconds";
 
@@ -87,5 +91,85 @@ describe("runFailureReason", () => {
     );
 
     expect(await runFailureReason("http://127.0.0.1:1", "r")).toBeUndefined();
+  });
+});
+
+describe("sandboxAccessProblemOf", () => {
+  const reply = (status: number, code?: string): Response => {
+    return new Response(
+      JSON.stringify(
+        code
+          ? { errors: [{ code, message: "x" }] }
+          : { data: { sandboxIds: [] } },
+      ),
+      { status },
+    );
+  };
+
+  /** Answers each path from a table, and records the paths asked. */
+  const stub = (answers: Record<string, Response | Error>) => {
+    const asked: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const path = url.replace("http://dev", "");
+        const answer = answers[path] ?? reply(200);
+
+        asked.push(path);
+
+        if (answer instanceof Error) {
+          throw answer;
+        }
+
+        return answer;
+      }),
+    );
+
+    return asked;
+  };
+
+  const status = "/dev/cloud/status";
+  const list = "/v2/sandboxes?limit=1";
+
+  test("is no problem when logged in and Sandboxes list", async () => {
+    const asked = stub({});
+
+    expect(await sandboxAccessProblemOf("http://dev")).toBeUndefined();
+    expect(asked).toEqual([status, list]);
+  });
+
+  test("is a login problem when the Dev Server isn't logged in", async () => {
+    const asked = stub({ [status]: reply(401, "cloud_login_required") });
+
+    expect(await sandboxAccessProblemOf("http://dev")).toBe("login");
+    expect(asked).toEqual([status]);
+  });
+
+  test("is an environment problem when the login has no single environment", async () => {
+    stub({ [status]: reply(400, "environment_required") });
+
+    expect(await sandboxAccessProblemOf("http://dev")).toBe("environment");
+  });
+
+  test("is a plan problem when Cloud refuses the list", async () => {
+    stub({ [list]: reply(403, "access_denied") });
+
+    expect(await sandboxAccessProblemOf("http://dev")).toBe("plan");
+  });
+
+  test("lets unknown errors through", async () => {
+    stub({
+      [status]: reply(404),
+      [list]: reply(503, "compute_unavailable"),
+    });
+
+    expect(await sandboxAccessProblemOf("http://dev")).toBeUndefined();
+  });
+
+  test("lets an unreachable Dev Server through", async () => {
+    stub({ [status]: new Error("connect ECONNREFUSED") });
+
+    expect(await sandboxAccessProblemOf("http://dev")).toBeUndefined();
   });
 });

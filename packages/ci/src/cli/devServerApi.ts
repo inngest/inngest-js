@@ -6,7 +6,11 @@
  */
 
 import type { LocalStatus } from "../local/protocol.ts";
-import { shortReason } from "../util.ts";
+import {
+  type SandboxAccessProblem,
+  sandboxAccessProblem,
+  shortReason,
+} from "../util.ts";
 
 const requestTimeoutMs = 5000;
 
@@ -205,4 +209,48 @@ export const runExists = async (
   runId: string,
 ): Promise<boolean> => {
   return (await request(`${devServerUrl}/v2/runs/${runId}`)).ok;
+};
+
+/** The `code` of the first error in a Sandbox API error body, if it has one. */
+const errorCode = async (response: Response): Promise<string | undefined> => {
+  try {
+    const body = (await response.json()) as { errors?: { code?: unknown }[] };
+    const code = body.errors?.[0]?.code;
+
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Whether Sandboxes can be used through the Dev Server, asked with two
+ * read-only calls: its Cloud login status, then a one-item list of Sandboxes,
+ * which Cloud refuses with `access_denied` when the account has no access.
+ * `/dev`'s `authed` isn't used: the Dev Server never sets it. Anything
+ * unexpected (an older Dev Server without the routes, a network blip) is no
+ * problem here; the first Sandbox call that fails says so later.
+ */
+export const sandboxAccessProblemOf = async (
+  devServerUrl: string,
+): Promise<SandboxAccessProblem | undefined> => {
+  for (const path of ["/dev/cloud/status", "/v2/sandboxes?limit=1"]) {
+    try {
+      const response = await request(`${devServerUrl}${path}`);
+
+      if (response.ok) {
+        continue;
+      }
+
+      const problem = sandboxAccessProblem({ code: await errorCode(response) });
+
+      if (problem) {
+        return problem;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
 };

@@ -116,6 +116,8 @@ Run the example above on your machine. Checks print to your terminal. CI lives i
 npx inngest-cli@latest login
 ```
 
+Without a login, or on an account that doesn't have [Sandboxes](https://www.inngest.com/docs/sandboxes/limits) enabled, `inngest-ci` stops before it runs anything, exits `2` and prints what to do.
+
 ### 1. Install the packages
 
 ```bash
@@ -258,6 +260,8 @@ The first time, `inngest-ci` finds how your app serves `ci.functions()` and sets
 ```
 
 It writes the `ci` key of `inngest.json`, offers to add `.inngest/` to `.gitignore`, and carries straight on with your run. If a later run can't start your app, it shows why and offers to run setup again. Nothing in your code is run to find any of this. See [Configure](#configure) to edit it by hand.
+
+Every job runs on a Sandbox, so `inngest-ci` first checks that the Dev Server is logged in and that your account can use Sandboxes. If not, it stops with the exact steps, such as `npx inngest-cli@latest login`, and exits `2`. A Sandbox refused partway through a run says the same thing.
 
 Without a terminal, such as for an agent, a missing config is a setup error that says what was found and prints the `inngest.json` to write.
 

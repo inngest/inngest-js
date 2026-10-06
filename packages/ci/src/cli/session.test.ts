@@ -205,3 +205,66 @@ describe("no config in a terminal", () => {
     ).toBe(false);
   });
 });
+
+describe("the Sandbox access check", () => {
+  const answer = (status: number, code: string) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({ errors: [{ code, message: "x" }] }),
+          { status },
+        );
+      }),
+    );
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("not logged in stops before the app starts", async () => {
+    const { startApp } = await import("./app.ts");
+
+    answer(401, "cloud_login_required");
+    vi.mocked(startApp).mockClear();
+
+    const { result, events } = await run(scripted([]).prompter);
+    const error = events.find((event) => {
+      return event.kind === "setup-error";
+    });
+
+    expect(result.conclusion).toBe("setup-error");
+    expect(error).toMatchObject({
+      message: expect.stringContaining("isn't logged in"),
+      fix: expect.stringContaining("npx inngest-cli@latest login"),
+    });
+    expect(startApp).not.toHaveBeenCalled();
+  });
+
+  test("an account without access stops the same way", async () => {
+    answer(403, "access_denied");
+
+    const { events } = await run(scripted([]).prompter);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "setup-error",
+        message: expect.stringContaining("can't use Sandboxes"),
+      }),
+    );
+  });
+
+  test("an unknown error passes through to the next step", async () => {
+    answer(500, "internal_error");
+
+    const { events } = await run(scripted([]).prompter);
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "setup-error",
+        message: "The app exited before it was ready.",
+      }),
+    );
+  });
+});
