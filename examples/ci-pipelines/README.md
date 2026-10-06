@@ -12,7 +12,6 @@ ci/
 ├─ jobs.ts        base, lint, test, compat, e2e, two-machines, release
 └─ pipelines.ts   pr, docs, release, prerelease
 app/              the project the pipelines install, lint, and test
-e2e/              end-to-end cases for @inngest/ci, run on real Sandboxes
 scripts/          send.ts sends local events, github-forwarder.ts forwards real ones
 server.ts         serves ci.functions()
 ```
@@ -89,17 +88,6 @@ Open `http://localhost:8288` to see the trace. Checks print in the terminal runn
 | `ci/jobs.ts` `release` | `step.waitForEvent` and `github.rest` |
 | `ci/pipelines.ts` `pr` | `singleton`, `changed()`, and `ci.skip()` |
 | `ci/pipelines.ts` `prerelease` | `github.comment()` with a permission check |
-
-## End-to-end tests
-
-`e2e/` is the integration test for `@inngest/ci`. Each case is a pipeline that runs on real Sandboxes against a throwaway git repository, and `e2e/run.ts` checks what it returned.
-
-```bash
-INNGEST_DEV=1 pnpm ci:e2e
-INNGEST_DEV=1 pnpm ci:e2e commands matrix
-```
-
-It needs the Dev Server from step 3, but not `pnpm dev`. It serves its own functions on port 3940.
 
 ## Run on GitHub
 
