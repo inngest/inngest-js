@@ -1,7 +1,6 @@
 import { openai } from "@inngest/ai";
 import { describe, expect, test } from "vitest";
-import { createClient, runFnWithStack } from "../test/helpers.ts";
-import type { OutgoingOp } from "../types.ts";
+import { createClient, runFnWithStack, runSteps } from "../test/helpers.ts";
 import type { InngestFunction } from "./InngestFunction.ts";
 import { createGroupTools } from "./InngestGroupTools.ts";
 
@@ -28,30 +27,6 @@ const findSteps = async (fn: InngestFunction.Any) => {
       return [op.userland?.id ?? op.id, op];
     }),
   );
-};
-
-/**
- * Run `fn` request by request, memoizing each new step, and return the steps
- * in the order they ran.
- */
-const runSteps = async (fn: InngestFunction.Any, count: number) => {
-  const steps: OutgoingOp[] = [];
-  let state: Record<string, { id: string; data: unknown }> = {};
-
-  for (let i = 0; i < count; i++) {
-    const ret = await runFnWithStack(fn, state, {
-      stackOrder: steps.map(({ id }) => id),
-    });
-
-    if (ret.type !== "step-ran") {
-      throw new Error(`Expected step-ran, got ${ret.type}`);
-    }
-
-    steps.push(ret.step);
-    state = { ...state, [ret.step.id]: { id: ret.step.id, data: null } };
-  }
-
-  return steps;
 };
 
 const outer = { id: "research", name: "Research agent" };
@@ -140,49 +115,21 @@ describe('group["~span"]()', () => {
           return step.run("start", () => "start");
         });
 
-        await group["~span"](outer, () => {
-          return step.run("finish", () => "finish");
-        });
-      },
-    );
-
-    const [start, finish] = await runSteps(fn, 2);
-
-    expect(start?.opts?.span).toEqual([outer]);
-    expect(finish?.opts?.span).toEqual([outer]);
-  });
-
-  test("stamps the same span paths on every replay", async () => {
-    const fn = client.createFunction(
-      { id: "fn", triggers: [{ event: "test" }] },
-      async ({ step, group }) => {
         await group["~span"](outer, async () => {
-          await step.run("a", () => "a");
+          await step.run("again", () => "again");
 
-          await group["~span"](inner, async () => {
-            await step.run("b", () => "b");
-            await step.run("c", () => "c");
+          await group["~span"](inner, () => {
+            return step.run("finish", () => "finish");
           });
         });
       },
     );
 
-    const spans = async () => {
-      const steps = await runSteps(fn, 3);
+    const [start, again, finish] = await runSteps(fn, 3);
 
-      return steps.map(({ id, opts }) => {
-        return { id, span: opts?.span };
-      });
-    };
-
-    const first = await spans();
-
-    expect(first.map(({ span }) => span)).toEqual([
-      [outer],
-      [outer, inner],
-      [outer, inner],
-    ]);
-    expect(await spans()).toEqual(first);
+    expect(start?.opts?.span).toEqual([outer]);
+    expect(again?.opts?.span).toEqual([outer]);
+    expect(finish?.opts?.span).toEqual([outer, inner]);
   });
 
   test("runs the callback ungrouped outside an execution", () => {

@@ -1,4 +1,4 @@
-import { runFnWithStack, testClientId } from "../../test/helpers.ts";
+import { runSteps, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -71,36 +71,6 @@ const createClient = (route: (path: string) => Response | undefined) => {
     },
     middleware: [sandboxMiddleware()],
   });
-};
-
-/**
- * Run `fn` request by request, memoizing each new step, and return the steps
- * in the order they ran.
- */
-const runSteps = async (
-  fn: InngestFunction.Any,
-  count: number,
-  state: Record<string, { id: string; data: unknown }> = {},
-) => {
-  const steps: OutgoingOp[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const result = await runFnWithStack(fn, state, {
-      stackOrder: Object.keys(state),
-    });
-
-    if (result.type !== "step-ran") {
-      throw new Error(`Expected step-ran, got ${result.type}`);
-    }
-
-    steps.push(result.step);
-    state = {
-      ...state,
-      [result.step.id]: { id: result.step.id, data: result.step.data },
-    };
-  }
-
-  return steps;
 };
 
 /**

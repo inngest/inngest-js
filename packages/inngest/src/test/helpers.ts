@@ -33,7 +33,12 @@ import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { isRecord } from "../helpers/types.ts";
 import { ConsoleLogger, Inngest, type InngestFunction } from "../index.ts";
-import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
+import {
+  type EventPayload,
+  type FunctionConfig,
+  type OutgoingOp,
+  StepMode,
+} from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -225,6 +230,34 @@ export function createFnRunner(fn: InngestFunction.Any, opts?: RunFnOpts) {
     };
   };
 }
+
+/**
+ * Run `fn` request by request, memoizing each new step, and return the steps
+ * in the order they ran.
+ */
+export const runSteps = async (
+  fn: InngestFunction.Any,
+  count: number,
+  stepState: InngestExecutionOptions["stepState"] = {},
+): Promise<OutgoingOp[]> => {
+  const steps: OutgoingOp[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const result = await runFnWithStack(fn, stepState);
+
+    if (result.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${result.type}`);
+    }
+
+    steps.push(result.step);
+    stepState = {
+      ...stepState,
+      [result.step.id]: { id: result.step.id, data: result.step.data },
+    };
+  }
+
+  return steps;
+};
 
 /**
  * Test signing key used for cloud mode tests.
