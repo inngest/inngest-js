@@ -35,6 +35,12 @@ const targets: Target[] = [
     id: "compat",
     takesInput: false,
     axes: { os: ["linux", "mac"], node: [20, 22] },
+    combos: [
+      { os: "linux", node: 20 },
+      { os: "linux", node: 22 },
+      { os: "mac", node: 20 },
+      { os: "mac", node: 22 },
+    ],
   },
 ];
 
@@ -61,9 +67,9 @@ describe("pickerLines", () => {
       "  ○ build    takes input",
       "",
       "  Matrices",
-      "  ○ compat   4 combinations →",
+      "  ○ compat   0/4 combinations →",
       "",
-      "  ↑↓ move · space select · → expand · enter run · q quit",
+      "  ↑↓ move · space select · ←→ fold · enter run · q quit",
     ]);
   });
 
@@ -73,38 +79,12 @@ describe("pickerLines", () => {
     expect(lines[1]).toBe("  ● pr       pull_request.opened · push");
     expect(lines[2]).toBe("› ● deploy   manual");
     expect(lines.at(-1)).toBe(
-      "  ↑↓ move · space select · → expand · enter run 2 selected · q quit",
+      "  ↑↓ move · space select · ←→ fold · enter run 2 selected · q quit",
     );
   });
 
-  test("lists a matrix's combinations under it, with the chosen one marked", () => {
-    const state = press(
-      createPicker(targets),
-      "down",
-      "down",
-      "down",
-      "down",
-      "down",
-      "right",
-      "down",
-      "down",
-      "space",
-    );
-
-    expect(draw(state).slice(9)).toEqual([
-      "  Matrices",
-      "  ● compat   4 combinations",
-      "  ├─ ○ all",
-      "› ├─ ● os:linux, node:20",
-      "  ├─ ○ os:linux, node:22",
-      "  ├─ ○ os:mac, node:20",
-      "  └─ ○ os:mac, node:22",
-      "",
-      "  ↑↓ move · space select · → expand · enter run 1 selected · q quit",
-    ]);
-  });
-
-  test("shows the chosen combination on a closed matrix", () => {
+  test("lists an open matrix as a tree, with live marks and count", () => {
+    // Open the matrix, select all of node and just linux.
     const state = press(
       createPicker(targets),
       ...Array(5).fill("down"),
@@ -112,12 +92,44 @@ describe("pickerLines", () => {
       "down",
       "down",
       "space",
-      "up",
-      "up",
+      "down",
+      "down",
+      "space",
+    );
+
+    expect(draw(state).slice(9)).toEqual([
+      "  Matrices",
+      "  ◐ compat   2/4 combinations",
+      "    ◐ os: *",
+      "      ● linux",
+      "      ○ mac",
+      "›   ● node: *",
+      "      ● 20",
+      "      ● 22",
+      "",
+      "  ↑↓ move · space select · ←→ fold · enter run 1 selected · q quit",
+    ]);
+  });
+
+  test("a folded axis hides its values", () => {
+    const state = press(
+      createPicker(targets),
+      ...Array(5).fill("down"),
+      "right",
+      "down",
       "left",
     );
 
-    expect(draw(state)[10]).toBe("› ● compat   os:linux, node:20 →");
+    expect(draw(state).slice(9)).toEqual([
+      "  Matrices",
+      "  ○ compat   0/4 combinations",
+      "›   ○ os: *",
+      "    ○ node: *",
+      "      ○ 20",
+      "      ○ 22",
+      "",
+      "  ↑↓ move · space select · ←→ fold · enter run · q quit",
+    ]);
   });
 
   test("scrolls to keep the highlighted row in view", () => {

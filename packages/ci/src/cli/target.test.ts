@@ -11,13 +11,13 @@ import type { SetupError } from "./setupError.ts";
 import {
   buildJobEvent,
   buildPipelineEvent,
-  combinations,
   describeCombo,
+  describeCombos,
   type LocalRepo,
   listTargets,
-  parseCombo,
   matchTrigger,
   resolveTarget,
+  selectCombos,
   type Target,
   targetsOf,
   triggerEvents,
@@ -38,7 +38,19 @@ const manifest: LocalManifest = {
     { id: "lint", takesInput: false },
     { id: "test", takesInput: true },
   ],
-  matrices: [{ id: "compat", axes: { os: ["linux", "mac"], node: [20, 22] } }],
+  matrices: [
+    {
+      id: "compat",
+      axes: { os: ["linux", "mac"], node: [20, 22] },
+      // `exclude` took mac on 22 and `include` added node 18 on linux.
+      combos: [
+        { os: "linux", node: 20 },
+        { os: "linux", node: 22 },
+        { os: "mac", node: 20 },
+        { os: "linux", node: 18 },
+      ],
+    },
+  ],
 };
 
 const repo: LocalRepo = {
@@ -62,7 +74,8 @@ describe("resolveTarget", () => {
     });
     expect(resolveTarget(manifest, { name: "compat" })).toMatchObject({
       kind: "job",
-      axes: { os: ["linux", "mac"], node: [20, 22] },
+      axes: { os: ["linux", "mac"], node: [20, 22, 18] },
+      combos: manifest.matrices[0]?.combos,
     });
   });
 
@@ -173,36 +186,66 @@ describe("buildPipelineEvent", () => {
   });
 });
 
-describe("parseCombo", () => {
-  const axes = { os: ["linux", "mac"], node: [20, 22] };
+describe("selectCombos", () => {
+  const compat = resolveTarget(manifest, { name: "compat" }) as Extract<
+    Target,
+    { kind: "job" }
+  >;
 
   test("is undefined with no flags, to run every combination", () => {
-    expect(parseCombo(axes, {})).toBeUndefined();
+    expect(selectCombos(compat, {})).toBeUndefined();
   });
 
   test("matches flag text to the axis's own values", () => {
-    expect(parseCombo(axes, { os: "mac", node: "22" })).toEqual({
-      os: "mac",
-      node: 22,
-    });
+    expect(selectCombos(compat, { os: ["mac"], node: ["20"] })).toEqual([
+      { os: "mac", node: 20 },
+    ]);
   });
 
-  test("rejects partial, unknown and non-matrix combos", () => {
-    expect(() => parseCombo(axes, { os: "mac" })).toThrow(/Missing --node/);
-    expect(() => parseCombo(axes, { os: "bsd", node: "20" })).toThrow(
+  test("a repeated axis takes all its values, and a missing axis takes any", () => {
+    expect(selectCombos(compat, { node: ["20", "22"] })).toEqual([
+      { os: "linux", node: 20 },
+      { os: "linux", node: 22 },
+      { os: "mac", node: 20 },
+    ]);
+    expect(selectCombos(compat, { node: ["20", "22"], os: ["linux"] })).toEqual(
+      [
+        { os: "linux", node: 20 },
+        { os: "linux", node: 22 },
+      ],
+    );
+  });
+
+  test("only picks combinations the matrix really has", () => {
+    expect(() => selectCombos(compat, { os: ["mac"], node: ["22"] })).toThrow(
+      /No combination/,
+    );
+  });
+
+  test("finds a value only an include adds", () => {
+    expect(selectCombos(compat, { node: ["18"] })).toEqual([
+      { os: "linux", node: 18 },
+    ]);
+  });
+
+  test("rejects unknown axes, unknown values and non-matrix jobs", () => {
+    expect(() => selectCombos(compat, { arch: ["x"] })).toThrow(
+      /Unknown option --arch/,
+    );
+    expect(() => selectCombos(compat, { os: ["bsd"] })).toThrow(
       /isn't a value of os/,
     );
     expect(() =>
-      parseCombo(axes, { arch: "x", os: "mac", node: "20" }),
-    ).toThrow(/Unknown option --arch/);
-    expect(() => parseCombo(undefined, { os: "mac" })).toThrow(
-      /isn't a matrix/,
-    );
+      selectCombos(
+        { kind: "job", id: "lint", takesInput: false },
+        { os: ["a"] },
+      ),
+    ).toThrow(/isn't a matrix/);
   });
 });
 
 describe("buildJobEvent", () => {
-  test("carries the repository, input and combo", () => {
+  test("carries the repository, input and combinations", () => {
     const event = buildJobEvent({
       target: {
         kind: "job",
@@ -212,7 +255,7 @@ describe("buildJobEvent", () => {
       },
       repo,
       input: { a: 1 },
-      combo: { os: "linux" },
+      combos: [{ os: "linux" }],
     });
 
     expect(event).toEqual({
@@ -221,38 +264,34 @@ describe("buildJobEvent", () => {
         ...repo.fixtureData,
         job: "compat",
         input: { a: 1 },
-        combo: { os: "linux" },
+        combos: [{ os: "linux" }],
       },
     });
   });
-});
 
-describe("buildJobEvent combos", () => {
-  const target: Extract<Target, { kind: "job" }> = {
-    kind: "job",
-    id: "compat",
-    takesInput: false,
-    axes: { os: ["linux"] },
-  };
+  test("leaves the combinations out to run every one", () => {
+    const target: Extract<Target, { kind: "job" }> = {
+      kind: "job",
+      id: "compat",
+      takesInput: false,
+      axes: { os: ["linux"] },
+    };
 
-  test("leaves the combo out to run every combination", () => {
-    expect(
-      buildJobEvent({ target, repo, combo: {} }).data.combo,
-    ).toBeUndefined();
-    expect(buildJobEvent({ target, repo }).data.combo).toBeUndefined();
+    expect(buildJobEvent({ target, repo }).data.combos).toBeUndefined();
   });
 });
 
-describe("combinations", () => {
-  test("is every combination, in declaration order", () => {
-    const combos = combinations({ os: ["linux", "mac"], node: [20, 22] });
-
-    expect(combos).toHaveLength(4);
-    expect(combos[0]).toEqual({ os: "linux", node: 20 });
-    expect(combos[3]).toEqual({ os: "mac", node: 22 });
-  });
-
-  test("describes a combination as a job names it", () => {
+describe("describing combinations", () => {
+  test("a combination reads as a job names it", () => {
     expect(describeCombo({ os: "linux", node: 22 })).toBe("os:linux, node:22");
+  });
+
+  test("a selection reads as the one combination, or how many", () => {
+    expect(describeCombos([{ os: "linux", node: 22 }])).toBe(
+      "os:linux, node:22",
+    );
+    expect(describeCombos([{ os: "linux" }, { os: "mac" }])).toBe(
+      "2 combinations",
+    );
   });
 });

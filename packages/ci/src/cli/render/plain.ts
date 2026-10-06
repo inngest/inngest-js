@@ -122,6 +122,7 @@ export const plainLines = (
   switch (event.kind) {
     case "manifest":
     case "project":
+    case "restart":
     case "ready": {
       return [];
     }

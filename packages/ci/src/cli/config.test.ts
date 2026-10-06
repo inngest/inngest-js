@@ -16,7 +16,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { findProjectRoot, loadConfig } from "./config.ts";
+import {
+  ancestors,
+  findProjectRoot,
+  loadConfig,
+  NoConfigError,
+} from "./config.ts";
 import { SetupError } from "./setupError.ts";
 
 let repo: string;
@@ -145,5 +150,25 @@ describe("findProjectRoot", () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+});
+
+describe("NoConfigError", () => {
+  test("is what loadConfig throws when nothing says how to start", async () => {
+    await expect(loadConfig(repo)).rejects.toBeInstanceOf(NoConfigError);
+  });
+});
+
+describe("ancestors", () => {
+  test("lists the directory and each one above it, up to and including the stop", () => {
+    expect(ancestors("/repo/apps/ci", "/repo")).toEqual([
+      "/repo/apps/ci",
+      "/repo/apps",
+      "/repo",
+    ]);
+  });
+
+  test("stops at the filesystem root if the stop isn't above", () => {
+    expect(ancestors("/a", "/elsewhere")).toEqual(["/a", "/"]);
   });
 });

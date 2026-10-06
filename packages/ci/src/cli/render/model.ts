@@ -208,6 +208,10 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
       };
     }
 
+    case "restart": {
+      return { ...initialModel, startedAt: event.at };
+    }
+
     case "project": {
       return { ...next, projectRoot: event.root };
     }

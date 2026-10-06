@@ -10,15 +10,18 @@ export class SetupError extends Error {
   readonly fix?: string;
   /** The end of the app's or Dev Server's log, when one of them failed. */
   readonly logTail?: string;
+  /** Whether running guided setup again could fix it, because `ci` is wrong. */
+  readonly reconfigurable: boolean;
 
   constructor(
     message: string,
-    details: { fix?: string; logTail?: string } = {},
+    details: { fix?: string; logTail?: string; reconfigurable?: boolean } = {},
   ) {
     super(message);
 
     this.name = "SetupError";
     this.fix = details.fix;
     this.logTail = details.logTail;
+    this.reconfigurable = details.reconfigurable ?? false;
   }
 }

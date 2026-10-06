@@ -5,12 +5,12 @@
  * @module
  */
 
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { LocalManifest } from "../local/protocol.ts";
 import { localEnv, runJobFunctionId } from "../local/protocol.ts";
 import { errorMessage } from "../util.ts";
-import type { CiConfig } from "./config.ts";
+import { ancestors, type CiConfig } from "./config.ts";
 import { listFunctionSlugs } from "./devServerApi.ts";
 import {
   type GroupProcess,
@@ -27,15 +27,9 @@ const syncTimeoutMs = 30_000;
  * `stopAt`, nearest first, as npm scripts get them.
  */
 export const binDirs = (root: string, stopAt: string): string[] => {
-  const dirs: string[] = [];
-
-  for (let dir = root; ; dir = dirname(dir)) {
-    dirs.push(join(dir, "node_modules", ".bin"));
-
-    if (dir === stopAt || dirname(dir) === dir) {
-      return dirs;
-    }
-  }
+  return ancestors(root, stopAt).map((dir) => {
+    return join(dir, "node_modules", ".bin");
+  });
 };
 
 /**
@@ -92,6 +86,7 @@ const hasSynced = async (devServerUrl: string): Promise<boolean> => {
       "The app synced, but doesn't serve `ci.functions()`.",
       {
         fix: "Serve them with `serve({ client, functions: ci.functions() })`.",
+        reconfigurable: true,
       },
     );
   }
@@ -121,6 +116,7 @@ export const waitForSync = async (opts: {
     if (opts.app.hasExited()) {
       throw new SetupError("The app exited before it was ready.", {
         logTail: await logTail(opts.app.logPath),
+        reconfigurable: true,
       });
     }
 
@@ -130,6 +126,7 @@ export const waitForSync = async (opts: {
         {
           fix: "Check that `start` listens on PORT and serves the Inngest endpoint at `path`.",
           logTail: await logTail(opts.app.logPath),
+          reconfigurable: true,
         },
       );
     }

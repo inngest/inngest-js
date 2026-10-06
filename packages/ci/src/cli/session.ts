@@ -19,7 +19,7 @@ import {
 import { devServerRunUrl, errorMessage } from "../util.ts";
 import { startApp, waitForSync } from "./app.ts";
 import type { CliArgs } from "./args.ts";
-import { findGitRoot, findProjectRoot, loadConfig } from "./config.ts";
+import { findGitRoot, findProjectRoot } from "./config.ts";
 import {
   devServerDir,
   resolveDevServerBin,
@@ -50,10 +50,11 @@ import { isTerminal } from "./render/model.ts";
 import { type ReporterServer, startReporterServer } from "./reporterServer.ts";
 import { combineConclusions, createRouter, type SentRun } from "./runs.ts";
 import { SetupError } from "./setupError.ts";
+import { configure, confirm } from "./setup/guided.ts";
 import {
   buildJobEvent,
   buildPipelineEvent,
-  describeCombo,
+  describeCombos,
   describeRepo,
   type LocalEvent,
   type LocalRepo,
@@ -427,12 +428,14 @@ interface Booted {
 }
 
 /**
- * Start the Dev Server and the app, wait for the sync and the manifest, and
- * read the repository. Everything it starts is stopped by `onCleanup`.
+ * Resolve the config, start the Dev Server and the app, wait for the sync and
+ * the manifest, and read the repository. Everything it starts is stopped by
+ * `onCleanup`. `again` runs guided setup even if the config loads.
  */
 const boot = async (
   opts: SessionOptions,
   onCleanup: (cleanup: () => Promise<void>) => void,
+  again: boolean,
 ): Promise<Booted> => {
   const { emit } = opts;
   const stage = (
@@ -443,10 +446,20 @@ const boot = async (
     emitStage(emit, name, status, detail);
   };
 
-  stage("config", "running");
-
   const root = await findProjectRoot(opts.cwd);
-  const config = await loadConfig(root);
+
+  // The app can sit below the repository root, but the run uploads the whole
+  // repository.
+  const repoRoot = await findGitRoot(root);
+
+  const config = await configure({
+    root,
+    gitRoot: repoRoot,
+    prompter: opts.prompter,
+    again,
+  });
+
+  stage("config", "running");
 
   emit({ kind: "project", root, at: Date.now() });
 
@@ -498,10 +511,6 @@ const boot = async (
 
   stage("dev-server", "done", devServer.url);
   stage("app", "running");
-
-  // The app can sit below the repository root, but the run uploads the whole
-  // repository.
-  const repoRoot = await findGitRoot(root);
 
   const app = startApp({
     config,
@@ -603,12 +612,11 @@ const planTarget = async (
       target,
       repo: booted.repo,
       input: input.input,
-      combo: input.combo,
+      combos: input.combos,
     }),
-    label:
-      input.combo && Object.keys(input.combo).length > 0
-        ? `${target.id} (${describeCombo(input.combo)})`
-        : target.id,
+    label: input.combos
+      ? `${target.id} (${describeCombos(input.combos)})`
+      : target.id,
   };
 };
 
@@ -662,11 +670,11 @@ const runRound = async (
     : await (prompter as Prompter).pick(targetsOf(booted.manifest));
   const plans: Plan[] = [];
 
-  for (const { target, combo } of picks) {
+  for (const { target, combos } of picks) {
     plans.push(
       await planTarget(booted, opts, {
         target,
-        flags: named ? flagInput(args, target) : { combo },
+        flags: named ? flagInput(args, target) : { combos },
       }),
     );
   }
@@ -745,10 +753,11 @@ const runRound = async (
 const execute = async (
   opts: SessionOptions,
   onCleanup: (cleanup: () => Promise<void>) => void,
+  again: boolean,
 ): Promise<SessionResult> => {
   const { args, emit, prompter } = opts;
   const named = Boolean(args.name || args.pipeline || args.job);
-  const booted = await boot(opts, onCleanup);
+  const booted = await boot(opts, onCleanup, again);
 
   if (!named && !prompter) {
     const [first] = targetsOf(booted.manifest);
@@ -788,35 +797,57 @@ const execute = async (
   return result;
 };
 
+/** What one attempt at a session ended with. */
+interface Attempt extends SessionResult {
+  /** Whether running guided setup again could fix what stopped it. */
+  reconfigurable: boolean;
+}
+
 /**
- * Run the session. It never throws: a failure to set up is a `setup-error`
- * event and a `"setup-error"` conclusion. Every session ends with a `done`
- * event, and the Dev Server and the app are stopped before it returns.
+ * One attempt: a failure to set up is a `setup-error` event and a
+ * `"setup-error"` conclusion, and backing out of setup is a cancel. Every
+ * attempt ends with a `done` event, and the Dev Server and the app are
+ * stopped before it returns.
  */
-export const runSession = async (
+const attempt = async (
   opts: SessionOptions,
-): Promise<SessionResult> => {
+  again: boolean,
+): Promise<Attempt> => {
   const cleanups: (() => Promise<void>)[] = [];
-  let result: SessionResult;
+  let result: Attempt;
 
   try {
-    result = await execute(opts, (cleanup) => {
-      cleanups.push(cleanup);
-    });
+    result = {
+      ...(await execute(
+        opts,
+        (cleanup) => {
+          cleanups.push(cleanup);
+        },
+        again,
+      )),
+      reconfigurable: false,
+    };
   } catch (error) {
     const details = error instanceof SetupError ? error : undefined;
 
-    opts.emit({
-      kind: "setup-error",
-      message: errorMessage(error),
-      fix: details?.fix,
-      logTail: details?.logTail,
-      at: Date.now(),
-    });
+    if (error instanceof PromptCancelled) {
+      result = { conclusion: "cancelled", reconfigurable: false };
+    } else {
+      opts.emit({
+        kind: "setup-error",
+        message: errorMessage(error),
+        fix: details?.fix,
+        logTail: details?.logTail,
+        at: Date.now(),
+      });
 
-    result = { conclusion: "setup-error" };
+      result = {
+        conclusion: "setup-error",
+        reconfigurable: details?.reconfigurable ?? false,
+      };
+    }
 
-    opts.emit({ kind: "done", ...result, at: Date.now() });
+    opts.emit({ kind: "done", conclusion: result.conclusion, at: Date.now() });
   }
 
   emitStage(opts.emit, "cleanup", "running");
@@ -828,4 +859,34 @@ export const runSession = async (
   emitStage(opts.emit, "cleanup", "done");
 
   return result;
+};
+
+/**
+ * Run the session. It never throws. When the config turns out to be wrong and
+ * a person is at a terminal, it offers to run guided setup again and, if they
+ * say yes, starts over.
+ */
+export const runSession = async (
+  opts: SessionOptions,
+): Promise<SessionResult> => {
+  const { prompter } = opts;
+  let again = false;
+
+  while (true) {
+    const { reconfigurable, ...result } = await attempt(opts, again);
+
+    if (
+      !(reconfigurable && prompter) ||
+      opts.signal.aborted ||
+      !(await confirm(prompter, "Run setup again?").catch(() => {
+        return false;
+      }))
+    ) {
+      return result;
+    }
+
+    opts.emit({ kind: "restart", at: Date.now() });
+
+    again = true;
+  }
 };

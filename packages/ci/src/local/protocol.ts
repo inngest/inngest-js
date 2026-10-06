@@ -7,6 +7,8 @@
  * @module
  */
 
+import type { JsonSchema } from "./jsonSchema.ts";
+
 /** Env vars the CLI sets on the app process. */
 export const localEnv = {
   /** `"1"` when the app was started by `inngest-ci`. Read by `ci.local`. */
@@ -35,8 +37,11 @@ export interface RunJobEventData extends Record<string, unknown> {
   job: string;
   /** The job's input, for jobs that take one. */
   input?: unknown;
-  /** One matrix combination, when `job` names a matrix. */
-  combo?: Record<string, string | number | boolean>;
+  /**
+   * The combinations of a matrix to run, when `job` names one. Left out, every
+   * combination runs.
+   */
+  combos?: Record<string, string | number | boolean>[];
 }
 
 /** What the app defines, sent once its functions are served. */
@@ -45,9 +50,13 @@ export interface LocalManifest {
     id: string;
     /**
      * Trigger event names (`github/pull_request.opened`, `ci/manual.deploy`)
-     * with their filter expression, and crons.
+     * with their filter expression, and crons. A manual trigger carries the
+     * JSON Schema of its data, when its schema can be written as one.
      */
-    triggers: ({ event: string; if?: string } | { cron: string })[];
+    triggers: (
+      | { event: string; if?: string; schema?: JsonSchema }
+      | { cron: string }
+    )[];
   }[];
   jobs: {
     id: string;
@@ -57,10 +66,17 @@ export interface LocalManifest {
      * taking none.
      */
     takesInput: boolean;
+    /** The JSON Schema of the job's `input` schema, when it has one. */
+    input?: JsonSchema;
   }[];
   matrices: {
     id: string;
     axes: Record<string, (string | number | boolean)[]>;
+    /**
+     * The combinations the matrix really runs: its axes' product with
+     * `exclude` removed and `include` added.
+     */
+    combos: Record<string, string | number | boolean>[];
   }[];
 }
 

@@ -347,6 +347,59 @@ describe("jobs infer their input and result", () => {
   });
 });
 
+describe("a job's input schema types its input", () => {
+  /** What a schema with a default looks like: optional going in, there coming out. */
+  const input: StandardSchemaV1<
+    { target: "web" | "api"; minify?: boolean },
+    { target: "web" | "api"; minify: boolean }
+  > = {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: (value) => {
+        return { value: value as { target: "web" | "api"; minify: boolean } };
+      },
+    },
+  };
+
+  test("the handler gets the schema's output", () => {
+    ci.job({ id: "build", input }, async (value) => {
+      expectTypeOf(value).toEqualTypeOf<{
+        target: "web" | "api";
+        minify: boolean;
+      }>();
+    });
+  });
+
+  test("the caller gives the schema's input", () => {
+    const job = ci.job({ id: "build-called", input }, async ({ target }) => {
+      return target;
+    });
+
+    expectTypeOf(job).parameter(0).toEqualTypeOf<{
+      target: "web" | "api";
+      minify?: boolean;
+    }>();
+    expectTypeOf(job).returns.resolves.toEqualTypeOf<"web" | "api">();
+
+    types(async () => {
+      await job({ target: "web" });
+      // @ts-expect-error the target must be one of the enum
+      await job({ target: "mars" });
+      // @ts-expect-error there's an input to give it
+      await job();
+    });
+  });
+
+  test("a job config without a schema still infers from the handler", () => {
+    const job = ci.job({ id: "no-schema" }, async (node: string) => {
+      return node.length;
+    });
+
+    expectTypeOf(job).parameter(0).toBeString();
+  });
+});
+
 describe("from() carries the parent's result", () => {
   const setup = ci.job("setup", async () => {
     return { installed: true };

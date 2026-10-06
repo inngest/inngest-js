@@ -7,8 +7,16 @@
  */
 
 import { type Paint, truncate } from "../render/format.ts";
-import { combinations, describeCombo, type Target } from "../target.ts";
-import { type PickerState, pickerRows, targetKey } from "./picker.ts";
+import type { Target } from "../target.ts";
+import {
+  type Mark,
+  type PickerState,
+  isSelected,
+  markOf,
+  pickerRows,
+  selectedCombos,
+  targetKey,
+} from "./picker.ts";
 
 const sectionOf = (target: Target): string => {
   if (target.kind === "pipeline") {
@@ -40,29 +48,34 @@ const detailOf = (state: PickerState, target: Target): string => {
     return target.takesInput ? "takes input" : "";
   }
 
-  const combos = combinations(target.axes);
-  const index = state.combos[targetKey(target)];
-  const open = state.expanded === targetKey(target);
+  const counted = `${selectedCombos(state, target).length}/${target.combos?.length ?? 0} combinations`;
 
-  if (open) {
-    return `${combos.length} combinations`;
+  return state.open.includes(targetKey(target)) ? counted : `${counted} →`;
+};
+
+const markerOf = (mark: Mark, paint: Paint): string => {
+  switch (mark) {
+    case "all": {
+      return paint("green", "●");
+    }
+
+    case "some": {
+      return paint("green", "◐");
+    }
+
+    case "none": {
+      return paint("dim", "○");
+    }
   }
-
-  const chosen =
-    index === undefined
-      ? `${combos.length} combinations`
-      : describeCombo(combos[index] ?? {});
-
-  return `${chosen} →`;
 };
 
 const hintOf = (state: PickerState): string => {
-  const run =
-    state.selected.length > 0
-      ? `enter run ${state.selected.length} selected`
-      : "enter run";
+  const selected = state.targets.filter((target) => {
+    return isSelected(state, target);
+  }).length;
+  const run = selected > 0 ? `enter run ${selected} selected` : "enter run";
 
-  return `↑↓ move · space select · → expand · ${run} · q quit`;
+  return `↑↓ move · space select · ←→ fold · ${run} · q quit`;
 };
 
 /**
@@ -92,6 +105,7 @@ export const pickerLines = (
     const label = sectionOf(target);
     const highlighted = index === state.cursor;
     const gutter = highlighted ? paint("bold", "› ") : "  ";
+    const marker = markerOf(markOf(state, row), paint);
 
     if (label !== section) {
       list.push(...(section ? [""] : []), `  ${paint("dim", label)}`);
@@ -102,29 +116,19 @@ export const pickerLines = (
       cursorLine = list.length;
     }
 
-    if (row.kind === "combo") {
-      const last =
-        index === rows.length - 1 || rows[index + 1]?.kind !== "combo";
-      const current = state.combos[targetKey(target)] === row.index;
-      const combos = combinations(target.axes ?? {});
-      const name = truncate(
-        row.index === undefined
-          ? "all"
-          : describeCombo(combos[row.index] ?? {}),
-        width - 8,
-      );
+    if (row.kind !== "target") {
+      const indent = row.kind === "axis" ? "  " : "    ";
+      const name = row.kind === "axis" ? `${row.axis}: *` : String(row.value);
 
       list.push(
-        `${gutter}${paint("dim", last ? "└─ " : "├─ ")}${current ? paint("green", "●") : paint("dim", "○")} ${name}`,
+        `${gutter}${indent}${marker} ${highlighted ? paint("bold", truncate(name, width - 10)) : truncate(name, width - 10)}`,
       );
 
       return;
     }
 
-    const selected = state.selected.includes(targetKey(target));
     const name = truncate(target.id, nameWidth);
     const detail = truncate(detailOf(state, target), width - nameWidth - 8);
-    const marker = selected ? paint("green", "●") : paint("dim", "○");
     // Padding goes on only when a detail follows, so a line never ends in spaces.
     const cell = detail ? name.padEnd(nameWidth) : name;
 

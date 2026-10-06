@@ -27,7 +27,8 @@ Options:
   --data <json>        The event data for a manual or comment trigger
   --input <json>       The input of a job that takes one
   --fixture <name>     Use the data saved under this name, from an earlier run
-  --<axis> <value>     One matrix axis; give every axis, or none to run all
+  --<axis> <value>     Limit a matrix to a value of an axis; repeat it for
+                       several, like --node 20 --node 22 --os linux
   --no-interactive     Print plain lines, as when there is no terminal
   -h, --help           Show this help
 
@@ -46,8 +47,8 @@ export interface CliArgs {
   data?: string;
   input?: string;
   fixture?: string;
-  /** Matrix axis flags, by axis name. */
-  combo: Record<string, string>;
+  /** Matrix axis flags: the values given for each axis, by axis name. */
+  axes: Record<string, string[]>;
   noInteractive: boolean;
   help: boolean;
 }
@@ -66,7 +67,7 @@ const options = {
 /** Parse `argv` (without the node and script paths). */
 export const parseCliArgs = (argv: string[]): CliArgs => {
   const known: string[] = [];
-  const combo: Record<string, string> = {};
+  const axes: Record<string, string[]> = {};
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i] as string;
@@ -85,7 +86,7 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
       throw new SetupError(`--${axis} needs a value.`, { fix: usage });
     }
 
-    combo[axis] = value;
+    axes[axis] = [...(axes[axis] ?? []), value];
   }
 
   try {
@@ -112,7 +113,7 @@ export const parseCliArgs = (argv: string[]): CliArgs => {
       data: values.data,
       input: values.input,
       fixture: values.fixture,
-      combo,
+      axes,
       noInteractive: values["no-interactive"] ?? false,
       help: values.help ?? false,
     };

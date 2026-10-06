@@ -9,6 +9,7 @@ import {
   waitForHttp,
 } from "@inngest/ci";
 import { step } from "inngest";
+import { z } from "zod";
 
 import { ci } from "./client.ts";
 import { appDir, install } from "./helpers.ts";
@@ -45,14 +46,22 @@ export const test = ci.job("test", async () => {
 });
 
 export const build = ci.job(
-  "build",
-  async (input: { target: "web" | "api" }) => {
+  {
+    id: "build",
+    input: z.object({
+      target: z.enum(["web", "api"]).describe("What to build"),
+      minify: z.boolean().default(true).describe("Minify the output"),
+    }),
+  },
+  async ({ target, minify }) => {
     await from(base);
     await checkout();
 
-    await $`pnpm build`.cwd(appDir).env({ BUILD_TARGET: input.target });
+    await $`pnpm build`
+      .cwd(appDir)
+      .env({ BUILD_TARGET: target, BUILD_MINIFY: String(minify) });
 
-    return input.target;
+    return target;
   },
 );
 

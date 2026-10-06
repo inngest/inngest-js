@@ -12,11 +12,14 @@ import { emitKeypressEvents, type Key } from "node:readline";
 import { stripVTControlCharacters } from "node:util";
 import type { InteractiveRenderer } from "../events.ts";
 import { choiceLines, createChoice, reduceChoice } from "../prompt/choice.ts";
+import { createForm, reduceForm } from "../prompt/form.ts";
+import { formLines } from "../prompt/formView.ts";
 import type { Outcome } from "../prompt/outcome.ts";
 import { createPicker, reducePicker } from "../prompt/picker.ts";
 import { pickerLines } from "../prompt/pickerView.ts";
 import { createText, reduceText, textLines } from "../prompt/text.ts";
 import { PromptCancelled } from "../prompter.ts";
+import { reviewLines } from "../setup/review.ts";
 import {
   createPaint,
   spinnerAt,
@@ -368,13 +371,34 @@ export const createInteractiveRenderer = (
       });
     },
 
-    line(question, check) {
+    review(question, options, facts) {
       return ask({
-        state: createText(question, check),
+        state: createChoice(question, options),
+        reduce: reduceChoice,
+        lines: (state, { width }) => {
+          return reviewLines(state, facts, { width, paint });
+        },
+      });
+    },
+
+    line(question, check, initial = "") {
+      return ask({
+        state: { ...createText(question, check), text: initial },
         reduce: reduceText,
         lines: (state, { width }) => {
           return textLines(state, { width, paint });
         },
+      });
+    },
+
+    form(opts) {
+      return ask({
+        state: createForm(opts),
+        reduce: reduceForm,
+        lines: (state, { width, height }) => {
+          return formLines(state, { width, height, paint });
+        },
+        replacesView: true,
       });
     },
 
