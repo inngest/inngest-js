@@ -165,9 +165,9 @@ export const pullRequest = <
 };
 
 export interface PushOptions {
-  /** Branch names to run for. Omit for every branch. */
+  /** Branch names to run for, matched exactly. Omit for every branch. */
   branches?: string[];
-  /** Tag patterns to run for, like `v*`. */
+  /** Tag names to run for, matched exactly, like `v1.0.0`. Patterns aren't supported. */
   tags?: string[];
   /** Only run for this `owner/name`. */
   repo?: string;
@@ -183,7 +183,7 @@ export interface PushOptions {
  *
  * ```ts
  * ci.pipeline(
- *   { id: "release", on: github.push({ branches: ["main"], tags: ["v*"] }) },
+ *   { id: "release", on: github.push({ branches: ["main"] }) },
  *   async ({ event }) => {
  *     event.data.after; // the commit that was pushed
  *   },
