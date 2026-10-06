@@ -628,8 +628,8 @@ const slowParentMs = 30_000;
 /**
  * Note each uncached job that took a while and had other jobs start `from()`
  * it, since it runs again next run. The run scope is rebuilt on every replay
- * and the durations come from memoized start times, so a replay adds the same
- * lines to its own fresh list, once.
+ * and the durations come from memoized start and end times, so a replay adds
+ * the same lines to its own fresh list, once.
  */
 const addSlowParentHints = (run: CiRunScope): void => {
   for (const [parentId, children] of run.fromChildren) {
