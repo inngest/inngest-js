@@ -76,20 +76,9 @@ export interface MachineHandle {
   treeId?: string;
 }
 
-/**
- * A layer snapshot in the making or made: a parent snapshot plus a large
- * uploaded change, shared by the jobs that would each have uploaded it.
- */
-export interface LayerGroup {
-  /** The job whose machine took the layer. */
-  leader: string;
-  /** The layer's snapshot, or `undefined` when none could be made. */
-  snapshot: Promise<string | undefined>;
-}
-
 /** How long a slow step took, for the run's timing summary. */
 export interface StepTiming {
-  /** What was timed: `upload`, `snapshot`, `start`, `layer`. */
+  /** What was timed: `upload`, `snapshot`, `start`. */
   kind: string;
   /** The job that waited on it. */
   path: string;
@@ -188,15 +177,6 @@ export interface CiRunScope {
    * already there.
    */
   snapshotTrees: Map<string, string>;
-  /** The jobs that started from each snapshot, by snapshot ID. */
-  snapshotConsumers: Map<string, Set<string>>;
-  /**
-   * Layer snapshots of this run, keyed by parent snapshot, tree ID and
-   * machine size. They live only as long as the run.
-   */
-  layers: Map<string, LayerGroup>;
-  /** Every layer snapshot this run made, deleted when the run ends. */
-  layerSnapshots: Set<string>;
   /** How long the slow steps took, in the order they finished. */
   timings: StepTiming[];
   /** Cache entries resolved this run, keyed by job path. */

@@ -6,13 +6,6 @@
  */
 
 import { CiUsageError } from "../errors.ts";
-import type { LayerRole } from "../machine/layer.ts";
-import {
-  joinLayer,
-  layerKey,
-  layerThresholdBytes,
-  snapshotLayer,
-} from "../machine/layer.ts";
 import { ensureMachine } from "../machine/machine.ts";
 import type {
   CiJobScope,
@@ -28,13 +21,9 @@ import {
 } from "../pipeline/scope.ts";
 import type { RepoContext } from "../types.ts";
 import { errorMessage, formatBytes, shellEscape } from "../util.ts";
-import {
-  buildTarball,
-  buildWorkingTreeTarball,
-  workingTreeFiles,
-} from "./tarball.ts";
+import { buildTarball, buildWorkingTreeTarball } from "./tarball.ts";
 import type { TreeDelta } from "./tree.ts";
-import { sizeOfFiles, treeDelta, workingTreeId } from "./tree.ts";
+import { treeDelta, workingTreeId } from "./tree.ts";
 
 /** Uploads are limited to 100 MiB, so a local checkout has an upper bound. */
 const maxUploadBytes = 100 * 1024 * 1024;
@@ -159,9 +148,20 @@ const maxRemoveArgBytes = 64 * 1024;
  * `checkout()` of the local working tree. The machine may already have most
  * of it, from the snapshot it started from, so only what changed is uploaded.
  *
- * A job that starts from a snapshot other jobs start from too may take part in
- * a layer first: when the change is large, one job uploads it and snapshots
- * the result, and the others start from that.
+ * We tried layer snapshots (upload a large change once, snapshot it, and let
+ * the other jobs in the run start from that) and removed them. Measured on the
+ * Dev Server with a 38 MB tree: a full upload took ~22s (~1.6 MB/s, limited by
+ * upload bandwidth, so parallel uploads share it); a snapshot took ~16s to be
+ * READY whatever the change size, because it captures the whole machine
+ * (memory and disk); starting from one took ~1.4s; a delta of a typical edit
+ * took ~2s. A layer only pays off when (jobs sharing the change - 1) x upload
+ * time exceeds ~16s: many jobs, large changes or slow uplinks. Typical edits
+ * are tiny deltas.
+ *
+ * Revisit when Sandboxes support cheap incremental snapshots, meaning a small
+ * layer on top of an existing snapshot that is quick to create and to share.
+ * Then snapshotting after `checkout()` (and similar automatic layers) would
+ * speed up every job, and should be reconsidered.
  */
 const checkoutLocal = async (
   scope: CiJobScope,
@@ -170,122 +170,24 @@ const checkoutLocal = async (
 ): Promise<void> => {
   const { run } = scope;
   const stepId = `${scope.path}${scopeSeparator}checkout`;
+  const machine = await ensureMachine(scope);
 
-  let knownTreeId: string | undefined;
-  let role: LayerRole | undefined;
+  run.ci.reporter.activity(run, scope.jobPath, "checking working tree…");
 
-  if (!scope.machine && scope.fromSnapshotId) {
-    const planned = await planLayer(scope, localPath);
+  const result = (await run.step.run({ id: stepId, name: stepId }, async () => {
+    return uploadWorkingTree(scope, machine, localPath, target);
+  })) as LocalCheckoutResult;
 
-    knownTreeId = planned?.treeId;
-    role = planned?.role;
+  machine.treeId = result.treeId;
+
+  if (result.mode !== "unchanged") {
+    recordTiming(run, {
+      kind: result.mode === "delta" ? "delta" : "upload",
+      path: scope.path,
+      durationMs: result.hashMs + result.tarMs + result.uploadMs,
+      bytes: result.bytes,
+    });
   }
-
-  let machine: MachineHandle;
-
-  try {
-    if (role?.kind === "peer") {
-      run.ci.reporter.activity(run, scope.jobPath, "waiting for changes…");
-
-      const layer = await role.snapshot;
-
-      if (layer) {
-        scope.fromSnapshotId = layer;
-
-        scope.startNote = `starting ${scope.fromJobIds[0] ?? "the parent"} · + changes`;
-      }
-    }
-
-    machine = await ensureMachine(scope);
-
-    run.ci.reporter.activity(run, scope.jobPath, "checking working tree…");
-
-    const result = (await run.step.run(
-      { id: stepId, name: stepId },
-      async () => {
-        return uploadWorkingTree(
-          scope,
-          machine,
-          localPath,
-          target,
-          knownTreeId,
-        );
-      },
-    )) as LocalCheckoutResult;
-
-    machine.treeId = result.treeId;
-
-    if (result.mode !== "unchanged") {
-      recordTiming(run, {
-        kind: result.mode === "delta" ? "delta" : "upload",
-        path: scope.path,
-        durationMs: result.hashMs + result.tarMs + result.uploadMs,
-        bytes: result.bytes,
-      });
-    }
-
-    if (role?.kind === "leader" && result.treeId) {
-      role.finish(await snapshotLayer(scope, machine, result.treeId));
-    }
-  } finally {
-    // Whoever is waiting must not hang on a leader that failed.
-    if (role?.kind === "leader") {
-      role.finish(undefined);
-    }
-  }
-};
-
-/**
- * For a job about to start from a snapshot, work out the working tree and how
- * much of it the snapshot lacks, and whether a layer is worth it.
- *
- * Only when other jobs start from the same snapshot too, since a layer only
- * pays off when several jobs would otherwise upload the same change. The tree
- * is hashed in a step so a replay sees the tree the first attempt did.
- */
-const planLayer = async (
-  scope: CiJobScope,
-  localPath: string,
-): Promise<{ treeId: string; role?: LayerRole } | undefined> => {
-  const { run } = scope;
-  const parentSnapshot = scope.fromSnapshotId as string;
-  const consumers = run.snapshotConsumers.get(parentSnapshot)?.size ?? 0;
-
-  if (consumers < 2 || run.snapshotsUnavailable) {
-    return undefined;
-  }
-
-  const id = `${scope.path}${scopeSeparator}tree`;
-
-  const planned = (await run.step.run({ id, name: id }, async () => {
-    const treeId = await workingTreeId(localPath);
-
-    if (!treeId) {
-      return {};
-    }
-
-    const had = run.snapshotTrees.get(parentSnapshot);
-    const delta = had ? await treeDelta(localPath, had, treeId) : undefined;
-
-    const bytes = delta
-      ? await sizeOfFiles(localPath, delta.changed)
-      : await sizeOfFiles(localPath, await workingTreeFiles(localPath));
-
-    return { treeId, bytes };
-  })) as { treeId?: string; bytes?: number };
-
-  if (!planned.treeId) {
-    return undefined;
-  }
-
-  if ((planned.bytes ?? 0) < layerThresholdBytes) {
-    return { treeId: planned.treeId };
-  }
-
-  return {
-    treeId: planned.treeId,
-    role: joinLayer(scope, layerKey(scope, parentSnapshot, planned.treeId)),
-  };
 };
 
 const uploadWorkingTree = async (
@@ -293,12 +195,10 @@ const uploadWorkingTree = async (
   machine: MachineHandle,
   localPath: string,
   target: string,
-  /** The tree ID, when it was worked out before the machine started. */
-  knownTreeId?: string,
 ): Promise<LocalCheckoutResult> => {
   const { run } = scope;
   const hashing = Date.now();
-  const treeId = knownTreeId ?? (await workingTreeId(localPath));
+  const treeId = await workingTreeId(localPath);
   const had = machine.treeId;
 
   const base = { path: target, source: "local" as const };
