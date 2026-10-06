@@ -4,6 +4,6 @@ Test-only helpers. Not exported and not built.
 
 - `fakeSandbox.ts`: a fake Sandboxes REST API.
 - `fakeGitHub.ts`: a fake GitHub HTTP layer.
-- `client.ts`: an Inngest client wired to the fake sandbox API.
-- `runFunction.ts`: drives a function to completion like the executor.
+- `client.ts`: an Inngest client wired to the fake sandbox API, which also records the functions it creates.
+- `runFunction.ts`: drives a function to completion like the executor, including `step.invoke` of the functions the test client created, one run at a time per `event.data` concurrency key.
 - `schema.ts`: a fake Standard Schema that can also write itself as JSON Schema.

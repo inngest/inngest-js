@@ -28,7 +28,7 @@ import {
 } from "./format.ts";
 import { initialModel, reduce } from "./model.ts";
 import { openUrl } from "./open.ts";
-import { frame, headerLines, maxWidth, selectableRunIds } from "./view.ts";
+import { frame, headerLines, maxWidth, selectableUrls } from "./view.ts";
 
 /** The fastest events redraw the screen, so a burst of them draws once. */
 const minRedrawInterval = 50;
@@ -254,23 +254,21 @@ export const createInteractiveRenderer = (
       return;
     }
 
-    const runIds = selectableRunIds(model);
+    const urls = selectableUrls(model);
 
     if (key.name === "up") {
       selected = Math.max(0, selected - 1);
     }
 
     if (key.name === "down") {
-      selected = Math.max(0, Math.min(runIds.length - 1, selected + 1));
+      selected = Math.max(0, Math.min(urls.length - 1, selected + 1));
     }
 
     if (key.name === "return") {
-      const run = model.runs.find((item) => {
-        return item.runId === runIds[selected];
-      });
+      const url = urls[selected];
 
-      if (run) {
-        openRun(run.url);
+      if (url) {
+        openRun(url);
       }
     }
 

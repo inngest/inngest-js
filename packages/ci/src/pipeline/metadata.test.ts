@@ -158,7 +158,7 @@ describe("run metadata", () => {
         waitForChecks: 0,
         waitForWorkflow: 0,
         waitFor: 0,
-        commands: 6,
+        commands: 5,
         background: 0,
         shard: 0,
         skip: 0,
@@ -319,7 +319,6 @@ describe("step metadata", () => {
     expect(tags).toEqual([
       ["github › check:pr:start", { kind: "check" }],
       ["cache:key", { kind: "cache", job: "built" }],
-      ["cache:lookup", { kind: "cache", job: "built" }],
       ["github › check:built:start", { kind: "check", job: "built" }],
       ["github › check:built:complete", { kind: "check", job: "built" }],
       ["start:plain", { kind: "job", job: "plain" }],

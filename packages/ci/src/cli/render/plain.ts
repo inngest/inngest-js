@@ -18,14 +18,42 @@ import {
   supportsColor,
 } from "./format.ts";
 import {
+  displayActivity,
   initialModel,
   isTerminal,
   type Model,
   reduce,
   runsStartedAt,
+  waitingFor,
 } from "./model.ts";
 
 type Transition = { key: string; state: string };
+
+/**
+ * The lines for the jobs of a run that wait on `parentId`, whose state just
+ * changed, so a waiting child keeps saying what its parent is doing.
+ */
+const waitingLines = (
+  model: Model,
+  runId: string,
+  parentId: string,
+): string[] => {
+  const run = model.runs.find((item) => {
+    return item.runId === runId;
+  });
+
+  if (!run) {
+    return [];
+  }
+
+  return run.jobs
+    .filter((job) => {
+      return !isTerminal(job.status) && waitingFor(job) === parentId;
+    })
+    .map((job) => {
+      return `job ${job.jobId}: ${oneLine(displayActivity(run, job) ?? "")}`;
+    });
+};
 
 /**
  * What identifies an event's row and which state it's in. A repeat of the
@@ -152,7 +180,18 @@ export const plainLines = (
     }
 
     case "activity": {
-      return [`job ${event.jobId}: ${oneLine(event.text)}`];
+      const run = model.runs.find((item) => {
+        return item.runId === event.runId;
+      });
+      const job = run?.jobs.find((item) => {
+        return item.jobId === event.jobId;
+      });
+      const text = (run && job && displayActivity(run, job)) ?? event.text;
+
+      return [
+        `job ${event.jobId}: ${oneLine(text)}`,
+        ...waitingLines(model, event.runId, event.jobId),
+      ];
     }
 
     case "stage": {
@@ -244,6 +283,9 @@ export const plainLines = (
         ),
         ...(event.status === "failed" && event.outputTail
           ? indented(event.outputTail)
+          : []),
+        ...(event.status === "running"
+          ? waitingLines(model, event.runId, event.jobId)
           : []),
       ];
     }

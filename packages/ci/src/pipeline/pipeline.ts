@@ -39,6 +39,7 @@ import type {
   RepoContext,
 } from "../types.ts";
 import { formatDuration, isSandboxNotFound } from "../util.ts";
+import type { CacheBuildData } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { conclusionForError, runJob } from "./job.ts";
 import { metadataStep, runEndMetadata, runStartMetadata } from "./metadata.ts";
@@ -156,6 +157,8 @@ interface RunPipelineArgs {
   internals: CiInternals;
   config: PipelineConfig;
   handler: (ctx: PipelineContext) => Promise<unknown>;
+  /** Set when the run builds one job's cache entry for another run. */
+  build?: CacheBuildData;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
 }
@@ -165,14 +168,17 @@ const newRunScope = ({
   config,
   ctx,
   asyncCtx,
+  build,
 }: {
   internals: CiInternals;
   config: PipelineConfig;
+  build?: CacheBuildData;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
   asyncCtx: AsyncContext;
 }): CiRunScope => {
-  const repo = repoContextFromEvent(ctx.event);
+  // A build starts with an event of its own, so it's told the repository.
+  const repo = build?.repo ?? repoContextFromEvent(ctx.event);
   const attempt: number = ctx.attempt ?? 0;
   const retries = (config as { retries?: number }).retries ?? defaultRetries;
   const maxAttempts: number = ctx.maxAttempts ?? retries + 1;
@@ -189,6 +195,7 @@ const newRunScope = ({
     ...(config.machine ? { machine: config.machine } : {}),
     event: ctx.event,
     ...(repo ? { repo } : {}),
+    ...(build ? { build } : {}),
     jobs: new Map(),
     machines: new Map(),
     snapshots: new Map(),
@@ -258,6 +265,7 @@ const runPipelineAttempt = async ({
   config,
   handler,
   ctx,
+  build,
 }: RunPipelineArgs): Promise<unknown> => {
   await initCiAls();
 
@@ -274,6 +282,7 @@ const runPipelineAttempt = async ({
     config,
     ctx,
     asyncCtx,
+    ...(build ? { build } : {}),
   });
   const checks = internals.checks as CheckReporter;
 

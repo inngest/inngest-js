@@ -365,6 +365,14 @@ const invalidateCached = async (
         name: "cache:invalidate",
       },
       async () => {
+        // A build that finished meanwhile may have replaced the entry, and its
+        // snapshot is not the bad one.
+        const current = await run.ci.cacheStore.get(writeKey);
+
+        if (current && current.snapshotId !== snapshotId) {
+          return { key: writeKey, replaced: true };
+        }
+
         await run.ci.cacheStore.set(writeKey, { ...entry, invalid: true });
 
         return { key: writeKey };

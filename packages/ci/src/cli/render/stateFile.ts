@@ -12,7 +12,7 @@ import { basename, dirname, join } from "node:path";
 
 import type { LocalStatus } from "../../local/protocol.ts";
 import type { Renderer, SessionConclusion, SessionEvent } from "../events.ts";
-import { initialModel, type Model, reduce } from "./model.ts";
+import { displayActivity, initialModel, type Model, reduce } from "./model.ts";
 
 /** The most often the file is written. */
 const throttleMs = 250;
@@ -153,7 +153,7 @@ export const toSessionState = (
               attempt: command.attempt,
               status: command.status,
             },
-            activity: job.activity,
+            activity: displayActivity(run, job),
             title: job.title,
           };
         }),

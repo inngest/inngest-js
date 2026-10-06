@@ -83,6 +83,21 @@ export interface CheckReporter {
     jobPath: string;
     command: string;
   }): Promise<void>;
+  /**
+   * A job's check as another run can find it: its name and, once started, its
+   * ID. `undefined` when the job has no check.
+   */
+  target(args: {
+    run: CiRunScope;
+    jobPath: string;
+    name?: string;
+  }): { name: string; checkRunId?: number } | undefined;
+  /**
+   * Tell the invoking run's check for a job that this run is building its
+   * entry, with a link to this run. Nothing is posted for a build run's own
+   * checks, which it doesn't have.
+   */
+  building(args: { run: CiRunScope; detailsUrl: string }): Promise<void>;
 }
 
 /**
@@ -113,6 +128,8 @@ export interface CheckSink {
     name: string;
     title: string;
     checkRunId?: number;
+    /** Points the check's link at another run. */
+    detailsUrl?: string;
   }): Promise<void>;
 }
 
@@ -382,6 +399,43 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       );
     },
 
+    target: ({ run, jobPath, name }) => {
+      if (!run.checkName || !run.jobChecks) {
+        return undefined;
+      }
+
+      return {
+        name: jobCheckName(run, jobPath, name),
+        ...idFor(run, jobPath),
+      };
+    },
+
+    building: async ({ run, detailsUrl }) => {
+      const check = run.build?.parent.check;
+
+      if (!run.build || !check) {
+        return;
+      }
+
+      const { parent } = run.build;
+      const stepId = `github › check:${parent.jobPath}:building`;
+
+      await run.step.run({ id: stepId, name: stepId }, async () => {
+        await sink.update?.({
+          // The check belongs to the pipeline that invoked this run.
+          run: { ...run, pipelineId: parent.pipelineId },
+          name: check.name,
+          title: "Building in its own run",
+          detailsUrl,
+          ...(check.checkRunId === undefined
+            ? {}
+            : { checkRunId: check.checkRunId }),
+        });
+
+        return null;
+      });
+    },
+
     currentCommand: async ({ run, jobPath, command }) => {
       if (!run.checkName || !run.jobChecks || !sink.update) {
         return;
@@ -485,8 +539,11 @@ export const consoleSink = (
         { check: name, conclusion, url: detailsUrl },
       );
     },
-    update: async ({ run, name, title }) => {
-      write(`[${run.pipelineId}] … ${name}  ${title}`, { check: name });
+    update: async ({ run, name, title, detailsUrl }) => {
+      write(
+        `[${run.pipelineId}] … ${name}  ${title}${detailsUrl ? `  → ${detailsUrl}` : ""}`,
+        { check: name },
+      );
     },
   };
 };
@@ -617,7 +674,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
       }
     },
 
-    update: async ({ run, name, title, checkRunId }) => {
+    update: async ({ run, name, title, checkRunId, detailsUrl }) => {
       const repo = run.repo;
 
       if (!repo?.sha || checkRunId === undefined) {
@@ -638,6 +695,7 @@ export const checksSink = (provider: GitHubProvider): CheckSink => {
         owner: repo.owner,
         repo: repo.name,
         check_run_id: checkRunId,
+        ...(detailsUrl ? { details_url: detailsUrl } : {}),
         output: { title, summary: current.data.output?.summary || name },
       });
     },

@@ -20,6 +20,7 @@ import {
 } from "./format.ts";
 import {
   type CommandView,
+  displayActivity,
   isTerminal,
   type JobView,
   type Model,
@@ -74,10 +75,18 @@ interface Row {
   bodyIndent: string;
 }
 
-/** The run each selectable row opens, in the order the rows are drawn. */
-export const selectableRunIds = (model: Model): string[] => {
+/**
+ * What each selectable row opens, in the order the rows are drawn: a run's
+ * URL, and a job's own run when another run builds it.
+ */
+export const selectableUrls = (model: Model): string[] => {
   return model.runs.flatMap((run) => {
-    return [run.runId, ...run.jobs.map(() => run.runId)];
+    return [
+      run.url,
+      ...run.jobs.map((job) => {
+        return job.url ?? run.url;
+      }),
+    ];
   });
 };
 
@@ -87,15 +96,17 @@ const commandText = (command: CommandView): string => {
   return command.attempt > 1 ? `${name} · attempt ${command.attempt}` : name;
 };
 
-const jobDetail = (job: JobView): string => {
+const jobDetail = (run: RunView, job: JobView): string => {
   if (job.status === "cached") {
     return "cached";
   }
 
   const command = job.commands.at(-1);
 
-  if (job.activity) {
-    return oneLine(job.activity);
+  const activity = displayActivity(run, job);
+
+  if (activity) {
+    return oneLine(activity);
   }
 
   if (command) {
@@ -164,7 +175,7 @@ const jobRows = (run: RunView, clock: number): Row[] => {
         status: job.status,
         name: oneLine(job.jobId),
         bold: false,
-        detail: jobDetail(job),
+        detail: jobDetail(run, job),
         elapsedMs: elapsed(job, clock),
         body: failureBody(job),
         bodyIndent: `${continuation}  `,

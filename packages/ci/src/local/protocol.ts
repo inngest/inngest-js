@@ -121,6 +121,11 @@ export type LocalMessage =
       parentId?: string;
       /** The check title, like `` `pnpm test` exited with 1 ``. */
       title?: string;
+      /**
+       * Where the job's own run is, for a job another run is building: the
+       * CLI opens it on the job instead of the pipeline's run.
+       */
+      url?: string;
       at: number;
     }
   | {

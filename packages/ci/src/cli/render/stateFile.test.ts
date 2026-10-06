@@ -278,3 +278,43 @@ describe("a run that failed with a reason", () => {
     });
   });
 });
+
+describe("a job waiting for its parent", () => {
+  test("carries what the parent is doing in its activity", () => {
+    const model = (
+      [
+        {
+          kind: "run",
+          eventId: "e1",
+          runId: "r1",
+          pipelineId: "pr",
+          status: "running",
+          url: "u",
+          at: 0,
+        },
+        { kind: "job", runId: "r1", jobId: "base", status: "running", at: 1 },
+        { kind: "job", runId: "r1", jobId: "test", status: "running", at: 2 },
+        {
+          kind: "activity",
+          runId: "r1",
+          jobId: "test",
+          text: "waiting for base…",
+          at: 3,
+        },
+        {
+          kind: "activity",
+          runId: "r1",
+          jobId: "base",
+          text: "building in its own run",
+          at: 4,
+        },
+      ] as SessionEvent[]
+    ).reduce(reduce, initialModel);
+
+    const jobs = toSessionState(model, meta, 9).runs[0]?.jobs;
+
+    expect(jobs?.[1]?.activity).toBe(
+      "waiting for base · building in its own run",
+    );
+  });
+});

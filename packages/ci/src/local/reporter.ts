@@ -60,6 +60,8 @@ export interface LocalReporter {
   sink(sink: CheckSink): CheckSink;
   /** A job started from another job's machine, which the CLI nests it under. */
   jobFrom(scope: CiJobScope, parentId: string): void;
+  /** Where a job's own run is, when another run builds it. */
+  jobRunUrl(run: CiRunScope, jobId: string, url: string): void;
   /** What a job is doing at a slow point that isn't a command. */
   activity(run: CiRunScope, jobId: string, text: string): void;
   commandStarted(scope: CiJobScope, command: CommandAttempt): void;
@@ -69,6 +71,14 @@ export interface LocalReporter {
     result: CommandResult,
   ): void;
 }
+
+/**
+ * The run a message is filed under. A cache build reports to the run that
+ * invoked it, so its jobs and commands show under that run's job.
+ */
+const reportedRunId = (run: CiRunScope): string => {
+  return run.build?.parent.runId ?? run.runId;
+};
 
 /** A check's external ID is `<runId>:<key>`. */
 const checkKey = (args: { run: CiRunScope; externalId: string }): string => {
@@ -161,7 +171,7 @@ export const createLocalReporter = (): LocalReporter => {
   ): void => {
     send({
       kind: "command",
-      runId: scope.run.runId,
+      runId: reportedRunId(scope.run),
       jobId: scope.jobPath,
       commandId: command.id,
       name: command.name,
@@ -213,6 +223,11 @@ export const createLocalReporter = (): LocalReporter => {
     },
 
     jobFrom: (scope, parentId) => {
+      // A build run's jobs aren't rows of the run it reports to.
+      if (scope.run.build) {
+        return;
+      }
+
       send({
         kind: "job",
         runId: scope.run.runId,
@@ -223,10 +238,21 @@ export const createLocalReporter = (): LocalReporter => {
       });
     },
 
+    jobRunUrl: (run, jobId, url) => {
+      send({
+        kind: "job",
+        runId: reportedRunId(run),
+        jobId,
+        status: "running",
+        url,
+        at: Date.now(),
+      });
+    },
+
     activity: (run, jobId, text) => {
       send({
         kind: "activity",
-        runId: run.runId,
+        runId: reportedRunId(run),
         jobId,
         text,
         at: Date.now(),
