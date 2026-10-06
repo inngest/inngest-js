@@ -47,8 +47,6 @@ export interface CiOptions {
    * to no reporting otherwise.
    */
   github?: GitHubProvider;
-  /** Where cache entries are stored. Defaults to `memoryCacheStore()`. */
-  cacheStore?: CacheStore;
   /** Default machine for jobs. */
   machine?: MachineConfig;
   /** Builds the link shown on checks. */
@@ -185,6 +183,19 @@ export interface Ci {
  * ```
  */
 export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
+  return createCiWithStore(client, options, memoryCacheStore());
+};
+
+/**
+ * `createCi` with a given cache store. Not exported from the package: cache
+ * entries live in memory for now (named Sandboxes snapshots replace this),
+ * and tests pass one store to several clients to simulate later runs.
+ */
+export const createCiWithStore = (
+  client: Inngest.Any,
+  options: CiOptions,
+  cacheStore: CacheStore,
+): Ci => {
   // Read on use rather than here: the client resolves its mode from env vars
   // that some runtimes only provide per request.
   const isDev = () => {
@@ -201,7 +212,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     isDev,
     github: provider,
     checks: createCheckReporter(sinkFor(provider, client, isDev)),
-    cacheStore: options.cacheStore ?? memoryCacheStore(),
+    cacheStore,
     jobs,
     ...(options.machine ? { defaultMachine: options.machine } : {}),
     runUrl: options.runUrl ?? defaultRunUrl(client, isDev),

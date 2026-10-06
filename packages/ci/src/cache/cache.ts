@@ -1,5 +1,5 @@
 /**
- * Cache stores (memory and file) and the machinery behind a job's `cache`
+ * The in-memory cache store and the machinery behind a job's `cache`
  * option: keys, lookups, storing entries, and the `files()` key helper.
  *
  * @module
@@ -19,14 +19,8 @@ import type {
 import { hash, stableStringify } from "../util.ts";
 
 /**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
- *
- * Keep cache entries in memory, for as long as the process lives.
- *
- * This is the default. It's the right choice for a single long-lived server
- * and the wrong one for a fleet, where each machine would have its own cache;
- * use `fileCacheStore()` on shared storage, or your own `CacheStore`.
+ * Keep cache entries in memory, for as long as the process lives. A miss
+ * just rebuilds the job. Internal: named Sandboxes snapshots replace this.
  */
 export const memoryCacheStore = (): CacheStore => {
   const entries = new Map<string, CacheEntry>();
@@ -37,49 +31,6 @@ export const memoryCacheStore = (): CacheStore => {
     },
     set: async (key, entry) => {
       entries.set(key, entry);
-    },
-  };
-};
-
-/**
- * EXPERIMENTAL: This API is not yet stable and may change in the future without
- * a major version bump.
- *
- * Keep cache entries as JSON files on disk, so they survive a restart.
- *
- * ```ts
- * export const ci = createCi(inngest, {
- *   cacheStore: fileCacheStore(".inngest/ci-cache"),
- * });
- * ```
- */
-export const fileCacheStore = (
-  /** Where to write entries. */
-  dir = ".inngest/ci-cache",
-): CacheStore => {
-  const pathFor = async (key: string) => {
-    const { join } = await import("node:path");
-
-    return join(dir, `${hash(key, 32)}.json`);
-  };
-
-  return {
-    get: async (key) => {
-      try {
-        const { readFile } = await import("node:fs/promises");
-        const contents = await readFile(await pathFor(key), "utf8");
-
-        return JSON.parse(contents) as CacheEntry;
-      } catch {
-        return undefined;
-      }
-    },
-    set: async (key, entry) => {
-      const { mkdir, writeFile } = await import("node:fs/promises");
-
-      await mkdir(dir, { recursive: true });
-
-      await writeFile(await pathFor(key), JSON.stringify(entry, null, 2));
     },
   };
 };

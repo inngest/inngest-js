@@ -15,7 +15,7 @@
 import type { PushEvent } from "@octokit/webhooks-types";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { describe, expectTypeOf, test } from "vitest";
-import { fileCacheStore, files, memoryCacheStore } from "./cache/cache.ts";
+import { files } from "./cache/cache.ts";
 import { changed } from "./checkout/changed.ts";
 import { checkout } from "./checkout/checkout.ts";
 import { waitForHttp, waitForPort } from "./checkout/wait.ts";
@@ -38,10 +38,8 @@ import { github } from "./github/index.ts";
 import type {
   BackgroundProcess as EntryBackgroundProcess,
   CacheConfig as EntryCacheConfig,
-  CacheEntry as EntryCacheEntry,
   CacheKey as EntryCacheKey,
   CacheKeyPart as EntryCacheKeyPart,
-  CacheStore as EntryCacheStore,
   CheckAnnotation as EntryCheckAnnotation,
   CheckConclusion as EntryCheckConclusion,
   Ci as EntryCi,
@@ -84,9 +82,7 @@ import { createCiTestClient } from "./testing/client.ts";
 import { createFakeSandboxApi } from "./testing/fakeSandbox.ts";
 import type {
   BackgroundProcess,
-  CacheEntry,
   CacheKeyPart,
-  CacheStore,
   CheckConclusion,
   CiEvent,
   CiSkip,
@@ -812,26 +808,9 @@ describe("providers and stores", () => {
     expectTypeOf(consoleReporter().history).toBeArray();
   });
 
-  test("cache stores are interchangeable", () => {
-    expectTypeOf(memoryCacheStore()).toEqualTypeOf<CacheStore>();
-    expectTypeOf(fileCacheStore(".cache")).toEqualTypeOf<CacheStore>();
-
-    const custom: CacheStore = {
-      get: async () => {
-        return undefined;
-      },
-      set: async () => {
-        return undefined;
-      },
-    };
-
-    expectTypeOf(custom.get).returns.resolves.toEqualTypeOf<
-      CacheEntry | undefined
-    >();
-
+  test("ci options", () => {
     createCi(createCiTestClient(createFakeSandboxApi()), {
       github: consoleReporter(),
-      cacheStore: custom,
       machine: { vcpu: 4 },
       runUrl: ({ runId, functionId }) => {
         return `${functionId}/${runId}`;
@@ -874,8 +853,6 @@ describe("the entry point exports what the docs use", () => {
     expectTypeOf(entry.fixtures).toBeObject();
     expectTypeOf(entry.githubEventName).toBeFunction();
     expectTypeOf(entry.githubWebhookTransform).toBeString();
-    expectTypeOf(entry.memoryCacheStore).toBeFunction();
-    expectTypeOf(entry.fileCacheStore).toBeFunction();
     expectTypeOf(entry.githubApp).toBeFunction();
     expectTypeOf(entry.githubToken).toBeFunction();
     expectTypeOf(entry.consoleReporter).toBeFunction();
@@ -894,7 +871,7 @@ describe("the entry point exports what the docs use", () => {
   });
 
   /**
-   * Writing a helper that takes a pipeline's event, or a custom cache store,
+   * Writing a helper that takes a pipeline's event
    * shouldn't mean reaching into the package's internals, so every type a
    * user might need to name is importable from `inngest/ci`.
    *
@@ -905,10 +882,8 @@ describe("the entry point exports what the docs use", () => {
     type Exported = [
       EntryBackgroundProcess,
       EntryCacheConfig,
-      EntryCacheEntry,
       EntryCacheKey,
       EntryCacheKeyPart,
-      EntryCacheStore,
       EntryCheckAnnotation,
       EntryCheckConclusion,
       EntryCi,

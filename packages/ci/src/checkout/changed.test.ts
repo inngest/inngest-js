@@ -11,7 +11,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { memoryCacheStore } from "../cache/cache.ts";
 import { hashLocalFiles } from "../cache/localCache.ts";
 import { CiUsageError } from "../errors.ts";
 import { consoleReporter } from "../github/auth.ts";
@@ -117,7 +116,6 @@ describe("changed()", () => {
   test("a run with no repository is unknown, not unchanged", async () => {
     const ci = createCi(createCiTestClient(createFakeSandboxApi()), {
       github: consoleReporter(),
-      cacheStore: memoryCacheStore(),
     });
 
     const pipeline = ci.pipeline(

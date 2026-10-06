@@ -28,11 +28,7 @@
  */
 
 // Caching
-export {
-  fileCacheStore,
-  files,
-  memoryCacheStore,
-} from "./cache/cache.ts";
+export { files } from "./cache/cache.ts";
 // Checkout, sharding and waiting
 export { changed } from "./checkout/changed.ts";
 export { checkout } from "./checkout/checkout.ts";
@@ -91,10 +87,8 @@ export { report } from "./report.ts";
 export type {
   BackgroundProcess,
   CacheConfig,
-  CacheEntry,
   CacheKey,
   CacheKeyPart,
-  CacheStore,
   CheckAnnotation,
   CheckConclusion,
   CiEvent,

@@ -18,7 +18,7 @@ import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { version } from "../version.ts";
-import { createCi } from "./createCi.ts";
+import { createCiWithStore } from "./createCi.ts";
 import { tagStep } from "./metadata.ts";
 import type { CiRunScope } from "./scope.ts";
 
@@ -47,13 +47,16 @@ const setup = (cacheStore = memoryCacheStore()) => {
   const api = createFakeSandboxApi();
   const client = createCiTestClient(api);
 
-  const ci = createCi(client, {
-    github: consoleReporter(),
-    cacheStore,
-    runUrl: ({ runId }) => {
-      return `http://localhost:8288/run?runID=${runId}`;
+  const ci = createCiWithStore(
+    client,
+    {
+      github: consoleReporter(),
+      runUrl: ({ runId }) => {
+        return `http://localhost:8288/run?runID=${runId}`;
+      },
     },
-  });
+    cacheStore,
+  );
 
   return { api, client, ci };
 };

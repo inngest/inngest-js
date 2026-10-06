@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { step } from "inngest";
 import { describe, expect, test } from "vitest";
-import { files, memoryCacheStore } from "./cache/cache.ts";
+import { files } from "./cache/cache.ts";
 import { changed } from "./checkout/changed.ts";
 import { checkout } from "./checkout/checkout.ts";
 import { waitForHttp } from "./checkout/wait.ts";
@@ -95,7 +95,6 @@ const buildPipeline = () => {
 
   const ci = createCi(client, {
     github: reporter,
-    cacheStore: memoryCacheStore(),
     runUrl: ({ runId }) => {
       return `http://localhost:8288/run?runID=${runId}`;
     },

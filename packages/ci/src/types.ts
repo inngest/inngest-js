@@ -212,20 +212,7 @@ export interface CacheEntry {
   fromInputs?: Record<string, unknown>;
 }
 
-/**
- * Where cache entries live. Implement this to keep them anywhere you like.
- *
- * ```ts
- * const redisCacheStore = (redis: Redis): CacheStore => ({
- *   get: async (key) => {
- *     return JSON.parse((await redis.get(key)) ?? "null") ?? undefined;
- *   },
- *   set: async (key, entry) => {
- *     await redis.set(key, JSON.stringify(entry));
- *   },
- * });
- * ```
- */
+/** Where cache entries live. Internal: not exported from the package. */
 export interface CacheStore {
   /** Read an entry, or `undefined` if there isn't one. */
   get(key: string): Promise<CacheEntry | undefined>;

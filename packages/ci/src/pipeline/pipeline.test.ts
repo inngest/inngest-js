@@ -24,7 +24,7 @@ import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import type { CacheStore } from "../types.ts";
-import { createCi } from "./createCi.ts";
+import { createCi, createCiWithStore } from "./createCi.ts";
 import { destroyOrphans } from "./pipeline.ts";
 
 const prEvent = {
@@ -65,13 +65,16 @@ const setup = (
   const client = createCiTestClient(api);
   const reporter = consoleReporter();
 
-  const ci = createCi(client, {
-    github: reporter,
-    cacheStore: opts.cacheStore ?? memoryCacheStore(),
-    runUrl: ({ runId }) => {
-      return `http://localhost:8288/run?runID=${runId}`;
+  const ci = createCiWithStore(
+    client,
+    {
+      github: reporter,
+      runUrl: ({ runId }) => {
+        return `http://localhost:8288/run?runID=${runId}`;
+      },
     },
-  });
+    opts.cacheStore ?? memoryCacheStore(),
+  );
 
   return { api, client, ci, reporter };
 };
@@ -1560,7 +1563,6 @@ const setupGitHub = (reporter: "checks" | "statuses" = "statuses") => {
       }),
       reporter,
     },
-    cacheStore: memoryCacheStore(),
     runUrl: ({ runId }) => {
       return `http://localhost:8288/run?runID=${runId}`;
     },
