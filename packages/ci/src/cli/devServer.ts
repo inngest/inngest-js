@@ -13,8 +13,7 @@ import {
   readFileSync,
   statSync,
 } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { CiConfig } from "./config.ts";
@@ -125,6 +124,36 @@ export const findOnPath = (
   return undefined;
 };
 
+/**
+ * The `package.json` of `name` installed in the project: `node_modules/<name>`
+ * in `root` or a folder above it. Looked up by hand rather than with
+ * `require.resolve`, which also searches `NODE_PATH` and would find a copy
+ * that package managers' bin shims put there from outside the project.
+ */
+const findProjectPackage = (root: string, name: string): string | undefined => {
+  let dir = resolve(root);
+
+  for (;;) {
+    const candidate = join(dir, "node_modules", name, "package.json");
+
+    try {
+      if (statSync(candidate).isFile()) {
+        return candidate;
+      }
+    } catch {
+      // Not here; keep looking up.
+    }
+
+    const parent = dirname(dir);
+
+    if (parent === dir) {
+      return undefined;
+    }
+
+    dir = parent;
+  }
+};
+
 /** What `<bin> --version` reports, like `1.45.1` or `dev-abc`, if it runs. */
 const binaryVersion = (bin: string): string | undefined => {
   try {
@@ -165,17 +194,18 @@ export const resolveDevServerBin = (
   let version: string | undefined;
 
   if (!bin) {
-    try {
-      const packageJson = createRequire(
-        join(config.root, "package.json"),
-      ).resolve("inngest-cli/package.json");
+    const packageJson = findProjectPackage(config.root, "inngest-cli");
 
-      bin = join(dirname(packageJson), "bin", "inngest");
-      version = (
-        JSON.parse(readFileSync(packageJson, "utf8")) as { version: string }
-      ).version;
-    } catch {
-      // Not installed in the project; try the machine.
+    if (packageJson) {
+      try {
+        version = (
+          JSON.parse(readFileSync(packageJson, "utf8")) as { version: string }
+        ).version;
+
+        bin = join(dirname(packageJson), "bin", "inngest");
+      } catch {
+        // Unreadable; try the machine.
+      }
     }
   }
 

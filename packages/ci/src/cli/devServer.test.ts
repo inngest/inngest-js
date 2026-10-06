@@ -118,6 +118,37 @@ describe("resolveDevServerBin", () => {
     expect(bin).toBe(join(pkg, "bin", "inngest"));
   });
 
+  test("ignores a copy that is only on NODE_PATH", () => {
+    const outside = mkdtempSync(join(tmpdir(), "ci-node-path-"));
+    const pkg = join(outside, "inngest-cli");
+    const previous = process.env.NODE_PATH;
+
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "inngest-cli", version: "1.46.0" }),
+    );
+
+    process.env.NODE_PATH = outside;
+
+    try {
+      const only = withBins(["inngest"]);
+
+      expect(
+        resolveDevServerBin(
+          { root: "/nowhere" },
+          { platform: "linux", versionOf: () => "1.46.0", env: { PATH: only } },
+        ),
+      ).toBe(join(only, "inngest"));
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NODE_PATH;
+      } else {
+        process.env.NODE_PATH = previous;
+      }
+    }
+  });
+
   test("falls back to inngest-cli, then inngest, on PATH", () => {
     const both = withBins(["inngest", "inngest-cli"]);
     const only = withBins(["inngest"]);
