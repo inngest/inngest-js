@@ -107,6 +107,40 @@ describe('group["~span"]()', () => {
     expect(steps.nested?.opts?.span).toEqual([outer, inner]);
   });
 
+  test("sends a span's kind only when given, through nesting", async () => {
+    const job = { id: "base", name: "Install", kind: "job" };
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"](job, () => {
+          return Promise.all([
+            step.run("plain", () => "plain"),
+            group["~span"](inner, () => {
+              return step.run(
+                { id: "cmd", "~span": { id: "x", kind: "cmd" } },
+                () => {
+                  return "cmd";
+                },
+              );
+            }),
+          ]);
+        });
+      },
+    );
+
+    const steps = await findSteps(fn);
+
+    expect(steps.plain?.opts?.span).toStrictEqual([job]);
+
+    // Strict equality fails on a `kind` key, even an undefined one
+    expect(steps.cmd?.opts?.span).toStrictEqual([
+      job,
+      inner,
+      { id: "x", name: "x", kind: "cmd" },
+    ]);
+  });
+
   test("re-enters a span opened again with the same ID", async () => {
     const fn = client.createFunction(
       { id: "fn", triggers: [{ event: "test" }] },

@@ -231,13 +231,16 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
 };
 
 /**
- * Append a span to a span path, naming it by its ID if it has no name.
+ * Append a span to a span path, naming it by its ID if it has no name. `kind`
+ * is only sent when given.
  */
 const appendSpan = (
-  path: Required<StepSpan>[] | undefined,
+  path: (StepSpan & { name: string })[] | undefined,
   span: StepSpan,
-): Required<StepSpan>[] => {
-  return [...(path ?? []), { id: span.id, name: span.name ?? span.id }];
+): (StepSpan & { name: string })[] => {
+  const { id, name = id, kind } = span;
+
+  return [...(path ?? []), { id, name, ...(kind ? { kind } : {}) }];
 };
 
 /**

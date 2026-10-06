@@ -1981,13 +1981,15 @@ export interface StepOptions {
 
 /**
  * A span that groups steps in a trace. Steps under the same path of span IDs
- * share a span, and `name` defaults to `id`.
+ * share a span, and `name` defaults to `id`. `kind` says what sort of thing
+ * the span is, such as `"job"`, so a UI can label it.
  *
  * @internal Unstable and may change without a major version bump.
  */
 export interface StepSpan {
   id: string;
   name?: string;
+  kind?: string;
 }
 
 /**

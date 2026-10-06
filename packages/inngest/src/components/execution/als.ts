@@ -51,7 +51,7 @@ export interface AsyncContext {
      * If present, the spans that steps created within this context are
      * grouped under, outermost first. Set by `group["~span"]()`.
      */
-    span?: Required<StepSpan>[];
+    span?: (StepSpan & { name: string })[];
 
     /**
      * The stream tools instance for this execution context. Used by the
