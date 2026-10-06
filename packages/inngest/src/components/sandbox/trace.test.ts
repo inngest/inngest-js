@@ -261,6 +261,9 @@ describe("step.sandbox trace metadata", () => {
     for (const step of [snapshot, wait]) {
       expect(step?.opts?.span).toEqual([{ id: "snap", name: "Snapshot" }]);
     }
+
+    expect(snapshot?.displayName).toBe("Create snapshot");
+    expect(wait?.displayName).toBe("Wait for snapshot");
   });
 
   test("emits one full entry per step attempt", async () => {

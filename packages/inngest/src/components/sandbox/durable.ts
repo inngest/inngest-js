@@ -455,21 +455,6 @@ const callRawTool = async <A extends SandboxAction>(
   }
 };
 
-const snapshotWaitStepOptions = (
-  idOrOptions: StepOptionsOrId,
-): StepOptionsOrId => {
-  if (typeof idOrOptions === "string") {
-    return `${idOrOptions}:wait-until-ready`;
-  }
-  return {
-    ...idOrOptions,
-    id: `${idOrOptions.id}:wait-until-ready`,
-    ...(idOrOptions.name && {
-      name: `${idOrOptions.name} (wait until ready)`,
-    }),
-  };
-};
-
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
   sandbox,
@@ -628,9 +613,12 @@ export const createDurableSandboxFacade = (
       target: sandboxTarget(ref),
       input: [createOptions],
     });
+    // The caller's name labels the span around both steps, so each step is
+    // named for what it does. Step IDs never change, for replay.
+    const stepOptions = getStepOptions(idOrOptions);
     const created = await callRawTool(
       rawToolResolver,
-      idOrOptions,
+      { ...stepOptions, name: "Create snapshot" },
       createOperation,
     );
     const waitOperation = parseSandboxOperationForAction(
@@ -644,7 +632,11 @@ export const createDurableSandboxFacade = (
     );
     const ready = await callRawTool(
       rawToolResolver,
-      snapshotWaitStepOptions(idOrOptions),
+      {
+        ...stepOptions,
+        id: `${stepOptions.id}:wait-until-ready`,
+        name: "Wait for snapshot",
+      },
       waitOperation,
     );
     return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);

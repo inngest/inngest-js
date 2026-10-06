@@ -383,12 +383,12 @@ describe("step.sandbox", () => {
     });
     expect(rawTool).toHaveBeenNthCalledWith(
       11,
-      "snapshot-create",
+      { id: "snapshot-create", name: "Create snapshot" },
       expect.objectContaining({ action: "snapshot.create" }),
     );
     expect(rawTool).toHaveBeenNthCalledWith(
       12,
-      "snapshot-create:wait-until-ready",
+      { id: "snapshot-create:wait-until-ready", name: "Wait for snapshot" },
       expect.objectContaining({ action: "snapshot.waitUntilReady" }),
     );
     expect(operations[16]).toMatchObject({
