@@ -5,6 +5,7 @@
  * @module
  */
 
+import { withSandboxStatement } from "inngest/experimental";
 import { CiUsageError } from "../errors.ts";
 import type {
   CiJobScope,
@@ -87,20 +88,33 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
       : "creating machine…",
   );
 
-  const sandbox = scope.fromSnapshotId
-    ? await tools.create(stepId, {
-        name,
-        snapshotId: scope.fromSnapshotId,
-      })
-    : await tools.create(stepId, { name, ...machineConfig });
+  // Setup is part of creating the machine, so the trace shows both as the
+  // create step's one row.
+  const sandbox = await withSandboxStatement(
+    { id: stepId, statement: "create" },
+    () => {
+      return scope.fromSnapshotId
+        ? tools.create(stepId, { name, snapshotId: scope.fromSnapshotId })
+        : tools.create(stepId, { name, ...machineConfig });
+    },
+  );
 
   run.sandboxes.add(sandbox.id);
 
-  await sandbox.commands.run(`${stepId}${scopeSeparator}setup`, [
-    "/bin/sh",
-    "-c",
-    machineSetupScript,
-  ]);
+  await withSandboxStatement(
+    {
+      id: stepId,
+      statement: "create",
+      sandbox: { id: sandbox.id, name: sandbox.name },
+    },
+    () => {
+      return sandbox.commands.run(`${stepId}${scopeSeparator}setup`, [
+        "/bin/sh",
+        "-c",
+        machineSetupScript,
+      ]);
+    },
+  );
 
   const handle: MachineHandle = { sandbox, name, id: sandbox.id };
 

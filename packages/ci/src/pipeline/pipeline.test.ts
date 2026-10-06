@@ -2290,6 +2290,52 @@ describe("trace statements", () => {
     });
   });
 
+  test("a machine's create and setup are one statement", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "fast" }]);
+
+    const job = ci.job("lint", async () => {
+      return $`quick`.as("check").text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const stepId = "lint › machine";
+
+    const entries = result.metadata.filter((update) => {
+      return (
+        update.kind === "inngest.sandbox" &&
+        (update.step === stepId || update.step.startsWith(`${stepId} `))
+      );
+    });
+
+    const byAction = Object.fromEntries(
+      entries.map((entry) => {
+        return [entry.values.action, entry.values];
+      }),
+    );
+
+    expect(byAction.create).toMatchObject({
+      statement: "create",
+      statement_id: statementId(stepId),
+      role: "statement",
+    });
+
+    expect(byAction.exec).toMatchObject({
+      statement: "create",
+      statement_id: statementId(stepId),
+      statement_name: stepId,
+      role: "internal",
+      sandbox_id: byAction.create?.sandbox_id,
+      command_display: machineSetupScript,
+    });
+  });
+
   test("a background process and its follow-ups are one statement", async () => {
     const { api, ci } = setup();
 
