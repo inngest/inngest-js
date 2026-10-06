@@ -724,8 +724,11 @@ describe("shortReason", () => {
 describe("looking a cached snapshot up by name", () => {
   const name = snapshotName("global", "setup", "k1");
 
+  // One moment for every fixture, so two snapshots built apart still match.
+  const now = Date.now();
+
   const inHours = (hours: number) => {
-    return new Date(Date.now() + hours * 3_600_000).toISOString();
+    return new Date(now + hours * 3_600_000).toISOString();
   };
 
   const snapshot = (fields: Record<string, unknown>) => {
