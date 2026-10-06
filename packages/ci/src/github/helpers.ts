@@ -8,10 +8,13 @@
 import { RetryAfterError } from "inngest";
 import { CiUsageError } from "../errors.ts";
 import { durablePath } from "../pipeline/durable.ts";
+import { traceName } from "../pipeline/names.ts";
+import type { CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
   getJobScope,
   getRunScope,
+  inGitHubSpan,
   requireRunScope,
 } from "../pipeline/scope.ts";
 import type { CheckConclusion, Duration } from "../types.ts";
@@ -21,6 +24,14 @@ import { mapGitHubError, octokitForRun, rest } from "./rest.ts";
 import { hasPermission, type Permission } from "./triggers.ts";
 
 /**
+ * Run a helper's steps in the job that called it, or in the run's GitHub span
+ * when no job did.
+ */
+const inHelperSpan = <T>(run: CiRunScope, fn: () => T): T => {
+  return getJobScope() ? fn() : inGitHubSpan(run, fn);
+};
+
+/**
  * Run a helper's body as a single step, so all the calls it makes retry
  * together. Inside the step, `github.rest` calls run directly.
  */
@@ -28,6 +39,8 @@ const helperStep = async <T>(
   helper: string,
   key: string,
   fn: () => Promise<T>,
+  /** The step's name, which is the helper's method name by default. */
+  name = traceName.githubHelper(helper),
 ): Promise<T> => {
   const run = requireRunScope(`github.${helper}`);
 
@@ -40,7 +53,9 @@ const helperStep = async <T>(
   const job = getJobScope();
   const id = `${job ? `${job.path} › ` : ""}github › ${helper}:${key}`;
 
-  return run.step.run({ id, name: id }, fn) as Promise<T>;
+  return inHelperSpan(run, () => {
+    return run.step.run({ id, name }, fn) as Promise<T>;
+  });
 };
 
 /** Run `call` as a step when inside a run, or directly when outside one. */
@@ -458,30 +473,35 @@ export const canUser = async (
   login: string,
   permission: Permission,
 ): Promise<boolean> => {
-  return helperStep("canUser", `${login}:${permission}`, async () => {
-    try {
-      const result = await rest.repos.getCollaboratorPermissionLevel({
-        username: login,
-      });
+  return helperStep(
+    "canUser",
+    `${login}:${permission}`,
+    async () => {
+      try {
+        const result = await rest.repos.getCollaboratorPermissionLevel({
+          username: login,
+        });
 
-      return hasPermission(result.permission, permission);
-    } catch (error) {
-      const status =
-        (error as ErrorWithStatus).status ??
-        (error as ErrorWithStatus).cause?.status;
+        return hasPermission(result.permission, permission);
+      } catch (error) {
+        const status =
+          (error as ErrorWithStatus).status ??
+          (error as ErrorWithStatus).cause?.status;
 
-      // A 403 or 404 here means "can't see it", which is the same as "no".
-      // Rate limits and server errors must retry, not become a "no".
-      if (
-        (status === 403 || status === 404) &&
-        !(error instanceof RetryAfterError)
-      ) {
-        return false;
+        // A 403 or 404 here means "can't see it", which is the same as "no".
+        // Rate limits and server errors must retry, not become a "no".
+        if (
+          (status === 403 || status === 404) &&
+          !(error instanceof RetryAfterError)
+        ) {
+          return false;
+        }
+
+        throw error;
       }
-
-      throw error;
-    }
-  });
+    },
+    traceName.canUser(login, permission),
+  );
 };
 
 /**
@@ -537,18 +557,20 @@ export const waitForChecks = async (opts: {
 
   const waited = await Promise.all(
     missing.map(async (name) => {
-      const event = (await run.step.waitForEvent(
-        {
-          id: `github › waitForChecks:${name}`,
-          name: `waitForChecks:${name}`,
-        },
-        {
-          event: "github/check_run.completed",
-          timeout: opts.timeout ?? "1h",
-          if: `async.data.check_run.name == ${JSON.stringify(name)} && async.data.check_run.head_sha == ${JSON.stringify(sha)}`,
-        },
+      const event = (await inHelperSpan(run, () => {
+        return run.step.waitForEvent(
+          {
+            id: `github › waitForChecks:${name}`,
+            name: traceName.waitForCheck(name),
+          },
+          {
+            event: "github/check_run.completed",
+            timeout: opts.timeout ?? "1h",
+            if: `async.data.check_run.name == ${JSON.stringify(name)} && async.data.check_run.head_sha == ${JSON.stringify(sha)}`,
+          },
+        );
         // biome-ignore lint/suspicious/noExplicitAny: event shape is the user's
-      )) as any;
+      })) as any;
 
       return [
         name,
@@ -597,18 +619,20 @@ export const waitForWorkflow = async (opts: {
     ? `async.data.workflow_run.workflow_id == ${opts.workflow}`
     : `async.data.workflow_run.path.endsWith(${JSON.stringify(`/${opts.workflow}`)})`;
 
-  const event = (await run.step.waitForEvent(
-    {
-      id: `github › waitForWorkflow:${opts.workflow}`,
-      name: `waitForWorkflow:${opts.workflow}`,
-    },
-    {
-      event: "github/workflow_run.completed",
-      timeout: opts.timeout ?? "1h",
-      if: `async.data.workflow_run.head_sha == ${JSON.stringify(sha)} && ${workflowMatch}`,
-    },
+  const event = (await inHelperSpan(run, () => {
+    return run.step.waitForEvent(
+      {
+        id: `github › waitForWorkflow:${opts.workflow}`,
+        name: traceName.waitForWorkflow(opts.workflow),
+      },
+      {
+        event: "github/workflow_run.completed",
+        timeout: opts.timeout ?? "1h",
+        if: `async.data.workflow_run.head_sha == ${JSON.stringify(sha)} && ${workflowMatch}`,
+      },
+    );
     // biome-ignore lint/suspicious/noExplicitAny: event shape is the user's
-  )) as any;
+  })) as any;
 
   return (event?.data?.workflow_run?.conclusion ?? "timed_out") as
     | CheckConclusion

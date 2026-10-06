@@ -1962,7 +1962,7 @@ describe("cleanup", () => {
 
     expect(
       result.stepIds.filter((id) => {
-        return id === "cleanup";
+        return id.startsWith("pipeline › cleanup");
       }),
     ).toHaveLength(1);
 
@@ -2063,7 +2063,7 @@ describe("repository for repo-less triggers", () => {
       baseRef: "main",
     });
 
-    expect(result.stepIds).toContain("repo:resolve");
+    expect(result.stepIds).toContain("github › repo:resolve");
   });
 
   test("a comment run gets its pull request's head commit", async () => {
@@ -2110,7 +2110,7 @@ describe("repository for repo-less triggers", () => {
       pullRequest: { number: 12, headRef: "feature", fork: false },
     });
 
-    expect(result.stepIds).toContain("pr:resolve");
+    expect(result.stepIds).toContain("github › pr:resolve");
   });
 });
 
@@ -2445,7 +2445,7 @@ describe("cache builds in their own run", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    expect(result.stepIds).toContain("build base");
+    expect(result.stepIds).toContain("base › build");
 
     const machines = [...api.sandboxes.values()];
 

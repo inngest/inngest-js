@@ -19,11 +19,14 @@ import type { AnyJob, CheckConclusion, JobConfig } from "../types.ts";
 import { errorMessage, formatDuration, shortReason } from "../util.ts";
 import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 import { tagStep } from "./metadata.ts";
+import { ciStep, traceName } from "./names.ts";
 import type { CiJobScope, CiRunScope } from "./scope.ts";
 import {
   getRunScope,
+  inJobSpan,
   jobHandlerKey,
   matrixOriginOf,
+  rebuildSuffix,
   runJobBody,
   scopeSeparator,
 } from "./scope.ts";
@@ -167,7 +170,7 @@ const invokeBuild = async ({
 
   try {
     output = (await run.step.invoke(
-      { id: `${path}${scopeSeparator}build`, name: `build ${path}` },
+      ciStep(`${path}${scopeSeparator}build`, traceName.buildInOwnRun(path)),
       { function: run.ci.cacheBuild(origin?.id ?? config.id), data },
     )) as CacheBuildResult | null;
   } catch (error) {
@@ -254,7 +257,7 @@ export const rebuildJob = async (
     return undefined;
   }
 
-  const path = `${jobId} (rebuild)`;
+  const path = `${jobId}${rebuildSuffix}`;
 
   const cached = run.cached.get(jobId);
 
@@ -336,7 +339,14 @@ const validateInput = async (
   );
 };
 
-const jobBody = async ({
+/** Everything a job does is in its span. */
+const jobBody = (args: RunJobArgs & { run: CiRunScope }): Promise<unknown> => {
+  return inJobSpan(args.run, args.path ?? args.config.id, () => {
+    return jobSteps(args);
+  });
+};
+
+const jobSteps = async ({
   path,
   run,
   config,
@@ -525,13 +535,14 @@ const jobBody = async ({
  * step to carry its start time.
  */
 const durableNow = (run: CiRunScope, jobPath: string): Promise<number> => {
-  const id = `start:${jobPath}`;
+  return run.step.run(
+    ciStep(`start:${jobPath}`, traceName.recordStartTime),
+    async () => {
+      await tagStep(run, { kind: "job", job: jobPath });
 
-  return run.step.run({ id, name: id }, async () => {
-    await tagStep(run, { kind: "job", job: jobPath });
-
-    return Date.now();
-  });
+      return Date.now();
+    },
+  );
 };
 
 /** What a job's check says when its snapshot was reused rather than built. */

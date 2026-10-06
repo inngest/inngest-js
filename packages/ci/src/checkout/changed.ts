@@ -6,6 +6,7 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import { traceName } from "../pipeline/names.ts";
 import {
   countApi,
   getJobScope,
@@ -92,19 +93,22 @@ export const changedFiles = async (): Promise<string[] | null> => {
 
   const id = nextStepId(run, getJobScope()?.path, "changed");
 
-  const files = (await run.step.run({ id, name: id }, async () => {
-    try {
-      return await listChangedFiles(run.repo);
-    } catch (error) {
-      if (!(error instanceof CiUsageError)) {
-        throw error;
-      }
+  const files = (await run.step.run(
+    { id, name: traceName.findChangedFiles },
+    async () => {
+      try {
+        return await listChangedFiles(run.repo);
+      } catch (error) {
+        if (!(error instanceof CiUsageError)) {
+          throw error;
+        }
 
-      // No credentials, so the change can't be read. The caller assumes
-      // everything changed rather than skipping work it shouldn't.
-      return { unknown: true as const, reason: error.message };
-    }
-  })) as string[] | { unknown: true; reason: string };
+        // No credentials, so the change can't be read. The caller assumes
+        // everything changed rather than skipping work it shouldn't.
+        return { unknown: true as const, reason: error.message };
+      }
+    },
+  )) as string[] | { unknown: true; reason: string };
 
   if (!Array.isArray(files)) {
     run.warnings.push(

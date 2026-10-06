@@ -27,9 +27,12 @@ describe("pauseMachine", () => {
 
     await pauseMachine(scopeWith(pause));
 
-    expect(pause).toHaveBeenCalledWith(expect.stringContaining("pause"), {
-      timeout: pauseTimeoutMs,
-    });
+    expect(pause).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Pause sandbox" }),
+      {
+        timeout: pauseTimeoutMs,
+      },
+    );
 
     expect(pauseTimeoutMs).toBeLessThan(60_000);
   });

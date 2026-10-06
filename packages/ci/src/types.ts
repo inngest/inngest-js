@@ -201,8 +201,10 @@ export interface CacheConfig {
  * ```
  */
 export interface JobConfig<_TInput = void> {
-  /** Unique within the CI client. It's the job's path in the trace and its check name. */
+  /** Unique within the CI client. It's the job's check name, and its step IDs start with it. */
   id: string;
+  /** What the trace calls the job. Defaults to `id`. */
+  name?: string;
   /** Machine settings for this job, overriding the pipeline's and the client's. */
   machine?: MachineConfig;
   /**
