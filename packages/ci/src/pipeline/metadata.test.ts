@@ -66,9 +66,13 @@ const runScoped = (metadata: Update[]) => {
   });
 };
 
+/**
+ * CI's own step tags. The SDK's `inngest.sandbox` entries, on every sandbox
+ * step, are left out.
+ */
 const stepScoped = (metadata: Update[]) => {
   return metadata.filter((update) => {
-    return update.scope === "step";
+    return update.scope === "step" && update.kind !== "inngest.sandbox";
   });
 };
 
