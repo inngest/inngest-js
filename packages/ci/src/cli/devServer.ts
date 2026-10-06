@@ -11,7 +11,6 @@ import {
   constants,
   mkdirSync,
   readFileSync,
-  rmSync,
   statSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -49,6 +48,8 @@ export interface DevServerPorts {
 export interface DevServer {
   /** Where the Dev Server and its UI are, like `http://127.0.0.1:24288`. */
   url: string;
+  /** Where its database is. */
+  dir: string;
   process: GroupProcess;
 }
 
@@ -204,7 +205,8 @@ export const resolveDevServerBin = (
 /** The arguments to `inngest dev` for an isolated Dev Server. */
 export const devServerArgs = (opts: {
   ports: DevServerPorts;
-  appUrl: string;
+  /** The app to sync, if there is one. */
+  appUrl?: string;
   sqliteDir: string;
 }): string[] => {
   const { ports } = opts;
@@ -224,8 +226,7 @@ export const devServerArgs = (opts: {
     String(ports.connectExecutorGrpc),
     "--debug-api-port",
     String(ports.debugApi),
-    "-u",
-    opts.appUrl,
+    ...(opts.appUrl ? ["-u", opts.appUrl] : []),
     "--persist",
     "--sqlite-dir",
     opts.sqliteDir,
@@ -233,28 +234,38 @@ export const devServerArgs = (opts: {
 };
 
 /**
- * Start the Dev Server and wait until it's healthy. Fails fast if it exits.
+ * Where a session keeps its Dev Server's database. Every session has its own,
+ * because two Dev Servers can't share one, and a new one has no functions
+ * left by an earlier run's app.
+ */
+export const devServerDir = (dir: string, sessionId: string): string => {
+  return join(dir, "dev-server", sessionId);
+};
+
+/**
+ * Start the Dev Server on the database in `sqliteDir` and wait until it's
+ * healthy. Fails fast if it exits.
  */
 export const startDevServer = async (opts: {
   config: CiConfig;
   bin: string;
+  sqliteDir: string;
   ports: DevServerPorts;
-  appPort: number;
+  /** The port of the app to sync, if the Dev Server has one. */
+  appPort?: number;
 }): Promise<DevServer> => {
-  const { config, ports } = opts;
+  const { config, ports, sqliteDir } = opts;
   const url = `http://127.0.0.1:${ports.main}`;
-  const sqliteDir = join(config.dir, "dev-server");
 
-  // Every run starts empty. Functions left by an earlier run's app would
-  // satisfy the sync wait, and then run against a URL nothing serves.
-  rmSync(sqliteDir, { recursive: true, force: true });
   mkdirSync(sqliteDir, { recursive: true });
 
   const proc = spawnGroup({
     file: opts.bin,
     args: devServerArgs({
       ports,
-      appUrl: `http://127.0.0.1:${opts.appPort}${config.path}`,
+      appUrl: opts.appPort
+        ? `http://127.0.0.1:${opts.appPort}${config.path}`
+        : undefined,
       sqliteDir,
     }),
     cwd: config.root,
@@ -281,5 +292,5 @@ export const startDevServer = async (opts: {
     await sleep(100);
   }
 
-  return { url, process: proc };
+  return { url, dir: sqliteDir, process: proc };
 };

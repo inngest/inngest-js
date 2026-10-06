@@ -209,6 +209,10 @@ describe("the manifest", () => {
       return undefined;
     });
 
+    ci.job("greet", async (name: string) => {
+      return name;
+    });
+
     ci.matrix(
       { id: "compat", axes: { node: ["20", "22"], os: ["linux"] } },
       async () => {
@@ -251,7 +255,11 @@ describe("the manifest", () => {
               ],
             },
           ],
-          jobs: [{ id: "lint" }, { id: "test" }],
+          jobs: [
+            { id: "lint", takesInput: false },
+            { id: "greet", takesInput: true },
+            { id: "test", takesInput: false },
+          ],
           matrices: [
             { id: "compat", axes: { node: ["20", "22"], os: ["linux"] } },
           ],
@@ -379,6 +387,8 @@ describe("the run-job function", () => {
             return `run ${message.pipelineId} ${message.status}`;
           case "job":
             return `job ${message.jobId} ${message.status}`;
+          case "activity":
+            return `activity ${message.jobId} ${message.text}`;
           case "command":
             return `command ${message.name} #${message.attempt} ${message.status}`;
         }
@@ -388,10 +398,12 @@ describe("the run-job function", () => {
       "run ci-run-job running",
       "job test running",
       "command pnpm install #1 running",
+      "activity test creating machine…",
       "command pnpm install #1 passed",
       "command pnpm test #1 running",
       "command pnpm test #1 passed",
       "job test passed",
+      "activity test pausing machine…",
       "run ci-run-job passed",
     ]);
   });

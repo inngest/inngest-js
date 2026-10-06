@@ -140,6 +140,10 @@ const jobBody = async ({
     ...(checkName ? { name: checkName } : {}),
   };
 
+  if (config.cache) {
+    run.ci.reporter.activity(run, scope.jobPath, "checking cache…");
+  }
+
   const cacheLookup = config.cache
     ? await lookupCache(scope, config.cache, input)
     : undefined;

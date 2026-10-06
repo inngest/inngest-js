@@ -1,7 +1,8 @@
 /**
- * One `inngest-ci` run, start to finish: set up the Dev Server and the app,
- * send the event, watch the run through the app's messages, and clean up. It
- * only talks to the outside through `SessionEvent`s.
+ * One `inngest-ci` session, start to finish: set up the Dev Server and the
+ * app, choose what to run, send the events, watch the runs through the app's
+ * messages, and clean up. It only talks to the outside through
+ * `SessionEvent`s and, for a person at a terminal, a `Prompter`.
  *
  * @module
  */
@@ -19,13 +20,24 @@ import { devServerRunUrl, errorMessage } from "../util.ts";
 import { startApp, waitForSync } from "./app.ts";
 import type { CliArgs } from "./args.ts";
 import { findGitRoot, findProjectRoot, loadConfig } from "./config.ts";
-import { resolveDevServerBin, startDevServer } from "./devServer.ts";
+import {
+  devServerDir,
+  resolveDevServerBin,
+  startDevServer,
+} from "./devServer.ts";
 import { cancelRun, findRun, sendEvent } from "./devServerApi.ts";
 import type {
   SessionConclusion,
   SessionEvent,
   SessionStage,
 } from "./events.ts";
+import {
+  checkFixtureName,
+  loadFixture,
+  loadFixtures,
+  saveFixture,
+} from "./fixtureStore.ts";
+import { flagInput, type RunInput, resolveInput } from "./input.ts";
 import { freePorts } from "./ports.ts";
 import {
   type GroupProcess,
@@ -33,17 +45,22 @@ import {
   reapStaleGroups,
   stopGroup,
 } from "./process.ts";
+import { type Pick, PromptCancelled, type Prompter } from "./prompter.ts";
 import { isTerminal } from "./render/model.ts";
 import { type ReporterServer, startReporterServer } from "./reporterServer.ts";
+import { combineConclusions, createRouter, type SentRun } from "./runs.ts";
 import { SetupError } from "./setupError.ts";
 import {
   buildJobEvent,
   buildPipelineEvent,
+  describeCombo,
   describeRepo,
+  type LocalEvent,
   type LocalRepo,
-  pickTrigger,
+  listTargets,
   resolveTarget,
   type Target,
+  targetsOf,
 } from "./target.ts";
 
 /** How long a cancelled run gets to destroy its Sandboxes. */
@@ -66,8 +83,11 @@ const messageGraceMs = 500;
 
 export interface SessionOptions {
   cwd: string;
+  /** Names this session's state file and Dev Server directory. */
+  sessionId: string;
   args: CliArgs;
-  interactive: boolean;
+  /** Asks the person questions. Without one, only the command line decides. */
+  prompter?: Prompter;
   /** Receives everything the renderers draw. */
   emit(event: SessionEvent): void;
   /** Aborted on Ctrl-C, `q` or SIGTERM. */
@@ -76,8 +96,14 @@ export interface SessionOptions {
 
 export interface SessionResult {
   conclusion: SessionConclusion;
-  /** The sent run's trace, when there is one. */
-  runUrl?: string;
+}
+
+/** What the session needs to know about each event it sent. */
+interface Sent extends SentRun {
+  /** What the view calls the run: the pipeline, or the job. */
+  label: string;
+  /** What to tell the user when the event starts no run. */
+  noRunFix: string;
 }
 
 const conclusionOf = (status: LocalStatus): SessionConclusion => {
@@ -97,17 +123,18 @@ const conclusionOf = (status: LocalStatus): SessionConclusion => {
  */
 const watchRun = async (opts: {
   devServerUrl: string;
-  eventId: string;
-  functionId: string;
-  reporter: ReporterServer;
+  run: Sent;
+  /** Registers the listener for this run's messages. */
+  onMessage(listener: (message: LocalMessage) => void): void;
+  /** Called once, when the run is first seen. */
+  onStart(): void;
   emit(event: SessionEvent): void;
   signal: AbortSignal;
-  /** What to tell the user when the event starts no run. */
-  noRunFix: string;
   /** The Dev Server and the app, which must stay up for the run to end. */
   processes: { name: string; proc: GroupProcess }[];
-}): Promise<SessionResult> => {
-  const { devServerUrl, eventId, functionId, reporter, emit } = opts;
+}): Promise<SessionConclusion> => {
+  const { devServerUrl, emit } = opts;
+  const { eventId, functionId, label } = opts.run;
   const startedAt = Date.now();
   const watching = new AbortController();
   let runId: string | undefined;
@@ -137,26 +164,31 @@ const watchRun = async (opts: {
     });
   };
 
-  // The event can start other pipelines too, like `docs` beside `pr`. Only
-  // the target's run is shown.
-  reporter.onMessage((message: LocalMessage) => {
-    if (message.kind === "manifest") {
-      return;
-    }
-
-    if (message.kind === "run" && message.pipelineId === functionId) {
+  const markSeen = () => {
+    if (!seen) {
       seen = true;
+
+      opts.onStart();
+    }
+  };
+
+  opts.onMessage((message: LocalMessage) => {
+    if (message.kind === "run") {
+      markSeen();
+
       runId = message.runId;
       runUrl = message.url;
 
       if (isTerminal(message.status)) {
         reportedStatus = message.status;
       }
+
+      emit({ ...message, pipelineId: label });
+
+      return;
     }
 
-    if (message.runId === runId) {
-      emit(message);
-    }
+    emit(message);
   });
 
   // The list, not `GET /v2/runs/{id}`: that answers COMPLETED while the run
@@ -197,10 +229,9 @@ const watchRun = async (opts: {
 
       if (!run && !seen && Date.now() - startedAt > startTimeoutMs) {
         fail(
-          new SetupError(
-            `Sending the event started no run of "${functionId}".`,
-            { fix: opts.noRunFix },
-          ),
+          new SetupError(`Sending the event started no run of "${label}".`, {
+            fix: opts.run.noRunFix,
+          }),
         );
 
         return;
@@ -211,13 +242,15 @@ const watchRun = async (opts: {
       // A pipeline with `check: false` sends no messages, so the run is only
       // ever seen here.
       if (run && !seen) {
-        seen = true;
+        markSeen();
+
         runUrl = devServerRunUrl(devServerUrl, run.id);
 
         emit({
           kind: "run",
           runId: run.id,
-          pipelineId: functionId,
+          eventId,
+          pipelineId: label,
           status: "running",
           url: runUrl,
           at: Date.now(),
@@ -235,7 +268,8 @@ const watchRun = async (opts: {
           emit({
             kind: "run",
             runId: run.id,
-            pipelineId: functionId,
+            eventId,
+            pipelineId: label,
             status: run.terminal,
             url: runUrl ?? devServerRunUrl(devServerUrl, run.id),
             at: Date.now(),
@@ -282,15 +316,68 @@ const watchRun = async (opts: {
         await Promise.race([ended, pause(cancelGraceMs)]);
       }
 
-      return { conclusion: "cancelled", runUrl };
+      return "cancelled";
     }
 
-    return {
-      conclusion: conclusionOf(await Promise.race([ended, failed])),
-      runUrl,
-    };
+    return conclusionOf(await Promise.race([ended, failed]));
   } finally {
     watching.abort();
+  }
+};
+
+/**
+ * Watch every sent run at once, and say how they went together. A failure to
+ * watch one waits for the others to notice too, then is thrown.
+ */
+const watchRuns = async (opts: {
+  devServerUrl: string;
+  sent: Sent[];
+  reporter: ReporterServer;
+  onStart(): void;
+  emit(event: SessionEvent): void;
+  signal: AbortSignal;
+  processes: { name: string; proc: GroupProcess }[];
+}): Promise<SessionConclusion> => {
+  const route = createRouter(opts.sent);
+  const listeners = new Map<Sent, (message: LocalMessage) => void>();
+
+  // The event can start other pipelines too, like `docs` beside `pr`. Only
+  // the sent runs are shown.
+  const stopListening = opts.reporter.onMessage((message) => {
+    const run = route(message);
+
+    if (run) {
+      listeners.get(run)?.(message);
+    }
+  });
+
+  try {
+    const results = await Promise.allSettled(
+      opts.sent.map((run) => {
+        return watchRun({
+          ...opts,
+          run,
+          onMessage: (listener) => {
+            listeners.set(run, listener);
+          },
+        });
+      }),
+    );
+    const rejected = results.find((result) => {
+      return result.status === "rejected";
+    });
+
+    if (rejected) {
+      throw rejected.reason;
+    }
+
+    return combineConclusions(
+      results.map((result) => {
+        return (result as PromiseFulfilledResult<SessionConclusion>).value;
+      }),
+    );
+  } finally {
+    stopListening();
   }
 };
 
@@ -319,18 +406,41 @@ const noRunFix = (
   ].join("\n");
 };
 
-const execute = async (
+const emitStage = (
+  emit: (event: SessionEvent) => void,
+  name: SessionStage,
+  status: "running" | "done" | "failed",
+  detail?: string,
+): void => {
+  emit({ kind: "stage", stage: name, status, detail, at: Date.now() });
+};
+
+/** What the first part of a session leaves running for the rest. */
+interface Booted {
+  dir: string;
+  devServerUrl: string;
+  processes: { name: string; proc: GroupProcess }[];
+  reporter: ReporterServer;
+  manifest: Awaited<ReturnType<typeof waitForSync>>;
+  repoRoot: string;
+  repo: LocalRepo;
+}
+
+/**
+ * Start the Dev Server and the app, wait for the sync and the manifest, and
+ * read the repository. Everything it starts is stopped by `onCleanup`.
+ */
+const boot = async (
   opts: SessionOptions,
   onCleanup: (cleanup: () => Promise<void>) => void,
-): Promise<SessionResult> => {
-  const { args, emit } = opts;
-
+): Promise<Booted> => {
+  const { emit } = opts;
   const stage = (
     name: SessionStage,
     status: "running" | "done" | "failed",
     detail?: string,
   ) => {
-    emit({ kind: "stage", stage: name, status, detail, at: Date.now() });
+    emitStage(emit, name, status, detail);
   };
 
   stage("config", "running");
@@ -373,6 +483,7 @@ const execute = async (
   const devServer = await startDevServer({
     config,
     bin,
+    sqliteDir: devServerDir(config.dir, opts.sessionId),
     appPort,
     ports: {
       main,
@@ -388,8 +499,13 @@ const execute = async (
   stage("dev-server", "done", devServer.url);
   stage("app", "running");
 
+  // The app can sit below the repository root, but the run uploads the whole
+  // repository.
+  const repoRoot = await findGitRoot(root);
+
   const app = startApp({
     config,
+    gitRoot: repoRoot,
     port: appPort,
     devServerUrl: devServer.url,
     reporterUrl: reporter.url,
@@ -408,72 +524,274 @@ const execute = async (
 
   stage("sync", "done");
 
-  const target = resolveTarget(manifest, args);
-  // The app can sit below the repository root, but the run uploads the whole
-  // repository.
-  const repoRoot = await findGitRoot(root);
   const repo = await describeRepo(repoRoot);
-  let event;
-  let trigger: string | undefined;
-
-  if (target.kind === "pipeline") {
-    trigger = pickTrigger(target.triggers, {
-      event: args.event,
-      interactive: opts.interactive,
-    });
-
-    event = await buildPipelineEvent({
-      trigger,
-      data: args.data,
-      cwd: repoRoot,
-    });
-  } else {
-    event = buildJobEvent({
-      target,
-      repo,
-      input: args.input,
-      combo: args.combo,
-    });
-  }
 
   emit({
     kind: "ready",
     devServerUrl: devServer.url,
+    devServerDir: devServer.dir,
     repo: {
       fullName: repo.fullName,
       ref: repo.ref,
       sha: repo.sha,
       dirty: repo.dirty,
     },
-    target: { kind: target.kind, id: target.id, trigger },
     at: Date.now(),
   });
 
-  stage("send", "running");
-
-  const eventId = await sendEvent(devServer.url, event);
-
-  stage("send", "done");
-
-  return watchRun({
+  return {
+    dir: config.dir,
     devServerUrl: devServer.url,
-    eventId,
-    functionId: target.kind === "pipeline" ? target.id : runJobFunctionId,
-    reporter,
-    emit,
-    signal: opts.signal,
-    noRunFix: noRunFix(target, trigger, repo),
     processes: [
       { name: "Dev Server", proc: devServer.process },
       { name: "app", proc: app },
     ],
+    reporter,
+    manifest,
+    repoRoot,
+    repo,
+  };
+};
+
+/** One thing to run, with everything its event needs. */
+interface Plan {
+  target: Target;
+  input: RunInput;
+  /** Whether the person typed any of the input, which makes it worth saving. */
+  entered: boolean;
+  event: LocalEvent;
+  label: string;
+}
+
+/** Resolve a target's input and build the event that runs it. */
+const planTarget = async (
+  booted: Booted,
+  opts: SessionOptions,
+  pick: { target: Target; flags: RunInput },
+): Promise<Plan> => {
+  const { target, flags } = pick;
+  const { args, prompter } = opts;
+  const { input, entered } = await resolveInput({
+    target,
+    flags,
+    fixture: args.fixture
+      ? loadFixture(booted.dir, target.id, args.fixture)
+      : undefined,
+    saved: prompter ? loadFixtures(booted.dir, target.id) : {},
+    ask: prompter,
   });
+
+  if (target.kind === "pipeline") {
+    return {
+      target,
+      input,
+      entered,
+      event: await buildPipelineEvent({
+        trigger: input.trigger as string,
+        data: input.data,
+        cwd: booted.repoRoot,
+      }),
+      label: target.id,
+    };
+  }
+
+  return {
+    target,
+    input,
+    entered,
+    event: buildJobEvent({
+      target,
+      repo: booted.repo,
+      input: input.input,
+      combo: input.combo,
+    }),
+    label:
+      input.combo && Object.keys(input.combo).length > 0
+        ? `${target.id} (${describeCombo(input.combo)})`
+        : target.id,
+  };
+};
+
+/**
+ * Ask whether to keep what was typed for each plan. Backing out of the
+ * question only skips it.
+ */
+const offerFixtures = async (
+  booted: Booted,
+  prompter: Prompter,
+  plans: Plan[],
+): Promise<void> => {
+  for (const plan of plans.filter((candidate) => {
+    return candidate.entered;
+  })) {
+    const name = await prompter
+      .line(
+        `Save the data for ${plan.target.id} as a fixture? Name`,
+        (text) => {
+          return text === "" ? undefined : checkFixtureName(text);
+        },
+      )
+      .catch(() => {
+        return "";
+      });
+
+    if (name) {
+      saveFixture({
+        dir: booted.dir,
+        targetId: plan.target.id,
+        name,
+        input: plan.input,
+        now: Date.now(),
+      });
+    }
+  }
+};
+
+/** Choose what to run, send it, and watch it end. */
+const runRound = async (
+  booted: Booted,
+  opts: SessionOptions,
+): Promise<SessionResult> => {
+  const { args, emit, prompter } = opts;
+  const { devServerUrl, repo } = booted;
+  const named = Boolean(args.name || args.pipeline || args.job);
+
+  // `execute` makes sure there's a prompter when nothing is named.
+  const picks: Pick[] = named
+    ? [{ target: resolveTarget(booted.manifest, args) }]
+    : await (prompter as Prompter).pick(targetsOf(booted.manifest));
+  const plans: Plan[] = [];
+
+  for (const { target, combo } of picks) {
+    plans.push(
+      await planTarget(booted, opts, {
+        target,
+        flags: named ? flagInput(args, target) : { combo },
+      }),
+    );
+  }
+
+  emit({
+    kind: "targets",
+    targets: plans.map(({ target, input }) => {
+      return { kind: target.kind, id: target.id, trigger: input.trigger };
+    }),
+    at: Date.now(),
+  });
+
+  emitStage(emit, "send", "running");
+
+  const eventIds = await Promise.all(
+    plans.map(({ event }) => {
+      return sendEvent(devServerUrl, event);
+    }),
+  );
+
+  emitStage(emit, "send", "done");
+
+  const sent = plans.map((plan, index): Sent => {
+    return {
+      eventId: eventIds[index] as string,
+      functionId:
+        plan.target.kind === "pipeline" ? plan.target.id : runJobFunctionId,
+      label: plan.label,
+      noRunFix: noRunFix(plan.target, plan.input.trigger, repo),
+    };
+  });
+  let started = 0;
+
+  emitStage(
+    emit,
+    "start",
+    "running",
+    `${sent.map((run) => run.label).join(", ")} to start…`,
+  );
+
+  let conclusion: SessionConclusion;
+
+  try {
+    conclusion = await watchRuns({
+      devServerUrl,
+      sent,
+      reporter: booted.reporter,
+      onStart: () => {
+        started += 1;
+
+        if (started === sent.length) {
+          emitStage(emit, "start", "done");
+        }
+      },
+      emit,
+      signal: opts.signal,
+      processes: booted.processes,
+    });
+  } catch (error) {
+    if (started < sent.length) {
+      emitStage(emit, "start", "failed");
+    }
+
+    throw error;
+  }
+
+  emit({ kind: "done", conclusion, at: Date.now() });
+
+  if (prompter && !opts.signal.aborted) {
+    await offerFixtures(booted, prompter, plans);
+  }
+
+  return { conclusion };
+};
+
+const execute = async (
+  opts: SessionOptions,
+  onCleanup: (cleanup: () => Promise<void>) => void,
+): Promise<SessionResult> => {
+  const { args, emit, prompter } = opts;
+  const named = Boolean(args.name || args.pipeline || args.job);
+  const booted = await boot(opts, onCleanup);
+
+  if (!named && !prompter) {
+    const [first] = targetsOf(booted.manifest);
+
+    throw new SetupError("No pipeline or job to run was given.", {
+      fix: `${listTargets(booted.manifest)}\n\nRun one, like: inngest-ci ${first?.id ?? "<name>"}`,
+    });
+  }
+
+  if (args.fixture && !named) {
+    throw new SetupError("--fixture needs a pipeline or job to use it with.");
+  }
+
+  let result: SessionResult | undefined;
+
+  try {
+    do {
+      result = await runRound(booted, opts);
+    } while (
+      prompter &&
+      !opts.signal.aborted &&
+      (await prompter.linger(!named))
+    );
+  } catch (error) {
+    // Backing out of a question ends the session, with the last runs' result.
+    if (!(error instanceof PromptCancelled)) {
+      throw error;
+    }
+  }
+
+  if (!result) {
+    result = { conclusion: "cancelled" };
+
+    emit({ kind: "done", ...result, at: Date.now() });
+  }
+
+  return result;
 };
 
 /**
  * Run the session. It never throws: a failure to set up is a `setup-error`
- * event and a `"setup-error"` conclusion. Always ends with a `done` event,
- * after the Dev Server and the app are stopped.
+ * event and a `"setup-error"` conclusion. Every session ends with a `done`
+ * event, and the Dev Server and the app are stopped before it returns.
  */
 export const runSession = async (
   opts: SessionOptions,
@@ -497,27 +815,17 @@ export const runSession = async (
     });
 
     result = { conclusion: "setup-error" };
+
+    opts.emit({ kind: "done", ...result, at: Date.now() });
   }
 
-  opts.emit({
-    kind: "stage",
-    stage: "cleanup",
-    status: "running",
-    at: Date.now(),
-  });
+  emitStage(opts.emit, "cleanup", "running");
 
   for (const cleanup of cleanups.reverse()) {
     await cleanup();
   }
 
-  opts.emit({
-    kind: "stage",
-    stage: "cleanup",
-    status: "done",
-    at: Date.now(),
-  });
-
-  opts.emit({ kind: "done", ...result, at: Date.now() });
+  emitStage(opts.emit, "cleanup", "done");
 
   return result;
 };

@@ -66,19 +66,48 @@ export const oneLine = (text: string): string => {
   return stripVTControlCharacters(text).replace(/\s+/g, " ").trim();
 };
 
-/** What a run is of, like `pull_request.opened · main @ 70f798f + uncommitted`. */
-export const describeTarget = (
-  header: Extract<SessionEvent, { kind: "ready" }>,
+type Ready = Extract<SessionEvent, { kind: "ready" }>;
+type Targets = Extract<SessionEvent, { kind: "targets" }>["targets"];
+
+/**
+ * What the runs are of, like `pull_request.opened · main @ 70f798f +
+ * uncommitted`. The trigger is only said for a single target.
+ */
+export const describeTargets = (
+  repo: Ready["repo"],
+  targets: Targets = [],
 ): string => {
-  const { target, repo } = header;
   const sha = repo.sha.slice(0, 7);
 
   return [
-    target.trigger,
+    targets.length === 1 ? targets[0]?.trigger : undefined,
     `${repo.ref} @ ${sha}${repo.dirty ? " + uncommitted" : ""}`,
   ]
     .filter(Boolean)
     .join(" · ");
+};
+
+/** Fit styled segments to `width`, cutting the last one that overflows. */
+export const compose = (
+  width: number,
+  paint: Paint,
+  segments: { text: string; style?: Style }[],
+): string => {
+  let remaining = width;
+  let line = "";
+
+  for (const { text, style } of segments) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const fitted = truncate(text, remaining);
+
+    line += style ? paint(style, fitted) : fitted;
+    remaining -= fitted.length;
+  }
+
+  return line;
 };
 
 /** Spinner frames, picked by the clock so every spinner turns in step. */

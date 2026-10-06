@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "vitest";
 import type { SessionEvent } from "../events.ts";
-import { initialModel, type Model, reduce } from "./model.ts";
+import { initialModel, type Model, reduce, runsStartedAt } from "./model.ts";
 
 const play = (events: SessionEvent[]): Model => {
   return events.reduce(reduce, initialModel);
@@ -15,6 +15,7 @@ const play = (events: SessionEvent[]): Model => {
 const run = (status: "running" | "passed" | "failed", at: number) => {
   return {
     kind: "run",
+    eventId: "e1",
     runId: "r1",
     pipelineId: "pr",
     status,
@@ -123,19 +124,44 @@ describe("reduce", () => {
     expect(model.runs).toEqual([]);
   });
 
-  test("names a single-job run after its target", () => {
+  test("starts over when new targets are chosen", () => {
     const model = play([
-      {
-        kind: "ready",
-        devServerUrl: "http://dev",
-        repo: { fullName: "a/b", ref: "main", sha: "abc", dirty: false },
-        target: { kind: "job", id: "lint" },
-        at: 0,
-      },
-      { ...run("running", 1), pipelineId: "ci-run-job" },
+      run("running", 1),
+      run("passed", 2),
+      { kind: "done", conclusion: "passed", at: 3 },
+      { kind: "targets", targets: [{ kind: "job", id: "lint" }], at: 4 },
     ]);
 
-    expect(model.runs[0]?.name).toBe("lint");
+    expect(model).toMatchObject({
+      runs: [],
+      conclusion: undefined,
+      endedAt: undefined,
+      targets: { at: 4 },
+    });
+    expect(runsStartedAt(model)).toBe(4);
+  });
+
+  test("shows an activity until a command or the end of the job", () => {
+    const activity = (text: string, at: number): SessionEvent => {
+      return { kind: "activity", runId: "r1", jobId: "test", text, at };
+    };
+    const jobActivity = (events: SessionEvent[]) => {
+      return play([run("running", 0), job("test", "running", 1), ...events])
+        .runs[0]?.jobs[0]?.activity;
+    };
+
+    expect(jobActivity([activity("creating machine…", 2)])).toBe(
+      "creating machine…",
+    );
+    expect(
+      jobActivity([activity("creating machine…", 2), command(1, "running", 3)]),
+    ).toBeUndefined();
+    expect(
+      jobActivity([activity("pausing machine…", 2), job("test", "passed", 3)]),
+    ).toBeUndefined();
+    expect(
+      jobActivity([job("test", "passed", 2), activity("pausing machine…", 3)]),
+    ).toBeUndefined();
   });
 
   test("tracks stages and keeps their detail", () => {
@@ -167,11 +193,10 @@ describe("reduce", () => {
     const model = play([
       run("running", 0),
       run("failed", 9),
-      { kind: "done", conclusion: "failed", runUrl: "http://run", at: 10 },
+      { kind: "done", conclusion: "failed", at: 10 },
     ]);
 
     expect(model.runs[0]).toMatchObject({ status: "failed", endedAt: 9 });
-    expect(model.runUrl).toBe("http://run");
   });
 
   test("ignores the manifest and doesn't mutate the previous model", () => {

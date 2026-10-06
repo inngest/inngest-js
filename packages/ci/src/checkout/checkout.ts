@@ -7,7 +7,11 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
-import type { CiRunScope, MachineHandle } from "../pipeline/scope.ts";
+import type {
+  CiJobScope,
+  CiRunScope,
+  MachineHandle,
+} from "../pipeline/scope.ts";
 import {
   countApi,
   defaultCwd,
@@ -83,9 +87,15 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
   const machine = await ensureMachine(scope);
   const stepId = `${scope.path}${scopeSeparator}checkout`;
 
+  run.ci.reporter.activity(
+    run,
+    scope.jobPath,
+    local ? "uploading working tree…" : "cloning repository…",
+  );
+
   await run.step.run({ id: stepId, name: stepId }, async () => {
     if (local) {
-      return uploadWorkingTree(run, machine, local.path, target);
+      return uploadWorkingTree(scope, machine, local.path, target);
     }
 
     return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
@@ -105,11 +115,12 @@ const getSandbox = async (run: CiRunScope, machine: MachineHandle) => {
 };
 
 const uploadWorkingTree = async (
-  run: CiRunScope,
+  scope: CiJobScope,
   machine: MachineHandle,
   localPath: string,
   target: string,
 ) => {
+  const { run } = scope;
   const tarball = await buildWorkingTreeTarball(localPath);
 
   if (tarball.byteLength > maxUploadBytes) {
@@ -117,6 +128,12 @@ const uploadWorkingTree = async (
       `The working tree is ${Math.round(tarball.byteLength / 1024 / 1024)} MiB, and uploads are limited to 100 MiB. Trim it, or use a GitHub checkout.`,
     );
   }
+
+  run.ci.reporter.activity(
+    run,
+    scope.jobPath,
+    `uploading working tree (${Math.round(tarball.byteLength / 1024 / 1024)} MB)…`,
+  );
 
   const sandbox = await getSandbox(run, machine);
 

@@ -12,7 +12,10 @@ const scopeWith = (pause: () => Promise<unknown>) => {
   return {
     path: "test",
     machine: Promise.resolve({ sandbox: { pause } }),
-    run: { warnings: [] as string[] },
+    run: {
+      warnings: [] as string[],
+      ci: { reporter: { activity: vi.fn() } },
+    },
   } as unknown as CiJobScope;
 };
 

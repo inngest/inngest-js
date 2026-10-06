@@ -79,6 +79,14 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
 
+  run.ci.reporter.activity(
+    run,
+    scope.jobPath,
+    scope.fromSnapshotId
+      ? `restoring ${scope.fromJobIds[0]} snapshot…`
+      : "creating machine…",
+  );
+
   const sandbox = scope.fromSnapshotId
     ? await tools.create(stepId, {
         name,
@@ -121,6 +129,12 @@ export const pauseMachine = async (scope: CiJobScope): Promise<void> => {
 
   try {
     const machine = await scope.machine;
+
+    scope.run.ci.reporter.activity(
+      scope.run,
+      scope.jobPath,
+      "pausing machine…",
+    );
 
     await machine.sandbox.pause(`${scope.path}${scopeSeparator}pause`, {
       timeout: pauseTimeoutMs,
@@ -178,6 +192,8 @@ const createSnapshot = async (
   if (run.snapshotsUnavailable) {
     return undefined;
   }
+
+  run.ci.reporter.activity(run, jobPath, "snapshotting machine…");
 
   try {
     // A paused machine has to be running again before it can be snapshotted.

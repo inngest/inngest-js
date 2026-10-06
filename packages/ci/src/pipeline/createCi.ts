@@ -323,8 +323,9 @@ export const createCiWithStore = (
       reporter.manifest(() => {
         return {
           pipelines: manifestPipelines,
-          jobs: [...jobs.keys()].map((id) => {
-            return { id };
+          jobs: [...jobs.values()].map(({ id, handler }) => {
+            // A handler that declares a parameter takes an input.
+            return { id, takesInput: handler.length > 0 };
           }),
           matrices: manifestMatrices,
         };

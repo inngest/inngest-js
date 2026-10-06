@@ -7,7 +7,6 @@
  */
 
 import type { LocalStatus } from "../../local/protocol.ts";
-import { runJobFunctionId } from "../../local/protocol.ts";
 import type { SessionConclusion, SessionEvent } from "../events.ts";
 
 export type StageName = Extract<SessionEvent, { kind: "stage" }>["stage"];
@@ -35,6 +34,8 @@ export interface JobView {
   /** The job it started `from()`, when known. */
   parentId?: string;
   title?: string;
+  /** What it's doing while no command runs. A command message clears it. */
+  activity?: string;
   /** In order of first appearance. */
   commands: CommandView[];
   startedAt: number;
@@ -56,6 +57,8 @@ export interface RunView {
 
 export interface Model {
   header?: Extract<SessionEvent, { kind: "ready" }>;
+  /** What's being run, once chosen. */
+  targets?: Extract<SessionEvent, { kind: "targets" }>;
   /** In order of first appearance. */
   stages: StageView[];
   /** In order of first appearance. */
@@ -64,7 +67,6 @@ export interface Model {
   projectRoot?: string;
   setupError?: Extract<SessionEvent, { kind: "setup-error" }>;
   conclusion?: SessionConclusion;
-  runUrl?: string;
   /** The first event's time, for the total duration. */
   startedAt?: number;
   /** Set by `done`. */
@@ -80,6 +82,11 @@ export const isTerminal = (status: LocalStatus): boolean => {
 };
 
 export const initialModel: Model = { stages: [], runs: [] };
+
+/** When the current runs began: the session's start, until they're chosen. */
+export const runsStartedAt = (model: Model): number => {
+  return model.targets?.at ?? model.startedAt ?? 0;
+};
 
 /**
  * Replace the item matching `match`, or append the item `create` makes. The
@@ -213,21 +220,21 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
       return { ...next, header: event };
     }
 
-    case "done": {
+    case "targets": {
       return {
         ...next,
-        conclusion: event.conclusion,
-        runUrl: event.runUrl,
-        endedAt: event.at,
+        targets: event,
+        runs: [],
+        conclusion: undefined,
+        endedAt: undefined,
       };
     }
 
-    case "run": {
-      const name =
-        event.pipelineId === runJobFunctionId
-          ? (next.header?.target.id ?? event.pipelineId)
-          : event.pipelineId;
+    case "done": {
+      return { ...next, conclusion: event.conclusion, endedAt: event.at };
+    }
 
+    case "run": {
       return {
         ...next,
         runs: upsert(
@@ -238,7 +245,7 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
           () => {
             return {
               runId: event.runId,
-              name,
+              name: event.pipelineId,
               status: event.status,
               url: event.url,
               jobs: [],
@@ -283,10 +290,25 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
                 startedAt: startedAt(job, event.status, event.at),
                 parentId: event.parentId ?? job.parentId,
                 title: event.title ?? job.title,
+                activity: isTerminal(event.status) ? undefined : job.activity,
                 endedAt: endedAt(event.status, event.at),
               };
             },
           ),
+        };
+      });
+    }
+
+    case "activity": {
+      return updateRun(next, event.runId, (run) => {
+        return {
+          ...run,
+          jobs: run.jobs.map((job) => {
+            // A finished job's machine is still being paused.
+            return job.jobId === event.jobId && !isTerminal(job.status)
+              ? { ...job, activity: event.text }
+              : job;
+          }),
         };
       });
     }
@@ -296,7 +318,9 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
         return {
           ...run,
           jobs: run.jobs.map((job) => {
-            return job.jobId === event.jobId ? reduceCommand(job, event) : job;
+            return job.jobId === event.jobId
+              ? { ...reduceCommand(job, event), activity: undefined }
+              : job;
           }),
         };
       });

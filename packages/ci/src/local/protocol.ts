@@ -51,6 +51,12 @@ export interface LocalManifest {
   }[];
   jobs: {
     id: string;
+    /**
+     * Whether the job's handler declares a parameter. Read from its arity,
+     * so a handler that only uses `arguments` or a rest parameter reads as
+     * taking none.
+     */
+    takesInput: boolean;
   }[];
   matrices: {
     id: string;
@@ -79,6 +85,8 @@ export type LocalMessage =
   | {
       kind: "run";
       runId: string;
+      /** The event that started the run, which tells runs of one function apart. */
+      eventId: string;
       /** The pipeline's ID, or {@link runJobFunctionId}. */
       pipelineId: string;
       status: LocalStatus;
@@ -97,6 +105,14 @@ export type LocalMessage =
       parentId?: string;
       /** The check title, like `` `pnpm test` exited with 1 ``. */
       title?: string;
+      at: number;
+    }
+  | {
+      kind: "activity";
+      runId: string;
+      jobId: string;
+      /** What the job is doing while no command runs, like `creating machine…`. */
+      text: string;
       at: number;
     }
   | {

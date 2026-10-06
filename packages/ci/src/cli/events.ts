@@ -7,6 +7,7 @@
  */
 
 import type { LocalMessage } from "../local/protocol.ts";
+import type { Prompter } from "./prompter.ts";
 
 /** A step the CLI takes before the run starts, and on the way out. */
 export type SessionStage =
@@ -15,6 +16,7 @@ export type SessionStage =
   | "app"
   | "sync"
   | "send"
+  | "start"
   | "cleanup";
 
 export type SessionEvent =
@@ -47,17 +49,26 @@ export type SessionEvent =
       kind: "ready";
       /** The Dev Server's UI, like `http://127.0.0.1:24288`. */
       devServerUrl: string;
-      /** The working tree the run uses, for the header. */
+      /** The Dev Server's database, which keeps this session's runs. */
+      devServerDir: string;
+      /** The working tree the runs use, for the header. */
       repo: { fullName: string; ref: string; sha: string; dirty: boolean };
-      /** What's being run, for the header. */
-      target: { kind: "pipeline" | "job"; id: string; trigger?: string };
       at: number;
     }
   | {
+      /** What's about to run. Starts a new set of runs, like after `r`. */
+      kind: "targets";
+      targets: {
+        kind: "pipeline" | "job";
+        id: string;
+        trigger?: string;
+      }[];
+      at: number;
+    }
+  | {
+      /** Every run the session started has ended, or it couldn't go on. */
       kind: "done";
       conclusion: SessionConclusion;
-      /** The sent run's trace, when there is one. */
-      runUrl?: string;
       at: number;
     };
 
@@ -74,8 +85,8 @@ export interface Renderer {
   close(): Promise<void>;
 }
 
-/** The interactive view, which also takes keys. */
-export interface InteractiveRenderer extends Renderer {
+/** The interactive view, which also takes keys and asks the questions. */
+export interface InteractiveRenderer extends Renderer, Prompter {
   /** Called on `q` or Ctrl-C. */
   onQuit(callback: () => void): void;
 }

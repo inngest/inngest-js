@@ -9,7 +9,8 @@
 
 import type { LocalStatus } from "../../local/protocol.ts";
 import {
-  describeTarget,
+  compose,
+  describeTargets,
   formatElapsed,
   oneLine,
   type Paint,
@@ -22,11 +23,12 @@ import {
   type JobView,
   type Model,
   type RunView,
+  runsStartedAt,
   type StageName,
 } from "./model.ts";
 
 /** Frames are never wider than this, however wide the terminal is. */
-const maxWidth = 80;
+export const maxWidth = 80;
 
 /** Lines of a failed command's output to show under its job. */
 const tailLines = 8;
@@ -37,6 +39,7 @@ const stageLabels: Record<StageName, string> = {
   app: "App",
   sync: "Sync",
   send: "Run",
+  start: "Waiting",
   cleanup: "Cleanup",
 };
 
@@ -89,6 +92,10 @@ const jobDetail = (job: JobView): string => {
   }
 
   const command = job.commands.at(-1);
+
+  if (job.activity) {
+    return oneLine(job.activity);
+  }
 
   if (command) {
     return commandText(command);
@@ -205,52 +212,45 @@ const rowsOf = (model: Model, clock: number): Row[] => {
   return [...stages, ...runs];
 };
 
-/** Fit styled segments to `width`, cutting the last one that overflows. */
-const compose = (
-  width: number,
+/** The two lines every frame starts with: what's run, and where. */
+export const headerLines = (
+  model: Model,
+  frameWidth: number,
   paint: Paint,
-  segments: { text: string; style?: Parameters<Paint>[0] }[],
-): string => {
-  let remaining = width;
-  let line = "";
-
-  for (const { text, style } of segments) {
-    if (remaining <= 0) {
-      break;
-    }
-
-    const fitted = truncate(text, remaining);
-
-    line += style ? paint(style, fitted) : fitted;
-    remaining -= fitted.length;
-  }
-
-  return line;
-};
-
-const headerLines = (model: Model, width: number, paint: Paint): string[] => {
-  const { header } = model;
+): string[] => {
+  const width = frameWidth - 2;
+  const { header, targets } = model;
 
   if (!header) {
     return [];
   }
 
-  const { target, devServerUrl } = header;
+  const { devServerUrl } = header;
+  const ids = (targets?.targets ?? [])
+    .map((target) => {
+      return target.id;
+    })
+    .join(", ");
   const app = model.stages.find((stage) => {
     return stage.stage === "app";
   })?.detail;
 
   return [
     compose(width, paint, [
-      { text: `inngest-ci ${target.id}`, style: "bold" },
-      { text: `  ${describeTarget(header)}`, style: "dim" },
+      { text: `inngest-ci${ids && ` ${ids}`}`, style: "bold" },
+      {
+        text: `  ${describeTargets(header.repo, targets?.targets)}`,
+        style: "dim",
+      },
     ]),
     compose(width, paint, [
       { text: "Dev Server", style: "dim" },
       { text: `  ${devServerUrl}` },
       ...(app ? [{ text: `   app  ${app}`, style: "dim" as const }] : []),
     ]),
-  ];
+  ].map((line) => {
+    return `  ${line}`;
+  });
 };
 
 const formatRow = (
@@ -340,20 +340,22 @@ const summaryLines = (model: Model, width: number, paint: Paint): string[] => {
     return [];
   }
 
-  const took = formatElapsed((model.endedAt ?? 0) - (model.startedAt ?? 0));
+  const took = formatElapsed((model.endedAt ?? 0) - runsStartedAt(model));
   const outcome = {
     passed: paint("green", "✓ Passed"),
     failed: paint("red", "✕ Failed"),
     cancelled: paint("yellow", "⊘ Cancelled"),
   }[conclusion];
 
+  const [run] = model.runs;
+
   return [
     `  ${outcome} ${paint("dim", `in ${took}`)}`,
-    ...(model.runUrl
+    ...(run && model.runs.length === 1
       ? [
           `  ${compose(width - 2, paint, [
-            { text: "Trace  ", style: "dim" },
-            { text: model.runUrl },
+            { text: "Open later  ", style: "dim" },
+            { text: `inngest-ci open ${run.runId}` },
           ])}`,
         ]
       : []),
@@ -394,9 +396,7 @@ export const frame = (model: Model, options: FrameOptions): string[] => {
     ];
   });
   const sections = [
-    headerLines(model, width - 2, paint).map((line) => {
-      return `  ${line}`;
-    }),
+    headerLines(model, width, paint),
     body,
     setupErrorLines(model, width, paint),
     summaryLines(model, width, paint),

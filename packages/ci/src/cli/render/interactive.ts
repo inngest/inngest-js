@@ -1,7 +1,9 @@
 /**
  * The interactive renderer: a live tree redrawn in place on a terminal, with
- * spinners, a highlighted row and a few keys. When the session is done it
- * leaves a still frame behind and gives the terminal back.
+ * spinners, a highlighted row and a few keys. It also asks the session's
+ * questions (the picker, a choice, a line of text) in the same frame, and
+ * when everything has run it stays open, with the Dev Server still up, until
+ * `q`. It gives the terminal back and leaves a still frame when it closes.
  *
  * @module
  */
@@ -9,6 +11,12 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 import { stripVTControlCharacters } from "node:util";
 import type { InteractiveRenderer } from "../events.ts";
+import { choiceLines, createChoice, reduceChoice } from "../prompt/choice.ts";
+import type { Outcome } from "../prompt/outcome.ts";
+import { createPicker, reducePicker } from "../prompt/picker.ts";
+import { pickerLines } from "../prompt/pickerView.ts";
+import { createText, reduceText, textLines } from "../prompt/text.ts";
+import { PromptCancelled } from "../prompter.ts";
 import {
   createPaint,
   spinnerAt,
@@ -17,12 +25,13 @@ import {
 } from "./format.ts";
 import { initialModel, reduce } from "./model.ts";
 import { openUrl } from "./open.ts";
-import { frame, selectableRunIds } from "./view.ts";
+import { frame, headerLines, maxWidth, selectableRunIds } from "./view.ts";
 
 /** The fastest events redraw the screen, so a burst of them draws once. */
 const minRedrawInterval = 50;
 
-const hint = "↑↓ select · enter open trace · q quit";
+/** How long a message about a link that wouldn't open stays in the footer. */
+const noticeMs = 6000;
 
 const hideCursor = "\x1b[?25l";
 const showCursor = "\x1b[?25h";
@@ -31,7 +40,18 @@ const showCursor = "\x1b[?25h";
 const beginUpdate = "\x1b[?2026h";
 const endUpdate = "\x1b[?2026l";
 
-export const createInteractiveRenderer = (): InteractiveRenderer => {
+/** A question on screen, which takes the keys until it's answered. */
+interface Modal {
+  /** Replaces the live view under the header, rather than sitting below it. */
+  replacesView: boolean;
+  lines(size: { width: number; height: number }): string[];
+  key(key: Key): void;
+}
+
+/** `signal` aborts the questions too, so quitting never waits on an answer. */
+export const createInteractiveRenderer = (
+  signal: AbortSignal,
+): InteractiveRenderer => {
   const { stdin, stdout } = process;
   const paint = createPaint(supportsColor(stdout));
   let model = initialModel;
@@ -41,24 +61,71 @@ export const createInteractiveRenderer = (): InteractiveRenderer => {
   let previous: string[] = [];
   let previousKey = "";
   let finished: Promise<void> | undefined;
+  let modal: Modal | undefined;
+  /** Set once everything has run and the view is waiting for `r` or `q`. */
+  let waiting: { again: boolean; resolve(again: boolean): void } | undefined;
+  let notice: { text: string; until: number } | undefined;
+
+  const hint = (now: number): string | undefined => {
+    if (notice && now < notice.until) {
+      return notice.text;
+    }
+
+    if (waiting) {
+      return `↑↓ select · enter open trace · ${waiting.again ? "r pick again · " : ""}q quit`;
+    }
+
+    return "↑↓ select · enter open trace · q cancel";
+  };
+
+  /** The lines of the current screen. */
+  const compose = (now: number, final: boolean): string[] => {
+    const columns = stdout.columns ?? 80;
+    // One short of the terminal, so a full line never leaves the cursor in
+    // the pending-wrap state, where clearing the line eats its last cell.
+    const width = columns - 1;
+    const rows = Math.max(1, (stdout.rows ?? 24) - 1);
+    const live = frame(model, {
+      width,
+      now,
+      spinner: final ? undefined : spinnerAt(now),
+      selected: final || modal ? undefined : selected,
+      hint: final || modal || model.runs.length === 0 ? undefined : hint(now),
+      paint,
+    });
+
+    if (!modal) {
+      return final ? live : live.slice(-rows);
+    }
+
+    if (!modal.replacesView) {
+      return [...live, "", ...modal.lines({ width, height: rows })].slice(
+        -rows,
+      );
+    }
+
+    // The picker comes before the next targets, so it doesn't name the last ones.
+    const header = headerLines(
+      { ...model, targets: undefined },
+      Math.min(width, maxWidth),
+      paint,
+    );
+
+    return [
+      ...header,
+      "",
+      ...modal.lines({
+        width: Math.min(width, maxWidth),
+        height: rows - header.length - 1,
+      }),
+    ];
+  };
 
   /** Draw a frame over the last one, or skip it if nothing changed. */
   const draw = (final = false): string => {
     const now = Date.now();
     const columns = stdout.columns ?? 80;
-    const lines = frame(model, {
-      // One short of the terminal, so a full line never leaves the cursor in
-      // the pending-wrap state, where clearing the line eats its last cell.
-      width: columns - 1,
-      now,
-      spinner: final ? undefined : spinnerAt(now),
-      selected: final ? undefined : selected,
-      hint: final ? undefined : hint,
-      paint,
-    });
-    const visible = final
-      ? lines
-      : lines.slice(-Math.max(1, (stdout.rows ?? 24) - 1));
+    const visible = compose(now, final);
     const key = `${columns}\n${visible.join("\n")}`;
 
     lastDrawAt = now;
@@ -94,8 +161,91 @@ export const createInteractiveRenderer = (): InteractiveRenderer => {
     stdout.write(draw());
   };
 
+  /** Show a question and resolve with its answer, or reject if it's backed out of. */
+  const ask = <S extends { outcome?: Outcome<T> }, T>(opts: {
+    state: S;
+    reduce(state: S, key: Key): S;
+    lines(state: S, size: { width: number; height: number }): string[];
+    replacesView?: boolean;
+  }): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      let state = opts.state;
+
+      modal = {
+        replacesView: opts.replacesView ?? false,
+        lines: (size) => {
+          return opts.lines(state, size);
+        },
+        key: (key) => {
+          state = opts.reduce(state, key);
+
+          const { outcome } = state;
+
+          if (!outcome) {
+            return;
+          }
+
+          modal = undefined;
+
+          if (outcome.kind === "submit") {
+            resolve(outcome.value);
+          } else {
+            reject(new PromptCancelled());
+          }
+        },
+      };
+
+      redraw();
+    });
+  };
+
+  const stopWaiting = (again: boolean): void => {
+    waiting?.resolve(again);
+    waiting = undefined;
+  };
+
+  const openRun = (url: string): void => {
+    void openUrl(url).then((opened) => {
+      if (!opened) {
+        notice = {
+          text: `couldn't open the browser; URL: ${url}`,
+          until: Date.now() + noticeMs,
+        };
+      }
+    });
+  };
+
   const onKeypress = (_: string | undefined, key: Key | undefined): void => {
-    if (key?.name === "q" || (key?.ctrl && key.name === "c")) {
+    if (!key) {
+      return;
+    }
+
+    if (key.ctrl && key.name === "c") {
+      quit();
+
+      return;
+    }
+
+    if (modal) {
+      modal.key(key);
+      redraw();
+
+      return;
+    }
+
+    if (waiting && key.name === "q") {
+      stopWaiting(false);
+
+      return;
+    }
+
+    if (waiting?.again && key.name === "r") {
+      stopWaiting(true);
+
+      return;
+    }
+
+    if (key.name === "q") {
       quit();
 
       return;
@@ -103,21 +253,21 @@ export const createInteractiveRenderer = (): InteractiveRenderer => {
 
     const runIds = selectableRunIds(model);
 
-    if (key?.name === "up") {
+    if (key.name === "up") {
       selected = Math.max(0, selected - 1);
     }
 
-    if (key?.name === "down") {
+    if (key.name === "down") {
       selected = Math.max(0, Math.min(runIds.length - 1, selected + 1));
     }
 
-    if (key?.name === "return") {
+    if (key.name === "return") {
       const run = model.runs.find((item) => {
         return item.runId === runIds[selected];
       });
 
       if (run) {
-        openUrl(run.url);
+        openRun(run.url);
       }
     }
 
@@ -134,6 +284,11 @@ export const createInteractiveRenderer = (): InteractiveRenderer => {
   };
 
   const timer = setInterval(redraw, spinnerInterval);
+
+  signal.addEventListener("abort", () => {
+    modal?.key({ ctrl: true, name: "c" });
+    stopWaiting(false);
+  });
 
   stdout.write(hideCursor);
   stdout.on("resize", redraw);
@@ -173,11 +328,13 @@ export const createInteractiveRenderer = (): InteractiveRenderer => {
         return;
       }
 
+      if (event.kind === "targets") {
+        selected = 0;
+      }
+
       model = reduce(model, event);
 
-      if (event.kind === "done") {
-        void finish();
-      } else if (Date.now() - lastDrawAt >= minRedrawInterval) {
+      if (Date.now() - lastDrawAt >= minRedrawInterval) {
         redraw();
       }
     },
@@ -188,6 +345,45 @@ export const createInteractiveRenderer = (): InteractiveRenderer => {
 
     onQuit(callback) {
       quit = callback;
+    },
+
+    pick(targets) {
+      return ask({
+        state: createPicker(targets),
+        reduce: reducePicker,
+        lines: (state, { width, height }) => {
+          return pickerLines(state, { width, height, paint });
+        },
+        replacesView: true,
+      });
+    },
+
+    choose(question, options) {
+      return ask({
+        state: createChoice(question, options),
+        reduce: reduceChoice,
+        lines: (state, { width }) => {
+          return choiceLines(state, { width, paint });
+        },
+      });
+    },
+
+    line(question, check) {
+      return ask({
+        state: createText(question, check),
+        reduce: reduceText,
+        lines: (state, { width }) => {
+          return textLines(state, { width, paint });
+        },
+      });
+    },
+
+    linger(again) {
+      return new Promise((resolve) => {
+        waiting = { again, resolve };
+
+        redraw();
+      });
     },
   };
 };

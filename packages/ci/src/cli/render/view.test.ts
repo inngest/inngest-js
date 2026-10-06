@@ -16,12 +16,18 @@ const events: SessionEvent[] = [
   {
     kind: "ready",
     devServerUrl: "http://127.0.0.1:1",
+    devServerDir: "/db/s1",
     repo: { fullName: "a/b", ref: "main", sha: "70f798f1234", dirty: true },
-    target: { kind: "pipeline", id: "pr", trigger: "pull_request.opened" },
+    at: 0,
+  },
+  {
+    kind: "targets",
+    targets: [{ kind: "pipeline", id: "pr", trigger: "pull_request.opened" }],
     at: 0,
   },
   {
     kind: "run",
+    eventId: "e1",
     runId: "r1",
     pipelineId: "pr",
     status: "running",
@@ -129,14 +135,60 @@ describe("frame", () => {
     const done = reduce(model, {
       kind: "done",
       conclusion: "failed",
-      runUrl: "http://run",
       at: 8000,
     });
 
     expect(frame(done, { width: 80, now: 9999, paint }).slice(-3)).toEqual([
       "",
       "  ✕ Failed in 8.0s",
-      "  Trace  http://run",
+      "  Open later  inngest-ci open r1",
+    ]);
+  });
+
+  test("names several targets in the header, without their triggers", () => {
+    const several = reduce(model, {
+      kind: "targets",
+      targets: [
+        { kind: "pipeline", id: "pr", trigger: "pull_request.opened" },
+        { kind: "job", id: "compat" },
+      ],
+      at: 10,
+    });
+
+    expect(frame(several, { width: 80, now: 11, paint })[0]).toBe(
+      "  inngest-ci pr, compat  main @ 70f798f + uncommitted",
+    );
+  });
+
+  test("shows what a job is doing until a command runs", () => {
+    const activity: SessionEvent[] = [
+      { kind: "job", runId: "r1", jobId: "lint", status: "running", at: 6000 },
+      {
+        kind: "activity",
+        runId: "r1",
+        jobId: "lint",
+        text: "creating machine…",
+        at: 7000,
+      },
+    ];
+    const working = activity.reduce(reduce, model);
+
+    expect(frame(working, { width: 80, now: 8000, paint })[9]).toContain(
+      "lint     creating machine…",
+    );
+  });
+
+  test("shows a stage that waits, with how long it has", () => {
+    const waiting = reduce(initialModel, {
+      kind: "stage",
+      stage: "start",
+      status: "running",
+      detail: "release to start…",
+      at: 1000,
+    });
+
+    expect(frame(waiting, { width: 80, now: 7000, paint })).toEqual([
+      "  ◌ Waiting  release to start…                                              6.0s",
     ]);
   });
 

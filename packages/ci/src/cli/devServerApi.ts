@@ -126,3 +126,26 @@ export const cancelRun = async (
 ): Promise<void> => {
   await request(`${devServerUrl}/v2/runs/${runId}/cancel`, { method: "POST" });
 };
+
+/** The ID of the most recent run, which the list starts with. */
+export const latestRunId = async (
+  devServerUrl: string,
+): Promise<string | undefined> => {
+  const response = await request(`${devServerUrl}/v2/runs?limit=1`);
+
+  if (!response.ok) {
+    throw new Error(`GET /v2/runs answered ${response.status}`);
+  }
+
+  const body = (await response.json()) as { data?: { id: string }[] };
+
+  return body.data?.[0]?.id;
+};
+
+/** Whether the Dev Server knows a run. */
+export const runExists = async (
+  devServerUrl: string,
+  runId: string,
+): Promise<boolean> => {
+  return (await request(`${devServerUrl}/v2/runs/${runId}`)).ok;
+};
