@@ -6,6 +6,7 @@
  */
 
 import type { LocalStatus } from "../local/protocol.ts";
+import { shortReason } from "../util.ts";
 
 const requestTimeoutMs = 5000;
 
@@ -35,12 +36,7 @@ export interface RunInfo {
 export const failureReason = (output: unknown): string | undefined => {
   const first = (text: unknown): string | undefined => {
     return typeof text === "string"
-      ? text
-          .split("\n")
-          .map((line) => {
-            return line.trim();
-          })
-          .find(Boolean)
+      ? shortReason(text) || undefined
       : undefined;
   };
 

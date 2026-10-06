@@ -9,10 +9,10 @@
 import { type Paint, truncate } from "../render/format.ts";
 import type { Target } from "../target.ts";
 import {
-  type Mark,
-  type PickerState,
   isSelected,
+  type Mark,
   markOf,
+  type PickerState,
   pickerRows,
   selectedCombos,
   targetKey,

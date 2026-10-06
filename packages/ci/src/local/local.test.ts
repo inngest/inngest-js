@@ -653,11 +653,11 @@ describe("what a job says while it starts from a parent", () => {
   test("a snapshot from this run says so", async () => {
     const { texts } = await run({ cache: false });
 
-    expect(texts).toContain("waiting for base to finish…");
-    expect(texts).toContain("starting from base: snapshot from this run");
+    expect(texts).toContain("waiting for base…");
+    expect(texts).toContain("starting base");
   });
 
-  test("a cached snapshot says how old it is and which run built it", async () => {
+  test("a cached snapshot says how old it is", async () => {
     const api = createFakeSandboxApi();
     const cacheStore = memoryCacheStore();
 
@@ -665,13 +665,11 @@ describe("what a job says while it starts from a parent", () => {
 
     const { texts } = await run({ cache: true, api, cacheStore });
 
-    expect(texts).toContain("waiting for base to finish…");
+    expect(texts).toContain("waiting for base…");
 
     expect(
       texts.some((text) => {
-        return /^starting from base: cached snapshot, built just now \(run …\w{6}\)$/.test(
-          text,
-        );
+        return /^starting base · cached (just now|.+ ago)$/.test(text);
       }),
     ).toBe(true);
   });
@@ -689,7 +687,7 @@ describe("what a job says while it starts from a parent", () => {
       cacheStore,
     });
 
-    expect(texts).toContain("rebuilding base: no cached snapshot");
+    expect(texts).toContain("rebuilding base · no cache");
   });
 
   test("unavailable snapshots say so", async () => {
@@ -697,7 +695,7 @@ describe("what a job says while it starts from a parent", () => {
       api.disableSnapshots();
     });
 
-    expect(texts).toContain("rebuilding base: snapshots unavailable");
+    expect(texts).toContain("rebuilding base · no snapshots");
   });
 
   test("a cached snapshot that won't start is rebuilt and its entry invalidated", async () => {
@@ -721,7 +719,7 @@ describe("what a job says while it starts from a parent", () => {
     const { result, texts } = await run({ cache: true, api, cacheStore });
 
     expect(result.type).toBe("function-resolved");
-    expect(texts).toContain("rebuilding base: cached snapshot wouldn't start");
+    expect(texts).toContain("rebuilding base · bad snapshot");
 
     const ran = api.commands.map((argv) => {
       return argv.join(" ");

@@ -79,7 +79,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   scope.run.ci.reporter.activity(
     scope.run,
     scope.jobPath,
-    `waiting for ${job.id} to finish…`,
+    `waiting for ${job.id}…`,
   );
 
   const result = await job(input as never);
@@ -94,8 +94,8 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
 
     scope.startNote =
       cached?.snapshotId === snapshotId
-        ? `starting from ${job.id}: ${describeCached(cached, { withRun: true })}`
-        : `starting from ${job.id}: snapshot from this run`;
+        ? `starting ${job.id} · ${describeCached(cached)}`
+        : `starting ${job.id}`;
 
     scope.rebuildParent = () => {
       return rerunOnThisMachine(scope, job, input);
@@ -103,13 +103,13 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   } else if (run.machines.has(job.id) || run.cacheEntries.has(job.id)) {
     const cacheable = Boolean(run.ci.jobs.get(job.id)?.config.cache);
 
-    scope.startNote = `rebuilding ${job.id}: ${
-      run.snapshotsUnavailable
-        ? "snapshots unavailable"
-        : cacheable
-          ? "no cached snapshot"
-          : "no snapshot"
-    }`;
+    const why = run.snapshotsUnavailable
+      ? " · no snapshots"
+      : cacheable
+        ? " · no cache"
+        : "";
+
+    scope.startNote = `rebuilding ${job.id}${why}`;
 
     run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
 
