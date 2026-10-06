@@ -161,18 +161,18 @@ describe("job IDs", () => {
     const { ci } = setup();
 
     ci.job("test", async () => {
-      return 1;
+      await $`true`;
     });
 
     expect(() => {
       return ci.job("test", async () => {
-        return 2;
+        await $`true`;
       });
     }).toThrow(CiUsageError);
 
     expect(() => {
       return ci.job("test", async () => {
-        return 2;
+        await $`true`;
       });
     }).toThrow(/unique.*"test"/);
   });
@@ -183,18 +183,20 @@ describe("job IDs", () => {
     const compat = ci.matrix(
       { id: "compat", axes: { node: ["20", "22"] } },
       async () => {
-        return "ok";
+        await $`true`;
       },
     );
 
     const build = (target: string) => {
       return ci.job(`build ${target}`, async () => {
-        return target;
+        await $`echo ${target}`;
       });
     };
 
     const pr = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-      return [await compat(), await build("web")()];
+      await compat();
+
+      await build("web")();
     });
 
     for (let run = 0; run < 2; run++) {
@@ -217,7 +219,7 @@ describe("the manifest", () => {
     });
 
     ci.job("greet", async (name: string) => {
-      return name;
+      await $`echo ${name}`;
     });
 
     ci.job(
@@ -367,9 +369,10 @@ describe("the run-job function", () => {
 
   test("runs a job with its input", async () => {
     const { ci } = setupLocal();
+    const received = new Set<string>();
 
     ci.job("greet", async (name: string) => {
-      return `hello ${name}`;
+      received.add(name);
     });
 
     const fn = functionFor(ci, runJobFunctionId);
@@ -379,22 +382,24 @@ describe("the run-job function", () => {
     });
 
     expect(result.type).toBe("function-resolved");
-    expect(result.data).toBe("hello jack");
+    expect([...received]).toEqual(["jack"]);
   });
 
   test("derives the repository context the way a pull request run does", async () => {
     const { ci } = setupLocal();
+    const seen: unknown[] = [];
 
     ci.job("who", async () => {
-      return repo();
+      seen.push(repo());
     });
 
-    const result = await runFunction(
-      functionFor(ci, runJobFunctionId) as never,
-      { event: runJobData({ job: "who" }) },
-    );
+    await runFunction(functionFor(ci, runJobFunctionId) as never, {
+      event: runJobData({ job: "who" }),
+    });
 
-    expect(result.data).toMatchObject({
+    expect(seen.length).toBeGreaterThan(0);
+
+    expect(seen[0]).toMatchObject({
       owner: "inngest",
       sha: "abc1234",
       ref: "feature",
@@ -403,6 +408,7 @@ describe("the run-job function", () => {
 
   test("runs the combinations it is given, or all of them", async () => {
     const { ci } = setupLocal();
+    let ran = new Set<string>();
 
     ci.matrix(
       {
@@ -412,13 +418,13 @@ describe("the run-job function", () => {
         include: [{ node: "22", os: "mac" }],
       },
       async ({ node, os }) => {
-        return `${node} ${os}`;
+        ran.add(`${node} ${os}`);
       },
     );
 
     const fn = functionFor(ci, runJobFunctionId);
 
-    const some = await runFunction(fn as never, {
+    await runFunction(fn as never, {
       event: runJobData({
         job: "compat",
         combos: [
@@ -430,13 +436,15 @@ describe("the run-job function", () => {
       }),
     });
 
-    expect(some.data).toEqual(["22 linux", "22 mac"]);
+    expect([...ran].sort()).toEqual(["22 linux", "22 mac"]);
 
-    const all = await runFunction(fn as never, {
+    ran = new Set();
+
+    await runFunction(fn as never, {
       event: runJobData({ job: "compat" }),
     });
 
-    expect(all.data).toEqual(["20 linux", "22 linux", "22 mac"]);
+    expect([...ran].sort()).toEqual(["20 linux", "22 linux", "22 mac"]);
   });
 
   test("runs a subset of a matrix in one run, each combination as its own job", async () => {
@@ -445,24 +453,17 @@ describe("the run-job function", () => {
 
     ci.matrix(
       { id: "compat", axes: { node: ["20", "22", "24"] }, concurrency: 1 },
-      async ({ node }) => {
+      async () => {
         await $`node --version`;
-
-        return node;
       },
     );
 
-    const result = await runFunction(
-      functionFor(ci, runJobFunctionId) as never,
-      {
-        event: runJobData({
-          job: "compat",
-          combos: [{ node: "20" }, { node: "24" }],
-        }),
-      },
-    );
-
-    expect(result.data).toEqual(["20", "24"]);
+    await runFunction(functionFor(ci, runJobFunctionId) as never, {
+      event: runJobData({
+        job: "compat",
+        combos: [{ node: "20" }, { node: "24" }],
+      }),
+    });
 
     await vi.waitFor(() => {
       expect(

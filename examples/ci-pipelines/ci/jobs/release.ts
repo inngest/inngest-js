@@ -1,4 +1,4 @@
-import { github } from "@inngest/ci";
+import { github, report } from "@inngest/ci";
 import { step } from "inngest";
 
 import { ci } from "../client.ts";
@@ -13,7 +13,9 @@ export const release = ci.job("release", async () => {
   });
 
   if (!approval) {
-    return { released: false, reason: "not approved in 24h" };
+    await report.summary("Not approved in 24h, so nothing was released");
+
+    return;
   }
 
   const created = await github.rest.repos.createRelease({
@@ -26,6 +28,4 @@ export const release = ci.job("release", async () => {
   if (number) {
     await github.stickyComment("release", `Released ${created.html_url}`);
   }
-
-  return { released: true, url: created.html_url };
 });

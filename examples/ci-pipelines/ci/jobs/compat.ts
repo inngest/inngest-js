@@ -13,7 +13,5 @@ export const compat = ci.matrix(
     await $`node --version`;
 
     await $`pnpm test`.cwd(appDir).env({ NODE_VERSION: node });
-
-    return node;
   },
 );

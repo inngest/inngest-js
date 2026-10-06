@@ -19,7 +19,7 @@ import { runJobEvent, runJobFunctionId } from "./protocol.ts";
 
 /** A matrix as the CLI runs it: exactly the combinations it picked. */
 interface MatrixRunner {
-  [runCombosKey](combos: Record<string, unknown>[]): Promise<unknown[]>;
+  [runCombosKey](combos: Record<string, unknown>[]): Promise<void>;
 }
 
 /**

@@ -11,6 +11,4 @@ export const test = ci.job("test", async () => {
   const result = await $`pnpm test`.cwd(appDir).retries(1);
 
   await report.summary(`Tests exited with ${result.exitCode}`);
-
-  return result.exitCode;
 });

@@ -20,7 +20,5 @@ export const build = ci.job(
     await $`pnpm build`
       .cwd(appDir)
       .env({ BUILD_TARGET: target, BUILD_MINIFY: String(minify) });
-
-    return target;
   },
 );

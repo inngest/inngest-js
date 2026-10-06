@@ -307,21 +307,24 @@ describe("a job's input schema", () => {
 
   test("validates the input before the job runs, and gives the handler the result", async () => {
     const { api, ci } = setup();
+    const received = new Set<string>();
 
     const build = ci.job({ id: "build", input }, async ({ target, minify }) => {
-      await $`pnpm build --target ${target}`;
+      received.add(JSON.stringify({ target, minify }));
 
-      return { target, minify };
+      await $`pnpm build --target ${target}`;
     });
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       return build({ target: "web" });
     });
 
-    const result = await runFunction(pipeline, { event: prEvent });
+    await runFunction(pipeline, { event: prEvent });
 
     // The default was applied.
-    expect(result.data).toEqual({ target: "web", minify: true });
+    expect([...received]).toEqual([
+      JSON.stringify({ target: "web", minify: true }),
+    ]);
     expect(userCommands(api)).toHaveLength(1);
   });
 
@@ -353,12 +356,10 @@ describe("a job's input schema", () => {
   });
 
   test("is checked when a job is started from, too", async () => {
-    const { ci } = setup();
+    const { api, ci } = setup();
 
     const base = ci.job({ id: "base", input }, async ({ target }) => {
       await $`pnpm install --target ${target}`;
-
-      return target;
     });
 
     const test = ci.job("test", async () => {
@@ -369,21 +370,26 @@ describe("a job's input schema", () => {
       return test();
     });
 
-    expect((await runFunction(pipeline, { event: prEvent })).data).toBe("web");
+    await runFunction(pipeline, { event: prEvent });
+
+    expect(userCommands(api)).toHaveLength(1);
   });
 
   test("a job without a schema takes its input as given", async () => {
     const { ci } = setup();
+    const received = new Set<string>();
 
     const greet = ci.job("greet", async (name: string) => {
-      return name;
+      received.add(name);
     });
 
     const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
       return greet("jack");
     });
 
-    expect((await runFunction(pipeline, { event: prEvent })).data).toBe("jack");
+    await runFunction(pipeline, { event: prEvent });
+
+    expect([...received]).toEqual(["jack"]);
   });
 });
 
@@ -1185,7 +1191,6 @@ describe("cache", () => {
     ["a different input", ["1", "2"], 2],
   ])("the same key with %s", async (_label, inputs, installs) => {
     const api = createFakeSandboxApi();
-    const built: string[] = [];
 
     for (const version of inputs) {
       const { ci } = setup({ api });
@@ -2409,8 +2414,6 @@ describe("cache builds in their own run", () => {
   const buildJob = (ci: ReturnType<typeof setup>["ci"], key = "v1") => {
     return ci.job({ id: "base", cache: { key } }, async () => {
       await $`pnpm install`;
-
-      return "installed";
     });
   };
 

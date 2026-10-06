@@ -340,7 +340,7 @@ describe("jobs infer their input", () => {
     });
 
     // @ts-expect-error config objects are held to the same rule
-    ci.job({ id: "cached", cache: { key: "v1" } }, async () => {
+    ci.job({ id: "cached-built", cache: { key: "v1" } }, async () => {
       return { built: true };
     });
   });
