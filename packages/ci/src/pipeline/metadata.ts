@@ -16,8 +16,7 @@ import { apiNames } from "./scope.ts";
 
 /**
  * The metadata kind everything here is attached under. It moves to
- * `inngest.ci` once the backend allowlists that kind (inngest/inngest branch
- * `jack/allow-inngest-ci-metadata`).
+ * `inngest.ci` once the backend allows that kind.
  */
 export const metadataKind = "userland.inngest-ci";
 

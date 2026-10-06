@@ -2065,6 +2065,53 @@ describe("repository for repo-less triggers", () => {
 
     expect(result.stepIds).toContain("repo:resolve");
   });
+
+  test("a comment run gets its pull request's head commit", async () => {
+    const { ci, gh } = setupGitHub();
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/12", {
+      number: 12,
+      head: {
+        sha: "beef5678",
+        ref: "feature",
+        repo: { full_name: "inngest/inngest-js" },
+      },
+      base: { sha: "base0001", ref: "main" },
+    });
+
+    const pipeline = ci.pipeline(
+      {
+        id: "prerelease",
+        on: github.comment({ command: "/prerelease" }),
+        check: false,
+      },
+      async ({ repo }) => {
+        return repo;
+      },
+    );
+
+    const result = await runFunction(pipeline, {
+      event: {
+        name: "github/issue_comment.created",
+        data: {
+          action: "created",
+          repository: { full_name: "inngest/inngest-js" },
+          issue: { number: 12, pull_request: {} },
+          comment: { body: "/prerelease", user: { login: "jack" } },
+        },
+      },
+    });
+
+    expect(result.data).toMatchObject({
+      sha: "beef5678",
+      ref: "feature",
+      baseRef: "main",
+      baseSha: "base0001",
+      pullRequest: { number: 12, headRef: "feature", fork: false },
+    });
+
+    expect(result.stepIds).toContain("pr:resolve");
+  });
 });
 
 describe("failures that retrying cannot fix", () => {
@@ -2208,6 +2255,12 @@ describe("comment permissions", () => {
 
     gh.route("GET /repos/inngest/inngest-js/collaborators/alice/permission", {
       permission: "write",
+    });
+
+    gh.route("GET /repos/inngest/inngest-js/pulls/7", {
+      number: 7,
+      head: { sha: "abc1234", ref: "feature" },
+      base: { sha: "base0001", ref: "main" },
     });
 
     gh.route("GET /repos/inngest/inngest-js/issues/7/comments", []);

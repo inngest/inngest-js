@@ -52,11 +52,6 @@ const test = ci.job("test", async () => {
 });
 ```
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/inngest/inngest-js/main/packages/ci/media/pipeline-dark.svg">
-  <img alt="A pull request triggers the pr pipeline. The base job runs on machine A and takes a snapshot. The lint and test jobs start in parallel on copies of that snapshot. The test command fails and runs again on the same machine, while base and lint do not rerun. Each job reports a GitHub check." src="https://raw.githubusercontent.com/inngest/inngest-js/main/packages/ci/media/pipeline-light.svg">
-</picture>
-
 A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, and a failed command runs again without rerunning the jobs that passed.
 
 ## Install

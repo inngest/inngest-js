@@ -13,7 +13,6 @@ ci/
 ├─ pipelines/         one pipeline per file: pr, docs, release, deploy, prerelease
 └─ index.ts           imports every pipeline and re-exports ci
 app/              the project the pipelines install, lint, and test
-e2e/              end-to-end cases for @inngest/ci, run on real Sandboxes
 scripts/          github-forwarder.ts forwards real GitHub events
 inngest.json       tells inngest-ci how to start server.ts
 server.ts         serves ci.functions()
@@ -98,17 +97,6 @@ pnpm run ci --pipeline release --event push      # skipped: ci.local
 | `ci/pipelines/release.ts` | `ci.local` to skip a release |
 | `ci/pipelines/deploy.ts` | `ci.manual()` with a typed payload |
 | `ci/pipelines/prerelease.ts` | `github.comment()` with a permission check |
-
-## End-to-end tests
-
-`e2e/` is the integration test for `@inngest/ci`. Each case is a pipeline that runs on real Sandboxes against a throwaway git repository, and `e2e/run.ts` checks what it returned.
-
-```bash
-INNGEST_DEV=1 pnpm ci:e2e
-INNGEST_DEV=1 pnpm ci:e2e commands matrix
-```
-
-It needs a Dev Server (`npx inngest-cli@latest dev`). It serves its own functions on port 3940.
 
 ## Run on GitHub
 
