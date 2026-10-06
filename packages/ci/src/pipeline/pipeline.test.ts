@@ -1702,12 +1702,17 @@ describe("slow parent hints", () => {
     children = 2,
     cache,
     fromBase = true,
+    laterRequestMs,
   }: {
     requestMs: number;
     children?: number;
     cache?: boolean;
     fromBase?: boolean;
+    /** When set, a stage after the jobs runs with requests this far apart. */
+    laterRequestMs?: number;
   }) => {
+    let later = false;
+
     vi.stubEnv("INNGEST_CI_GITHUB", "live");
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
@@ -1752,13 +1757,27 @@ describe("slow parent hints", () => {
         if (!fromBase) {
           await base();
         }
+
+        if (laterRequestMs !== undefined) {
+          later = true;
+
+          const tail = ci.job("tail", async () => {
+            await $`pnpm lint`;
+
+            await $`pnpm e2e`;
+          });
+
+          await tail();
+        }
       },
     );
 
     const result = await runFunction(pipeline, {
       event: prEvent,
       beforeRequest: () => {
-        vi.setSystemTime(Date.now() + requestMs);
+        vi.setSystemTime(
+          Date.now() + (later ? (laterRequestMs ?? requestMs) : requestMs),
+        );
       },
     });
 
@@ -1814,6 +1833,17 @@ describe("slow parent hints", () => {
     const summary = await runHint({ requestMs: 1 });
 
     expect(hintLines(summary)).toHaveLength(0);
+  });
+
+  test("a fast parent isn't inflated by a slow stage after it", async () => {
+    const summary = await runHint({ requestMs: 1, laterRequestMs: 60_000 });
+
+    expect(hintLines(summary)).toHaveLength(0);
+
+    const row = /^\| base \|.*\| (\S+(?: \S+)?) \|$/m.exec(summary);
+
+    expect(row?.[1]).toMatch(/^(\d+ms|\d|[12]\ds)$/);
+    expect(row?.[0]).not.toMatch(/\dm /);
   });
 
   test("a slow job nothing starts from gets no line", async () => {

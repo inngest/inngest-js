@@ -56,9 +56,13 @@ export interface CheckReporter {
     jobPath: string;
     name?: string;
   }): Promise<number | undefined>;
+  /**
+   * Complete a job's check. Returns when it completed, read inside the step so
+   * it's memoized, or `undefined` when there's no check to complete.
+   */
   jobComplete(
     args: { run: CiRunScope; jobPath: string; name?: string } & CheckResult,
-  ): Promise<void>;
+  ): Promise<number | undefined>;
   /**
    * Keep a check in progress with a retry title, because the run will be
    * attempted again and its own completion belongs to a later attempt. With no
@@ -246,23 +250,30 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     result: CheckResult,
     tag: StepTag,
     metadata?: () => Record<string, unknown>,
-  ) => {
-    await run.step.run({ id: stepId, name: stepId }, async () => {
-      await tagStep(run, tag, metadata?.());
+  ): Promise<number> => {
+    const endedAt = await run.step.run(
+      { id: stepId, name: stepId },
+      async () => {
+        await tagStep(run, tag, metadata?.());
 
-      return sink.complete({
-        run,
-        name,
-        ...identity(run, key),
-        conclusion: result.conclusion,
-        title: result.title,
-        summary: truncateSummary(result.summary ?? ""),
-        annotations: (result.annotations ?? []).map(normaliseAnnotation),
-        ...idFor(run, key),
-      });
-    });
+        await sink.complete({
+          run,
+          name,
+          ...identity(run, key),
+          conclusion: result.conclusion,
+          title: result.title,
+          summary: truncateSummary(result.summary ?? ""),
+          annotations: (result.annotations ?? []).map(normaliseAnnotation),
+          ...idFor(run, key),
+        });
+
+        return Date.now();
+      },
+    );
 
     checkRunIds.delete(idKey(run, key));
+
+    return endedAt;
   };
 
   return {
@@ -313,10 +324,10 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
     jobComplete: async ({ run, jobPath, name, ...result }) => {
       if (!run.checkName || !run.jobChecks) {
-        return;
+        return undefined;
       }
 
-      await complete(
+      return complete(
         run,
         jobPath,
         jobCheckName(run, jobPath, name),

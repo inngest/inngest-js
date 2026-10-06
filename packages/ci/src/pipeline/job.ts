@@ -236,7 +236,9 @@ const jobBody = async ({
   // would time the last replay. The start comes from the check's step, which
   // memoizes it, or from a step of its own when there's no check.
   const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
-  const startedAt = checkStartedAt ?? (await durableNow(run, scope.path));
+  const startedAt =
+    checkStartedAt ??
+    (await durableNow(run, `start:${scope.path}`, scope.path));
 
   if (checked) {
     run.openChecks.set(scope.path, checkName);
@@ -247,25 +249,20 @@ const jobBody = async ({
       return handler(input);
     });
 
-    const durationMs = Date.now() - startedAt;
-    const title = `Passed in ${formatDuration(durationMs)}`;
-
     if (cacheLookup) {
       await storeCache(scope, cacheLookup, await cacheEntryFor(scope));
     }
 
-    run.summaries.push({
-      path: scope.path,
-      conclusion: "success",
-      title,
-      durationMs,
-    });
+    // Replays run this from the top, so the clock here is only right on the
+    // replay that executes the check's complete step. Its title is memoized
+    // with that value, and the job's real end comes back from the step.
+    let checkEndedAt: number | undefined;
 
     if (checked) {
-      await checks.jobComplete({
+      checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
-        title,
+        title: `Passed in ${formatDuration(Date.now() - startedAt)}`,
         ...(scope.summaries.length > 0
           ? { summary: scope.summaries.join("\n\n") }
           : {}),
@@ -277,9 +274,19 @@ const jobBody = async ({
       run.openChecks.delete(scope.path);
     }
 
+    const endedAt =
+      checkEndedAt ?? (await durableNow(run, `end:${scope.path}`, scope.path));
+    const durationMs = endedAt - startedAt;
+
+    run.summaries.push({
+      path: scope.path,
+      conclusion: "success",
+      title: `Passed in ${formatDuration(durationMs)}`,
+      durationMs,
+    });
+
     await pauseMachine(scope);
   } catch (error) {
-    const durationMs = Date.now() - startedAt;
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);
 
@@ -293,13 +300,7 @@ const jobBody = async ({
       run.createdSnapshots.delete(keptSnapshotId);
     }
 
-    run.summaries.push({
-      path: scope.path,
-      conclusion,
-      title,
-      durationMs,
-      ...(keptSnapshotId ? { keptSnapshotId } : {}),
-    });
+    let checkEndedAt: number | undefined;
 
     if (checked) {
       const result = {
@@ -319,21 +320,34 @@ const jobBody = async ({
           ...result,
         });
       } else {
-        await checks.jobComplete({ ...target, ...result });
+        checkEndedAt = await checks.jobComplete({ ...target, ...result });
       }
     }
+
+    const endedAt =
+      checkEndedAt ?? (await durableNow(run, `end:${scope.path}`, scope.path));
+
+    run.summaries.push({
+      path: scope.path,
+      conclusion,
+      title,
+      durationMs: endedAt - startedAt,
+      ...(keptSnapshotId ? { keptSnapshotId } : {}),
+    });
 
     throw error;
   }
 };
 
 /**
- * The time, memoized. Only for a job whose check didn't start, which has no
- * step to carry its start time.
+ * The time, memoized under the step `id`. Only for a job whose check didn't
+ * start or complete, which has no step to carry its start or end time.
  */
-const durableNow = (run: CiRunScope, jobPath: string): Promise<number> => {
-  const id = `start:${jobPath}`;
-
+const durableNow = (
+  run: CiRunScope,
+  id: string,
+  jobPath: string,
+): Promise<number> => {
   return run.step.run({ id, name: id }, async () => {
     await tagStep(run, { kind: "job", job: jobPath });
 
