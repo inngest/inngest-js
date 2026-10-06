@@ -30,11 +30,15 @@ afterEach(() => {
 
 describe("failureReason", () => {
   test("reads the error a single run answers with", () => {
-    expect(failureReason(singleRun.data.output)).toBe(message);
+    expect(failureReason(singleRun.data.output)).toBe(
+      "machine didn't start in 2m",
+    );
   });
 
   test("reads the error the run list wraps", () => {
-    expect(failureReason({ error: singleRun.data.output })).toBe(message);
+    expect(failureReason({ error: singleRun.data.output })).toBe(
+      "machine didn't start in 2m",
+    );
   });
 
   test("takes the first meaningful line", () => {
@@ -58,7 +62,7 @@ describe("runFailureReason", () => {
 
     expect(
       await runFailureReason("http://127.0.0.1:1", singleRun.data.id),
-    ).toBe(message);
+    ).toBe("machine didn't start in 2m");
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       `http://127.0.0.1:1/v2/runs/${singleRun.data.id}?includeOutput=true`,

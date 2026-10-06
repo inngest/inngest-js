@@ -10,19 +10,19 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 
 import { type CliArgs, parseCliArgs, usage } from "./args.ts";
+import { openRun } from "./openRun.ts";
 import {
   createInteractiveRenderer,
   createPlainRenderer,
 } from "./render/index.ts";
-import { openRun } from "./openRun.ts";
 import {
   createStateFileRenderer,
   describeStarter,
   sessionFile,
 } from "./render/stateFile.ts";
 import { runSession } from "./session.ts";
-import { pruneSessions, resolveStateDir } from "./stateDir.ts";
 import type { SetupError } from "./setupError.ts";
+import { pruneSessions, resolveStateDir } from "./stateDir.ts";
 
 const exitCodes = {
   passed: 0,

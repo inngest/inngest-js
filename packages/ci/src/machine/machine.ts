@@ -126,18 +126,11 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
   const parentId = scope.fromJobIds[0] ?? "the parent";
   const snapshotId = scope.fromSnapshotId;
-  const wasCached = snapshotId
-    ? [...run.cacheEntries.values()].some((entry) => {
-        return entry?.snapshotId === snapshotId;
-      })
-    : false;
 
   let sandbox: Awaited<ReturnType<typeof tools.create>>;
 
   if (snapshotId && run.badSnapshots.has(snapshotId)) {
-    sandbox = await startFresh(
-      `rebuilding ${parentId}: ${wasCached ? "cached " : ""}snapshot wouldn't start`,
-    );
+    sandbox = await startFresh(`rebuilding ${parentId} · bad snapshot`);
   } else if (snapshotId) {
     try {
       sandbox = await tools.create(stepId, { name, snapshotId });
@@ -154,9 +147,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
       await invalidateCached(run, snapshotId);
 
-      sandbox = await startFresh(
-        `rebuilding ${parentId}: ${wasCached ? "cached " : ""}snapshot wouldn't start`,
-      );
+      sandbox = await startFresh(`rebuilding ${parentId} · bad snapshot`);
     }
   } else {
     sandbox = await tools.create(stepId, { name, ...machineConfig });

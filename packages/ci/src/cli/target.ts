@@ -6,9 +6,9 @@
  * @module
  */
 
-import type { JsonSchema } from "../local/jsonSchema.ts";
 import { fixtures } from "../github/fixtures.ts";
 import type { PullRequestAction } from "../github/triggers.ts";
+import type { JsonSchema } from "../local/jsonSchema.ts";
 import {
   type LocalManifest,
   type RunJobEventData,

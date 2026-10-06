@@ -918,7 +918,7 @@ Checks are automatic: one for the pipeline and one for each job. Require the pip
 | Running | In progress, with the current command |
 | Retrying a command | In progress, with the attempt count and the last error |
 | Passed | Success, with the duration |
-| Reused from cache | Success, with `Restored, built …` or `Passed at <sha>, no changes since` |
+| Reused from cache | Success, with `Cached …` or `Passed at <sha>, no changes since` |
 | Failed | Failure, with the command, the output tail, and annotations |
 | Timed out | Timed out |
 | Cancelled by a failure elsewhere | Cancelled |

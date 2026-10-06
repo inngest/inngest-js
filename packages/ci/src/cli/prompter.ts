@@ -7,8 +7,8 @@
  * @module
  */
 
-import type { Fact } from "./setup/review.ts";
 import type { JsonSchema } from "../local/jsonSchema.ts";
+import type { Fact } from "./setup/review.ts";
 import type { Combo, Target } from "./target.ts";
 
 /** What the picker chose to run. */

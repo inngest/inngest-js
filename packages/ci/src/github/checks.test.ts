@@ -300,7 +300,7 @@ describe("pipeline summary", () => {
           {
             path: "setup",
             conclusion: "success",
-            title: "Restored, built 5h ago",
+            title: "Cached 5h ago",
             durationMs: 0,
             cached: true,
           },
@@ -316,7 +316,7 @@ describe("pipeline summary", () => {
       }),
     );
 
-    expect(summary).toContain("| setup | success | Restored, built 5h ago |");
+    expect(summary).toContain("| setup | success | Cached 5h ago |");
     expect(summary).toContain("| test | failure |");
     expect(summary).toContain("1m 05s");
     expect(summary).toContain("[View the trace](http://trace/01TESTRUN)");
