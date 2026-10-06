@@ -137,6 +137,13 @@ export type LocalMessage =
       at: number;
     }
   | {
+      kind: "warning";
+      runId: string;
+      /** A note about the run, like a job that isn't cached but could be. */
+      text: string;
+      at: number;
+    }
+  | {
       kind: "command";
       runId: string;
       jobId: string;

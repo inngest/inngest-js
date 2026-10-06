@@ -22,6 +22,34 @@ const lines = (events: SessionEvent[]): string[] => {
   });
 };
 
+describe("warnings", () => {
+  const events: SessionEvent[] = [
+    {
+      kind: "run",
+      eventId: "e1",
+      runId: "r1",
+      pipelineId: "pr",
+      status: "running",
+      url: "u",
+      at: 0,
+    },
+    { kind: "warning", runId: "r1", text: "base is slow", at: 1 },
+  ];
+
+  test("print nothing when they arrive, and once at the end", () => {
+    expect(lines(events)).toEqual(["run pr: running"]);
+
+    expect(
+      lines([...events, { kind: "done", conclusion: "passed", at: 2001 }]),
+    ).toEqual([
+      "run pr: running",
+      "passed in 2.0s",
+      "warning pr: base is slow",
+      "open pr: inngest-ci open r1",
+    ]);
+  });
+});
+
 describe("plainLines", () => {
   test("prints one line per transition with durations", () => {
     expect(

@@ -53,6 +53,8 @@ export interface RunView {
   url: string;
   /** In order of first appearance. */
   jobs: JobView[];
+  /** Notes the run ended with, each once. */
+  warnings: string[];
   startedAt: number;
   endedAt?: number;
 }
@@ -347,6 +349,7 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
               status: event.status,
               url: event.url,
               jobs: [],
+              warnings: [],
               startedAt: event.at,
             };
           },
@@ -404,6 +407,14 @@ export const reduce = (model: Model, event: SessionEvent): Model => {
             },
           ),
         };
+      });
+    }
+
+    case "warning": {
+      return updateRun(next, event.runId, (run) => {
+        return run.warnings.includes(event.text)
+          ? run
+          : { ...run, warnings: [...run.warnings, event.text] };
       });
     }
 

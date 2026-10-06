@@ -262,6 +262,25 @@ describe("a failed run's reason", () => {
   });
 });
 
+describe("warnings", () => {
+  test("show under the summary line", () => {
+    const model = (
+      [
+        ...events,
+        { kind: "warning", runId: "r1", text: "base is slow", at: 2000 },
+        { kind: "done", conclusion: "passed", at: 3000 },
+      ] as SessionEvent[]
+    ).reduce(reduce, initialModel);
+
+    const lines = frame(model, { paint, now: 2000, width: 100 });
+    const summary = lines.findIndex((line) => {
+      return line.includes("Passed in");
+    });
+
+    expect(lines[summary + 1]).toBe("  ! base is slow");
+  });
+});
+
 describe("a job built in its own run", () => {
   test("opens that run on Enter, and shows what the parent is doing in the child", () => {
     const built = [

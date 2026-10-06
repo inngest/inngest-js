@@ -224,6 +224,29 @@ describe("reduce", () => {
   });
 });
 
+describe("warnings", () => {
+  test("are kept on their run, each once", () => {
+    const warning = {
+      kind: "warning",
+      runId: "r1",
+      text: "base is slow",
+      at: 5,
+    } as const;
+
+    const model = play([run("running", 0), warning, warning]);
+
+    expect(model.runs[0]?.warnings).toEqual(["base is slow"]);
+  });
+
+  test("for a run that isn't announced are dropped", () => {
+    const model = play([
+      { kind: "warning", runId: "nope", text: "lost", at: 1 },
+    ]);
+
+    expect(model.runs).toEqual([]);
+  });
+});
+
 describe("restart", () => {
   test("forgets the attempt that failed, keeping only when it began", () => {
     const model = play([

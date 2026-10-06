@@ -377,8 +377,15 @@ const summaryLines = (model: Model, width: number, paint: Paint): string[] => {
         )
       : "";
 
+  const warnings = model.runs.flatMap((item) => {
+    return item.warnings.map((text) => {
+      return `  ${paint("yellow", truncate(`! ${oneLine(text)}`, width - 2))}`;
+    });
+  });
+
   return [
     `${lead}${paint("dim", why)}`,
+    ...warnings,
     ...(run && model.runs.length === 1
       ? [
           `  ${compose(width - 2, paint, [

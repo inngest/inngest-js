@@ -361,6 +361,7 @@ const runPipelineAttempt = async ({
       await completeDeferredJobChecks(run, checks);
 
       addSlowParentHints(run);
+      run.ci.reporter.warnings(run);
 
       await completePipeline(run, checks, {
         conclusion: "success",
@@ -405,6 +406,7 @@ const runPipelineAttempt = async ({
       await closeOpenJobChecks(run, checks);
 
       addSlowParentHints(run);
+      run.ci.reporter.warnings(run);
 
       await completePipeline(run, checks, {
         conclusion: conclusionForError(error),

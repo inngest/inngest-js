@@ -164,7 +164,9 @@ export const plainLines = (
     case "manifest":
     case "project":
     case "restart":
-    case "ready": {
+    case "ready":
+    case "warning": {
+      // Warnings are printed once, with the outcome, when the run is over.
       return [];
     }
 
@@ -304,6 +306,11 @@ export const plainLines = (
         `${paintStatus(paint, event.conclusion)} in ${elapsed}${
           event.conclusion === "failed" && why ? why : ""
         }`,
+        ...model.runs.flatMap((run) => {
+          return run.warnings.map((text) => {
+            return `${paint("yellow", "warning")} ${run.name}: ${oneLine(text)}`;
+          });
+        }),
         ...model.runs.map((run) => {
           return `open ${run.name}: inngest-ci open ${run.runId}`;
         }),

@@ -525,6 +525,8 @@ describe("the run-job function", () => {
             return `job ${message.jobId} ${message.status}`;
           case "activity":
             return `activity ${message.jobId} ${message.text}`;
+          case "warning":
+            return `warning ${message.text}`;
           case "command":
             return `command ${message.name} #${message.attempt} ${message.status}`;
         }
@@ -641,7 +643,7 @@ describe("what a job says while it starts from a parent", () => {
       expect(kinds(messages, "run").length).toBeGreaterThan(1);
     });
 
-    return { api, result, texts: activities(messages) };
+    return { api, result, messages, texts: activities(messages) };
   };
 
   /** The snapshots `base` is cached under. A local run caches to `local`. */
@@ -683,6 +685,18 @@ describe("what a job says while it starts from a parent", () => {
 
     expect(texts).toContain("rebuilding base · no cache");
     expect(api.snapshots.size).toBe(0);
+  });
+
+  test("a run's warnings are sent once, for the CLI to show at the end", async () => {
+    const { messages } = await run({ cache: true, commands: false });
+
+    const warnings = messages.flatMap((message) => {
+      return message.kind === "warning" ? [message.text] : [];
+    });
+
+    expect(warnings).toEqual([
+      expect.stringContaining("not cached: `base` ran no commands"),
+    ]);
   });
 
   test("unavailable snapshots say so", async () => {

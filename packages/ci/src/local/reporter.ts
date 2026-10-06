@@ -64,6 +64,8 @@ export interface LocalReporter {
   jobRunUrl(run: CiRunScope, jobId: string, url: string): void;
   /** What a job is doing at a slow point that isn't a command. */
   activity(run: CiRunScope, jobId: string, text: string): void;
+  /** What the run wants to say once it's over, like a cache that's missing. */
+  warnings(run: CiRunScope): void;
   commandStarted(scope: CiJobScope, command: CommandAttempt): void;
   commandFinished(
     scope: CiJobScope,
@@ -257,6 +259,17 @@ export const createLocalReporter = (): LocalReporter => {
         text,
         at: Date.now(),
       });
+    },
+
+    warnings: (run) => {
+      // A build run's warnings reach the run that invoked it in its result.
+      if (run.build) {
+        return;
+      }
+
+      for (const text of run.warnings) {
+        send({ kind: "warning", runId: run.runId, text, at: Date.now() });
+      }
     },
 
     commandStarted: (scope, command) => {
