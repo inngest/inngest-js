@@ -27,7 +27,7 @@ type SandboxStepExtension = {
  */
 const describeStep = (
   operation: unknown,
-  outcome: { result: unknown } | { error: unknown },
+  outcome: { result: SandboxOperationResultV1 } | { error: unknown },
 ): void => {
   try {
     const execution = getAsyncCtxSync()?.execution;
@@ -41,14 +41,12 @@ const describeStep = (
       sandboxMetadataKind,
       "step",
       "merge",
-      {
-        ...sandboxTraceMetadata(
-          parseSandboxOperation(operation),
-          "result" in outcome
-            ? { result: outcome.result as SandboxOperationResultV1 }
-            : { error: getSandboxError(outcome.error) },
-        ),
-      },
+      sandboxTraceMetadata(
+        parseSandboxOperation(operation),
+        "result" in outcome
+          ? outcome
+          : { error: getSandboxError(outcome.error) },
+      ),
     );
   } catch {
     // An operation that fails validation has nothing to describe.

@@ -1,6 +1,9 @@
-import type {
-  SandboxOperationResultV1,
-  SandboxOperationV1,
+import {
+  operationProcessId,
+  operationSandboxId,
+  operationSnapshotId,
+  type SandboxOperationResultV1,
+  type SandboxOperationV1,
 } from "./protocol.ts";
 import type { SandboxError } from "./types.ts";
 
@@ -10,29 +13,19 @@ import type { SandboxError } from "./types.ts";
 export const sandboxMetadataKind = "inngest.sandbox";
 
 /**
- * The facade method a user calls for each action. Methods that share an
- * action, like `snapshot.clone()` and `create()`, are named by the action.
+ * The facade method a user calls for each action, where it isn't the action's
+ * own name. Methods that share an action, like `snapshot.clone()` and
+ * `create()`, are named by the action.
  */
-const methodForAction: Record<SandboxOperationV1["action"], string> = {
-  create: "create",
-  list: "list",
-  get: "get",
-  waitUntilRunning: "waitUntilRunning",
+const methodForAction: Partial<Record<SandboxOperationV1["action"], string>> = {
   exec: "commands.run",
-  destroy: "destroy",
-  pause: "pause",
-  resume: "resume",
   "process.start": "processes.start",
   "process.list": "processes.list",
   "process.get": "processes.get",
-  "process.signal": "process.signal",
-  "process.wait": "process.wait",
   "process.output": "process.getOutput",
   "snapshot.create": "snapshot",
   "snapshot.list": "snapshots.list",
   "snapshot.get": "snapshots.get",
-  "snapshot.waitUntilReady": "snapshot.waitUntilReady",
-  "snapshot.delete": "snapshot.delete",
 };
 
 /**
@@ -47,7 +40,7 @@ const methodForAction: Record<SandboxOperationV1["action"], string> = {
  * Values stay flat: scalars and short string arrays only, no nested objects,
  * so they survive ClickHouse `JSON` and DuckDB `VARIANT` storage unchanged.
  */
-export interface SandboxTraceMetadata {
+export type SandboxTraceMetadata = {
   version: 1;
   action: SandboxOperationV1["action"];
   /**
@@ -69,7 +62,7 @@ export interface SandboxTraceMetadata {
   snapshot_id?: string;
   snapshot_status?: string;
   error_code?: string;
-}
+};
 
 /**
  * Commands can be up to 32 KiB of argv, and a run's metadata is capped at
@@ -79,104 +72,60 @@ const maxCommandMetadataChars = 1_024;
 
 const commandMetadata = (
   argv: readonly string[],
-): Pick<
-  SandboxTraceMetadata,
-  "command" | "command_display" | "command_truncated"
-> => {
+): Partial<SandboxTraceMetadata> => {
   let remaining = maxCommandMetadataChars;
-  let truncated = false;
   const command: string[] = [];
   for (const argument of argv) {
     if (remaining <= 0) {
-      truncated = true;
       break;
     }
-    if (argument.length > remaining) {
-      command.push(argument.slice(0, remaining));
-      truncated = true;
-      break;
-    }
-    command.push(argument);
+    command.push(argument.slice(0, remaining));
     remaining -= argument.length;
   }
 
-  // `commands.run("npm test")` runs as `/bin/sh -c "npm test"`; show what the
-  // user wrote.
-  const shellScript =
-    command.length === 3 && command[0] === "/bin/sh" && command[1] === "-c"
-      ? command[2]
-      : undefined;
+  const isShellScript =
+    command.length === 3 && command[0] === "/bin/sh" && command[1] === "-c";
 
   return {
     command,
-    ...(shellScript !== undefined && { command_display: shellScript }),
-    ...(truncated && { command_truncated: true }),
+    // `commands.run("npm test")` runs as `/bin/sh -c "npm test"`; show what
+    // the user wrote.
+    command_display: isShellScript ? command[2] : undefined,
+    command_truncated:
+      remaining < 0 || command.length < argv.length || undefined,
   };
 };
 
+/**
+ * What the operation targets. This comes from the operation, not its result,
+ * so a failed step still names its machine.
+ */
 const targetMetadata = (
   operation: SandboxOperationV1,
 ): Partial<SandboxTraceMetadata> => {
-  switch (operation.action) {
-    case "create": {
-      const [options] = operation.input;
-      return {
-        sandbox_name: options.name,
-        ...("snapshotId" in options &&
-          options.snapshotId !== undefined && {
-            source_snapshot_id: options.snapshotId,
-          }),
-      };
-    }
-    case "get":
-      return { sandbox_id: operation.input[0].sandboxId };
-    case "exec": {
-      const [options] = operation.input;
-      return {
-        sandbox_id: operation.target.sandbox.id,
-        sandbox_name: operation.target.sandbox.name,
-        ...commandMetadata(options.command),
-        ...(options.cwd !== undefined && { cwd: options.cwd }),
-      };
-    }
-    case "process.start": {
-      const [options] = operation.input;
-      return {
-        sandbox_id: operation.target.sandbox.id,
-        sandbox_name: operation.target.sandbox.name,
-        ...commandMetadata(options.command),
-        ...(options.cwd !== undefined && { cwd: options.cwd }),
-      };
-    }
-    case "process.get":
-      return {
-        sandbox_id: operation.target.sandbox.id,
-        sandbox_name: operation.target.sandbox.name,
-        process_id: operation.target.processId,
-      };
-    case "process.signal":
-    case "process.wait":
-    case "process.output":
-      return {
-        sandbox_id: operation.target.sandbox.id,
-        sandbox_name: operation.target.sandbox.name,
-        process_id: operation.target.process.id,
-        ...commandMetadata(operation.target.process.command),
-      };
-    case "snapshot.get":
-      return { snapshot_id: operation.target.snapshotId };
-    case "snapshot.waitUntilReady":
-    case "snapshot.delete":
-      return { snapshot_id: operation.target.snapshot.id };
-    case "list":
-    case "snapshot.list":
-      return {};
-    default:
-      return {
-        sandbox_id: operation.target.sandbox.id,
-        sandbox_name: operation.target.sandbox.name,
-      };
-  }
+  const [input] = operation.input;
+  const command =
+    input && "command" in input
+      ? input.command
+      : "target" in operation && "process" in operation.target
+        ? operation.target.process.command
+        : undefined;
+
+  return {
+    sandbox_id: operationSandboxId(operation),
+    sandbox_name:
+      "target" in operation && "sandbox" in operation.target
+        ? operation.target.sandbox.name
+        : input && "name" in input
+          ? input.name
+          : undefined,
+    source_snapshot_id:
+      input && "snapshotId" in input ? input.snapshotId : undefined,
+    process_id: operationProcessId(operation),
+    snapshot_id: operationSnapshotId(operation),
+    cwd: input && "cwd" in input ? input.cwd : undefined,
+    ...(command && commandMetadata(command)),
+  };
 };
 
 const resultMetadata = (
@@ -184,43 +133,31 @@ const resultMetadata = (
 ): Partial<SandboxTraceMetadata> => {
   switch (result.action) {
     case "create":
+    case "get":
     case "waitUntilRunning":
     case "pause":
     case "resume":
-      return {
-        sandbox_id: result.sandbox.id,
-        sandbox_name: result.sandbox.name,
-      };
-    case "get":
       return result.sandbox
         ? { sandbox_id: result.sandbox.id, sandbox_name: result.sandbox.name }
         : {};
     case "exec":
       return {
         exit_code: result.result.exitCode,
-        ...(result.result.output.truncated && { output_truncated: true }),
+        output_truncated: result.result.output.truncated || undefined,
       };
     case "process.start":
     case "process.wait":
       return {
         process_id: result.process.id,
         process_state: result.process.state,
-        ...(result.process.exitCode !== undefined && {
-          exit_code: result.process.exitCode,
-        }),
-        ...(result.process.terminationSignal !== undefined && {
-          termination_signal: result.process.terminationSignal,
-        }),
+        exit_code: result.process.exitCode,
+        termination_signal: result.process.terminationSignal,
       };
     case "process.get":
-      return result.process
-        ? {
-            process_state: result.process.state,
-            ...(result.process.exitCode !== undefined && {
-              exit_code: result.process.exitCode,
-            }),
-          }
-        : {};
+      return {
+        process_state: result.process?.state,
+        exit_code: result.process?.exitCode,
+      };
     case "snapshot.create":
     case "snapshot.waitUntilReady":
       return {
@@ -228,7 +165,7 @@ const resultMetadata = (
         snapshot_status: result.snapshot.status,
       };
     case "snapshot.get":
-      return result.snapshot ? { snapshot_status: result.snapshot.status } : {};
+      return { snapshot_status: result.snapshot?.status };
     default:
       return {};
   }
@@ -248,15 +185,12 @@ export const sandboxTraceMetadata = (
   const metadata: SandboxTraceMetadata = {
     version: 1,
     action: operation.action,
-    method: methodForAction[operation.action],
+    method: methodForAction[operation.action] ?? operation.action,
     ...targetMetadata(operation),
+    ...("result" in outcome
+      ? resultMetadata(outcome.result)
+      : { error_code: outcome.error?.code }),
   };
-
-  if ("result" in outcome) {
-    Object.assign(metadata, resultMetadata(outcome.result));
-  } else if (outcome.error) {
-    metadata.error_code = outcome.error.code;
-  }
 
   // `undefined` doesn't survive the wire, so don't send keys for it.
   for (const key of Object.keys(metadata) as (keyof SandboxTraceMetadata)[]) {

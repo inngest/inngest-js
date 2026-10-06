@@ -714,7 +714,7 @@ export const findSandboxValidationError = (
   return;
 };
 
-const operationSandboxId = (
+export const operationSandboxId = (
   operation: SandboxOperationV1,
 ): string | undefined => {
   if (operation.action === "get") {
@@ -726,7 +726,7 @@ const operationSandboxId = (
   return;
 };
 
-const operationProcessId = (
+export const operationProcessId = (
   operation: SandboxOperationV1,
 ): string | undefined =>
   "target" in operation
@@ -737,7 +737,7 @@ const operationProcessId = (
         : undefined
     : undefined;
 
-const operationSnapshotId = (
+export const operationSnapshotId = (
   operation: SandboxOperationV1,
 ): string | undefined =>
   "target" in operation
