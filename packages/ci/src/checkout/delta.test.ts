@@ -24,7 +24,7 @@ import { memoryCacheStore } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { createCi } from "../pipeline/createCi.ts";
+import { createCiWithStore } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import type { FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -126,13 +126,16 @@ describe("checkout() of a local working tree", () => {
   };
 
   const harness = (store: CacheStore, api = createFakeSandboxApi()) => {
-    const ci = createCi(createCiTestClient(api), {
-      github: consoleReporter(),
-      cacheStore: store,
-      runUrl: ({ runId }) => {
-        return `http://localhost:8288/run?runID=${runId}`;
+    const ci = createCiWithStore(
+      createCiTestClient(api),
+      {
+        github: consoleReporter(),
+        runUrl: ({ runId }) => {
+          return `http://localhost:8288/run?runID=${runId}`;
+        },
       },
-    });
+      store,
+    );
 
     // Installed once, the way the example's `base` does.
     const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {

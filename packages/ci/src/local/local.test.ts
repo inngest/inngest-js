@@ -15,7 +15,7 @@ import { consoleReporter } from "../github/auth.ts";
 import { repo } from "../github/helpers.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { createCi } from "../pipeline/createCi.ts";
+import { type createCi, createCiWithStore } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
@@ -48,13 +48,16 @@ const setup = (
 ) => {
   const api = opts.api ?? createFakeSandboxApi();
 
-  const ci = createCi(createCiTestClient(api), {
-    github: consoleReporter(),
-    ...(opts.cacheStore ? { cacheStore: opts.cacheStore } : {}),
-    runUrl: ({ runId }) => {
-      return `http://localhost:8288/run?runID=${runId}`;
+  const ci = createCiWithStore(
+    createCiTestClient(api),
+    {
+      github: consoleReporter(),
+      runUrl: ({ runId }) => {
+        return `http://localhost:8288/run?runID=${runId}`;
+      },
     },
-  });
+    opts.cacheStore ?? memoryCacheStore(),
+  );
 
   return { api, ci };
 };
