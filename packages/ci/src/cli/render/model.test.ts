@@ -381,7 +381,7 @@ describe("a job waiting for its parent", () => {
           at: 5,
         },
       ]),
-    ).toBe("waiting for base · pnpm install");
+    ).toBe("waiting for base · $ pnpm install");
 
     expect(
       waiting([

@@ -82,7 +82,7 @@ describe("plainLines", () => {
     ];
 
     expect(lines(events).slice(1)).toEqual([
-      "command test › pnpm test: failed · attempt 2, exit 1 (1.5s)",
+      "command test › $ pnpm test: failed · attempt 2, exit 1 (1.5s)",
       "    boom",
     ]);
   });

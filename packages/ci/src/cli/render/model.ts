@@ -102,7 +102,7 @@ const stateOf = (job: JobView): string | undefined => {
   const command = running[running.length - 1];
 
   if (command) {
-    return command.name.replace(/\s+/g, " ").trim();
+    return `$ ${command.name.replace(/\s+/g, " ").trim()}`;
   }
 
   // A parent that is itself waiting adds nothing the child can use.
