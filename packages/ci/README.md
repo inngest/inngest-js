@@ -21,8 +21,11 @@ With `@inngest/ci` you get:
 - [Example](#example)
 - [Quick start](#quick-start)
 - [Run locally](#run-locally)
+  - [Pick what to run](#pick-what-to-run)
   - [Run one job](#run-one-job)
   - [Choose the event](#choose-the-event)
+  - [Saved input](#saved-input)
+  - [Open an earlier run](#open-an-earlier-run)
   - [Flags](#flags)
   - [Exit codes](#exit-codes)
   - [Configure](#configure)
@@ -197,31 +200,50 @@ npx inngest-ci pr
 
 ## Run locally
 
-`inngest-ci <target>` runs one pipeline or one job on real Sandboxes against your working tree.
+`inngest-ci <target>` runs one pipeline or one job on real Sandboxes against your working tree. With no target, a terminal shows a picker.
 
 ```bash
 npx inngest-ci pr
 npx inngest-ci lint
+npx inngest-ci
 ```
 
-It starts a Dev Server and your app for the run, and stops both when the run ends. In a terminal it draws the run live:
+It starts a Dev Server and your app, and stops both when you quit. In a terminal it draws the runs live:
 
 ```
 inngest-ci pr  pull_request.opened · jack/ci-package @ 70f798f + uncommitted
-Dev Server  http://127.0.0.1:24288   app  ci/server.ts · synced
+Dev Server  http://127.0.0.1:24288   app  port 41711
 ◐ pr                                   1m 12s
 ├─ ✓ base   restored from cache        0.8s
 ├─ ✓ lint   pnpm lint                  22s
-└─ ◐ test   pnpm test · attempt 2 of 2 41s
+└─ ◐ test   creating machine…          41s
 ```
+
+While no command runs, a job shows what it is doing, like `creating machine…` or `uploading working tree (12 MB)…`.
 
 | Key | Does |
 | --- | --- |
 | `↑` `↓` | Moves the highlight across runs and jobs. |
-| `enter` | Opens the highlighted run's trace. |
-| `q`, `Ctrl-C` | Cancels the run, cleans up, and exits. |
+| `enter` | Opens the highlighted run's trace in your browser. On WSL it uses `wslview`, or `explorer.exe`. If nothing opens, the footer shows the URL. |
+| `q`, `Ctrl-C` | While running, cancels the runs, cleans up, and exits. |
 
-Pass `--no-interactive` to print one line per transition instead. This is also the default without a terminal, such as in a log or for an agent.
+When every run has ended, the Dev Server and app stay up so the traces still open. `q` cleans up and exits. After a picker session, `r` goes back to the picker with no restart.
+
+Pass `--no-interactive` to print one line per transition instead. This is also the default without a terminal, such as in a log or for an agent. It ends with `inngest-ci open <runId>` for each run.
+
+### Pick what to run
+
+Run `inngest-ci` with no target in a terminal to pick from your pipelines, jobs and matrices. A matrix shows its number of combinations.
+
+| Key | Does |
+| --- | --- |
+| `↑` `↓` | Moves. |
+| `space` | Selects. |
+| `→` `←` | Opens and closes a matrix's combinations. `all` is the default. |
+| `enter` | Runs the selection in parallel, or the highlighted row if nothing is selected. |
+| `q`, `esc` | Quits. |
+
+Without a terminal, no target is an error that lists what you can run.
 
 ### Run one job
 
@@ -239,14 +261,35 @@ npx inngest-ci compat --node 22
 
 ### Choose the event
 
-A pipeline runs on an event built from your current checkout. For a pipeline with several triggers, `--event` picks one. Without a terminal, `--event` is required. In a terminal, the first trigger is used.
+A pipeline runs on an event built from your current checkout. For a pipeline with several triggers, `--event` picks one. Without a terminal, `--event` is required. In a terminal, it asks.
 
 ```bash
 npx inngest-ci release --event push
 npx inngest-ci deploy --data '{"env":"preview"}'
 ```
 
-`--data` is the `event.data` for a [`ci.manual()`](#triggers) trigger.
+`--data` is the `event.data` for a [`ci.manual()`](#triggers) trigger, or `{"body": "..."}` for a comment trigger.
+
+### Saved input
+
+In a terminal, a target that needs data asks for it: a trigger, the JSON for a `ci.manual()` trigger, a comment's text, a job's input or a matrix combination. Flags skip the question they answer.
+
+After a run with typed data, it offers to save it as a fixture. Fixtures are files in `<dir>/fixtures/<target>/<name>.json`. The next time, the prompt lists them first.
+
+```bash
+npx inngest-ci deploy --fixture nightly-api
+```
+
+`--fixture` uses a saved input without asking. A flag still wins over the fixture for the same field.
+
+### Open an earlier run
+
+```bash
+npx inngest-ci open            # the latest run
+npx inngest-ci open 01KABC...  # a run by ID
+```
+
+Each session keeps its runs in its own Dev Server database, `<dir>/dev-server/<session>`, so sessions can run side by side. `open` finds the session that ran the run (or the latest session), starts a Dev Server on its database without your app, opens the run in your browser and prints its URL. It stays up until `Ctrl-C`. Databases are cleaned up with their session's state file, some time after it ends. A job or pipeline named `open` is reached with `--job open`.
 
 ### Flags
 
@@ -255,8 +298,9 @@ npx inngest-ci deploy --data '{"env":"preview"}'
 | `--pipeline <id>` | Runs the pipeline with this ID. |
 | `--job <id>` | Runs the job with this ID. |
 | `--event <name>` | Picks a trigger when the pipeline has several. |
-| `--data <json>` | Sets `event.data` for a `ci.manual()` trigger. |
+| `--data <json>` | Sets `event.data` for a `ci.manual()` or comment trigger. |
 | `--input <json>` | Sets a job's input. |
+| `--fixture <name>` | Uses a saved input. |
 | `--<axis> <value>` | Picks a matrix combination. |
 | `--no-interactive` | Prints plain lines instead of the live view. |
 | `--help` | Prints usage. |
@@ -298,7 +342,7 @@ Each session also writes its live state to `~/.local/state/inngest-ci/sessions` 
 With no `ci` key, `inngest-ci` looks for `ci/server.ts`, `ci/server.mts`, `ci/server.js`, or `ci/server.mjs` and starts it with `tsx` or `node`.
 
 - Your app starts with `PORT` and `INNGEST_DEV=1` set. `ci.functions()` must be in what it serves. [`ci.local`](#local-runs) is `true`.
-- Add `.inngest/ci/` to `.gitignore`. It holds the Dev Server's data and the logs in `logs/dev-server.log` and `logs/app.log`.
+- Add `.inngest/ci/` to `.gitignore`. It holds the Dev Server's data, saved fixtures and the logs in `logs/dev-server.log` and `logs/app.log`.
 
 ### The Dev Server
 
@@ -313,7 +357,7 @@ With no `ci` key, `inngest-ci` looks for `ci/server.ts`, `ci/server.mts`, `ci/se
 npm install --save-dev inngest-cli
 ```
 
-It starts the Dev Server on free ports and stops it when the run ends.
+It starts the Dev Server on free ports and stops it when you quit. Each session's database in `<dir>/dev-server/<session>` keeps its run history after it ends.
 
 ### Send an event yourself
 

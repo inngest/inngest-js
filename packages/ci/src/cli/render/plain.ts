@@ -11,13 +11,13 @@ import type { LocalStatus } from "../../local/protocol.ts";
 import type { Renderer, SessionEvent } from "../events.ts";
 import {
   createPaint,
-  describeTarget,
+  describeTargets,
   formatElapsed,
   oneLine,
   type Paint,
   supportsColor,
 } from "./format.ts";
-import { initialModel, type Model, reduce } from "./model.ts";
+import { initialModel, type Model, reduce, runsStartedAt } from "./model.ts";
 
 type Transition = { key: string; state: string };
 
@@ -121,15 +121,24 @@ export const plainLines = (
 ): string[] => {
   switch (event.kind) {
     case "manifest":
-    case "project": {
+    case "project":
+    case "ready": {
       return [];
     }
 
-    case "ready": {
-      return [
-        `inngest-ci ${event.target.id} · ${describeTarget(event)}`,
-        `Dev Server: ${event.devServerUrl}`,
-      ];
+    case "targets": {
+      const { header } = model;
+
+      return header
+        ? [
+            `inngest-ci ${event.targets.map((target) => target.id).join(", ")} · ${describeTargets(header.repo, event.targets)}`,
+            `Dev Server: ${header.devServerUrl}`,
+          ]
+        : [];
+    }
+
+    case "activity": {
+      return [`job ${event.jobId}: ${oneLine(event.text)}`];
     }
 
     case "stage": {
@@ -224,11 +233,13 @@ export const plainLines = (
     }
 
     case "done": {
-      const elapsed = formatElapsed(event.at - (model.startedAt ?? event.at));
+      const elapsed = formatElapsed(event.at - runsStartedAt(model));
 
       return [
         `${paintStatus(paint, event.conclusion)} in ${elapsed}`,
-        ...(event.runUrl ? [`trace: ${event.runUrl}`] : []),
+        ...model.runs.map((run) => {
+          return `open ${run.name}: inngest-ci open ${run.runId}`;
+        }),
       ];
     }
   }
@@ -238,10 +249,18 @@ export const createPlainRenderer = (): Renderer => {
   const paint = createPaint(supportsColor(process.stdout));
   const seen = new Map<string, string>();
   let model = initialModel;
+  // The outcome is held back so it's the last thing printed, after cleanup.
+  let outcome: string[] = [];
 
   return {
     handle(event) {
       model = reduce(model, event);
+
+      if (event.kind === "done") {
+        outcome = plainLines(event, model, paint);
+
+        return;
+      }
 
       const transition = transitionOf(event);
 
@@ -259,8 +278,12 @@ export const createPlainRenderer = (): Renderer => {
     },
 
     close() {
+      const lines = outcome.map((text) => {
+        return `${text}\n`;
+      });
+
       return new Promise((resolve) => {
-        process.stdout.write("", () => {
+        process.stdout.write(lines.join(""), () => {
           resolve();
         });
       });

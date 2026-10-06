@@ -10,11 +10,11 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 
 import { type CliArgs, parseCliArgs, usage } from "./args.ts";
-import type { Renderer } from "./events.ts";
 import {
   createInteractiveRenderer,
   createPlainRenderer,
 } from "./render/index.ts";
+import { openRun } from "./openRun.ts";
 import {
   createStateFileRenderer,
   describeStarter,
@@ -29,18 +29,6 @@ const exitCodes = {
   failed: 1,
   cancelled: 1,
   "setup-error": 2,
-};
-
-const createRenderer = (interactive: boolean, onQuit: () => void): Renderer => {
-  if (!interactive) {
-    return createPlainRenderer();
-  }
-
-  const renderer = createInteractiveRenderer();
-
-  renderer.onQuit(onQuit);
-
-  return renderer;
 };
 
 const main = async (): Promise<number> => {
@@ -62,13 +50,6 @@ const main = async (): Promise<number> => {
     return 0;
   }
 
-  if (!args.name && !args.pipeline && !args.job) {
-    console.error(usage);
-
-    return exitCodes["setup-error"];
-  }
-
-  const interactive = Boolean(process.stdout.isTTY) && !args.noInteractive;
   const abort = new AbortController();
 
   const stop = () => {
@@ -78,12 +59,40 @@ const main = async (): Promise<number> => {
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 
-  const renderer = createRenderer(interactive, stop);
   const stateDir = resolveStateDir({
     env: process.env,
     platform: process.platform,
     home: homedir(),
   });
+
+  if (args.command === "open") {
+    try {
+      await openRun({
+        cwd: process.cwd(),
+        stateDir,
+        runId: args.runId,
+        log: console.log,
+        signal: abort.signal,
+      });
+
+      return 0;
+    } catch (error) {
+      const { message, fix } = error as SetupError;
+
+      console.error(`inngest-ci: ${message}${fix ? `\n\n${fix}` : ""}`);
+
+      return exitCodes["setup-error"];
+    }
+  }
+
+  const interactive = Boolean(process.stdout.isTTY) && !args.noInteractive;
+  const prompter = interactive
+    ? createInteractiveRenderer(abort.signal)
+    : undefined;
+
+  prompter?.onQuit(stop);
+
+  const renderer = prompter ?? createPlainRenderer();
   const sessionId = randomBytes(12).toString("hex");
 
   pruneSessions({ dir: stateDir, now: Date.now() });
@@ -99,7 +108,8 @@ const main = async (): Promise<number> => {
   const { conclusion } = await runSession({
     cwd: process.cwd(),
     args,
-    interactive,
+    sessionId,
+    prompter,
     emit: (event) => {
       renderer.handle(event);
       stateFile.handle(event);

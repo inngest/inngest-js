@@ -36,6 +36,7 @@ describe("plainLines", () => {
         },
         {
           kind: "run",
+          eventId: "e1",
           runId: "r",
           pipelineId: "pr",
           status: "running",
@@ -58,6 +59,7 @@ describe("plainLines", () => {
     const events: SessionEvent[] = [
       {
         kind: "run",
+        eventId: "e1",
         runId: "r",
         pipelineId: "pr",
         status: "running",
@@ -89,19 +91,59 @@ describe("plainLines", () => {
     expect(
       lines([
         { kind: "setup-error", message: "No config.", fix: "add it", at: 1000 },
-        {
-          kind: "done",
-          conclusion: "setup-error",
-          runUrl: "http://t",
-          at: 3000,
-        },
+        { kind: "done", conclusion: "setup-error", at: 3000 },
       ]),
     ).toEqual([
       "error: No config.",
       "  fix:",
       "    add it",
       "setup-error in 2.0s",
-      "trace: http://t",
+    ]);
+  });
+
+  test("names the targets, what a job is doing and how to reopen each run", () => {
+    expect(
+      lines([
+        {
+          kind: "ready",
+          devServerUrl: "http://127.0.0.1:1",
+          devServerDir: "/db/s1",
+          repo: { fullName: "a/b", ref: "main", sha: "abc1234", dirty: false },
+          at: 0,
+        },
+        {
+          kind: "targets",
+          targets: [
+            { kind: "pipeline", id: "pr" },
+            { kind: "job", id: "lint" },
+          ],
+          at: 1,
+        },
+        {
+          kind: "run",
+          eventId: "e1",
+          runId: "r1",
+          pipelineId: "lint",
+          status: "running",
+          url: "u",
+          at: 2,
+        },
+        {
+          kind: "activity",
+          runId: "r1",
+          jobId: "lint",
+          text: "creating machine…",
+          at: 3,
+        },
+        { kind: "done", conclusion: "passed", at: 4001 },
+      ]),
+    ).toEqual([
+      "inngest-ci pr, lint · main @ abc1234",
+      "Dev Server: http://127.0.0.1:1",
+      "run lint: running",
+      "job lint: creating machine…",
+      "passed in 4.0s",
+      "open lint: inngest-ci open r1",
     ]);
   });
 });

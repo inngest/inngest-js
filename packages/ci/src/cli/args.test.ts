@@ -29,6 +29,34 @@ describe("parseCliArgs", () => {
     });
   });
 
+  test("reads --fixture", () => {
+    expect(parseCliArgs(["deploy", "--fixture", "nightly"])).toMatchObject({
+      name: "deploy",
+      fixture: "nightly",
+    });
+  });
+
+  test("runs a target by default, and opens a run with `open`", () => {
+    expect(parseCliArgs(["pr"]).command).toBe("run");
+    expect(parseCliArgs([]).command).toBe("run");
+    expect(parseCliArgs(["open"])).toMatchObject({
+      command: "open",
+      runId: undefined,
+      name: undefined,
+    });
+    expect(parseCliArgs(["open", "01ABC"])).toMatchObject({
+      command: "open",
+      runId: "01ABC",
+    });
+  });
+
+  test("reaches a job called open with --job", () => {
+    expect(parseCliArgs(["--job", "open"])).toMatchObject({
+      command: "run",
+      job: "open",
+    });
+  });
+
   test("keeps unknown options as matrix axes", () => {
     const args = parseCliArgs(["compat", "--os", "linux", "--node=22"]);
 
@@ -45,6 +73,7 @@ describe("parseCliArgs", () => {
 
   test("rejects a second positional and a missing axis value", () => {
     expect(() => parseCliArgs(["a", "b"])).toThrow(SetupError);
+    expect(() => parseCliArgs(["open", "a", "b"])).toThrow(SetupError);
     expect(() => parseCliArgs(["a", "--os"])).toThrow("--os needs a value");
   });
 });

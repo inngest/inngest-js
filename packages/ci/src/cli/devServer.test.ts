@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   devServerArgs,
+  devServerDir,
   findOnPath,
   isSupportedVersion,
   resolveDevServerBin,
@@ -33,6 +34,17 @@ describe("isSupportedVersion", () => {
   });
 });
 
+describe("devServerDir", () => {
+  test("gives every session its own database folder", () => {
+    expect(devServerDir("/p/.inngest/ci", "aaa")).toBe(
+      "/p/.inngest/ci/dev-server/aaa",
+    );
+    expect(devServerDir("/p/.inngest/ci", "bbb")).not.toBe(
+      devServerDir("/p/.inngest/ci", "aaa"),
+    );
+  });
+});
+
 describe("devServerArgs", () => {
   test("isolates the Dev Server on its own ports", () => {
     const args = devServerArgs({
@@ -50,6 +62,22 @@ describe("devServerArgs", () => {
     expect(args.join(" ")).toBe(
       "dev --no-discovery --host 127.0.0.1 --port 1 --connect-gateway-port 2 --connect-gateway-grpc-port 3 --connect-executor-grpc-port 4 --debug-api-port 5 -u http://127.0.0.1:6/api/inngest --persist --sqlite-dir /d",
     );
+  });
+
+  test("syncs no app when there is none, as `inngest-ci open` starts it", () => {
+    const args = devServerArgs({
+      ports: {
+        main: 1,
+        connectGateway: 2,
+        connectGatewayGrpc: 3,
+        connectExecutorGrpc: 4,
+        debugApi: 5,
+      },
+      sqliteDir: "/d",
+    });
+
+    expect(args).not.toContain("-u");
+    expect(args.slice(-3)).toEqual(["--persist", "--sqlite-dir", "/d"]);
   });
 });
 

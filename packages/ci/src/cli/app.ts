@@ -5,7 +5,7 @@
  * @module
  */
 
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { LocalManifest } from "../local/protocol.ts";
 import { localEnv, runJobFunctionId } from "../local/protocol.ts";
@@ -22,9 +22,31 @@ import { SetupError } from "./setupError.ts";
 
 const syncTimeoutMs = 30_000;
 
-/** Start the app with `sh -c <start>`, listening on `port`. */
+/**
+ * The `node_modules/.bin` of `root` and of every directory above it up to
+ * `stopAt`, nearest first, as npm scripts get them.
+ */
+export const binDirs = (root: string, stopAt: string): string[] => {
+  const dirs: string[] = [];
+
+  for (let dir = root; ; dir = dirname(dir)) {
+    dirs.push(join(dir, "node_modules", ".bin"));
+
+    if (dir === stopAt || dirname(dir) === dir) {
+      return dirs;
+    }
+  }
+};
+
+/**
+ * Start the app with `sh -c <start>`, listening on `port`. Its `PATH` has the
+ * project's `node_modules/.bin` first, so `start` can name a local tool like
+ * `tsx` however `inngest-ci` was run.
+ */
 export const startApp = (opts: {
   config: CiConfig;
+  /** The git root, where the search for `node_modules/.bin` stops. */
+  gitRoot: string;
   port: number;
   devServerUrl: string;
   reporterUrl: string;
@@ -34,6 +56,10 @@ export const startApp = (opts: {
     args: ["-c", opts.config.start],
     cwd: opts.config.root,
     env: scrubbedEnv({
+      PATH: [
+        ...binDirs(opts.config.root, opts.gitRoot),
+        process.env.PATH ?? "",
+      ].join(delimiter),
       PORT: String(opts.port),
       INNGEST_DEV: "1",
       INNGEST_BASE_URL: opts.devServerUrl,

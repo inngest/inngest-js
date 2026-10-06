@@ -16,15 +16,27 @@ import {
 import { git } from "../util.ts";
 import { SetupError } from "./setupError.ts";
 
-type AxisValue = string | number | boolean;
+export type AxisValue = string | number | boolean;
+
+/** One combination of a matrix's axes. */
+export type Combo = Record<string, AxisValue>;
 
 export type Target =
   | {
       kind: "pipeline";
       id: string;
       triggers: LocalManifest["pipelines"][number]["triggers"];
+      /** Only a matrix has axes; this lets any target be asked. */
+      axes?: undefined;
     }
-  | { kind: "job"; id: string; axes?: Record<string, AxisValue[]> };
+  | {
+      kind: "job";
+      id: string;
+      /** Whether the job's handler declares a parameter. */
+      takesInput: boolean;
+      /** Set for a matrix. */
+      axes?: Record<string, AxisValue[]>;
+    };
 
 export interface LocalEvent {
   name: string;
@@ -45,6 +57,34 @@ const list = (items: string[]): string => {
   return items.length ? items.join(", ") : "none";
 };
 
+/** Everything the manifest defines that can run: pipelines, jobs, then matrices. */
+export const targetsOf = (manifest: LocalManifest): Target[] => {
+  return [
+    ...manifest.pipelines.map((pipeline): Target => {
+      return { kind: "pipeline", id: pipeline.id, triggers: pipeline.triggers };
+    }),
+    ...manifest.jobs.map((job): Target => {
+      return { kind: "job", id: job.id, takesInput: job.takesInput };
+    }),
+    ...manifest.matrices.map((matrix): Target => {
+      return {
+        kind: "job",
+        id: matrix.id,
+        takesInput: false,
+        axes: matrix.axes,
+      };
+    }),
+  ];
+};
+
+/** What can be run, for an error to list. */
+export const listTargets = (manifest: LocalManifest): string => {
+  return [
+    `Pipelines: ${list(manifest.pipelines.map((p) => p.id))}`,
+    `Jobs: ${list([...manifest.jobs, ...manifest.matrices].map((j) => j.id))}`,
+  ].join("\n");
+};
+
 /**
  * Find what the user named in the manifest. A bare name must be unambiguous;
  * `--pipeline` and `--job` say which when it isn't.
@@ -54,61 +94,38 @@ export const resolveTarget = (
   args: { name?: string; pipeline?: string; job?: string },
 ): Target => {
   const name = args.pipeline ?? args.job ?? args.name;
-  const pipeline = args.job
-    ? undefined
-    : manifest.pipelines.find((candidate) => {
-        return candidate.id === name;
-      });
-  const matrix = args.pipeline
-    ? undefined
-    : manifest.matrices.find((candidate) => {
-        return candidate.id === name;
-      });
-  const job = args.pipeline
-    ? undefined
-    : manifest.jobs.find((candidate) => {
-        return candidate.id === name;
-      });
+  const matches = targetsOf(manifest).filter((target) => {
+    if (target.id !== name) {
+      return false;
+    }
 
-  if (pipeline && (job || matrix)) {
+    if (args.pipeline) {
+      return target.kind === "pipeline";
+    }
+
+    return args.job ? target.kind === "job" : true;
+  });
+  const [target] = matches;
+
+  if (matches.length > 1) {
     throw new SetupError(`"${name}" is both a pipeline and a job.`, {
       fix: `Use --pipeline ${name} or --job ${name}.`,
     });
   }
 
-  if (pipeline) {
-    return { kind: "pipeline", id: pipeline.id, triggers: pipeline.triggers };
+  if (!target) {
+    throw new SetupError(`Nothing named "${name}" to run.`, {
+      fix: listTargets(manifest),
+    });
   }
 
-  if (matrix) {
-    return { kind: "job", id: matrix.id, axes: matrix.axes };
-  }
-
-  if (job) {
-    return { kind: "job", id: job.id };
-  }
-
-  throw new SetupError(`Nothing named "${name}" to run.`, {
-    fix: `Pipelines: ${list(manifest.pipelines.map((p) => p.id))}\nJobs: ${list([...manifest.jobs, ...manifest.matrices].map((j) => j.id))}`,
-  });
+  return target;
 };
 
-const parseJson = (flag: string, value: string): Record<string, unknown> => {
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new SetupError(`--${flag} is not valid JSON.`);
-  }
-};
-
-/**
- * The trigger to run a pipeline with. A pipeline with several needs `--event`,
- * except interactively, where the first is used until picking is built.
- */
-export const pickTrigger = (
+/** The events a pipeline can be triggered with. Crons can't run locally. */
+export const triggerEvents = (
   triggers: Extract<Target, { kind: "pipeline" }>["triggers"],
-  opts: { event?: string; interactive: boolean },
-): string => {
+): string[] => {
   const events = triggers.flatMap((trigger) => {
     return "event" in trigger ? [trigger.event] : [];
   });
@@ -117,41 +134,36 @@ export const pickTrigger = (
     throw new SetupError("Cron triggers can't be run locally yet.");
   }
 
-  if (opts.event) {
-    const match = events.find((event) => {
-      return event === opts.event || event === `github/${opts.event}`;
-    });
+  return events;
+};
 
-    if (!match) {
-      throw new SetupError(`This pipeline has no "${opts.event}" trigger.`, {
-        fix: `Triggers: ${events.join(", ")}`,
-      });
-    }
+/** The trigger `--event` names. `github/` can be left off. */
+export const matchTrigger = (events: string[], name: string): string => {
+  const match = events.find((event) => {
+    return event === name || event === `github/${name}`;
+  });
 
-    return match;
-  }
-
-  if (events.length > 1 && !opts.interactive) {
-    throw new SetupError("This pipeline has several triggers.", {
-      fix: `Pick one with --event: ${events.join(", ")}`,
+  if (!match) {
+    throw new SetupError(`This pipeline has no "${name}" trigger.`, {
+      fix: `Triggers: ${events.join(", ")}`,
     });
   }
 
-  return events[0] as string;
+  return match;
 };
 
 /**
  * The event that triggers a pipeline: a fixture for a GitHub event, or the
- * `--data` for a manual one. A manual event also carries the repository, so
+ * `data` for a manual one. A manual event also carries the repository, so
  * `checkout()` has the working tree to upload.
  */
 export const buildPipelineEvent = async (opts: {
   trigger: string;
-  data?: string;
+  data?: Record<string, unknown>;
   cwd: string;
 }): Promise<LocalEvent> => {
   const { trigger, cwd } = opts;
-  const data = opts.data ? parseJson("data", opts.data) : {};
+  const data = opts.data ?? {};
 
   if (trigger.startsWith("ci/manual.")) {
     const { fixtureData } = await describeRepo(cwd);
@@ -215,7 +227,7 @@ export const describeRepo = async (cwd: string): Promise<LocalRepo> => {
 export const parseCombo = (
   axes: Record<string, AxisValue[]> | undefined,
   flags: Record<string, string>,
-): Record<string, AxisValue> | undefined => {
+): Combo | undefined => {
   const given = Object.keys(flags);
 
   if (given.length === 0) {
@@ -238,7 +250,7 @@ export const parseCombo = (
     });
   }
 
-  const combo: Record<string, AxisValue> = {};
+  const combo: Combo = {};
 
   for (const [axis, values] of Object.entries(axes)) {
     const flag = flags[axis];
@@ -269,23 +281,45 @@ export const parseCombo = (
 export const buildJobEvent = (opts: {
   target: Extract<Target, { kind: "job" }>;
   repo: LocalRepo;
-  input?: string;
-  combo: Record<string, string>;
+  input?: unknown;
+  /** A matrix's combination. Left out, every combination runs. */
+  combo?: Combo;
 }): LocalEvent => {
   const data: RunJobEventData = {
     ...opts.repo.fixtureData,
     job: opts.target.id,
   };
 
-  if (opts.input) {
-    data.input = parseJson("input", opts.input);
+  if (opts.input !== undefined) {
+    data.input = opts.input;
   }
 
-  const combo = parseCombo(opts.target.axes, opts.combo);
-
-  if (combo) {
-    data.combo = combo;
+  if (opts.combo && Object.keys(opts.combo).length > 0) {
+    data.combo = opts.combo;
   }
 
   return { name: runJobEvent, data };
+};
+
+/** Every combination of a matrix's axes, in declaration order. */
+export const combinations = (axes: Record<string, AxisValue[]>): Combo[] => {
+  return Object.entries(axes).reduce<Combo[]>(
+    (combos, [axis, values]) => {
+      return combos.flatMap((combo) => {
+        return values.map((value) => {
+          return { ...combo, [axis]: value };
+        });
+      });
+    },
+    [{}],
+  );
+};
+
+/** A combination as a job names it, like `node:22, os:linux`. */
+export const describeCombo = (combo: Combo): string => {
+  return Object.entries(combo)
+    .map(([axis, value]) => {
+      return `${axis}:${value}`;
+    })
+    .join(", ");
 };

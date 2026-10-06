@@ -32,12 +32,18 @@ const pipelineRun: SessionEvent[] = [
   {
     kind: "ready",
     devServerUrl: "http://127.0.0.1:1",
+    devServerDir: "/db/s1",
     repo: { fullName: "a/b", ref: "main", sha: "abc", dirty: true },
-    target: { kind: "pipeline", id: "pr", trigger: "pull_request.opened" },
+    at: 2,
+  },
+  {
+    kind: "targets",
+    targets: [{ kind: "pipeline", id: "pr", trigger: "pull_request.opened" }],
     at: 2,
   },
   {
     kind: "run",
+    eventId: "e1",
     runId: "r1",
     pipelineId: "pr",
     status: "running",
@@ -84,6 +90,7 @@ const pipelineRun: SessionEvent[] = [
   },
   {
     kind: "run",
+    eventId: "e1",
     runId: "r1",
     pipelineId: "pr",
     status: "failed",
@@ -108,6 +115,8 @@ describe("toSessionState", () => {
       conclusion: "failed",
       project: { root: "/work/ci-pipelines", name: "ci-pipelines" },
       repo: { fullName: "a/b", dirty: true },
+      devServerUrl: "http://127.0.0.1:1",
+      devServerDir: "/db/s1",
       target: { kind: "pipeline", id: "pr", trigger: "pull_request.opened" },
     });
     expect(state.runs[0]).toMatchObject({
@@ -205,11 +214,16 @@ describe("throttle", () => {
       renderer.handle(event);
     }
 
+    expect(writes.map((content) => JSON.parse(content).closedAt)).toEqual([
+      undefined,
+    ]);
+
     await renderer.close();
 
     expect(JSON.parse(writes.at(-1)!)).toMatchObject({
       conclusion: "failed",
       endedAt: 10,
+      closedAt: Date.now(),
     });
   });
 });

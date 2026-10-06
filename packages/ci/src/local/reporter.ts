@@ -60,6 +60,8 @@ export interface LocalReporter {
   sink(sink: CheckSink): CheckSink;
   /** A job started from another job's machine, which the CLI nests it under. */
   jobFrom(scope: CiJobScope, parentId: string): void;
+  /** What a job is doing at a slow point that isn't a command. */
+  activity(run: CiRunScope, jobId: string, text: string): void;
   commandStarted(scope: CiJobScope, command: CommandAttempt): void;
   commandFinished(
     scope: CiJobScope,
@@ -131,6 +133,7 @@ export const createLocalReporter = (): LocalReporter => {
       send({
         kind: "run",
         runId: run.runId,
+        eventId: (run.event as { id?: string } | undefined)?.id ?? "",
         pipelineId: run.pipelineId,
         status,
         ...(title && status !== "passed" ? { reason: title } : {}),
@@ -216,6 +219,16 @@ export const createLocalReporter = (): LocalReporter => {
         jobId: scope.jobPath,
         status: "running",
         parentId,
+        at: Date.now(),
+      });
+    },
+
+    activity: (run, jobId, text) => {
+      send({
+        kind: "activity",
+        runId: run.runId,
+        jobId,
+        text,
         at: Date.now(),
       });
     },

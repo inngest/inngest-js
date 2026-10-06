@@ -75,6 +75,12 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
     scope.fromInputs[job.id] = input;
   }
 
+  scope.run.ci.reporter.activity(
+    scope.run,
+    scope.jobPath,
+    `waiting for ${job.id}…`,
+  );
+
   const result = await job(input as never);
 
   const snapshotId = await snapshotJob(scope.run, job.id);

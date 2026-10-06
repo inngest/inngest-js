@@ -15,8 +15,8 @@ export interface ReporterServer {
   url: string;
   /** Resolves with the first manifest the app sends. */
   manifest: Promise<LocalManifest>;
-  /** Call `listener` with every message from now on. */
-  onMessage(listener: (message: LocalMessage) => void): void;
+  /** Call `listener` with every message from now on. Returns how to stop. */
+  onMessage(listener: (message: LocalMessage) => void): () => void;
   close(): Promise<void>;
 }
 
@@ -67,6 +67,10 @@ export const startReporterServer = async (): Promise<ReporterServer> => {
     manifest,
     onMessage: (listener) => {
       listeners.push(listener);
+
+      return () => {
+        listeners.splice(listeners.indexOf(listener), 1);
+      };
     },
     close: () => {
       return new Promise((resolve) => {
