@@ -5,7 +5,12 @@
  * @module
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { checkout } from "../checkout/checkout.ts";
 import { files, memoryCacheStore } from "../cache/cache.ts";
 import {
   CiUsageError,
@@ -854,6 +859,57 @@ describe("from()", () => {
     ).toHaveLength(2);
 
     expect(result.stepIds).toContain("base (2) › machine");
+  });
+
+  test("a child that from()s a cached parent can checkout() again", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "inngest-ci-from-checkout-"));
+
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir });
+      writeFileSync(join(dir, "a.txt"), "a");
+
+      const { api, ci } = setup();
+
+      const base = ci.job("base", async () => {
+        await checkout();
+
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job("lint", async () => {
+        await from(base);
+
+        await checkout();
+
+        await $`pnpm lint`;
+      });
+
+      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+      });
+
+      const result = await runFunction(pipeline, {
+        event: {
+          ...prEvent,
+          data: { ...prEvent.data, local: { path: dir, baseRef: "main" } },
+        },
+      });
+
+      expect(result.type).toBe("function-resolved");
+      expect(result.stepIds).toContain("base › checkout");
+      expect(result.stepIds).toContain("lint › checkout");
+
+      expect(
+        userCommands(api).filter((argv) => {
+          return argv[0] === "pnpm";
+        }),
+      ).toEqual([
+        ["pnpm", "install"],
+        ["pnpm", "lint"],
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("from() after a command throws", async () => {

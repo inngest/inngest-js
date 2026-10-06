@@ -46,6 +46,11 @@ interface CheckoutOptions {
  *
  * This is usually a job's first command, and it's what creates the machine.
  *
+ * If `/work` already has a checkout, it's updated to this run's commit instead
+ * of cloned again, and installed dependencies and build output are kept. A job
+ * that starts `from()` a cached job should call `checkout()` again to move to
+ * this run's commit, since the cached machine has the commit it was built on.
+ *
  * ```ts
  * const test = ci.job("test", async () => {
  *   await checkout();        // the machine starts here
@@ -55,7 +60,9 @@ interface CheckoutOptions {
  * ```
  *
  * Locally, it uploads your working tree, including uncommitted changes, so
- * there's nothing to push before running a pipeline. Against GitHub, it clones
+ * there's nothing to push before running a pipeline. Over an existing local
+ * checkout the files are extracted on top, so files deleted locally since can
+ * linger on the machine. Against GitHub, it clones
  * the commit that triggered the run with a short-lived installation token that
  * never leaves the step handler, so it's never in step input, step output, or
  * the trace.
@@ -142,7 +149,8 @@ const uploadWorkingTree = async (
  * The shell script that clones the repository and checks out `sha`.
  *
  * The URL comes from `$CI_REPO_URL` so the token stays out of the script, and
- * the path and ref are quoted so they're only ever data.
+ * the path and ref are quoted so they're only ever data. When the target is
+ * already a git checkout it's updated to `sha` instead of cloned.
  */
 export const cloneScript = (args: {
   repo: RepoContext;
@@ -162,20 +170,37 @@ export const cloneScript = (args: {
   const target = shellEscape(args.target);
   const filter = opts.history === "full" ? "" : "--filter=blob:none";
 
-  return [
+  // A fork's commits aren't in the target repository's branches, but GitHub
+  // keeps every pull request's head under a ref there.
+  const fork = repo.pullRequest?.fork
+    ? `git -C ${target} fetch origin ${shellEscape(`refs/pull/${repo.pullRequest.number}/head`)}`
+    : null;
+
+  const submodules = opts.submodules
+    ? [`git -C ${target} submodule update --init --recursive`]
+    : [];
+
+  const clone = [
     `git clone ${filter} --no-checkout -- "$CI_REPO_URL" ${target}`,
-    // A fork's commits aren't in the target repository's branches, but
-    // GitHub keeps every pull request's head under a ref there.
-    ...(repo.pullRequest?.fork
-      ? [
-          `git -C ${target} fetch origin ${shellEscape(`refs/pull/${repo.pullRequest.number}/head`)}`,
-        ]
-      : []),
+    ...(fork ? [fork] : []),
     `git -C ${target} checkout ${shellEscape(sha)}`,
-    ...(opts.submodules
-      ? [`git -C ${target} submodule update --init --recursive`]
-      : []),
+    ...submodules,
   ].join(" && ");
+
+  // A checkout that's already there, such as one restored from a cached
+  // snapshot, moves to `sha`. The token in its old remote URL has expired, so
+  // the remote is repointed. Nothing is cleaned, so installed dependencies and
+  // build output stay.
+  const update = [
+    `git -C ${target} remote set-url origin "$CI_REPO_URL"`,
+    fork ?? `git -C ${target} fetch ${filter} origin ${shellEscape(sha)}`,
+    fork
+      ? `git -C ${target} checkout --force --detach ${shellEscape(sha)}`
+      : `git -C ${target} checkout --force --detach FETCH_HEAD`,
+    ...submodules,
+  ].join(" && ");
+
+  return `if [ -d ${target}/.git ]; then ${update}; else ${clone}; fi`;
 };
 
 const cloneFromGithub = async (
