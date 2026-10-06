@@ -33,15 +33,12 @@ const sameCombo = (
 /**
  * Expand a matrix into its combinations and run them as jobs.
  */
-export const createMatrix = <
-  TAxes extends Record<string, readonly unknown[]>,
-  TResult,
->(
+export const createMatrix = <TAxes extends Record<string, readonly unknown[]>>(
   ci: Ci,
   config: MatrixConfig<TAxes>,
-  handler: (combo: MatrixCombo<TAxes>) => Promise<TResult>,
-): Matrix<TAxes, TResult> => {
-  const run = async (combos: MatrixCombo<TAxes>[]): Promise<TResult[]> => {
+  handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
+): Matrix<TAxes> => {
+  const run = async (combos: MatrixCombo<TAxes>[]): Promise<void> => {
     countApi("matrix");
 
     const tasks = combos.map((combo) => {
@@ -56,7 +53,7 @@ export const createMatrix = <
             ? config.cache(combo)
             : config.cache;
 
-        const job = ci.job<TResult>(
+        const job = ci.job(
           {
             id: matrixJobId(config.id, combo),
             ...(machine ? { machine } : {}),
@@ -69,11 +66,11 @@ export const createMatrix = <
           },
         );
 
-        return job();
+        await job();
       };
     });
 
-    return runPool(tasks, config.concurrency, config.failFast ?? false);
+    await runPool(tasks, config.concurrency, config.failFast ?? false);
   };
 
   const matrix = ((only?: Partial<MatrixCombo<TAxes>>) => {
@@ -86,7 +83,7 @@ export const createMatrix = <
           : true;
       }),
     );
-  }) as Matrix<TAxes, TResult>;
+  }) as Matrix<TAxes>;
 
   Object.defineProperties(matrix, {
     id: { value: config.id, enumerable: true },
@@ -158,15 +155,14 @@ export const expandMatrix = <TAxes extends Record<string, readonly unknown[]>>(
  * With `failFast` off, everything runs and the failures are thrown together,
  * so one bad combination doesn't hide the rest. With it on, the first failure
  * rejects and no queued combination starts; the ones already running finish
- * and their results are ignored.
+ * and their outcomes are ignored.
  */
-export const runPool = async <T>(
-  tasks: Array<() => Promise<T>>,
+export const runPool = async (
+  tasks: Array<() => Promise<void>>,
   concurrency: number | undefined,
   failFast: boolean,
-): Promise<T[]> => {
+): Promise<void> => {
   const limit = concurrency && concurrency > 0 ? concurrency : tasks.length;
-  const results: T[] = new Array(tasks.length);
   const errors: unknown[] = [];
   let next = 0;
   let stopped = false;
@@ -181,7 +177,7 @@ export const runPool = async <T>(
       }
 
       try {
-        results[index] = await task();
+        await task();
       } catch (error) {
         if (failFast) {
           stopped = true;
@@ -203,6 +199,4 @@ export const runPool = async <T>(
   if (errors.length > 0) {
     throw new AggregateError(errors, `${errors.length} job(s) failed`);
   }
-
-  return results;
 };

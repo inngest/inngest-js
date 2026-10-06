@@ -210,8 +210,6 @@ export interface JobConfig<_TInput = void> {
    * nothing in the key has changed: the job doesn't run again, and jobs that
    * start `from()` it start from the snapshot. A job that runs no commands has
    * no machine, so it isn't cached.
-   *
-   * A cached job resolves to `undefined`, since it's built in a run of its own.
    */
   cache?: CacheConfig;
   /** Check settings for this job. `false` means no job check. */
@@ -247,19 +245,21 @@ export interface JobConfig<_TInput = void> {
  *
  * Calling it twice in one run joins the run already in progress, so two parts
  * of a pipeline can both depend on it without it running twice.
+ *
+ * A job is called for its side effects, so it resolves to nothing.
  */
-export interface Job<TResult = unknown, TInput = void> {
-  (input: TInput): Promise<TResult>;
+export interface Job<TInput = void> {
+  (input: TInput): Promise<void>;
   /** The job's ID, as given to `ci.job()`. */
   readonly id: string;
   readonly kind: "inngest/ci.job";
 }
 
 /**
- * Any job, regardless of its input and result types.
+ * Any job, regardless of its input type.
  */
 // biome-ignore lint/suspicious/noExplicitAny: matches any job
-export type AnyJob = Job<any, any>;
+export type AnyJob = Job<any>;
 
 /**
  * A pipeline's options. Every flow control option `createFunction` takes works
@@ -561,7 +561,7 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
   concurrency?: number;
   /**
    * Stop the rest when one fails. Off by default, so one bad combination
-   * doesn't hide the others' results.
+   * doesn't hide the others' failures.
    */
   failFast?: boolean;
   /** Machine settings, per combination if you need them to differ. */
@@ -582,8 +582,8 @@ export interface MatrixConfig<TAxes extends MatrixAxes = MatrixAxes> {
  * await compat({ node: "22", db: "postgres" }); // just the one
  * ```
  */
-export interface Matrix<TAxes extends MatrixAxes, TResult> {
-  (only?: Partial<MatrixCombo<TAxes>>): Promise<TResult[]>;
+export interface Matrix<TAxes extends MatrixAxes> {
+  (only?: Partial<MatrixCombo<TAxes>>): Promise<void>;
   /** The matrix's ID, as given to `ci.matrix()`. */
   readonly id: string;
 }

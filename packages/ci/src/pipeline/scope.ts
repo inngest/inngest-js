@@ -19,7 +19,7 @@ import type {
   MachineConfig,
   RepoContext,
 } from "../types.ts";
-import type { CacheBuildData } from "./cacheBuild.ts";
+import type { CacheBuildData, CacheBuildResult } from "./cacheBuild.ts";
 
 /**
  * The separator used between parts of a scope path and a step label. It's a
@@ -183,7 +183,12 @@ export interface CiRunScope {
   event: unknown;
   repo?: RepoContext;
   /** Jobs that have started in this run, keyed by job ID. */
-  jobs: Map<string, Promise<unknown>>;
+  jobs: Map<string, Promise<void>>;
+  /**
+   * Cached jobs being rebuilt after their snapshot went bad, keyed by the
+   * rebuild's path, so jobs that find the same bad snapshot share one build.
+   */
+  rebuilds?: Map<string, Promise<CacheBuildResult>>;
   /** Machines created in this run, keyed by scope path. */
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */

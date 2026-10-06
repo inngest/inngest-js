@@ -371,14 +371,12 @@ describe("dev mode", () => {
       }),
     });
 
-    const job = ci.job("build", async () => {
-      return "built";
-    });
+    const job = ci.job("build", async () => {});
 
     const pipeline = ci.pipeline(
       { id: "pr", on: [{ event: "github/pull_request.opened" }] },
       async () => {
-        return job();
+        await job();
       },
     );
 

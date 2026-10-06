@@ -71,19 +71,20 @@ describe("github.rest", () => {
     });
 
     const { ci } = setup(gh);
+    let url: string | undefined;
 
     const job = ci.job("release", async () => {
       const release = await github.rest.repos.createRelease({
         tag_name: "v1.4.0",
       });
 
-      return release.html_url;
+      url = release.html_url;
     });
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
       async () => {
-        return job();
+        await job();
       },
     );
 
@@ -92,9 +93,7 @@ describe("github.rest", () => {
     expect(result.type).toBe("function-resolved");
 
     // `data` is returned, not the whole response.
-    expect(result.data).toBe(
-      "https://github.com/inngest/inngest-js/releases/v1",
-    );
+    expect(url).toBe("https://github.com/inngest/inngest-js/releases/v1");
 
     expect(result.stepIds).toContain("release › github.repos.createRelease");
 
@@ -165,11 +164,12 @@ describe("github.rest", () => {
     gh.route("GET /repos/inngest/inngest-js/pulls/7", { mergeable: true });
 
     const { ci, client } = setup(gh);
+    let read: unknown;
 
     const job = ci.job("read", async () => {
       const { step } = await import("inngest");
 
-      return step.run("read-both", async () => {
+      read = await step.run("read-both", async () => {
         const repo = await github.rest.repos.get({});
         const pull = await github.rest.pulls.get({ pull_number: 7 });
 
@@ -182,13 +182,13 @@ describe("github.rest", () => {
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
       async () => {
-        return job();
+        await job();
       },
     );
 
     const result = await runFunction(pipeline, { event: prEvent });
 
-    expect(result.data).toEqual({ branch: "main", mergeable: true });
+    expect(read).toEqual({ branch: "main", mergeable: true });
 
     // One step for the two calls, not three.
     expect(
@@ -235,13 +235,13 @@ describe("github.rest", () => {
     const { ci } = setup(gh);
 
     const job = ci.job("read", async () => {
-      return github.rest.repos.get({});
+      await github.rest.repos.get({});
     });
 
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
       async () => {
-        return job();
+        await job();
       },
     );
 
@@ -261,22 +261,23 @@ describe("github helpers", () => {
     });
 
     const first = setup(gh);
+    let firstComment: unknown;
 
     const firstJob = first.ci.job("comment", async () => {
-      return github.stickyComment(
+      firstComment = await github.stickyComment(
         "preview",
         "Preview: https://preview.example",
       );
     });
 
-    const firstResult = await runFunction(
+    await runFunction(
       first.ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return firstJob();
+        await firstJob();
       }),
       { event: prEvent },
     );
 
-    expect(firstResult.data).toEqual({
+    expect(firstComment).toEqual({
       id: 99,
       url: "https://github.com/c/99",
     });
@@ -294,7 +295,7 @@ describe("github helpers", () => {
     const second = setup(gh);
 
     const secondJob = second.ci.job("comment", async () => {
-      return github.stickyComment(
+      await github.stickyComment(
         "preview",
         "Preview: https://preview-2.example",
       );
@@ -304,7 +305,7 @@ describe("github helpers", () => {
       second.ci.pipeline(
         { id: "pr", on: prTrigger, check: false },
         async () => {
-          return secondJob();
+          await secondJob();
         },
       ),
       { event: prEvent },
@@ -325,13 +326,13 @@ describe("github helpers", () => {
     const { ci } = setup(gh);
 
     const job = ci.job("comment", async () => {
-      return github.stickyComment("preview", "hello");
+      await github.stickyComment("preview", "hello");
     });
 
     const pipeline = ci.pipeline(
       { id: "push", on: [{ event: "github/push" }], check: false },
       async () => {
-        return job();
+        await job();
       },
     );
 
@@ -365,18 +366,20 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
+    let pushed: unknown;
+
     const job = ci.job("push-ref", async () => {
-      return github.forcePushRef("heads/next", "abc1234");
+      pushed = await github.forcePushRef("heads/next", "abc1234");
     });
 
-    const result = await runFunction(
+    await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       { event: prEvent },
     );
 
-    expect(result.data).toEqual({ created: true });
+    expect(pushed).toEqual({ created: true });
 
     expect(
       gh.requests.some((request) => {
@@ -395,21 +398,23 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
+    let permissions: unknown;
+
     const job = ci.job("permission", async () => {
-      return {
+      permissions = {
         write: await github.canUser("someone", "write"),
         admin: await github.canUser("someone", "admin"),
       };
     });
 
-    const result = await runFunction(
+    await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       { event: prEvent },
     );
 
-    expect(result.data).toEqual({ write: true, admin: false });
+    expect(permissions).toEqual({ write: true, admin: false });
   });
 
   test("waitForChecks keeps checks that already finished", async () => {
@@ -422,18 +427,20 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
+    let checks: unknown;
+
     const job = ci.job("wait", async () => {
-      return github.waitForChecks({ names: ["vercel"] });
+      checks = await github.waitForChecks({ names: ["vercel"] });
     });
 
     const result = await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       { event: prEvent },
     );
 
-    expect(result.data).toEqual({ vercel: "success" });
+    expect(checks).toEqual({ vercel: "success" });
 
     // Nothing was waited on, because the check was already done.
     expect(
@@ -451,13 +458,18 @@ describe("github helpers", () => {
 
     const { ci } = setup(gh);
 
+    let checks: unknown;
+
     const job = ci.job("wait", async () => {
-      return github.waitForChecks({ names: ["vercel"], timeout: "10m" });
+      checks = await github.waitForChecks({
+        names: ["vercel"],
+        timeout: "10m",
+      });
     });
 
     const result = await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       {
         event: prEvent,
@@ -473,21 +485,21 @@ describe("github helpers", () => {
     );
 
     expect({
-      data: result.data,
+      checks,
       error: (result.error as { message?: string })?.message,
-    }).toEqual({ data: { vercel: "failure" }, error: undefined });
+    }).toEqual({ checks: { vercel: "failure" }, error: undefined });
   });
 
   test("github.token() and github.octokit() throw outside a step", async () => {
     const { ci } = setup(gh);
 
     const job = ci.job("token", async () => {
-      return github.token();
+      await github.token();
     });
 
     const result = await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       { event: prEvent },
     );
@@ -667,8 +679,10 @@ describe("shard", () => {
 
     const ci = createCi(client, { github: consoleReporter() });
 
+    let picked: unknown;
+
     const job = ci.job("shard", async () => {
-      return shard(
+      picked = await shard(
         { total: 2, index: 0, files: ["a", "b", "c", "d"] },
         async (files) => {
           return files;
@@ -679,13 +693,13 @@ describe("shard", () => {
     const pipeline = ci.pipeline(
       { id: "pr", on: prTrigger, check: false },
       async () => {
-        return job();
+        await job();
       },
     );
 
-    const result = await runFunction(pipeline, { event: prEvent });
+    await runFunction(pipeline, { event: prEvent });
 
-    expect(result.data).toEqual(["a", "c"]);
+    expect(picked).toEqual(["a", "c"]);
   });
 });
 
@@ -745,6 +759,8 @@ describe("helper edge cases", () => {
 
     const { ci } = setup(gh);
 
+    let answers: unknown;
+
     const job = ci.job("permission", async () => {
       const ghost = await github.canUser("ghost", "write");
 
@@ -756,17 +772,17 @@ describe("helper edge cases", () => {
         flaky = "threw";
       }
 
-      return { ghost, flaky };
+      answers = { ghost, flaky };
     });
 
-    const result = await runFunction(
+    await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       { event: prEvent },
     );
 
-    expect(result.data).toEqual({ ghost: false, flaky: "threw" });
+    expect(answers).toEqual({ ghost: false, flaky: "threw" });
   });
 
   test("waitForChecks reads every page of check runs", async () => {
@@ -814,18 +830,20 @@ describe("helper edge cases", () => {
 
     const { ci } = setup(gh);
 
+    let checks: unknown;
+
     const job = ci.job("wait", async () => {
-      return github.waitForChecks({ names: ["vercel"] });
+      checks = await github.waitForChecks({ names: ["vercel"] });
     });
 
-    const result = await runFunction(
+    await runFunction(
       ci.pipeline({ id: "pr", on: prTrigger, check: false }, async () => {
-        return job();
+        await job();
       }),
       { event: prEvent },
     );
 
-    expect(result.data).toEqual({ vercel: "success" });
+    expect(checks).toEqual({ vercel: "success" });
     expect(requested[0]).toContain("per_page=100");
     expect(requested).toHaveLength(2);
   });
@@ -839,10 +857,8 @@ describe("helper edge cases", () => {
     const conditions: string[] = [];
 
     const job = ci.job("wait", async () => {
-      const byName = await github.waitForWorkflow({ workflow: "deploy.yml" });
-      const byId = await github.waitForWorkflow({ workflow: "1234" });
-
-      return { byName, byId };
+      await github.waitForWorkflow({ workflow: "deploy.yml" });
+      await github.waitForWorkflow({ workflow: "1234" });
     });
 
     await runFunction(

@@ -32,7 +32,7 @@ export interface RegisteredJob {
   id: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<any>;
+  handler: (input: any) => Promise<void>;
 }
 
 export const defineJob = ({
@@ -82,7 +82,7 @@ interface RunJobArgs {
   path?: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
-  handler: (input: any) => Promise<any>;
+  handler: (input: any) => Promise<void>;
   input: unknown;
 }
 
@@ -93,7 +93,7 @@ export const runJob = async ({
   config,
   handler,
   input,
-}: RunJobArgs): Promise<unknown> => {
+}: RunJobArgs): Promise<void> => {
   const run = getRunScope();
 
   if (!run) {
@@ -261,7 +261,9 @@ export const rebuildJob = async (
   if (registered.config.cache && cached) {
     const target = { ownKey: cached.ownKey, name: cached.writeName };
 
-    let building = run.jobs.get(path) as Promise<CacheBuildResult> | undefined;
+    run.rebuilds ??= new Map();
+
+    let building = run.rebuilds.get(path);
 
     if (!building) {
       building = invokeBuild({
@@ -273,7 +275,7 @@ export const rebuildJob = async (
         exclude: cached.snapshotId,
       });
 
-      run.jobs.set(path, building);
+      run.rebuilds.set(path, building);
     }
 
     const built = await building;
@@ -342,7 +344,7 @@ const jobBody = async ({
   config,
   handler,
   input: given,
-}: RunJobArgs & { run: CiRunScope }): Promise<unknown> => {
+}: RunJobArgs & { run: CiRunScope }): Promise<void> => {
   const input = await validateInput(config, given);
   const checks = run.ci.checks as CheckReporter;
 
@@ -396,7 +398,7 @@ const jobBody = async ({
       await checks.jobComplete({ ...target, conclusion: "success", title });
     }
 
-    return undefined;
+    return;
   }
 
   // Handlers replay from the top on every step, so reading the clock here
@@ -410,7 +412,6 @@ const jobBody = async ({
   }
 
   try {
-    let result: unknown;
     let reusedTitle: string | undefined;
 
     if (cacheAt && asksBuild) {
@@ -437,7 +438,7 @@ const jobBody = async ({
         await announceBuild(run);
       }
 
-      result = await runJobBody(scope, () => {
+      await runJobBody(scope, () => {
         return handler(input);
       });
 
@@ -474,8 +475,6 @@ const jobBody = async ({
     }
 
     await pauseMachine(scope);
-
-    return result;
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     const conclusion = conclusionForError(error);

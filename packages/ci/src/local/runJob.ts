@@ -35,7 +35,7 @@ export const runJobFunction = ({
   client: Inngest.Any;
   internals: CiInternals;
   jobs: Map<string, RegisteredJob>;
-  matrices: Map<string, Matrix<MatrixAxes, unknown>>;
+  matrices: Map<string, Matrix<MatrixAxes>>;
 }): InngestFunction.Any => {
   return client.createFunction(
     {

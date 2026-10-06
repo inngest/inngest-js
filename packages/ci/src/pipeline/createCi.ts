@@ -88,8 +88,9 @@ export interface Ci {
   /**
    * Define a job: a unit of work with its own machine, called like a function.
    *
-   * Its input and result are inferred from the handler, and it runs once per
-   * pipeline run however many times it's called.
+   * Its input is inferred from the handler, and it runs once per pipeline run
+   * however many times it's called. It has no return value, and a handler
+   * that returns one is a type error.
    *
    * ```ts
    * const test = ci.job("test", async () => {
@@ -99,7 +100,6 @@ export interface Ci {
    *
    * const compat = ci.job("compat", async (node: string) => {
    *   await $`fnm use ${node}`;
-   *   return node;
    * });
    * ```
    *
@@ -115,14 +115,14 @@ export interface Ci {
    * );
    * ```
    */
-  job<TSchema extends StandardSchemaV1, TResult>(
+  job<TSchema extends StandardSchemaV1>(
     config: JobConfig & { input: TSchema },
-    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<TResult>,
-  ): Job<TResult, StandardSchemaV1.InferInput<TSchema>>;
-  job<TResult, TInput = void>(
+    handler: (input: StandardSchemaV1.InferOutput<TSchema>) => Promise<void>,
+  ): Job<StandardSchemaV1.InferInput<TSchema>>;
+  job<TInput = void>(
     idOrConfig: string | JobConfig<TInput>,
-    handler: (input: TInput) => Promise<TResult>,
-  ): Job<TResult, TInput>;
+    handler: (input: TInput) => Promise<void>,
+  ): Job<TInput>;
 
   /**
    * Define a matrix: one job per combination of the axes.
@@ -139,10 +139,10 @@ export interface Ci {
    * );
    * ```
    */
-  matrix<const TAxes extends MatrixAxes, TResult>(
+  matrix<const TAxes extends MatrixAxes>(
     config: MatrixConfig<TAxes>,
-    handler: (combo: MatrixCombo<TAxes>) => Promise<TResult>,
-  ): Matrix<TAxes, TResult>;
+    handler: (combo: MatrixCombo<TAxes>) => Promise<void>,
+  ): Matrix<TAxes>;
 
   /**
    * A manual trigger with a typed payload, sent as `ci/manual.<pipelineId>`.
@@ -231,7 +231,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
   // we're in; only where checks *go* changes in dev.
   const provider = options.github ?? consoleReporter();
   const jobs = new Map<string, RegisteredJob>();
-  const matrices = new Map<string, Matrix<MatrixAxes, unknown>>();
+  const matrices = new Map<string, Matrix<MatrixAxes>>();
   const reporter = createLocalReporter();
   /** The matrices with a `cache`, whose combinations have a build function. */
   const cachedMatrixIds = new Set<string>();
@@ -313,7 +313,7 @@ export const createCi = (client: Inngest.Any, options: CiOptions = {}): Ci => {
     matrix: (config, handler) => {
       const matrix = createMatrix(ci, config, handler);
 
-      matrices.set(config.id, matrix as Matrix<MatrixAxes, unknown>);
+      matrices.set(config.id, matrix as Matrix<MatrixAxes>);
 
       if (config.cache) {
         cachedMatrixIds.add(config.id);

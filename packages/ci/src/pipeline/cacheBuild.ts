@@ -78,7 +78,7 @@ export interface CacheBuildResult {
 
 /** A matrix as the build runs it: exactly one combination. */
 interface MatrixRunner {
-  [runCombosKey](combos: Record<string, unknown>[]): Promise<unknown[]>;
+  [runCombosKey](combos: Record<string, unknown>[]): Promise<void>;
 }
 
 /**
@@ -95,7 +95,7 @@ export const cacheBuildFunction = ({
   client: Inngest.Any;
   internals: CiInternals;
   jobs: Map<string, RegisteredJob>;
-  matrices: Map<string, Matrix<MatrixAxes, unknown>>;
+  matrices: Map<string, Matrix<MatrixAxes>>;
   /** The job's ID, or the matrix's. */
   target: string;
 }): InngestFunction.Any => {
@@ -137,7 +137,7 @@ const buildSnapshot = async ({
 }: {
   data: CacheBuildData;
   jobs: Map<string, RegisteredJob>;
-  matrices: Map<string, Matrix<MatrixAxes, unknown>>;
+  matrices: Map<string, Matrix<MatrixAxes>>;
 }): Promise<CacheBuildResult> => {
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
