@@ -1,6 +1,7 @@
 /**
  * Defining and running a job: the `ci.job()` factory, starting a run of a job
- * or joining the shared one `from()` uses, and the job body that reports checks, caches and pauses machines.
+ * or joining the shared one `from()` uses, and the job body that reports
+ * checks, caches and pauses machines.
  *
  * @module
  */
