@@ -385,11 +385,17 @@ describe("step.sandbox", () => {
       11,
       "snapshot-create",
       expect.objectContaining({ action: "snapshot.create" }),
+      { statement: "snapshot" },
     );
     expect(rawTool).toHaveBeenNthCalledWith(
       12,
       "snapshot-create:wait-until-ready",
       expect.objectContaining({ action: "snapshot.waitUntilReady" }),
+      {
+        statement: "snapshot",
+        statementOperation: operations[10],
+        sandbox: { id: sandboxId, name: sandboxRef.name },
+      },
     );
     expect(operations[16]).toMatchObject({
       action: "create",
@@ -567,6 +573,7 @@ describe("step.sandbox", () => {
           }),
         ],
       }),
+      { statement: "commands.run" },
     );
     const widerOptions = {
       command: "printf overridden",
@@ -588,6 +595,7 @@ describe("step.sandbox", () => {
           }),
         ],
       }),
+      { statement: "commands.run" },
     );
     rawTool.mockClear();
     await expect(sandbox.commands.run("empty", "")).rejects.toThrow(
@@ -603,6 +611,7 @@ describe("step.sandbox", () => {
         expect.objectContaining({
           input: [expect.objectContaining({ command })],
         }),
+        { statement: "commands.run" },
       );
     }
     rawTool.mockClear();

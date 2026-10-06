@@ -73,6 +73,27 @@ export interface AsyncContext {
     experimentStepTracker?: { found: boolean };
 
     /**
+     * If present, every step created in this context serves one sandbox
+     * statement, like a CI command made of a start, polls and sleeps. Set by
+     * `withSandboxStatement()`. Sandbox steps describe themselves as internal
+     * to it, and `step.sleep()` carries it on `OutgoingOp.opts` so the
+     * executor can describe the sleep too.
+     */
+    sandboxStatement?: {
+      /** Hashed step ID that groups the statement's steps. */
+      statementId: string;
+
+      /** The user's label for the statement. */
+      statementName: string;
+
+      /** The SDK method the statement stands for, like "commands.run". */
+      statement: string;
+
+      /** The machine the statement runs on. */
+      sandbox?: { id: string; name: string };
+    };
+
+    /**
      * If true, we are inside the `select()` callback of
      * `group.experiment()`. Any `step.*()` call here would create a
      * nested step, which is not allowed.

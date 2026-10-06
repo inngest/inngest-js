@@ -19,6 +19,7 @@ export type MetadataKind =
   | "inngest.warnings"
   | "inngest.ai"
   | "inngest.ci"
+  | "inngest.sandbox"
   | `userland.${string}`;
 
 /**

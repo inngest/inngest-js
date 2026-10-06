@@ -1,6 +1,7 @@
 import { z } from "zod/v3";
 
 import type { StepOptionsOrId } from "../../types.ts";
+import type { SandboxStepTrace } from "./trace.ts";
 import {
   type SandboxAction,
   SandboxError,
@@ -632,6 +633,7 @@ export type DurableSandboxAction = SandboxOperationV1["action"];
 export type SandboxRawTool = (
   idOrOptions: StepOptionsOrId,
   operation: SandboxOperationV1,
+  trace?: SandboxStepTrace,
 ) => Promise<unknown>;
 export type SandboxRawToolResolver = () =>
   | SandboxRawTool

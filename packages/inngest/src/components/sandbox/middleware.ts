@@ -1,8 +1,24 @@
+import { getAsyncCtxSync } from "../execution/als.ts";
 import type { Inngest } from "../Inngest.ts";
 import { Middleware } from "../middleware/middleware.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { createSandboxTools, executeSandboxOperation } from "./durable.ts";
-import type { SandboxRawTool } from "./protocol.ts";
+import {
+  getSandboxError,
+  parseSandboxOperation,
+  type SandboxOperationResultV1,
+  type SandboxOperationV1,
+  type SandboxRawTool,
+} from "./protocol.ts";
+import {
+  getSandboxStatement,
+  type SandboxStatementScope,
+} from "./statement.ts";
+import {
+  type SandboxStepTrace,
+  sandboxMetadataKind,
+  sandboxTraceMetadata,
+} from "./trace.ts";
 import {
   type DurableSandboxTools,
   SandboxError,
@@ -14,13 +30,74 @@ type SandboxStepExtension = {
   sandbox: DurableSandboxTools;
 };
 
+/**
+ * Attach `inngest.sandbox` metadata to the step that's executing, describing
+ * the sandbox action for the trace. Tracing must never fail the step.
+ */
+const describeStep = (
+  operation: unknown,
+  trace: SandboxStepTrace,
+  resolveStatementId: (operation: SandboxOperationV1) => string | undefined,
+  statementScope: SandboxStatementScope | undefined,
+  outcome: { result: unknown } | { error: unknown },
+): void => {
+  try {
+    const execution = getAsyncCtxSync()?.execution;
+    const step = execution?.executingStep;
+    if (!execution || !step?.id || !step.hashedId) {
+      return;
+    }
+
+    const parsed = parseSandboxOperation(operation);
+    const statementId = trace.statementOperation
+      ? resolveStatementId(trace.statementOperation)
+      : undefined;
+
+    execution.instance.addMetadata(
+      step.id,
+      sandboxMetadataKind,
+      "step",
+      "merge",
+      {
+        ...sandboxTraceMetadata({
+          operation: parsed,
+          trace,
+          stepId: step.hashedId,
+          ...(statementId !== undefined && { statementId }),
+          ...(statementScope && { statementScope }),
+          outcome:
+            "result" in outcome
+              ? { result: outcome.result as SandboxOperationResultV1 }
+              : { error: getSandboxError(outcome.error) },
+        }),
+      },
+    );
+  } catch {
+    // An operation that fails validation has nothing to describe.
+  }
+};
+
 const executeAsStep = async (
   client: Inngest.Any,
   operation: unknown,
+  trace: SandboxStepTrace | undefined,
+  resolveStatementId: (operation: SandboxOperationV1) => string | undefined,
+  statementScope: SandboxStatementScope | undefined,
 ): Promise<unknown> => {
   try {
-    return await executeSandboxOperation(client.sandboxes, operation);
+    const result = await executeSandboxOperation(client.sandboxes, operation);
+    if (trace) {
+      describeStep(operation, trace, resolveStatementId, statementScope, {
+        result,
+      });
+    }
+    return result;
   } catch (error) {
+    if (trace) {
+      describeStep(operation, trace, resolveStatementId, statementScope, {
+        error,
+      });
+    }
     if (error instanceof SandboxError) {
       const cause = {
         protocolVersion: error.protocolVersion,
@@ -74,6 +151,30 @@ const executeAsStep = async (
 export class SandboxMiddleware extends Middleware.BaseMiddleware {
   readonly id = "inngest:sandbox";
 
+  /**
+   * The step ID each sandbox operation was planned or memoized under, so an
+   * internal step can name the statement step it serves. Keyed by the
+   * operation object the facade passed to `step.run`, which is recreated on
+   * every request, including replays of memoized steps.
+   */
+  private readonly stepIds = new WeakMap<object, string>();
+
+  override transformStepInput(
+    arg: Middleware.TransformStepInputArgs,
+  ): Middleware.TransformStepInputArgs {
+    const [operation] = arg.input;
+    if (
+      arg.stepInfo.stepType === "run" &&
+      typeof operation === "object" &&
+      operation !== null &&
+      "protocolVersion" in operation &&
+      "action" in operation
+    ) {
+      this.stepIds.set(operation, arg.stepInfo.hashedId);
+    }
+    return arg;
+  }
+
   override transformFunctionInput(
     arg: Middleware.TransformFunctionInputArgs,
   ): Middleware.TransformFunctionInputArgs & {
@@ -82,12 +183,25 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
         SandboxStepExtension;
     };
   } {
-    const rawTool: SandboxRawTool = (idOrOptions, operation) =>
-      arg.ctx.step.run(
+    const resolveStatementId = (operation: SandboxOperationV1) =>
+      this.stepIds.get(operation);
+    const rawTool: SandboxRawTool = (idOrOptions, operation, trace) => {
+      // Read the scope where the facade was called, since the step's handler
+      // may run later, outside it.
+      const statementScope = getSandboxStatement();
+      return arg.ctx.step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input),
+        (input) =>
+          executeAsStep(
+            this.client,
+            input,
+            trace,
+            resolveStatementId,
+            statementScope,
+          ),
         operation,
       );
+    };
 
     return {
       ...arg,
