@@ -35,8 +35,10 @@ export interface FakeProcess {
 export interface FakeSandbox {
   id: string;
   name: string;
-  status: "RUNNING" | "PAUSED" | "TERMINATED";
+  status: "STARTING" | "RUNNING" | "PAUSED" | "TERMINATED";
   snapshotId?: string;
+  /** Set on a sandbox whose start failed, which the create call reported. */
+  stuck?: boolean;
   vcpu: number;
   memoryMb: number;
 }
@@ -259,22 +261,40 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       snapshotStarts.push(body.snapshotId);
     }
 
+    // A name identifies an *active* sandbox; once one is terminated the same
+    // name creates a new one.
+    const taken = [...sandboxes.values()].some((sandbox) => {
+      return sandbox.name === body.name && sandbox.status !== "TERMINATED";
+    });
+
+    if (taken) {
+      return apiError(
+        409,
+        "sandbox_name_taken",
+        "Sandbox name is already in use",
+      );
+    }
+
     if (body.snapshotId && failingSnapshots.has(body.snapshotId)) {
+      // As on the real API, the sandbox exists and keeps its name, stuck in
+      // STARTING, though the create call fails.
+      const stuck: FakeSandbox = {
+        id: nextId(),
+        name: body.name,
+        status: "STARTING",
+        vcpu: body.vcpu ?? 2,
+        memoryMb: body.memoryMb ?? 2048,
+        snapshotId: body.snapshotId,
+        stuck: true,
+      };
+
+      sandboxes.set(stuck.id, stuck);
+
       return apiError(
         422,
         "sandbox_start_failed",
         "Sandbox did not reach RUNNING within 120000 milliseconds",
       );
-    }
-
-    // A name identifies an *active* sandbox; once one is terminated the same
-    // name creates a new one.
-    const existing = [...sandboxes.values()].find((sandbox) => {
-      return sandbox.name === body.name && sandbox.status !== "TERMINATED";
-    });
-
-    if (existing) {
-      return json(201, sandboxResource(existing));
     }
 
     const sandbox: FakeSandbox = {
