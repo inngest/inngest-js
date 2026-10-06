@@ -41,7 +41,8 @@ import { snapshotJob } from "./machine.ts";
  * own machine and gives you its result, the second does that *and* starts this
  * job from where it finished.
  *
- * Resolves to whatever the parent job returned.
+ * Resolves to whatever the parent job returned. A cached parent is built in a
+ * run of its own, or not at all, so it resolves to `undefined`.
  *
  * @throws {CiUsageError} When called outside a job, after this job's first
  * command, or a second time.
@@ -74,7 +75,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   scope.run.ci.reporter.jobFrom(scope, job.id);
 
   if (input !== undefined) {
-    scope.fromInputs[job.id] = input;
+    scope.parentInputs[job.id] = input;
   }
 
   scope.run.ci.reporter.activity(
@@ -88,14 +89,15 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   const snapshotId = await snapshotJob(scope.run, job.id);
 
   const { run } = scope;
-  const cached = run.cacheEntries.get(job.id);
+  const cached = run.cached.get(job.id);
+  const cacheable = Boolean(run.ci.jobs.get(job.id)?.config.cache);
 
   if (snapshotId) {
     scope.fromSnapshotId = snapshotId;
 
     scope.startNote =
       cached?.snapshotId === snapshotId
-        ? `starting ${job.id} · ${describeCached(cached)}`
+        ? `starting ${job.id} · ${describeCached(cached.createdAt)}`
         : `starting ${job.id}`;
 
     scope.rebuildSnapshot = () => {
@@ -105,9 +107,9 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
     scope.rebuildParent = () => {
       return rerunOnThisMachine(scope, job, input);
     };
-  } else if (run.machines.has(job.id) || run.cacheEntries.has(job.id)) {
-    const cacheable = Boolean(run.ci.jobs.get(job.id)?.config.cache);
-
+  } else if (run.machines.has(job.id) || cacheable) {
+    // A cached job is built in a run of its own, so without a snapshot its
+    // work isn't on any machine here.
     const why = run.snapshotsUnavailable
       ? " · no snapshots"
       : cacheable

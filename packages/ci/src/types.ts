@@ -172,9 +172,6 @@ export interface CacheConfig {
   /**
    * What the job depends on. If nothing in the key changed since the last
    * successful run, the job is reused.
-   *
-   * "Cache" reads a little oddly for jobs like `test` that don't restore
-   * anything; the trace and checks say "restored" or "passed at …" instead.
    */
   key?: CacheKey;
 
@@ -189,43 +186,6 @@ export interface CacheConfig {
    * their own scope.
    */
   scope?: "branch" | "global";
-}
-
-/**
- * A stored cache entry: a job's last successful result and where it came from.
- */
-export interface CacheEntry {
-  /** The resolved cache key. */
-  key: string;
-  /** The job that wrote the entry. */
-  jobId: string;
-  /** The snapshot of the job's machine, if one was taken, for `from()`. */
-  snapshotId?: string;
-  /**
-   * The git tree ID of the working tree the snapshot holds, so a job that
-   * starts from it uploads only what changed since.
-   */
-  treeId?: string;
-  /** Set once the snapshot failed to start: the entry is a miss and is rebuilt. */
-  invalid?: boolean;
-  /** What the job returned. */
-  result: unknown;
-  /** When the entry was written, as an ISO timestamp. */
-  builtAt: string;
-  /** The run that wrote the entry. */
-  builtBy: { runId: string; sha?: string; trigger: string };
-  /** The keys of the cached jobs this job started `from()` when it was built. */
-  fromKeys?: Record<string, string>;
-  /** The input each of those jobs was called with, by job ID. */
-  fromInputs?: Record<string, unknown>;
-}
-
-/** Where cache entries live. Internal: not exported from the package. */
-export interface CacheStore {
-  /** Read an entry, or `undefined` if there isn't one. */
-  get(key: string): Promise<CacheEntry | undefined>;
-  /** Write an entry, replacing any under the same key. */
-  set(key: string, entry: CacheEntry): Promise<void>;
 }
 
 /**
@@ -246,11 +206,12 @@ export interface JobConfig<_TInput = void> {
   /** Machine settings for this job, overriding the pipeline's and the client's. */
   machine?: MachineConfig;
   /**
-   * Reuse the job's last result when nothing it depends on has changed.
+   * Snapshot the job's machine when it passes, and reuse that snapshot while
+   * nothing in the key has changed: the job doesn't run again, and jobs that
+   * start `from()` it start from the snapshot. A job that runs no commands has
+   * no machine, so it isn't cached.
    *
-   * "Cache" reads oddly for a job like `test`, where nothing is restored and
-   * the job simply doesn't need to run again. The trace and checks say what
-   * actually happened: "restored" or "passed at …".
+   * A cached job resolves to `undefined`, since it's built in a run of its own.
    */
   cache?: CacheConfig;
   /** Check settings for this job. `false` means no job check. */

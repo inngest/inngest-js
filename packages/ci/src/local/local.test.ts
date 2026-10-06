@@ -9,18 +9,16 @@ import type { Server } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { memoryCacheStore } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { repo } from "../github/helpers.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { type createCi, createCiWithStore } from "../pipeline/createCi.ts";
+import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
-import type { CacheStore } from "../types.ts";
 import type { LocalMessage, RunJobEventData } from "./protocol.ts";
 import { localEnv, runJobEvent, runJobFunctionId } from "./protocol.ts";
 
@@ -42,22 +40,18 @@ const runJobData = (
 
 const setup = (
   opts: {
+    /** Shared by clients that stand for later runs in one environment. */
     api?: ReturnType<typeof createFakeSandboxApi>;
-    cacheStore?: CacheStore;
   } = {},
 ) => {
   const api = opts.api ?? createFakeSandboxApi();
 
-  const ci = createCiWithStore(
-    createCiTestClient(api),
-    {
-      github: consoleReporter(),
-      runUrl: ({ runId }) => {
-        return `http://localhost:8288/run?runID=${runId}`;
-      },
+  const ci = createCi(createCiTestClient(api), {
+    github: consoleReporter(),
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
     },
-    opts.cacheStore ?? memoryCacheStore(),
-  );
+  });
 
   return { api, ci };
 };
@@ -628,17 +622,13 @@ describe("what a job says while it starts from a parent", () => {
       cache: boolean;
       commands?: boolean;
       api?: ReturnType<typeof createFakeSandboxApi>;
-      cacheStore?: CacheStore;
     },
     prepare?: (api: ReturnType<typeof createFakeSandboxApi>) => void,
   ) => {
     vi.stubEnv(localEnv.local, "1");
 
     const messages = await listen();
-    const { api, ci } = setup({
-      ...(opts.api ? { api: opts.api } : {}),
-      ...(opts.cacheStore ? { cacheStore: opts.cacheStore } : {}),
-    });
+    const { api, ci } = setup(opts.api ? { api: opts.api } : {});
 
     prepare?.(api);
 
@@ -653,6 +643,13 @@ describe("what a job says while it starts from a parent", () => {
     return { api, result, texts: activities(messages) };
   };
 
+  /** The snapshots `base` is cached under. A local run caches to `local`. */
+  const cachedBase = (api: ReturnType<typeof createFakeSandboxApi>) => {
+    return [...api.snapshots.values()].filter((snapshot) => {
+      return snapshot.name?.startsWith("ci/local/base/");
+    });
+  };
+
   test("a snapshot from this run says so", async () => {
     const { texts } = await run({ cache: false });
 
@@ -662,11 +659,10 @@ describe("what a job says while it starts from a parent", () => {
 
   test("a cached snapshot says how old it is", async () => {
     const api = createFakeSandboxApi();
-    const cacheStore = memoryCacheStore();
 
-    await run({ cache: true, api, cacheStore });
+    await run({ cache: true, api });
 
-    const { texts } = await run({ cache: true, api, cacheStore });
+    const { texts } = await run({ cache: true, api });
 
     expect(texts).toContain("waiting for base…");
 
@@ -677,20 +673,15 @@ describe("what a job says while it starts from a parent", () => {
     ).toBe(true);
   });
 
-  test("a cached entry with no snapshot says it is rebuilding", async () => {
+  test("a cached job with no machine has no snapshot, so it says it is rebuilding", async () => {
     const api = createFakeSandboxApi();
-    const cacheStore = memoryCacheStore();
 
-    await run({ cache: true, commands: false, api, cacheStore });
+    await run({ cache: true, commands: false, api });
 
-    const { texts } = await run({
-      cache: true,
-      commands: false,
-      api,
-      cacheStore,
-    });
+    const { texts } = await run({ cache: true, commands: false, api });
 
     expect(texts).toContain("rebuilding base · no cache");
+    expect(api.snapshots.size).toBe(0);
   });
 
   test("unavailable snapshots say so", async () => {
@@ -701,25 +692,17 @@ describe("what a job says while it starts from a parent", () => {
     expect(texts).toContain("rebuilding base · no snapshots");
   });
 
-  test("a cached snapshot that won't start is rebuilt and its entry invalidated", async () => {
+  test("a cached snapshot that won't start is deleted and rebuilt", async () => {
     const api = createFakeSandboxApi();
-    const inner = memoryCacheStore();
-    const writes: { invalid?: boolean }[] = [];
-    const cacheStore: CacheStore = {
-      get: inner.get,
-      set: async (key, entry) => {
-        writes.push(entry);
 
-        await inner.set(key, entry);
-      },
-    };
+    await run({ cache: true, api });
 
-    await run({ cache: true, api, cacheStore });
+    const [bad] = cachedBase(api);
 
     api.commands.length = 0;
     api.failSnapshotStarts();
 
-    const { result, texts } = await run({ cache: true, api, cacheStore });
+    const { result, texts } = await run({ cache: true, api });
 
     expect(result.type).toBe("function-resolved");
     expect(texts).toContain("rebuilding base · bad snapshot");
@@ -734,13 +717,11 @@ describe("what a job says while it starts from a parent", () => {
       }),
     ).toBe(true);
 
-    expect(
-      writes.filter((entry) => {
-        return entry.invalid;
-      }),
-    ).toHaveLength(1);
+    expect(api.snapshots.has(bad?.id ?? "")).toBe(false);
 
-    expect(writes.at(-1)?.invalid).toBeUndefined();
+    expect(cachedBase(api)).toEqual([
+      expect.objectContaining({ status: "READY" }),
+    ]);
   });
 
   describe("three jobs starting from one cached parent", () => {
@@ -748,16 +729,6 @@ describe("what a job says while it starts from a parent", () => {
       vi.stubEnv(localEnv.local, "1");
 
       const api = createFakeSandboxApi();
-      const inner = memoryCacheStore();
-      const writes: { invalid?: boolean; snapshotId?: string }[] = [];
-      const cacheStore: CacheStore = {
-        get: inner.get,
-        set: async (key, entry) => {
-          writes.push(entry);
-
-          await inner.set(key, entry);
-        },
-      };
 
       const define = (ci: ReturnType<typeof createCi>) => {
         const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
@@ -781,7 +752,7 @@ describe("what a job says while it starts from a parent", () => {
         });
       };
 
-      const first = setup({ api, cacheStore });
+      const first = setup({ api });
 
       define(first.ci);
 
@@ -797,10 +768,9 @@ describe("what a job says while it starts from a parent", () => {
 
       api.commands.length = 0;
       api.snapshotStarts.length = 0;
-      writes.length = 0;
 
       const messages = await listen();
-      const second = setup({ api, cacheStore });
+      const second = setup({ api });
 
       define(second.ci);
 
@@ -821,11 +791,11 @@ describe("what a job says while it starts from a parent", () => {
         });
       };
 
-      return { api, result, writes, cachedSnapshot, texts };
+      return { api, result, cachedSnapshot, texts };
     };
 
     test("a bad snapshot is tried once and the parent rebuilt once", async () => {
-      const { api, result, writes, cachedSnapshot, texts } = await runAll({
+      const { api, result, cachedSnapshot, texts } = await runAll({
         bad: true,
       });
 
@@ -855,13 +825,9 @@ describe("what a job says while it starts from a parent", () => {
         }),
       ).toHaveLength(3);
 
-      expect(
-        writes.filter((entry) => {
-          return entry.invalid;
-        }),
-      ).toHaveLength(1);
-
-      expect(writes.at(-1)).toMatchObject({ snapshotId: fresh });
+      // The bad snapshot is gone, and the rebuild holds the name now.
+      expect(api.snapshots.has(cachedSnapshot)).toBe(false);
+      expect(cachedBase(api).map((snapshot) => snapshot.id)).toEqual([fresh]);
 
       const lines = ["one", "two", "three"].map(texts);
 

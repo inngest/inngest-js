@@ -1,19 +1,20 @@
 /**
- * Building a cached job's entry in a run of its own: what a pipeline hands the
- * build, the generated function that does it, and what it hands back.
+ * Building a cached job's snapshot in a run of its own: what a pipeline hands
+ * the build, the generated function that does it, and what it hands back.
  *
- * A pipeline that misses the cache invokes this function instead of running
- * the job inline. The function is limited to one run per cache key, and looks
- * the entry up again when it starts, so a burst of runs that all missed the
- * same key builds it once and every one of them gets the same snapshot.
+ * A pipeline with a cached job invokes this function instead of running the
+ * job inline. The function is limited to one run per snapshot name, and looks
+ * the snapshot up again when it starts, so a burst of runs that all missed the
+ * same name builds it once and every one of them gets the same snapshot.
  *
  * @module
  */
 
 import type { Inngest, InngestFunction } from "inngest";
 import { metadataMiddleware, sandboxMiddleware } from "inngest/experimental";
+import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
-import type { CacheEntry, Matrix, MatrixAxes, RepoContext } from "../types.ts";
+import type { Matrix, MatrixAxes, RepoContext } from "../types.ts";
 import type { RegisteredJob } from "./job.ts";
 import { runJob } from "./job.ts";
 import { runCombosKey } from "./matrix.ts";
@@ -25,7 +26,7 @@ import { getRunScope } from "./scope.ts";
 const invokedEvent = "inngest/function.invoked";
 
 /**
- * What a pipeline sends to build one job's cache entry. It's everything the
+ * What a pipeline sends to build one job's snapshot. It's everything the
  * build can't work out for itself, since it starts with no event of its own.
  */
 export interface CacheBuildData extends Record<string, unknown> {
@@ -37,32 +38,42 @@ export interface CacheBuildData extends Record<string, unknown> {
   input?: unknown;
   /** The job's resolved cache key, as the pipeline computed it. */
   ownKey: string;
-  /** The key the entry is stored under: scope, job and `ownKey`. */
+  /**
+   * The name the snapshot is written under: scope, job and `ownKey`. Builds
+   * are limited to one at a time per name.
+   */
   cacheKey: string;
-  /** The scope the entry is written to. */
-  scope: string;
+  /**
+   * A snapshot that turned out to be bad, which may still hold the name. The
+   * build never reuses it.
+   */
+  exclude?: string;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
-  /** The run that needs the entry, and the job there that waits on it. */
+  /** The run that needs the snapshot, and the job there that waits on it. */
   parent: {
     /** The pipeline run that the build's jobs and commands are shown under. */
     runId: string;
     pipelineId: string;
     /** The waiting job's path in that run. */
     jobPath: string;
-    /** The event that started that run, for the entry's `builtBy`. */
+    /** The event that started that run. */
     trigger: string;
     /** The waiting job's check, which the build tells it is building. */
     check?: { name: string; checkRunId?: number };
   };
 }
 
-/** What the build gives back: the entry, and the job's result. */
+/** What the build gives back. */
 export interface CacheBuildResult {
-  entry: CacheEntry;
-  result: unknown;
-  /** Whether the entry was already there, rather than built by this run. */
+  /** The job's snapshot, if it had a machine and snapshots could be taken. */
+  snapshotId?: string;
+  /** Set when that snapshot is cached under the job's name. */
+  cached?: CachedSnapshot;
+  /** Whether the snapshot was already there, rather than built by this run. */
   reused: boolean;
+  /** What the invoking run should say about the build, like a fallback. */
+  warnings: string[];
 }
 
 /** A matrix as the build runs it: exactly one combination. */
@@ -94,7 +105,7 @@ export const cacheBuildFunction = ({
     {
       id,
       name: `build ${target}`,
-      // One build per entry at a time. Whoever comes next finds it written.
+      // One build per name at a time. Whoever comes next finds it taken.
       concurrency: [{ key: "event.data.cacheKey", limit: 1 }],
       middleware: [sandboxMiddleware(), metadataMiddleware()],
     },
@@ -107,7 +118,7 @@ export const cacheBuildFunction = ({
         config: { id, on: { event: invokedEvent }, check: false },
         build: data,
         handler: async (): Promise<CacheBuildResult> => {
-          return buildEntry({ data, jobs, matrices });
+          return buildSnapshot({ data, jobs, matrices });
         },
         ctx,
       });
@@ -116,10 +127,10 @@ export const cacheBuildFunction = ({
 };
 
 /**
- * Run the job as it would run in a pipeline: it looks its entry up, restores
- * it if another build just wrote one, and otherwise runs and stores it.
+ * Run the job as it would run in a pipeline: it looks its snapshot up, reuses
+ * it if another build just took one, and otherwise runs and snapshots.
  */
-const buildEntry = async ({
+const buildSnapshot = async ({
   data,
   jobs,
   matrices,
@@ -128,8 +139,6 @@ const buildEntry = async ({
   jobs: Map<string, RegisteredJob>;
   matrices: Map<string, Matrix<MatrixAxes, unknown>>;
 }): Promise<CacheBuildResult> => {
-  let result: unknown;
-
   if (data.matrix) {
     const matrix = matrices.get(data.matrix.id);
 
@@ -139,7 +148,7 @@ const buildEntry = async ({
       );
     }
 
-    [result] = await (matrix as unknown as MatrixRunner)[runCombosKey]([
+    await (matrix as unknown as MatrixRunner)[runCombosKey]([
       data.matrix.combo,
     ]);
   } else {
@@ -151,24 +160,29 @@ const buildEntry = async ({
       );
     }
 
-    result = await runJob({
+    await runJob({
       config: job.config,
       handler: job.handler,
       input: data.input,
     });
   }
 
-  const entry = getRunScope()?.cacheEntries.get(data.jobId);
-
-  if (!entry) {
-    throw new CiUsageError(
-      `Building "${data.jobId}" finished without a cache entry. Does the job have a \`cache\`?`,
-    );
-  }
+  const run = getRunScope();
+  const cached = run?.cached.get(data.jobId);
+  const snapshotId = await run?.snapshots.get(data.jobId);
 
   return {
-    entry,
-    result,
-    reused: entry.builtBy.runId !== getRunScope()?.runId,
+    ...(snapshotId ? { snapshotId } : {}),
+    ...(cached
+      ? {
+          cached: {
+            snapshotId: cached.snapshotId,
+            name: cached.name,
+            createdAt: cached.createdAt,
+          },
+        }
+      : {}),
+    reused: cached?.restored ?? false,
+    warnings: run?.warnings ?? [],
   };
 };

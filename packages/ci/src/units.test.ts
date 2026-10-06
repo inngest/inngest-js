@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { cacheScopes, snapshotIsReady, storeKey } from "./cache/cache.ts";
+import { cacheScopes, lookupCache, snapshotName } from "./cache/cache.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -584,8 +584,34 @@ describe("cache scopes", () => {
     ).toEqual({ read: ["global"], write: "global" });
   });
 
-  test("store keys include the scope and job", () => {
-    expect(storeKey("main", "setup", "abc")).toBe("main:setup:abc");
+  describe("a local run writes only to its own scope, and reads what CI built", () => {
+    const local = { path: "/repo", baseRef: "main" };
+    const repo = { owner: "o", name: "r", fullName: "o/r", sha: "abc" };
+
+    test.each([
+      [
+        "a pull request fixture",
+        {
+          ...repo,
+          baseRef: "main",
+          pullRequest: { number: 1, headRef: "f", fork: false },
+        },
+        undefined,
+        ["local", "main"],
+      ],
+      [
+        "a push fixture",
+        { ...repo, ref: "refs/heads/main" },
+        undefined,
+        ["local", "main"],
+      ],
+      ["global scope", repo, "global" as const, ["local", "global"]],
+    ])("%s", (_label, fixture, scope, read) => {
+      expect(cacheScopes({ ...fixture, local }, scope)).toEqual({
+        read,
+        write: "local",
+      });
+    });
   });
 });
 
@@ -695,41 +721,134 @@ describe("shortReason", () => {
   });
 });
 
-describe("snapshotIsReady", () => {
-  const runWith = (snapshot: unknown) => {
-    return {
-      sandboxTools: {
-        snapshots: {
-          get: async () => {
-            return snapshot;
-          },
-        },
-      },
-    } as never;
-  };
+describe("looking a cached snapshot up by name", () => {
+  const name = snapshotName("global", "setup", "k1");
 
   const inHours = (hours: number) => {
     return new Date(Date.now() + hours * 3_600_000).toISOString();
   };
 
-  test("a READY snapshot well before its expiry is reused", async () => {
-    const run = runWith({ status: "READY", expiresAt: inHours(10) });
+  const snapshot = (fields: Record<string, unknown>) => {
+    return {
+      id: "s1",
+      name,
+      status: "READY",
+      createdAt: inHours(-1),
+      expiresAt: inHours(10),
+      ...fields,
+    };
+  };
 
-    expect(await snapshotIsReady(run, "job", "s1")).toBe(true);
+  /** A job scope just big enough for a lookup, over a list and a get. */
+  const lookup = async (
+    list: () => Promise<unknown>,
+    get: () => Promise<unknown> = async () => {
+      return null;
+    },
+    exclude?: string,
+  ) => {
+    const scope = {
+      path: "setup",
+      config: { id: "setup" },
+      run: {
+        step: {
+          run: async (_id: unknown, fn: () => Promise<unknown>) => {
+            return fn();
+          },
+        },
+        ci: { client: { sandboxes: { snapshots: { list, get } } } },
+      },
+    } as never;
+
+    return lookupCache(
+      scope,
+      { key: "v1", scope: "global" },
+      { ownKey: "k1", name },
+      exclude,
+    );
+  };
+
+  const listing = (...items: unknown[]) => {
+    return async () => {
+      return { items };
+    };
+  };
+
+  test.each([
+    ["a READY snapshot well before its expiry", listing(snapshot({})), "s1"],
+    [
+      "a snapshot past its expiry",
+      listing(snapshot({ expiresAt: inHours(-1) })),
+      undefined,
+    ],
+    [
+      "a snapshot that expires within the margin",
+      listing(snapshot({ expiresAt: inHours(0.1) })),
+      undefined,
+    ],
+    [
+      "a snapshot that failed",
+      listing(snapshot({ status: "FAILED" })),
+      undefined,
+    ],
+    [
+      "another snapshot, from a server that ignores the name",
+      listing(snapshot({ name: undefined })),
+      undefined,
+    ],
+    [
+      "a list the server refuses",
+      async () => {
+        throw new Error("unknown query parameter: name");
+      },
+      undefined,
+    ],
+    ["nothing", listing(), undefined],
+  ])("%s gives %s", async (_label, list, expected) => {
+    expect((await lookup(list))?.snapshotId).toBe(expected);
   });
 
-  test("a READY snapshot past or near its expiry is a miss", async () => {
-    const expired = runWith({ status: "READY", expiresAt: inHours(-1) });
-    const nearly = runWith({ status: "READY", expiresAt: inHours(0.1) });
+  test("only the newest snapshot with the name counts", async () => {
+    const found = await lookup(
+      listing(snapshot({ id: "s2", status: "FAILED" }), snapshot({})),
+    );
 
-    expect(await snapshotIsReady(expired, "job", "s1")).toBe(false);
-    expect(await snapshotIsReady(nearly, "job", "s1")).toBe(false);
+    expect(found).toBeUndefined();
   });
 
-  test("a snapshot that isn't READY, or can't be read, is a miss", async () => {
-    const pending = runWith({ status: "PENDING", expiresAt: inHours(10) });
+  test("a snapshot still being created is waited for", async () => {
+    const found = await lookup(
+      listing(snapshot({ status: "CREATING" })),
+      async () => {
+        return snapshot({});
+      },
+    );
 
-    expect(await snapshotIsReady(pending, "job", "s1")).toBe(false);
-    expect(await snapshotIsReady(runWith(undefined), "job", "s1")).toBe(false);
+    expect(found).toEqual({
+      snapshotId: "s1",
+      name,
+      createdAt: snapshot({}).createdAt,
+    });
+  });
+
+  test("a snapshot found to be bad is never found again", async () => {
+    expect(await lookup(listing(snapshot({})), undefined, "s1")).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("snapshot names", () => {
+  test("say what they are for", () => {
+    expect(snapshotName("pr:4", "setup", "abc")).toBe("ci/pr:4/setup/abc");
+  });
+
+  test("too long a name keeps its start and stays unique", () => {
+    const long = snapshotName("main", "j".repeat(300), "abc");
+    const other = snapshotName("main", "j".repeat(300), "abd");
+
+    expect(long).toHaveLength(255);
+    expect(long.startsWith("ci/main/jjj")).toBe(true);
+    expect(long).not.toBe(other);
   });
 });

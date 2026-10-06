@@ -157,7 +157,7 @@ interface RunPipelineArgs {
   internals: CiInternals;
   config: PipelineConfig;
   handler: (ctx: PipelineContext) => Promise<unknown>;
-  /** Set when the run builds one job's cache entry for another run. */
+  /** Set when the run builds one job's cached snapshot for another run. */
   build?: CacheBuildData;
   // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
   ctx: any;
@@ -200,9 +200,8 @@ const newRunScope = ({
     jobs: new Map(),
     machines: new Map(),
     snapshots: new Map(),
-    snapshotTrees: new Map(),
     timings: [],
-    cacheEntries: new Map(),
+    cached: new Map(),
     sandboxes: new Set(),
     summaries: [],
     openChecks: new Map(),

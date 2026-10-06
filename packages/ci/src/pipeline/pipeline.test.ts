@@ -7,7 +7,7 @@
 
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { files, memoryCacheStore } from "../cache/cache.ts";
+import { files } from "../cache/cache.ts";
 import {
   CiUsageError,
   CommandFailedError,
@@ -19,14 +19,14 @@ import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
 import { destroyRunMachines, machineSetupScript } from "../machine/machine.ts";
 import { sandbox } from "../machine/sandbox.ts";
+import { writeSnapshotMetaScript } from "../machine/snapshotMeta.ts";
 import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { fakeSchema } from "../testing/schema.ts";
-import type { CacheStore } from "../types.ts";
-import { createCi, createCiWithStore } from "./createCi.ts";
+import { createCi } from "./createCi.ts";
 import { destroyOrphans } from "./pipeline.ts";
 import { getRunScope } from "./scope.ts";
 
@@ -51,35 +51,48 @@ const prEvent = {
 
 const prTrigger = [{ event: "github/pull_request.opened" }];
 
-/** The commands a job asked for, without CI's own machine setup. */
+/**
+ * The commands a job asked for, without CI's own machine setup and snapshot
+ * metadata.
+ */
 const userCommands = (api: ReturnType<typeof createFakeSandboxApi>) => {
   return api.commands.filter((argv) => {
-    return argv[2] !== machineSetupScript;
+    return (
+      argv[2] !== machineSetupScript && argv[2] !== writeSnapshotMetaScript
+    );
   });
 };
 
+/**
+ * A CI client over a sandbox API. Clients given the same API share nothing
+ * else, like two machines running the same app against one environment.
+ */
 const setup = (
   opts: {
-    cacheStore?: CacheStore;
     api?: ReturnType<typeof createFakeSandboxApi>;
+    /** The app's ID, for clients that should look like different apps. */
+    appId?: string;
   } = {},
 ) => {
   const api = opts.api ?? createFakeSandboxApi();
-  const client = createCiTestClient(api);
+  const client = createCiTestClient(api, opts.appId);
   const reporter = consoleReporter();
 
-  const ci = createCiWithStore(
-    client,
-    {
-      github: reporter,
-      runUrl: ({ runId }) => {
-        return `http://localhost:8288/run?runID=${runId}`;
-      },
+  const ci = createCi(client, {
+    github: reporter,
+    runUrl: ({ runId }) => {
+      return `http://localhost:8288/run?runID=${runId}`;
     },
-    opts.cacheStore ?? memoryCacheStore(),
-  );
+  });
 
   return { api, client, ci, reporter };
+};
+
+/** The snapshots cached under a name, by name. */
+const namedSnapshots = (api: ReturnType<typeof createFakeSandboxApi>) => {
+  return [...api.snapshots.values()].flatMap((snapshot) => {
+    return snapshot.name ? [snapshot.name] : [];
+  });
 };
 
 describe("pipelines and jobs", () => {
@@ -1114,153 +1127,118 @@ describe("matrix", () => {
 });
 
 describe("cache", () => {
-  test("a second run restores the job and skips its commands", async () => {
-    const store = memoryCacheStore();
-    // The same machines and snapshots across both runs, like a real environment.
+  const pushEvent = {
+    name: "github/push",
+    data: {
+      ref: "refs/heads/main",
+      after: "abc1234",
+      repository: { full_name: "inngest/inngest-js" },
+    },
+  };
+
+  const pushTrigger = [{ event: "github/push" }];
+
+  /** How many times a command containing `text` ran. */
+  const ran = (api: ReturnType<typeof createFakeSandboxApi>, text: string) => {
+    return userCommands(api).filter((argv) => {
+      return argv.join(" ").includes(text);
+    }).length;
+  };
+
+  test("a run on another machine finds the snapshot by name and skips the job", async () => {
+    // Two apps that share nothing but the sandbox environment.
     const api = createFakeSandboxApi();
 
-    const first = setup({ cacheStore: store, api });
+    for (const appId of ["machine-a", "machine-b"]) {
+      const { ci } = setup({ api, appId });
 
-    const build = first.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
+      const build = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
         await $`pnpm install`;
+      });
 
-        return "built";
-      },
-    );
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build();
+        }),
+        { event: prEvent },
+      );
 
-    const firstPipeline = first.ci.pipeline(
-      { id: "pr", on: prTrigger },
-      async () => {
-        return build();
-      },
-    );
+      expect(result.type).toBe("function-resolved");
+    }
 
-    expect((await runFunction(firstPipeline, { event: prEvent })).data).toBe(
-      "built",
-    );
-
-    expect(userCommands(first.api)).toHaveLength(1);
-
-    const second = setup({ cacheStore: store, api });
-
-    const build2 = second.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-
-        return "built again";
-      },
-    );
-
-    const secondPipeline = second.ci.pipeline(
-      { id: "pr", on: prTrigger },
-      async () => {
-        return build2();
-      },
-    );
-
-    const result = await runFunction(secondPipeline, { event: prEvent });
-
-    expect(result.data).toBe("built");
-    // Nothing new ran: no extra commands, and no second machine.
-    expect(userCommands(api)).toHaveLength(1);
+    // Nothing new ran the second time: no extra commands, and no second machine.
+    expect(ran(api, "pnpm install")).toBe(1);
     expect(api.sandboxes.size).toBe(1);
+    expect(namedSnapshots(api)).toEqual([
+      expect.stringMatching(/^ci\/pr:7\/setup\/[0-9a-f]+$/),
+    ]);
   });
 
-  test("the same key with a different input is a different entry", async () => {
-    const store = memoryCacheStore();
+  test.each([
+    ["the same input again", ["1", "1"], 1],
+    ["a different input", ["1", "2"], 2],
+  ])("the same key with %s", async (_label, inputs, installs) => {
     const api = createFakeSandboxApi();
 
-    const runWith = async (version: string) => {
-      const { ci } = setup({ cacheStore: store, api });
+    for (const version of inputs) {
+      const { ci } = setup({ api });
 
-      const build = ci.job<string, string>(
+      const build = ci.job<void, string>(
         { id: "setup", cache: { key: "v1" } },
         async (input) => {
-          await $`pnpm install`;
-
-          return input;
+          await $`pnpm install ${input}`;
         },
       );
 
-      const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return build(version);
-      });
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build(version);
+        }),
+        { event: prEvent },
+      );
+    }
 
-      return runFunction(pipeline, { event: prEvent });
-    };
-
-    expect((await runWith("1")).data).toBe("1");
-    expect((await runWith("2")).data).toBe("2");
-    expect(userCommands(api)).toHaveLength(2);
-
-    // The same input again is a hit.
-    expect((await runWith("1")).data).toBe("1");
-    expect(userCommands(api)).toHaveLength(2);
+    expect(ran(api, "pnpm install")).toBe(installs);
   });
 
   test("a changed key misses and runs again", async () => {
-    const store = memoryCacheStore();
-    // The same machines and snapshots across both runs, like a real environment.
     const api = createFakeSandboxApi();
 
-    const first = setup({ cacheStore: store, api });
+    for (const key of ["v1", "v2"]) {
+      const { ci } = setup({ api });
 
-    const job1 = first.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
+      const build = ci.job({ id: "setup", cache: { key } }, async () => {
         await $`pnpm install`;
+      });
 
-        return 1;
-      },
-    );
+      await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          return build();
+        }),
+        { event: prEvent },
+      );
+    }
 
-    await runFunction(
-      first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return job1();
-      }),
-      { event: prEvent },
-    );
-
-    const second = setup({ cacheStore: store, api });
-
-    const job2 = second.ci.job(
-      { id: "setup", cache: { key: "v2" } },
-      async () => {
-        await $`pnpm install`;
-
-        return 2;
-      },
-    );
-
-    const result = await runFunction(
-      second.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
-        return job2();
-      }),
-      { event: prEvent },
-    );
-
-    expect(result.data).toBe(2);
-    expect(userCommands(api)).toHaveLength(2);
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(namedSnapshots(api)).toHaveLength(2);
   });
 
   test("a cached job with a machine can still be started from", async () => {
-    const store = memoryCacheStore();
-    // The same machines and snapshots across both runs, like a real environment.
     const api = createFakeSandboxApi();
 
-    const first = setup({ cacheStore: store, api });
+    const define = (ci: ReturnType<typeof setup>["ci"]) => {
+      const setupJob = ci.job(
+        { id: "setup", cache: { key: "v1" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
 
-    const setupJob = first.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
+      return { setupJob };
+    };
 
-        return "installed";
-      },
-    );
+    const first = setup({ api });
+    const { setupJob } = define(first.ci);
 
     await runFunction(
       first.ci.pipeline({ id: "pr", on: prTrigger }, async () => {
@@ -1269,16 +1247,8 @@ describe("cache", () => {
       { event: prEvent },
     );
 
-    const second = setup({ cacheStore: store, api });
-
-    const setupJob2 = second.ci.job(
-      { id: "setup", cache: { key: "v1" } },
-      async () => {
-        await $`pnpm install`;
-
-        return "installed";
-      },
-    );
+    const second = setup({ api });
+    const { setupJob: setupJob2 } = define(second.ci);
 
     const test = second.ci.job("test", async () => {
       await from(setupJob2);
@@ -1302,19 +1272,25 @@ describe("cache", () => {
     ]);
 
     // …and the child cloned the cached snapshot rather than starting fresh.
+    const [cached] = [...api.snapshots.values()];
+
     expect(
       [...api.sandboxes.values()].filter((machine) => {
         return machine.snapshotId;
       }),
-    ).toHaveLength(1);
+    ).toEqual([expect.objectContaining({ snapshotId: cached?.id })]);
   });
 
-  test("a cached job is rebuilt when a job it starts from changes its key", async () => {
-    const store = memoryCacheStore();
-    const api = createFakeSandboxApi();
-
-    const runWith = async (setupKey: string) => {
-      const { ci } = setup({ cacheStore: store, api });
+  describe("a cached snapshot built from a parent that has changed is rebuilt when restored", () => {
+    /**
+     * `setup` and `build` are cached, `build` starts from `setup`, and `test`
+     * starts from `build`.
+     */
+    const runWith = async (
+      api: ReturnType<typeof createFakeSandboxApi>,
+      setupKey: string,
+    ) => {
+      const { ci } = setup({ api });
 
       const setupJob = ci.job(
         { id: "setup", cache: { key: setupKey } },
@@ -1323,37 +1299,238 @@ describe("cache", () => {
         },
       );
 
-      const test = ci.job({ id: "test", cache: { key: "t" } }, async () => {
-        await from(setupJob);
+      const buildJob = ci.job(
+        { id: "build", cache: { key: "b" } },
+        async () => {
+          await from(setupJob);
+
+          await $`pnpm build`;
+        },
+      );
+
+      const test = ci.job("test", async () => {
+        await from(buildJob);
 
         await $`pnpm test`;
       });
 
-      await runFunction(
+      const result = await runFunction(
         ci.pipeline({ id: "pr", on: prTrigger }, async () => {
           return test();
         }),
         { event: prEvent },
       );
+
+      expect(result.type).toBe("function-resolved");
     };
 
-    const testRuns = () => {
-      return userCommands(api).filter((argv) => {
-        return argv[1] === "test";
-      }).length;
+    /** The snapshot `build` is cached under now. */
+    const buildSnapshot = (api: ReturnType<typeof createFakeSandboxApi>) => {
+      return [...api.snapshots.values()].find((snapshot) => {
+        return snapshot.name?.startsWith("ci/pr:7/build/");
+      })?.id;
     };
 
-    await runWith("lock-1");
+    test.each([
+      [
+        "its key changed",
+        (_api: ReturnType<typeof createFakeSandboxApi>) => {
+          return "s2";
+        },
+      ],
+      [
+        "its snapshot is gone",
+        (api: ReturnType<typeof createFakeSandboxApi>) => {
+          for (const snapshot of api.snapshots.values()) {
+            if (snapshot.name?.startsWith("ci/pr:7/setup/")) {
+              api.snapshots.delete(snapshot.id);
+            }
+          }
 
-    expect(testRuns()).toBe(1);
+          return "s1";
+        },
+      ],
+    ])("when %s", async (_label, change) => {
+      const api = createFakeSandboxApi();
 
-    await runWith("lock-1");
+      await runWith(api, "s1");
+      await runWith(api, "s1");
 
-    expect(testRuns()).toBe(1);
+      // Built once, then reused whole.
+      expect(ran(api, "pnpm install")).toBe(1);
+      expect(ran(api, "pnpm build")).toBe(1);
 
-    await runWith("lock-2");
+      const stale = buildSnapshot(api);
 
-    expect(testRuns()).toBe(2);
+      const key = change(api);
+
+      await runWith(api, key);
+
+      expect(ran(api, "pnpm install")).toBe(2);
+      expect(ran(api, "pnpm build")).toBe(2);
+      expect(ran(api, "pnpm test")).toBe(3);
+
+      // The stale snapshot is deleted, and `test` started from its rebuild.
+      const fresh = buildSnapshot(api);
+
+      expect(api.snapshots.has(stale ?? "")).toBe(false);
+      expect(fresh).toBeDefined();
+      expect(fresh).not.toBe(stale);
+      expect(api.snapshotStarts.at(-1)).toBe(fresh);
+
+      // The rebuild is good again for the next run.
+      await runWith(api, key);
+
+      expect(ran(api, "pnpm build")).toBe(2);
+    });
+  });
+
+  test("a build that loses the name to another build uses the winner's snapshot", async () => {
+    const { api, ci } = setup();
+
+    api.loseSnapshotNameRaces();
+
+    const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job("lint", async () => {
+      await from(base);
+
+      await $`pnpm lint`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await lint();
+
+        return getRunScope()?.warnings;
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+    expect(result.data).toEqual([]);
+
+    const [winner, ...others] = [...api.snapshots.values()];
+
+    expect(others).toEqual([]);
+    expect(winner?.name).toMatch(/^ci\/pr:7\/base\//);
+    expect(winner?.status).toBe("READY");
+
+    const child = [...api.sandboxes.values()].find((machine) => {
+      return machine.name === "ci-01TESTRUN-lint";
+    });
+
+    expect(child?.snapshotId).toBe(winner?.id);
+  });
+
+  test("without snapshot names, every run builds, starts children from the snapshot, and passes", async () => {
+    const api = createFakeSandboxApi();
+
+    api.withoutSnapshotNames();
+
+    const runs = [];
+
+    for (let i = 0; i < 2; i++) {
+      const { ci } = setup({ api });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const lint = ci.job("lint", async () => {
+        await from(base);
+
+        await $`pnpm lint`;
+      });
+
+      runs.push(
+        await runFunction(
+          ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+            await lint();
+
+            return getRunScope()?.warnings;
+          }),
+          { event: prEvent, runId: `01RUN${i}` },
+        ),
+      );
+    }
+
+    for (const run of runs) {
+      expect(run.type).toBe("function-resolved");
+      expect(run.data).toEqual([expect.stringContaining("not cached")]);
+    }
+
+    expect(ran(api, "pnpm install")).toBe(2);
+    expect(namedSnapshots(api)).toEqual([]);
+
+    // Each run's child still started from that run's snapshot of `base`.
+    expect(api.snapshotStarts).toEqual([...api.snapshots.keys()]);
+  });
+
+  test("a pull request reuses what its base branch built, and caches nothing of its own", async () => {
+    const api = createFakeSandboxApi();
+
+    const run = async (
+      event: { name: string; data: unknown },
+      on: { event: string }[],
+    ) => {
+      const { ci } = setup({ api });
+
+      const build = ci.job({ id: "setup", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "ci", on }, async () => {
+          return build();
+        }),
+        { event },
+      );
+
+      expect(result.type).toBe("function-resolved");
+    };
+
+    await run(pushEvent, pushTrigger);
+    await run(prEvent, prTrigger);
+
+    expect(ran(api, "pnpm install")).toBe(1);
+    expect(namedSnapshots(api)).toEqual([
+      expect.stringMatching(/^ci\/main\/setup\//),
+    ]);
+  });
+
+  test("a cached job with no commands has nothing to cache, so it runs every time and says so", async () => {
+    const api = createFakeSandboxApi();
+
+    let runs = 0;
+
+    for (let i = 0; i < 2; i++) {
+      const { ci } = setup({ api });
+
+      const plan = ci.job({ id: "plan", cache: { key: "v1" } }, async () => {
+        runs += 1;
+      });
+
+      const result = await runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await plan();
+
+          return getRunScope()?.warnings;
+        }),
+        { event: prEvent, runId: `01RUN${i}` },
+      );
+
+      expect(result.type).toBe("function-resolved");
+
+      expect(result.data).toEqual([
+        expect.stringContaining("not cached: `plan` ran no commands"),
+      ]);
+    }
+
+    expect(runs).toBeGreaterThanOrEqual(2);
+    expect(api.snapshots.size).toBe(0);
   });
 
   test("files() keys are resolved through the repository", async () => {
@@ -1418,11 +1595,10 @@ describe("checks", () => {
   });
 
   test("a cached child of a parent called with an input hits again, and misses when that input changes", async () => {
-    const store = memoryCacheStore();
     const api = createFakeSandboxApi();
 
     const runWith = async (version: string) => {
-      const { ci } = setup({ cacheStore: store, api });
+      const { ci } = setup({ api });
 
       const parent = ci.job(
         { id: "setup", cache: { key: "p" } },
@@ -1470,11 +1646,10 @@ describe("checks", () => {
   });
 
   test("a cache hit reads as restored, never skipped", async () => {
-    const store = memoryCacheStore();
     // The same machines and snapshots across both runs, like a real environment.
     const api = createFakeSandboxApi();
 
-    const first = setup({ cacheStore: store, api });
+    const first = setup({ api });
 
     const job1 = first.ci.job(
       { id: "setup", cache: { key: "v1" } },
@@ -1490,7 +1665,7 @@ describe("checks", () => {
       { event: prEvent },
     );
 
-    const second = setup({ cacheStore: store, api });
+    const second = setup({ api });
 
     const job2 = second.ci.job(
       { id: "setup", cache: { key: "v1" } },
@@ -1511,7 +1686,7 @@ describe("checks", () => {
     });
 
     expect(restored?.conclusion).toBe("success");
-    expect(restored?.title).toMatch(/^Cached (just now|.+ ago) by /);
+    expect(restored?.title).toMatch(/^Cached (just now|.+ ago)$/);
   });
 
   test("job checks can be turned off for the whole pipeline", async () => {
@@ -2240,11 +2415,10 @@ describe("cache builds in their own run", () => {
   });
 
   test("a hit asks the build function and builds nothing", async () => {
-    const store = memoryCacheStore();
     const api = createFakeSandboxApi();
 
     for (let i = 0; i < 2; i++) {
-      const { ci } = setup({ cacheStore: store, api });
+      const { ci } = setup({ api });
 
       await runFunction(childPipeline(ci, buildJob(ci)), { event: prEvent });
     }
@@ -2253,11 +2427,10 @@ describe("cache builds in their own run", () => {
   });
 
   test("two pipelines needing the same key build it once", async () => {
-    const store = memoryCacheStore();
     const api = createFakeSandboxApi();
 
-    // Two runs of one app, which share the cache store and the sandboxes.
-    const { ci } = setup({ cacheStore: store, api });
+    // Two runs of one app, against one sandbox environment.
+    const { ci } = setup({ api });
     const base = buildJob(ci);
 
     const first = childPipeline(ci, base);
@@ -2272,7 +2445,6 @@ describe("cache builds in their own run", () => {
 
     expect(a.type).toBe("function-resolved");
     expect(b.type).toBe("function-resolved");
-    expect(b.data).toBe("installed");
     expect(installs(api)).toBe(1);
 
     const snapshots = [...api.sandboxes.values()].filter((machine) => {
@@ -2282,10 +2454,8 @@ describe("cache builds in their own run", () => {
     expect(snapshots.length).toBeGreaterThan(0);
   });
 
-  test("a failed build fails the job with its reason and writes nothing", async () => {
-    const store = memoryCacheStore();
-    const set = vi.spyOn(store, "set");
-    const { ci, reporter } = setup({ cacheStore: store });
+  test("a failed build fails the job with its reason and caches nothing", async () => {
+    const { api, ci, reporter } = setup();
 
     const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
       throw new NonRetriableError("registry is down");
@@ -2303,7 +2473,7 @@ describe("cache builds in their own run", () => {
 
     expect(failed?.conclusion).toBe("failure");
     expect(failed?.title).toContain("registry is down");
-    expect(set).not.toHaveBeenCalled();
+    expect(namedSnapshots(api)).toEqual([]);
   });
 
   test("the build run posts no check of its own", async () => {

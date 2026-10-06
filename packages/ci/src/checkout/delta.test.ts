@@ -1,7 +1,7 @@
 /**
  * Tests for `checkout()` of a local working tree that a machine already has
- * most of: delta uploads, the tree ID carried through snapshots and cache
- * entries, run end to end against the fake sandbox API.
+ * most of: delta uploads, and the tree ID carried through snapshots in their
+ * metadata, run end to end against the fake sandbox API.
  *
  * @module
  */
@@ -20,16 +20,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { memoryCacheStore } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { createCiWithStore } from "../pipeline/createCi.ts";
+import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
+import { snapshotMetaPath } from "../machine/snapshotMeta.ts";
+import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import type { FakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
-import type { CacheEntry, CacheStore } from "../types.ts";
 import { checkout } from "./checkout.ts";
 import { workingTreeId } from "./tree.ts";
 
@@ -99,20 +99,22 @@ const tarballs = (api: FakeSandboxApi) => {
   });
 };
 
-/** A cache store that remembers what was written to it. */
-const recordingStore = (): CacheStore & { written: CacheEntry[] } => {
-  const inner = memoryCacheStore();
-  const written: CacheEntry[] = [];
+/** The snapshot `base` is cached under, and the metadata inside it. */
+const cachedBase = (api: FakeSandboxApi) => {
+  const snapshot = [...api.snapshots.values()].find((candidate) => {
+    return candidate.name?.includes("/base/");
+  });
 
-  return {
-    written,
-    get: inner.get,
-    set: async (key, entry) => {
-      written.push(entry);
+  const meta = JSON.parse(
+    snapshot?.files.get(snapshotMetaPath) ?? "{}",
+  ) as SnapshotMeta;
 
-      await inner.set(key, entry);
-    },
+  /** Change what the snapshot says about itself, as another machine might. */
+  const rewrite = (change: (meta: SnapshotMeta) => SnapshotMeta) => {
+    snapshot?.files.set(snapshotMetaPath, JSON.stringify(change(meta)));
   };
+
+  return { snapshot, meta, rewrite };
 };
 
 describe("checkout() of a local working tree", () => {
@@ -125,17 +127,14 @@ describe("checkout() of a local working tree", () => {
     writeFileSync(join(repo, path), contents);
   };
 
-  const harness = (store: CacheStore, api = createFakeSandboxApi()) => {
-    const ci = createCiWithStore(
-      createCiTestClient(api),
-      {
-        github: consoleReporter(),
-        runUrl: ({ runId }) => {
-          return `http://localhost:8288/run?runID=${runId}`;
-        },
+  /** A client over `api`, which later runs share like one environment. */
+  const harness = (api = createFakeSandboxApi()) => {
+    const ci = createCi(createCiTestClient(api), {
+      github: consoleReporter(),
+      runUrl: ({ runId }) => {
+        return `http://localhost:8288/run?runID=${runId}`;
       },
-      store,
-    );
+    });
 
     // Installed once, the way the example's `base` does.
     const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
@@ -145,6 +144,38 @@ describe("checkout() of a local working tree", () => {
     });
 
     return { api, ci, base };
+  };
+
+  /** Run `lint`, which starts from `base` and checks out again. */
+  const runLint = async (api: FakeSandboxApi) => {
+    const { ci, base } = harness(api);
+
+    const lint = ci.job("lint", async () => {
+      await from(base);
+
+      await checkout();
+
+      await $`pnpm lint`;
+    });
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: trigger }, async () => {
+        return lint();
+      }),
+      { event: event(repo) },
+    );
+  };
+
+  /** Run `base` on its own, which caches it. */
+  const runBase = async (api: FakeSandboxApi) => {
+    const { ci, base } = harness(api);
+
+    await runFunction(
+      ci.pipeline({ id: "pr", on: trigger }, async () => {
+        return base();
+      }),
+      { event: event(repo) },
+    );
   };
 
   beforeEach(() => {
@@ -171,25 +202,9 @@ describe("checkout() of a local working tree", () => {
   });
 
   test("a job that starts from a snapshot uploads only what changed since", async () => {
-    const store = recordingStore();
     const api = createFakeSandboxApi();
 
-    const first = harness(store, api);
-
-    const lint = first.ci.job("lint", async () => {
-      await from(first.base);
-
-      await checkout();
-
-      await $`pnpm lint`;
-    });
-
-    await runFunction(
-      first.ci.pipeline({ id: "pr", on: trigger }, async () => {
-        return lint();
-      }),
-      { event: event(repo) },
-    );
+    await runLint(api);
 
     // The base job uploaded everything; lint found the same tree there.
     expect(tarballs(api)).toHaveLength(1);
@@ -198,31 +213,14 @@ describe("checkout() of a local working tree", () => {
       Object.keys(unpack(tarballs(api)[0]?.bytes as Uint8Array)).sort(),
     ).toEqual(["dir/nested.txt", "edit.txt", "gone.txt", "keep.txt"]);
 
-    // The tree is stored with the snapshot, in the cache entry the build wrote.
-    const treeAtBuild = await workingTreeId(repo);
-
-    expect(store.written[0]?.treeId).toBe(treeAtBuild);
+    // The tree is kept in the cached snapshot's own metadata.
+    expect(cachedBase(api).meta.treeId).toBe(await workingTreeId(repo));
 
     write("edit.txt", "after");
     write("added.txt", "added");
     rmSync(join(repo, "gone.txt"));
 
-    const second = harness(store, api);
-
-    const lint2 = second.ci.job("lint", async () => {
-      await from(second.base);
-
-      await checkout();
-
-      await $`pnpm lint`;
-    });
-
-    await runFunction(
-      second.ci.pipeline({ id: "pr", on: trigger }, async () => {
-        return lint2();
-      }),
-      { event: event(repo) },
-    );
+    await runLint(api);
 
     // The base came from the cache, so only the second job uploaded: a tar of
     // the two files that were added or changed, and one command that removes
@@ -243,8 +241,7 @@ describe("checkout() of a local working tree", () => {
   });
 
   test("a snapshot of a job that isn't cached carries its tree too", async () => {
-    const api = createFakeSandboxApi();
-    const { ci } = harness(memoryCacheStore(), api);
+    const { api, ci } = harness();
 
     const parent = ci.job("parent", async () => {
       await checkout();
@@ -272,100 +269,36 @@ describe("checkout() of a local working tree", () => {
     });
   });
 
-  test("a tree this machine's git has never seen falls back to the whole tree", async () => {
-    const inner = recordingStore();
+  test.each([
+    [
+      "a tree this machine's git has never seen",
+      (meta: SnapshotMeta) => {
+        return { ...meta, treeId: "0".repeat(40) };
+      },
+    ],
+    [
+      "a snapshot that says nothing about its tree",
+      (meta: SnapshotMeta) => {
+        const { treeId: _dropped, ...rest } = meta;
+
+        return rest;
+      },
+    ],
+  ])("%s falls back to the whole tree", async (_label, change) => {
     const api = createFakeSandboxApi();
 
-    const first = harness(inner, api);
+    await runBase(api);
 
-    await runFunction(
-      first.ci.pipeline({ id: "pr", on: trigger }, async () => {
-        return first.base();
-      }),
-      { event: event(repo) },
-    );
-
-    // Another machine's cache: the entry names a tree that isn't in this
-    // repository.
-    const foreign: CacheStore = {
-      get: async (key) => {
-        const entry = await inner.get(key);
-
-        return entry ? { ...entry, treeId: "0".repeat(40) } : entry;
-      },
-      set: inner.set,
-    };
+    cachedBase(api).rewrite(change);
 
     write("edit.txt", "after");
 
-    const second = harness(foreign, api);
-
-    const lint = second.ci.job("lint", async () => {
-      await from(second.base);
-
-      await checkout();
-    });
-
-    await runFunction(
-      second.ci.pipeline({ id: "pr", on: trigger }, async () => {
-        return lint();
-      }),
-      { event: event(repo) },
-    );
+    await runLint(api);
 
     expect(tarballs(api)).toHaveLength(2);
 
     expect(
       Object.keys(unpack(tarballs(api)[1]?.bytes as Uint8Array)).sort(),
     ).toEqual(["dir/nested.txt", "edit.txt", "gone.txt", "keep.txt"]);
-  });
-
-  test("an entry with no tree, from before trees were stored, uploads everything", async () => {
-    const inner = recordingStore();
-    const api = createFakeSandboxApi();
-
-    const first = harness(inner, api);
-
-    await runFunction(
-      first.ci.pipeline({ id: "pr", on: trigger }, async () => {
-        return first.base();
-      }),
-      { event: event(repo) },
-    );
-
-    const old: CacheStore = {
-      get: async (key) => {
-        const entry = await inner.get(key);
-
-        if (!entry) {
-          return entry;
-        }
-
-        const { treeId: _dropped, ...rest } = entry;
-
-        return rest;
-      },
-      set: inner.set,
-    };
-
-    const second = harness(old, api);
-
-    const lint = second.ci.job("lint", async () => {
-      await from(second.base);
-
-      await checkout();
-    });
-
-    await runFunction(
-      second.ci.pipeline({ id: "pr", on: trigger }, async () => {
-        return lint();
-      }),
-      { event: event(repo) },
-    );
-
-    expect(tarballs(api)).toHaveLength(2);
-    expect(
-      Object.keys(unpack(tarballs(api)[1]?.bytes as Uint8Array)),
-    ).toHaveLength(4);
   });
 });

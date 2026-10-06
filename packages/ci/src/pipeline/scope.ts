@@ -8,10 +8,11 @@
 import type { GetStepTools, Inngest, InngestFunction } from "inngest";
 import type { AsyncContext, DurableSandboxTools } from "inngest/experimental";
 import { runWithAsyncCtx } from "inngest/experimental";
+import type { CachedSnapshot } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { LocalReporter } from "../local/reporter.ts";
+import type { SnapshotParent } from "../machine/snapshotMeta.ts";
 import type {
-  CacheEntry,
   CheckAnnotation,
   CheckConclusion,
   JobConfig,
@@ -38,7 +39,7 @@ export const jobHandlerKey = Symbol("inngest/ci.jobHandler");
 
 /**
  * Where a matrix combination's job config remembers the matrix and combination
- * it came from, so its cache entry is built by the matrix's build function.
+ * it came from, so its snapshot is built by the matrix's build function.
  */
 export const matrixOriginKey = Symbol("inngest/ci.matrixOrigin");
 
@@ -74,6 +75,24 @@ export interface MachineHandle {
    * only what changed since.
    */
   treeId?: string;
+  /**
+   * The cached snapshots this machine was built from, all the way up, which
+   * its own snapshot records so a restore can check they are still current.
+   */
+  parents: Record<string, SnapshotParent>;
+}
+
+/**
+ * A cached job's snapshot that this run uses, whether it was found by name or
+ * built for the run.
+ */
+export interface CachedJob extends CachedSnapshot {
+  /** The job's resolved key, for a rebuild. */
+  ownKey: string;
+  /** The name the job's snapshot is written under, for a rebuild. */
+  writeName: string;
+  /** Whether it was already there, rather than built for this run. */
+  restored: boolean;
 }
 
 /** How long a slow step took, for the run's timing summary. */
@@ -108,8 +127,6 @@ export interface CiInternals {
   checks: any;
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
-  // biome-ignore lint/suspicious/noExplicitAny: CacheStore
-  cacheStore: any;
   /** Every job defined on the client, so a cache key can look up its parents. */
   jobs: Map<string, { config: JobConfig }>;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
@@ -119,7 +136,7 @@ export interface CiInternals {
   // biome-ignore lint/suspicious/noExplicitAny: Inngest.Any
   client: any;
   /**
-   * The function that builds the cache entries of a job, or of a matrix's
+   * The function that builds the cached snapshots of a job, or of a matrix's
    * combinations, in a run of its own. `target` is the job or matrix ID.
    */
   cacheBuild: (target: string) => InngestFunction.Any;
@@ -171,18 +188,10 @@ export interface CiRunScope {
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
-  /**
-   * The working tree each snapshot holds, by snapshot ID, for snapshots whose
-   * machine did a local `checkout()`. A job that starts from one knows what's
-   * already there.
-   */
-  snapshotTrees: Map<string, string>;
   /** How long the slow steps took, in the order they finished. */
   timings: StepTiming[];
-  /** Cache entries resolved this run, keyed by job path. */
-  cacheEntries: Map<string, CacheEntry | undefined>;
-  /** Where each restored cache entry lives, keyed by job path. */
-  cacheWriteKeys?: Map<string, string>;
+  /** The cached snapshots this run uses, keyed by job ID. */
+  cached: Map<string, CachedJob>;
   /**
    * One per snapshot a job started from this run. The first job to use a
    * snapshot starts a machine from it and settles this with the snapshot every
@@ -191,7 +200,7 @@ export interface CiRunScope {
    */
   snapshotProbes?: Map<string, Promise<string | undefined>>;
   /**
-   * Set when this run is a cache build: one job's entry, built for the run
+   * Set when this run is a cache build: one job's snapshot, built for the run
    * that invoked it. It has no checks of its own and reports to that run.
    */
   build?: CacheBuildData;
@@ -277,7 +286,7 @@ export interface CiJobScope {
   fromCalled: boolean;
   fromJobIds: string[];
   /** The input each `from()` parent was called with, by job ID. */
-  fromInputs: Record<string, unknown>;
+  parentInputs: Record<string, unknown>;
   annotations: CheckAnnotation[];
   /** Extra summary markdown added with `report.summary`. */
   summaries: string[];
