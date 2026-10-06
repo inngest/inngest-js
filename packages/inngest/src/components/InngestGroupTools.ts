@@ -1,12 +1,12 @@
 import type { IsNever } from "../helpers/types.ts";
-import type { ExperimentRef, StepOptionsOrId } from "../types.ts";
+import type { ExperimentRef, StepOptionsOrId, StepSpan } from "../types.ts";
 import {
   type AsyncContext,
   getAsyncCtxSync,
   getAsyncLocalStorage,
   isALSFallback,
 } from "./execution/als.ts";
-import { getStepOptions } from "./InngestStepTools.ts";
+import { getStepOptions, withSpan } from "./InngestStepTools.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 
 /**
@@ -219,6 +219,17 @@ export interface GroupTools {
    * ```
    */
   experiment: GroupExperiment;
+
+  /**
+   * Run a callback where every step is grouped under a span in the trace,
+   * nested inside any span this is called in. The same ID under the same
+   * parent re-enters the same span.
+   *
+   * Without AsyncLocalStorage, the callback runs ungrouped.
+   *
+   * @internal Unstable and may change without a major version bump.
+   */
+  "~span": <T>(span: StepSpan, callback: () => T) => T;
 }
 
 /**
@@ -408,5 +419,5 @@ export const createGroupTools = (deps?: GroupToolsDeps): GroupTools => {
     };
   }) as GroupExperiment;
 
-  return { parallel, experiment };
+  return { parallel, experiment, "~span": withSpan };
 };

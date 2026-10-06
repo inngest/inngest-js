@@ -1969,6 +1969,25 @@ export interface StepOptions {
    * `group.parallel()`.
    */
   parallelMode?: "race";
+
+  /**
+   * Group this step's trace under a span, nested inside any
+   * `group["~span"]()` scope the step is called in.
+   *
+   * @internal Unstable and may change without a major version bump.
+   */
+  "~span"?: StepSpan;
+}
+
+/**
+ * A span that groups steps in a trace. Steps under the same path of span IDs
+ * share a span, and `name` defaults to `id`.
+ *
+ * @internal Unstable and may change without a major version bump.
+ */
+export interface StepSpan {
+  id: string;
+  name?: string;
 }
 
 /**

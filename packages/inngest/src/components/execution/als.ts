@@ -1,4 +1,4 @@
-import type { Context, StepOptions } from "../../types.ts";
+import type { Context, StepOptions, StepSpan } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { Stream } from "../StreamTools.ts";
 import type { IInngestExecution } from "./InngestExecution.ts";
@@ -46,6 +46,12 @@ export interface AsyncContext {
      * created within this context. Set by `group.parallel()`.
      */
     parallelMode?: "race";
+
+    /**
+     * If present, the spans that steps created within this context are
+     * grouped under, outermost first. Set by `group["~span"]()`.
+     */
+    span?: Required<StepSpan>[];
 
     /**
      * The stream tools instance for this execution context. Used by the

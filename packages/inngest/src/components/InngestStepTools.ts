@@ -31,9 +31,14 @@ import {
   StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
+  type StepSpan,
   type TriggerEventFromFunction,
 } from "../types.ts";
-import { getAsyncCtx, getAsyncCtxSync } from "./execution/als.ts";
+import {
+  getAsyncCtx,
+  getAsyncCtxSync,
+  runWithAsyncCtx,
+} from "./execution/als.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import {
@@ -226,6 +231,39 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
 };
 
 /**
+ * Append a span to a span path, naming it by its ID if it has no name.
+ */
+const appendSpan = (
+  path: Required<StepSpan>[] | undefined,
+  span: StepSpan,
+): Required<StepSpan>[] => {
+  return [...(path ?? []), { id: span.id, name: span.name ?? span.id }];
+};
+
+/**
+ * Run a callback with `span` appended to the current span path, so steps
+ * created within it carry the path. See `GroupTools["~span"]`.
+ */
+export const withSpan = <T>(span: StepSpan, callback: () => T): T => {
+  const currentCtx = getAsyncCtxSync();
+
+  if (!currentCtx?.execution) {
+    return callback();
+  }
+
+  return runWithAsyncCtx(
+    {
+      ...currentCtx,
+      execution: {
+        ...currentCtx.execution,
+        span: appendSpan(currentCtx.execution.span, span),
+      },
+    },
+    callback,
+  );
+};
+
+/**
  * Suffix used to namespace steps that are automatically indexed.
  */
 export const STEP_INDEXING_SUFFIX = ":";
@@ -298,6 +336,15 @@ export const createStepTools = <
 
       if (parallelMode) {
         op.opts = { ...op.opts, parallelMode };
+      }
+
+      // The span option nests inside the `group["~span"]()` scope, if any
+      const span = stepOptions["~span"]
+        ? appendSpan(alsCtx?.span, stepOptions["~span"])
+        : alsCtx?.span;
+
+      if (span) {
+        op.opts = { ...op.opts, span };
       }
 
       // Propagate experiment context to variant sub-steps
@@ -1203,6 +1250,7 @@ export const group: GroupTools = {
     getDeferredGroupTooling().then((tools) => tools.parallel(...args)),
   experiment: (...args) =>
     getDeferredGroupTooling().then((tools) => tools.experiment(...args)),
+  "~span": withSpan,
 };
 
 /**
