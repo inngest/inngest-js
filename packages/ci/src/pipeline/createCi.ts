@@ -43,8 +43,8 @@ import type { CiInternals } from "./scope.ts";
 
 export interface CiOptions {
   /**
-   * How pipelines talk to GitHub. Defaults to a console reporter in dev, and
-   * to no reporting otherwise.
+   * How pipelines talk to GitHub. Defaults to `consoleReporter()`, which
+   * prints checks to the Inngest logger instead of sending them to GitHub.
    */
   github?: GitHubProvider;
   /** Default machine for jobs. */

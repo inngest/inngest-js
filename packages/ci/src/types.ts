@@ -249,7 +249,8 @@ export interface JobConfig<_TInput = void> {
   check?: false | { name?: string };
   /**
    * Snapshot the machine if the job fails, so you can start from where it
-   * broke. The snapshot ID is on the job's check and in the run's summary.
+   * broke. The snapshot ID is in the pipeline check's summary, under "Kept
+   * machines".
    *
    * The duration is currently ignored: the snapshot is kept for the
    * platform's default retention, whatever you pass.
