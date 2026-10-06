@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { files, memoryCacheStore } from "../cache/cache.ts";
+import { files } from "../cache/cache.ts";
 import { checkout } from "../checkout/checkout.ts";
 import {
   CiUsageError,
