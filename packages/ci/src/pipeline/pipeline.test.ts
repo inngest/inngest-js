@@ -5,6 +5,7 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files, memoryCacheStore } from "../cache/cache.ts";
 import {
@@ -22,8 +23,8 @@ import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { fakeSchema } from "../testing/schema.ts";
 import { runFunction } from "../testing/runFunction.ts";
+import { fakeSchema } from "../testing/schema.ts";
 import type { CacheStore } from "../types.ts";
 import { createCi } from "./createCi.ts";
 import { destroyOrphans } from "./pipeline.ts";
@@ -2131,5 +2132,210 @@ describe("checks across retries", () => {
 
     expect(ends).toHaveLength(1);
     expect(ends[0]?.values).toMatchObject({ conclusion: "failure" });
+  });
+});
+
+describe("trace statements", () => {
+  /** The ID a trace groups a command's steps under: its hashed step ID. */
+  const statementId = (stepId: string) => {
+    return createHash("sha1").update(stepId).digest("hex");
+  };
+
+  /**
+   * The `inngest.sandbox` entries of the steps nested under `stepId`, across
+   * every attempt, like `test › unit #attempt-2 › start`.
+   */
+  const sandboxEntries = (
+    result: Awaited<ReturnType<typeof runFunction>>,
+    stepId: string,
+  ) => {
+    return result.metadata.filter((update) => {
+      return (
+        update.kind === "inngest.sandbox" &&
+        update.step.startsWith(`${stepId} `)
+      );
+    });
+  };
+
+  test("a long command's start, polls, sleeps and output are one statement", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "slow", ticks: 2, stdout: "done" }]);
+
+    const job = ci.job("build", async () => {
+      return $`slow`.as("compile").text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return job();
+    });
+
+    const waits: Array<{ id: string; opts?: Record<string, unknown> }> = [];
+
+    const result = await runFunction(pipeline, {
+      event: prEvent,
+      resolveWait: (step) => {
+        waits.push({ ...step, id: step.displayName ?? step.id });
+
+        return null;
+      },
+    });
+
+    expect(result.data).toBe("done");
+
+    const stepId = "build › compile";
+    const entries = sandboxEntries(result, stepId);
+
+    expect(
+      entries.map((entry) => {
+        return entry.values.action;
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "process.start",
+        "process.get",
+        "process.output",
+      ]),
+    );
+
+    for (const entry of entries) {
+      expect(entry.values).toMatchObject({
+        statement: "commands.run",
+        statement_id: statementId(stepId),
+        statement_name: stepId,
+        role: "internal",
+      });
+
+      expect(entry.values.sandbox_id).toEqual(expect.any(String));
+    }
+
+    const sleeps = waits.filter((wait) => {
+      return wait.id.includes("wait #");
+    });
+
+    expect(sleeps.length).toBeGreaterThan(0);
+
+    for (const sleep of sleeps) {
+      expect(sleep.opts?.sandboxStatement).toEqual({
+        statement: "commands.run",
+        statement_id: statementId(stepId),
+        statement_name: stepId,
+        sandbox_id: entries[0]?.values.sandbox_id,
+        sandbox_name: entries[0]?.values.sandbox_name,
+      });
+    }
+  });
+
+  test("every attempt of a retried command shares its statement", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "flaky", exitCode: 1, stderr: "flake" }]);
+
+    const job = ci.job("test", async () => {
+      await $`flaky`.as("unit").retries(1);
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const stepId = "test › unit";
+    const entries = sandboxEntries(result, stepId);
+
+    const attempts = new Set(
+      entries.map((entry) => {
+        return entry.step.split(" › ")[1];
+      }),
+    );
+
+    expect(attempts).toEqual(new Set(["unit #attempt-1", "unit #attempt-2"]));
+
+    for (const entry of entries) {
+      expect(entry.values).toMatchObject({
+        statement_id: statementId(stepId),
+        statement_name: stepId,
+      });
+    }
+  });
+
+  test("a captured command is its own statement's row", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "quick", stdout: "fast" }]);
+
+    const job = ci.job("lint", async () => {
+      return $`quick`.as("check").timeout("30s").text();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const stepId = "lint › check";
+
+    const [entry] = result.metadata.filter((update) => {
+      return update.kind === "inngest.sandbox" && update.step === stepId;
+    });
+
+    expect(entry?.values).toMatchObject({
+      action: "exec",
+      statement: "commands.run",
+      statement_id: statementId(stepId),
+      statement_name: stepId,
+      role: "statement",
+    });
+  });
+
+  test("a background process and its follow-ups are one statement", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "serve", ticks: 1, stdout: "listening" }]);
+
+    const job = ci.job("e2e", async () => {
+      const server = await $`serve`.as("server").background();
+
+      await server.output();
+
+      await server.kill();
+
+      return server.exited();
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      return job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    const stepId = "e2e › server";
+    const entries = sandboxEntries(result, stepId);
+
+    expect(
+      new Set(
+        entries.map((entry) => {
+          return entry.values.action;
+        }),
+      ),
+    ).toEqual(
+      new Set([
+        "process.start",
+        "process.output",
+        "process.signal",
+        "process.get",
+      ]),
+    );
+
+    for (const entry of entries) {
+      expect(entry.values).toMatchObject({
+        statement: "processes.start",
+        statement_id: statementId(stepId),
+        statement_name: stepId,
+        role: "internal",
+      });
+    }
   });
 });

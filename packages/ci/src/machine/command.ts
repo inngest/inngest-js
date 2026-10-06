@@ -6,7 +6,11 @@
  * @module
  */
 
-import { getSandboxError } from "inngest/experimental";
+import type {
+  SandboxCommandResult,
+  SandboxProcessOutput,
+} from "inngest/experimental";
+import { getSandboxError, withSandboxStatement } from "inngest/experimental";
 import {
   CiUsageError,
   CommandFailedError,
@@ -58,6 +62,18 @@ const maxPollIntervalMs = 15_000;
 
 // biome-ignore lint/suspicious/noExplicitAny: DurableSandboxProcess, loose like MachineHandle
 type SandboxProcess = any;
+
+/** The step IDs one attempt of a command uses. */
+interface AttemptIds {
+  /** This attempt's step ID, like `test #attempt-2`. Its steps nest under it. */
+  stepId: string;
+
+  /**
+   * The command's step ID, like `test`, which every attempt shares so the
+   * trace shows them all as the command's one row.
+   */
+  commandId: string;
+}
 
 interface CommandState {
   argv: string[];
@@ -165,6 +181,31 @@ export const buildShellString = (
   return out;
 };
 
+/**
+ * Run a command's steps as one sandbox statement, so the trace shows its
+ * start, polls, sleeps and output fetch as a single row titled with the
+ * command's step ID.
+ */
+const asStatement = <T>(
+  opts: {
+    machine: MachineHandle;
+    /** The command's step ID, which every attempt shares. */
+    stepId: string;
+    /** The sandbox method the command stands for. */
+    statement: "commands.run" | "processes.start";
+  },
+  fn: () => Promise<T>,
+): Promise<T> => {
+  return withSandboxStatement(
+    {
+      id: opts.stepId,
+      statement: opts.statement,
+      sandbox: { id: opts.machine.sandbox.id, name: opts.machine.sandbox.name },
+    },
+    fn,
+  );
+};
+
 /** The id and name of a step nested under `stepId`. */
 const subStep = (stepId: string, suffix: string) => {
   const id = `${stepId}${scopeSeparator}${suffix}`;
@@ -261,11 +302,16 @@ class CommandBuilder implements Command {
     const stepId = this.stepId(scope);
     const machine = await ensureMachine(scope);
 
-    const process = await startProcess(
+    // The start and every follow-up below are one row in the trace.
+    const statement = {
       machine,
       stepId,
-      this.spawnOptions(scope),
-    );
+      statement: "processes.start",
+    } as const;
+
+    const process = await asStatement(statement, () => {
+      return startProcess(machine, stepId, this.spawnOptions(scope));
+    });
 
     const argv = this.state.argv;
     const secrets = this.secretValues(scope);
@@ -275,24 +321,32 @@ class CommandBuilder implements Command {
 
     return {
       id: process.id,
-      exited: async () => {
-        const polled = await pollUntilTerminal({
-          scope,
-          machine,
-          process,
-          stepId,
-          nextWait,
-        });
+      exited: () => {
+        return asStatement(statement, async () => {
+          const polled = await pollUntilTerminal({
+            scope,
+            machine,
+            process,
+            stepId,
+            nextWait,
+          });
 
-        return readResult({ process: polled.process, stepId, argv, secrets });
+          return readResult({ process: polled.process, stepId, argv, secrets });
+        });
       },
       kill: async (signal = 15) => {
-        await process.signal(subStep(stepId, "kill"), { signal });
+        await asStatement(statement, () => {
+          return process.signal(subStep(stepId, "kill"), { signal });
+        });
       },
       output: async (opts) => {
-        const output = await process.getOutput(
-          subStep(stepId, `output #${nextWait()}`),
-          { tailBytes: opts?.tailBytes ?? outputTailBytes },
+        const output = await asStatement<SandboxProcessOutput>(
+          statement,
+          () => {
+            return process.getOutput(subStep(stepId, `output #${nextWait()}`), {
+              tailBytes: opts?.tailBytes ?? outputTailBytes,
+            });
+          },
         );
 
         const decoded = decodeChunks(output);
@@ -361,7 +415,10 @@ class CommandBuilder implements Command {
 
       scope.run.ci.reporter.commandStarted(scope, attemptInfo);
 
-      const result = await this.runOnce(scope, attemptId);
+      const result = await this.runOnce(scope, {
+        stepId: attemptId,
+        commandId: stepId,
+      });
 
       scope.run.ci.reporter.commandFinished(scope, attemptInfo, result);
 
@@ -394,7 +451,7 @@ class CommandBuilder implements Command {
   /** One attempt, which never throws for a non-zero exit. */
   private async runOnce(
     scope: CiJobScope,
-    stepId: string,
+    ids: AttemptIds,
   ): Promise<CommandResult> {
     const machine = await ensureMachine(scope);
 
@@ -405,26 +462,32 @@ class CommandBuilder implements Command {
     // Short commands with an explicit timeout run as one captured step, which
     // is cheaper and keeps the trace tidy.
     if (timeoutMs !== undefined && timeoutMs <= capturedExecLimitMs) {
-      return this.runCaptured(scope, machine, stepId, timeoutMs);
+      return this.runCaptured(scope, machine, ids, timeoutMs);
     }
 
-    return this.runManaged(scope, machine, stepId, timeoutMs);
+    return this.runManaged(scope, machine, ids, timeoutMs);
   }
 
   private async runCaptured(
     scope: CiJobScope,
     machine: MachineHandle,
-    stepId: string,
+    ids: AttemptIds,
     timeoutMs: number,
   ): Promise<CommandResult> {
     const secrets = this.secretValues(scope);
     const { command, ...options } = this.spawnOptions(scope);
+    const { stepId } = ids;
 
     try {
-      const result = await machine.sandbox.commands.run(
-        { id: stepId, name: stepId },
-        command,
-        { ...options, timeout: timeoutMs },
+      const result = await asStatement<SandboxCommandResult>(
+        { machine, stepId: ids.commandId, statement: "commands.run" },
+        () => {
+          return machine.sandbox.commands.run(
+            { id: stepId, name: stepId },
+            command,
+            { ...options, timeout: timeoutMs },
+          );
+        },
       );
 
       return {
@@ -452,37 +515,55 @@ class CommandBuilder implements Command {
   private async runManaged(
     scope: CiJobScope,
     machine: MachineHandle,
-    stepId: string,
+    ids: AttemptIds,
     timeoutMs: number | undefined,
   ): Promise<CommandResult> {
-    const process = await startProcess(
-      machine,
-      stepId,
-      this.spawnOptions(scope),
-    );
+    const { stepId } = ids;
 
-    const polled = await pollUntilTerminal({
-      scope,
+    // The start, polls, sleeps and output fetch are one row in the trace. The
+    // user's `onTimeout` runs outside it, since its steps are its own.
+    const statement = {
       machine,
-      process,
-      stepId,
-      nextWait: counter(),
-      timeoutMs,
+      stepId: ids.commandId,
+      statement: "commands.run",
+    } as const;
+
+    const { process, polled } = await asStatement(statement, async () => {
+      const process = await startProcess(
+        machine,
+        stepId,
+        this.spawnOptions(scope),
+      );
+
+      const polled = await pollUntilTerminal({
+        scope,
+        machine,
+        process,
+        stepId,
+        nextWait: counter(),
+        timeoutMs,
+      });
+
+      return { process, polled };
     });
 
     if (polled.timedOut) {
       await this.state.onTimeout?.();
 
-      await process.signal(subStep(stepId, "timeout-kill"), { signal: 9 });
+      await asStatement(statement, () => {
+        return process.signal(subStep(stepId, "timeout-kill"), { signal: 9 });
+      });
 
       throw this.timeoutError(scope);
     }
 
-    const result = await readResult({
-      process: polled.process,
-      stepId,
-      argv: this.state.argv,
-      secrets: this.secretValues(scope),
+    const result = await asStatement(statement, () => {
+      return readResult({
+        process: polled.process,
+        stepId,
+        argv: this.state.argv,
+        secrets: this.secretValues(scope),
+      });
     });
 
     await publishOutput(scope, stepId, "stdout", result.stdout);

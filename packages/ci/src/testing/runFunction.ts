@@ -35,6 +35,7 @@ interface Step {
   id: string;
   op?: string;
   displayName?: string;
+  opts?: Record<string, unknown>;
   name?: string;
   data?: unknown;
   error?: unknown;
@@ -80,7 +81,12 @@ export interface RunFunctionOptions {
    * What a sleep or wait resolves to. Defaults to `null`, which is what a
    * `waitForEvent` timeout looks like.
    */
-  resolveWait?: (step: { id: string; displayName?: string }) => unknown;
+  resolveWait?: (step: {
+    id: string;
+    displayName?: string;
+    /** The opcode's opts, like a sleep's duration. */
+    opts?: Record<string, unknown>;
+  }) => unknown;
   /** How many times a retriable step failure is retried. Defaults to 4. */
   stepAttempts?: number;
   /**
