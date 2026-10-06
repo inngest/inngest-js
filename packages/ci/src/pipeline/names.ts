@@ -142,6 +142,7 @@ export const traceName = {
   resumeMachine: "Resume sandbox",
   snapshotMachine: "Snapshot sandbox",
   cleanUpMachines: "Clean up sandboxes",
+  cleanUpSnapshots: "Clean up snapshots",
 
   /** A captured command's one step: it runs and returns its output at once. */
   runAndReadOutput: "Run and read output",

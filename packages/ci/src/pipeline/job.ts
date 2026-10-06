@@ -278,6 +278,13 @@ const adoptBuilt = (
 
   if (built.snapshotId) {
     run.snapshots.set(jobId, Promise.resolve(built.snapshotId));
+
+    // A named snapshot belongs to the cache and is never deleted by a run. One
+    // without a name is the build's unnamed fallback (see createNamedSnapshot),
+    // which the build run left for this one to delete when it ends.
+    if (!built.cached) {
+      run.createdSnapshots.add(built.snapshotId);
+    }
   }
 };
 

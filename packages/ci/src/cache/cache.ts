@@ -523,6 +523,9 @@ export const deleteSnapshot = async (
 
           await snapshot?.delete();
 
+          // Gone now, so the run's cleanup has nothing to delete.
+          run.createdSnapshots.delete(snapshotId);
+
           return { deleted: Boolean(snapshot) };
         } catch {
           return { deleted: false };

@@ -26,8 +26,8 @@ import { snapshotJob } from "./machine.ts";
  * waits doesn't pay for a machine while it waits.
  *
  * The snapshot behind the copy is deleted when the pipeline run ends, unless
- * the parent is cached (the cache keeps it for later runs) or fails with
- * `keepOnFailure`.
+ * the parent is cached under a name (the cache keeps it for later runs) or
+ * fails with `keepOnFailure`.
  *
  * ```ts
  * const setup = ci.job("setup", async () => {

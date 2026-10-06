@@ -724,9 +724,7 @@ const createSnapshot = async (
 
     const id = cache
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
-      : (await handle.sandbox.snapshot(snapshotStep(stepId))).id;
-
-    run.createdSnapshots.add(id);
+      : await createRunSnapshot(run, handle, stepId);
 
     recordTiming(run, {
       kind: "snapshot",
@@ -752,6 +750,9 @@ const createSnapshot = async (
 
 /**
  * Snapshot a cached job's machine under its name, and record it as the run's.
+ * A named snapshot is never added to `run.createdSnapshots`, so the run's
+ * cleanup leaves it for later runs, and so is one adopted from a name race
+ * winner.
  *
  * If another build holds the name, its snapshot is used instead. If the name
  * is refused, as by a server without snapshot names, the snapshot is taken
@@ -832,8 +833,39 @@ const createNamedSnapshot = async (
     `not cached: the snapshot of \`${jobPath}\` couldn't be named${refusal ? ` (${errorMessage(refusal)})` : ""}, so later runs build it again`,
   );
 
-  return (await handle.sandbox.snapshot(snapshotStep(`${stepId} (unnamed)`)))
-    .id;
+  const unnamed = await handle.sandbox.snapshot(
+    snapshotStep(`${stepId} (unnamed)`),
+  );
+
+  // Today's Cloud rejects snapshot names, so a cached job's snapshot falls back
+  // to an unnamed one that no later run can find. Delete it like any run-only
+  // snapshot. Remove this once every Cloud environment has snapshot names
+  // (inngest/inngest jack/snapshot-names, monorepo jack/snapshot-names).
+  //
+  // A build run hands the snapshot to the run that invoked it, which deletes
+  // it at its own end: the build's cleanup would delete it while the invoking
+  // run still starts jobs from it.
+  if (!run.build) {
+    run.createdSnapshots.add(unnamed.id);
+  }
+
+  return unnamed.id;
+};
+
+/**
+ * Snapshot a machine for this run only, and track it so the run's cleanup
+ * deletes it.
+ */
+const createRunSnapshot = async (
+  run: CiRunScope,
+  handle: MachineHandle,
+  stepId: string,
+): Promise<string> => {
+  const snapshot = await handle.sandbox.snapshot(snapshotStep(stepId));
+
+  run.createdSnapshots.add(snapshot.id);
+
+  return snapshot.id;
 };
 
 /** The code a create gets when another snapshot holds the name. */
@@ -961,10 +993,10 @@ export const deleteRunSnapshots = async (
   }
 
   await run.step.run(
-    {
-      id: `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
-      name: "cleanup:snapshots",
-    },
+    ciStep(
+      `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+      traceName.cleanUpSnapshots,
+    ),
     async () => {
       const deleted: string[] = [];
       const failed: string[] = [];

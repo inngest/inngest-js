@@ -538,6 +538,7 @@ describe("spans", () => {
         "  Save sandbox",
         "    Pause sandbox",
         "Clean up sandboxes",
+        "Clean up snapshots",
       ].join("\n"),
     );
   });
@@ -600,6 +601,7 @@ describe("spans", () => {
         "  Save sandbox <- ci",
         "    Pause sandbox <- ci",
         "Clean up sandboxes <- ci",
+        "Clean up snapshots <- ci",
       ].join("\n"),
     );
   });
