@@ -12,6 +12,7 @@
 
 import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
 import { tagStep } from "../pipeline/metadata.ts";
+import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import { countApi, scopeSeparator } from "../pipeline/scope.ts";
 import type {
@@ -234,10 +235,7 @@ export const cacheTarget = async (
   const ownKey =
     given?.ownKey ??
     ((await run.step.run(
-      {
-        id: `${scope.path}${scopeSeparator}cache:key`,
-        name: "cache:key",
-      },
+      ciStep(`${scope.path}${scopeSeparator}cache:key`, traceName.checkCache),
       async () => {
         await tagStep(run, { kind: "cache", job: scope.path });
 
@@ -397,10 +395,7 @@ export const lookupCache = async (
   const { run } = scope;
 
   const found = (await run.step.run(
-    {
-      id: `${scope.path}${scopeSeparator}cache:lookup`,
-      name: "cache:lookup",
-    },
+    ciStep(`${scope.path}${scopeSeparator}cache:lookup`, traceName.lookUpCache),
     async () => {
       await tagStep(run, { kind: "cache", job: scope.path });
 
@@ -431,7 +426,7 @@ export const resolveTakenName = async (
   exclude?: string,
 ): Promise<{ winner?: CachedSnapshot; cleared: boolean }> => {
   return (await run.step.run(
-    { id: stepId, name: "cache:name-taken" },
+    ciStep(stepId, traceName.resolveCacheName),
     async () => {
       const winner = await findNamed(run, name, exclude);
 
@@ -484,7 +479,7 @@ export const staleParentOf = async (
   meta: SnapshotMeta,
 ): Promise<string | undefined> => {
   const stale = (await run.step.run(
-    { id: stepId, name: "cache:verify" },
+    ciStep(stepId, traceName.verifyCachedSnapshot),
     async () => {
       await tagStep(run, { kind: "cache", job: jobPath });
 
@@ -520,17 +515,20 @@ export const deleteSnapshot = async (
   snapshotId: string,
 ): Promise<void> => {
   try {
-    await run.step.run({ id: stepId, name: "cache:delete" }, async () => {
-      try {
-        const snapshot = await snapshotsClient(run).get(snapshotId);
+    await run.step.run(
+      ciStep(stepId, traceName.deleteBadSnapshot),
+      async () => {
+        try {
+          const snapshot = await snapshotsClient(run).get(snapshotId);
 
-        await snapshot?.delete();
+          await snapshot?.delete();
 
-        return { deleted: Boolean(snapshot) };
-      } catch {
-        return { deleted: false };
-      }
-    });
+          return { deleted: Boolean(snapshot) };
+        } catch {
+          return { deleted: false };
+        }
+      },
+    );
   } catch {
     // Best effort only.
   }

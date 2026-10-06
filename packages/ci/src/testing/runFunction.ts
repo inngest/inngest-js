@@ -15,6 +15,7 @@
 
 import type { EventPayload, InngestFunction } from "inngest";
 import { createdFunctions } from "./client.ts";
+import { SpanStubMiddleware, spanStubInstalled, stampOf } from "./spanStub.ts";
 
 /** The opcodes the harness reads; their values are the wire format. */
 const StepOpCode = {
@@ -41,7 +42,18 @@ interface Step {
   data?: unknown;
   error?: unknown;
   metadata?: MetadataUpdate[];
+  opts?: { span?: StepSpanPath; origin?: string };
+  /** The step's ID before hashing. */
+  userland?: { id: string };
 }
+
+/** The spans a step is grouped under, outermost first. */
+type StepSpanPath = Array<{
+  id: string;
+  name: string;
+  kind?: string;
+  origin?: string;
+}>;
 
 /** One execution request's outcome, loosely typed: the SDK doesn't export it. */
 interface ExecutionResult {
@@ -59,17 +71,20 @@ export interface RunResult {
   error?: unknown;
   /** For a rejected run, whether the executor would retry it. */
   retriable?: unknown;
-  /**
-   * Step names in the order they completed. The executor hashes IDs, so these
-   * are the display names CI gave each step.
-   */
+  /** Step IDs, before hashing, in the order the steps completed. */
   stepIds: string[];
-  /** Step data keyed by display name. */
+  /** Each step's display name, keyed by step ID. */
+  names: Record<string, string>;
+  /** Step data keyed by step ID. */
   steps: Record<string, unknown>;
+  /** The span path of each step in a span, keyed by step ID. */
+  spans: Record<string, StepSpanPath>;
+  /** The origin of each step that has one, keyed by step ID. */
+  origins: Record<string, string>;
   /**
-   * Metadata updates in the order steps ran them, each with the display name
-   * of the step that carried it. A step that fails and retries carries its
-   * metadata on every attempt, so it can appear more than once.
+   * Metadata updates in the order steps ran them, each with the ID of the step
+   * that carried it. A step that fails and retries carries its metadata on
+   * every attempt, so it can appear more than once.
    */
   metadata: Array<MetadataUpdate & { step: string }>;
 }
@@ -204,6 +219,11 @@ const isFailed = (step: Step): boolean => {
   return step.op === StepOpCode.StepError || step.op === StepOpCode.StepFailed;
 };
 
+/** A step's ID as CI wrote it, since the executor's `id` is hashed. */
+const stepId = (step: Step): string => {
+  return step.userland?.id ?? step.id;
+};
+
 /**
  * Drive a function to completion the way the executor would.
  */
@@ -228,7 +248,10 @@ export const runFunction = async (
   const attempts = new Map<string, number>();
 
   const stepIds: string[] = [];
+  const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
+  const spans: RunResult["spans"] = {};
+  const origins: RunResult["origins"] = {};
   const metadata: RunResult["metadata"] = [];
 
   const request = async (runStep?: string): Promise<ExecutionResult> => {
@@ -257,11 +280,28 @@ export const runFunction = async (
 
     completionOrder.push(step.id);
 
-    const label = step.displayName ?? step.name ?? step.id;
+    const id = stepId(step);
 
-    stepIds.push(label);
+    stepIds.push(id);
 
-    steps[label] = step.data;
+    names[id] = step.displayName ?? step.name ?? id;
+
+    steps[id] = step.data;
+
+    // Where the SDK has the span API it stamps these on the step. Where the
+    // test stub provides it, the stub recorded them instead.
+    const stamp = spanStubInstalled() ? stampOf(id) : undefined;
+    const span =
+      step.opts?.span ?? (stamp?.span.length ? stamp.span : undefined);
+    const origin = step.opts?.origin ?? stamp?.origin;
+
+    if (span) {
+      spans[id] = span;
+    }
+
+    if (origin) {
+      origins[id] = origin;
+    }
   };
 
   // The executor retries a step that failed retriably, and only writes the
@@ -277,7 +317,7 @@ export const runFunction = async (
 
     for (const update of step.metadata ?? []) {
       metadata.push({
-        step: step.displayName ?? step.name ?? step.id,
+        step: stepId(step),
         ...update,
       });
     }
@@ -299,7 +339,16 @@ export const runFunction = async (
     const result = await request();
 
     if (result.type === "function-resolved") {
-      return { type: result.type, data: result.data, stepIds, steps, metadata };
+      return {
+        type: result.type,
+        data: result.data,
+        stepIds,
+        names,
+        steps,
+        spans,
+        origins,
+        metadata,
+      };
     }
 
     if (result.type === "function-rejected") {
@@ -314,7 +363,10 @@ export const runFunction = async (
         error: result.error,
         retriable: result.retriable,
         stepIds,
+        names,
         steps,
+        spans,
+        origins,
         metadata,
       };
     }
@@ -335,9 +387,11 @@ export const runFunction = async (
 
         record({
           id: planned.id,
+          ...(planned.userland ? { userland: planned.userland } : {}),
           ...(planned.displayName === undefined
             ? {}
             : { displayName: planned.displayName }),
+          opts: planned.opts,
           ...(outcome.error === undefined
             ? { data: outcome.data ?? null }
             : { error: outcome.error }),
@@ -352,10 +406,12 @@ export const runFunction = async (
       if (planned.op && planned.op !== StepOpCode.StepPlanned) {
         record({
           id: planned.id,
+          ...(planned.userland ? { userland: planned.userland } : {}),
           ...(planned.displayName === undefined
             ? {}
             : { displayName: planned.displayName }),
           data: opts.resolveWait ? opts.resolveWait(planned) : null,
+          opts: planned.opts,
         });
 
         continue;
@@ -396,6 +452,11 @@ const runOnce = async (
   ].map((Middleware: any) => {
     return new Middleware({ client });
   });
+
+  if (spanStubInstalled()) {
+    // First, so the other middleware builds on step tools that record.
+    middlewareInstances.unshift(new SpanStubMiddleware({ client }));
+  }
 
   const execution = internals["createExecution"]({
     partialOptions: {

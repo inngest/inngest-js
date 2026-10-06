@@ -7,6 +7,7 @@
 
 import { CiUsageError } from "../errors.ts";
 import { ensureMachine } from "../machine/machine.ts";
+import { traceName } from "../pipeline/names.ts";
 import type {
   CiJobScope,
   CiRunScope,
@@ -100,9 +101,12 @@ export const checkout = async (opts: CheckoutOptions = {}): Promise<void> => {
 
   run.ci.reporter.activity(run, scope.jobPath, "cloning repository…");
 
-  await run.step.run({ id: stepId, name: stepId }, async () => {
-    return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
-  });
+  await run.step.run(
+    { id: stepId, name: traceName.cloneRepository },
+    async () => {
+      return cloneFromGithub(run, machine, repo as RepoContext, opts, target);
+    },
+  );
 
   scope.cwd ??= target;
 };
@@ -174,9 +178,12 @@ const checkoutLocal = async (
 
   run.ci.reporter.activity(run, scope.jobPath, "checking working tree…");
 
-  const result = (await run.step.run({ id: stepId, name: stepId }, async () => {
-    return uploadWorkingTree(scope, machine, localPath, target);
-  })) as LocalCheckoutResult;
+  const result = (await run.step.run(
+    { id: stepId, name: traceName.uploadWorkingTree },
+    async () => {
+      return uploadWorkingTree(scope, machine, localPath, target);
+    },
+  )) as LocalCheckoutResult;
 
   machine.treeId = result.treeId;
 
