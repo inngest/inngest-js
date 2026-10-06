@@ -151,8 +151,80 @@ describe("pipelines and jobs", () => {
     expect(api.sandboxes.size).toBe(0);
   });
 
-  test("two callers share one job run", async () => {
-    const { api, ci } = setup();
+  test("calling a job twice runs it twice", async () => {
+    const { api, ci, reporter } = setup();
+
+    const test = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+
+      await test();
+
+      await test();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(api.sandboxes.size).toBe(3);
+
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv[1] === "test";
+      }),
+    ).toHaveLength(3);
+
+    expect(result.stepIds).toContain("test › machine");
+    expect(result.stepIds).toContain("test (2) › machine");
+    expect(result.stepIds).toContain("test (3) › machine");
+
+    const completed = reporter.history
+      .filter((entry) => {
+        return entry.status === "completed";
+      })
+      .map((entry) => {
+        return entry.name;
+      });
+
+    expect(completed).toEqual([
+      "pr / test",
+      "pr / test (2)",
+      "pr / test (3)",
+      "pr",
+    ]);
+  });
+
+  test("an explicit check name gets the call number too", async () => {
+    const { ci, reporter } = setup();
+
+    const test = ci.job({ id: "test", check: { name: "Unit" } }, async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+
+      await test();
+    });
+
+    await runFunction(pipeline, { event: prEvent });
+
+    const names = reporter.history
+      .filter((entry) => {
+        return entry.status === "completed";
+      })
+      .map((entry) => {
+        return entry.name;
+      });
+
+    expect(names).toEqual(["pr / Unit", "pr / Unit (2)", "pr"]);
+  });
+
+  test("concurrent calls of a job each run with their own path", async () => {
+    const { api, ci, reporter } = setup();
 
     const build = ci.job("build", async () => {
       await $`pnpm build`;
@@ -165,14 +237,28 @@ describe("pipelines and jobs", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    // One machine and one command, however many callers there were.
-    expect(api.sandboxes.size).toBe(1);
+    expect(api.sandboxes.size).toBe(2);
 
     expect(
       userCommands(api).filter((argv) => {
         return argv[1] === "build";
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+
+    expect(result.stepIds).toContain("build › machine");
+    expect(result.stepIds).toContain("build (2) › machine");
+
+    const names = reporter.history
+      .filter((entry) => {
+        return entry.status === "completed";
+      })
+      .map((entry) => {
+        return entry.name;
+      });
+
+    expect(names).toEqual(
+      expect.arrayContaining(["pr / build", "pr / build (2)"]),
+    );
   });
 
   test("step IDs inside a job are scoped to it", async () => {
@@ -699,6 +785,74 @@ describe("from()", () => {
     });
 
     expect(cloned).toHaveLength(2);
+  });
+
+  test("calling the parent directly, then from() it, runs it once", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job("lint", async () => {
+      await from(base);
+
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await base();
+
+      await lint();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv[1] === "install";
+      }),
+    ).toHaveLength(1);
+
+    expect(api.sandboxes.size).toBe(2);
+
+    const cloned = [...api.sandboxes.values()].filter((sandbox) => {
+      return sandbox.snapshotId;
+    });
+
+    expect(cloned).toHaveLength(1);
+  });
+
+  test("a direct call after from() starts its own run", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const lint = ci.job("lint", async () => {
+      await from(base);
+
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await lint();
+
+      await base();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(
+      userCommands(api).filter((argv) => {
+        return argv[1] === "install";
+      }),
+    ).toHaveLength(2);
+
+    expect(result.stepIds).toContain("base (2) › machine");
   });
 
   test("from() after a command throws", async () => {

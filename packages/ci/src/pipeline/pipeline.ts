@@ -188,6 +188,7 @@ const newRunScope = ({
     event: ctx.event,
     ...(repo ? { repo } : {}),
     jobs: new Map(),
+    jobCalls: new Map(),
     machines: new Map(),
     snapshots: new Map(),
     cacheEntries: new Map(),

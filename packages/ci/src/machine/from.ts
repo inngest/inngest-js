@@ -6,6 +6,7 @@
  */
 
 import { CiUsageError } from "../errors.ts";
+import { joinJob } from "../pipeline/job.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
 import { countApi, jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
 import type { AnyJob, Job } from "../types.ts";
@@ -18,7 +19,8 @@ import { snapshotJob } from "./machine.ts";
  * Start this job on a copy of another job's machine.
  *
  * The parent runs once however many jobs start from it, and each child gets
- * its own copy, so they can't affect each other. The copy is made when this
+ * its own copy, so they can't affect each other. If the parent was already
+ * called directly, `from()` uses that run instead of starting another. The copy is made when this
  * job runs its first command, so a job that starts from another and then
  * waits doesn't pay for a machine while it waits.
  *
@@ -35,8 +37,8 @@ import { snapshotJob } from "./machine.ts";
  * ```
  *
  * `await setup()` and `await from(setup)` differ: the first runs setup on its
- * own machine, the second does that *and* starts this
- * job from where it finished.
+ * own machine every time it's called, the second joins the one shared run of
+ * setup *and* starts this job from where it finished.
  *
  * @throws {CiUsageError} When called outside a job, after this job's first
  * command, or a second time.
@@ -70,7 +72,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
     scope.fromInputs[job.id] = input;
   }
 
-  await job(input as never);
+  await joinJob({ id: job.id, input });
 
   const snapshotId = await snapshotJob(scope.run, job.id);
 
