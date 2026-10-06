@@ -24,6 +24,9 @@ import { snapshotJob } from "./machine.ts";
  * job runs its first command, so a job that starts from another and then
  * waits doesn't pay for a machine while it waits.
  *
+ * `from()` shares a job's machine within one run. Only a `cache` key on the
+ * parent reuses it across runs.
+ *
  * The snapshot behind the copy is deleted when the pipeline run ends, unless
  * the parent is cached (the cache keeps it for later runs) or fails with
  * `keepOnFailure`.
@@ -71,6 +74,11 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
   scope.fromCalled = true;
 
   scope.fromJobIds.push(job.id);
+
+  const children = scope.run.fromChildren.get(job.id) ?? new Set<string>();
+
+  children.add(scope.jobPath);
+  scope.run.fromChildren.set(job.id, children);
 
   if (input !== undefined) {
     scope.fromInputs[job.id] = input;

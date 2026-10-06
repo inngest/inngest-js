@@ -189,6 +189,7 @@ const newRunScope = ({
     ...(repo ? { repo } : {}),
     jobs: new Map(),
     jobCalls: new Map(),
+    fromChildren: new Map(),
     machines: new Map(),
     snapshots: new Map(),
     createdSnapshots: new Set(),
@@ -344,6 +345,8 @@ const runPipelineAttempt = async ({
 
       await completeDeferredJobChecks(run, checks);
 
+      addSlowParentHints(run);
+
       await completePipeline(run, checks, {
         conclusion: "success",
         title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
@@ -385,6 +388,8 @@ const runPipelineAttempt = async ({
       // Jobs that were still running when the run ended would otherwise leave
       // their checks spinning.
       await closeOpenJobChecks(run, checks);
+
+      addSlowParentHints(run);
 
       await completePipeline(run, checks, {
         conclusion: conclusionForError(error),
@@ -614,6 +619,37 @@ const closeOpenJobChecks = async (
       conclusion: "cancelled",
       title: "Cancelled: the pipeline ended first",
     });
+  }
+};
+
+/** How long an uncached parent can take before its missing cache is worth a note. */
+const slowParentMs = 30_000;
+
+/**
+ * Note each uncached job that took a while and had other jobs start `from()`
+ * it, since it runs again next run. The run scope is rebuilt on every replay
+ * and the durations come from memoized start times, so a replay adds the same
+ * lines to its own fresh list, once.
+ */
+const addSlowParentHints = (run: CiRunScope): void => {
+  for (const [parentId, children] of run.fromChildren) {
+    if (run.ci.jobs.get(parentId)?.config.cache) {
+      continue;
+    }
+
+    const summary = run.summaries.find((candidate) => {
+      return candidate.path === parentId;
+    });
+
+    if (!summary || summary.durationMs <= slowParentMs) {
+      continue;
+    }
+
+    const count = `${children.size} ${children.size === 1 ? "job" : "jobs"}`;
+
+    run.warnings.push(
+      `\`${parentId}\` took ${formatDuration(summary.durationMs)} and ${count} started from it. It isn't cached, so it runs again next time. To reuse it, give it a cache key: \`cache: { key: files("pnpm-lock.yaml") }\`.`,
+    );
   }
 };
 
