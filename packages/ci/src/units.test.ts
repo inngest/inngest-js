@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { cacheScopes, storeKey } from "./cache/cache.ts";
+import { cacheScopes, snapshotIsReady, storeKey } from "./cache/cache.ts";
 import { CiUsageError } from "./errors.ts";
 import {
   batchAnnotations,
@@ -692,5 +692,44 @@ describe("shortReason", () => {
     expect(shortReason("")).toBe("");
     expect(shortReason(undefined)).toBe("");
     expect(shortReason(new Error(""))).toBe("");
+  });
+});
+
+describe("snapshotIsReady", () => {
+  const runWith = (snapshot: unknown) => {
+    return {
+      sandboxTools: {
+        snapshots: {
+          get: async () => {
+            return snapshot;
+          },
+        },
+      },
+    } as never;
+  };
+
+  const inHours = (hours: number) => {
+    return new Date(Date.now() + hours * 3_600_000).toISOString();
+  };
+
+  test("a READY snapshot well before its expiry is reused", async () => {
+    const run = runWith({ status: "READY", expiresAt: inHours(10) });
+
+    expect(await snapshotIsReady(run, "job", "s1")).toBe(true);
+  });
+
+  test("a READY snapshot past or near its expiry is a miss", async () => {
+    const expired = runWith({ status: "READY", expiresAt: inHours(-1) });
+    const nearly = runWith({ status: "READY", expiresAt: inHours(0.1) });
+
+    expect(await snapshotIsReady(expired, "job", "s1")).toBe(false);
+    expect(await snapshotIsReady(nearly, "job", "s1")).toBe(false);
+  });
+
+  test("a snapshot that isn't READY, or can't be read, is a miss", async () => {
+    const pending = runWith({ status: "PENDING", expiresAt: inHours(10) });
+
+    expect(await snapshotIsReady(pending, "job", "s1")).toBe(false);
+    expect(await snapshotIsReady(runWith(undefined), "job", "s1")).toBe(false);
   });
 });
