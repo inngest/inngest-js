@@ -276,6 +276,70 @@ describe('step "~origin"', () => {
     expect(steps.create?.opts?.origin).toBe(sdk);
   });
 
+  test("sends a span's inherited origin on its path element", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"]({ id: "save", name: "Save", origin: ci }, () => {
+          return group["~span"]({ id: "snap" }, () => {
+            return step.run("create", () => "create");
+          });
+        });
+      },
+    );
+
+    const [create] = await runSteps(fn, 1);
+
+    expect(create?.opts?.span).toStrictEqual([
+      { id: "save", name: "Save", origin: ci },
+      { id: "snap", name: "snap", origin: ci },
+    ]);
+  });
+
+  test("keeps an explicit origin on a nested span over the parent's", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"]({ id: "save", origin: ci }, () => {
+          return group["~span"]({ id: "snap", origin: sdk }, () => {
+            return group["~span"]({ id: "inner" }, () => {
+              return step.run("create", () => "create");
+            });
+          });
+        });
+      },
+    );
+
+    const [create] = await runSteps(fn, 1);
+
+    expect(create?.opts?.span).toStrictEqual([
+      { id: "save", name: "save", origin: ci },
+      { id: "snap", name: "snap", origin: sdk },
+      { id: "inner", name: "inner", origin: sdk },
+    ]);
+  });
+
+  test("leaves a span without an origin when none is in scope", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"]({ id: "outer" }, () => {
+          return group["~span"]({ id: "snap" }, () => {
+            return step.run("create", () => "create");
+          });
+        });
+      },
+    );
+
+    const [create] = await runSteps(fn, 1);
+
+    expect(create?.opts?.span).toStrictEqual([
+      { id: "outer", name: "outer" },
+      { id: "snap", name: "snap" },
+    ]);
+    expect(create?.opts?.origin).toBeUndefined();
+  });
+
   test("lets the step option override the span's origin", async () => {
     const fn = client.createFunction(
       { id: "fn", triggers: [{ event: "test" }] },
