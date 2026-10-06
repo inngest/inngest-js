@@ -64,6 +64,8 @@ export type {
   SandboxSnapshotResource,
   SandboxSnapshotStatus,
   SandboxSnapshotWaitOptions,
+  SandboxStatementOptions,
+  SandboxStatementOpts,
   SandboxStatus,
   SandboxWaitUntilRunningOptions,
 } from "./components/InngestSandbox.ts";
@@ -72,6 +74,7 @@ export {
   SandboxError,
   SandboxValidationError,
   sandboxMiddleware,
+  withSandboxStatement,
 } from "./components/InngestSandbox.ts";
 // Scoring
 export { scoreMiddleware } from "./components/InngestScore.ts";

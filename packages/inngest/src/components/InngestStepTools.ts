@@ -62,6 +62,7 @@ import {
 import type { Middleware } from "./middleware/index.ts";
 import { NonRetriableError } from "./NonRetriableError.ts";
 import type { Realtime } from "./realtime/types.ts";
+import { sandboxStatementOpts } from "./sandbox/statement.ts";
 import type { EventType } from "./triggers/triggers.ts";
 
 /**
@@ -304,6 +305,16 @@ export const createStepTools = <
       const experimentContext = alsCtx?.experimentContext;
       if (experimentContext) {
         op.opts = { ...op.opts, ...experimentContext };
+      }
+
+      // A sleep can't attach metadata from a handler, so it carries the
+      // sandbox statement it serves for the executor to describe.
+      const sandboxStatement = alsCtx?.sandboxStatement;
+      if (sandboxStatement && op.op === StepOpCode.Sleep) {
+        op.opts = {
+          ...op.opts,
+          sandboxStatement: sandboxStatementOpts(sandboxStatement),
+        };
       }
 
       // Track that a step tool was invoked inside a variant callback
