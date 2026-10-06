@@ -88,8 +88,9 @@ export interface Ci {
   /**
    * Define a job: a unit of work with its own machine, called like a function.
    *
-   * Its input is inferred from the handler, and it runs once per pipeline run
-   * however many times it's called. It has no return value, and a handler
+   * Its input is inferred from the handler. Every call runs the job again, on
+   * its own machine and with its own check, named `test (2)` the second time.
+   * `from()` is how jobs share one run. It has no return value, and a handler
    * that returns one is a type error.
    *
    * ```ts

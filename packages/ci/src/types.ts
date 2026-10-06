@@ -245,8 +245,9 @@ export interface JobConfig<_TInput = void> {
 /**
  * A job: call it like a function.
  *
- * Calling it twice in one run joins the run already in progress, so two parts
- * of a pipeline can both depend on it without it running twice.
+ * Every call is its own run of the job, with its own machine, steps and check:
+ * the second call in a pipeline run is `test (2)`. To share one run between
+ * jobs, start them with `from()`, which builds the parent once.
  *
  * A job is called for its side effects, so it resolves to nothing.
  */

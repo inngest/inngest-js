@@ -1,6 +1,7 @@
 /**
- * Defining and running a job: the `ci.job()` factory, joining a run already in
- * progress, and the job body that reports checks, caches and pauses machines.
+ * Defining and running a job: the `ci.job()` factory, starting a run of a job
+ * or joining the shared one `from()` uses, and the job body that reports
+ * checks, caches and pauses machines.
  *
  * @module
  */
@@ -90,7 +91,9 @@ interface RunJobArgs {
 }
 
 /**
- * Run a job, or join the run already in progress for this ID.
+ * Run a job. Every direct call is its own run of the job: the first has the
+ * job's ID as its path and is the one `from()` shares, and each later call gets
+ * `${id} (n)`, so it has its own machine, steps and check.
  */
 export const runJob = async ({
   config,
@@ -105,15 +108,80 @@ export const runJob = async ({
     );
   }
 
-  const existing = run.jobs.get(config.id);
+  if (!run.jobs.has(config.id)) {
+    return startShared({ run, config, handler, input });
+  }
+
+  const number = (run.jobCalls.get(config.id) ?? 1) + 1;
+
+  run.jobCalls.set(config.id, number);
+
+  return jobBody({
+    run,
+    config,
+    handler,
+    input,
+    path: `${config.id} (${number})`,
+    number,
+  });
+};
+
+/**
+ * Get the shared run of a job, the one `from()` copies from: join it if it has
+ * started, whether by a direct call or another `from()`, or start it.
+ */
+export const joinJob = ({
+  id,
+  input,
+}: {
+  id: string;
+  input: unknown;
+}): Promise<void> => {
+  const run = getRunScope();
+
+  if (!run) {
+    throw new CiUsageError(
+      `Jobs can only run inside a pipeline. \`${id}\` was started outside \`ci.pipeline()\`.`,
+    );
+  }
+
+  const existing = run.jobs.get(id);
 
   if (existing) {
     return existing;
   }
 
-  const started = jobBody({ run, config, handler, input });
+  const registered = run.ci.jobs.get(id);
+
+  if (!registered) {
+    throw new CiUsageError(`Job \`${id}\` isn't registered on this client.`);
+  }
+
+  return startShared({
+    run,
+    config: registered.config,
+    handler: registered.handler,
+    input,
+  });
+};
+
+const startShared = ({
+  run,
+  config,
+  handler,
+  input,
+}: RunJobArgs & { run: CiRunScope }): Promise<void> => {
+  const started = jobBody({
+    run,
+    config,
+    handler,
+    input,
+    path: config.id,
+    number: 1,
+  });
 
   run.jobs.set(config.id, started);
+  run.jobCalls.set(config.id, 1);
 
   return started;
 };
@@ -297,6 +365,7 @@ export const rebuildJob = async (
       config: { ...registered.config, check: false },
       handler: registered.handler,
       input,
+      number: 1,
     });
 
     run.jobs.set(path, started);
@@ -342,26 +411,35 @@ const validateInput = async (
 };
 
 /** Everything a job does is in its span. */
-const jobBody = (args: RunJobArgs & { run: CiRunScope }): Promise<void> => {
-  return inJobSpan(args.run, args.path ?? args.config.id, () => {
+const jobBody = (
+  args: RunJobArgs & { run: CiRunScope; path: string; number: number },
+): Promise<void> => {
+  return inJobSpan(args.run, args.path, () => {
     return jobSteps(args);
   });
 };
 
 const jobSteps = async ({
-  path,
   run,
   config,
   handler,
   input: given,
-}: RunJobArgs & { run: CiRunScope }): Promise<void> => {
+  path,
+  number,
+}: RunJobArgs & {
+  run: CiRunScope;
+  /** The job's path: its ID, or `${id} (n)` for a later direct call. */
+  path: string;
+  /** Which run of this job in the pipeline run this is, counting from 1. */
+  number: number;
+}): Promise<void> => {
   const input = await validateInput(config, given);
   const checks = run.ci.checks as CheckReporter;
 
   const scope: CiJobScope = {
     run,
-    path: path ?? config.id,
-    jobPath: path ?? config.id,
+    path,
+    jobPath: path,
     config,
     fromCalled: false,
     fromJobIds: [],
@@ -372,7 +450,12 @@ const jobSteps = async ({
     secrets: [],
   };
 
-  const checkName = config.check === false ? undefined : config.check?.name;
+  const configuredName =
+    config.check === false ? undefined : config.check?.name;
+
+  const checkName = configuredName
+    ? `${configuredName}${number > 1 ? ` (${number})` : ""}`
+    : undefined;
   const checked = config.check !== false;
   const isBuild = run.build?.jobId === config.id;
 
@@ -569,7 +652,7 @@ const restoreFromCache = (
     restored: true,
   });
 
-  run.snapshots.set(scope.config.id, Promise.resolve(hit.snapshotId));
+  run.snapshots.set(scope.path, Promise.resolve(hit.snapshotId));
 
   const title = cachedTitle(hit);
 

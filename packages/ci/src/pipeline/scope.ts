@@ -133,7 +133,14 @@ export interface CiInternals {
   // biome-ignore lint/suspicious/noExplicitAny: GitHubProvider, kept loose to avoid a cycle
   github: any;
   /** Every job defined on the client, so a cache key can look up its parents. */
-  jobs: Map<string, { config: JobConfig }>;
+  jobs: Map<
+    string,
+    {
+      config: JobConfig;
+      // biome-ignore lint/suspicious/noExplicitAny: user handler
+      handler: (input: any) => Promise<void>;
+    }
+  >;
   defaultMachine?: { vcpu?: 1 | 2 | 4 };
   runUrl: (ctx: { runId: string; functionId: string }) => string;
   /** Tells the `inngest-ci` CLI what's happening, when it started the app. */
@@ -187,13 +194,18 @@ export interface CiRunScope {
   machine?: MachineConfig;
   event: unknown;
   repo?: RepoContext;
-  /** Jobs that have started in this run, keyed by job ID. */
+  /**
+   * The first run of each job in this pipeline run, keyed by job ID. It's the
+   * shared one `from()` copies from. Later direct calls aren't stored.
+   */
   jobs: Map<string, Promise<void>>;
   /**
    * Cached jobs being rebuilt after their snapshot went bad, keyed by the
    * rebuild's path, so jobs that find the same bad snapshot share one build.
    */
   rebuilds?: Map<string, Promise<CacheBuildResult>>;
+  /** How many runs of each job have started, keyed by job ID. */
+  jobCalls: Map<string, number>;
   /** Machines created in this run, keyed by scope path. */
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */

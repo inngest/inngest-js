@@ -39,6 +39,7 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
       sha: "abc1234",
     },
     jobs: new Map(),
+    jobCalls: new Map(),
     machines: new Map(),
     snapshots: new Map(),
     cached: new Map(),
