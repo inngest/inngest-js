@@ -283,6 +283,11 @@ const runPipelineAttempt = async ({
       run.repo = await resolveConfiguredRepo(run, config.repo);
     }
 
+    // A comment trigger knows its pull request but not the commit it's for.
+    if (run.repo?.pullRequest && !run.repo.sha && !run.repo.local) {
+      run.repo = await resolvePullRequestHead(run, run.repo);
+    }
+
     // The check's step carries the run's metadata. With checks off there's no
     // such step, so one of its own does.
     const checkStarted = await checks.pipelineStart({
@@ -462,6 +467,53 @@ const resolveConfiguredRepo = (
         ref: `refs/heads/${branch}`,
         baseRef: branch,
         trigger: (run.event as { name?: string } | undefined)?.name ?? "manual",
+      };
+    },
+  ) as Promise<RepoContext>;
+};
+
+/**
+ * Look up a pull request's head and base, in a step so every replay sees the
+ * same commit.
+ *
+ * With no GitHub credentials, as with the console reporter in dev, there's
+ * nothing to ask, so the repository comes back unchanged.
+ */
+const resolvePullRequestHead = (
+  run: CiRunScope,
+  repo: RepoContext,
+): Promise<RepoContext> => {
+  return run.step.run(
+    { id: `github › pr:resolve`, name: "pr:resolve" },
+    async (): Promise<RepoContext> => {
+      const provider = run.ci.github as GitHubProvider;
+      const number = repo.pullRequest?.number;
+
+      if (provider.kind === "console" || !number) {
+        return repo;
+      }
+
+      const octokit = await provider.octokit({
+        owner: repo.owner,
+        repo: repo.name,
+      });
+      const { data: pr } = await octokit.rest.pulls.get({
+        owner: repo.owner,
+        repo: repo.name,
+        pull_number: number,
+      });
+
+      return {
+        ...repo,
+        sha: pr.head.sha,
+        ref: pr.head.ref,
+        baseRef: pr.base.ref,
+        baseSha: pr.base.sha,
+        pullRequest: {
+          number,
+          headRef: pr.head.ref,
+          fork: (pr.head.repo?.full_name ?? repo.fullName) !== repo.fullName,
+        },
       };
     },
   ) as Promise<RepoContext>;

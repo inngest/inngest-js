@@ -209,7 +209,7 @@ export const repoContextFromEvent = (
 
   if (data.issue) {
     // Comment triggers know the pull request but not its head commit; the
-    // pipeline wrapper resolves that in a step.
+    // pipeline wrapper resolves that in a step (`resolvePullRequestHead`).
     return {
       ...base,
       ...(data.issue.number
