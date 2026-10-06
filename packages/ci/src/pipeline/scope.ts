@@ -135,8 +135,13 @@ export interface CiRunScope {
   cacheEntries: Map<string, CacheEntry | undefined>;
   /** Where each restored cache entry lives, keyed by job path. */
   cacheWriteKeys?: Map<string, string>;
-  /** Snapshots that failed to start this run, so no other job tries them. */
-  badSnapshots?: Set<string>;
+  /**
+   * One per snapshot a job started from this run. The first job to use a
+   * snapshot starts a machine from it and settles this with the snapshot every
+   * job should use: the same one if it started, or the rebuilt parent's if it
+   * didn't. Jobs that come later wait on it rather than probe again.
+   */
+  snapshotProbes?: Map<string, Promise<string | undefined>>;
   /** Sandbox IDs created in this run, for cleanup. */
   sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
@@ -198,6 +203,11 @@ export interface CiJobScope {
   fromSnapshotId?: string;
   /** Re-runs the `from()` parent on this job's machine. Set by `from()`. */
   rebuildParent?: () => Promise<void>;
+  /**
+   * Runs the `from()` parent again as a job of its own, once per run, and
+   * gives its new snapshot. Set by `from()`.
+   */
+  rebuildSnapshot?: () => Promise<string | undefined>;
   /**
    * `rebuildParent`, once the snapshot wouldn't start and a fresh machine
    * has to be brought to where the snapshot would have been.

@@ -731,6 +731,182 @@ describe("what a job says while it starts from a parent", () => {
       }),
     ).toBe(true);
 
-    expect(writes.at(-1)?.invalid).toBe(true);
+    expect(
+      writes.filter((entry) => {
+        return entry.invalid;
+      }),
+    ).toHaveLength(1);
+
+    expect(writes.at(-1)?.invalid).toBeUndefined();
+  });
+
+  describe("three jobs starting from one cached parent", () => {
+    const runAll = async (opts: { bad: boolean }) => {
+      vi.stubEnv(localEnv.local, "1");
+
+      const api = createFakeSandboxApi();
+      const inner = memoryCacheStore();
+      const writes: { invalid?: boolean; snapshotId?: string }[] = [];
+      const cacheStore: CacheStore = {
+        get: inner.get,
+        set: async (key, entry) => {
+          writes.push(entry);
+
+          await inner.set(key, entry);
+        },
+      };
+
+      const define = (ci: ReturnType<typeof createCi>) => {
+        const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+          await $`pnpm install`;
+        });
+
+        const children = ["one", "two", "three"].map((id) => {
+          return ci.job(id, async () => {
+            await from(base);
+
+            await $`pnpm test ${id}`;
+          });
+        });
+
+        return ci.job("all", async () => {
+          await Promise.all(
+            children.map((child) => {
+              return child();
+            }),
+          );
+        });
+      };
+
+      const first = setup({ api, cacheStore });
+
+      define(first.ci);
+
+      await runFunction(functionFor(first.ci, runJobFunctionId) as never, {
+        event: runJobData({ job: "all" }),
+      });
+
+      const cachedSnapshot = [...api.snapshots.keys()][0] as string;
+
+      if (opts.bad) {
+        api.failSnapshotStarts();
+      }
+
+      api.commands.length = 0;
+      api.snapshotStarts.length = 0;
+      writes.length = 0;
+
+      const messages = await listen();
+      const second = setup({ api, cacheStore });
+
+      define(second.ci);
+
+      const result = await runFunction(
+        functionFor(second.ci, runJobFunctionId) as never,
+        { event: runJobData({ job: "all" }) },
+      );
+
+      await vi.waitFor(() => {
+        expect(kinds(messages, "run").length).toBeGreaterThan(1);
+      });
+
+      const texts = (jobId: string) => {
+        return messages.flatMap((message) => {
+          return message.kind === "activity" && message.jobId === jobId
+            ? [message.text]
+            : [];
+        });
+      };
+
+      return { api, result, writes, cachedSnapshot, texts };
+    };
+
+    test("a bad snapshot is tried once and the parent rebuilt once", async () => {
+      const { api, result, writes, cachedSnapshot, texts } = await runAll({
+        bad: true,
+      });
+
+      expect(result.type).toBe("function-resolved");
+
+      const attempts = api.snapshotStarts.filter((id) => {
+        return id === cachedSnapshot;
+      });
+
+      expect(attempts).toHaveLength(1);
+
+      const installs = api.commands.filter((argv) => {
+        return argv.join(" ") === "pnpm install";
+      });
+
+      expect(installs).toHaveLength(1);
+
+      const fresh = [...api.snapshots.keys()].find((id) => {
+        return id !== cachedSnapshot;
+      });
+
+      expect(fresh).toBeDefined();
+
+      expect(
+        [...api.sandboxes.values()].filter((machine) => {
+          return machine.snapshotId === fresh;
+        }),
+      ).toHaveLength(3);
+
+      expect(
+        writes.filter((entry) => {
+          return entry.invalid;
+        }),
+      ).toHaveLength(1);
+
+      expect(writes.at(-1)).toMatchObject({ snapshotId: fresh });
+
+      const lines = ["one", "two", "three"].map(texts);
+
+      const rebuilding = lines.filter((line) => {
+        return line.includes("rebuilding base · bad snapshot");
+      });
+
+      expect(rebuilding).toHaveLength(1);
+
+      for (const line of lines) {
+        expect(line.indexOf("waiting for base…")).toBeGreaterThanOrEqual(0);
+        expect(line.indexOf("waiting for base…")).toBeLessThan(
+          line.lastIndexOf("starting base"),
+        );
+      }
+    });
+
+    test("a good snapshot costs no extra machines or rebuilds", async () => {
+      const { api, result, cachedSnapshot, texts } = await runAll({
+        bad: false,
+      });
+
+      expect(result.type).toBe("function-resolved");
+
+      expect(api.snapshotStarts).toEqual([
+        cachedSnapshot,
+        cachedSnapshot,
+        cachedSnapshot,
+      ]);
+
+      expect(
+        api.commands.filter((argv) => {
+          return argv.join(" ") === "pnpm install";
+        }),
+      ).toHaveLength(0);
+
+      expect(
+        [...api.sandboxes.values()].filter((machine) => {
+          return machine.snapshotId;
+        }),
+      ).toHaveLength(6);
+
+      // Three children from each run, and base's own machine from the first.
+      expect(api.sandboxes.size).toBe(7);
+
+      for (const id of ["one", "two", "three"]) {
+        expect(texts(id).join("|")).not.toContain("rebuilding");
+      }
+    });
   });
 });
