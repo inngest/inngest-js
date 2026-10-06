@@ -91,7 +91,8 @@ export const selectableUrls = (model: Model): string[] => {
 };
 
 const commandText = (command: CommandView): string => {
-  const name = oneLine(command.name);
+  // `$` marks a command, so it reads apart from a status like `cached`.
+  const name = `$ ${oneLine(command.name)}`;
 
   return command.attempt > 1 ? `${name} · attempt ${command.attempt}` : name;
 };

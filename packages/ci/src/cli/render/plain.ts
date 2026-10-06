@@ -276,7 +276,7 @@ export const plainLines = (
       return [
         line(
           paint,
-          `command ${event.jobId} › ${event.name}`,
+          `command ${event.jobId} › $ ${event.name}`,
           event.status,
           detail,
           event.durationMs,

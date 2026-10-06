@@ -100,7 +100,7 @@ describe("frame", () => {
       "",
       "  ◌ pr                                                                      6.0s",
       "  └─ ✓ base     cached                                                      1.0s",
-      "     └─ ✕ test  pnpm test · attempt 2                                       4.0s",
+      "     └─ ✕ test  $ pnpm test · attempt 2                                     4.0s",
       "          `pnpm test` exited with 1",
       "          boom",
       "          red",
