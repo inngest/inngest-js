@@ -201,6 +201,11 @@ export interface CacheEntry {
   jobId: string;
   /** The snapshot of the job's machine, if one was taken, for `from()`. */
   snapshotId?: string;
+  /**
+   * The git tree ID of the working tree the snapshot holds, so a job that
+   * starts from it uploads only what changed since.
+   */
+  treeId?: string;
   /** Set once the snapshot failed to start: the entry is a miss and is rebuilt. */
   invalid?: boolean;
   /** What the job returned. */

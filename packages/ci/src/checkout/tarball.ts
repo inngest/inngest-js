@@ -1,6 +1,6 @@
 /**
- * A tar of the local working tree, for uploading to a machine. Only
- * `checkout()` needs it.
+ * A tar of the local working tree, or of some of its files, for uploading to
+ * a machine. Only `checkout()` needs it.
  *
  * @module
  */
@@ -107,7 +107,7 @@ const header = (fields: {
  * The files git would consider part of the working tree: tracked files plus
  * untracked ones that aren't ignored.
  */
-const workingTreeFiles = async (cwd: string): Promise<string[]> => {
+export const workingTreeFiles = async (cwd: string): Promise<string[]> => {
   const stdout = await git(cwd, [
     "ls-files",
     "-co",
@@ -130,7 +130,17 @@ const workingTreeFiles = async (cwd: string): Promise<string[]> => {
 export const buildWorkingTreeTarball = async (
   cwd: string,
 ): Promise<Uint8Array> => {
-  const files = await workingTreeFiles(cwd);
+  return buildTarball(cwd, await workingTreeFiles(cwd));
+};
+
+/**
+ * The same tar for just these files, which are paths relative to `cwd`. A
+ * path that is no longer a file or a symlink is left out.
+ */
+export const buildTarball = async (
+  cwd: string,
+  files: string[],
+): Promise<Uint8Array> => {
   const blocks: Uint8Array[] = [];
 
   for (const relative of files) {

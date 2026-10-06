@@ -29,6 +29,7 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
+import { deleteRunLayers } from "../machine/layer.ts";
 import { destroyRunMachines } from "../machine/machine.ts";
 import type {
   CiSkip,
@@ -194,11 +195,17 @@ const newRunScope = ({
     jobChecks: config.check === false ? false : config.check?.jobs !== false,
     ...(config.machine ? { machine: config.machine } : {}),
     event: ctx.event,
+    ...(ctx.logger ? { logger: ctx.logger } : {}),
     ...(repo ? { repo } : {}),
     ...(build ? { build } : {}),
     jobs: new Map(),
     machines: new Map(),
     snapshots: new Map(),
+    snapshotTrees: new Map(),
+    snapshotConsumers: new Map(),
+    layers: new Map(),
+    layerSnapshots: new Set(),
+    timings: [],
     cacheEntries: new Map(),
     sandboxes: new Set(),
     summaries: [],
@@ -403,6 +410,8 @@ const runPipelineAttempt = async ({
     } finally {
       if (!retrying) {
         await destroyRunMachines(run, ctx.attempt ?? 0);
+
+        await deleteRunLayers(run, ctx.attempt ?? 0);
       }
     }
   });

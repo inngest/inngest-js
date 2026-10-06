@@ -9,8 +9,8 @@ import { NonRetriableError } from "inngest";
 import type { CacheLookup } from "../cache/cache.ts";
 import {
   cacheScopes,
-  describeCached,
   cacheTarget,
+  describeCached,
   lookupCache,
   snapshotIsReady,
   storeCache,
@@ -211,6 +211,10 @@ const adoptBuilt = (
 
   if (entry.snapshotId) {
     run.snapshots.set(jobId, Promise.resolve(entry.snapshotId));
+
+    if (entry.treeId) {
+      run.snapshotTrees.set(entry.snapshotId, entry.treeId);
+    }
   }
 };
 
@@ -578,6 +582,10 @@ const restoreFromCache = async (
 
   if (entry.snapshotId) {
     run.snapshots.set(scope.config.id, Promise.resolve(entry.snapshotId));
+
+    if (entry.treeId) {
+      run.snapshotTrees.set(entry.snapshotId, entry.treeId);
+    }
   }
 
   const title = cachedTitle(entry);
@@ -603,9 +611,12 @@ const cacheEntryFor = async (
     ? await snapshotJob(run, scope.path)
     : undefined;
 
+  const treeId = snapshotId ? run.snapshotTrees.get(snapshotId) : undefined;
+
   return {
     jobId: scope.config.id,
     ...(snapshotId ? { snapshotId } : {}),
+    ...(treeId ? { treeId } : {}),
     result,
     builtAt: new Date().toISOString(),
     builtBy: {

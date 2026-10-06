@@ -93,6 +93,11 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   if (snapshotId) {
     scope.fromSnapshotId = snapshotId;
 
+    run.snapshotConsumers.set(
+      snapshotId,
+      (run.snapshotConsumers.get(snapshotId) ?? new Set()).add(scope.path),
+    );
+
     scope.startNote =
       cached?.snapshotId === snapshotId
         ? `starting ${job.id} · ${describeCached(cached)}`
