@@ -505,7 +505,14 @@ const jobSteps = async ({
   // would time the last replay. The start comes from the check's step, which
   // memoizes it, or from a step of its own when there's no check.
   const checkStartedAt = checked ? await checks.jobStart(target) : undefined;
-  const startedAt = checkStartedAt ?? (await durableNow(run, scope.path));
+  const startedAt =
+    checkStartedAt ??
+    (await durableNow(
+      run,
+      `start:${scope.path}`,
+      traceName.recordStartTime,
+      scope.path,
+    ));
 
   if (checked) {
     run.openChecks.set(scope.path, checkName);
@@ -547,22 +554,17 @@ const jobSteps = async ({
       }
     }
 
-    const durationMs = Date.now() - startedAt;
-    const title = reusedTitle ?? `Passed in ${formatDuration(durationMs)}`;
-
-    run.summaries.push({
-      path: scope.path,
-      conclusion: "success",
-      title,
-      durationMs: reusedTitle ? 0 : durationMs,
-      ...(reusedTitle ? { cached: true } : {}),
-    });
+    // Replays run this from the top, so the clock here is only right on the
+    // replay that executes the check's complete step. Its title is memoized
+    // with that value, and the job's real end comes back from the step.
+    let checkEndedAt: number | undefined;
 
     if (checked) {
-      await checks.jobComplete({
+      checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
-        title,
+        title:
+          reusedTitle ?? `Passed in ${formatDuration(Date.now() - startedAt)}`,
         ...(scope.summaries.length > 0
           ? { summary: scope.summaries.join("\n\n") }
           : {}),
@@ -574,9 +576,26 @@ const jobSteps = async ({
       run.openChecks.delete(scope.path);
     }
 
+    const endedAt =
+      checkEndedAt ??
+      (await durableNow(
+        run,
+        `end:${scope.path}`,
+        traceName.recordEndTime,
+        scope.path,
+      ));
+    const durationMs = endedAt - startedAt;
+
+    run.summaries.push({
+      path: scope.path,
+      conclusion: "success",
+      title: reusedTitle ?? `Passed in ${formatDuration(durationMs)}`,
+      durationMs: reusedTitle ? 0 : durationMs,
+      ...(reusedTitle ? { cached: true } : {}),
+    });
+
     await pauseMachine(scope);
   } catch (error) {
-    const durationMs = Date.now() - startedAt;
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);
 
@@ -590,13 +609,7 @@ const jobSteps = async ({
       run.createdSnapshots.delete(keptSnapshotId);
     }
 
-    run.summaries.push({
-      path: scope.path,
-      conclusion,
-      title,
-      durationMs,
-      ...(keptSnapshotId ? { keptSnapshotId } : {}),
-    });
+    let checkEndedAt: number | undefined;
 
     if (checked) {
       const result = {
@@ -616,27 +629,46 @@ const jobSteps = async ({
           ...result,
         });
       } else {
-        await checks.jobComplete({ ...target, ...result });
+        checkEndedAt = await checks.jobComplete({ ...target, ...result });
       }
     }
+
+    const endedAt =
+      checkEndedAt ??
+      (await durableNow(
+        run,
+        `end:${scope.path}`,
+        traceName.recordEndTime,
+        scope.path,
+      ));
+
+    run.summaries.push({
+      path: scope.path,
+      conclusion,
+      title,
+      durationMs: endedAt - startedAt,
+      ...(keptSnapshotId ? { keptSnapshotId } : {}),
+    });
 
     throw error;
   }
 };
 
 /**
- * The time, memoized. Only for a job whose check didn't start, which has no
- * step to carry its start time.
+ * The time, memoized under the step `id`. Only for a job whose check didn't
+ * start or complete, which has no step to carry its start or end time.
  */
-const durableNow = (run: CiRunScope, jobPath: string): Promise<number> => {
-  return run.step.run(
-    ciStep(`start:${jobPath}`, traceName.recordStartTime),
-    async () => {
-      await tagStep(run, { kind: "job", job: jobPath });
+const durableNow = (
+  run: CiRunScope,
+  id: string,
+  name: string,
+  jobPath: string,
+): Promise<number> => {
+  return run.step.run(ciStep(id, name), async () => {
+    await tagStep(run, { kind: "job", job: jobPath });
 
-      return Date.now();
-    },
-  );
+    return Date.now();
+  });
 };
 
 /** What a job's check says when its snapshot was reused rather than built. */

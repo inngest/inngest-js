@@ -165,6 +165,7 @@ export const traceName = {
   findChangedFiles: "Find changed files",
 
   recordStartTime: "Record start time",
+  recordEndTime: "Record end time",
   recordRunDetails: "Record run details",
   addSummary: "Add summary",
   addAnnotations: "Add annotations",

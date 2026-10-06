@@ -166,7 +166,8 @@ export type CacheKey =
   | (() => Promise<string>);
 
 /**
- * A job's cache settings.
+ * A job's cache settings. `from()` shares a job's machine within one run, and
+ * only a `cache` key reuses it across runs.
  */
 export interface CacheConfig {
   /**

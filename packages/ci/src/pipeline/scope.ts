@@ -206,6 +206,11 @@ export interface CiRunScope {
   rebuilds?: Map<string, Promise<CacheBuildResult>>;
   /** How many runs of each job have started, keyed by job ID. */
   jobCalls: Map<string, number>;
+  /**
+   * The jobs that started `from()` each job, keyed by the parent's job ID and
+   * holding the children's paths.
+   */
+  fromChildren: Map<string, Set<string>>;
   /** Machines created in this run, keyed by scope path. */
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */

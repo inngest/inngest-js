@@ -1966,6 +1966,237 @@ describe("job durations", () => {
   });
 });
 
+describe("slow parent hints", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * Run a pipeline where `base` and some jobs that start from it run, with
+   * every execution request `requestMs` later, and return the pipeline
+   * check's summary.
+   */
+  const runHint = async ({
+    requestMs,
+    children = 2,
+    cache,
+    fromBase = true,
+    laterRequestMs,
+  }: {
+    requestMs: number;
+    children?: number;
+    cache?: boolean;
+    fromBase?: boolean;
+    /** When set, a stage after the jobs runs with requests this far apart. */
+    laterRequestMs?: number;
+  }) => {
+    let later = false;
+
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
+    const { ci, gh } = setupGitHub("checks");
+
+    gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+      check_runs: [],
+    });
+
+    gh.route("POST /repos/inngest/inngest-js/check-runs", { id: 9 });
+    gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
+
+    const base = ci.job(
+      { id: "base", ...(cache ? { cache: { key: "v1" } } : {}) },
+      async () => {
+        await $`pnpm install`;
+
+        await $`pnpm build`;
+      },
+    );
+
+    const childJobs = Array.from({ length: children }, (_, index) => {
+      return ci.job(`child-${index}`, async () => {
+        if (fromBase) {
+          await from(base);
+        }
+
+        await $`pnpm test`;
+      });
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, check: { jobs: false } },
+      async () => {
+        await Promise.all(
+          childJobs.map((child) => {
+            return child();
+          }),
+        );
+
+        if (!fromBase) {
+          await base();
+        }
+
+        if (laterRequestMs !== undefined) {
+          later = true;
+
+          const tail = ci.job("tail", async () => {
+            await $`pnpm lint`;
+
+            await $`pnpm e2e`;
+          });
+
+          await tail();
+        }
+      },
+    );
+
+    const result = await runFunction(pipeline, {
+      event: prEvent,
+      beforeRequest: () => {
+        vi.setSystemTime(
+          Date.now() + (later ? (laterRequestMs ?? requestMs) : requestMs),
+        );
+      },
+    });
+
+    expect(result.type).toBe("function-resolved");
+
+    const completion = gh.requests.find((request) => {
+      return (
+        request.method === "PATCH" &&
+        (request.body as { status?: string })?.status === "completed"
+      );
+    });
+
+    return (
+      (completion?.body as { output?: { summary?: string } })?.output
+        ?.summary ?? ""
+    );
+  };
+
+  const hintLines = (summary: string) => {
+    return summary.split("\n").filter((line) => {
+      return line.includes("started from it");
+    });
+  };
+
+  test("an uncached slow parent gets one line with its count and duration", async () => {
+    const summary = await runHint({ requestMs: 20_000 });
+    const lines = hintLines(summary);
+
+    expect(lines).toHaveLength(1);
+
+    const duration = /^\| base \|.*\| (\S+(?: \S+)?) \|$/m.exec(summary)?.[1];
+
+    expect(duration).toBeDefined();
+    expect(lines[0]).toBe(
+      `- \`base\` took ${duration} and 2 jobs started from it. It isn't cached, so it runs again next time. To reuse it, give it a cache key: \`cache: { key: files("pnpm-lock.yaml") }\`.`,
+    );
+  });
+
+  test("one job starting from it reads as singular", async () => {
+    const summary = await runHint({ requestMs: 20_000, children: 1 });
+
+    expect(hintLines(summary)).toHaveLength(1);
+    expect(summary).toContain(" and 1 job started from it.");
+  });
+
+  test("a cached parent gets no line", async () => {
+    const summary = await runHint({ requestMs: 20_000, cache: true });
+
+    expect(hintLines(summary)).toHaveLength(0);
+  });
+
+  test("a parent restored from a named snapshot gets no line, and costs no time", async () => {
+    vi.stubEnv("INNGEST_CI_GITHUB", "live");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
+    const runOnce = async (
+      existing?: ReturnType<typeof createFakeSandboxApi>,
+    ) => {
+      const { api, ci, gh } = setupGitHub("checks", existing);
+
+      gh.route("GET /repos/inngest/inngest-js/commits/abc1234/check-runs", {
+        check_runs: [],
+      });
+
+      gh.route("POST /repos/inngest/inngest-js/check-runs", { id: 9 });
+      gh.route("PATCH /repos/inngest/inngest-js/check-runs/9", { id: 9 });
+
+      const base = ci.job({ id: "base", cache: { key: "v1" } }, async () => {
+        await $`pnpm install`;
+      });
+
+      const child = ci.job("child", async () => {
+        await from(base);
+
+        await $`pnpm test`;
+      });
+
+      const pipeline = ci.pipeline(
+        { id: "pr", on: prTrigger, check: { jobs: false } },
+        async () => {
+          return child();
+        },
+      );
+
+      await runFunction(pipeline, {
+        event: prEvent,
+        beforeRequest: () => {
+          vi.setSystemTime(Date.now() + 20_000);
+        },
+      });
+
+      const completion = gh.requests.find((request) => {
+        return (
+          request.method === "PATCH" &&
+          (request.body as { status?: string })?.status === "completed"
+        );
+      });
+
+      return {
+        api,
+        summary:
+          (completion?.body as { output?: { summary?: string } })?.output
+            ?.summary ?? "",
+      };
+    };
+
+    const first = await runOnce();
+    const second = await runOnce(first.api);
+
+    expect(hintLines(first.summary)).toHaveLength(0);
+    expect(hintLines(second.summary)).toHaveLength(0);
+    expect(second.summary).toMatch(/\| base \|.*Cached/);
+  });
+
+  test("a parent that took 30s or less gets no line", async () => {
+    const summary = await runHint({ requestMs: 1 });
+
+    expect(hintLines(summary)).toHaveLength(0);
+  });
+
+  test("a fast parent isn't inflated by a slow stage after it", async () => {
+    const summary = await runHint({ requestMs: 1, laterRequestMs: 60_000 });
+
+    expect(hintLines(summary)).toHaveLength(0);
+
+    const row = /^\| base \|.*\| (\S+(?: \S+)?) \|$/m.exec(summary);
+
+    expect(row?.[1]).toMatch(/^(\d+ms|\d|[12]\ds)$/);
+    expect(row?.[0]).not.toMatch(/\dm /);
+  });
+
+  test("a slow job nothing starts from gets no line", async () => {
+    const summary = await runHint({ requestMs: 20_000, fromBase: false });
+
+    expect(hintLines(summary)).toHaveLength(0);
+  });
+});
+
 describe("errors", () => {
   test("CommandFailedError carries the command and output", () => {
     const error = new CommandFailedError({
@@ -1982,8 +2213,11 @@ describe("errors", () => {
 });
 
 /** A CI client whose GitHub calls go to a fake. */
-const setupGitHub = (reporter: "checks" | "statuses" = "statuses") => {
-  const api = createFakeSandboxApi();
+const setupGitHub = (
+  reporter: "checks" | "statuses" = "statuses",
+  existing?: ReturnType<typeof createFakeSandboxApi>,
+) => {
+  const api = existing ?? createFakeSandboxApi();
   const client = createCiTestClient(api);
   const gh = createFakeGitHub();
 
