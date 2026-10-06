@@ -2304,6 +2304,7 @@ describe("cleanup", () => {
   }) => {
     return {
       sandboxes: new Set(["a"]),
+      pauses: new Map(),
       step: {
         run: (_options: unknown, fn: () => unknown) => {
           return fn();

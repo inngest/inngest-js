@@ -213,6 +213,12 @@ export interface CiRunScope {
   fromChildren: Map<string, Set<string>>;
   /** Machines created in this run, keyed by scope path. */
   machines: Map<string, Promise<MachineHandle>>;
+  /**
+   * Pauses of finished jobs' machines that were started and not awaited, keyed
+   * by scope path. Each never rejects: a failed pause is a run warning. The
+   * map is made with this attempt's scope, so a retry never sees a stale one.
+   */
+  pauses: Map<string, Promise<void>>;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
   /**

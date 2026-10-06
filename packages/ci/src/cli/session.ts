@@ -59,8 +59,8 @@ import { type Pick, PromptCancelled, type Prompter } from "./prompter.ts";
 import { isTerminal } from "./render/model.ts";
 import { type ReporterServer, startReporterServer } from "./reporterServer.ts";
 import { combineConclusions, createRouter, type SentRun } from "./runs.ts";
-import { configure, confirm } from "./setup/guided.ts";
 import { sandboxAccessError } from "./sandboxAccess.ts";
+import { configure, confirm } from "./setup/guided.ts";
 import { SetupError } from "./setupError.ts";
 import {
   buildJobEvent,

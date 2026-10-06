@@ -73,6 +73,11 @@ export interface RunResult {
   retriable?: unknown;
   /** Step IDs, before hashing, in the order the steps completed. */
   stepIds: string[];
+  /**
+   * The step IDs each request found at once, in request order. Steps in one
+   * batch were found while none of them had finished, so they run in parallel.
+   */
+  batches: string[][];
   /** Each step's display name, keyed by step ID. */
   names: Record<string, string>;
   /** Step data keyed by step ID. */
@@ -248,6 +253,7 @@ export const runFunction = async (
   const attempts = new Map<string, number>();
 
   const stepIds: string[] = [];
+  const batches: string[][] = [];
   const names: Record<string, string> = {};
   const steps: Record<string, unknown> = {};
   const spans: RunResult["spans"] = {};
@@ -343,6 +349,7 @@ export const runFunction = async (
         type: result.type,
         data: result.data,
         stepIds,
+        batches,
         names,
         steps,
         spans,
@@ -363,6 +370,7 @@ export const runFunction = async (
         error: result.error,
         retriable: result.retriable,
         stepIds,
+        batches,
         names,
         steps,
         spans,
@@ -380,6 +388,12 @@ export const runFunction = async (
     if (result.type !== "steps-found") {
       throw new Error(`Unexpected execution result: ${result.type}`);
     }
+
+    batches.push(
+      (result.steps ?? []).map((planned) => {
+        return stepId(planned);
+      }),
+    );
 
     for (const planned of result.steps ?? []) {
       if (planned.op === StepOpCode.InvokeFunction) {

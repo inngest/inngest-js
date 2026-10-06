@@ -107,6 +107,8 @@ export interface FakeSandboxApi {
   failSnapshotStarts(): void;
   /** The snapshot of every sandbox create that asked for one, in order. */
   snapshotStarts: string[];
+  /** Make every pause fail, as one the platform accepts but never completes. */
+  failPauses(): void;
   /**
    * Behave like a server without snapshot names, as Cloud is today: a create
    * with a name is refused as a bad request, and a list ignores `name` and
@@ -242,6 +244,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   let snapshotsEnabled = true;
   let snapshotsExhausted = false;
   let snapshotNames = true;
+  let pausesFail = false;
   let loseNameRaces = false;
   let counter = 1;
 
@@ -619,6 +622,10 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       method: "POST",
       path: new RegExp(`${SANDBOX}/pause$`),
       handler: onSandbox((_req, sandbox) => {
+        if (pausesFail) {
+          return apiError(400, "sandbox_not_pausable", "did not reach PAUSED");
+        }
+
         sandbox.status = "PAUSED";
 
         return json(200, sandboxResource(sandbox));
@@ -793,6 +800,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
       for (const id of snapshots.keys()) {
         failingSnapshots.add(id);
       }
+    },
+    failPauses: () => {
+      pausesFail = true;
     },
     snapshotStarts,
     withoutSnapshotNames: () => {

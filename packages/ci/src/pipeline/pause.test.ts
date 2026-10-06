@@ -1,0 +1,226 @@
+/**
+ * Tests of pausing a finished job's machine in the background: a job doesn't
+ * wait for its pause, `from()` and cleanup do, and a failed pause is a warning.
+ *
+ * @module
+ */
+
+import { describe, expect, test } from "vitest";
+import { consoleReporter } from "../github/auth.ts";
+import { $ } from "../machine/command.ts";
+import { from } from "../machine/from.ts";
+import { destroyRunMachines } from "../machine/machine.ts";
+import { createCiTestClient } from "../testing/client.ts";
+import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
+import { runFunction } from "../testing/runFunction.ts";
+import { createCi } from "./createCi.ts";
+import { getRunScope } from "./scope.ts";
+
+const prEvent = {
+  name: "github/pull_request.opened",
+  data: {
+    action: "opened",
+    number: 7,
+    repository: { full_name: "inngest/inngest-js" },
+    pull_request: {
+      number: 7,
+      head: {
+        sha: "abc1234",
+        ref: "feature",
+        repo: { full_name: "inngest/inngest-js" },
+      },
+      base: { sha: "def5678", ref: "main" },
+    },
+    _github: { event: "pull_request", installationId: 1 },
+  },
+};
+
+const prTrigger = [{ event: "github/pull_request.opened" }];
+
+const setup = () => {
+  const api = createFakeSandboxApi();
+
+  const ci = createCi(createCiTestClient(api), { github: consoleReporter() });
+
+  return { api, ci };
+};
+
+describe("background pause", () => {
+  test("a leaf job ends without waiting for its pause", async () => {
+    const { ci } = setup();
+
+    const leaf = ci.job("leaf", async () => {
+      await $`pnpm test`;
+    });
+
+    const next = ci.job("next", async () => {
+      await $`pnpm lint`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await leaf();
+
+        await next();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    // The next job's first step was found while the leaf's pause was still in
+    // flight, so the two were reported together instead of one after the other.
+    expect(result.batches).toContainEqual([
+      "leaf › pause",
+      "github › check:next:start",
+    ]);
+  });
+
+  test("from() waits for the parent's pause, then resumes and snapshots", async () => {
+    const { api, ci } = setup();
+
+    const parent = ci.job("parent", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job("child", async () => {
+      await from(parent);
+
+      await $`pnpm test`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await Promise.all([parent(), child()]);
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    const order = result.stepIds.filter((id) => {
+      return /^parent › (pause|resume|snapshot)$/.test(id);
+    });
+
+    expect(order).toEqual([
+      "parent › pause",
+      "parent › resume",
+      "parent › snapshot",
+    ]);
+
+    const calls = api.requests
+      .map((request) => {
+        return /\/(pause|resume|snapshots)$/.exec(request)?.[1];
+      })
+      .filter(Boolean);
+
+    expect(calls.slice(0, 3)).toEqual(["pause", "resume", "snapshots"]);
+  });
+
+  test("a failed background pause is a warning and the run passes", async () => {
+    const { api, ci } = setup();
+
+    api.failPauses();
+
+    const leaf = ci.job("leaf", async () => {
+      await $`pnpm test`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await leaf();
+
+        const run = getRunScope();
+
+        await Promise.all(run?.pauses.values() ?? []);
+
+        return run?.warnings;
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(result.data).toEqual([
+      expect.stringContaining("Could not pause `leaf`"),
+    ]);
+  });
+
+  test("step IDs are the same on every replay", async () => {
+    const { ci } = setup();
+
+    const leaf = ci.job("leaf", async () => {
+      await $`pnpm test`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+        await leaf();
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-resolved");
+
+    // Each step completes once. A replay that registered the pause under a
+    // different ID, or twice, would show up as a second copy.
+    expect(new Set(result.stepIds).size).toBe(result.stepIds.length);
+
+    expect(
+      result.stepIds.filter((id) => {
+        return id === "leaf › pause";
+      }),
+    ).toHaveLength(1);
+  });
+
+  test("cleanup waits for in-flight pauses before destroying", async () => {
+    const events: string[] = [];
+    let finishPause = () => {};
+
+    const pausing = new Promise<void>((resolve) => {
+      finishPause = () => {
+        events.push("paused");
+
+        resolve();
+      };
+    });
+
+    const run = {
+      sandboxes: new Set(["a"]),
+      pauses: new Map([["job", pausing]]),
+      step: {
+        run: (_options: unknown, fn: () => unknown) => {
+          return fn();
+        },
+      },
+      ci: {
+        client: {
+          sandboxes: {
+            get: async () => {
+              return {
+                destroy: async () => {
+                  events.push("destroyed");
+                },
+              };
+            },
+          },
+        },
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: a partial scope is enough here
+    } as any;
+
+    const cleanup = destroyRunMachines(run);
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(events).toEqual([]);
+
+    finishPause();
+
+    await cleanup;
+
+    expect(events).toEqual(["paused", "destroyed"]);
+  });
+});

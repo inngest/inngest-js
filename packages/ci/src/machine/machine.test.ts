@@ -14,6 +14,7 @@ const scopeWith = (pause: () => Promise<unknown>) => {
     machine: Promise.resolve({ sandbox: { pause } }),
     run: {
       warnings: [] as string[],
+      pauses: new Map<string, Promise<void>>(),
       ci: { reporter: { activity: vi.fn() } },
     },
   } as unknown as CiJobScope;
@@ -25,7 +26,11 @@ describe("pauseMachine", () => {
       return undefined;
     });
 
-    await pauseMachine(scopeWith(pause));
+    const scope = scopeWith(pause);
+
+    pauseMachine(scope);
+
+    await scope.run.pauses.get("test");
 
     expect(pause).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Pause sandbox" }),
@@ -42,7 +47,9 @@ describe("pauseMachine", () => {
       throw new Error("did not reach PAUSED");
     });
 
-    await pauseMachine(scope);
+    pauseMachine(scope);
+
+    await scope.run.pauses.get("test");
 
     expect(scope.run.warnings).toEqual([
       expect.stringContaining("did not reach PAUSED"),

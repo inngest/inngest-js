@@ -203,6 +203,7 @@ const newRunScope = ({
     jobCalls: new Map(),
     fromChildren: new Map(),
     machines: new Map(),
+    pauses: new Map(),
     snapshots: new Map(),
     timings: [],
     cached: new Map(),

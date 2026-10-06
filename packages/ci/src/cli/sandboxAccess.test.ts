@@ -5,9 +5,8 @@
  * @module
  */
 
-import { describe, expect, test } from "vitest";
-
 import { SandboxError } from "inngest/experimental";
+import { describe, expect, test } from "vitest";
 import { sandboxAccessProblem, shortReason } from "../util.ts";
 import { createPaint } from "./render/format.ts";
 import { initialModel, reduce } from "./render/model.ts";

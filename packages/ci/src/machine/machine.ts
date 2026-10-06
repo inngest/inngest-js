@@ -591,40 +591,69 @@ const inSaveSpan = <R>(jobPath: string, fn: () => R): R => {
 export const pauseTimeoutMs = 30_000;
 
 /**
- * Pause a finished job's machine rather than destroying it, so a later
+ * Start pausing a finished job's machine, without waiting for it, so a later
  * `from()` can still snapshot it. Everything is destroyed at the end of the
  * run.
+ *
+ * Nothing needs the machine paused until something snapshots it or the run
+ * cleans up, and a pause takes 15-20 seconds, so the job ends now and those two
+ * wait on `run.pauses` instead. The pause is still one durable step with a
+ * fixed ID, started at the same point on every replay, so it memoizes like any
+ * other. The returned promise is stored, never rejects, and so can't surface as
+ * an unhandled rejection.
  */
-export const pauseMachine = async (scope: CiJobScope): Promise<void> => {
+export const pauseMachine = (scope: CiJobScope): void => {
   if (!scope.machine) {
     return;
   }
 
-  try {
-    const machine = await scope.machine;
-
-    scope.run.ci.reporter.activity(
-      scope.run,
-      scope.jobPath,
-      "pausing machine…",
-    );
-
-    await inSaveSpan(scope.path, () => {
-      return machine.sandbox.pause(
-        {
-          id: `${scope.path}${scopeSeparator}pause`,
-          name: traceName.pauseMachine,
-        },
-        { timeout: pauseTimeoutMs },
-      );
-    });
-  } catch (error) {
+  const pausing = pauseNow(scope, scope.machine).catch((error: unknown) => {
     // Pausing is an optimisation; a machine that can't pause is still
     // destroyed at the end of the run.
     scope.run.warnings.push(
       `Could not pause \`${scope.path}\`: ${errorMessage(error)}`,
     );
-  }
+  });
+
+  scope.run.pauses.set(scope.path, pausing);
+};
+
+const pauseNow = async (
+  scope: CiJobScope,
+  pending: Promise<MachineHandle>,
+): Promise<void> => {
+  const machine = await pending;
+
+  scope.run.ci.reporter.activity(scope.run, scope.jobPath, "pausing machine…");
+
+  await inSaveSpan(scope.path, () => {
+    return machine.sandbox.pause(
+      {
+        id: `${scope.path}${scopeSeparator}pause`,
+        name: traceName.pauseMachine,
+      },
+      { timeout: pauseTimeoutMs },
+    );
+  });
+};
+
+/**
+ * Wait for the pause started when a job ended, if there was one. A paused
+ * machine can be resumed; one that is still pausing can't.
+ */
+export const awaitPause = async (
+  run: CiRunScope,
+  path: string,
+): Promise<void> => {
+  await run.pauses.get(path);
+};
+
+/**
+ * Wait for every pause the run started, whatever its outcome. Cleanup calls
+ * this so it never destroys a machine while its pause is in flight.
+ */
+export const settlePauses = async (run: CiRunScope): Promise<void> => {
+  await Promise.allSettled(run.pauses.values());
 };
 
 /** How a job's snapshot is cached, for a job with `cache`. */
@@ -692,6 +721,11 @@ const createSnapshot = async (
   }
 
   run.ci.reporter.activity(run, jobPath, "snapshotting machine…");
+
+  // The job's pause runs in the background, and a machine still pausing can't
+  // be resumed, so it settles first. A cached job snapshots before it pauses,
+  // so there's nothing to wait for there.
+  await awaitPause(run, jobPath);
 
   try {
     // A paused machine has to be running again before it can be snapshotted.
@@ -937,6 +971,8 @@ export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
+  await settlePauses(run);
+
   const ids = [...run.sandboxes];
 
   if (ids.length === 0) {

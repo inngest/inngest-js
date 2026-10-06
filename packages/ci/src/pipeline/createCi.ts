@@ -39,9 +39,9 @@ import type {
   PipelineContext,
 } from "../types.ts";
 import { devServerRunUrl } from "../util.ts";
+import { cacheBuildFunction } from "./cacheBuild.ts";
 import type { RegisteredJob } from "./job.ts";
 import { defineJob } from "./job.ts";
-import { cacheBuildFunction } from "./cacheBuild.ts";
 import { createMatrix, expandMatrix } from "./matrix.ts";
 import {
   cacheRefreshFunctions,

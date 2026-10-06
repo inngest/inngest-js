@@ -594,7 +594,7 @@ const jobSteps = async ({
       ...(reusedTitle ? { cached: true } : {}),
     });
 
-    await pauseMachine(scope);
+    pauseMachine(scope);
   } catch (error) {
     const conclusion = conclusionForError(error);
     const title = jobErrorTitle(error);
