@@ -217,3 +217,43 @@ describe("selectableRunIds", () => {
     expect(selectableRunIds(model)).toEqual(["r1", "r1", "r1"]);
   });
 });
+
+describe("a failed run's reason", () => {
+  const reason = "Sandbox did not reach RUNNING within 120000 milliseconds";
+  const failed = [
+    {
+      kind: "run",
+      eventId: "e1",
+      runId: "r1",
+      pipelineId: "pr",
+      status: "running",
+      url: "u",
+      at: 0,
+    },
+    { kind: "job", runId: "r1", jobId: "lint", status: "running", at: 1 },
+    {
+      kind: "run",
+      eventId: "e1",
+      runId: "r1",
+      pipelineId: "pr",
+      status: "failed",
+      reason,
+      url: "u",
+      at: 2000,
+    },
+    { kind: "done", conclusion: "failed", at: 2000 },
+  ] as SessionEvent[];
+
+  test("shows on the run, the job and the summary line", () => {
+    const lines = frame(failed.reduce(reduce, initialModel), {
+      paint,
+      now: 2000,
+      width: 100,
+    });
+
+    const text = lines.join("\n");
+
+    expect(text.split(reason).length - 1).toBe(4);
+    expect(text).toContain(`✕ Failed in 2.0s — ${reason}`);
+  });
+});

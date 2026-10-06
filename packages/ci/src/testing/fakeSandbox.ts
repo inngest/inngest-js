@@ -78,6 +78,8 @@ export interface FakeSandboxApi {
   disableSnapshots(): void;
   /** Make snapshot creation fail the way Cloud does when none are left. */
   exhaustSnapshots(): void;
+  /** Make a sandbox created from a snapshot never start, as a stale one doesn't. */
+  failSnapshotStarts(): void;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: request bodies are untyped JSON
@@ -244,7 +246,17 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     });
   };
 
+  let snapshotStartsFail = false;
+
   const createSandbox: Handler = ({ body }) => {
+    if (body.snapshotId && snapshotStartsFail) {
+      return apiError(
+        422,
+        "sandbox_start_failed",
+        "Sandbox did not reach RUNNING within 120000 milliseconds",
+      );
+    }
+
     // A name identifies an *active* sandbox; once one is terminated the same
     // name creates a new one.
     const existing = [...sandboxes.values()].find((sandbox) => {
@@ -578,6 +590,9 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     },
     exhaustSnapshots: () => {
       snapshotsExhausted = true;
+    },
+    failSnapshotStarts: () => {
+      snapshotStartsFail = true;
     },
   };
 };

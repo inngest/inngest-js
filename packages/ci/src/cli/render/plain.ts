@@ -17,7 +17,13 @@ import {
   type Paint,
   supportsColor,
 } from "./format.ts";
-import { initialModel, type Model, reduce, runsStartedAt } from "./model.ts";
+import {
+  initialModel,
+  isTerminal,
+  type Model,
+  reduce,
+  runsStartedAt,
+} from "./model.ts";
 
 type Transition = { key: string; state: string };
 
@@ -35,7 +41,10 @@ const transitionOf = (event: SessionEvent): Transition | undefined => {
     }
 
     case "run": {
-      return { key: `run:${event.runId}`, state: event.status };
+      return {
+        key: `run:${event.runId}`,
+        state: `${event.status}:${event.reason ?? ""}`,
+      };
     }
 
     case "job": {
@@ -93,17 +102,21 @@ const indented = (text: string, indent = "    "): string[] => {
     });
 };
 
-/** `<name>: <status> · <detail> (<duration>)`, without the parts that aren't known. */
+/**
+ * `<name>: <status> · <detail> (<duration>)`, without the parts that aren't
+ * known. A reason for failing reads `<status> — <reason>` instead.
+ */
 const line = (
   paint: Paint,
   name: string,
   status: LocalStatus | "done",
   detail?: string,
   durationMs?: number,
+  separator = " · ",
 ): string => {
   return [
     `${name}: ${paintStatus(paint, status)}`,
-    detail ? ` · ${oneLine(detail)}` : "",
+    detail ? `${separator}${oneLine(detail)}` : "",
     durationMs === undefined
       ? ""
       : paint("dim", ` (${formatElapsed(durationMs)})`),
@@ -184,6 +197,7 @@ export const plainLines = (
           event.status,
           event.reason,
           durationMs,
+          " — ",
         ),
       ];
     }
@@ -206,6 +220,7 @@ export const plainLines = (
           event.status,
           event.title,
           durationMs,
+          " — ",
         ),
       ];
     }
@@ -236,14 +251,66 @@ export const plainLines = (
     case "done": {
       const elapsed = formatElapsed(event.at - runsStartedAt(model));
 
+      const failure = model.runs.find((run) => {
+        return run.status === "failed" && run.reason;
+      });
+      const why =
+        failure?.reason &&
+        ` — ${model.runs.length > 1 ? `${failure.name}: ` : ""}${oneLine(failure.reason)}`;
+
       return [
-        `${paintStatus(paint, event.conclusion)} in ${elapsed}`,
+        `${paintStatus(paint, event.conclusion)} in ${elapsed}${
+          event.conclusion === "failed" && why ? why : ""
+        }`,
         ...model.runs.map((run) => {
           return `open ${run.name}: inngest-ci open ${run.runId}`;
         }),
       ];
     }
   }
+};
+
+/**
+ * The jobs a run's end closed without a message of their own, as the `job`
+ * events that say so.
+ */
+const jobsClosedBy = (
+  event: SessionEvent,
+  before: Model,
+  after: Model,
+): SessionEvent[] => {
+  if (event.kind !== "run") {
+    return [];
+  }
+
+  const previous = before.runs.find((run) => {
+    return run.runId === event.runId;
+  });
+
+  return (
+    after.runs
+      .find((run) => {
+        return run.runId === event.runId;
+      })
+      ?.jobs.filter((job) => {
+        return (
+          isTerminal(job.status) &&
+          previous?.jobs.some((old) => {
+            return old.jobId === job.jobId && !isTerminal(old.status);
+          })
+        );
+      })
+      .map((job): SessionEvent => {
+        return {
+          kind: "job",
+          runId: event.runId,
+          jobId: job.jobId,
+          status: job.status,
+          ...(job.title ? { title: job.title } : {}),
+          at: event.at,
+        };
+      }) ?? []
+  );
 };
 
 export const createPlainRenderer = (): Renderer => {
@@ -255,6 +322,8 @@ export const createPlainRenderer = (): Renderer => {
 
   return {
     handle(event) {
+      const before = model;
+
       model = reduce(model, event);
 
       if (event.kind === "done") {
@@ -275,6 +344,12 @@ export const createPlainRenderer = (): Renderer => {
 
       for (const text of plainLines(event, model, paint)) {
         process.stdout.write(`${text}\n`);
+      }
+
+      for (const closed of jobsClosedBy(event, before, model)) {
+        for (const text of plainLines(closed, model, paint)) {
+          process.stdout.write(`${text}\n`);
+        }
       }
     },
 

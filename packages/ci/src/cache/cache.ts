@@ -16,7 +16,7 @@ import type {
   CacheStore,
   RepoContext,
 } from "../types.ts";
-import { hash, stableStringify } from "../util.ts";
+import { formatRelative, hash, stableStringify } from "../util.ts";
 
 /**
  * Keep cache entries in memory, for as long as the process lives. A miss
@@ -333,6 +333,21 @@ export const storeCache = async (
       return { key: lookup.writeKey };
     },
   );
+};
+
+/**
+ * How a cached snapshot is described wherever it shows: `cached snapshot,
+ * built 10h ago`, with the run that built it when it's known.
+ */
+export const describeCached = (
+  entry: CacheEntry,
+  opts: { withRun?: boolean } = {},
+): string => {
+  const runId = opts.withRun ? entry.builtBy.runId : undefined;
+
+  return `cached snapshot, built ${formatRelative(entry.builtAt)}${
+    runId ? ` (run …${runId.slice(-6)})` : ""
+  }`;
 };
 
 /**

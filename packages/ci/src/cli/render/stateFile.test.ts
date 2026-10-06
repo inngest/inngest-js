@@ -240,3 +240,41 @@ describe("writeFileAtomic", () => {
     expect(readdirSync(join(dir, "sessions"))).toEqual(["s.json"]);
   });
 });
+
+describe("a run that failed with a reason", () => {
+  test("the file's run carries the reason and its jobs end", () => {
+    const reason = "Sandbox did not reach RUNNING within 120000 milliseconds";
+    const model = (
+      [
+        {
+          kind: "run",
+          eventId: "e1",
+          runId: "r1",
+          pipelineId: "pr",
+          status: "running",
+          url: "u",
+          at: 1,
+        },
+        { kind: "job", runId: "r1", jobId: "lint", status: "running", at: 2 },
+        {
+          kind: "run",
+          eventId: "e1",
+          runId: "r1",
+          pipelineId: "pr",
+          status: "failed",
+          reason,
+          url: "u",
+          at: 3,
+        },
+      ] as SessionEvent[]
+    ).reduce(reduce, initialModel);
+    const [run] = toSessionState(model, meta, 9).runs;
+
+    expect(run).toMatchObject({ status: "failed", reason });
+    expect(run?.jobs[0]).toMatchObject({
+      status: "failed",
+      title: reason,
+      endedAt: 3,
+    });
+  });
+});

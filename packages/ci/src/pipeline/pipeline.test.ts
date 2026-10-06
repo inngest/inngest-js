@@ -5,6 +5,7 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { files, memoryCacheStore } from "../cache/cache.ts";
 import {
@@ -22,11 +23,12 @@ import { report } from "../report.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
-import { fakeSchema } from "../testing/schema.ts";
 import { runFunction } from "../testing/runFunction.ts";
+import { fakeSchema } from "../testing/schema.ts";
 import type { CacheStore } from "../types.ts";
 import { createCi, createCiWithStore } from "./createCi.ts";
 import { destroyOrphans } from "./pipeline.ts";
+import { getRunScope } from "./scope.ts";
 
 const prEvent = {
   name: "github/pull_request.opened",
@@ -1509,7 +1511,7 @@ describe("checks", () => {
     });
 
     expect(restored?.conclusion).toBe("success");
-    expect(restored?.title).toMatch(/^Restored, built /);
+    expect(restored?.title).toMatch(/^Cached snapshot, built .+ by /);
   });
 
   test("job checks can be turned off for the whole pipeline", async () => {
@@ -1917,6 +1919,48 @@ describe("failures that retrying cannot fix", () => {
         return sandbox.status === "TERMINATED";
       }),
     ).toBe(true);
+  });
+
+  test("a non-retriable step error completes the checks with its message", async () => {
+    const { ci, reporter } = setup();
+
+    const build = ci.job("build", async () => {
+      await getRunScope()?.step.run({ id: "machine:create" }, () => {
+        throw new NonRetriableError(
+          "Sandbox did not reach RUNNING within 120000 milliseconds",
+        );
+      });
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await build();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 4 });
+
+    expect(result.type).toBe("function-rejected");
+    expect(result.retriable).toBe(false);
+
+    const completed = reporter.history.filter((entry) => {
+      return entry.status === "completed";
+    });
+
+    expect(
+      completed.map((entry) => {
+        return [entry.name, entry.conclusion, entry.title];
+      }),
+    ).toEqual([
+      [
+        "pr / build",
+        "failure",
+        "Sandbox did not reach RUNNING within 120000 milliseconds",
+      ],
+      [
+        "pr",
+        "failure",
+        "build: Sandbox did not reach RUNNING within 120000 milliseconds",
+      ],
+    ]);
   });
 
   test("a malformed repo fails when the pipeline is defined", () => {

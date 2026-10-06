@@ -5,6 +5,7 @@
  * @module
  */
 
+import { describeCached } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
 import { countApi, jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
@@ -78,19 +79,40 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
   scope.run.ci.reporter.activity(
     scope.run,
     scope.jobPath,
-    `waiting for ${job.id}…`,
+    `waiting for ${job.id} to finish…`,
   );
 
   const result = await job(input as never);
 
   const snapshotId = await snapshotJob(scope.run, job.id);
 
+  const { run } = scope;
+  const cached = run.cacheEntries.get(job.id);
+
   if (snapshotId) {
     scope.fromSnapshotId = snapshotId;
-  } else if (
-    scope.run.machines.has(job.id) ||
-    scope.run.cacheEntries.has(job.id)
-  ) {
+
+    scope.startNote =
+      cached?.snapshotId === snapshotId
+        ? `starting from ${job.id}: ${describeCached(cached, { withRun: true })}`
+        : `starting from ${job.id}: snapshot from this run`;
+
+    scope.rebuildParent = () => {
+      return rerunOnThisMachine(scope, job, input);
+    };
+  } else if (run.machines.has(job.id) || run.cacheEntries.has(job.id)) {
+    const cacheable = Boolean(run.ci.jobs.get(job.id)?.config.cache);
+
+    scope.startNote = `rebuilding ${job.id}: ${
+      run.snapshotsUnavailable
+        ? "snapshots unavailable"
+        : cacheable
+          ? "no cached snapshot"
+          : "no snapshot"
+    }`;
+
+    run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
+
     await rerunOnThisMachine(scope, job, input);
   }
 
@@ -109,7 +131,7 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
  * that one build (no thundering herd), which needs reliable snapshots or a
  * shared base image to copy from.
  */
-const rerunOnThisMachine = async (
+export const rerunOnThisMachine = async (
   scope: CiJobScope,
   job: AnyJob,
   input: unknown,

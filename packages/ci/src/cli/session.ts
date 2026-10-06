@@ -25,7 +25,12 @@ import {
   resolveDevServerBin,
   startDevServer,
 } from "./devServer.ts";
-import { cancelRun, findRun, sendEvent } from "./devServerApi.ts";
+import {
+  cancelRun,
+  findRun,
+  runFailureReason,
+  sendEvent,
+} from "./devServerApi.ts";
 import type {
   SessionConclusion,
   SessionEvent,
@@ -49,8 +54,8 @@ import { type Pick, PromptCancelled, type Prompter } from "./prompter.ts";
 import { isTerminal } from "./render/model.ts";
 import { type ReporterServer, startReporterServer } from "./reporterServer.ts";
 import { combineConclusions, createRouter, type SentRun } from "./runs.ts";
-import { SetupError } from "./setupError.ts";
 import { configure, confirm } from "./setup/guided.ts";
+import { SetupError } from "./setupError.ts";
 import {
   buildJobEvent,
   buildPipelineEvent,
@@ -142,6 +147,7 @@ const watchRun = async (opts: {
   let runUrl: string | undefined;
   let seen = false;
   let reportedStatus: LocalStatus | undefined;
+  let reportedReason: string | undefined;
   let finish: (status: LocalStatus) => void = () => {};
   let fail: (error: SetupError) => void = () => {};
 
@@ -182,6 +188,7 @@ const watchRun = async (opts: {
 
       if (isTerminal(message.status)) {
         reportedStatus = message.status;
+        reportedReason = message.reason;
       }
 
       emit({ ...message, pipelineId: label });
@@ -265,13 +272,22 @@ const watchRun = async (opts: {
       if (run?.terminal) {
         await pause(messageGraceMs);
 
-        if (!reportedStatus) {
+        // A run that failed outside every job and check, like a step that
+        // threw a `NonRetriableError`, never says why. Its output does.
+        const failed = (reportedStatus ?? run.terminal) === "failed";
+        const reason =
+          failed && !reportedReason
+            ? await runFailureReason(devServerUrl, run.id)
+            : undefined;
+
+        if (!reportedStatus || reason) {
           emit({
             kind: "run",
             runId: run.id,
             eventId,
             pipelineId: label,
-            status: run.terminal,
+            status: reportedStatus ?? run.terminal,
+            ...(reason ? { reason } : {}),
             url: runUrl ?? devServerRunUrl(devServerUrl, run.id),
             at: Date.now(),
           });

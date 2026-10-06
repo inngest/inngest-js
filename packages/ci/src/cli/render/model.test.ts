@@ -230,3 +230,67 @@ describe("restart", () => {
     expect(model).toEqual({ stages: [], runs: [], startedAt: 8 });
   });
 });
+
+describe("a run that ends with jobs still open", () => {
+  const failed = (reason?: string) => {
+    return { ...run("failed", 9), ...(reason ? { reason } : {}) } as const;
+  };
+
+  test("fails the one job that was active, with the run's reason", () => {
+    const model = play([
+      run("running", 0),
+      job("base", "passed", 1),
+      job("lint", "running", 2),
+      failed("Sandbox did not reach RUNNING"),
+    ]);
+
+    expect(model.runs[0]?.reason).toBe("Sandbox did not reach RUNNING");
+
+    expect(
+      model.runs[0]?.jobs.map((item) => {
+        return [item.jobId, item.status, item.title, item.endedAt];
+      }),
+    ).toEqual([
+      ["base", "passed", undefined, 1],
+      ["lint", "failed", "Sandbox did not reach RUNNING", 9],
+    ]);
+  });
+
+  test("cancels the open jobs when it can't tell which was active", () => {
+    const model = play([
+      run("running", 0),
+      job("lint", "running", 1),
+      job("test", "queued", 2),
+      failed("boom"),
+    ]);
+
+    expect(
+      model.runs[0]?.jobs.map((item) => {
+        return [item.status, item.title];
+      }),
+    ).toEqual([
+      ["cancelled", "Cancelled: the run ended first"],
+      ["cancelled", "Cancelled: the run ended first"],
+    ]);
+  });
+
+  test("a cancelled run cancels its open jobs", () => {
+    const model = play([
+      run("running", 0),
+      job("lint", "running", 1),
+      { ...run("failed", 5), status: "cancelled" },
+    ]);
+
+    expect(model.runs[0]?.jobs[0]?.status).toBe("cancelled");
+  });
+
+  test("a passed run leaves its jobs alone", () => {
+    const model = play([
+      run("running", 0),
+      job("lint", "running", 1),
+      { ...run("failed", 5), status: "passed" },
+    ]);
+
+    expect(model.runs[0]?.jobs[0]?.status).toBe("running");
+  });
+});

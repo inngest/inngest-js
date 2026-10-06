@@ -42,10 +42,34 @@ export const machineName = (runId: string, path: string): string => {
  * Machines are lazy: a job that never runs a command never gets one, and
  * concurrent first commands share a single creation promise.
  */
-export const ensureMachine = (scope: CiJobScope): Promise<MachineHandle> => {
+export const ensureMachine = async (
+  scope: CiJobScope,
+): Promise<MachineHandle> => {
   scope.machine ??= createMachine(scope);
 
-  return scope.machine;
+  const handle = await scope.machine;
+
+  // A snapshot that wouldn't start left a fresh machine that still has to be
+  // brought to where the snapshot would have been. The commands that does
+  // run call back here, and must not wait on it.
+  if (scope.restoreFallback && !scope.restoringFallback) {
+    scope.fallbackRan ??= (async () => {
+      const rebuild = scope.restoreFallback;
+
+      scope.restoringFallback = true;
+      scope.restoreFallback = undefined;
+
+      try {
+        await rebuild?.();
+      } finally {
+        scope.restoringFallback = false;
+      }
+    })();
+
+    await scope.fallbackRan;
+  }
+
+  return handle;
 };
 
 /**
@@ -79,20 +103,64 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
 
+  run.badSnapshots ??= new Set();
+
+  const startFresh = (note: string) => {
+    scope.fromSnapshotId = undefined;
+    scope.startNote = note;
+    scope.restoreFallback = scope.rebuildParent;
+
+    run.ci.reporter.activity(run, scope.jobPath, note);
+
+    return tools.create(`${stepId}${scopeSeparator}fresh`, {
+      name: machineName(run.runId, `${scope.path} fresh`),
+      ...machineConfig,
+    });
+  };
+
   run.ci.reporter.activity(
     run,
     scope.jobPath,
-    scope.fromSnapshotId
-      ? `restoring ${scope.fromJobIds[0]} snapshot…`
-      : "creating machine…",
+    scope.startNote ?? "creating machine…",
   );
 
-  const sandbox = scope.fromSnapshotId
-    ? await tools.create(stepId, {
-        name,
-        snapshotId: scope.fromSnapshotId,
+  const parentId = scope.fromJobIds[0] ?? "the parent";
+  const snapshotId = scope.fromSnapshotId;
+  const wasCached = snapshotId
+    ? [...run.cacheEntries.values()].some((entry) => {
+        return entry?.snapshotId === snapshotId;
       })
-    : await tools.create(stepId, { name, ...machineConfig });
+    : false;
+
+  let sandbox: Awaited<ReturnType<typeof tools.create>>;
+
+  if (snapshotId && run.badSnapshots.has(snapshotId)) {
+    sandbox = await startFresh(
+      `rebuilding ${parentId}: ${wasCached ? "cached " : ""}snapshot wouldn't start`,
+    );
+  } else if (snapshotId) {
+    try {
+      sandbox = await tools.create(stepId, { name, snapshotId });
+    } catch (error) {
+      if (!isStartFailure(error)) {
+        throw error;
+      }
+
+      run.badSnapshots.add(snapshotId);
+
+      run.warnings.push(
+        `fell back: snapshot of \`${parentId}\` wouldn't start (${errorMessage(error)}), so \`${scope.path}\` re-ran it on its own machine`,
+      );
+
+      await invalidateCached(run, snapshotId);
+
+      sandbox = await startFresh(
+        `rebuilding ${parentId}: ${wasCached ? "cached " : ""}snapshot wouldn't start`,
+      );
+    }
+  } else {
+    sandbox = await tools.create(stepId, { name, ...machineConfig });
+  }
 
   run.sandboxes.add(sandbox.id);
 
@@ -107,6 +175,53 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   run.machines.set(scope.path, Promise.resolve(handle));
 
   return handle;
+};
+
+/**
+ * Whether a machine failed to start, as opposed to a request that was refused.
+ * Only a snapshot restore falls back on it: a plain machine that won't start
+ * fails the job with its reason.
+ */
+const isStartFailure = (error: unknown): boolean => {
+  const codes = ["sandbox_start_timed_out", "sandbox_start_failed"];
+  const seen = error as
+    | { code?: string; cause?: { code?: string } }
+    | undefined;
+
+  return (
+    codes.includes(seen?.code ?? "") ||
+    codes.includes(seen?.cause?.code ?? "") ||
+    /did not reach RUNNING/i.test(errorMessage(error))
+  );
+};
+
+/**
+ * Mark the cache entry of a snapshot that wouldn't start, so the next run
+ * rebuilds it instead of restoring it again.
+ */
+const invalidateCached = async (
+  run: CiRunScope,
+  snapshotId: string,
+): Promise<void> => {
+  for (const [jobId, entry] of run.cacheEntries) {
+    const writeKey = run.cacheWriteKeys?.get(jobId);
+
+    if (entry?.snapshotId !== snapshotId || !writeKey) {
+      continue;
+    }
+
+    await run.step.run(
+      {
+        id: `${jobId}${scopeSeparator}cache:invalidate`,
+        name: "cache:invalidate",
+      },
+      async () => {
+        await run.ci.cacheStore.set(writeKey, { ...entry, invalid: true });
+
+        return { key: writeKey };
+      },
+    );
+  }
 };
 
 /**
