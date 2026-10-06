@@ -149,6 +149,14 @@ const listChangedFiles = async (
     });
   }
 
+  // A push that creates a branch has no previous commit (`before` is all
+  // zeros), so there is no range to compare.
+  if (repo.baseSha && /^0+$/.test(repo.baseSha)) {
+    throw new CiUsageError(
+      "this push created the branch, so there is no previous commit to compare against.",
+    );
+  }
+
   if (repo.baseSha && repo.sha) {
     const basehead = `${repo.baseSha}...${repo.sha}`;
 
@@ -165,7 +173,11 @@ const listChangedFiles = async (
     });
   }
 
-  return [];
+  // No pull request and no push range (a cron, a manual run, a merge group):
+  // an empty list would skip work that may have changed.
+  throw new CiUsageError(
+    "this run has no pull request or push range to read changes from.",
+  );
 };
 
 /** GitHub's page size for a compare, and the most files it will list. */

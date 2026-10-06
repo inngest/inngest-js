@@ -13,9 +13,10 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { hashLocalFiles } from "../cache/localCache.ts";
 import { CiUsageError } from "../errors.ts";
-import { consoleReporter } from "../github/auth.ts";
+import { consoleReporter, githubToken } from "../github/auth.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
+import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
 import { runFunction } from "../testing/runFunction.ts";
 import { changed, collectComparedFiles, localChangedFiles } from "./changed.ts";
@@ -127,6 +128,57 @@ describe("changed()", () => {
 
     const result = await runFunction(pipeline, {
       event: { name: "inngest/scheduled.timer", data: {} },
+    });
+
+    expect(result.data).toBe(true);
+  });
+
+  const runOn = async (name: string, data: Record<string, unknown>) => {
+    // GitHub answers a compare against a missing commit with a 404.
+    const gh = createFakeGitHub();
+
+    gh.route("GET /repos/acme/app/compare/*", { message: "Not Found" }, 404);
+
+    const ci = createCi(createCiTestClient(createFakeSandboxApi()), {
+      github: githubToken({
+        token: "t",
+        baseUrl: "https://api.github.test",
+        fetch: gh.fetch,
+      }),
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "changes", on: [{ event: name }] },
+      async () => {
+        return changed("src/**");
+      },
+    );
+
+    return runFunction(pipeline, { event: { name, data } });
+  };
+
+  const repository = {
+    full_name: "acme/app",
+    name: "app",
+    owner: { login: "acme" },
+    default_branch: "main",
+  };
+
+  test("a push that creates a branch is unknown, not unchanged", async () => {
+    const result = await runOn("github/push", {
+      repository,
+      ref: "refs/heads/feature",
+      before: "0000000000000000000000000000000000000000",
+      after: "abc123",
+    });
+
+    expect(result.data).toBe(true);
+  });
+
+  test("a run with no pull request or push range is unknown, not unchanged", async () => {
+    const result = await runOn("github/merge_group.checks_requested", {
+      repository,
+      merge_group: { head_sha: "abc123", base_ref: "refs/heads/main" },
     });
 
     expect(result.data).toBe(true);
