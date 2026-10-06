@@ -25,6 +25,11 @@ export {
   validateSandboxResult,
 } from "./sandbox/protocol.ts";
 export type {
+  SandboxStatementOptions,
+  SandboxStatementOpts,
+} from "./sandbox/statement.ts";
+export { withSandboxStatement } from "./sandbox/statement.ts";
+export type {
   DurableSandbox,
   DurableSandboxProcess,
   DurableSandboxSnapshot,

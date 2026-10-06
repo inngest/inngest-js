@@ -2,6 +2,7 @@ import type {
   SandboxOperationResultV1,
   SandboxOperationV1,
 } from "./protocol.ts";
+import type { SandboxStatementScope } from "./statement.ts";
 import type { SandboxError } from "./types.ts";
 
 /**
@@ -64,6 +65,7 @@ export interface SandboxTraceMetadata {
    */
   statement_id: string;
   role: SandboxTraceRole;
+  statement_name?: string;
   sandbox_id?: string;
   sandbox_name?: string;
   source_snapshot_id?: string;
@@ -254,6 +256,7 @@ export const sandboxTraceMetadata = ({
   trace,
   stepId,
   statementId,
+  statementScope,
   outcome,
 }: {
   operation: SandboxOperationV1;
@@ -262,23 +265,45 @@ export const sandboxTraceMetadata = ({
   stepId: string;
   /** The statement step's hashed ID, for an internal step. */
   statementId?: string;
+  /**
+   * The sandbox statement the step was called in, from
+   * `withSandboxStatement()`. It takes over from the facade call, so every
+   * step in the scope shares one row.
+   */
+  statementScope?: SandboxStatementScope;
   outcome:
     | { result: SandboxOperationResultV1 }
     | { error: Pick<SandboxError, "code"> | undefined };
 }): SandboxTraceMetadata => {
   const internal = trace.statementOperation !== undefined;
-  const metadata: SandboxTraceMetadata = {
-    version: 1,
-    action: operation.action,
-    statement: trace.statement,
-    statement_id: (internal && statementId) || stepId,
-    role: internal ? "internal" : "statement",
-    ...(trace.sandbox && {
-      sandbox_id: trace.sandbox.id,
-      sandbox_name: trace.sandbox.name,
-    }),
-    ...targetMetadata(operation),
-  };
+  const metadata: SandboxTraceMetadata = statementScope
+    ? {
+        version: 1,
+        action: operation.action,
+        statement: statementScope.statement,
+        statement_id: statementScope.statementId,
+        // The statement's ID can name a real step, like a short CI command
+        // that runs as one `commands.run`. That step is the row itself.
+        role: stepId === statementScope.statementId ? "statement" : "internal",
+        statement_name: statementScope.statementName,
+        ...(statementScope.sandbox && {
+          sandbox_id: statementScope.sandbox.id,
+          sandbox_name: statementScope.sandbox.name,
+        }),
+        ...targetMetadata(operation),
+      }
+    : {
+        version: 1,
+        action: operation.action,
+        statement: trace.statement,
+        statement_id: (internal && statementId) || stepId,
+        role: internal ? "internal" : "statement",
+        ...(trace.sandbox && {
+          sandbox_id: trace.sandbox.id,
+          sandbox_name: trace.sandbox.name,
+        }),
+        ...targetMetadata(operation),
+      };
 
   if ("result" in outcome) {
     Object.assign(metadata, resultMetadata(outcome.result));

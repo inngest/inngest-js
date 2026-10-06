@@ -11,6 +11,10 @@ import {
   type SandboxRawTool,
 } from "./protocol.ts";
 import {
+  getSandboxStatement,
+  type SandboxStatementScope,
+} from "./statement.ts";
+import {
   type SandboxStepTrace,
   sandboxMetadataKind,
   sandboxTraceMetadata,
@@ -34,6 +38,7 @@ const describeStep = (
   operation: unknown,
   trace: SandboxStepTrace,
   resolveStatementId: (operation: SandboxOperationV1) => string | undefined,
+  statementScope: SandboxStatementScope | undefined,
   outcome: { result: unknown } | { error: unknown },
 ): void => {
   try {
@@ -59,6 +64,7 @@ const describeStep = (
           trace,
           stepId: step.hashedId,
           ...(statementId !== undefined && { statementId }),
+          ...(statementScope && { statementScope }),
           outcome:
             "result" in outcome
               ? { result: outcome.result as SandboxOperationResultV1 }
@@ -76,16 +82,21 @@ const executeAsStep = async (
   operation: unknown,
   trace: SandboxStepTrace | undefined,
   resolveStatementId: (operation: SandboxOperationV1) => string | undefined,
+  statementScope: SandboxStatementScope | undefined,
 ): Promise<unknown> => {
   try {
     const result = await executeSandboxOperation(client.sandboxes, operation);
     if (trace) {
-      describeStep(operation, trace, resolveStatementId, { result });
+      describeStep(operation, trace, resolveStatementId, statementScope, {
+        result,
+      });
     }
     return result;
   } catch (error) {
     if (trace) {
-      describeStep(operation, trace, resolveStatementId, { error });
+      describeStep(operation, trace, resolveStatementId, statementScope, {
+        error,
+      });
     }
     if (error instanceof SandboxError) {
       const cause = {
@@ -174,12 +185,23 @@ export class SandboxMiddleware extends Middleware.BaseMiddleware {
   } {
     const resolveStatementId = (operation: SandboxOperationV1) =>
       this.stepIds.get(operation);
-    const rawTool: SandboxRawTool = (idOrOptions, operation, trace) =>
-      arg.ctx.step.run(
+    const rawTool: SandboxRawTool = (idOrOptions, operation, trace) => {
+      // Read the scope where the facade was called, since the step's handler
+      // may run later, outside it.
+      const statementScope = getSandboxStatement();
+      return arg.ctx.step.run(
         idOrOptions,
-        (input) => executeAsStep(this.client, input, trace, resolveStatementId),
+        (input) =>
+          executeAsStep(
+            this.client,
+            input,
+            trace,
+            resolveStatementId,
+            statementScope,
+          ),
         operation,
       );
+    };
 
     return {
       ...arg,
