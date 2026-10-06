@@ -102,7 +102,7 @@ A pipeline run is one trace. `lint` and `test` start from a snapshot of `base`, 
 
 ## Quick start
 
-Run the example above on your machine. Checks print to your terminal.
+Run the example above on your machine. Checks print to your terminal. CI lives in `ci/`, one file per job and per pipeline.
 
 ### Before you start
 
@@ -139,13 +139,55 @@ export const ci = createCi(inngest);
 
 In dev mode, `createCi` prints checks to the terminal with `consoleReporter()`. In production, pass a [GitHub provider](#run-on-github).
 
-### 3. Write a pipeline
+### 3. Write the jobs and a pipeline
 
-`ci/pipelines.ts`
+One file per job and per pipeline, named after what it holds:
+
+```
+ci/
+  client.ts
+  jobs/base.ts
+  jobs/lint.ts
+  jobs/test.ts
+  pipelines/pr.ts
+  index.ts
+  server.ts
+```
+
+`ci/jobs/base.ts`
 
 ```ts
-import { github, checkout, from, $ } from "@inngest/ci";
-import { ci } from "./client";
+import { checkout, $ } from "@inngest/ci";
+import { ci } from "../client";
+
+export const base = ci.job("base", async () => {
+  await checkout();
+  await $`pnpm install`;
+});
+```
+
+`ci/jobs/lint.ts`
+
+```ts
+import { from, $ } from "@inngest/ci";
+import { ci } from "../client";
+import { base } from "./base";
+
+export const lint = ci.job("lint", async () => {
+  await from(base);
+  await $`pnpm lint`;
+});
+```
+
+`ci/jobs/test.ts` is the same with `pnpm test`, `.retries(1)` and the id `test`.
+
+`ci/pipelines/pr.ts`
+
+```ts
+import { github } from "@inngest/ci";
+import { ci } from "../client";
+import { lint } from "../jobs/lint";
+import { test } from "../jobs/test";
 
 export const pr = ci.pipeline(
   {
@@ -157,31 +199,24 @@ export const pr = ci.pipeline(
     await Promise.all([lint(), test()]);
   },
 );
-
-const base = ci.job("base", async () => {
-  await checkout();
-  await $`pnpm install`;
-});
-
-const lint = ci.job("lint", async () => {
-  await from(base);
-  await $`pnpm lint`;
-});
-
-const test = ci.job("test", async () => {
-  await from(base);
-  await $`pnpm test`.retries(1);
-});
 ```
 
 ### 4. Serve the pipelines
+
+`ci/index.ts` imports every pipeline, so the server registers them all.
+
+```ts
+import "./pipelines/pr";
+
+export { ci } from "./client";
+```
 
 `ci/server.ts`
 
 ```ts
 import { createServer } from "inngest/node";
-import { inngest, ci } from "./client";
-import "./pipelines";
+import { inngest } from "./client";
+import { ci } from "./index";
 
 const server = createServer({ client: inngest, functions: ci.functions() });
 
