@@ -76,7 +76,7 @@ pnpm run ci --pipeline release --event push      # skipped: ci.local
 
 ## Things to try
 
-1. Run `pnpm run ci pr` again. `base` is cached on `pnpm-lock.yaml`, so its check says `Restored` and no machine starts. The cache lives in memory, so it lasts until you stop `inngest-ci`.
+1. Run `pnpm run ci pr` again. `base` is cached on `pnpm-lock.yaml`, so its check says `Restored` and no machine starts.
 2. Break a test without committing. Edit `app/src/sum.ts`, then run `pr`. `test` fails with the end of its output on the check.
 3. Run `pr` in two terminals at once. `singleton` cancels the first run.
 4. Make a test flaky. Add `.env({ FLAKY: "1" })` to the `pnpm test` command in `ci/jobs/test.ts`, then run `pr`. `app/src/sum.test.ts` fails about half the time, and `.retries(1)` runs the command again. The check shows the attempt count and the failure.
