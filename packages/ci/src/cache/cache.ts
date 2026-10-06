@@ -343,6 +343,23 @@ export const describeCached = (entry: CacheEntry): string => {
 };
 
 /**
+ * How long before its `expiresAt` a snapshot stops being reused: long enough
+ * for the jobs that start from it to get their machines.
+ */
+const expiryMarginMs = 15 * 60 * 1000;
+
+/** Whether a snapshot expires within the margin, or already has. */
+const isExpiring = (expiresAt: string | undefined): boolean => {
+  if (!expiresAt) {
+    return false;
+  }
+
+  const at = Date.parse(expiresAt);
+
+  return Number.isFinite(at) && at - Date.now() < expiryMarginMs;
+};
+
+/**
  * A cached snapshot may have expired, in which case the entry is a miss.
  */
 export const snapshotIsReady = async (
@@ -359,7 +376,9 @@ export const snapshotIsReady = async (
       snapshotId,
     );
 
-    return snapshot?.status === "READY";
+    // `READY` alone isn't enough: a snapshot past its server-set `expiresAt`
+    // can still read as ready while restores from it never start.
+    return snapshot?.status === "READY" && !isExpiring(snapshot.expiresAt);
   } catch {
     return false;
   }
