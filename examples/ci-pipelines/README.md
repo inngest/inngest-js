@@ -41,8 +41,10 @@ pnpm -C packages/ci build
 
 ```bash
 cd examples/ci-pipelines
-pnpm install
+pnpm install --ignore-workspace
 ```
+
+The example isn't part of the monorepo's pnpm workspace, so a plain `pnpm install` here installs the workspace instead.
 
 ## 3. Run a pipeline
 
