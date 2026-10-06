@@ -79,6 +79,8 @@ export const conclusionForError = (error: unknown): CheckConclusion => {
 };
 
 interface RunJobArgs {
+  /** Where the job runs and keeps its steps, when that isn't its ID. */
+  path?: string;
   config: JobConfig;
   // biome-ignore lint/suspicious/noExplicitAny: user handler
   handler: (input: any) => Promise<any>;
@@ -112,6 +114,46 @@ export const runJob = async ({
   run.jobs.set(config.id, started);
 
   return started;
+};
+
+/**
+ * Run a job again as a job of its own, once per run, and give its snapshot.
+ *
+ * This is how a parent whose cached snapshot won't start is rebuilt: the same
+ * handler and cache entry, under the stable path `<id> (rebuild)` so its steps
+ * and machine are distinct from the original's and replays find them again.
+ * It has no check of its own, since the original job's is already complete.
+ */
+export const rebuildJob = async (
+  run: CiRunScope,
+  jobId: string,
+  input: unknown,
+): Promise<string | undefined> => {
+  const registered = run.ci.jobs.get(jobId) as RegisteredJob | undefined;
+
+  if (!registered) {
+    return undefined;
+  }
+
+  const path = `${jobId} (rebuild)`;
+
+  let started = run.jobs.get(path);
+
+  if (!started) {
+    started = jobBody({
+      run,
+      path,
+      config: { ...registered.config, check: false },
+      handler: registered.handler,
+      input,
+    });
+
+    run.jobs.set(path, started);
+  }
+
+  await started;
+
+  return snapshotJob(run, path);
 };
 
 /**
@@ -149,6 +191,7 @@ const validateInput = async (
 };
 
 const jobBody = async ({
+  path,
   run,
   config,
   handler,
@@ -159,8 +202,8 @@ const jobBody = async ({
 
   const scope: CiJobScope = {
     run,
-    path: config.id,
-    jobPath: config.id,
+    path: path ?? config.id,
+    jobPath: path ?? config.id,
     config,
     fromCalled: false,
     fromJobIds: [],

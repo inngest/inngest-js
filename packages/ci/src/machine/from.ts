@@ -7,6 +7,7 @@
 
 import { describeCached } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
+import { rebuildJob } from "../pipeline/job.ts";
 import type { CiJobScope } from "../pipeline/scope.ts";
 import { countApi, jobHandlerKey, requireJobScope } from "../pipeline/scope.ts";
 import type { AnyJob, Job } from "../types.ts";
@@ -96,6 +97,10 @@ export async function from(job: AnyJob, input?: unknown): Promise<unknown> {
       cached?.snapshotId === snapshotId
         ? `starting ${job.id} · ${describeCached(cached)}`
         : `starting ${job.id}`;
+
+    scope.rebuildSnapshot = () => {
+      return rebuildJob(run, job.id, input);
+    };
 
     scope.rebuildParent = () => {
       return rerunOnThisMachine(scope, job, input);

@@ -86,6 +86,22 @@ export const ensureMachine = async (
  */
 export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true)`;
 
+const deferred = <T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+};
+
 const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   const { run } = scope;
   const tools = run.sandboxTools;
@@ -103,7 +119,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
 
-  run.badSnapshots ??= new Set();
+  run.snapshotProbes ??= new Map();
 
   const startFresh = (note: string) => {
     scope.fromSnapshotId = undefined;
@@ -118,38 +134,105 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     });
   };
 
-  run.ci.reporter.activity(
-    run,
-    scope.jobPath,
-    scope.startNote ?? "creating machine…",
-  );
-
   const parentId = scope.fromJobIds[0] ?? "the parent";
   const snapshotId = scope.fromSnapshotId;
+  const probe = snapshotId ? run.snapshotProbes.get(snapshotId) : undefined;
 
   let sandbox: Awaited<ReturnType<typeof tools.create>>;
 
-  if (snapshotId && run.badSnapshots.has(snapshotId)) {
-    sandbox = await startFresh(`rebuilding ${parentId} · bad snapshot`);
+  if (snapshotId && probe) {
+    // Another job is already finding out whether this snapshot starts, and
+    // rebuilding the parent if it doesn't. Wait for that instead of repeating
+    // it.
+    run.ci.reporter.activity(run, scope.jobPath, `waiting for ${parentId}…`);
+
+    const usable = await probe;
+
+    if (usable !== snapshotId) {
+      scope.startNote = `starting ${parentId}`;
+    }
+
+    run.ci.reporter.activity(
+      run,
+      scope.jobPath,
+      scope.startNote ?? "creating machine…",
+    );
+
+    sandbox = usable
+      ? await tools.create(stepId, { name, snapshotId: usable })
+      : await startFresh(`rebuilding ${parentId} · bad snapshot`);
   } else if (snapshotId) {
+    run.ci.reporter.activity(
+      run,
+      scope.jobPath,
+      scope.startNote ?? "creating machine…",
+    );
+
+    const outcome = deferred<string | undefined>();
+
+    // Other jobs may never wait on it, and this job gets the error below.
+    outcome.promise.catch(() => {
+      return undefined;
+    });
+
+    run.snapshotProbes.set(snapshotId, outcome.promise);
+
     try {
       sandbox = await tools.create(stepId, { name, snapshotId });
+
+      outcome.resolve(snapshotId);
     } catch (error) {
       if (!isStartFailure(error)) {
+        // Not the snapshot's fault, so the others may still try it.
+        outcome.resolve(snapshotId);
+
         throw error;
       }
 
-      run.badSnapshots.add(snapshotId);
-
       run.warnings.push(
-        `fell back: snapshot of \`${parentId}\` wouldn't start (${errorMessage(error)}), so \`${scope.path}\` re-ran it on its own machine`,
+        `fell back: snapshot of \`${parentId}\` wouldn't start (${errorMessage(error)}), so \`${scope.path}\` rebuilt it`,
       );
 
-      await invalidateCached(run, snapshotId);
+      const note = `rebuilding ${parentId} · bad snapshot`;
 
-      sandbox = await startFresh(`rebuilding ${parentId} · bad snapshot`);
+      scope.startNote = note;
+
+      run.ci.reporter.activity(run, scope.jobPath, note);
+
+      let replacement: string | undefined;
+
+      try {
+        await invalidateCached(run, snapshotId);
+
+        replacement = await scope.rebuildSnapshot?.();
+      } catch (rebuildError) {
+        outcome.reject(rebuildError);
+
+        throw rebuildError;
+      }
+
+      outcome.resolve(replacement);
+
+      if (replacement) {
+        scope.startNote = `starting ${parentId}`;
+
+        run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
+
+        sandbox = await tools.create(stepId, {
+          name,
+          snapshotId: replacement,
+        });
+      } else {
+        sandbox = await startFresh(note);
+      }
     }
   } else {
+    run.ci.reporter.activity(
+      run,
+      scope.jobPath,
+      scope.startNote ?? "creating machine…",
+    );
+
     sandbox = await tools.create(stepId, { name, ...machineConfig });
   }
 
