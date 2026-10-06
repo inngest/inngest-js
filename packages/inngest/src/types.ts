@@ -2016,8 +2016,8 @@ export interface StepSpan {
    *
    * Steps inside the span inherit it unless they set their own `"~origin"`,
    * or a span nested inside this one sets its own origin. A nested span that
-   * sets none inherits this one's, so it is sent with this origin. The Inngest UI
-   * de-emphasises spans and steps whose origin is an Inngest package.
+   * sets none inherits this one's. The Inngest UI de-emphasises spans and
+   * steps whose origin is an Inngest package.
    *
    * @internal Unstable and may change or be removed without a major version
    * bump.

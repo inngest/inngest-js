@@ -229,14 +229,10 @@ export interface GroupTools {
    *
    * EXPERIMENTAL: a library that runs steps on the user's behalf can give
    * the span an `origin`, the library's `"<package>@<version>"`, such as
-   * `"@inngest/ci@0.1.0"`. Every step inside then carries that origin, unless
-   * the step sets its own `"~origin"` or sits in a nested span with its own
-   * origin; the innermost one wins. A nested span without an origin inherits
-   * its parent's, and one opened where no origin is in scope has none. Leave
-   * it unset for spans that stand for
-   * the user's own code. The Inngest UI de-emphasises spans and steps whose
-   * origin is an Inngest package, so a trace separates what the user wrote
-   * from what a library did for them.
+   * `"@inngest/ci@0.1.0"`. Steps inside inherit it unless they set their own
+   * `"~origin"`; a nested span inherits it too unless it sets its own. Leave
+   * it unset for spans that stand for the user's own code. The Inngest UI
+   * de-emphasises spans and steps whose origin is an Inngest package.
    *
    * @example
    * ```ts

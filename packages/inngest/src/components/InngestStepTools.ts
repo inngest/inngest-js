@@ -231,11 +231,12 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
 };
 
 /**
- * The origin of the innermost span in `path` that has one, which a step or a
- * nested span in that path inherits. See `StepOptions["~origin"]`.
+ * The origin a step or nested span in `path` inherits. Each span in a path
+ * already carries its effective origin, so the innermost span's is the answer.
+ * See `StepOptions["~origin"]`.
  */
 const spanOrigin = (path: StepSpan[] | undefined): string | undefined => {
-  return [...(path ?? [])].reverse().find((span) => span.origin)?.origin;
+  return path?.[path.length - 1]?.origin;
 };
 
 /**
