@@ -91,6 +91,12 @@ const listInputSchema = z
     limit: z.number().int().min(1).max(250),
   })
   .strict();
+const snapshotCreateInputSchema = z
+  .object({ name: sandboxNameSchema.optional() })
+  .strict();
+const snapshotListInputSchema = listInputSchema
+  .extend({ name: sandboxNameSchema.optional() })
+  .strict();
 const getInputSchema = z.object({ sandboxId: canonicalUuidSchema }).strict();
 const processSpecShape = {
   command: z.array(z.string()).min(1).max(128),
@@ -271,14 +277,14 @@ export const sandboxOperationSchema = z.discriminatedUnion("action", [
       ...operationBase,
       action: z.literal("snapshot.create"),
       target: sandboxTargetSchema,
-      input: z.tuple([z.object({}).strict()]),
+      input: z.tuple([snapshotCreateInputSchema]),
     })
     .strict(),
   z
     .object({
       ...operationBase,
       action: z.literal("snapshot.list"),
-      input: z.tuple([listInputSchema]),
+      input: z.tuple([snapshotListInputSchema]),
     })
     .strict(),
   z

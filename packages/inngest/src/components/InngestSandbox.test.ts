@@ -1151,6 +1151,181 @@ describe("step.sandbox", () => {
     expect("snapshots" in client.sandboxes).toBe(true);
   });
 
+  test("carries a snapshot name through durable create and list steps", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const {
+      kind: _snapshotKind,
+      version: _snapshotVersion,
+      ...snapshotResource
+    } = snapshotRef;
+    const namedResource = { ...snapshotResource, name: "base" };
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      requests.push({ url, init });
+      if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/snapshots`) {
+        return Response.json({ data: namedResource }, { status: 201 });
+      }
+      if (url.pathname === `/v2/snapshots/${snapshotId}`) {
+        return Response.json({ data: namedResource });
+      }
+      if (url.pathname === "/v2/snapshots") {
+        return Response.json({
+          data: [namedResource],
+          metadata: { fetchedAt: now },
+          page: { hasMore: false, limit: 50 },
+        });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      {
+        id: "sandbox-named-snapshot",
+        triggers: [{ event: "sandbox/named-snapshot" }],
+      },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        const created = await sandbox.snapshot("create-snapshot", {
+          name: "base",
+        });
+        const listed = await step.sandbox.snapshots.list("list-snapshots", {
+          name: "base",
+        });
+        return {
+          created: created.name,
+          listed: listed.items.map((snapshot) => snapshot.name),
+        };
+      },
+    );
+    const run = createFnRunner(fn);
+
+    await run();
+    const createRun = await run();
+    await run();
+    await run();
+    const replay = await run();
+
+    expect(createRun.result).toMatchObject({
+      type: "step-ran",
+      step: {
+        opts: {
+          input: [
+            {
+              action: "snapshot.create",
+              input: [{ name: "base" }],
+            },
+          ],
+        },
+      },
+    });
+    expect(replay.result).toMatchObject({
+      type: "function-resolved",
+      data: { created: "base", listed: ["base"] },
+    });
+    const post = requests.find(({ init }) => init?.method === "POST");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ name: "base" });
+    const list = requests.find(({ url }) => url.pathname === "/v2/snapshots");
+    expect(list?.url.searchParams.get("name")).toBe("base");
+  });
+
+  test("fails a durable snapshot create with a taken name without retrying", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const fetchMock: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      if (url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: sandboxResource });
+      }
+      return Response.json(
+        {
+          errors: [
+            {
+              code: "sandbox_snapshot_name_taken",
+              message: "snapshot name is taken",
+            },
+          ],
+        },
+        { status: 409 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      {
+        id: "sandbox-snapshot-name-taken",
+        triggers: [{ event: "sandbox/snapshot-name-taken" }],
+      },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-sandbox", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        return sandbox.snapshot("create-snapshot", { name: "base" });
+      },
+    );
+    const getRun = await runFnWithStack(fn, {});
+    if (getRun.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${getRun.type}`);
+    }
+    const state = {
+      [getRun.step.id]: { id: getRun.step.id, data: getRun.step.data },
+    };
+    const createRun = await runFnWithStack(fn, state, {
+      stackOrder: [getRun.step.id],
+    });
+    if (createRun.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${createRun.type}`);
+    }
+    const replay = await runFnWithStack(
+      fn,
+      {
+        ...state,
+        [createRun.step.id]: {
+          id: createRun.step.id,
+          data: undefined,
+          error: createRun.step.error,
+        },
+      },
+      { stackOrder: [getRun.step.id, createRun.step.id] },
+    );
+
+    expect(replay).toMatchObject({
+      type: "function-rejected",
+      retriable: false,
+    });
+    if (replay.type !== "function-rejected") {
+      throw new Error(`Expected function-rejected, got ${replay.type}`);
+    }
+    expect(getSandboxError(replay.error)).toMatchObject({
+      action: "snapshot.create",
+      code: "sandbox_snapshot_name_taken",
+      status: 409,
+      sandboxId,
+      ambiguous: false,
+      retryable: false,
+    });
+  });
+
   test("keeps larger direct Exec results but tail-truncates them at the durable step boundary", async () => {
     const stdoutBytes = new Uint8Array(3 << 20);
     stdoutBytes.set([1, 2, 3]);
@@ -2261,6 +2436,161 @@ describe("inngest.sandboxes", () => {
       ambiguous: true,
       retryable: false,
     });
+  });
+
+  test("names direct snapshots and lists them by name", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const {
+      kind: _snapshotKind,
+      version: _snapshotVersion,
+      ...snapshotResource
+    } = snapshotRef;
+    const requests: Array<{ method: string; url: URL; init?: RequestInit }> =
+      [];
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      requests.push({ method, url, init });
+      if (method === "GET" && url.pathname === `/v2/sandboxes/${sandboxId}`) {
+        return Response.json({ data: sandboxResource });
+      }
+      if (method === "POST") {
+        return Response.json(
+          { data: { ...snapshotResource, name: "base" } },
+          { status: 201 },
+        );
+      }
+      return Response.json({
+        data: [
+          { ...snapshotResource, name: "base" },
+          { ...snapshotResource, name: "" },
+          { ...snapshotResource, name: null },
+        ],
+        metadata: { fetchedAt: now },
+        page: { hasMore: false, limit: 50 },
+      });
+    });
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => fetchMock,
+    });
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+
+    const created = await sandbox.snapshot({ name: "base" });
+    const listed = await client.snapshots.list({ name: "base" });
+
+    expect(created.name).toBe("base");
+    expect(requests[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({
+      name: "base",
+    });
+    expect(requests[1]?.init?.headers).toMatchObject({
+      "Content-Type": "application/json",
+    });
+    expect(requests[2]?.url.searchParams.get("name")).toBe("base");
+    expect(requests[2]?.url.searchParams.get("limit")).toBe("50");
+    expect(listed.items.map((snapshot) => snapshot.name)).toEqual([
+      "base",
+      undefined,
+      undefined,
+    ]);
+    expect("name" in listed.items[1]!).toBe(false);
+  });
+
+  test.each([
+    ["", "must not be empty"],
+    [" base", "must not contain leading or trailing whitespace"],
+    ["base\n", "must not contain"],
+    ["x".repeat(256), "must not exceed 255 characters"],
+  ])(
+    "rejects invalid snapshot name %j before dispatch",
+    async (name, message) => {
+      const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+      let requestCount = 0;
+      const client = createSandboxClient({
+        baseUrl: () => "https://api.example.test",
+        apiKey: () => "signkey-test",
+        headers: () => ({}),
+        fetch: () => async () => {
+          requestCount++;
+          return Response.json({ data: sandboxResource });
+        },
+      });
+      const sandbox = await client.get(sandboxId);
+      if (!sandbox) {
+        throw new Error("Expected sandbox");
+      }
+
+      await expect(sandbox.snapshot({ name })).rejects.toThrow(
+        SandboxValidationError,
+      );
+      await expect(sandbox.snapshot({ name })).rejects.toThrow(message);
+      await expect(client.snapshots.list({ name })).rejects.toThrow(message);
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "snapshot.create",
+          target: { sandbox: sandboxRef },
+          input: [{ name }],
+        }),
+      ).toThrow(message);
+      expect(() =>
+        parseSandboxOperation({
+          protocolVersion: 1,
+          action: "snapshot.list",
+          input: [{ limit: 50, name }],
+        }),
+      ).toThrow(message);
+      expect(requestCount).toBe(1);
+    },
+  );
+
+  test("reports a taken direct snapshot name with its error code", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    let requestCount = 0;
+    const client = createSandboxClient({
+      baseUrl: () => "https://api.example.test",
+      apiKey: () => "signkey-test",
+      headers: () => ({}),
+      fetch: () => async () => {
+        requestCount++;
+        if (requestCount === 1) {
+          return Response.json({ data: sandboxResource });
+        }
+        return Response.json(
+          {
+            errors: [
+              {
+                code: "sandbox_snapshot_name_taken",
+                message: "snapshot name is taken",
+              },
+            ],
+          },
+          { status: 409 },
+        );
+      },
+    });
+    const sandbox = await client.get(sandboxId);
+    if (!sandbox) {
+      throw new Error("Expected sandbox");
+    }
+
+    await expect(sandbox.snapshot({ name: "base" })).rejects.toMatchObject({
+      name: "SandboxError",
+      action: "snapshot.create",
+      code: "sandbox_snapshot_name_taken",
+      message: "snapshot name is taken",
+      status: 409,
+      sandboxId,
+      ambiguous: false,
+      retryable: false,
+    });
+    expect(requestCount).toBe(2);
   });
 
   test("decodes captured Exec output as non-fatal UTF-8", async () => {

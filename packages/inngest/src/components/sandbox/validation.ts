@@ -249,6 +249,7 @@ export const sandboxSnapshotStatusSchema = z.enum([
 const sandboxSnapshotResourceBaseSchema = z
   .object({
     id: canonicalUuidSchema,
+    name: sandboxNameSchema.optional(),
     sourceImageId: z.string().min(1),
     status: sandboxSnapshotStatusSchema,
     compatibilityId: z.string().min(1).optional(),
@@ -297,8 +298,10 @@ export const sandboxSnapshotResourceSchema =
   );
 
 const wireSandboxSnapshotResourceSchema = sandboxSnapshotResourceBaseSchema
-  .omit({ resources: true, error: true })
+  .omit({ name: true, resources: true, error: true })
   .extend({
+    // Unnamed snapshots may omit the name, send null, or send "".
+    name: z.union([z.literal(""), sandboxNameSchema]).nullish(),
     resources: sandboxResourcesSchema.strip(),
     memoryPackCount: wireUint32Schema,
     diskPackCount: wireUint32Schema,
@@ -486,11 +489,12 @@ export const sandboxSnapshotRefFromResource = (
     value,
     "sandbox snapshot resource",
   );
-  const { error, ...base } = resource;
+  const { name, error, ...base } = resource;
   return {
     kind: "inngest/sandbox.snapshot",
     version: 1,
     ...base,
+    ...(name && { name }),
     ...(error != null && { error }),
   };
 };
@@ -598,16 +602,35 @@ type SandboxProcessSpecOptions = SandboxCommandOptions & {
 
 export const normalizeSandboxSnapshotListOptions = (
   options: SandboxSnapshotListOptions = {},
-) => normalizeSandboxListOptions(options);
+): Required<Pick<SandboxSnapshotListOptions, "limit">> &
+  Pick<SandboxSnapshotListOptions, "cursor" | "name"> => {
+  const { name, ...list } = parseWithSchema(
+    z
+      .object({
+        cursor: z.string().min(1).optional(),
+        limit: z.number().int().min(1).max(250).optional(),
+        name: sandboxNameSchema.optional(),
+      })
+      .strict(),
+    options,
+    "sandbox snapshot list options",
+  );
+  return {
+    ...normalizeSandboxListOptions(list),
+    ...(name !== undefined && { name }),
+  };
+};
 
 export const normalizeSandboxSnapshotCreateOptions = (
   options: SandboxSnapshotCreateOptions = {},
-): SandboxSnapshotCreateOptions =>
-  parseWithSchema(
-    z.object({}).strict(),
+): SandboxSnapshotCreateOptions => {
+  const { name } = parseWithSchema(
+    z.object({ name: sandboxNameSchema.optional() }).strict(),
     options,
     "sandbox snapshot create options",
   );
+  return name === undefined ? {} : { name };
+};
 
 export const normalizeSandboxSnapshotWaitOptions = (
   options: SandboxSnapshotWaitOptions,
