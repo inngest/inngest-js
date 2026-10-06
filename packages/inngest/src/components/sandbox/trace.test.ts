@@ -205,7 +205,7 @@ describe("sandboxTraceMetadata", () => {
 });
 
 describe("step.sandbox trace metadata", () => {
-  test("describes each step", async () => {
+  test("describes each step, and groups a snapshot's steps in one span", async () => {
     const client = createClient((path) => {
       if (path.endsWith("/exec")) {
         return Response.json({
@@ -283,6 +283,14 @@ describe("step.sandbox trace metadata", () => {
         snapshot_status: "READY",
       }),
     ]);
+
+    for (const step of [get, exec]) {
+      expect(step?.opts ?? {}).not.toHaveProperty("span");
+    }
+
+    for (const step of [snapshot, wait]) {
+      expect(step?.opts?.span).toEqual([{ id: "snap", name: "Snapshot" }]);
+    }
   });
 
   test("emits one full entry per step attempt", async () => {

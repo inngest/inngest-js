@@ -1,4 +1,5 @@
 import type { StepOptionsOrId } from "../../types.ts";
+import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import {
   createSandboxForOperation,
@@ -648,6 +649,11 @@ export const createDurableSandboxFacade = (
     );
     return createDurableSandboxSnapshotFacade(ready.snapshot, rawToolResolver);
   };
+  // The create and readiness wait are one call, so they share one span.
+  const snapshot: DurableSandbox["snapshot"] = (idOrOptions, ...args) => {
+    const { id, name } = getStepOptions(idOrOptions);
+    return withSpan({ id, name }, () => createSnapshot(idOrOptions, ...args));
+  };
   const facade: DurableSandbox = {
     ...ref,
     resources: Object.freeze({ ...ref.resources }),
@@ -744,9 +750,9 @@ export const createDurableSandboxFacade = (
       },
     }),
     snapshots: Object.freeze({
-      create: createSnapshot,
+      create: snapshot,
     }),
-    snapshot: createSnapshot,
+    snapshot,
     waitUntilRunning: async (idOrOptions, options) => {
       const operation = parseSandboxOperationForAction("waitUntilRunning", {
         protocolVersion: sandboxProtocolVersion,
