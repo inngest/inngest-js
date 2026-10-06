@@ -551,7 +551,7 @@ const createSnapshot = async (
  * snapshots (`sandbox_snapshot_limit_exceeded`). Delete this once neither
  * happens; a real failure should then always surface.
  */
-export const isSnapshotUnavailable = (error: unknown): boolean => {
+const isSnapshotUnavailable = (error: unknown): boolean => {
   const cause = (error as { cause?: { code?: string; status?: number } })
     ?.cause;
 

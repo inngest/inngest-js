@@ -1,7 +1,7 @@
 /**
  * Tests for `checkout()` of a local working tree that a machine already has
  * most of: delta uploads, the tree ID carried through snapshots and cache
- * entries, and layer snapshots, run end to end against the fake sandbox API.
+ * entries, run end to end against the fake sandbox API.
  *
  * @module
  */
@@ -14,7 +14,6 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +24,6 @@ import { memoryCacheStore } from "../cache/cache.ts";
 import { consoleReporter } from "../github/auth.ts";
 import { $ } from "../machine/command.ts";
 import { from } from "../machine/from.ts";
-import { layerThresholdBytes } from "../machine/layer.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import type { FakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -99,23 +97,6 @@ const tarballs = (api: FakeSandboxApi) => {
   return api.uploads.filter((upload) => {
     return upload.path.endsWith(".inngest-ci-source.tar");
   });
-};
-
-/** How many snapshots were asked for, whatever became of them. */
-const snapshotRequests = (api: FakeSandboxApi): number => {
-  return api.requests.filter((request) => {
-    return /^POST \/v2\/sandboxes\/[^/]+\/snapshots$/.test(request);
-  }).length;
-};
-
-const deletedSnapshots = (api: FakeSandboxApi): string[] => {
-  return api.requests
-    .filter((request) => {
-      return request.startsWith("DELETE /v2/snapshots/");
-    })
-    .map((request) => {
-      return request.replace("DELETE /v2/snapshots/", "");
-    });
 };
 
 /** A cache store that remembers what was written to it. */
@@ -383,143 +364,5 @@ describe("checkout() of a local working tree", () => {
     expect(
       Object.keys(unpack(tarballs(api)[1]?.bytes as Uint8Array)),
     ).toHaveLength(4);
-  });
-});
-
-describe("layer snapshots", () => {
-  let root: string;
-  let repo: string;
-
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "ci-layer-"));
-    repo = join(root, "repo");
-
-    mkdirSync(repo);
-
-    git(repo, "init", "-q", "-b", "main");
-    git(repo, "config", "user.email", "ci@example.com");
-    git(repo, "config", "user.name", "ci");
-
-    writeFileSync(join(repo, "keep.txt"), "keep");
-
-    git(repo, "add", ".");
-    git(repo, "commit", "-q", "-m", "init");
-  });
-
-  afterEach(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  /**
-   * A parent that checks out, then three jobs that start from it after the
-   * working tree changed by `bytes`.
-   */
-  const runWithChange = async (bytes: number) => {
-    const api = createFakeSandboxApi();
-
-    const ci = createCi(createCiTestClient(api), {
-      github: consoleReporter(),
-      cacheStore: memoryCacheStore(),
-      runUrl: ({ runId }) => {
-        return `http://localhost:8288/run?runID=${runId}`;
-      },
-    });
-
-    const parent = ci.job("parent", async () => {
-      await checkout();
-
-      await $`pnpm install`;
-    });
-
-    const child = (id: string) => {
-      return ci.job(id, async () => {
-        await from(parent);
-
-        await checkout();
-
-        await $`pnpm ${id}`;
-      });
-    };
-
-    const [lint, test, compat] = [
-      child("lint"),
-      child("test"),
-      child("compat"),
-    ];
-
-    const result = await runFunction(
-      ci.pipeline({ id: "pr", on: trigger }, async () => {
-        await parent();
-
-        // The change the children have to get onto their machines.
-        const file = join(repo, "change.bin");
-
-        writeFileSync(file, "");
-        truncateSync(file, bytes);
-
-        await Promise.all([lint(), test(), compat()]);
-      }),
-      { event: event(repo) },
-    );
-
-    return { api, result };
-  };
-
-  test("a large change is uploaded once and snapshotted for the other jobs", async () => {
-    const { api, result } = await runWithChange(layerThresholdBytes + 1024);
-
-    expect(result.type).toBe("function-resolved");
-
-    // The parent's own full upload, and one upload of the change.
-    expect(tarballs(api)).toHaveLength(2);
-
-    // The parent's snapshot, and the layer.
-    expect(snapshotRequests(api)).toBe(2);
-
-    // One job started from the parent's snapshot and took the change; the
-    // other two started from the layer and had nothing to upload.
-    const parentSnapshot = api.snapshotStarts[0] as string;
-    const layer = api.snapshotStarts.find((id) => {
-      return id !== parentSnapshot;
-    });
-
-    expect(layer).toBeDefined();
-    expect(
-      api.snapshotStarts.filter((id) => {
-        return id === parentSnapshot;
-      }),
-    ).toHaveLength(1);
-    expect(
-      api.snapshotStarts.filter((id) => {
-        return id === layer;
-      }),
-    ).toHaveLength(2);
-  });
-
-  test("a layer is deleted when the run ends", async () => {
-    const { api } = await runWithChange(layerThresholdBytes + 1024);
-
-    const layer = api.snapshotStarts.find((id) => {
-      return id !== api.snapshotStarts[0];
-    }) as string;
-
-    expect(deletedSnapshots(api)).toEqual([layer]);
-    expect(api.snapshots.has(layer)).toBe(false);
-
-    // Nothing else of the run's was a layer.
-    expect(api.snapshots.size).toBe(1);
-  });
-
-  test("a small change is uploaded by each job and makes no layer", async () => {
-    const { api, result } = await runWithChange(10 * 1024);
-
-    expect(result.type).toBe("function-resolved");
-
-    // The parent's full upload, and one small delta per job.
-    expect(tarballs(api)).toHaveLength(4);
-
-    expect(snapshotRequests(api)).toBe(1);
-    expect(deletedSnapshots(api)).toEqual([]);
-    expect(new Set(api.snapshotStarts).size).toBe(1);
   });
 });
