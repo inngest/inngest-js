@@ -1,0 +1,83 @@
+{
+  "name": "@inngest/ci",
+  "version": "0.0.0",
+  "description": "Inngest Labs: CI pipelines in TypeScript, run by Inngest on Sandboxes",
+  "type": "module",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "genversion": "genversion --semi --double --es6 ./src/version.ts",
+    "prebuild": "pnpm run genversion",
+    "build": "tsdown --config tsdown.config.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format:check": "biome format .",
+    "release:version": "pnpm run genversion",
+    "postversion": "pnpm run build",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
+    "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-ci.tgz"
+  },
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./index.d.mts",
+        "require": "./index.d.cts"
+      },
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    }
+  },
+  "files": [
+    "*.cjs",
+    "*.mjs",
+    "*.d.cts",
+    "*.d.mts",
+    "*.map",
+    "**/*.cjs",
+    "**/*.mjs",
+    "**/*.d.cts",
+    "**/*.d.mts",
+    "**/*.map",
+    "CHANGELOG.md",
+    "LICENSE.md",
+    "README.md"
+  ],
+  "keywords": [
+    "inngest",
+    "inngest-labs",
+    "ci",
+    "continuous-integration",
+    "sandbox",
+    "pipeline"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/ci#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/ci"
+  },
+  "author": "Inngest Inc. <hello@inngest.com>",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "inngest": "^4.22.0"
+  },
+  "dependencies": {
+    "@octokit/auth-app": "^8.3.1",
+    "@octokit/rest": "^22.0.1",
+    "@octokit/webhooks-types": "^7.6.1",
+    "@standard-schema/spec": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "~24.3.0",
+    "genversion": "^3.1.1",
+    "inngest": "link:../inngest/dist",
+    "tsdown": "^0.23.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  }
+}
