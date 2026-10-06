@@ -103,7 +103,7 @@ It needs the Dev Server from step 3, but not `pnpm dev`. It serves its own funct
 
 ## Run on GitHub
 
-1. Set up a GitHub App as described in the [package README](../../packages/ci/README.md#run-on-github).
+1. Set up a GitHub App as described in the [Run on GitHub docs](https://www.inngest.com/docs/labs/ci/reference#run-on-github).
 2. Set the app's credentials, then send a pull request. `ci/client.ts` reads them.
 
 ```bash
