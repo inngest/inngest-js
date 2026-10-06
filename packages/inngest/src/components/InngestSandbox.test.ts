@@ -9,6 +9,7 @@ import {
   testClientId,
 } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
+import { version } from "../version.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   createSandboxClient,
@@ -383,12 +384,20 @@ describe("step.sandbox", () => {
     });
     expect(rawTool).toHaveBeenNthCalledWith(
       11,
-      { id: "snapshot-create", name: "Create snapshot" },
+      {
+        id: "snapshot-create",
+        name: "Create snapshot",
+        "~origin": `inngest@${version}`,
+      },
       expect.objectContaining({ action: "snapshot.create" }),
     );
     expect(rawTool).toHaveBeenNthCalledWith(
       12,
-      { id: "snapshot-create:wait-until-ready", name: "Wait for snapshot" },
+      {
+        id: "snapshot-create:wait-until-ready",
+        name: "Wait for snapshot",
+        "~origin": `inngest@${version}`,
+      },
       expect.objectContaining({ action: "snapshot.waitUntilReady" }),
     );
     expect(operations[16]).toMatchObject({

@@ -1,4 +1,5 @@
 import type { StepOptionsOrId } from "../../types.ts";
+import { version } from "../../version.ts";
 import { getStepOptions, withSpan } from "../InngestStepTools.ts";
 import { StepError } from "../StepError.ts";
 import {
@@ -455,6 +456,12 @@ const callRawTool = async <A extends SandboxAction>(
   }
 };
 
+/**
+ * Marks the steps the SDK runs on the user's behalf, such as the create and
+ * wait inside `snapshot()`. See `StepOptions["~origin"]`.
+ */
+const sdkOrigin = `inngest@${version}`;
+
 const sandboxTarget = (ref: SandboxRef) => ({ sandbox: ref });
 const processTarget = (sandbox: SandboxRef, process: SandboxProcessRef) => ({
   sandbox,
@@ -614,11 +621,12 @@ export const createDurableSandboxFacade = (
       input: [createOptions],
     });
     // The caller's name labels the span around both steps, so each step is
-    // named for what it does. Step IDs never change, for replay.
+    // named for what it does and marked as the SDK's own work. Step IDs never
+    // change, for replay.
     const stepOptions = getStepOptions(idOrOptions);
     const created = await callRawTool(
       rawToolResolver,
-      { ...stepOptions, name: "Create snapshot" },
+      { ...stepOptions, name: "Create snapshot", "~origin": sdkOrigin },
       createOperation,
     );
     const waitOperation = parseSandboxOperationForAction(
@@ -636,6 +644,7 @@ export const createDurableSandboxFacade = (
         ...stepOptions,
         id: `${stepOptions.id}:wait-until-ready`,
         name: "Wait for snapshot",
+        "~origin": sdkOrigin,
       },
       waitOperation,
     );

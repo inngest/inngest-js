@@ -210,3 +210,106 @@ describe('group["~span"]()', () => {
     }
   });
 });
+
+describe('step "~origin"', () => {
+  const ci = "@inngest/ci@0.1.0";
+  const sdk = "inngest@1.0.0";
+
+  test("sends the step option as the step's origin", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step }) => {
+        await step.run({ id: "marked", "~origin": ci }, () => "marked");
+      },
+    );
+
+    const [marked] = await runSteps(fn, 1);
+
+    expect(marked?.opts).toStrictEqual({ origin: ci });
+  });
+
+  test("inherits the origin of the span it is in", async () => {
+    const setup = { id: "setup", name: "Start sandbox", origin: ci };
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"](setup, () => {
+          return Promise.all([
+            step.run("create", () => "create"),
+            step.sleep("wait", "1s"),
+          ]);
+        });
+      },
+    );
+
+    const steps = await findSteps(fn);
+
+    for (const id of ["create", "wait"]) {
+      expect(steps[id]?.opts?.span).toStrictEqual([setup]);
+      expect(steps[id]?.opts?.origin).toBe(ci);
+    }
+  });
+
+  test("takes the innermost span's origin", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"]({ id: "save", origin: ci }, () => {
+          return Promise.all([
+            step.run("pause", () => "pause"),
+            group["~span"]({ id: "plain" }, () => {
+              return step.run("inherited", () => "inherited");
+            }),
+            group["~span"]({ id: "snap", origin: sdk }, () => {
+              return step.run("create", () => "create");
+            }),
+          ]);
+        });
+      },
+    );
+
+    const steps = await findSteps(fn);
+
+    expect(steps.pause?.opts?.origin).toBe(ci);
+    expect(steps.inherited?.opts?.origin).toBe(ci);
+    expect(steps.create?.opts?.origin).toBe(sdk);
+  });
+
+  test("lets the step option override the span's origin", async () => {
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await group["~span"]({ id: "snap", origin: ci }, () => {
+          return step.run({ id: "create", "~origin": sdk }, () => "create");
+        });
+      },
+    );
+
+    const [create] = await runSteps(fn, 1);
+
+    expect(create?.opts?.origin).toBe(sdk);
+  });
+
+  test("sends no origin key when nothing sets one", async () => {
+    const job = { id: "base", name: "Install", kind: "job" };
+
+    const fn = client.createFunction(
+      { id: "fn", triggers: [{ event: "test" }] },
+      async ({ step, group }) => {
+        await Promise.all([
+          step.sleep("outside", "1s"),
+          group["~span"](job, () => {
+            return step.sleep("inside", "1s");
+          }),
+        ]);
+      },
+    );
+
+    const steps = await findSteps(fn);
+
+    // Strict equality fails on an `origin` key, even an undefined one
+    expect(steps.outside?.opts).toStrictEqual({});
+    expect(steps.inside?.opts).toStrictEqual({ span: [job] });
+  });
+});

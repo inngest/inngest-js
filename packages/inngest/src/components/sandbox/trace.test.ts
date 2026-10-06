@@ -1,5 +1,6 @@
 import { runSteps, testClientId } from "../../test/helpers.ts";
 import type { OutgoingOp } from "../../types.ts";
+import { version } from "../../version.ts";
 import { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { sandboxMiddleware } from "./middleware.ts";
@@ -254,12 +255,18 @@ describe("step.sandbox trace metadata", () => {
       }),
     ]);
 
+    // Only the SDK's own steps inside `snapshot()` are marked, not the
+    // user's calls or the snapshot span itself
     for (const step of [get, exec]) {
       expect(step?.opts ?? {}).not.toHaveProperty("span");
+      expect(step?.opts ?? {}).not.toHaveProperty("origin");
     }
 
     for (const step of [snapshot, wait]) {
-      expect(step?.opts?.span).toEqual([{ id: "snap", name: "Snapshot" }]);
+      expect(step?.opts?.span).toStrictEqual([
+        { id: "snap", name: "Snapshot" },
+      ]);
+      expect(step?.opts?.origin).toBe(`inngest@${version}`);
     }
 
     expect(snapshot?.displayName).toBe("Create snapshot");

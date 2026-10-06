@@ -232,15 +232,26 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
 
 /**
  * Append a span to a span path, naming it by its ID if it has no name. `kind`
- * is only sent when given.
+ * and `origin` are only sent when given.
  */
 const appendSpan = (
   path: (StepSpan & { name: string })[] | undefined,
   span: StepSpan,
 ): (StepSpan & { name: string })[] => {
-  const { id, name = id, kind } = span;
+  const { id, name = id, kind, origin } = span;
 
-  return [...(path ?? []), { id, name, ...(kind ? { kind } : {}) }];
+  return [
+    ...(path ?? []),
+    { id, name, ...(kind ? { kind } : {}), ...(origin ? { origin } : {}) },
+  ];
+};
+
+/**
+ * The origin of the innermost span in `path` that has one, which a step in
+ * that path inherits. See `StepOptions["~origin"]`.
+ */
+const spanOrigin = (path: StepSpan[] | undefined): string | undefined => {
+  return [...(path ?? [])].reverse().find((span) => span.origin)?.origin;
 };
 
 /**
@@ -348,6 +359,13 @@ export const createStepTools = <
 
       if (span) {
         op.opts = { ...op.opts, span };
+      }
+
+      // The step's own origin wins, then the innermost span's
+      const origin = stepOptions["~origin"] ?? spanOrigin(span);
+
+      if (origin) {
+        op.opts = { ...op.opts, origin };
       }
 
       // Propagate experiment context to variant sub-steps
