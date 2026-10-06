@@ -26,7 +26,13 @@ import {
 } from "../pipeline/scope.ts";
 import { inSpan } from "../pipeline/spans.ts";
 import type { MachineConfig } from "../types.ts";
-import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
+import {
+  boundedName,
+  errorMessage,
+  isSandboxNotFound,
+  isSnapshotNotFound,
+  slug,
+} from "../util.ts";
 import type { SnapshotMeta, SnapshotParent } from "./snapshotMeta.ts";
 import {
   parseSnapshotMeta,
@@ -720,6 +726,8 @@ const createSnapshot = async (
       ? await createNamedSnapshot(run, handle, jobPath, stepId, cache)
       : (await handle.sandbox.snapshot(snapshotStep(stepId))).id;
 
+    run.createdSnapshots.add(id);
+
     recordTiming(run, {
       kind: "snapshot",
       path: jobPath,
@@ -930,6 +938,61 @@ export const destroyRunMachines = async (
       }
 
       return { destroyed };
+    },
+  );
+};
+
+/**
+ * Delete the snapshots this run took for `from()`, once the run is over.
+ * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
+ * run only restored never was.
+ *
+ * Best effort, in one step: a snapshot that can't be deleted is logged and
+ * left to expire, and never fails the run.
+ */
+export const deleteRunSnapshots = async (
+  run: CiRunScope,
+  attempt = 0,
+): Promise<void> => {
+  const ids = [...run.createdSnapshots];
+
+  if (ids.length === 0) {
+    return;
+  }
+
+  await run.step.run(
+    {
+      id: `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+      name: "cleanup:snapshots",
+    },
+    async () => {
+      const deleted: string[] = [];
+      const failed: string[] = [];
+
+      for (const id of ids) {
+        try {
+          const snapshot = await run.ci.client.sandboxes.snapshots.get(id);
+
+          if (snapshot) {
+            await snapshot.delete();
+
+            deleted.push(id);
+          }
+        } catch (error) {
+          if (isSnapshotNotFound(error)) {
+            continue;
+          }
+
+          failed.push(id);
+
+          run.ci.logger?.warn(
+            { snapshotId: id, error },
+            "Couldn't delete a snapshot this run took; it will expire on its own",
+          );
+        }
+      }
+
+      return { deleted, failed };
     },
   );
 };

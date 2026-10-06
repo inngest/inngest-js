@@ -210,6 +210,13 @@ export interface CiRunScope {
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
+  /**
+   * Snapshots this run took itself, by ID. They are deleted when the run ends,
+   * so a snapshot a later run can find (a named cache snapshot) or one the run
+   * keeps (`keepOnFailure`) is removed from here, and one it only restored is
+   * never added.
+   */
+  createdSnapshots: Set<string>;
   /** How long the slow steps took, in the order they finished. */
   timings: StepTiming[];
   /** The cached snapshots this run uses, keyed by job ID. */

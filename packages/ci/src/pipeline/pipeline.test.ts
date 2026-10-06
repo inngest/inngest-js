@@ -887,7 +887,8 @@ describe("from()", () => {
       }),
     ).toHaveLength(1);
 
-    expect(api.snapshots.size).toBe(1);
+    // The one snapshot was taken for `from()`, and is deleted with the run.
+    expect(api.snapshots.size).toBe(0);
     expect(api.sandboxes.size).toBe(3);
 
     const cloned = [...api.sandboxes.values()].filter((sandbox) => {

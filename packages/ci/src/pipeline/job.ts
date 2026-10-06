@@ -578,6 +578,11 @@ const jobSteps = async ({
         ? await snapshotJob(run, scope.path)
         : undefined;
 
+    // Kept on purpose, so the run's cleanup leaves it alone.
+    if (keptSnapshotId) {
+      run.createdSnapshots.delete(keptSnapshotId);
+    }
+
     run.summaries.push({
       path: scope.path,
       conclusion,

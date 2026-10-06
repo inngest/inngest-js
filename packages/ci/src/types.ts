@@ -223,6 +223,9 @@ export interface JobConfig<_TInput = void> {
    *
    * The duration is currently ignored: the snapshot is kept for the
    * platform's default retention, whatever you pass.
+   *
+   * Every other snapshot a run takes for `from()` is deleted when the run
+   * ends, unless the job is cached. This one is kept.
    */
   keepOnFailure?: Duration;
   /**

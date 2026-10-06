@@ -29,7 +29,7 @@ import {
 } from "../github/events.ts";
 import { canUser } from "../github/helpers.ts";
 import { commentPermissionFor, type Permission } from "../github/triggers.ts";
-import { destroyRunMachines } from "../machine/machine.ts";
+import { deleteRunSnapshots, destroyRunMachines } from "../machine/machine.ts";
 import type {
   CiSkip,
   CiTrigger,
@@ -205,6 +205,7 @@ const newRunScope = ({
     snapshots: new Map(),
     timings: [],
     cached: new Map(),
+    createdSnapshots: new Set(),
     sandboxes: new Set(),
     summaries: [],
     openChecks: new Map(),
@@ -319,9 +320,11 @@ const runPipelineAttempt = async ({
       });
     }
 
-    // A run that is about to be retried keeps its machines: the retry replays
-    // the memoized machine IDs and needs them alive. The generated cleanup
-    // function covers the case where the retries run out.
+    // A run that is about to be retried keeps its machines and snapshots: the
+    // retry replays the memoized machine and snapshot IDs and needs them
+    // alive. The generated cleanup function covers a run that never gets
+    // here; it finds machines by name, but snapshots carry no run name, so
+    // it can't delete them.
     let retrying = false;
 
     try {
@@ -413,6 +416,7 @@ const runPipelineAttempt = async ({
     } finally {
       if (!retrying) {
         await destroyRunMachines(run, ctx.attempt ?? 0);
+        await deleteRunSnapshots(run, ctx.attempt ?? 0);
       }
     }
   });

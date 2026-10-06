@@ -274,6 +274,22 @@ export const isSandboxNotFound = (error: unknown): boolean => {
 };
 
 /**
+ * Whether the Sandbox API said the snapshot doesn't exist, which is fine when
+ * deleting one that is already gone.
+ */
+export const isSnapshotNotFound = (error: unknown): boolean => {
+  const code = (error as { code?: string } | undefined)?.code;
+
+  const causeCode = (error as { cause?: { code?: string } } | undefined)?.cause
+    ?.code;
+
+  return (
+    code === "sandbox_snapshot_not_found" ||
+    causeCode === "sandbox_snapshot_not_found"
+  );
+};
+
+/**
  * Human-readable duration, like "1m 05s", for check titles.
  */
 export const formatDuration = (ms: number): string => {
