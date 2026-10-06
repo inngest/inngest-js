@@ -299,6 +299,281 @@ describe("step.sandbox trace metadata", () => {
       },
     ]);
     expect(wait?.id).not.toBe(snapshot?.id);
+
+    for (const step of ran) {
+      expect(step.id).toMatch(/^[0-9a-f]{40}$/);
+    }
+    expect(snapshot?.id).not.toBe("snap");
+  });
+
+  test("emits one full entry per step attempt", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    let execCalls = 0;
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === `/v2/sandboxes/${sandboxId}` && method === "GET") {
+        return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname.endsWith("/exec")) {
+        execCalls++;
+        if (execCalls === 1) {
+          return Response.json(
+            { errors: [{ code: "sandbox_unavailable", message: "busy" }] },
+            { status: 503 },
+          );
+        }
+        return Response.json({
+          data: { stdout: "", stderr: "", encoding: "base64", exitCode: 0 },
+        });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-trace-retry", triggers: [{ event: "sandbox/trace" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-box", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        await sandbox.commands.run("test", "npm test");
+      },
+    );
+
+    const first = await runFnWithStack(fn, {});
+    if (first.type !== "step-ran") {
+      throw new Error(`Expected step-ran, got ${first.type}`);
+    }
+    const state = {
+      [first.step.id]: { id: first.step.id, data: first.step.data },
+    };
+
+    const attempts = [];
+    for (let i = 0; i < 2; i++) {
+      const result = await runFnWithStack(fn, state);
+      if (result.type !== "step-ran") {
+        throw new Error(`Expected step-ran, got ${result.type}`);
+      }
+      attempts.push(result.step);
+    }
+
+    const sandboxEntries = (metadata: unknown) => {
+      return ((metadata ?? []) as Array<{ kind: string; values: object }>)
+        .filter(({ kind }) => {
+          return kind === "inngest.sandbox";
+        })
+        .map(({ values }) => {
+          return values;
+        });
+    };
+
+    const [failed, succeeded] = attempts;
+    expect(failed?.error).toBeDefined();
+    expect(sandboxEntries(failed?.metadata)).toEqual([
+      expect.objectContaining({
+        action: "exec",
+        statement_id: failed?.id,
+        error_code: "sandbox_unavailable",
+      }),
+    ]);
+
+    // Entries are folded as merge patches, so a later entry can't clear a key.
+    // Each attempt's entry must stand alone: no error_code once it succeeds.
+    expect(succeeded?.id).toBe(failed?.id);
+    const [success] = sandboxEntries(succeeded?.metadata);
+    expect(sandboxEntries(succeeded?.metadata)).toHaveLength(1);
+    expect(success).toMatchObject({
+      action: "exec",
+      statement_id: succeeded?.id,
+      exit_code: 0,
+    });
+    expect(success).not.toHaveProperty("error_code");
+  });
+});
+
+describe("withSandboxStatement", () => {
+  const processId = "55555555-5555-4555-8555-555555555555";
+  const statementId = sha1().update("test").digest("hex");
+
+  test("names the statement on every step in its scope", () => {
+    const operation = parseSandboxOperation({
+      protocolVersion: 1,
+      action: "process.get",
+      target: { sandbox: sandboxRef, processId },
+      input: [],
+    });
+    const statementScope = {
+      statementId,
+      statementName: "test",
+      statement: "commands.run",
+      sandbox: { id: sandboxId, name: "ci-box" },
+    };
+
+    expect(
+      sandboxTraceMetadata({
+        operation,
+        trace: { statement: "processes.get" },
+        stepId: "step-check",
+        statementScope,
+        outcome: {
+          result: { protocolVersion: 1, action: "process.get", process: null },
+        },
+      }),
+    ).toEqual({
+      version: 1,
+      action: "process.get",
+      statement: "commands.run",
+      statement_id: statementId,
+      role: "internal",
+      statement_name: "test",
+      sandbox_id: sandboxId,
+      sandbox_name: "ci-box",
+      process_id: processId,
+    });
+
+    // A step whose ID is the statement's is the statement's own row.
+    expect(
+      sandboxTraceMetadata({
+        operation,
+        trace: { statement: "processes.get" },
+        stepId: statementId,
+        statementScope,
+        outcome: { error: undefined },
+      }).role,
+    ).toBe("statement");
+  });
+
+  test("groups a command's start, sleeps and polls under one statement", async () => {
+    const { kind: _kind, version: _version, ...sandboxResource } = sandboxRef;
+    const processResource = {
+      id: processId,
+      command: ["npm", "test"],
+      pid: 7,
+      state: "RUNNING",
+      startedAt: now,
+    };
+    const fetchMock: typeof fetch = vi.fn(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
+      const method = init?.method ?? "GET";
+      if (url.pathname === `/v2/sandboxes/${sandboxId}` && method === "GET") {
+        return Response.json({ data: sandboxResource });
+      }
+      if (url.pathname === `/v2/sandboxes/${sandboxId}/processes`) {
+        return Response.json({ data: processResource }, { status: 201 });
+      }
+      if (
+        url.pathname === `/v2/sandboxes/${sandboxId}/processes/${processId}`
+      ) {
+        return Response.json({ data: processResource });
+      }
+      return Response.json(
+        { errors: [{ code: "missing", message: "missing" }] },
+        { status: 404 },
+      );
+    });
+    const client = new Inngest({
+      id: testClientId,
+      signingKey: "signkey-test",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+      middleware: [sandboxMiddleware()],
+    });
+    const fn = client.createFunction(
+      { id: "sandbox-statement", triggers: [{ event: "sandbox/statement" }] },
+      async ({ step }) => {
+        const sandbox = await step.sandbox.get("get-box", sandboxId);
+        if (!sandbox) {
+          throw new Error("Expected sandbox");
+        }
+        await withSandboxStatement(
+          { id: "test", statement: "commands.run", sandbox },
+          async () => {
+            const process = await sandbox.processes.start("test › start", {
+              command: ["npm", "test"],
+            });
+            await step.sleep("test › wait #1", "1s");
+            await sandbox.processes.get("test › check #1", process.id);
+          },
+        );
+        await step.sleep("after", "1s");
+      },
+    );
+
+    const ran: Array<{ id: string; metadata?: unknown; opts?: unknown }> = [];
+    let state: Record<string, { id: string; data: unknown }> = {};
+    for (let i = 0; i < 5; i++) {
+      const result = await runFnWithStack(fn, state, {
+        stackOrder: ran.map(({ id }) => id),
+      });
+      const step =
+        result.type === "step-ran"
+          ? result.step
+          : result.type === "steps-found"
+            ? result.steps[0]
+            : undefined;
+      if (!step) {
+        throw new Error(`Expected a step, got ${result.type}`);
+      }
+      ran.push({ id: step.id, metadata: step.metadata, opts: step.opts });
+      state = { ...state, [step.id]: { id: step.id, data: step.data ?? null } };
+    }
+
+    const [get, start, wait, check, after] = ran;
+    expect(get?.metadata).toMatchObject([
+      { values: { action: "get", role: "statement", statement_id: get?.id } },
+    ]);
+    expect(start?.metadata).toEqual([
+      {
+        kind: "inngest.sandbox",
+        scope: "step",
+        op: "merge",
+        values: {
+          version: 1,
+          action: "process.start",
+          statement: "commands.run",
+          statement_id: statementId,
+          role: "internal",
+          statement_name: "test",
+          sandbox_id: sandboxId,
+          sandbox_name: "ci-box",
+          command: ["npm", "test"],
+          process_id: processId,
+          process_state: "RUNNING",
+        },
+      },
+    ]);
+    expect(wait?.opts).toMatchObject({
+      sandboxStatement: {
+        statement: "commands.run",
+        statement_id: statementId,
+        statement_name: "test",
+        sandbox_id: sandboxId,
+        sandbox_name: "ci-box",
+      },
+    });
+    expect(check?.metadata).toMatchObject([
+      {
+        values: {
+          action: "process.get",
+          statement: "commands.run",
+          statement_id: statementId,
+          role: "internal",
+          statement_name: "test",
+          process_id: processId,
+        },
+      },
+    ]);
+    expect(after?.opts).not.toHaveProperty("sandboxStatement");
   });
 });
 

@@ -45,11 +45,24 @@ export interface SandboxStepTrace {
 /**
  * Values of an `inngest.sandbox` metadata entry. Mirrors `SandboxMetadata` in
  * the Inngest server's `pkg/tracing/metadata/sandbox.go`.
+ *
+ * Each step attempt sends exactly one entry, and it carries the attempt's full
+ * value set. The server folds entries for the same span and kind as merge
+ * patches, which never clear a key that a later entry omits, so an entry must
+ * never rely on an earlier one.
+ *
+ * Values stay flat: scalars and short string arrays only, no nested objects,
+ * so they survive ClickHouse `JSON` and DuckDB `VARIANT` storage unchanged.
  */
 export interface SandboxTraceMetadata {
   version: 1;
   action: SandboxOperationV1["action"];
   statement: string;
+  /**
+   * The hashed step ID of the statement step, not the user's step ID. It's
+   * the trace's `stepID` and the same ID the run metadata table stores as
+   * `step_id`.
+   */
   statement_id: string;
   role: SandboxTraceRole;
   statement_name?: string;
@@ -235,7 +248,8 @@ const resultMetadata = (
 
 /**
  * Describe a sandbox step for the trace: what it did, to which machine, and
- * which user-level statement it belongs to.
+ * which user-level statement it belongs to. The result is the attempt's whole
+ * entry (see `SandboxTraceMetadata`), never a partial update.
  */
 export const sandboxTraceMetadata = ({
   operation,
@@ -247,9 +261,9 @@ export const sandboxTraceMetadata = ({
 }: {
   operation: SandboxOperationV1;
   trace: SandboxStepTrace;
-  /** This step's ID. */
+  /** This step's hashed ID. */
   stepId: string;
-  /** The statement step's ID, for an internal step. */
+  /** The statement step's hashed ID, for an internal step. */
   statementId?: string;
   /**
    * The sandbox statement the step was called in, from
