@@ -7,7 +7,7 @@
 
 `@inngest/ci` turns plain TypeScript functions into CI pipelines. Inngest runs each pipeline as a durable function and each job on its own [Sandbox](https://www.inngest.com/docs/sandboxes/overview), an ephemeral microVM. One run produces one trace that covers the pipeline, its jobs, and every command.
 
-- **Plain TypeScript, not YAML.** Use `if`, loops, `Promise.all`, types, and your own SDKs. [Pipelines](https://www.inngest.com/docs/labs/ci/pipelines)
+- **Plain TypeScript.** Use `if`, loops, `Promise.all`, types, and your own SDKs. [Pipelines](https://www.inngest.com/docs/labs/ci/pipelines)
 - **Durable jobs.** A retry never reruns work that already passed. [Concepts](https://www.inngest.com/docs/labs/ci/concepts)
 - **Jobs that start from other jobs.** `from()` starts a job on a copy of another job's machine. [Machines](https://www.inngest.com/docs/labs/ci/machines#start-a-job-from-another-job)
 - **The same code locally.** Run a pipeline against the Dev Server with your uncommitted changes. [Quick start](https://www.inngest.com/docs/labs/ci/quick-start#5-run-locally)

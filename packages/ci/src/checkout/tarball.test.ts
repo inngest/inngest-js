@@ -107,4 +107,49 @@ describe("buildWorkingTreeTarball", () => {
     expect(readlinkSync(join(dest, "long"))).toBe(longTarget);
     expect(readFileSync(join(dest, "inside"), "utf8")).toBe("real");
   });
+
+  test("extracting over an existing directory updates files and keeps the rest", async () => {
+    const source = join(root, "source");
+    const dest = join(root, "dest");
+
+    mkdirSync(source);
+    mkdirSync(join(dest, "node_modules"), { recursive: true });
+
+    execFileSync("git", ["init", "-q"], { cwd: source });
+
+    writeFileSync(join(source, "a.txt"), "old");
+    writeFileSync(join(source, "gone.txt"), "old");
+    writeFileSync(join(source, "same.txt"), "same");
+
+    writeFileSync(
+      join(root, "first.tar"),
+      await buildWorkingTreeTarball(source),
+    );
+
+    execFileSync("tar", ["-xf", join(root, "first.tar"), "-C", dest]);
+
+    writeFileSync(join(dest, "node_modules", "x"), "installed");
+
+    writeFileSync(join(source, "a.txt"), "new");
+    writeFileSync(join(source, "added.txt"), "added");
+
+    rmSync(join(source, "gone.txt"));
+
+    writeFileSync(
+      join(root, "second.tar"),
+      await buildWorkingTreeTarball(source),
+    );
+
+    execFileSync("tar", ["-xf", join(root, "second.tar"), "-C", dest]);
+
+    expect(readFileSync(join(dest, "a.txt"), "utf8")).toBe("new");
+    expect(readFileSync(join(dest, "added.txt"), "utf8")).toBe("added");
+    expect(readFileSync(join(dest, "same.txt"), "utf8")).toBe("same");
+    expect(readFileSync(join(dest, "node_modules", "x"), "utf8")).toBe(
+      "installed",
+    );
+
+    // Known limitation: a file deleted locally since the first upload lingers.
+    expect(readFileSync(join(dest, "gone.txt"), "utf8")).toBe("old");
+  });
 });

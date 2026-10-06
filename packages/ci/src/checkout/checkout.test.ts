@@ -142,4 +142,114 @@ describe("cloneScript", () => {
 
     expect(git(target, "rev-parse", "HEAD")).toBe(forkSha);
   });
+
+  test("a second run updates the existing checkout and keeps ignored files", () => {
+    writeFileSync(join(origin, ".gitignore"), "node_modules\n");
+    writeFileSync(join(origin, "b.txt"), "b");
+
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "second");
+
+    const first = git(origin, "rev-parse", "HEAD");
+    const target = join(root, "work");
+
+    run(
+      cloneScript({
+        repo: repoContext(first),
+        opts: { history: "full" },
+        target,
+        sha: first,
+      }),
+    );
+
+    mkdirSync(join(target, "node_modules"));
+    writeFileSync(join(target, "node_modules", "x"), "installed");
+
+    writeFileSync(join(origin, "a.txt"), "changed");
+    git(origin, "rm", "-q", "b.txt");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "third");
+
+    const second = git(origin, "rev-parse", "HEAD");
+
+    run(
+      cloneScript({
+        repo: repoContext(second),
+        opts: { history: "full" },
+        target,
+        sha: second,
+      }),
+    );
+
+    expect(git(target, "rev-parse", "HEAD")).toBe(second);
+    expect(readFileSync(join(target, "a.txt"), "utf8")).toBe("changed");
+    expect(existsSync(join(target, "b.txt"))).toBe(false);
+    expect(readFileSync(join(target, "node_modules", "x"), "utf8")).toBe(
+      "installed",
+    );
+  });
+
+  test("the update replaces the remote URL with the fresh one", () => {
+    const target = join(root, "work");
+
+    run(
+      cloneScript({
+        repo: repoContext(sha),
+        opts: { history: "full" },
+        target,
+        sha,
+      }),
+    );
+
+    git(target, "remote", "set-url", "origin", "https://expired.invalid/o/r");
+
+    run(
+      cloneScript({
+        repo: repoContext(sha),
+        opts: {},
+        target,
+        sha,
+      }),
+    );
+
+    expect(git(target, "remote", "get-url", "origin")).toBe(origin);
+  });
+
+  test("a fork pull request update fetches the pull request head", () => {
+    const target = join(root, "work");
+
+    git(origin, "update-ref", "refs/pull/7/head", sha);
+
+    run(
+      cloneScript({
+        repo: repoContext(sha, true),
+        opts: { history: "full" },
+        target,
+        sha,
+      }),
+    );
+
+    git(origin, "checkout", "-q", "-b", "other");
+    writeFileSync(join(origin, "fork.txt"), "from a fork");
+    git(origin, "add", ".");
+    git(origin, "commit", "-q", "-m", "fork change");
+
+    const forkSha = git(origin, "rev-parse", "HEAD");
+
+    git(origin, "update-ref", "refs/pull/7/head", forkSha);
+    git(origin, "checkout", "-q", "main");
+    git(origin, "branch", "-q", "-D", "other");
+
+    run(
+      cloneScript({
+        repo: repoContext(forkSha, true),
+        opts: { history: "full" },
+        target,
+        sha: forkSha,
+      }),
+    );
+
+    expect(git(target, "rev-parse", "HEAD")).toBe(forkSha);
+    expect(readFileSync(join(target, "fork.txt"), "utf8")).toBe("from a fork");
+  });
 });
