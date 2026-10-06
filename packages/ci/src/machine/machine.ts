@@ -201,6 +201,12 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
       let replacement: string | undefined;
 
+      // The failed start still holds `name`, so what replaces it gets
+      // another, and the stuck machine is cleared away meanwhile.
+      await discardFailedStart(run, stepId, name, error);
+
+      const retryName = machineName(run.runId, `${scope.path} retry`);
+
       try {
         await invalidateCached(run, snapshotId);
 
@@ -218,8 +224,8 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
         run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
 
-        sandbox = await tools.create(stepId, {
-          name,
+        sandbox = await tools.create(`${stepId}${scopeSeparator}retry`, {
+          name: retryName,
           snapshotId: replacement,
         });
       } else {
@@ -249,6 +255,75 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   run.machines.set(scope.path, Promise.resolve(handle));
 
   return handle;
+};
+
+/**
+ * Best-effort cleanup of a machine that failed to start. The platform keeps
+ * such a machine (stuck in STARTING) and its name, so it is destroyed here, and
+ * its ID is tracked so the end of the run destroys it if this couldn't.
+ *
+ * Never throws: a machine that can't be cleaned up now must not fail the job.
+ */
+const discardFailedStart = async (
+  run: CiRunScope,
+  stepId: string,
+  name: string,
+  error: unknown,
+): Promise<void> => {
+  const knownId = (error as { cause?: { sandboxId?: string } })?.cause
+    ?.sandboxId;
+
+  try {
+    const found = await run.step.run(
+      {
+        id: `${stepId}${scopeSeparator}discard`,
+        name: "machine:discard",
+      },
+      async (): Promise<{ id?: string }> => {
+        // Errors are swallowed inside the step so it never retries.
+        let id = knownId;
+
+        try {
+          let cursor: string | undefined;
+
+          while (!id) {
+            const page = await run.ci.client.sandboxes.list({
+              ...(cursor ? { cursor } : {}),
+              limit: 100,
+            });
+
+            id = page.items.find(
+              (sandbox: { name: string; status: string }) => {
+                return sandbox.name === name && sandbox.status !== "TERMINATED";
+              },
+            )?.id;
+
+            if (id || !page.page.hasMore) {
+              break;
+            }
+
+            cursor = page.page.cursor;
+          }
+
+          if (id) {
+            const sandbox = await run.ci.client.sandboxes.get(id);
+
+            await sandbox?.destroy();
+          }
+        } catch {
+          // Whatever was found is destroyed again with the run's machines.
+        }
+
+        return id ? { id } : {};
+      },
+    );
+
+    if (found?.id) {
+      run.sandboxes.add(found.id);
+    }
+  } catch {
+    // Best effort only.
+  }
 };
 
 /**

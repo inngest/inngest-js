@@ -876,6 +876,31 @@ describe("what a job says while it starts from a parent", () => {
       }
     });
 
+    test("the child that probed the bad snapshot recovers under a new name and its stuck machine is destroyed", async () => {
+      const { api, result } = await runAll({ bad: true });
+
+      expect(result.type).toBe("function-resolved");
+
+      const stuck = [...api.sandboxes.values()].filter((machine) => {
+        return machine.stuck;
+      });
+
+      expect(stuck).toHaveLength(1);
+      expect(stuck[0]?.status).toBe("TERMINATED");
+
+      expect(
+        [...api.sandboxes.values()].filter((machine) => {
+          return machine.name.endsWith("one-retry");
+        }),
+      ).toHaveLength(1);
+
+      expect(
+        [...api.sandboxes.values()].filter((machine) => {
+          return machine.status === "STARTING";
+        }),
+      ).toHaveLength(0);
+    });
+
     test("a good snapshot costs no extra machines or rebuilds", async () => {
       const { api, result, cachedSnapshot, texts } = await runAll({
         bad: false,
