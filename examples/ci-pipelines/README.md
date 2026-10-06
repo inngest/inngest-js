@@ -7,10 +7,11 @@ Pipelines for a small app, written with [`@inngest/ci`](../../packages/ci) and r
 
 ```
 ci/
-├─ client.ts      Inngest client and createCi
-├─ helpers.ts     plain functions that run commands
-├─ jobs.ts        base, lint, test, build, compat, e2e, two-machines, release
-└─ pipelines.ts   pr, docs, release, deploy, prerelease
+├─ client.ts          Inngest client and createCi
+├─ helpers.ts         plain functions that run commands
+├─ jobs/              one job per file: base, lint, test, build, compat, e2e, two-machines, release
+├─ pipelines/         one pipeline per file: pr, docs, release, deploy, prerelease
+└─ index.ts           imports every pipeline and re-exports ci
 app/              the project the pipelines install, lint, and test
 e2e/              end-to-end cases for @inngest/ci, run on real Sandboxes
 scripts/          github-forwarder.ts forwards real GitHub events
@@ -78,7 +79,7 @@ pnpm run ci --pipeline release --event push      # skipped: ci.local
 1. Run `pnpm run ci pr` again. `base` is cached on `pnpm-lock.yaml`, so its check says `Restored` and no machine starts. The cache lives in memory, so it lasts until you stop `inngest-ci`.
 2. Break a test without committing. Edit `app/src/sum.ts`, then run `pr`. `test` fails with the end of its output on the check.
 3. Run `pr` in two terminals at once. `singleton` cancels the first run.
-4. Make a test flaky. Add `.env({ FLAKY: "1" })` to the `pnpm test` command in `ci/jobs.ts`, then run `pr`. `app/src/sum.test.ts` fails about half the time, and `.retries(1)` runs the command again. The check shows the attempt count and the failure.
+4. Make a test flaky. Add `.env({ FLAKY: "1" })` to the `pnpm test` command in `ci/jobs/test.ts`, then run `pr`. `app/src/sum.test.ts` fails about half the time, and `.retries(1)` runs the command again. The check shows the attempt count and the failure.
 5. Run `pnpm run ci docs` on a change with no documentation. The pipeline returns `ci.skip()` and its check still completes.
 6. On `main`, run `pnpm run ci --pipeline release --event push`. The pipeline returns `ci.skip()` because `ci.local` is true, so nothing is released from your machine.
 
@@ -86,17 +87,17 @@ pnpm run ci --pipeline release --event push      # skipped: ci.local
 
 | File | Look at |
 | --- | --- |
-| `ci/jobs.ts` `base` | A cached job with a nightly refresh |
-| `ci/jobs.ts` `lint`, `test` | `from(base)` starts on a copy of the `base` machine |
-| `ci/jobs.ts` `build` | A job that takes input |
-| `ci/jobs.ts` `compat` | `ci.matrix`, one job per Node version |
-| `ci/jobs.ts` `e2e` | `.background()` and `waitForHttp()` |
-| `ci/jobs.ts` `two-machines` | `sandbox()` for a second machine |
-| `ci/jobs.ts` `release` | `step.waitForEvent` and `github.rest` |
-| `ci/pipelines.ts` `pr` | `singleton`, `changed()`, and `ci.skip()` |
-| `ci/pipelines.ts` `release` | `ci.local` to skip a release |
-| `ci/pipelines.ts` `deploy` | `ci.manual()` with a typed payload |
-| `ci/pipelines.ts` `prerelease` | `github.comment()` with a permission check |
+| `ci/jobs/base.ts` | A cached job with a nightly refresh |
+| `ci/jobs/lint.ts`, `ci/jobs/test.ts` | `from(base)` starts on a copy of the `base` machine |
+| `ci/jobs/build.ts` | A job that takes input |
+| `ci/jobs/compat.ts` | `ci.matrix`, one job per Node version |
+| `ci/jobs/e2e.ts` | `.background()` and `waitForHttp()` |
+| `ci/jobs/two-machines.ts` | `sandbox()` for a second machine |
+| `ci/jobs/release.ts` | `step.waitForEvent` and `github.rest` |
+| `ci/pipelines/pr.ts` | `singleton`, `changed()`, and `ci.skip()` |
+| `ci/pipelines/release.ts` | `ci.local` to skip a release |
+| `ci/pipelines/deploy.ts` | `ci.manual()` with a typed payload |
+| `ci/pipelines/prerelease.ts` | `github.comment()` with a permission check |
 
 ## End-to-end tests
 
