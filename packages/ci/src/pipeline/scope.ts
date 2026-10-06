@@ -68,6 +68,34 @@ export interface MachineHandle {
    * ambiguous start never adopts one of them.
    */
   claimedProcessIds?: Set<string>;
+  /**
+   * The git tree ID of the working tree this machine has, from its last local
+   * `checkout()` or the snapshot it started from. A later `checkout()` uploads
+   * only what changed since.
+   */
+  treeId?: string;
+}
+
+/**
+ * A layer snapshot in the making or made: a parent snapshot plus a large
+ * uploaded change, shared by the jobs that would each have uploaded it.
+ */
+export interface LayerGroup {
+  /** The job whose machine took the layer. */
+  leader: string;
+  /** The layer's snapshot, or `undefined` when none could be made. */
+  snapshot: Promise<string | undefined>;
+}
+
+/** How long a slow step took, for the run's timing summary. */
+export interface StepTiming {
+  /** What was timed: `upload`, `snapshot`, `start`, `layer`. */
+  kind: string;
+  /** The job that waited on it. */
+  path: string;
+  durationMs: number;
+  /** Bytes moved, for an upload. */
+  bytes?: number;
 }
 
 export interface JobSummary {
@@ -154,6 +182,23 @@ export interface CiRunScope {
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
+  /**
+   * The working tree each snapshot holds, by snapshot ID, for snapshots whose
+   * machine did a local `checkout()`. A job that starts from one knows what's
+   * already there.
+   */
+  snapshotTrees: Map<string, string>;
+  /** The jobs that started from each snapshot, by snapshot ID. */
+  snapshotConsumers: Map<string, Set<string>>;
+  /**
+   * Layer snapshots of this run, keyed by parent snapshot, tree ID and
+   * machine size. They live only as long as the run.
+   */
+  layers: Map<string, LayerGroup>;
+  /** Every layer snapshot this run made, deleted when the run ends. */
+  layerSnapshots: Set<string>;
+  /** How long the slow steps took, in the order they finished. */
+  timings: StepTiming[];
   /** Cache entries resolved this run, keyed by job path. */
   cacheEntries: Map<string, CacheEntry | undefined>;
   /** Where each restored cache entry lives, keyed by job path. */
@@ -199,6 +244,8 @@ export interface CiRunScope {
   maxAttempts: number;
   /** Whether Inngest will run the function again after this error. */
   willRetry: (error: unknown) => boolean;
+  /** The run's logger, which writes into the trace. */
+  logger?: { debug?: (...args: unknown[]) => void };
   /** Raw step tools for CI's own steps. IDs are written in full. */
   step: GetStepTools<Inngest.Any>;
   sandboxTools: DurableSandboxTools;
@@ -330,6 +377,15 @@ export const countApi = (api: ApiName): void => {
   if (run) {
     run.apis[api] += 1;
   }
+};
+
+/**
+ * Note how long a slow step took, in the run's timings and its debug log.
+ */
+export const recordTiming = (run: CiRunScope, timing: StepTiming): void => {
+  run.timings.push(timing);
+
+  run.logger?.debug?.({ timing }, `${timing.kind} took ${timing.durationMs}ms`);
 };
 
 export const runInScope = <R>(store: CiStore, fn: () => R): R => {

@@ -11,7 +11,7 @@ import type {
   CiRunScope,
   MachineHandle,
 } from "../pipeline/scope.ts";
-import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
+import { defaultCwd, recordTiming, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
 import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
 
@@ -121,6 +121,29 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
   run.snapshotProbes ??= new Map();
 
+  /** The snapshot the machine ends up started from, if any. */
+  let startedFrom: string | undefined;
+
+  const createFrom = async (
+    id: string,
+    options: Parameters<typeof tools.create>[1],
+  ) => {
+    const began = Date.now();
+    const created = await tools.create(id, options);
+
+    if ("snapshotId" in options && options.snapshotId) {
+      startedFrom = options.snapshotId;
+
+      recordTiming(run, {
+        kind: "start",
+        path: scope.path,
+        durationMs: Date.now() - began,
+      });
+    }
+
+    return created;
+  };
+
   const startFresh = (note: string) => {
     scope.fromSnapshotId = undefined;
     scope.startNote = note;
@@ -159,7 +182,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     );
 
     sandbox = usable
-      ? await tools.create(stepId, { name, snapshotId: usable })
+      ? await createFrom(stepId, { name, snapshotId: usable })
       : await startFresh(`rebuilding ${parentId} · bad snapshot`);
   } else if (snapshotId) {
     run.ci.reporter.activity(
@@ -178,7 +201,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
     run.snapshotProbes.set(snapshotId, outcome.promise);
 
     try {
-      sandbox = await tools.create(stepId, { name, snapshotId });
+      sandbox = await createFrom(stepId, { name, snapshotId });
 
       outcome.resolve(snapshotId);
     } catch (error) {
@@ -224,7 +247,7 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
 
         run.ci.reporter.activity(run, scope.jobPath, scope.startNote);
 
-        sandbox = await tools.create(`${stepId}${scopeSeparator}retry`, {
+        sandbox = await createFrom(`${stepId}${scopeSeparator}retry`, {
           name: retryName,
           snapshotId: replacement,
         });
@@ -251,6 +274,16 @@ const createMachine = async (scope: CiJobScope): Promise<MachineHandle> => {
   ]);
 
   const handle: MachineHandle = { sandbox, name, id: sandbox.id };
+
+  // A machine from a snapshot has the working tree that snapshot was taken
+  // with, which is what lets `checkout()` upload only what changed since.
+  const inherited = startedFrom
+    ? run.snapshotTrees.get(startedFrom)
+    : undefined;
+
+  if (inherited) {
+    handle.treeId = inherited;
+  }
 
   run.machines.set(scope.path, Promise.resolve(handle));
 
@@ -476,9 +509,21 @@ const createSnapshot = async (
   }
 
   try {
+    const began = Date.now();
+
     const snapshot = await handle.sandbox.snapshot(
       `${jobPath}${scopeSeparator}snapshot`,
     );
+
+    recordTiming(run, {
+      kind: "snapshot",
+      path: jobPath,
+      durationMs: Date.now() - began,
+    });
+
+    if (handle.treeId) {
+      run.snapshotTrees.set(snapshot.id, handle.treeId);
+    }
 
     return snapshot.id;
   } catch (error) {
@@ -506,7 +551,7 @@ const createSnapshot = async (
  * snapshots (`sandbox_snapshot_limit_exceeded`). Delete this once neither
  * happens; a real failure should then always surface.
  */
-const isSnapshotUnavailable = (error: unknown): boolean => {
+export const isSnapshotUnavailable = (error: unknown): boolean => {
   const cause = (error as { cause?: { code?: string; status?: number } })
     ?.cause;
 
