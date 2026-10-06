@@ -42,6 +42,7 @@ const fakeRun = (overrides: Partial<CiRunScope> = {}): CiRunScope => {
     jobCalls: new Map(),
     machines: new Map(),
     snapshots: new Map(),
+    createdSnapshots: new Set(),
     cacheEntries: new Map(),
     sandboxes: new Set(),
     summaries: [],

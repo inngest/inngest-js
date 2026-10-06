@@ -308,6 +308,11 @@ export const storeCache = async (
 ): Promise<void> => {
   const { run } = scope;
 
+  // A cache entry's snapshot outlives the run, so a later run can restore it.
+  if (entry.snapshotId) {
+    run.createdSnapshots.delete(entry.snapshotId);
+  }
+
   await run.step.run(
     {
       id: `${scope.path}${scopeSeparator}cache:store`,

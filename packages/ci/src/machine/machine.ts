@@ -13,7 +13,13 @@ import type {
 } from "../pipeline/scope.ts";
 import { defaultCwd, scopeSeparator } from "../pipeline/scope.ts";
 import type { MachineConfig } from "../types.ts";
-import { boundedName, errorMessage, isSandboxNotFound, slug } from "../util.ts";
+import {
+  boundedName,
+  errorMessage,
+  isSandboxNotFound,
+  isSnapshotNotFound,
+  slug,
+} from "../util.ts";
 
 /**
  * Memory is paired with vCPU count, so a job only picks one number.
@@ -192,6 +198,8 @@ const createSnapshot = async (
       `${jobPath}${scopeSeparator}snapshot`,
     );
 
+    run.createdSnapshots.add(snapshot.id);
+
     return snapshot.id;
   } catch (error) {
     if (!isSnapshotUnavailable(error)) {
@@ -290,6 +298,60 @@ export const destroyRunMachines = async (
       }
 
       return { destroyed };
+    },
+  );
+};
+
+/**
+ * Delete the snapshots this run took for `from()`, once the run is over.
+ * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
+ * run only restored never was.
+ *
+ * Best effort, in one step: a snapshot that can't be deleted is logged and
+ * left to expire, and never fails the run.
+ */
+export const deleteRunSnapshots = async (
+  run: CiRunScope,
+  attempt = 0,
+): Promise<void> => {
+  const ids = [...run.createdSnapshots];
+
+  if (ids.length === 0) {
+    return;
+  }
+
+  await run.step.run(
+    {
+      id: `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
+      name: "cleanup:snapshots",
+    },
+    async () => {
+      const deleted: string[] = [];
+      const failed: string[] = [];
+
+      for (const id of ids) {
+        try {
+          const snapshot = await run.ci.client.sandboxes.snapshots.get(id);
+
+          if (snapshot) {
+            await snapshot.delete();
+
+            deleted.push(id);
+          }
+        } catch (error) {
+          if (isSnapshotNotFound(error)) {
+            continue;
+          }
+
+          failed.push(id);
+
+          run.ci.logger?.warn(
+            `Could not delete snapshot ${id}: ${errorMessage(error)}`,
+          );
+        }
+      }
+
+      return { deleted, failed };
     },
   );
 };

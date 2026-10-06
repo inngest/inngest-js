@@ -140,6 +140,12 @@ export interface CiRunScope {
   machines: Map<string, Promise<MachineHandle>>;
   /** Snapshots taken of finished jobs, keyed by job path. */
   snapshots: Map<string, Promise<string | undefined>>;
+  /**
+   * Snapshots this run took itself, by ID. They're deleted when the run ends,
+   * so a snapshot the run keeps (a cache entry, `keepOnFailure`) is removed
+   * from here, and one it only restored is never added.
+   */
+  createdSnapshots: Set<string>;
   /** Cache entries resolved this run, keyed by job path. */
   cacheEntries: Map<string, CacheEntry | undefined>;
   /** Sandbox IDs created in this run, for cleanup. */

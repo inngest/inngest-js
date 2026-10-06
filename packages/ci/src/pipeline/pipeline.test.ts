@@ -777,7 +777,8 @@ describe("from()", () => {
       }),
     ).toHaveLength(1);
 
-    expect(api.snapshots.size).toBe(1);
+    // The one snapshot was taken for `from()`, and is deleted with the run.
+    expect(api.snapshots.size).toBe(0);
     expect(api.sandboxes.size).toBe(3);
 
     const cloned = [...api.sandboxes.values()].filter((sandbox) => {
@@ -2249,5 +2250,312 @@ describe("checks across retries", () => {
 
     expect(ends).toHaveLength(1);
     expect(ends[0]?.values).toMatchObject({ conclusion: "failure" });
+  });
+});
+
+describe("run snapshot cleanup", () => {
+  const cleanupSteps = (stepIds: string[]) => {
+    return stepIds.filter((id) => {
+      return id === "cleanup:snapshots";
+    });
+  };
+
+  test("a from() chain's snapshots are deleted when the run passes", async () => {
+    const { api, ci } = setup();
+    let duringRun = 0;
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job("child", async () => {
+      await from(base);
+
+      await $`pnpm build`;
+    });
+
+    const grandchild = ci.job("grandchild", async () => {
+      await from(child);
+
+      await $`pnpm test`;
+
+      duringRun = Math.max(duringRun, api.snapshots.size);
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await grandchild();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(duringRun).toBe(2);
+    expect(api.snapshots.size).toBe(0);
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+
+  test("a run with no snapshots has no cleanup step", async () => {
+    const { ci } = setup();
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await job();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(cleanupSteps(result.stepIds)).toHaveLength(0);
+  });
+
+  test("snapshots are deleted when the run fails", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job("child", async () => {
+      await from(base);
+
+      throw new Error("boom");
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        await child();
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    expect(api.snapshots.size).toBe(0);
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+
+  test("a cache entry's snapshot is kept, and a later run restoring it keeps it too", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+
+    const runOnce = async () => {
+      const { ci } = setup({ cacheStore: store, api });
+
+      const setupJob = ci.job(
+        { id: "setup", cache: { key: "v1" } },
+        async () => {
+          await $`pnpm install`;
+        },
+      );
+
+      const test = ci.job("test", async () => {
+        await from(setupJob);
+
+        await $`pnpm test`;
+      });
+
+      return runFunction(
+        ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+          await test();
+        }),
+        { event: prEvent },
+      );
+    };
+
+    const first = await runOnce();
+
+    expect(first.type).toBe("function-resolved");
+    expect(api.snapshots.size).toBe(1);
+
+    const [kept] = [...api.snapshots.keys()];
+
+    const second = await runOnce();
+
+    expect(second.type).toBe("function-resolved");
+    expect([...api.snapshots.keys()]).toEqual([kept]);
+    expect(cleanupSteps(first.stepIds)).toHaveLength(0);
+    expect(cleanupSteps(second.stepIds)).toHaveLength(0);
+  });
+
+  test("only the run's own snapshots go when a cached job's sits beside them", async () => {
+    const store = memoryCacheStore();
+    const api = createFakeSandboxApi();
+    const { ci } = setup({ cacheStore: store, api });
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const cached = ci.job({ id: "cached", cache: { key: "v1" } }, async () => {
+      await from(base);
+
+      await $`pnpm build`;
+    });
+
+    const test = ci.job("test", async () => {
+      await from(cached);
+
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await test();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    // `base`'s is deleted; `cached`'s is the cache entry.
+    expect(api.snapshots.size).toBe(1);
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
+  });
+
+  test("a keepOnFailure snapshot is kept on the failing run", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job({ id: "child", keepOnFailure: "1h" }, async () => {
+      await from(base);
+
+      await $`pnpm build`;
+
+      throw new Error("boom");
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 0 },
+      async () => {
+        await child();
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-rejected");
+    // `base`'s snapshot is deleted, the kept one of `child` stays.
+    expect(api.snapshots.size).toBe(1);
+  });
+
+  test("a delete that throws is logged and doesn't fail the run", async () => {
+    const real = createFakeSandboxApi();
+
+    const flaky = {
+      ...real,
+      fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+        const request = new Request(input, init);
+
+        if (
+          request.method === "DELETE" &&
+          request.url.includes("/snapshots/")
+        ) {
+          return new Response(
+            JSON.stringify({
+              errors: [{ code: "internal_error", message: "try later" }],
+            }),
+            { status: 503, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return real.fetch(input, init);
+      }) as typeof real.fetch,
+    };
+
+    const { client, ci } = setup({ api: flaky });
+
+    const warn = vi.spyOn(
+      client.logger as unknown as { warn: (...args: unknown[]) => void },
+      "warn",
+    );
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job("child", async () => {
+      await from(base);
+
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await child();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+    expect(real.snapshots.size).toBe(1);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Could not delete snapshot"),
+    );
+  });
+
+  test("a snapshot that's already gone is fine", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job("child", async () => {
+      await from(base);
+
+      api.snapshots.clear();
+
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await child();
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+  });
+
+  test("nothing is deleted on an attempt that will be retried", async () => {
+    const { api, ci } = setup();
+
+    const base = ci.job("base", async () => {
+      await $`pnpm install`;
+    });
+
+    const child = ci.job("child", async () => {
+      await from(base);
+
+      await $`pnpm test`;
+    });
+
+    let sizeBeforeRetry = -1;
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: prTrigger, retries: 1 },
+      async ({ attempt }) => {
+        await child();
+
+        if (attempt === 0) {
+          sizeBeforeRetry = api.snapshots.size;
+
+          throw new Error("flaky infrastructure");
+        }
+
+        return "ok";
+      },
+    );
+
+    const result = await runFunction(pipeline, { event: prEvent, retries: 1 });
+
+    expect(result.type).toBe("function-resolved");
+    expect(sizeBeforeRetry).toBe(1);
+    expect(api.snapshots.size).toBe(0);
+    expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 });

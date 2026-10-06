@@ -24,6 +24,10 @@ import { snapshotJob } from "./machine.ts";
  * job runs its first command, so a job that starts from another and then
  * waits doesn't pay for a machine while it waits.
  *
+ * The snapshot behind the copy is deleted when the pipeline run ends, unless
+ * the parent is cached (the cache keeps it for later runs) or fails with
+ * `keepOnFailure`.
+ *
  * ```ts
  * const setup = ci.job("setup", async () => {
  *   await checkout();
