@@ -2493,7 +2493,8 @@ describe("run snapshot cleanup", () => {
     expect(real.snapshots.size).toBe(1);
 
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("Could not delete snapshot"),
+      expect.objectContaining({ snapshotId: expect.any(String) }),
+      expect.stringContaining("Couldn't delete a snapshot"),
     );
   });
 

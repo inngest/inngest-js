@@ -346,7 +346,8 @@ export const deleteRunSnapshots = async (
           failed.push(id);
 
           run.ci.logger?.warn(
-            `Could not delete snapshot ${id}: ${errorMessage(error)}`,
+            { snapshotId: id, error },
+            "Couldn't delete a snapshot this run took; it will expire on its own",
           );
         }
       }
