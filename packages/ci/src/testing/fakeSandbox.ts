@@ -96,6 +96,11 @@ export interface FakeSandboxApi {
   snapshots: Map<string, FakeSnapshot>;
   /** Every command or process argv the API was asked to run, in order. */
   commands: string[][];
+  /**
+   * Commands asked of machines and snapshots taken of them, in order, as
+   * `command <argv>` and `snapshot <machine name>`.
+   */
+  timeline: string[];
   /** Every request path, in order. */
   requests: string[];
   /** Every file uploaded to a sandbox, in order. */
@@ -250,6 +255,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
   const processes = new Map<string, FakeProcess>();
   const snapshots = new Map<string, FakeSnapshot>();
   const commands: string[][] = [];
+  const timeline: string[] = [];
   const requests: string[] = [];
   const uploads: FakeSandboxApi["uploads"] = [];
 
@@ -382,6 +388,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     // CI's snapshot metadata is the one file kept: written by its own script,
     // and read with `cat` by a machine's setup.
@@ -432,6 +439,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     };
 
     snapshots.set(snapshot.id, snapshot);
+    timeline.push(`snapshot ${sandbox.name}`);
 
     return snapshot;
   };
@@ -525,6 +533,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     const argv = toArgv(body.command);
 
     commands.push(argv);
+    timeline.push(`command ${argv.join(" ")}`);
 
     const script = scriptFor(argv);
 
@@ -819,6 +828,7 @@ export const createFakeSandboxApi = (): FakeSandboxApi => {
     processes,
     snapshots,
     commands,
+    timeline,
     requests,
     uploads,
     script: (next) => {
