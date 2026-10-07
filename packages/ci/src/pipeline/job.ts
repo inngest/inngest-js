@@ -145,6 +145,7 @@ export const invokeBuild = async ({
   target,
   exclude,
   check,
+  lookup = true,
 }: {
   run: CiRunScope;
   /** The job's path here, which is where the build's activity goes. */
@@ -157,6 +158,8 @@ export const invokeBuild = async ({
   /** A bad snapshot the build must not reuse. */
   exclude?: string;
   check?: CacheBuildData["parent"]["check"];
+  /** Whether to look the snapshot up before invoking. Off when the caller just did. */
+  lookup?: boolean;
 }): Promise<CacheBuildResult> => {
   const origin = matrixOriginOf(config);
   const parent = run.build?.parent;
@@ -182,32 +185,20 @@ export const invokeBuild = async ({
   };
 
   // A snapshot that is already there needs no build run, and no wait behind
-  // the builds that are queued for its name.
-  const hit = await lookupBeforeBuild(
-    run,
-    { id: config.id, path, stepPath },
-    config.cache,
-    target,
-    exclude,
-  );
-
-  if (hit) {
-    return {
-      snapshotId: hit.snapshotId,
-      ...(config.cache ? { cached: hit } : {}),
-      reused: true,
+  // the builds that are queued for its name. A caller that has just looked it
+  // up itself has no use for a second lookup.
+  if (lookup) {
+    const hit = await lookupBeforeBuild(
+      run,
+      { id: config.id, path, stepPath },
+      config.cache,
       target,
-      hadMachine: true,
-      createdSnapshots: [],
-      summary: {
-        path: config.id,
-        conclusion: "success",
-        title: cachedTitle(hit),
-        durationMs: 0,
-        cached: true,
-      },
-      warnings: [],
-    };
+      exclude,
+    );
+
+    if (hit) {
+      return reusedBuild(config, target, hit);
+    }
   }
 
   let output: CacheBuildResult | null;
@@ -231,6 +222,30 @@ export const invokeBuild = async ({
   }
 
   return output;
+};
+
+/** What a build run would have given back, for a snapshot that was already there. */
+export const reusedBuild = (
+  config: JobConfig,
+  target: CacheTarget,
+  hit: CachedSnapshot,
+): CacheBuildResult => {
+  return {
+    snapshotId: hit.snapshotId,
+    ...(config.cache ? { cached: hit } : {}),
+    reused: true,
+    target,
+    hadMachine: true,
+    createdSnapshots: [],
+    summary: {
+      path: config.id,
+      conclusion: "success",
+      title: cachedTitle(hit),
+      durationMs: 0,
+      cached: true,
+    },
+    warnings: [],
+  };
 };
 
 /**

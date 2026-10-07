@@ -6,11 +6,16 @@
  * @module
  */
 
-import type { CacheTarget } from "../cache/cache.ts";
-import { cacheTarget, describeCached, runTarget } from "../cache/cache.ts";
+import type { CachedSnapshot, CacheTarget } from "../cache/cache.ts";
+import { describeCached, lookupParent } from "../cache/cache.ts";
 import { CiUsageError } from "../errors.ts";
 import type { CacheBuildResult } from "../pipeline/cacheBuild.ts";
-import { adoptBuilt, invokeBuild, validateInput } from "../pipeline/job.ts";
+import {
+  adoptBuilt,
+  invokeBuild,
+  reusedBuild,
+  validateInput,
+} from "../pipeline/job.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
 import {
   countApi,
@@ -105,7 +110,9 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
 
   run.ci.reporter.activity(run, scope.jobPath, `waiting for ${job.id}…`);
 
-  const built = await requestBuild({ run, config, input: given });
+  const { target, hit } = await lookupParent(scope, { config, input: given });
+
+  const built = await requestBuild({ run, config, input: given, target, hit });
 
   scope.fromBuilt[job.id] = built;
 
@@ -124,7 +131,8 @@ export async function from(job: AnyJob, input?: unknown): Promise<void> {
         run,
         config,
         input: given,
-        replacing: { snapshotId, target: built.target },
+        target: built.target,
+        replacing: { snapshotId },
       });
 
       scope.fromBuilt[job.id] = rebuilt;
@@ -164,8 +172,8 @@ const buildPathOf = (jobId: string, input: unknown): string => {
 };
 
 /**
- * Ask for a `from()` parent's snapshot: a lookup by name first, then, only on a
- * miss, a build run of its own. Children of
+ * Ask for a `from()` parent's snapshot, after the asking child looked it up
+ * by name: the hit it found, or, on a miss, a build run of its own. Children of
  * one parent share one invoke, which `run.builds` holds as a promise, so
  * whichever child comes first makes no difference to the steps the run plans.
  *
@@ -181,13 +189,19 @@ const requestBuild = ({
   run,
   config,
   input,
+  target,
+  hit,
   replacing,
 }: {
   run: CiRunScope;
   config: JobConfig;
   input: unknown;
-  /** The bad snapshot, and the name the build gave it. */
-  replacing?: { snapshotId: string; target: CacheTarget };
+  /** The parent's key and snapshot name, which every child worked out alike. */
+  target: CacheTarget;
+  /** The snapshot the asking child found, when it found one. */
+  hit?: CachedSnapshot;
+  /** The bad snapshot the build replaces. */
+  replacing?: { snapshotId: string };
 }): Promise<CacheBuildResult> => {
   const base = buildPathOf(config.id, input);
   const path = replacing ? `${base}${rebuildSuffix}` : base;
@@ -198,26 +212,21 @@ const requestBuild = ({
   }
 
   const built = outsideJobs(run, async () => {
-    const target =
-      replacing?.target ??
-      (config.cache
-        ? await cacheTarget(
+    // Every child that asked has just looked the snapshot up itself, so the
+    // build function is the only guard left against a build that raced it.
+    const result =
+      hit && !replacing
+        ? reusedBuild(config, target, hit)
+        : await invokeBuild({
             run,
-            { id: config.id, path: base },
-            config.cache,
+            path: config.id,
+            stepPath: path,
+            config,
             input,
-          )
-        : runTarget(run, config.id, input));
-
-    const result = await invokeBuild({
-      run,
-      path: config.id,
-      stepPath: path,
-      config,
-      input,
-      target,
-      ...(replacing ? { exclude: replacing.snapshotId } : {}),
-    });
+            target,
+            lookup: false,
+            ...(replacing ? { exclude: replacing.snapshotId } : {}),
+          });
 
     adoptBuilt(run, result);
 

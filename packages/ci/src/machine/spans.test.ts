@@ -438,11 +438,13 @@ describe("spans", () => {
     );
 
     // `base` runs in a run of its own, so the pipeline has only the step that
-    // invokes it, outside any job whichever child asks first. Check updates
-    // are in the GitHub span.
+    // invokes it, outside any job whichever child asks first. The child's own
+    // lookup is the first step in its span. Check updates are in the GitHub
+    // span.
     expect(jobOf).toEqual({
       "github › check:pr:start": "github",
       "github › check:test:start": "github",
+      "test › from base": "test",
       "base (from) › build": undefined,
       "test › machine": "test",
       "test › machine › setup": "test",
@@ -469,9 +471,8 @@ describe("spans", () => {
         "  Report test: passed",
         "  Report jobs: ended with the run",
         "  Complete check: pr",
-        "Look up cache",
-        "Build base in its own run",
         "test [job]",
+        "  Start from base",
         "  Start sandbox from base",
         "    Create sandbox",
         "    Prepare workspace",
@@ -492,6 +493,7 @@ describe("spans", () => {
         "      Prepare workspace",
         "    $ pnpm start",
         "      Run and read output",
+        "Build base in its own run",
         "Clean up sandboxes",
         "Clean up snapshots",
       ].join("\n"),
@@ -516,9 +518,8 @@ describe("spans", () => {
         "  Report test: passed <- ci",
         "  Report jobs: ended with the run <- ci",
         "  Complete check: pr <- ci",
-        "Look up cache <- ci",
-        "Build base in its own run <- ci",
         "test [job]",
+        "  Start from base <- ci",
         "  Start sandbox from base <- ci",
         "    Create sandbox <- ci",
         "    Prepare workspace <- ci",
@@ -539,6 +540,7 @@ describe("spans", () => {
         "      Prepare workspace <- ci",
         "    $ pnpm start",
         "      Run and read output <- ci",
+        "Build base in its own run <- ci",
         "Clean up sandboxes <- ci",
         "Clean up snapshots <- ci",
       ].join("\n"),

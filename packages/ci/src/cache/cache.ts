@@ -19,6 +19,7 @@ import type {
   CacheConfig,
   CacheKey,
   CacheKeyPart,
+  JobConfig,
   RepoContext,
 } from "../types.ts";
 import { boundedName, formatRelative, hash, stableStringify } from "../util.ts";
@@ -481,6 +482,67 @@ export const lookupBeforeBuild = async (
   )) as CachedSnapshot | null;
 
   return found ?? undefined;
+};
+
+/**
+ * Look a `from()` parent's snapshot up for the job that starts from it, as the
+ * first memoized step inside that job. One step works out the parent's key and
+ * name, then lists by name once per scope the parent reads, so the job's own
+ * row shows the work from the moment the job is called. A miss is for the
+ * shared build to settle, which looks again when it starts.
+ */
+export const lookupParent = async (
+  scope: CiJobScope,
+  parent: {
+    config: JobConfig;
+    /** The input `from()` was given for the parent. */
+    input: unknown;
+  },
+): Promise<{ target: CacheTarget; hit?: CachedSnapshot }> => {
+  const { run } = scope;
+  const { config, input } = parent;
+
+  if (config.cache) {
+    countApi("cache");
+  }
+
+  const found = (await run.step.run(
+    ciStep(
+      `${scope.path}${scopeSeparator}from ${config.id}`,
+      traceName.startFrom(config.id),
+    ),
+    async () => {
+      await tagStep(run, { kind: "cache", job: scope.path });
+
+      if (!config.cache) {
+        const target = runTarget(run, config.id, input);
+        const hit = await findNamed(run, target.name);
+
+        return { target, hit: hit ?? null };
+      }
+
+      const given = run.build?.jobId === config.id ? run.build : undefined;
+      const ownKey =
+        given?.ownKey ?? (await jobCacheKey(run, config.cache, input));
+
+      const target = {
+        ownKey,
+        name:
+          given?.cacheKey ??
+          snapshotName(
+            cacheScopes(run.repo, config.cache.scope).write,
+            config.id,
+            ownKey,
+          ),
+      };
+
+      const hit = await findInScopes(run, config.id, config.cache, ownKey);
+
+      return { target, hit: hit ?? null };
+    },
+  )) as { target: CacheTarget; hit: CachedSnapshot | null };
+
+  return { target: found.target, ...(found.hit ? { hit: found.hit } : {}) };
 };
 
 /**
