@@ -560,6 +560,10 @@ const jobSteps = async ({
     let checkEndedAt: number | undefined;
 
     if (checked) {
+      // Before the step, not after: a sibling's failure can end the run while
+      // it's in flight, and a job that passed must not be cancelled for it.
+      run.openChecks.delete(scope.path);
+
       checkEndedAt = await checks.jobComplete({
         ...target,
         conclusion: "success",
@@ -572,8 +576,6 @@ const jobSteps = async ({
           ? { annotations: scope.annotations }
           : {}),
       });
-
-      run.openChecks.delete(scope.path);
     }
 
     const endedAt =

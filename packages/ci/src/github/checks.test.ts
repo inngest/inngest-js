@@ -9,7 +9,7 @@ import { describe, expect, test } from "vitest";
 
 import { $ } from "../machine/command.ts";
 import { createCi } from "../pipeline/createCi.ts";
-import type { CiRunScope } from "../pipeline/scope.ts";
+import { type CiRunScope, getRunScope } from "../pipeline/scope.ts";
 import { createCiTestClient } from "../testing/client.ts";
 import { createFakeGitHub } from "../testing/fakeGitHub.ts";
 import { createFakeSandboxApi } from "../testing/fakeSandbox.ts";
@@ -442,6 +442,55 @@ describe("a required check never hangs", () => {
     });
 
     expect(slowCheck?.conclusion).toBe("cancelled");
+  });
+
+  test("a job that passed is no longer open while its check completes", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const ci = createCi(client, { github: consoleReporter() });
+    const openWhenCompleting: boolean[] = [];
+
+    const job = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }] },
+      async () => {
+        const run = getRunScope();
+
+        if (run) {
+          const tools = run.step;
+
+          run.step = new Proxy(tools, {
+            get: (target, key) => {
+              if (key !== "run") {
+                return Reflect.get(target, key);
+              }
+
+              // biome-ignore lint/suspicious/noExplicitAny: passing through
+              return (step: { id: string }, ...rest: any[]) => {
+                if (step.id === "github › check:test:complete") {
+                  openWhenCompleting.push(run.openChecks.has("test"));
+                }
+
+                // biome-ignore lint/suspicious/noExplicitAny: passing through
+                return (target.run as any)(step, ...rest);
+              };
+            },
+          });
+        }
+
+        await job();
+      },
+    );
+
+    await runFunction(pipeline);
+
+    // A sibling failing while the step is in flight would otherwise cancel a
+    // job that passed.
+    expect(openWhenCompleting.length).toBeGreaterThan(0);
+    expect(openWhenCompleting).not.toContain(true);
   });
 
   test("checks held back for a retry are kept in progress in one step", async () => {
