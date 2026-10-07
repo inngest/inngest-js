@@ -320,6 +320,7 @@ describe("step metadata", () => {
       ["github › check:built:complete", { kind: "check", job: "built" }],
       ["start:plain", { kind: "job", job: "plain" }],
       ["end:plain", { kind: "job", job: "plain" }],
+      ["github › check:jobs:complete", { kind: "check" }],
       ["github › check:pr:complete", { kind: "check" }],
     ]);
 

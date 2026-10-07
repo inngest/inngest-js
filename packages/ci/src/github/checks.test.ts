@@ -603,14 +603,16 @@ describe("check run IDs across runs", () => {
 
     await reporter.pipelineComplete({
       run: runA,
-      conclusion: "success",
-      title: "ok",
+      result: () => {
+        return { conclusion: "success", title: "ok" };
+      },
     });
 
     await reporter.pipelineComplete({
       run: runB,
-      conclusion: "success",
-      title: "ok",
+      result: () => {
+        return { conclusion: "success", title: "ok" };
+      },
     });
 
     expect(completed).toEqual([

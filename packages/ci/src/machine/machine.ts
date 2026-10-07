@@ -191,8 +191,6 @@ const createMachine = async (
           ...machineConfig,
         });
 
-    run.sandboxes.add(sandbox.id);
-
     if (options.snapshotId) {
       recordTiming(run, {
         kind: "start",
@@ -412,7 +410,7 @@ const discardStale = async (
 /**
  * Best-effort cleanup of a machine that failed to start. The platform keeps
  * such a machine (stuck in STARTING) and its name, so it is destroyed here, and
- * its ID is tracked so the end of the run destroys it if this couldn't.
+ * the end of the run finds it by its name if this couldn't.
  *
  * Never throws: a machine that can't be cleaned up now must not fail the job.
  */
@@ -426,7 +424,7 @@ const discardFailedStart = async (
     ?.sandboxId;
 
   try {
-    const found = await run.step.run(
+    await run.step.run(
       {
         id: `${stepId}${scopeSeparator}discard`,
         name: traceName.discardMachine,
@@ -463,16 +461,12 @@ const discardFailedStart = async (
             await sandbox?.destroy();
           }
         } catch {
-          // Whatever was found is destroyed again with the run's machines.
+          // The run's cleanup finds it again by its name.
         }
 
         return id ? { id } : {};
       },
     );
-
-    if (found?.id) {
-      run.sandboxes.add(found.id);
-    }
   } catch {
     // Best effort only.
   }
@@ -785,53 +779,32 @@ const isSnapshotUnavailable = (error: unknown): boolean => {
 };
 
 /**
- * Destroy every machine this run created. Tolerates machines that are already
- * gone, because cleanup also runs after failures.
+ * Destroy every machine this run created, which the Sandboxes API lists by the
+ * run's name prefix. Tolerates machines that are already gone, because cleanup
+ * also runs after failures.
+ *
+ * The step is always there and reads the list when it runs: how many machines
+ * exist now depends on how far each sibling got in this request, so a request
+ * that sees none must still plan what another found.
  */
 export const destroyRunMachines = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  // The step is always there and reads the set when it runs: how many
-  // machines exist now depends on how far each sibling got in this request, so
-  // a request that sees none must still plan what another found.
   await run.step.run(
     ciStep(
       `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
       traceName.cleanUpMachines,
     ),
     async () => {
-      const destroyed: string[] = [];
-
-      for (const id of [...run.sandboxes]) {
-        try {
-          const sandbox = await run.ci.client.sandboxes.get(id);
-
-          if (sandbox) {
-            await sandbox.destroy();
-
-            destroyed.push(id);
-          }
-        } catch (error) {
-          // Anything but "not found" fails the step so it retries; ignoring it
-          // would leave a billable machine running.
-          if (!isSandboxNotFound(error)) {
-            throw error;
-          }
-        }
-      }
-
-      // Whatever the in-memory set missed, such as a machine of a job nobody
-      // awaited, is found by the run's name prefix.
-      const swept = await destroyOrphans(run.ci.client, run.runId);
-
-      return { destroyed, swept: swept.destroyed };
+      return destroyOrphans(run.ci.client, run.runId);
     },
   );
 };
 
 /**
- * Delete the snapshots this run took for `from()`, once the run is over.
+ * Delete the snapshots the builds of this run left for it, once the run is
+ * over: those of `from()` parents without a cache, and unnamed fallbacks.
  * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
  * run only restored never was.
  *

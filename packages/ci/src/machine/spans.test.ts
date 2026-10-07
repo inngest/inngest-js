@@ -257,6 +257,7 @@ describe("spans", () => {
       "test › serve › output": serve,
       "test › serve › kill": serve,
       "github › check:test:complete": github,
+      "github › check:jobs:complete": github,
       "github › check:pr:complete": github,
     });
   });
@@ -296,6 +297,7 @@ describe("spans", () => {
       "test › serve › output",
       "test › serve › kill",
       "github › check:test:complete",
+      "github › check:jobs:complete",
       "github › check:pr:complete",
       "pipeline › cleanup",
       "pipeline › cleanup:snapshots",
@@ -320,6 +322,7 @@ describe("spans", () => {
       "test › serve › output #1": "Read output",
       "test › serve › kill": "Stop process",
       "github › check:test:complete": "Report test: passed",
+      "github › check:jobs:complete": "Report jobs: ended with the run",
       "github › check:pr:complete": "Complete check: pr",
       "pipeline › cleanup": "Clean up sandboxes",
     });
@@ -374,6 +377,7 @@ describe("spans", () => {
       "test › fail › check #1",
       "test › fail › output",
       "github › check:test:complete",
+      "github › check:jobs:complete",
       "github › check:pr:complete",
       "pipeline › cleanup",
       "pipeline › cleanup:snapshots",
@@ -447,6 +451,7 @@ describe("spans", () => {
       "test › unit › check #1": "test",
       "test › unit › output": "test",
       "github › check:test:complete": "github",
+      "github › check:jobs:complete": "github",
       "github › check:pr:complete": "github",
     });
   });
@@ -462,6 +467,7 @@ describe("spans", () => {
         "  Create check: pr",
         "  Report test: started",
         "  Report test: passed",
+        "  Report jobs: ended with the run",
         "  Complete check: pr",
         "Build base in its own run",
         "test [job]",
@@ -507,6 +513,7 @@ describe("spans", () => {
         "  Create check: pr <- ci",
         "  Report test: started <- ci",
         "  Report test: passed <- ci",
+        "  Report jobs: ended with the run <- ci",
         "  Complete check: pr <- ci",
         "Build base in its own run <- ci",
         "test [job]",

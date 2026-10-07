@@ -222,8 +222,6 @@ export interface CiRunScope {
   build?: CacheBuildData;
   /** What the build's job ended with, which the build hands back. */
   outcome?: BuildOutcome;
-  /** Sandbox IDs created in this run, for cleanup. */
-  sandboxes: Set<string>;
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
   /**

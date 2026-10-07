@@ -50,8 +50,14 @@ export interface CheckReporter {
   pipelineStart(
     args: { run: CiRunScope } & RunMetadata,
   ): Promise<number | undefined>;
+  /**
+   * Complete the pipeline's check. What it says is read inside the step, when
+   * it runs, because the run's summaries and warnings are only complete then.
+   */
   pipelineComplete(
-    args: { run: CiRunScope } & RunMetadata & CheckResult,
+    args: { run: CiRunScope } & RunMetadata & {
+        result: () => CheckResult;
+      },
   ): Promise<void>;
   /**
    * Start a job's check. Returns when the job started, read inside the step so
@@ -73,12 +79,12 @@ export interface CheckReporter {
    * Complete the checks of every job still open when the run ended, in one
    * step. Which jobs are open depends on how far each sibling got in that
    * request, so one step per job could be found on one request and missing on
-   * the next. Returns the jobs it completed, memoized, or the given jobs when
-   * checks are off.
+   * the next, and the jobs are read inside the step, when it runs. Returns the
+   * jobs it completed, memoized, or the jobs as read when checks are off.
    */
   jobsComplete(args: {
     run: CiRunScope;
-    jobs: ClosingJob[];
+    jobs: () => ClosingJob[];
   }): Promise<Array<Omit<ClosingJob, "summary" | "annotations">>>;
   /**
    * Keep a check in progress with a retry title, because the run will be
@@ -99,7 +105,8 @@ export interface CheckReporter {
    */
   retryingAll(args: {
     run: CiRunScope;
-    jobs: Array<{ jobPath: string; name?: string }>;
+    /** The jobs held back, read inside the step. */
+    jobs: () => Array<{ jobPath: string; name?: string }>;
     title: string;
   }): Promise<void>;
   commandRetry(args: {
@@ -292,21 +299,23 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
     key: string,
     name: string,
     step: { id: string; name: string },
-    result: CheckResult,
+    result: () => CheckResult,
     tag: StepTag,
     metadata?: () => Record<string, unknown>,
   ): Promise<number> => {
     const endedAt = await githubStep(run, step, async () => {
       await tagStep(run, tag, metadata?.());
 
+      const read = result();
+
       await sink.complete({
         run,
         name,
         ...identity(run, key),
-        conclusion: result.conclusion,
-        title: result.title,
-        summary: truncateSummary(result.summary ?? ""),
-        annotations: (result.annotations ?? []).map(normaliseAnnotation),
+        conclusion: read.conclusion,
+        title: read.title,
+        summary: truncateSummary(read.summary ?? ""),
+        annotations: (read.annotations ?? []).map(normaliseAnnotation),
         ...idFor(run, key),
       });
 
@@ -337,7 +346,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       );
     },
 
-    pipelineComplete: async ({ run, metadata, ...result }) => {
+    pipelineComplete: async ({ run, metadata, result }) => {
       if (!run.checkName) {
         return;
       }
@@ -386,18 +395,22 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           id: `github › check:${jobPath}:complete`,
           name: traceName.report(jobPath, traceName.outcome(result.conclusion)),
         },
-        result,
+        () => {
+          return result;
+        },
         { kind: "check", job: jobPath },
       );
     },
 
-    jobsComplete: async ({ run, jobs }) => {
-      const closed = jobs.map(({ jobPath, name, conclusion, title }) => {
-        return { jobPath, ...(name ? { name } : {}), conclusion, title };
-      });
+    jobsComplete: async ({ run, jobs: read }) => {
+      const closing = (jobs: ClosingJob[]) => {
+        return jobs.map(({ jobPath, name, conclusion, title }) => {
+          return { jobPath, ...(name ? { name } : {}), conclusion, title };
+        });
+      };
 
       if (!run.checkName || !run.jobChecks) {
-        return closed;
+        return closing(read());
       }
 
       const step = {
@@ -407,6 +420,8 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
 
       return githubStep(run, step, async () => {
         await tagStep(run, { kind: "check" });
+
+        const jobs = read();
 
         for (const { jobPath, name, ...result } of jobs) {
           await sink.complete({
@@ -421,7 +436,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
           });
         }
 
-        return closed;
+        return closing(jobs);
       });
     },
 
@@ -462,7 +477,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       });
     },
 
-    retryingAll: async ({ run, jobs, title }) => {
+    retryingAll: async ({ run, jobs: read, title }) => {
       if (!run.checkName || !run.jobChecks) {
         return;
       }
@@ -478,7 +493,7 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
       await githubStep(run, step, async () => {
         await tagStep(run, { kind: "check" });
 
-        for (const { jobPath, name } of jobs) {
+        for (const { jobPath, name } of read()) {
           await sink.update?.({
             run,
             name: jobCheckName(run, jobPath, name),

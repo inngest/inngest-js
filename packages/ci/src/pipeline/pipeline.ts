@@ -35,6 +35,8 @@ import {
   destroyRunMachines,
 } from "../machine/machine.ts";
 import type {
+  CheckAnnotation,
+  CheckConclusion,
   CiSkip,
   CiTrigger,
   CiTriggerInput,
@@ -221,7 +223,6 @@ const newRunScope = ({
     jobCalls: new Map(),
     timings: [],
     createdSnapshots: new Set(),
-    sandboxes: new Set(),
     summaries: [],
     jobErrors: [],
     openChecks: new Map(),
@@ -335,70 +336,23 @@ const runPipelineAttempt = async ({
       });
     }
 
-    // A run that is about to be retried keeps its machines and snapshots: the
-    // retry replays the memoized machine and snapshot IDs and needs them
-    // alive. The generated cleanup function covers a run that never gets
-    // here; it finds machines by name, but snapshots carry no run name, so
-    // it can't delete them.
-    let retrying = false;
+    // The handler's outcome is caught here, so what comes after it is the same
+    // steps whether it passed or failed. Which jobs were still running, what
+    // the summaries say and which sandboxes exist all differ between
+    // requests, so each is read inside the step that needs it, never to
+    // decide which steps exist.
+    const outcome = await settle({ run, config, handler, ctx });
 
-    try {
-      const permitted = await checkCommentPermission(run, config);
-
-      if (!permitted) {
-        await completePipeline(run, checks, {
-          conclusion: "neutral",
-          title: "Not permitted",
-          summary: pipelineSummary(run),
-          annotations: run.pipelineAnnotations,
-        });
-
-        return { skipped: "not permitted" };
-      }
-
-      const result = await handler({
-        event: ctx.event,
-        events: ctx.events ?? [ctx.event],
-        runId: ctx.runId,
-        pipelineId: config.id,
-        repo: run.repo,
-        attempt: ctx.attempt ?? 0,
-        logger: ctx.logger ?? console,
-      });
-
-      // Settled jobs, as with `Promise.allSettled`, don't reject the handler,
-      // but a failed job still fails the pipeline.
-      if (run.jobErrors.length > 0) {
-        throw new AggregateError(run.jobErrors, jobsFailed(run.jobErrors));
-      }
-
-      const skip = asSkip(result);
-
-      if (skip) {
-        countApi("skip");
-      }
-
-      await completeDeferredJobChecks(run, checks);
-
-      run.ci.reporter.warnings(run);
-
-      await completePipeline(run, checks, {
-        conclusion: "success",
-        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
-        summary: pipelineSummaryWithReports(run),
-        annotations: run.pipelineAnnotations,
-      });
-
-      return result;
-    } catch (error) {
-      // A failed command's exit code is already recorded in its steps, and a
-      // usage error is the same on every attempt, so retrying the run would
-      // only replay the same failure.
-      const deterministic = isDeterministicFailure(error);
-
-      retrying = !deterministic && run.willRetry(error);
-
-      if (retrying) {
+    if (outcome.kind === "failed") {
+      // A run that is about to be retried keeps its machines and snapshots:
+      // the retry replays the memoized machine and snapshot IDs and needs them
+      // alive. The generated cleanup function covers a run that never gets
+      // here; it finds machines by name, but snapshots carry no run name, so
+      // it can't delete them.
+      if (
+        !isDeterministicFailure(outcome.error) &&
+        run.willRetry(outcome.error)
+      ) {
         // The check steps are memoized, so completing a check as failed now
         // would leave it failed even if the retry passes. They stay in
         // progress until an attempt that's final.
@@ -406,47 +360,168 @@ const runPipelineAttempt = async ({
 
         // One step whatever is held back, because which jobs have a check
         // deferred depends on how far each sibling got in this request.
-        const held = [...run.deferredChecks.entries()].map(
-          ([jobPath, deferred]) => {
-            return {
-              jobPath,
-              ...(deferred.name ? { name: deferred.name } : {}),
-            };
+        await checks.retryingAll({
+          run,
+          jobs: () => {
+            return [...run.deferredChecks.entries()].map(
+              ([jobPath, deferred]) => {
+                return {
+                  jobPath,
+                  ...(deferred.name ? { name: deferred.name } : {}),
+                };
+              },
+            );
           },
-        );
-
-        await checks.retryingAll({ run, jobs: held, title });
+          title,
+        });
 
         await checks.retrying({ run, title });
 
-        throw error;
-      }
-
-      // Jobs that were still running when the run ended would otherwise leave
-      // their checks spinning.
-      await closeJobChecks(run, checks);
-
-      run.ci.reporter.warnings(run);
-
-      await completePipeline(run, checks, {
-        conclusion: conclusionForError(error),
-        title: errorTitle(error, run),
-        summary: pipelineSummaryWithReports(run),
-        annotations: run.pipelineAnnotations,
-      });
-
-      if (deterministic) {
-        throw new NonRetriableError(error.message, { cause: error });
-      }
-
-      throw error;
-    } finally {
-      if (!retrying) {
-        await destroyRunMachines(run, ctx.attempt ?? 0);
-        await deleteRunSnapshots(run, ctx.attempt ?? 0);
+        throw outcome.error;
       }
     }
+
+    // Jobs that were still running when the run ended would otherwise leave
+    // their checks spinning. The run doesn't wait for them: one a person left
+    // unawaited on purpose is cancelled by the run ending.
+    await closeJobChecks(run, checks);
+
+    run.ci.reporter.warnings(run);
+
+    await completePipeline(run, checks, conclusionOf(outcome), () => {
+      return describeOutcome(run, outcome);
+    });
+
+    await destroyRunMachines(run, ctx.attempt ?? 0);
+    await deleteRunSnapshots(run, ctx.attempt ?? 0);
+
+    if (outcome.kind === "failed") {
+      // A failed command's exit code is already recorded in its steps, and a
+      // usage error is the same on every attempt, so retrying the run would
+      // only replay the same failure.
+      if (isDeterministicFailure(outcome.error)) {
+        throw new NonRetriableError(outcome.error.message, {
+          cause: outcome.error,
+        });
+      }
+
+      throw outcome.error;
+    }
+
+    return outcome.kind === "denied"
+      ? { skipped: "not permitted" }
+      : outcome.result;
   });
+};
+
+/** How the handler ended, caught rather than thrown. */
+type Outcome =
+  | { kind: "ran"; result: unknown }
+  | { kind: "denied" }
+  | { kind: "failed"; error: unknown };
+
+/**
+ * Run the handler, and say how it ended instead of throwing, so a failed run
+ * reaches the same end-of-run steps as one that passed.
+ */
+const settle = async ({
+  run,
+  config,
+  handler,
+  ctx,
+}: {
+  run: CiRunScope;
+  config: PipelineConfig;
+  handler: (ctx: PipelineContext) => Promise<unknown>;
+  // biome-ignore lint/suspicious/noExplicitAny: SDK ctx
+  ctx: any;
+}): Promise<Outcome> => {
+  try {
+    const permitted = await checkCommentPermission(run, config);
+
+    if (!permitted) {
+      return { kind: "denied" };
+    }
+
+    const result = await handler({
+      event: ctx.event,
+      events: ctx.events ?? [ctx.event],
+      runId: ctx.runId,
+      pipelineId: config.id,
+      repo: run.repo,
+      attempt: ctx.attempt ?? 0,
+      logger: ctx.logger ?? console,
+    });
+
+    // Settled jobs, as with `Promise.allSettled`, don't reject the handler,
+    // but a failed job still fails the pipeline.
+    if (run.jobErrors.length > 0) {
+      throw new AggregateError(run.jobErrors, jobsFailed(run.jobErrors));
+    }
+
+    if (asSkip(result)) {
+      countApi("skip");
+    }
+
+    return { kind: "ran", result };
+  } catch (error) {
+    return { kind: "failed", error };
+  }
+};
+
+/** What the pipeline's check concludes for an outcome. */
+const conclusionOf = (outcome: Outcome): CheckConclusion => {
+  switch (outcome.kind) {
+    case "ran": {
+      return "success";
+    }
+
+    case "denied": {
+      return "neutral";
+    }
+
+    case "failed": {
+      return conclusionForError(outcome.error);
+    }
+  }
+};
+
+/**
+ * What the pipeline's check says for an outcome. It reads the run's summaries,
+ * warnings and annotations, so it only runs inside the step that completes
+ * the check.
+ */
+const describeOutcome = (
+  run: CiRunScope,
+  outcome: Outcome,
+): { title: string; summary: string; annotations: CheckAnnotation[] } => {
+  switch (outcome.kind) {
+    case "ran": {
+      const skip = asSkip(outcome.result);
+
+      return {
+        title: skip ? `Nothing to do: ${skip.reason}` : summaryTitle(run),
+        summary: pipelineSummaryWithReports(run),
+        annotations: run.pipelineAnnotations,
+      };
+    }
+
+    case "denied": {
+      return {
+        title: "Not permitted",
+        summary: pipelineSummary(run),
+        annotations: run.pipelineAnnotations,
+      };
+    }
+
+    case "failed": {
+      return {
+        title: errorTitle(outcome.error, run),
+        summary: pipelineSummaryWithReports(run),
+        annotations: run.pipelineAnnotations,
+      };
+    }
+  }
 };
 
 /**
@@ -456,16 +531,25 @@ const runPipelineAttempt = async ({
 const completePipeline = async (
   run: CiRunScope,
   checks: CheckReporter,
-  result: Omit<
-    Parameters<CheckReporter["pipelineComplete"]>[0],
-    "run" | "metadata"
-  >,
+  conclusion: CheckConclusion,
+  /** What the check says, read inside the step that completes it. */
+  describe: () => {
+    title: string;
+    summary: string;
+    annotations: CheckAnnotation[];
+  },
 ): Promise<void> => {
   const metadata = () => {
-    return runEndMetadata(run, result.conclusion);
+    return runEndMetadata(run, conclusion);
   };
 
-  await checks.pipelineComplete({ run, ...result, metadata });
+  await checks.pipelineComplete({
+    run,
+    metadata,
+    result: () => {
+      return { conclusion, ...describe() };
+    },
+  });
 
   if (!run.checkName) {
     await metadataStep(run, "ci › metadata:end", metadata);
@@ -620,29 +704,6 @@ const willRetry = (
 /** How many times Inngest retries a function that sets no `retries`. */
 const defaultRetries = 4;
 
-/**
- * Complete the job checks that were held back for a retry that isn't coming
- * after all: the run succeeded around the failed job, or this was the last
- * attempt.
- */
-const completeDeferredJobChecks = async (
-  run: CiRunScope,
-  checks: CheckReporter,
-): Promise<void> => {
-  const deferred = [...run.deferredChecks.entries()];
-
-  run.deferredChecks.clear();
-
-  for (const [jobPath, { name, ...result }] of deferred) {
-    await checks.jobComplete({
-      run,
-      jobPath,
-      ...(name ? { name } : {}),
-      ...result,
-    });
-  }
-};
-
 const cancelledTitle = "Cancelled: the pipeline ended first";
 
 const jobsFailed = (errors: unknown[]): string => {
@@ -650,40 +711,39 @@ const jobsFailed = (errors: unknown[]): string => {
 };
 
 /**
- * Complete the job checks the failed run leaves behind: those held back for a
- * retry that isn't coming, and those of jobs still running.
+ * Complete the job checks the run leaves behind: those held back for a retry
+ * that isn't coming, and those of jobs still running.
  *
  * With `Promise.all`, the first failure ends the run while its siblings are
  * mid-flight, so their checks are marked cancelled rather than left in
- * progress. The siblings keep going while this runs, and how far each got
- * differs between requests, so both lists are read at once and completed in
- * one memoized step.
+ * progress, and so are those of jobs left unawaited. The siblings keep going
+ * while this runs, and how far each got differs between requests, so both
+ * lists are read at once, inside one memoized step.
  */
 const closeJobChecks = async (
   run: CiRunScope,
   checks: CheckReporter,
 ): Promise<void> => {
-  const deferred = [...run.deferredChecks.entries()].map(
-    ([jobPath, { name, ...result }]) => {
-      return { jobPath, ...(name ? { name } : {}), ...result };
-    },
-  );
-
-  const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
-    return {
-      jobPath,
-      ...(name ? { name } : {}),
-      conclusion: "cancelled" as const,
-      title: cancelledTitle,
-    };
-  });
-
-  run.deferredChecks.clear();
-  run.openChecks.clear();
-
   const closed = await checks.jobsComplete({
     run,
-    jobs: [...deferred, ...open],
+    jobs: () => {
+      const deferred = [...run.deferredChecks.entries()].map(
+        ([jobPath, { name, ...result }]) => {
+          return { jobPath, ...(name ? { name } : {}), ...result };
+        },
+      );
+
+      const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
+        return {
+          jobPath,
+          ...(name ? { name } : {}),
+          conclusion: "cancelled" as const,
+          title: cancelledTitle,
+        };
+      });
+
+      return [...deferred, ...open];
+    },
   });
 
   for (const job of closed) {
