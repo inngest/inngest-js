@@ -143,22 +143,6 @@ export const inMachineSpan = <R>(scope: CiJobScope, fn: () => R): R => {
  */
 export const machineSetupScript = `mkdir -p ${defaultCwd} && (ip link set lo up 2>/dev/null || true) && (cat ${snapshotMetaPath} 2>/dev/null || true)`;
 
-const deferred = <T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason: unknown) => void;
-} => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-
-  return { promise, resolve, reject };
-};
-
 /** A machine that has started and been set up. */
 interface Started {
   // biome-ignore lint/suspicious/noExplicitAny: DurableSandbox
@@ -189,8 +173,6 @@ const createMachine = async (
   const machineConfig = resolveMachineConfig(
     scope.config.machine ?? run.machine ?? run.ci.defaultMachine,
   );
-
-  run.snapshotProbes ??= new Map();
 
   /** Create a machine, from a snapshot if one is given, and set it up. */
   const start = async (
@@ -258,46 +240,18 @@ const createMachine = async (
 
   const parentId = scope.fromJobIds[0] ?? "the parent";
   const snapshotId = scope.fromSnapshotId;
-  const probe = snapshotId ? run.snapshotProbes.get(snapshotId) : undefined;
 
   let started: Started;
 
-  if (snapshotId && probe) {
-    // Another job is already finding out whether this snapshot starts, and
-    // can be used, and rebuilding the parent if not. Wait for that instead of
-    // repeating it.
-    run.ci.reporter.activity(run, scope.jobPath, `waiting for ${parentId}…`);
-
-    const usable = await probe;
-
-    if (usable !== snapshotId) {
-      scope.startNote = `starting ${parentId}`;
-    }
-
+  if (snapshotId) {
+    // Every job starting from a snapshot checks it for itself, so what a job
+    // does never depends on whether a sibling got there first. Only the
+    // rebuild of the parent, which each of them awaits, is shared.
     run.ci.reporter.activity(
       run,
       scope.jobPath,
       scope.startNote ?? "creating machine…",
     );
-
-    started = usable
-      ? await start(create, { name, snapshotId: usable })
-      : await startFresh(`rebuilding ${parentId} · bad snapshot`);
-  } else if (snapshotId) {
-    run.ci.reporter.activity(
-      run,
-      scope.jobPath,
-      scope.startNote ?? "creating machine…",
-    );
-
-    const outcome = deferred<string | undefined>();
-
-    // Other jobs may never wait on it, and this job gets the error below.
-    outcome.promise.catch(() => {
-      return undefined;
-    });
-
-    run.snapshotProbes.set(snapshotId, outcome.promise);
 
     let probed: Started | undefined;
 
@@ -308,9 +262,6 @@ const createMachine = async (
       probed = await start(create, { name, snapshotId });
     } catch (error) {
       if (!isStartFailure(error)) {
-        // Not the snapshot's fault, so the others may still try it.
-        outcome.resolve(snapshotId);
-
         throw error;
       }
 
@@ -341,8 +292,6 @@ const createMachine = async (
     }
 
     if (probed && !bad) {
-      outcome.resolve(snapshotId);
-
       started = probed;
     } else {
       run.warnings.push(
@@ -355,23 +304,14 @@ const createMachine = async (
 
       run.ci.reporter.activity(run, scope.jobPath, note);
 
-      let replacement: string | undefined;
+      await deleteSnapshot(
+        run,
+        `${scope.path}${scopeSeparator}cache:delete`,
+        snapshotId,
+      );
 
-      try {
-        await deleteSnapshot(
-          run,
-          `${scope.path}${scopeSeparator}cache:delete`,
-          snapshotId,
-        );
-
-        replacement = await scope.rebuildSnapshot?.();
-      } catch (rebuildError) {
-        outcome.reject(rebuildError);
-
-        throw rebuildError;
-      }
-
-      outcome.resolve(replacement);
+      // Shared: jobs that found the same bad snapshot wait for one rebuild.
+      const replacement = await scope.rebuildSnapshot?.();
 
       if (replacement) {
         scope.startNote = `starting ${parentId}`;

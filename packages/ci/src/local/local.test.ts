@@ -809,7 +809,7 @@ describe("what a job says while it starts from a parent", () => {
       return { api, result, cachedSnapshot, texts };
     };
 
-    test("a bad snapshot is tried once and the parent rebuilt once", async () => {
+    test("each job tries a bad snapshot for itself and the parent is rebuilt once", async () => {
       const { api, result, cachedSnapshot, texts } = await runAll({
         bad: true,
       });
@@ -820,7 +820,9 @@ describe("what a job says while it starts from a parent", () => {
         return id === cachedSnapshot;
       });
 
-      expect(attempts).toHaveLength(1);
+      // No job waits to learn from another whether the snapshot is bad, so
+      // what each does can't depend on which got there first.
+      expect(attempts).toHaveLength(3);
 
       const installs = api.commands.filter((argv) => {
         return argv.join(" ") === "pnpm install";
@@ -850,17 +852,16 @@ describe("what a job says while it starts from a parent", () => {
         return line.includes("rebuilding base · bad snapshot");
       });
 
-      expect(rebuilding).toHaveLength(1);
+      expect(rebuilding).toHaveLength(3);
 
       for (const line of lines) {
-        expect(line.indexOf("waiting for base…")).toBeGreaterThanOrEqual(0);
-        expect(line.indexOf("waiting for base…")).toBeLessThan(
+        expect(line.indexOf("rebuilding base · bad snapshot")).toBeLessThan(
           line.lastIndexOf("starting base"),
         );
       }
     });
 
-    test("the child that probed the bad snapshot recovers under a new name and its stuck machine is destroyed", async () => {
+    test("every child recovers under a new name and its stuck machine is destroyed", async () => {
       const { api, result } = await runAll({ bad: true });
 
       expect(result.type).toBe("function-resolved");
@@ -869,14 +870,19 @@ describe("what a job says while it starts from a parent", () => {
         return machine.stuck;
       });
 
-      expect(stuck).toHaveLength(1);
-      expect(stuck[0]?.status).toBe("TERMINATED");
+      expect(stuck).toHaveLength(3);
+
+      expect(
+        stuck.every((machine) => {
+          return machine.status === "TERMINATED";
+        }),
+      ).toBe(true);
 
       expect(
         [...api.sandboxes.values()].filter((machine) => {
-          return machine.name.endsWith("one-retry");
+          return machine.name.endsWith("-retry");
         }),
-      ).toHaveLength(1);
+      ).toHaveLength(3);
 
       expect(
         [...api.sandboxes.values()].filter((machine) => {

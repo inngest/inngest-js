@@ -235,13 +235,6 @@ export interface CiRunScope {
   /** The cached snapshots this run uses, keyed by job ID. */
   cached: Map<string, CachedJob>;
   /**
-   * One per snapshot a job started from this run. The first job to use a
-   * snapshot starts a machine from it and settles this with the snapshot every
-   * job should use: the same one if it started, or the rebuilt parent's if it
-   * didn't. Jobs that come later wait on it rather than probe again.
-   */
-  snapshotProbes?: Map<string, Promise<string | undefined>>;
-  /**
    * Set when this run is a cache build: one job's snapshot, built for the run
    * that invoked it. It has no checks of its own and reports to that run.
    */
