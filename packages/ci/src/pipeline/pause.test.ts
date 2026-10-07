@@ -321,14 +321,26 @@ describe("CI-owned pause step", () => {
     ]);
   });
 
-  test("a sandbox still PAUSING at the timeout is a warning", async () => {
+  test("a sandbox still PAUSING at the timeout is a warning, not retried", async () => {
+    let pauseRequests = () => {
+      return 0;
+    };
+
     const result = await pauseOf((api) => {
       api.scriptPause(["PAUSING"]);
+
+      pauseRequests = () => {
+        return api.requests.filter((request) => {
+          return request.startsWith("POST ") && request.endsWith("/pause");
+        }).length;
+      };
     });
 
     expect(result.data).toEqual([
       expect.stringContaining("Could not pause `leaf`"),
     ]);
+
+    expect(pauseRequests()).toBe(1);
   });
 
   test("the step keeps its ID", async () => {

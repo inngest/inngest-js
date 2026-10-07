@@ -6,15 +6,17 @@
  * @module
  */
 
+import { NonRetriableError } from "inngest";
 import { isSandboxNotFound } from "../util.ts";
 
 /**
- * How long a pause may wait for the sandbox to report PAUSED. The SDK's
- * default is 5 minutes, and a pause the platform accepts but never completes
- * (the sandbox goes back to STARTING) would hold the whole pipeline that long
- * for what is only an optimisation. A healthy pause takes about 10 seconds.
+ * How long a pause may wait for the sandbox to report PAUSED. A healthy pause
+ * takes 15-20 seconds, but some take over 30. The SDK's default is 5 minutes,
+ * which is too long to hold a pipeline for what is only an optimisation. A
+ * pause that runs out of time isn't retried: the sandbox stays running until
+ * the run's cleanup destroys it.
  */
-export const pauseTimeoutMs = 30_000;
+export const pauseTimeoutMs = 90_000;
 
 /**
  * The pause's timing. Tests shorten it; nothing else changes it.
@@ -67,10 +69,15 @@ const isEnded = (error: unknown): boolean => {
   return /entered (TERMINATING|TERMINATED|STOPPED) before/.test(message);
 };
 
+const errorText = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
+
 /**
  * Pause a sandbox and report how it ended. A sandbox that is gone, or being
  * destroyed, is an outcome (`paused: false`); a sandbox that failed, or is
- * still running or pausing at the timeout, throws.
+ * still running or pausing at the timeout, throws a `NonRetriableError`, so
+ * the step warns once instead of starting the wait over.
  *
  * The SDK's `pause()` requests the pause and then polls, and only stops early
  * for FAILED and TERMINATED, so a sandbox destroyed while pausing would hold it
@@ -147,7 +154,9 @@ export const pauseSandbox = async (
           return gone();
         }
 
-        throw settled.error;
+        throw new NonRetriableError(errorText(settled.error), {
+          cause: settled.error,
+        });
       }
 
       let status: string;
@@ -173,13 +182,13 @@ export const pauseSandbox = async (
       }
 
       if (status === "FAILED") {
-        throw new Error(
+        throw new NonRetriableError(
           `Sandbox entered FAILED before reaching PAUSED (saw ${seen.join(" > ")})`,
         );
       }
 
       if (Date.now() >= deadline) {
-        throw new Error(
+        throw new NonRetriableError(
           `Sandbox did not reach PAUSED within ${timeoutMs} milliseconds (saw ${seen.join(" > ")})`,
         );
       }

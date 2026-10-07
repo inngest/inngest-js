@@ -66,7 +66,7 @@ describe("pauseMachine", () => {
       expect.objectContaining({ timeout: pauseTiming.timeoutMs }),
     );
 
-    expect(pauseTiming.timeoutMs).toBeLessThan(60_000);
+    expect(pauseTiming.timeoutMs).toBeLessThan(5 * 60_000);
   });
 
   test("a pause that fails becomes a warning, not an error", async () => {
