@@ -650,6 +650,8 @@ const jobSteps = async ({
       ...(keptSnapshotId ? { keptSnapshotId } : {}),
     });
 
+    run.jobErrors.push(error);
+
     throw error;
   }
 };

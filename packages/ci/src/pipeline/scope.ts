@@ -251,6 +251,11 @@ export interface CiRunScope {
   /** Job results in call order, for the pipeline check summary. */
   summaries: JobSummary[];
   /**
+   * Every job's error, so a pipeline that settles its jobs instead of failing
+   * on the first, as with `Promise.allSettled`, still fails when one did.
+   */
+  jobErrors: unknown[];
+  /**
    * Job checks that have started and not finished. When a run ends while jobs
    * are still going, these are completed rather than left spinning.
    */

@@ -359,6 +359,44 @@ describe("a required check never hangs", () => {
     expect(pipelineCheck[0]?.title).toContain("something went wrong");
   });
 
+  test("a settled failed job still fails the pipeline", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    api.script([{ match: "pnpm test", exitCode: 1 }]);
+
+    const failing = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const passing = ci.job("lint", async () => {
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }] },
+      async () => {
+        await Promise.allSettled([failing(), passing()]);
+      },
+    );
+
+    const result = await runFunction(pipeline);
+
+    expect(result.type).toBe("function-rejected");
+
+    const completed = (name: string) => {
+      return reporter.history.find((entry) => {
+        return entry.name === name && entry.status === "completed";
+      });
+    };
+
+    expect(completed("pr / lint")?.conclusion).toBe("success");
+    expect(completed("pr / test")?.conclusion).toBe("failure");
+    expect(completed("pr")?.conclusion).toBe("failure");
+  });
+
   test("jobs still running when the run fails are cancelled in one step", async () => {
     const api = createFakeSandboxApi();
     const client = createCiTestClient(api);

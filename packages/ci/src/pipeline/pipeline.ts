@@ -225,6 +225,7 @@ const newRunScope = ({
     createdSnapshots: new Set(),
     sandboxes: new Set(),
     summaries: [],
+    jobErrors: [],
     openChecks: new Map(),
     deferredChecks: new Map(),
     attempt,
@@ -367,6 +368,12 @@ const runPipelineAttempt = async ({
         attempt: ctx.attempt ?? 0,
         logger: ctx.logger ?? console,
       });
+
+      // Settled jobs, as with `Promise.allSettled`, don't reject the handler,
+      // but a failed job still fails the pipeline.
+      if (run.jobErrors.length > 0) {
+        throw new AggregateError(run.jobErrors, jobsFailed(run.jobErrors));
+      }
 
       const skip = asSkip(result);
 
@@ -638,6 +645,10 @@ const completeDeferredJobChecks = async (
 };
 
 const cancelledTitle = "Cancelled: the pipeline ended first";
+
+const jobsFailed = (errors: unknown[]): string => {
+  return `${errors.length} ${errors.length === 1 ? "job" : "jobs"} failed`;
+};
 
 /**
  * Complete the job checks the failed run leaves behind: those held back for a
