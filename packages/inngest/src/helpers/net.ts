@@ -141,9 +141,8 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
           Authorization: `Bearer ${authTokenFallback}`,
         },
       });
-    } catch (err) {
+    } finally {
       void replay?.cancel();
-      throw err;
     }
   } else {
     void replay?.cancel();

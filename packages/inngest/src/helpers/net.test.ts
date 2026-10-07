@@ -315,6 +315,32 @@ describe("fetchWithAuthFallback", () => {
       expect(state.pulled).toBeLessThan(10);
       await vi.waitFor(() => expect(state.cancelled).toBe(true));
     });
+
+    it("should cancel the source stream when the fallback fetch settles", async () => {
+      const { state, stream } = chunkedStream(1000, 1024 * 1024);
+      const fakeFetch = (async (_url, init) => {
+        const headers = init?.headers as Record<string, string>;
+        const body = init?.body as ReadableStream<Uint8Array>;
+        const reader = body.getReader();
+        await reader.read();
+        reader.releaseLock();
+        return new Response(null, {
+          status: headers.Authorization === "Bearer testToken" ? 401 : 200,
+        });
+      }) as typeof fetch;
+
+      const response = await fetchWithAuthFallback({
+        authToken: "testToken",
+        authTokenFallback: "fallbackToken",
+        fetch: fakeFetch,
+        url: "https://example.com",
+        options: { method: "POST", body: stream },
+      });
+
+      expect(response.status).toEqual(200);
+      expect(state.pulled).toBeLessThan(10);
+      await vi.waitFor(() => expect(state.cancelled).toBe(true));
+    });
   });
 });
 
