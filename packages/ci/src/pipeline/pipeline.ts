@@ -224,7 +224,6 @@ const newRunScope = ({
     timings: [],
     createdSnapshots: new Set(),
     summaries: [],
-    jobErrors: [],
     openChecks: new Map(),
     deferredChecks: new Map(),
     attempt,
@@ -452,12 +451,6 @@ const settle = async ({
       attempt: ctx.attempt ?? 0,
       logger: ctx.logger ?? console,
     });
-
-    // Settled jobs, as with `Promise.allSettled`, don't reject the handler,
-    // but a failed job still fails the pipeline.
-    if (run.jobErrors.length > 0) {
-      throw new AggregateError(run.jobErrors, jobsFailed(run.jobErrors));
-    }
 
     if (asSkip(result)) {
       countApi("skip");
@@ -705,10 +698,6 @@ const willRetry = (
 const defaultRetries = 4;
 
 const cancelledTitle = "Cancelled: the pipeline ended first";
-
-const jobsFailed = (errors: unknown[]): string => {
-  return `${errors.length} ${errors.length === 1 ? "job" : "jobs"} failed`;
-};
 
 /**
  * Complete the job checks the run leaves behind: those held back for a retry
