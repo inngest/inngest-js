@@ -395,6 +395,13 @@ const runPipelineAttempt = async ({
 
       return result;
     } catch (error) {
+      // A sibling's failure can end the run before a replay reaches a pause an
+      // earlier request found, which then can't be run ("Could not find
+      // step"). Waiting for the pauses already started lets this request plan
+      // them too. Only a failed run waits, and cleanup below still doesn't
+      // wait on any that are slower.
+      await Promise.allSettled([...run.pauses.values()]);
+
       // A failed command's exit code is already recorded in its steps, and a
       // usage error is the same on every attempt, so retrying the run would
       // only replay the same failure.

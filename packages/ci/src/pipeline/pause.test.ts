@@ -174,6 +174,33 @@ describe("background pause", () => {
     ).toHaveLength(1);
   });
 
+  test("a failed run still reaches the pauses of jobs that finished", async () => {
+    const { api, ci } = setup();
+
+    api.script([{ match: "pnpm build", exitCode: 1, ticks: 2 }]);
+
+    const done = ci.job("done", async () => {
+      await $`pnpm test`;
+    });
+
+    const broken = ci.job("broken", async () => {
+      await $`pnpm build`;
+    });
+
+    const result = await runFunction(
+      ci.pipeline({ id: "pr", on: prTrigger, retries: 0 }, async () => {
+        await Promise.all([done(), broken()]);
+      }),
+      { event: prEvent },
+    );
+
+    expect(result.type).toBe("function-rejected");
+
+    // The failure ends the run in whichever request it is replayed, so the
+    // pause that an earlier request found has to be reached before it ends.
+    expect(result.stepIds).toContain("done › pause");
+  });
+
   test("cleanup destroys without waiting for in-flight pauses", async () => {
     const events: string[] = [];
     let finishPause = () => {};
