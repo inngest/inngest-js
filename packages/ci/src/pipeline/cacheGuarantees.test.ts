@@ -348,7 +348,7 @@ describe("a warm cache", () => {
       runId: "01COLD",
     });
 
-    expect(cold.stepIds).toContain("install (from) › lookup");
+    expect(cold.stepIds).toContain("lint › from install");
     expect(cold.stepIds).toContain("install (from) › build");
     expect(builds()).toBe(1);
 
@@ -358,7 +358,7 @@ describe("a warm cache", () => {
     });
 
     expect(warm.type).toBe("function-resolved");
-    expect(warm.stepIds).toContain("install (from) › lookup");
+    expect(warm.stepIds).toContain("lint › from install");
     expect(warm.stepIds).not.toContain("install (from) › build");
     expect(builds()).toBe(1);
     expect(count(api, "pnpm install")).toBe(1);
@@ -427,5 +427,93 @@ describe("a snapshot that is about to expire", () => {
     });
 
     expect(child?.snapshotId).toBe(replacement?.id);
+  });
+});
+
+describe("jobs that start from one parent", () => {
+  const siblings = (api: Api) => {
+    const { ci } = setup(api);
+
+    const install = ci.job(
+      { id: "install", cache: { key: "v1" } },
+      async () => {
+        await $`pnpm install`;
+      },
+    );
+
+    const startingFrom = (name: string) => {
+      return ci.job(name, async () => {
+        await from(install);
+
+        await $`echo ${name}`;
+      });
+    };
+
+    const a = startingFrom("a");
+    const b = startingFrom("b");
+
+    return ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([a(), b()]);
+    });
+  };
+
+  const buildSteps = (stepIds: string[]) => {
+    return stepIds.filter((stepId) => {
+      return stepId.endsWith("(from) › build");
+    });
+  };
+
+  const lookups = (stepIds: string[]) => {
+    return stepIds.filter((stepId) => {
+      return stepId.endsWith("› from install");
+    });
+  };
+
+  test("each looks the parent up first inside its own job, and one build serves both", async () => {
+    const api = createFakeSandboxApi();
+
+    const result = await runFunction(siblings(api), {
+      event: prEvent,
+      runId: "01COLD",
+    });
+
+    expect(result.type).toBe("function-resolved");
+
+    expect(lookups(result.stepIds).sort()).toEqual([
+      "a › from install",
+      "b › from install",
+    ]);
+
+    expect(buildSteps(result.stepIds)).toEqual(["install (from) › build"]);
+    expect(count(api, "pnpm install")).toBe(1);
+
+    for (const job of ["a", "b"]) {
+      const inJob = result.stepIds.filter((stepId) => {
+        return result.spans[stepId]?.[0]?.id === job;
+      });
+
+      expect(inJob[0]).toBe(`${job} › from install`);
+      expect(result.spans[`${job} › from install`]?.[0]?.name).toBe(job);
+    }
+
+    // Many jobs share the build, so it sits in none of them.
+    expect(result.spans["install (from) › build"] ?? []).toEqual([]);
+  });
+
+  test("a warm hit invokes no build, and each job still looks up once", async () => {
+    const api = createFakeSandboxApi();
+    const pipeline = siblings(api);
+
+    await runFunction(pipeline, { event: prEvent, runId: "01COLD" });
+
+    const warm = await runFunction(pipeline, {
+      event: prEvent,
+      runId: "01WARM",
+    });
+
+    expect(warm.type).toBe("function-resolved");
+    expect(lookups(warm.stepIds)).toHaveLength(2);
+    expect(buildSteps(warm.stepIds)).toEqual([]);
+    expect(count(api, "pnpm install")).toBe(1);
   });
 });
