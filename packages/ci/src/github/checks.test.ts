@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from "vitest";
 
+import { $ } from "../machine/command.ts";
 import { createCi } from "../pipeline/createCi.ts";
 import type { CiRunScope } from "../pipeline/scope.ts";
 import { createCiTestClient } from "../testing/client.ts";
@@ -356,6 +357,53 @@ describe("a required check never hangs", () => {
     expect(pipelineCheck).toHaveLength(1);
     expect(pipelineCheck[0]?.conclusion).toBe("failure");
     expect(pipelineCheck[0]?.title).toContain("something went wrong");
+  });
+
+  test("jobs still running when the run fails are cancelled in one step", async () => {
+    const api = createFakeSandboxApi();
+    const client = createCiTestClient(api);
+    const reporter = consoleReporter();
+    const ci = createCi(client, { github: reporter });
+
+    api.script([
+      { match: "pnpm test", exitCode: 1 },
+      { match: "pnpm build", ticks: 50 },
+    ]);
+
+    const failing = ci.job("test", async () => {
+      await $`pnpm test`;
+    });
+
+    const slow = ci.job("slow", async () => {
+      await $`pnpm build`;
+    });
+
+    const pipeline = ci.pipeline(
+      { id: "pr", on: [{ event: "test/event" }] },
+      async () => {
+        await Promise.all([failing(), slow()]);
+      },
+    );
+
+    const result = await runFunction(pipeline);
+
+    expect(result.type).toBe("function-rejected");
+
+    // One step whatever was open, so no request can ask for a per-job step
+    // that a later request, with its siblings further along, wouldn't reach.
+    expect(
+      result.stepIds.filter((id) => {
+        return id === "github › check:jobs:complete";
+      }),
+    ).toHaveLength(1);
+
+    expect(result.stepIds).not.toContain("github › check:slow:complete");
+
+    const slowCheck = reporter.history.find((entry) => {
+      return entry.name === "pr / slow" && entry.status === "completed";
+    });
+
+    expect(slowCheck?.conclusion).toBe("cancelled");
   });
 });
 

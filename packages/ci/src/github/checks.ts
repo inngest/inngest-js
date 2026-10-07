@@ -33,6 +33,13 @@ interface CheckResult {
   annotations?: CheckAnnotation[] | undefined;
 }
 
+/** A job whose check is completed when the run ends. */
+export interface ClosingJob extends CheckResult {
+  jobPath: string;
+  /** The check's name, when the job set one. */
+  name?: string;
+}
+
 /** Run metadata to attach to the pipeline check's step, read inside the step. */
 interface RunMetadata {
   metadata?: () => Record<string, unknown>;
@@ -65,6 +72,17 @@ export interface CheckReporter {
   jobComplete(
     args: { run: CiRunScope; jobPath: string; name?: string } & CheckResult,
   ): Promise<number | undefined>;
+  /**
+   * Complete the checks of every job still open when the run ended, in one
+   * step. Which jobs are open depends on how far each sibling got in that
+   * request, so one step per job could be found on one request and missing on
+   * the next. Returns the jobs it completed, memoized, or the given jobs when
+   * checks are off.
+   */
+  jobsComplete(args: {
+    run: CiRunScope;
+    jobs: ClosingJob[];
+  }): Promise<Array<Omit<ClosingJob, "summary" | "annotations">>>;
   /**
    * Keep a check in progress with a retry title, because the run will be
    * attempted again and its own completion belongs to a later attempt. With no
@@ -371,6 +389,40 @@ export const createCheckReporter = (sink: CheckSink): CheckReporter => {
         result,
         { kind: "check", job: jobPath },
       );
+    },
+
+    jobsComplete: async ({ run, jobs }) => {
+      const closed = jobs.map(({ jobPath, name, conclusion, title }) => {
+        return { jobPath, ...(name ? { name } : {}), conclusion, title };
+      });
+
+      if (!run.checkName || !run.jobChecks) {
+        return closed;
+      }
+
+      const step = {
+        id: "github › check:jobs:complete",
+        name: traceName.report("jobs", "ended with the run"),
+      };
+
+      return githubStep(run, step, async () => {
+        await tagStep(run, { kind: "check" });
+
+        for (const { jobPath, name, ...result } of jobs) {
+          await sink.complete({
+            run,
+            name: jobCheckName(run, jobPath, name),
+            ...identity(run, jobPath),
+            conclusion: result.conclusion,
+            title: result.title,
+            summary: truncateSummary(result.summary ?? ""),
+            annotations: (result.annotations ?? []).map(normaliseAnnotation),
+            ...idFor(run, jobPath),
+          });
+        }
+
+        return closed;
+      });
     },
 
     retrying: async ({ run, jobPath, name, title }) => {

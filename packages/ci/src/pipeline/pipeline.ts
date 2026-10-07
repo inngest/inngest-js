@@ -415,11 +415,9 @@ const runPipelineAttempt = async ({
         throw error;
       }
 
-      await completeDeferredJobChecks(run, checks);
-
       // Jobs that were still running when the run ended would otherwise leave
       // their checks spinning.
-      await closeOpenJobChecks(run, checks);
+      await closeJobChecks(run, checks);
 
       addSlowParentHints(run);
       run.ci.reporter.warnings(run);
@@ -639,35 +637,54 @@ const completeDeferredJobChecks = async (
   }
 };
 
+const cancelledTitle = "Cancelled: the pipeline ended first";
+
 /**
- * Complete the job checks of anything still running when the run ended.
+ * Complete the job checks the failed run leaves behind: those held back for a
+ * retry that isn't coming, and those of jobs still running.
  *
  * With `Promise.all`, the first failure ends the run while its siblings are
- * mid-flight; their checks are marked cancelled rather than left in progress.
+ * mid-flight, so their checks are marked cancelled rather than left in
+ * progress. The siblings keep going while this runs, and how far each got
+ * differs between requests, so both lists are read at once and completed in
+ * one memoized step.
  */
-const closeOpenJobChecks = async (
+const closeJobChecks = async (
   run: CiRunScope,
   checks: CheckReporter,
 ): Promise<void> => {
-  const open = [...run.openChecks.entries()];
+  const deferred = [...run.deferredChecks.entries()].map(
+    ([jobPath, { name, ...result }]) => {
+      return { jobPath, ...(name ? { name } : {}), ...result };
+    },
+  );
 
-  run.openChecks.clear();
-
-  for (const [jobPath, name] of open) {
-    run.summaries.push({
-      path: jobPath,
-      conclusion: "cancelled",
-      title: "Cancelled: the pipeline ended first",
-      durationMs: 0,
-    });
-
-    await checks.jobComplete({
-      run,
+  const open = [...run.openChecks.entries()].map(([jobPath, name]) => {
+    return {
       jobPath,
       ...(name ? { name } : {}),
-      conclusion: "cancelled",
-      title: "Cancelled: the pipeline ended first",
-    });
+      conclusion: "cancelled" as const,
+      title: cancelledTitle,
+    };
+  });
+
+  run.deferredChecks.clear();
+  run.openChecks.clear();
+
+  const closed = await checks.jobsComplete({
+    run,
+    jobs: [...deferred, ...open],
+  });
+
+  for (const job of closed) {
+    if (job.conclusion === "cancelled" && job.title === cancelledTitle) {
+      run.summaries.push({
+        path: job.jobPath,
+        conclusion: "cancelled",
+        title: cancelledTitle,
+        durationMs: 0,
+      });
+    }
   }
 };
 
