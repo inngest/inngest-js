@@ -84,6 +84,17 @@ export namespace InngestApi {
   }
 }
 
+/**
+ * The most characters of a response body to include in an error message, so
+ * that a large gateway error page doesn't produce an oversized error.
+ */
+const maxErrorBodyLength = 1000;
+
+const truncateErrorBody = (body: string): string =>
+  body.length > maxErrorBodyLength
+    ? `${body.slice(0, maxErrorBodyLength)}... (truncated)`
+    : body;
+
 export class InngestApi {
   private readonly _signingKey: () => string | undefined;
   private readonly _signingKeyFallback: () => string | undefined;
@@ -179,7 +190,12 @@ export class InngestApi {
     res: Response,
     action: string,
   ): Promise<ErrorResponse> {
-    const text = await res.text().catch(() => "");
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (error) {
+      text = `failed to read the response body: ${getErrorMessage(error, "unknown error")}`;
+    }
 
     let json: unknown;
     try {
@@ -193,12 +209,13 @@ export class InngestApi {
       return parsed.data;
     }
 
-    const message = z.object({ error: z.string() }).safeParse(json);
+    // Keep the whole body unless it holds nothing but an error message.
+    const message = z.object({ error: z.string() }).strict().safeParse(json);
+    const detail = message.success ? message.data.error : text;
+    const statusText = res.statusText ? ` ${res.statusText}` : "";
 
     return {
-      error: message.success
-        ? message.data.error
-        : `Failed to retrieve ${action}: ${res.status} ${res.statusText} - ${text}`,
+      error: `Failed to retrieve ${action}: ${res.status}${statusText} - ${truncateErrorBody(detail)}`,
       status: res.status,
     };
   }
