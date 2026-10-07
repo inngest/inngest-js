@@ -967,9 +967,12 @@ export const destroyRunMachines = async (
   // and a pause's snapshot doesn't count toward the snapshot quota.
   run.destroyingMachines = true;
 
-  // The step is always there and reads the set when it runs: how many
-  // machines exist now depends on how far each sibling got in this request, so
-  // a request that sees none must still plan what another found.
+  const ids = [...run.sandboxes];
+
+  if (ids.length === 0) {
+    return;
+  }
+
   await run.step.run(
     ciStep(
       `pipeline${scopeSeparator}cleanup${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
@@ -978,7 +981,7 @@ export const destroyRunMachines = async (
     async () => {
       const destroyed: string[] = [];
 
-      for (const id of [...run.sandboxes]) {
+      for (const id of ids) {
         try {
           const sandbox = await run.ci.client.sandboxes.get(id);
 
@@ -1013,8 +1016,12 @@ export const deleteRunSnapshots = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
-  // Always there, and reads the set when it runs, for the reason cleaning up
-  // machines is.
+  const ids = [...run.createdSnapshots];
+
+  if (ids.length === 0) {
+    return;
+  }
+
   await run.step.run(
     ciStep(
       `pipeline${scopeSeparator}cleanup:snapshots${attempt > 0 ? ` (attempt ${attempt})` : ""}`,
@@ -1024,7 +1031,7 @@ export const deleteRunSnapshots = async (
       const deleted: string[] = [];
       const failed: string[] = [];
 
-      for (const id of [...run.createdSnapshots]) {
+      for (const id of ids) {
         try {
           const snapshot = await run.ci.client.sandboxes.snapshots.get(id);
 
