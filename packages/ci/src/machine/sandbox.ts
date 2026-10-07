@@ -1,0 +1,99 @@
+/**
+ * The `sandbox()` API: extra machines a job can run alongside its own.
+ *
+ * @module
+ */
+
+import { waitForHttp, waitForPort } from "../checkout/wait.ts";
+import type { CiJobScope } from "../pipeline/scope.ts";
+import {
+  countApi,
+  requireJobScope,
+  scopeSeparator,
+} from "../pipeline/scope.ts";
+import type { Duration, ExtraMachine, MachineConfig } from "../types.ts";
+import { createCommandTag } from "./command.ts";
+import { ensureMachine } from "./machine.ts";
+
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * Create another machine for this job, for work that needs several alive at
+ * the same time.
+ *
+ * ```ts
+ * const e2e = ci.job("e2e", async () => {
+ *   const api = await sandbox("api");
+ *   await api.$`pnpm start`.background();
+ *   await api.waitForPort(3000);
+ *
+ *   await checkout();
+ *   await $`pnpm exec playwright test`; // the job's own machine
+ * });
+ * ```
+ *
+ * `$` on its own still means the job's machine, and extra machines are
+ * destroyed with the pipeline. They appear under the job in the trace.
+ *
+ * | If the work… | Use |
+ * | --- | --- |
+ * | is independent, like lint and test | separate jobs |
+ * | follows on from earlier work | separate jobs, with `from()` |
+ * | needs several machines at once | one job, with `sandbox()` |
+ *
+ * @throws {CiUsageError} When called outside a job.
+ */
+export const sandbox = async (
+  /** Unique within the job. It names the machine in the trace. */
+  name: string,
+  /** Machine settings, defaulting to the job's. */
+  config: MachineConfig = {},
+): Promise<ExtraMachine> => {
+  const job = requireJobScope("sandbox");
+
+  countApi("sandbox");
+  const path = `${job.jobPath}${scopeSeparator}${name}`;
+
+  const existing = job.extras?.get(name);
+
+  const scope: CiJobScope =
+    existing ??
+    ({
+      run: job.run,
+      path,
+      jobPath: job.jobPath,
+      config: { ...job.config, id: path, machine: config },
+      fromCalled: false,
+      fromJobIds: [],
+      fromInputs: {},
+      annotations: [],
+      summaries: [],
+      env: {},
+      secrets: [],
+    } satisfies CiJobScope);
+
+  job.extras ??= new Map();
+
+  job.extras.set(name, scope);
+
+  // The machine is created up front here, because callers asked for it by
+  // name rather than by running a command.
+  await ensureMachine(scope);
+
+  return {
+    name,
+    $: createCommandTag(() => {
+      return scope;
+    }),
+    waitForPort: (port: number, opts?: { timeout?: Duration }) => {
+      return waitForPort(port, opts ?? {}, scope);
+    },
+    waitForHttp: (
+      url: string,
+      opts?: { timeout?: Duration; status?: number },
+    ) => {
+      return waitForHttp(url, opts ?? {}, scope);
+    },
+  };
+};

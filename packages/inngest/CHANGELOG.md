@@ -1,5 +1,11 @@
 # inngest
 
+## 4.22.0
+
+### Minor Changes
+
+- [#1749](https://github.com/inngest/inngest-js/pull/1749) [`817d10f2`](https://github.com/inngest/inngest-js/commit/817d10f203bd4ae187c9e761d2ab862819185c42) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export `runWithAsyncCtx` from `inngest/experimental`
+
 ## 4.21.1
 
 ### Patch Changes

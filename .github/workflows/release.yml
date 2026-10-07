@@ -67,6 +67,7 @@ jobs:
               {package: "ai"},
               {package: "realtime", dist_dir: "dist"},
               {package: "otel", dist_dir: "dist"},
+              {package: "ci", dist_dir: "dist"},
               {package: "middleware-validation", dist_dir: "dist"}
             ] | map(. as $pkg | select($labelList | index("prerelease/" + $pkg.package)))
           ')
@@ -94,7 +95,7 @@ jobs:
       - uses: ./.github/actions/setup-and-build
         with:
           install-dependencies: true
-          build: ${{ matrix.package == 'inngest' }}
+          build: ${{ matrix.package == 'inngest' || matrix.package == 'ci' }}
 
       - run: pnpm build
         if: matrix.package != 'inngest'

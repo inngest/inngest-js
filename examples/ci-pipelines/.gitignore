@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.inngest/
+e2e/

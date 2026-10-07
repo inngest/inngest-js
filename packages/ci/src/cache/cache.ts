@@ -1,0 +1,392 @@
+/**
+ * The in-memory cache store and the machinery behind a job's `cache`
+ * option: keys, lookups, storing entries, and the `files()` key helper.
+ *
+ * @module
+ */
+
+import { tagStep } from "../pipeline/metadata.ts";
+import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
+import { countApi, scopeSeparator } from "../pipeline/scope.ts";
+import type {
+  CacheConfig,
+  CacheEntry,
+  CacheKey,
+  CacheKeyPart,
+  CacheStore,
+  RepoContext,
+} from "../types.ts";
+import { hash, stableStringify } from "../util.ts";
+
+/**
+ * Keep cache entries in memory, for as long as the process lives. A miss
+ * just rebuilds the job. Internal: named Sandboxes snapshots replace this.
+ */
+export const memoryCacheStore = (): CacheStore => {
+  const entries = new Map<string, CacheEntry>();
+
+  return {
+    get: async (key) => {
+      return entries.get(key);
+    },
+    set: async (key, entry) => {
+      entries.set(key, entry);
+    },
+  };
+};
+
+/**
+ * Where a job reads and writes cache entries.
+ *
+ * With the default `"branch"` scope, a pull request reads entries built on the
+ * branch it targets and writes its own, so one PR can't poison another. A
+ * pull request's scope has a `:`, which a branch name can't contain, so a
+ * branch called `pr-4` never shares it.
+ */
+export const cacheScopes = (
+  repo: RepoContext | undefined,
+  scope: CacheConfig["scope"],
+): { read: string[]; write: string } => {
+  if (scope === "global" || !repo) {
+    return { read: ["global"], write: "global" };
+  }
+
+  const base = repo.baseRef ?? "default";
+
+  if (repo.pullRequest) {
+    const own = `pr:${repo.pullRequest.number}`;
+
+    return { read: [own, base], write: own };
+  }
+
+  const branch = repo.ref?.replace(/^refs\/heads\//, "") ?? base;
+
+  return { read: [branch], write: branch };
+};
+
+export const storeKey = (scope: string, jobId: string, key: string): string => {
+  return `${scope}:${jobId}:${key}`;
+};
+
+/**
+ * Resolve the parts of a cache key into a single hash.
+ *
+ * `files()` parts are resolved against the repository: the git tree for the
+ * run's commit on GitHub, or the working tree locally, so a key changes
+ * exactly when the matched files do.
+ */
+export const resolveCacheKey = async (
+  run: CiRunScope,
+  key: CacheKey | undefined,
+): Promise<string> => {
+  if (key === undefined) {
+    return "";
+  }
+
+  if (typeof key === "function") {
+    return hash(await key());
+  }
+
+  const parts = Array.isArray(key) ? key : [key];
+  const resolved: string[] = [];
+
+  for (const part of parts) {
+    if (typeof part === "string") {
+      resolved.push(part);
+
+      continue;
+    }
+
+    resolved.push(await resolveFilesPart(run, part));
+  }
+
+  return hash(resolved.join("\0"));
+};
+
+const resolveFilesPart = async (
+  run: CiRunScope,
+  part: CacheKeyPart,
+): Promise<string> => {
+  const repo = run.repo;
+
+  if (repo?.local && process.env.INNGEST_CI_GITHUB !== "live") {
+    const { hashLocalFiles } = await import("./localCache.ts");
+
+    return hashLocalFiles(repo.local.path, part.patterns);
+  }
+
+  if (!repo) {
+    return `files:${part.patterns.join(",")}`;
+  }
+
+  const { rest } = await import("../github/rest.ts");
+  const { filterPaths } = await import("../util.ts");
+
+  const tree = await rest.git.getTree({
+    tree_sha: repo.sha,
+    recursive: "1",
+  });
+
+  const entries = (tree.tree ?? [])
+    .filter((entry) => {
+      return entry.type === "blob" && entry.path;
+    })
+    .map((entry) => {
+      return { path: entry.path as string, sha: entry.sha ?? "" };
+    });
+
+  const matched = filterPaths(
+    entries.map((entry) => {
+      return entry.path;
+    }),
+    { include: part.patterns },
+  );
+
+  const byPath = new Map(
+    entries.map((entry) => {
+      return [entry.path, entry.sha];
+    }),
+  );
+
+  return hash(
+    matched
+      .sort()
+      .map((path) => {
+        return `${path}:${byPath.get(path) ?? ""}`;
+      })
+      .join("\n"),
+  );
+};
+
+/**
+ * A job's own cache key: its resolved key, with the input it was called with
+ * folded in, since the same key with a different input is a different job.
+ * Lookups, stores and parent keys all go through this, so they always agree.
+ */
+export const jobCacheKey = async (
+  run: CiRunScope,
+  cache: CacheConfig,
+  input: unknown,
+): Promise<string> => {
+  const key = await resolveCacheKey(run, cache.key);
+
+  return input === undefined
+    ? key
+    : hash(`${key}\0input:${stableStringify(input)}`);
+};
+
+export interface CacheLookup {
+  /** The key this job's entry is stored under. */
+  writeKey: string;
+  entry?: CacheEntry;
+  /** The resolved key the entry is stored under. */
+  ownKey: string;
+}
+
+const findEntry = async (
+  run: CiRunScope,
+  cache: CacheConfig,
+  jobId: string,
+  key: string,
+): Promise<CacheEntry | undefined> => {
+  for (const readScope of cacheScopes(run.repo, cache.scope).read) {
+    const found = await run.ci.cacheStore.get(storeKey(readScope, jobId, key));
+
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+};
+
+/**
+ * The current keys of the cached jobs a job starts `from()`, by job ID.
+ *
+ * `from()` only runs inside the job body, after the lookup, so a job's entry
+ * records its parents' keys when it is built and a lookup compares them with
+ * the current ones. Each key folds in the parent's own parents, read from the
+ * parent's stored entry, so a change anywhere up the chain changes it. A parent
+ * that isn't cached has no key and is left out.
+ */
+export const resolveParentKeys = async (
+  run: CiRunScope,
+  jobIds: string[],
+  /** The input each parent was called with, by job ID. */
+  inputs: Record<string, unknown>,
+): Promise<Record<string, string>> => {
+  const keys: Record<string, string> = {};
+
+  for (const jobId of jobIds) {
+    const cache = run.ci.jobs.get(jobId)?.config.cache;
+
+    if (!cache) {
+      continue;
+    }
+
+    const key = await jobCacheKey(run, cache, inputs[jobId]);
+
+    const entry = await findEntry(run, cache, jobId, key);
+
+    const parents = await resolveParentKeys(
+      run,
+      Object.keys(entry?.fromKeys ?? {}),
+      entry?.fromInputs ?? {},
+    );
+
+    keys[jobId] = hash(
+      `${key}|${entry ? "built" : "unbuilt"}|${JSON.stringify(parents)}`,
+    );
+  }
+
+  return keys;
+};
+
+/**
+ * Compute this job's key and look for an entry, both as memoized steps. An
+ * entry is a miss if any parent's key has changed since it was built.
+ */
+export const lookupCache = async (
+  scope: CiJobScope,
+  cache: CacheConfig,
+  /** The input the job was called with, which is part of its identity. */
+  input?: unknown,
+): Promise<CacheLookup> => {
+  const { run } = scope;
+  const jobId = scope.config.id;
+  const tag = { kind: "cache", job: scope.path } as const;
+
+  countApi("cache");
+
+  const ownKey = (await run.step.run(
+    {
+      id: `${scope.path}${scopeSeparator}cache:key`,
+      name: "cache:key",
+    },
+    async () => {
+      await tagStep(run, tag);
+
+      return jobCacheKey(run, cache, input);
+    },
+  )) as string;
+
+  const entry = (await run.step.run(
+    {
+      id: `${scope.path}${scopeSeparator}cache:lookup`,
+      name: "cache:lookup",
+    },
+    async () => {
+      await tagStep(run, tag);
+
+      const found = await findEntry(run, cache, jobId, ownKey);
+      const built = found?.fromKeys ?? {};
+      const current = await resolveParentKeys(
+        run,
+        Object.keys(built),
+        found?.fromInputs ?? {},
+      );
+      const unchanged = JSON.stringify(current) === JSON.stringify(built);
+
+      return found && unchanged ? found : null;
+    },
+  )) as CacheEntry | null;
+
+  return {
+    writeKey: storeKey(cacheScopes(run.repo, cache.scope).write, jobId, ownKey),
+    ownKey,
+    ...(entry ? { entry } : {}),
+  };
+};
+
+/**
+ * Store an entry after a successful run, with the keys of its parents.
+ */
+export const storeCache = async (
+  scope: CiJobScope,
+  lookup: CacheLookup,
+  entry: Omit<CacheEntry, "key" | "fromKeys" | "fromInputs">,
+): Promise<void> => {
+  const { run } = scope;
+
+  // A cache entry's snapshot outlives the run, so a later run can restore it.
+  if (entry.snapshotId) {
+    run.createdSnapshots.delete(entry.snapshotId);
+  }
+
+  await run.step.run(
+    {
+      id: `${scope.path}${scopeSeparator}cache:store`,
+      name: "cache:store",
+    },
+    async () => {
+      const fromInputs = scope.fromInputs;
+      const fromKeys = await resolveParentKeys(
+        run,
+        scope.fromJobIds,
+        fromInputs,
+      );
+
+      const full: CacheEntry = {
+        ...entry,
+        key: lookup.ownKey,
+        fromKeys,
+        fromInputs,
+      };
+
+      await run.ci.cacheStore.set(lookup.writeKey, full);
+
+      return { key: lookup.writeKey };
+    },
+  );
+};
+
+/**
+ * A cached snapshot may have expired, in which case the entry is a miss.
+ */
+export const snapshotIsReady = async (
+  run: CiRunScope,
+  scopePath: string,
+  snapshotId: string,
+): Promise<boolean> => {
+  try {
+    const snapshot = await run.sandboxTools.snapshots.get(
+      {
+        id: `${scopePath}${scopeSeparator}cache:snapshot`,
+        name: "cache:snapshot",
+      },
+      snapshotId,
+    );
+
+    return snapshot?.status === "READY";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * EXPERIMENTAL: This API is not yet stable and may change in the future without
+ * a major version bump.
+ *
+ * A cache key part built from repository files. The key changes when any
+ * matched file's contents change, so a job is reused until its inputs move.
+ *
+ * ```ts
+ * cache: { key: files("pnpm-lock.yaml", ".nvmrc") }
+ * cache: { key: files("migrations/**", "seeds/**") }
+ * cache: { key: [files("go.mod", "go.sum"), "go1.25"] }
+ * ```
+ *
+ * Contents are read from the git tree for the run's commit, or from the
+ * working tree locally, so uncommitted changes change the key too.
+ *
+ * Patterns support `**`, `*`, `?`, and `{a,b}`.
+ */
+export const files = (
+  /** Glob patterns for the files to hash. */ ...patterns: string[]
+): CacheKeyPart => {
+  return {
+    kind: "inngest/ci.cacheKeyPart",
+    type: "files",
+    patterns,
+  };
+};
