@@ -14,7 +14,7 @@ import type { SnapshotMeta } from "../machine/snapshotMeta.ts";
 import { tagStep } from "../pipeline/metadata.ts";
 import { ciStep, traceName } from "../pipeline/names.ts";
 import type { CiJobScope, CiRunScope } from "../pipeline/scope.ts";
-import { countApi, scopeSeparator } from "../pipeline/scope.ts";
+import { countApi, rootRunIdOf, scopeSeparator } from "../pipeline/scope.ts";
 import type {
   CacheConfig,
   CacheKey,
@@ -258,13 +258,17 @@ export const cacheTarget = async (
 
 /**
  * Where a job without a `cache` has its snapshot for `from()`: a name that
- * belongs to this pipeline run, so another run never starts from it, and that
- * a second build in this run finds rather than builds again.
+ * belongs to the pipeline run at the root, so another run never starts from
+ * it, and that a second build anywhere in that pipeline finds rather than
+ * builds again.
  */
 export const runTarget = (run: CiRunScope, jobId: string, input?: unknown) => {
   const ownKey = input === undefined ? "" : hash(stableStringify(input));
 
-  return { ownKey, name: snapshotName(`run:${run.runId}`, jobId, ownKey) };
+  return {
+    ownKey,
+    name: snapshotName(`run:${rootRunIdOf(run)}`, jobId, ownKey),
+  };
 };
 
 /**

@@ -954,6 +954,53 @@ describe("from()", () => {
     expect(ran(api, "pnpm install")).toBe(1);
   });
 
+  test("builds nested in other builds share one build of an uncached parent", async () => {
+    const { api, ci } = setup();
+
+    const build = ci.job("build", async () => {
+      await $`pnpm install`;
+    });
+
+    const pack = ci.job("pack", async () => {
+      await from(build);
+
+      await $`pnpm pack`;
+    });
+
+    const ship = ci.job("ship", async () => {
+      await from(pack);
+
+      await $`pnpm ship`;
+    });
+
+    const lint = ci.job("lint", async () => {
+      await from(build);
+
+      await $`pnpm lint`;
+    });
+
+    const pipeline = ci.pipeline({ id: "pr", on: prTrigger }, async () => {
+      await Promise.all([ship(), lint()]);
+    });
+
+    const result = await runFunction(pipeline, { event: prEvent });
+
+    expect(result.type).toBe("function-resolved");
+
+    // `build` is built once, however many builds and jobs start from it.
+    expect(
+      [...api.sandboxes.values()].filter((machine) => {
+        return /^ci-01TESTINVOKED\d+-build$/.test(machine.name);
+      }),
+    ).toHaveLength(1);
+
+    expect(ran(api, "pnpm install")).toBe(1);
+    expect(ran(api, "pnpm pack")).toBe(1);
+
+    // Every uncached snapshot is the root run's, and all are deleted with it.
+    expect(api.snapshots.size).toBe(0);
+  });
+
   test("an uncached parent's snapshot is named for the run, and deleted with it", async () => {
     const { api, ci } = setup();
     const named = new Set<string>();
@@ -3263,12 +3310,12 @@ describe("run snapshot cleanup", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    // `child`'s snapshot is the pipeline's to delete. `base`'s was `child`
-    // build run's, and is gone with it.
-    expect(duringRun).toBe(1);
+    // Both are the pipeline's to delete: `base`'s was left by `child`'s build
+    // run, which hands it up instead of deleting what others may share.
+    expect(duringRun).toBe(2);
     expect(api.snapshots.size).toBe(0);
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
-    expect(deletedBy(result)).toHaveLength(1);
+    expect(deletedBy(result)).toHaveLength(2);
   });
 
   test("a run with no snapshots still plans the cleanup step, which deletes nothing", async () => {
@@ -3370,7 +3417,7 @@ describe("run snapshot cleanup", () => {
     expect(cleanupSteps(result.stepIds)).toHaveLength(1);
   });
 
-  test("a build run deletes its own run-only snapshots and keeps the named one it built", async () => {
+  test("a build run hands up its run-only snapshots and keeps the named one it built", async () => {
     const api = createFakeSandboxApi();
     const { ci } = setup({ api });
 
@@ -3397,11 +3444,11 @@ describe("run snapshot cleanup", () => {
     const result = await runFunction(pipeline, { event: prEvent });
 
     expect(result.type).toBe("function-resolved");
-    // `base`'s was taken in the build run and deleted when it ended;
-    // `cached`'s is the named cache snapshot. The invoking run took none.
+    // `base`'s was taken in the build run and handed up, so the pipeline
+    // deletes it; `cached`'s is the named cache snapshot, which stays.
     expect(namedSnapshots(api)).toHaveLength(1);
     expect(api.snapshots.size).toBe(1);
-    expect(deletedBy(result)).toHaveLength(0);
+    expect(deletedBy(result)).toHaveLength(1);
   });
 
   test("a build run doesn't delete the named snapshot it built", async () => {

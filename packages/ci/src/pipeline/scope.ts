@@ -369,6 +369,15 @@ const getStore = (): CiStore | undefined => {
   return resolvedAls?.getStore();
 };
 
+/**
+ * The ID of the pipeline run at the root: this run, or for a build run, the
+ * root it was invoked with. It travels in the invoke data, never in shared
+ * memory.
+ */
+export const rootRunIdOf = (run: CiRunScope): string => {
+  return run.build?.rootRunId ?? run.runId;
+};
+
 export const getRunScope = (): CiRunScope | undefined => {
   return getStore()?.run;
 };

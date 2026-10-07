@@ -55,6 +55,13 @@ export interface CacheBuildData extends Record<string, unknown> {
   exclude?: string;
   /** The pipeline's repository, with the working tree's location for local runs. */
   repo?: RepoContext;
+  /**
+   * The ID of the pipeline run at the root of this build: the run itself for a
+   * build a pipeline invokes, and the `rootRunId` the invoking build was given
+   * for one a build invokes. A job without a `cache` is named under it, so
+   * every build in one pipeline shares one build per such job.
+   */
+  rootRunId: string;
   /** The run that needs the snapshot, and the job there that waits on it. */
   parent: {
     /** The pipeline run that the build's jobs and commands are shown under. */
@@ -81,6 +88,11 @@ export interface CacheBuildResult {
   target: CacheTarget;
   /** Whether the job ran commands, so there was a machine to snapshot. */
   hadMachine: boolean;
+  /**
+   * Snapshots the build left for the pipeline to delete when it ends: those of
+   * the builds it invoked in turn, which other builds in the pipeline share.
+   */
+  createdSnapshots: string[];
   /** The job's line in the pipeline summary, for the run that invoked it. */
   summary?: JobSummary;
   /** What the invoking run should say about the build, like a fallback. */
@@ -192,6 +204,7 @@ const buildSnapshot = async ({
     reused: outcome?.reused ?? false,
     target: { ownKey: data.ownKey, name: data.cacheKey },
     hadMachine: outcome?.hadMachine ?? false,
+    createdSnapshots: [...(run?.createdSnapshots ?? [])],
     ...(summary ? { summary } : {}),
     warnings: run?.warnings ?? [],
   };

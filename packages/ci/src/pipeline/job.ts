@@ -32,6 +32,7 @@ import {
   inJobSpan,
   jobHandlerKey,
   matrixOriginOf,
+  rootRunIdOf,
   runJobBody,
   scopeSeparator,
 } from "./scope.ts";
@@ -158,6 +159,7 @@ export const invokeBuild = async ({
 }): Promise<CacheBuildResult> => {
   const origin = matrixOriginOf(config);
   const parent = run.build?.parent;
+  const rootRunId = rootRunIdOf(run);
 
   const data: CacheBuildData = {
     jobId: config.id,
@@ -167,8 +169,9 @@ export const invokeBuild = async ({
     cacheKey: target.name,
     ...(exclude ? { exclude } : {}),
     ...(run.repo ? { repo: run.repo } : {}),
+    rootRunId,
     parent: {
-      runId: parent?.runId ?? run.runId,
+      runId: rootRunId,
       pipelineId: parent?.pipelineId ?? run.pipelineId,
       jobPath: path,
       trigger:
@@ -208,6 +211,10 @@ export const invokeBuild = async ({
  */
 export const adoptBuilt = (run: CiRunScope, built: CacheBuildResult): void => {
   run.warnings.push(...built.warnings);
+
+  for (const id of built.createdSnapshots) {
+    run.createdSnapshots.add(id);
+  }
 
   if (built.snapshotId && !built.cached) {
     run.createdSnapshots.add(built.snapshotId);

@@ -808,6 +808,9 @@ export const destroyRunMachines = async (
  * Cache entries and `keepOnFailure` snapshots aren't in the set, and one the
  * run only restored never was.
  *
+ * A build run deletes none: other builds in the pipeline share its snapshots,
+ * so it hands them to the run that invoked it, and the root run deletes them.
+ *
  * Best effort, in one step: a snapshot that can't be deleted is logged and
  * left to expire, and never fails the run.
  */
@@ -815,6 +818,10 @@ export const deleteRunSnapshots = async (
   run: CiRunScope,
   attempt = 0,
 ): Promise<void> => {
+  if (run.build) {
+    return;
+  }
+
   // Always there, and reads the set when it runs, for the reason cleaning up
   // machines is.
   await run.step.run(
